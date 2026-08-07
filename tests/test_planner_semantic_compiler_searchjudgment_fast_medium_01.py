@@ -323,6 +323,56 @@ def test_pr551_parse_diagnostics_remain_intact() -> None:
     assert calls and calls[0]["require_json"] is True
 
 
+def test_semantically_invalid_proposal_uses_canonical_adapter_failure() -> None:
+    proposal = _direct_semantic_proposal()
+    proposal["components"][0]["support_kinds"] = ["not_a_kind"]
+    marker = "LEAKED_MODEL_VALUE_not_a_kind"
+    proposal["interpretation"] = marker
+
+    with pytest.raises(SearchPlannerModelAdapterError) as caught:
+        accept_planner_model_output(proposal)
+    error = caught.value
+    assert not isinstance(error.__cause__, ValueError)
+    assert error.__cause__ is None
+    assert error.failure_code.value == "INVALID_SEMANTIC_PROPOSAL"
+    assert error.predicate_id is not None
+    assert error.predicate_id.name == "SEMANTIC_PROPOSAL_VALIDATION_FAILED"
+    assert error.mechanical_rule_id == "M02"
+    assert error.failure_stage.name == "MODEL_OUTPUT_VALIDATION"
+    message = str(error)
+    assert message == "search planner semantic proposal failed closed"
+    assert marker not in message
+    assert "not_a_kind" not in message
+    assert "raw_" not in message.lower()
+    assert "secret" not in message.lower()
+
+
+def test_inferred_support_requires_explicit_max_inference_depth() -> None:
+    proposal = _multicomponent_semantic_proposal()
+    del proposal["components"][1]["max_inference_depth"]
+
+    with pytest.raises(SearchPlannerModelAdapterError) as caught:
+        accept_planner_model_output(proposal)
+    error = caught.value
+    assert error.failure_code.value == "INVALID_SEMANTIC_PROPOSAL"
+    assert error.predicate_id is not None
+    assert error.predicate_id.name == "SEMANTIC_PROPOSAL_VALIDATION_FAILED"
+    assert error.mechanical_rule_id == "M02"
+
+
+def test_slotless_component_is_rejected_not_bound_to_all_slots() -> None:
+    proposal = _direct_semantic_proposal()
+    proposal["components"][0]["slots"] = []
+
+    with pytest.raises(SearchPlannerModelAdapterError) as caught:
+        accept_planner_model_output(proposal)
+    error = caught.value
+    assert error.failure_code.value == "INVALID_SEMANTIC_PROPOSAL"
+    assert error.predicate_id is not None
+    assert error.predicate_id.name == "SEMANTIC_PROPOSAL_VALIDATION_FAILED"
+    assert error.mechanical_rule_id == "M02"
+
+
 def test_planner_burden_reduction_floors() -> None:
     schema = SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA
     static_chars = len(json.dumps(schema, sort_keys=True, separators=(",", ":")))

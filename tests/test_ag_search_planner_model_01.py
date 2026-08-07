@@ -833,6 +833,11 @@ _M02_COMPONENT_COUNT: _WitnessMetadata = (
     SearchPlannerModelAdapterFailureCode.INVALID_COMPONENT_COUNT,
     "M02",
 )
+_M02_SEMANTIC_PROPOSAL: _WitnessMetadata = (
+    SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION,
+    SearchPlannerModelAdapterFailureCode.INVALID_SEMANTIC_PROPOSAL,
+    "M02",
+)
 _M03: _WitnessMetadata = (
     SearchPlannerModelAdapterFailureStage.CROSS_REFERENCE_VALIDATION,
     SearchPlannerModelAdapterFailureCode.INVALID_ID_OR_CROSS_REFERENCE,
@@ -1138,6 +1143,35 @@ def _raw_model_output_error(raw: str) -> SearchPlannerModelAdapterError:
     return caught.value
 
 
+def _semantic_proposal_validation_error() -> SearchPlannerModelAdapterError:
+    """Emit canonical semantic-proposal validation failure through the adapter path."""
+
+    proposal = {
+        "interpretation": "Determine the official current threshold.",
+        "components": [
+            {
+                "purpose": "user_facing_answer_target",
+                "label": "Official threshold",
+                "question": "What is the official current filing threshold?",
+                "requirement_posture": "required",
+                "acceptance_criteria": ["state the threshold"],
+                "support_kinds": ["direct"],
+                "materiality": "material",
+                "slots": [],
+                "source": {"kind": "official_current", "strictness": "required"},
+                "search": {
+                    "summary": "Find the official current source for the threshold.",
+                    "primary_query": {
+                        "text": "Example Permit official filing threshold",
+                        "role": "official_bias",
+                    },
+                },
+            }
+        ],
+    }
+    return _model_output_error(proposal)
+
+
 def _mutated_model_output_error(
     mutate: Callable[[dict[str, Any]], None],
 ) -> SearchPlannerModelAdapterError:
@@ -1239,6 +1273,16 @@ def _field_condition_witness_inventory() -> tuple[_FieldConditionWitness, ...]:
             predicate_id=SearchPlannerModelAdapterPredicateId.JSON_TOP_LEVEL_OBJECT_REQUIRED,
             metadata=_M01_ROOT_OBJECT,
             emit=lambda: _raw_model_output_error("[]"),
+            scope="universal",
+        ),
+        _direct_witness(
+            field_path="semantic_proposal",
+            condition="validation_failed",
+            predicate_id=(
+                SearchPlannerModelAdapterPredicateId.SEMANTIC_PROPOSAL_VALIDATION_FAILED
+            ),
+            metadata=_M02_SEMANTIC_PROPOSAL,
+            emit=_semantic_proposal_validation_error,
             scope="universal",
         ),
     ]
@@ -4466,6 +4510,7 @@ _UNIVERSAL_OR_DYNAMIC_PREDICATE_IDS = frozenset(
     {
         SearchPlannerModelAdapterPredicateId.JSON_STRICT_PARSE_FAILED,
         SearchPlannerModelAdapterPredicateId.JSON_TOP_LEVEL_OBJECT_REQUIRED,
+        SearchPlannerModelAdapterPredicateId.SEMANTIC_PROPOSAL_VALIDATION_FAILED,
         SearchPlannerModelAdapterPredicateId.QUERY_STRATEGY_PROVIDER_MODEL_AUTHORITY_FORBIDDEN,
         SearchPlannerModelAdapterPredicateId.CLOSED_AUTHORITY_FIELD_FORBIDDEN,
         SearchPlannerModelAdapterPredicateId.CLOSED_RUNTIME_CLAIM_FORBIDDEN,
@@ -4487,14 +4532,14 @@ def test_field_condition_witness_inventory_is_complete_and_one_to_one() -> None:
     exempt_ids = {witness.predicate_id for witness in _FIELD_CONDITION_WITNESS_INVENTORY if witness.scope != "field"}
 
     assert len(inventory_ids) == len(set(inventory_ids))
-    assert len(inventory_ids) == 304
+    assert len(inventory_ids) == 305
     assert set(inventory_ids) == set(SearchPlannerModelAdapterPredicateId)
     assert set(inventory_ids) == set(SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY)
     assert Counter(
         registration.mechanical_rule_id for registration in SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY.values()
     ) == {
         "M01": 14,
-        "M02": 164,
+        "M02": 165,
         "M03": 49,
         "M04": 8,
         "M05": 9,
@@ -5281,6 +5326,7 @@ def test_adapter_failure_code_inventory_is_stable_and_repository_owned() -> None
         "INVALID_NESTED_TYPE",
         "INVALID_ENUM_OR_BOUNDED_VALUE",
         "INVALID_COMPONENT_COUNT",
+        "INVALID_SEMANTIC_PROPOSAL",
         "INVALID_COMPONENT_SUPPORT_MATRIX",
         "INVALID_COMPONENT_PURPOSE_OR_SOURCE_TARGET_SEPARATION",
         "INVALID_ID_OR_CROSS_REFERENCE",
@@ -5315,6 +5361,7 @@ def test_every_adapter_error_construction_supplies_a_registered_code() -> None:
         SearchPlannerModelAdapterFailureCode.INVALID_NESTED_TYPE: "M02",
         SearchPlannerModelAdapterFailureCode.INVALID_ENUM_OR_BOUNDED_VALUE: "M02",
         SearchPlannerModelAdapterFailureCode.INVALID_COMPONENT_COUNT: "M02",
+        SearchPlannerModelAdapterFailureCode.INVALID_SEMANTIC_PROPOSAL: "M02",
         SearchPlannerModelAdapterFailureCode.INVALID_ID_OR_CROSS_REFERENCE: "M03",
         SearchPlannerModelAdapterFailureCode.INVALID_DEPENDENCY_OR_INFERENCE_DEPTH: "M04",
         SearchPlannerModelAdapterFailureCode.INVALID_COMPONENT_SUPPORT_MATRIX: "M05",

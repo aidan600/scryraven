@@ -264,6 +264,7 @@ SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA: dict[str, Any] = {
             "acceptance_criteria",
             "support_kinds",
             "materiality",
+            "slots",
         ),
         fields={
             "local_id": _text_contract("default_text", required=False, nonempty=False),
@@ -303,7 +304,8 @@ SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA: dict[str, Any] = {
                 "required": False,
                 "minimum": 0,
                 "adapter_normalization": (
-                    "omit for direct-only (compiles to 0); required >=1 when inferred"
+                    "omit for direct-only (compiles to 0); required integer >=1 when "
+                    "support_kinds includes inferred"
                 ),
             },
             "depends_on": _text_array_contract(
@@ -313,8 +315,8 @@ SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA: dict[str, Any] = {
             ),
             "slots": {
                 "json_type": "array",
-                "required": False,
-                "minimum_items": 0,
+                "required": True,
+                "minimum_items": 1,
                 "item_contract": "semantic_slot",
             },
             "source": {
@@ -574,11 +576,6 @@ def validate_semantic_planner_proposal(
                     "component must not depend on itself"
                 )
 
-    if not any(component.get("slots") for component in components):
-        raise SearchPlannerSemanticProposalError(
-            "semantic planner proposal requires at least one semantic slot"
-        )
-
     return {
         "interpretation": interpretation,
         "components": components,
@@ -686,8 +683,14 @@ def compile_semantic_planner_proposal(
         owns_direct = "direct" in support_kinds
         owns_inferred = "inferred" in support_kinds
         max_depth = component.get("max_inference_depth")
-        if max_depth is None:
-            max_depth = 0 if support_kinds == ["direct"] else 1
+        if support_kinds == ["direct"]:
+            max_depth = 0 if max_depth is None else int(max_depth)
+        elif max_depth is None:
+            raise SearchPlannerSemanticProposalError(
+                f"component {component_id} with inferred support requires max_inference_depth"
+            )
+        else:
+            max_depth = int(max_depth)
 
         obligation_ids: list[str] = []
         if owns_direct:
@@ -717,11 +720,8 @@ def compile_semantic_planner_proposal(
 
         owned_slots = slot_ids_by_component[component_id]
         if not owned_slots:
-            # Bind to all slots when a premise component authors none of its own.
-            owned_slots = [slot["slot_id"] for slot in semantic_slots]
-        if not owned_slots:
             raise SearchPlannerSemanticProposalError(
-                "compiled proposal requires at least one semantic slot binding"
+                f"component {component_id} requires at least one nested semantic slot"
             )
 
         rich_component: dict[str, Any] = {
@@ -921,7 +921,11 @@ def _validate_component(item: Any, *, index: int) -> dict[str, Any]:
                 f"components[{index}] direct support requires search"
             )
     if "inferred" in support_kinds:
-        if max_inference_depth is not None and max_inference_depth < 1:
+        if max_inference_depth is None:
+            raise SearchPlannerSemanticProposalError(
+                f"components[{index}] inferred support requires max_inference_depth"
+            )
+        if max_inference_depth < 1:
             raise SearchPlannerSemanticProposalError(
                 f"components[{index}] inferred support requires max_inference_depth >= 1"
             )
@@ -942,15 +946,21 @@ def _validate_component(item: Any, *, index: int) -> dict[str, Any]:
     local_id = _optional_text(
         item, "local_id", limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS["default_text"]
     )
-    slots_raw = item.get("slots") or []
+    slots_raw = item.get("slots")
     if slots_raw is None:
         slots_raw = []
     if not isinstance(slots_raw, list):
         raise SearchPlannerSemanticProposalError(
             f"components[{index}] slots must be an array"
         )
-    slots = [_validate_slot(slot, index=index, slot_index=slot_index)
-             for slot_index, slot in enumerate(slots_raw)]
+    if not slots_raw:
+        raise SearchPlannerSemanticProposalError(
+            f"components[{index}] requires at least one nested semantic slot"
+        )
+    slots = [
+        _validate_slot(slot, index=index, slot_index=slot_index)
+        for slot_index, slot in enumerate(slots_raw)
+    ]
 
     source = None
     if isinstance(item.get("source"), Mapping):

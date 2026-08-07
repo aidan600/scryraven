@@ -220,6 +220,7 @@ class SearchPlannerModelAdapterFailureCode(str, Enum):
     INVALID_NESTED_TYPE = "INVALID_NESTED_TYPE"
     INVALID_ENUM_OR_BOUNDED_VALUE = "INVALID_ENUM_OR_BOUNDED_VALUE"
     INVALID_COMPONENT_COUNT = "INVALID_COMPONENT_COUNT"
+    INVALID_SEMANTIC_PROPOSAL = "INVALID_SEMANTIC_PROPOSAL"
     INVALID_COMPONENT_SUPPORT_MATRIX = "INVALID_COMPONENT_SUPPORT_MATRIX"
     INVALID_COMPONENT_PURPOSE_OR_SOURCE_TARGET_SEPARATION = "INVALID_COMPONENT_PURPOSE_OR_SOURCE_TARGET_SEPARATION"
     INVALID_ID_OR_CROSS_REFERENCE = "INVALID_ID_OR_CROSS_REFERENCE"
@@ -597,6 +598,9 @@ class SearchPlannerModelAdapterPredicateId(str, Enum):
     QUERY_STRATEGY_COMPONENT_BINDING_STALE = auto()
     COMPONENT_SEARCH_REQUIREMENT_SUBORDINATE_TO_ANSWER_CONTRACT_NOT_TRUE = auto()
 
+    # Semantic proposal boundary (pre-rich compile validation).
+    SEMANTIC_PROPOSAL_VALIDATION_FAILED = auto()
+
 
 _FailureCode = SearchPlannerModelAdapterFailureCode
 _PredicateId = SearchPlannerModelAdapterPredicateId
@@ -653,6 +657,10 @@ _FAILURE_STAGE_AND_RULE_BY_CODE: Mapping[
             "M02",
         ),
         _FailureCode.INVALID_COMPONENT_COUNT: (
+            SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION,
+            "M02",
+        ),
+        _FailureCode.INVALID_SEMANTIC_PROPOSAL: (
             SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION,
             "M02",
         ),
@@ -989,6 +997,10 @@ def _build_predicate_registry() -> Mapping[
         _PredicateId.ANSWER_COMPONENT_DEPENDENCY_IDS_DUPLICATE,
         _PredicateId.ANSWER_COMPONENT_DEPENDENCY_REFERENCE_UNRESOLVED,
         _PredicateId.ANSWER_COMPONENT_SELF_DEPENDENCY_FORBIDDEN,
+    )
+    register(
+        _FailureCode.INVALID_SEMANTIC_PROPOSAL,
+        _PredicateId.SEMANTIC_PROPOSAL_VALIDATION_FAILED,
     )
     register(
         _FailureCode.INVALID_COMPONENT_SUPPORT_MATRIX,
@@ -1872,12 +1884,12 @@ def accept_planner_model_output(model_output: Mapping[str, Any]) -> dict[str, An
         try:
             semantic = validate_semantic_planner_proposal(model_output)
             compiled = compile_semantic_planner_proposal(semantic)
-        except SearchPlannerSemanticProposalError as exc:
+        except SearchPlannerSemanticProposalError:
             raise SearchPlannerModelAdapterError(
-                f"search planner semantic proposal failed closed: {exc}",
-                failure_code=_FailureCode.INVALID_COMPONENT_SUPPORT_MATRIX,
-                predicate_id=None,
-            ) from exc
+                "search planner semantic proposal failed closed",
+                failure_code=_FailureCode.INVALID_SEMANTIC_PROPOSAL,
+                predicate_id=_PredicateId.SEMANTIC_PROPOSAL_VALIDATION_FAILED,
+            ) from None
         return validate_and_sanitize_model_output(compiled)
     return validate_and_sanitize_model_output(model_output)
 
