@@ -2209,7 +2209,11 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             locals(),
             retrieval_pass_records=retrieval_pass_records,
         )
+        if cap_policy is not None and cap_policy.bounded:
+            cap_policy.note_product_stage("retrieval_dispatch_complete")
         run_kernel.reduce(main_retrieval_outcome.observation)
+        if cap_policy is not None and cap_policy.bounded:
+            cap_policy.note_product_stage("retrieval_kernel_observed")
         new_passages = main_retrieval_outcome.passages
         discover_candidate_urls_admitted += main_retrieval_outcome.seen_url_delta
         total_chunks_embedded += main_retrieval_outcome.chunk_delta
@@ -2762,6 +2766,8 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     # Post-retrieval: synthesis
     # ------------------------------------------------------------------
     if not all_passages:
+        if cap_policy is not None and cap_policy.bounded:
+            cap_policy.note_product_stage("retrieval_no_readable_passages")
         raise PipelineError("No readable passages were extracted.")
 
     # Revision 1 is the immutable ordinary post-DISCOVER selection snapshot.

@@ -20,6 +20,7 @@ import pytest
 
 import core.cap_enforcement as cap_module
 import core.llm as llm
+import core.pipeline as pipeline
 import core.pipeline_orchestrator as orchestrator
 import core.search_providers as search_providers
 import proplex.__main__ as compatibility_cli
@@ -43,7 +44,13 @@ from core.cap_enforcement import (
     mark_cap_aware,
     model_usage_bound,
 )
-from core.cost_accounting import estimate_tokens
+from core.cost_accounting import CostAccumulator, estimate_tokens
+from core.protocols import NullStatusWriter
+from core.retrieval_dispatch_runtime import (
+    RecordedRetrievalDispatch,
+    RetrievalDispatchDeps,
+    execute_recorded_retrieval_dispatch,
+)
 from core.routing import (
     AcquisitionCapability,
     ProviderCapabilityRequest,
@@ -54,6 +61,7 @@ from core.run_authority_search_judgment_runtime import (
 )
 from core.run_cap_authorization import CompiledRunCapAuthorization, query_sha256
 from core.run_config import RunConfig, RunDeps
+from core.run_kernel import ObservationType
 from core.strict_one_shot_model_transport import (
     build_strict_one_shot_smart_model_transport,
 )
@@ -1145,6 +1153,92 @@ def _isclose_harness(tmp_path: Path) -> PostRetirementOrdinaryPipelineHarness:
     )
 
 
+def _bounded_isclose_runtime(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    session_id: str = "session-retrieval-stage-fixture",
+    run_id: str = "run-retrieval-stage-fixture",
+) -> tuple[Any, ...]:
+    harness = _isclose_harness(tmp_path)
+    policy = _policy(activate=False)
+    config = RunConfig(
+        query=_ISCLOSE_QUERY,
+        mode="Balanced",
+        include_domains=["docs.python.org"],
+        fast_provider="OpenAI",
+        fast_model="gpt-5.4-mini",
+        smart_provider="OpenAI",
+        smart_model="gpt-5.4",
+        embed_provider="OpenAI",
+        embed_model="text-embedding-3-small",
+        session_id=session_id,
+        run_id=run_id,
+        cap_policy=policy,
+    )
+    deps = _bounded_harness_deps(harness, policy)
+
+    def forbidden_persistence(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("bounded path reached a persistence or raw-log path")
+
+    for name in (
+        "execute_persistence_side_effects",
+        "load_policy_state",
+        "recent_recurring_kb_hints",
+        "log_run_started",
+        "log_run_failed",
+    ):
+        monkeypatch.setattr(orchestrator, name, forbidden_persistence)
+    return harness, policy, config, deps
+
+
+def _stage_fixture_search(
+    *_args: Any,
+    **_kwargs: Any,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    return (
+        [
+            {
+                "title": "Fixture retrieval material",
+                "url": "https://fixture.example/retrieval",
+                "domain": "fixture.example",
+                "credibility": 4,
+                "snippet": "Fixture retrieval material. " * 20,
+                "raw_content": "Fixture retrieval material. " * 20,
+            }
+        ],
+        [],
+    )
+
+
+def _ordinary_output_projection(outcome: Any) -> tuple[Any, ...]:
+    passage_fields = (
+        "title",
+        "url",
+        "text",
+        "score",
+        "source_tier",
+        "source_class",
+        "currentness_signal",
+        "readable_status",
+        "disposition",
+    )
+    return (
+        outcome.report,
+        [
+            {field: passage.get(field) for field in passage_fields}
+            for passage in outcome.top_passages
+        ],
+        sorted(outcome.seen_urls),
+        sorted(outcome.collected_images),
+        outcome.failure_card,
+        outcome.intent,
+        outcome.complexity,
+        outcome.corpus_state,
+        outcome.pipeline_config,
+    )
+
+
 def test_unbounded_cli_config_keeps_the_default_no_policy_posture() -> None:
     args = compatibility_cli._parse_args([_ISCLOSE_QUERY])
     config = compatibility_cli._build_run_config(args)
@@ -1281,6 +1375,12 @@ def test_public_bounded_cli_preserves_safe_search_planner_failure_identity(
         "fictional-raw-model-output-sentinel",
         "fictional-raw-prompt-sentinel",
         "fictional-provider-payload-sentinel",
+        "fictional-raw-embedding-vector-sentinel",
+        "fictional-raw-provider-result-sentinel",
+        "fictional-raw-query-text-sentinel",
+        "https://fixture.invalid/raw-url-sentinel",
+        "fictional-raw-passage-text-sentinel",
+        "fictional-raw-exception-message-sentinel",
     )
     private_message = (
         "SearchPlanner fixture failure: " + " | ".join(private_fragments)
@@ -1520,6 +1620,289 @@ def test_ordinary_pipeline_executes_bounded_isclose_with_explicit_policy(
     assert success["answer_present"] is True
     assert success["physical_envelope"]["physical_attempts"] > 0
     assert "profile_name" not in success
+
+
+@pytest.mark.parametrize(
+    ("failure_boundary", "expected_stage"),
+    [
+        ("embedding", "retrieval-embedding"),
+        ("similarity", "retrieval_embedding_vectors_ready"),
+        ("ranking", "retrieval_similarity_ready"),
+    ],
+)
+def test_bounded_retrieval_local_stage_stops_at_last_completed_operation(
+    failure_boundary: str,
+    expected_stage: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(pipeline, "search_web_results", _stage_fixture_search)
+    policy = _policy()
+    entity_hint: str | None = None
+    failure_message = f"fixture-{failure_boundary}-failed"
+    def embed_texts(texts: list[str], **_kwargs: Any) -> list[list[float]]:
+        return [[1.0, 0.0] for _ in texts]
+
+    if failure_boundary == "embedding":
+        def embed_texts(*_args: Any, **_kwargs: Any) -> list[list[float]]:
+            raise RuntimeError(failure_message)
+
+        def compute_similarities(*_args: Any) -> list[float]:
+            return [0.9]
+    elif failure_boundary == "similarity":
+        def compute_similarities(*_args: Any) -> list[float]:
+            raise RuntimeError(failure_message)
+    else:
+        def compute_similarities(*_args: Any) -> list[float]:
+            return [0.9]
+
+        def fail_ranking_filtering(*_args: Any) -> bool:
+            raise RuntimeError(failure_message)
+
+        monkeypatch.setattr(
+            pipeline,
+            "passage_mentions_entity_full_phrase",
+            fail_ranking_filtering,
+        )
+        entity_hint = "Fixture"
+
+    with pytest.raises(RuntimeError, match=failure_message):
+        pipeline.process_search_queries(
+            ["fixture query"],
+            "general",
+            "medium",
+            "advanced",
+            1,
+            [],
+            [],
+            [1.0, 0.0],
+            set(),
+            set(),
+            "OpenAI",
+            "text-embedding-3-small",
+            None,
+            embed_texts,
+            compute_similarities,
+            search_providers=["tavily"],
+            entity_hint=entity_hint,
+            cap_policy=policy,
+        )
+
+    assert policy.physical_snapshot()["furthest_product_stage"] == expected_stage
+
+
+def test_bounded_local_stage_projection_preserves_ranked_passages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(pipeline, "search_web_results", _stage_fixture_search)
+
+    def run_ranked_pass(policy: RunCapPolicy) -> list[dict[str, Any]]:
+        return pipeline.process_search_queries(
+            ["fixture query"],
+            "general",
+            "medium",
+            "advanced",
+            1,
+            [],
+            [],
+            [1.0, 0.0],
+            set(),
+            set(),
+            "OpenAI",
+            "text-embedding-3-small",
+            None,
+            lambda texts, **_kwargs: [[1.0, 0.0] for _ in texts],
+            lambda *_args: [0.9],
+            search_providers=["tavily"],
+            cap_policy=policy,
+        )
+
+    with monkeypatch.context() as baseline_patch:
+        baseline_patch.setattr(
+            RunCapPolicy,
+            "note_product_stage",
+            lambda _self, _stage: None,
+        )
+        baseline_passages = run_ranked_pass(_policy())
+
+    observed_policy = _policy()
+    observed_passages = run_ranked_pass(observed_policy)
+
+    assert observed_passages == baseline_passages
+    assert observed_policy.physical_snapshot()["furthest_product_stage"] == "retrieval_passages_ready"
+
+
+def test_bounded_retrieval_passage_stage_precedes_dispatch_completion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(pipeline, "search_web_results", _stage_fixture_search)
+    policy = _policy()
+
+    def passage_processing_then_fail(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+        kwargs["cap_policy"] = policy
+        pipeline.process_search_queries(*args, **kwargs)
+        raise RuntimeError("fixture-dispatch-completion-failed")
+
+    dispatch = RecordedRetrievalDispatch(
+        stage="main_retrieval",
+        queries=("fixture query",),
+        intent="general",
+        complexity="medium",
+        search_depth="advanced",
+        results_per_query=1,
+        include_domains=(),
+        exclude_domains=(),
+        providers=("tavily",),
+        provider_role="main_retrieval",
+    )
+    deps = RetrievalDispatchDeps(
+        process_search_queries=passage_processing_then_fail,
+        query_embedding=[1.0, 0.0],
+        seen_urls=set(),
+        collected_images=set(),
+        embed_provider="OpenAI",
+        embed_model="text-embedding-3-small",
+        local_url=None,
+        embed_texts=lambda texts, **_kwargs: [[1.0, 0.0] for _ in texts],
+        compute_similarities=lambda *_args: [0.9],
+        status_container=NullStatusWriter(),
+        provider_diagnostics=[],
+    )
+
+    with pytest.raises(RuntimeError, match="fixture-dispatch-completion-failed"):
+        execute_recorded_retrieval_dispatch(
+            dispatch,
+            deps,
+        )
+
+    assert policy.physical_snapshot()["furthest_product_stage"] == "retrieval_passages_ready"
+
+
+def test_bounded_retrieval_dispatch_stage_precedes_kernel_reduction(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_reduce = orchestrator.RunKernel.reduce
+
+    def fail_main_retrieval_reduction(self: Any, observation: Any) -> Any:
+        if observation.observation_type is ObservationType.RETRIEVAL_PASS_RESULT:
+            raise RuntimeError("fixture-kernel-reduction-failed")
+        return original_reduce(self, observation)
+
+    monkeypatch.setattr(orchestrator.RunKernel, "reduce", fail_main_retrieval_reduction)
+    _harness, policy, config, deps = _bounded_isclose_runtime(tmp_path, monkeypatch)
+
+    with pytest.raises(RuntimeError, match="fixture-kernel-reduction-failed"):
+        orchestrator.run_pipeline(
+            config,
+            deps,
+            NullStatusWriter(),
+            CostAccumulator(),
+        )
+
+    assert policy.physical_snapshot()["furthest_product_stage"] == "retrieval_dispatch_complete"
+
+
+def test_bounded_retrieval_kernel_observation_stage_follows_successful_reduction(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_dispatch = orchestrator.execute_main_retrieval_pass_from_scope
+
+    class FailureAfterKernelObservation:
+        def __init__(self, outcome: Any) -> None:
+            self._observation = outcome.observation
+
+        @property
+        def observation(self) -> Any:
+            return self._observation
+
+        @property
+        def passages(self) -> list[dict[str, Any]]:
+            raise RuntimeError("fixture-after-kernel-observation-failed")
+
+    def fail_after_kernel_observation(*args: Any, **kwargs: Any) -> Any:
+        outcome = original_dispatch(*args, **kwargs)
+        return FailureAfterKernelObservation(outcome)
+
+    monkeypatch.setattr(
+        orchestrator,
+        "execute_main_retrieval_pass_from_scope",
+        fail_after_kernel_observation,
+    )
+    _harness, policy, config, deps = _bounded_isclose_runtime(tmp_path, monkeypatch)
+
+    with pytest.raises(RuntimeError, match="fixture-after-kernel-observation-failed"):
+        orchestrator.run_pipeline(
+            config,
+            deps,
+            NullStatusWriter(),
+            CostAccumulator(),
+        )
+
+    assert policy.physical_snapshot()["furthest_product_stage"] == "retrieval_kernel_observed"
+
+
+def test_bounded_no_readable_passages_stage_precedes_existing_terminal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness, policy, config, deps = _bounded_isclose_runtime(tmp_path, monkeypatch)
+    harness.evidence_rows = ()
+
+    with pytest.raises(orchestrator.PipelineError, match="No readable passages were extracted"):
+        orchestrator.run_pipeline(
+            config,
+            deps,
+            NullStatusWriter(),
+            CostAccumulator(),
+        )
+
+    assert policy.physical_snapshot()["furthest_product_stage"] == "retrieval_no_readable_passages"
+
+
+def test_bounded_retrieval_stage_projection_preserves_successful_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_id = "run-retrieval-stage-output-parity"
+    with monkeypatch.context() as baseline_patch:
+        baseline_patch.setattr(
+            RunCapPolicy,
+            "note_product_stage",
+            lambda _self, _stage: None,
+        )
+        _baseline_harness, _baseline_policy, baseline_config, baseline_deps = (
+            _bounded_isclose_runtime(
+                tmp_path / "baseline",
+                baseline_patch,
+                run_id=run_id,
+            )
+        )
+        baseline_outcome = orchestrator.run_pipeline(
+            baseline_config,
+            baseline_deps,
+            NullStatusWriter(),
+            CostAccumulator(),
+        )
+
+    _observed_harness, observed_policy, observed_config, observed_deps = (
+        _bounded_isclose_runtime(
+            tmp_path / "observed",
+            monkeypatch,
+            run_id=run_id,
+        )
+    )
+    observed_outcome = orchestrator.run_pipeline(
+        observed_config,
+        observed_deps,
+        NullStatusWriter(),
+        CostAccumulator(),
+    )
+
+    assert _ordinary_output_projection(observed_outcome) == _ordinary_output_projection(
+        baseline_outcome
+    )
+    assert observed_policy.physical_snapshot()["furthest_product_stage"] == "run_outcome_completed"
 
 
 @pytest.mark.parametrize("entrypoint", ["proplex", "scryraven"])
