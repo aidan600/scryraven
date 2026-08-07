@@ -3041,6 +3041,9 @@ def test_model_adapter_calls_injected_model_with_json_requirement() -> None:
     assert "Do not invoke Scout" in prompt
     assert LONG_SUFFIX.strip() in prompt
     assert "SearchPlanner" in system_prompt
+    for requirement in search_planner_model_prompt.SEARCH_PLANNER_MODEL_STRICT_JSON_OUTPUT_CONTRACT:
+        assert requirement in prompt
+        assert requirement in system_prompt
     assert kwargs["require_json"] is True
     assert kwargs["provider"] == "FakeProvider"
     assert kwargs["model"] == "fake-fast-model"
@@ -3149,6 +3152,8 @@ def _assert_strict_json_parsing_failure(
     assert caught.value.failure_stage == SearchPlannerModelAdapterFailureStage.JSON_PARSING
     assert caught.value.failure_code == SearchPlannerModelAdapterFailureCode.INVALID_JSON
     assert caught.value.mechanical_rule_id == "M01"
+    assert caught.value.predicate_registry_version == SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY_VERSION
+    assert caught.value.predicate_id == SearchPlannerModelAdapterPredicateId.JSON_STRICT_PARSE_FAILED
     assert caught.value.failure_stage != SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION
     assert caught.value.__cause__ is None
     assert caught.value.__context__ is None
@@ -3497,7 +3502,7 @@ def test_model_prompt_embeds_the_exact_output_contract_and_version() -> None:
     prompt = search_planner_model_prompt.build_search_planner_model_prompt(planner_input)
     prompt_packet = json.loads(prompt.split("Sanitized planner input JSON:\n", 1)[1])
 
-    assert SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION == "search_planner_model_prompt_ag_search_planner_model_01_v3"
+    assert SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION == "search_planner_model_prompt_ag_search_planner_model_01_v4"
     assert SEARCH_PLANNER_MODEL_ADAPTER_SCHEMA_VERSION == "search_planner_model_adapter_ag_search_planner_model_01_v1"
     assert prompt_packet["schema_version"] == SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION
     assert prompt_packet["output_schema"] == search_planner_model_prompt.SEARCH_PLANNER_MODEL_OUTPUT_SCHEMA
@@ -3512,6 +3517,34 @@ def test_model_prompt_embeds_the_exact_output_contract_and_version() -> None:
         "value."
     ) in prompt
     assert _REQUIRED_NARRATIVE_TEXT_PROMPT_RULE in prompt
+
+
+def test_strict_json_contract_is_shared_by_system_prompt_and_serialized_schema() -> None:
+    planner_input = _planner_input(_kernel()).to_adapter_payload()
+    prompt = search_planner_model_prompt.build_search_planner_model_prompt(planner_input)
+    prompt_packet = json.loads(prompt.split("Sanitized planner input JSON:\n", 1)[1])
+    strict_json_contract = (
+        "Return exactly one JSON object.",
+        "Return JSON only; emit no prose before or after the object.",
+        "Do not wrap the object in Markdown or code fences.",
+        (
+            "Within every JSON object, including nested objects and objects inside arrays, "
+            "use each member name at most once. Never emit duplicate keys."
+        ),
+        "Never emit NaN, Infinity, or -Infinity.",
+        "Use only standard finite JSON values.",
+    )
+
+    assert (
+        search_planner_model_prompt.SEARCH_PLANNER_MODEL_STRICT_JSON_OUTPUT_CONTRACT
+        == strict_json_contract
+    )
+    assert prompt_packet["output_schema"]["strict_json_output_contract"] == list(
+        strict_json_contract
+    )
+    for requirement in strict_json_contract:
+        assert requirement in search_planner_model_prompt.SEARCH_PLANNER_MODEL_SYSTEM_PROMPT
+        assert requirement in prompt
 
 
 def test_required_narrative_text_schema_contract_is_explicit_and_exactly_scoped() -> None:
@@ -4272,11 +4305,11 @@ def test_prompt_contract_preserves_sanitized_proposal_and_typed_m02_rejections()
     assert metadata["planner_model_prompt_schema_version"] == (SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION)
     assert metadata == {
         "planner_model_adapter_schema_version": ("search_planner_model_adapter_ag_search_planner_model_01_v1"),
-        "planner_model_prompt_schema_version": ("search_planner_model_prompt_ag_search_planner_model_01_v3"),
+        "planner_model_prompt_schema_version": ("search_planner_model_prompt_ag_search_planner_model_01_v4"),
         "prompt_hash": (
-            "ad0915872f1e5bdbfa14e4e134bb7ae2c941e772dd018b59abc965e0c0a54ac5"  # pragma: allowlist secret
+            "75348a01138644c46f1d59bc8904da45f8a731bbc55a37ea5ae5a1a3d7536104"  # pragma: allowlist secret
         ),
-        "prompt_length": 22479,
+        "prompt_length": 23224,
         "provider": "FakeProvider",
         "model": "fake-fast-model",
         "effort": "low",

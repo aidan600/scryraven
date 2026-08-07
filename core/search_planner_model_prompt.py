@@ -23,12 +23,29 @@ from core.semantic_contract_foundation import (
     SupportKind,
 )
 
-SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION = "search_planner_model_prompt_ag_search_planner_model_01_v3"
+SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION = "search_planner_model_prompt_ag_search_planner_model_01_v4"
+
+SEARCH_PLANNER_MODEL_STRICT_JSON_OUTPUT_CONTRACT = (
+    "Return exactly one JSON object.",
+    "Return JSON only; emit no prose before or after the object.",
+    "Do not wrap the object in Markdown or code fences.",
+    (
+        "Within every JSON object, including nested objects and objects inside arrays, "
+        "use each member name at most once. Never emit duplicate keys."
+    ),
+    "Never emit NaN, Infinity, or -Infinity.",
+    "Use only standard finite JSON values.",
+)
+_STRICT_JSON_OUTPUT_CONTRACT_TEXT = "\n".join(
+    f"- {requirement}"
+    for requirement in SEARCH_PLANNER_MODEL_STRICT_JSON_OUTPUT_CONTRACT
+)
 
 SEARCH_PLANNER_MODEL_SYSTEM_PROMPT = (
     "You are SearchPlanner and own semantic interpretation of the supplied human "
     "utterance and bounded planning context. You are not Author, Scout, SearchExecutor, "
-    "a citation formatter, or an evidence ledger. Return only strict JSON planner proposal data."
+    "a citation formatter, or an evidence ledger. Follow the strict JSON output contract:\n"
+    f"{_STRICT_JSON_OUTPUT_CONTRACT_TEXT}"
 )
 
 SEARCH_PLANNER_MODEL_REQUIRED_TOP_LEVEL_FIELDS = (
@@ -191,6 +208,9 @@ def _object_contract(
 
 SEARCH_PLANNER_MODEL_OUTPUT_SCHEMA: dict[str, Any] = {
     "contract_format": "static_model_visible_output_contract_v1",
+    "strict_json_output_contract": list(
+        SEARCH_PLANNER_MODEL_STRICT_JSON_OUTPUT_CONTRACT
+    ),
     "top_level": _object_contract(
         required=True,
         required_fields=SEARCH_PLANNER_MODEL_REQUIRED_TOP_LEVEL_FIELDS,
@@ -803,7 +823,11 @@ def build_search_planner_model_prompt(planner_input: Mapping[str, Any]) -> str:
         "- contract_amendment_candidates, if present, are deferred/proposal-only.",
         "- relationship_hypotheses, if present, are bounded local noncanonical planning hypotheses only; they do not support an answer, create graph authority, or construct search work.",
         "- Use concise rationale fields only; do not include chain-of-thought.",
-        "- Return strict JSON only. Do not wrap it in Markdown fences.",
+        "Strict JSON output contract:",
+        *(
+            f"- {requirement}"
+            for requirement in SEARCH_PLANNER_MODEL_STRICT_JSON_OUTPUT_CONTRACT
+        ),
         "",
         "Sanitized planner input JSON:",
         _json(prompt_payload),
@@ -840,6 +864,7 @@ __all__ = [
     "SEARCH_PLANNER_MODEL_SEMANTIC_SLOT_STATUSES",
     "SEARCH_PLANNER_MODEL_SOURCE_OBLIGATION_KINDS",
     "SEARCH_PLANNER_MODEL_SOURCE_OBLIGATION_STRICTNESSES",
+    "SEARCH_PLANNER_MODEL_STRICT_JSON_OUTPUT_CONTRACT",
     "SEARCH_PLANNER_MODEL_SUPPORT_KINDS",
     "SEARCH_PLANNER_MODEL_SYSTEM_PROMPT",
     "SEARCH_PLANNER_MODEL_TEXT_LIMITS",
