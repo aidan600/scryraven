@@ -2664,6 +2664,29 @@ _SAFE_RECEIVER_FAILURE_CLASSES = frozenset(
     }
 )
 
+# Allowlisted exception-class tokens that can reach ordinary OpenAI SearchJudgment
+# transport failures via `_failure_reason()` (`model_transport_failed:<type.__name__>`).
+# Built-in TimeoutError/ConnectionError are omitted: the installed OpenAI client path
+# surfaces APITimeoutError / APIConnectionError instead.
+_SAFE_TRANSPORT_EXCEPTION_CLASSES = frozenset(
+    {
+        "APITimeoutError",
+        "APIConnectionError",
+        "RateLimitError",
+        "BadRequestError",
+        "AuthenticationError",
+        "PermissionDeniedError",
+        "NotFoundError",
+        "ConflictError",
+        "UnprocessableEntityError",
+        "InternalServerError",
+        "APIStatusError",
+        "APIError",
+        "OpenAIError",
+    }
+)
+_TRANSPORT_FAILURE_PREFIX = "model_transport_failed:"
+
 
 def _opaque_identity_digest(token: Any) -> str:
     text = str(token or "").strip()
@@ -2716,6 +2739,43 @@ def _project_safe_failure_class(*, posture: str, reason: Any) -> str:
         return "unresolved_handoff"
     if "stale" in lowered or "invalid_nomination" in lowered:
         return "stale_or_invalid"
+    return "other_safe"
+
+
+def _extract_transport_exception_class_token(reason: str) -> str | None:
+    """Return the first identifier after the transport prefix, else None."""
+
+    if not reason.startswith(_TRANSPORT_FAILURE_PREFIX):
+        return None
+    remainder = reason[len(_TRANSPORT_FAILURE_PREFIX) :]
+    if not remainder:
+        return None
+    token_chars: list[str] = []
+    for index, char in enumerate(remainder):
+        if index == 0:
+            if not (char.isalpha() or char == "_"):
+                return None
+            token_chars.append(char)
+            continue
+        if char.isalnum() or char == "_":
+            token_chars.append(char)
+            continue
+        break
+    token = "".join(token_chars)
+    return token or None
+
+
+def _project_safe_transport_exception_class(*, posture: str, reason: Any) -> str:
+    """Project an allowlisted transport exception class from canonical SearchOS reason."""
+
+    if _project_safe_failure_class(posture=posture, reason=reason) != "model_transport_failed":
+        return "none"
+    text = str(reason or "").strip()
+    token = _extract_transport_exception_class_token(text)
+    if token is None:
+        return "other_safe"
+    if token in _SAFE_TRANSPORT_EXCEPTION_CLASSES:
+        return token
     return "other_safe"
 
 
@@ -2775,6 +2835,11 @@ def _project_required_slot_summary(
             or record.get("slice_a_ready") is True
         )
     )
+    reason = record.get("latest_judgment_reason")
+    safe_failure_class = _project_safe_failure_class(
+        posture=final_posture,
+        reason=reason,
+    )
     return {
         "slot_identity_digest": str(
             slot_ref.get("slot_digest") or _opaque_identity_digest(slot_ref.get("slot_id"))
@@ -2786,9 +2851,10 @@ def _project_required_slot_summary(
         "required": True,
         "support_kind": _allowlisted_support_kind(record.get("support_kind")),
         "final_posture": final_posture,
-        "safe_failure_class": _project_safe_failure_class(
+        "safe_failure_class": safe_failure_class,
+        "safe_transport_exception_class": _project_safe_transport_exception_class(
             posture=final_posture,
-            reason=record.get("latest_judgment_reason"),
+            reason=reason,
         ),
         "judgment_event_count": judgment_event_count,
         "judgment_failure_count": judgment_failure_count,

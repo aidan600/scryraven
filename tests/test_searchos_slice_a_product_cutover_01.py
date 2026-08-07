@@ -876,6 +876,7 @@ def test_bounded_searchos_n1_causal_projection_successful_path(
     assert slot["support_kind"] == "official_current"
     assert slot["final_posture"] == "semantically_handed_off"
     assert slot["safe_failure_class"] == "none"
+    assert slot["safe_transport_exception_class"] == "none"
 
 
 @pytest.mark.parametrize(
@@ -911,6 +912,7 @@ def test_bounded_searchos_n1_causal_projection_judgment_failure_path(
     slot = _required_causal_slot(projection)
     assert slot["final_posture"] == expected_posture
     assert slot["safe_failure_class"] == expected_failure_class
+    assert slot["safe_transport_exception_class"] == "none"
     assert slot["semantic_handoff_present"] is False
     assert slot["semantic_admission_status"] != "admitted"
     assert slot["component_coverage_satisfied"] is False
@@ -976,6 +978,11 @@ def test_bounded_searchos_n1_causal_projection_privacy_allowlist() -> None:
         "fictional-provider-payload-sentinel",
         "fictional-exception-text-sentinel",
         "fictional-embedding-vector-sentinel",
+        "SuperSecretBearerTokenClass",
+        "api_key_sk-live-fixture",
+        "https://fixture.invalid/private",
+        "fictional-provider-message",
+        "fictional-traceback",
     )
     fixture = {
         "slot_postures": {"slot-1": "judgment_failed"},
@@ -1054,12 +1061,166 @@ def test_bounded_searchos_n1_causal_projection_privacy_allowlist() -> None:
         assert sentinel not in serialized
     slot = _required_causal_slot(projection)
     assert slot["safe_failure_class"] == "model_transport_failed"
+    assert slot["safe_transport_exception_class"] == "other_safe"
     assert slot["read_custody_observed"] is True
     assert "custody_refs" not in slot
     assert "action_history" not in slot
     assert "latest_judgment_reason" not in slot
     assert "normalized_url" not in serialized
     assert "private_raw" not in serialized
+    assert '"safe_transport_exception_class": "RuntimeError"' not in serialized
+    assert '"safe_transport_exception_class": "other_safe"' in serialized
+
+
+def _transport_cause_fixture(*, reason: str, posture: str = "judgment_failed") -> dict[str, Any]:
+    return {
+        "slot_postures": {"slot-1": posture},
+        "semantic_outcomes_by_slot": {
+            "slot-1": {
+                "semantic_handoff_ref": {},
+                "component_analyst_proposal_status": "not_proposed",
+                "component_dprime_validation_ref": {},
+                "semantic_admission_outcome_ref": {},
+                "semantic_admission_status": "not_admitted",
+                "searchos_handoff_material_consumed": False,
+            }
+        },
+        "readiness_projection": {
+            "required_slot_count": 1,
+            "optional_slot_count": 0,
+            "all_required_slots_slice_a_ready": False,
+            "slot_records": [
+                {
+                    "slot_ref": {
+                        "slot_id": "slot-1",
+                        "slot_digest": "digest-1",
+                        "component_id": "component-1",
+                        "source_obligation_id": "obligation-1",
+                    },
+                    "requirement_posture": "required",
+                    "support_kind": "canonical_documentation",
+                    "latest_judgment_posture": posture,
+                    "latest_judgment_reason": reason,
+                    "judgment_call_count": 1,
+                    "action_history": [{"event": "judgment_failed"}],
+                    "custody_refs": [{"read_custody_material_id": "custody-1"}],
+                    "semantic_handoff_ref": {},
+                    "slice_a_ready": False,
+                }
+            ],
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    ("reason", "expected_failure_class", "expected_transport_class", "forbidden_tokens"),
+    [
+        (
+            "model_transport_failed:APITimeoutError",
+            "model_transport_failed",
+            "APITimeoutError",
+            (),
+        ),
+        (
+            "model_transport_failed:APIConnectionError",
+            "model_transport_failed",
+            "APIConnectionError",
+            (),
+        ),
+        (
+            "model_transport_failed:RateLimitError",
+            "model_transport_failed",
+            "RateLimitError",
+            (),
+        ),
+        (
+            "model_output_malformed",
+            "model_output_malformed",
+            "none",
+            (),
+        ),
+        (
+            "model_transport_failed:FictionalUnknownTransportError",
+            "model_transport_failed",
+            "other_safe",
+            ("FictionalUnknownTransportError",),
+        ),
+        (
+            "model_transport_failed:SuperSecretBearerTokenClass:api_key_sk-live-fixture",
+            "model_transport_failed",
+            "other_safe",
+            (
+                "SuperSecretBearerTokenClass",
+                "api_key_sk-live-fixture",
+                "https://fixture.invalid/private",
+                "fictional-provider-message",
+                "fictional-traceback",
+            ),
+        ),
+    ],
+)
+def test_bounded_searchos_n1_causal_projection_transport_exception_class(
+    reason: str,
+    expected_failure_class: str,
+    expected_transport_class: str,
+    forbidden_tokens: tuple[str, ...],
+) -> None:
+    projection = build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=_transport_cause_fixture(reason=reason),
+    )
+    assert projection is not None
+    assert projection["schema_version"] == "bounded_searchos_n1_causal_projection_v1"
+    slot = _required_causal_slot(projection)
+    assert slot["safe_failure_class"] == expected_failure_class
+    assert slot["safe_transport_exception_class"] == expected_transport_class
+    serialized = json.dumps(projection, sort_keys=True)
+    assert "latest_judgment_reason" not in serialized
+    for token in forbidden_tokens:
+        assert token not in serialized
+
+
+def test_bounded_searchos_n1_causal_projection_transport_field_parity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _establish_official_current_qualification_truth(monkeypatch)
+    outcome, _harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        mode="Balanced",
+        query="What is Alpha's current official operating rule?",
+        core_topic="Alpha current official operating rule",
+        primary_entity="Alpha",
+        researcher_queries=["Alpha current official operating rule"],
+        raw_author_response=(
+            "Alpha's current official operating rule is supported. "
+            "[[1]](https://alpha.example/report-1)"
+        ),
+    )
+    projection = build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=dict(outcome.execution_trace["searchos_slice_a"]),
+    )
+    assert projection is not None
+    slot = _required_causal_slot(projection)
+    assert slot["safe_failure_class"] == "none"
+    assert slot["safe_transport_exception_class"] == "none"
+    assert slot["semantic_handoff_present"] is True
+    assert slot["handoff_material_consumed"] is True
+    assert slot["component_analyst_proposal_status"] == "proposed"
+    assert slot["component_dprime_validation_present"] is True
+    assert slot["semantic_admission_status"] == "admitted"
+    assert slot["component_coverage_satisfied"] is True
+    assert set(slot) >= {
+        "safe_failure_class",
+        "safe_transport_exception_class",
+        "read_custody_observed",
+        "semantic_handoff_present",
+        "handoff_material_consumed",
+        "component_analyst_proposal_status",
+        "component_dprime_validation_present",
+        "semantic_admission_status",
+        "component_coverage_satisfied",
+    }
 
 
 def test_bounded_searchos_n1_causal_projection_ordinary_output_parity(

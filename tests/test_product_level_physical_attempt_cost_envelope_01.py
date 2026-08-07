@@ -1626,6 +1626,25 @@ def test_ordinary_pipeline_executes_bounded_isclose_with_explicit_policy(
     assert projection["projection_status"] == "available"
     assert int(projection["required_slot_count"]) >= 1
     assert len(projection["slots"]) == int(projection["required_slot_count"])
+    for slot in projection["slots"]:
+        assert "safe_transport_exception_class" in slot
+        assert slot["safe_transport_exception_class"] in {
+            "none",
+            "other_safe",
+            "APITimeoutError",
+            "APIConnectionError",
+            "RateLimitError",
+            "BadRequestError",
+            "AuthenticationError",
+            "PermissionDeniedError",
+            "NotFoundError",
+            "ConflictError",
+            "UnprocessableEntityError",
+            "InternalServerError",
+            "APIStatusError",
+            "APIError",
+            "OpenAIError",
+        }
     disabled = compatibility_cli._bounded_success_payload(
         entrypoint=entrypoint,
         config=config,
