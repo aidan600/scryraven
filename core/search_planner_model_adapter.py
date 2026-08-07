@@ -7,6 +7,7 @@ raw prompt, model response, or provider payload.
 
 from __future__ import annotations
 
+import inspect
 import json
 from dataclasses import dataclass
 from enum import Enum, auto
@@ -221,6 +222,36 @@ class SearchPlannerModelAdapterFailureCode(str, Enum):
     CLOSED_AUTHORITY_VIOLATION = "CLOSED_AUTHORITY_VIOLATION"
     PRIVACY_OR_RAW_MATERIAL_VIOLATION = "PRIVACY_OR_RAW_MATERIAL_VIOLATION"
     LINEAGE_OR_BINDING_FAILURE = "LINEAGE_OR_BINDING_FAILURE"
+
+
+class SearchPlannerProviderCompletionPosture(str, Enum):
+    """Closed provider-completion posture for Planner diagnostics only."""
+
+    COMPLETED = "completed"
+    LENGTH_LIMITED = "length_limited"
+    CONTENT_FILTERED = "content_filtered"
+    EMPTY = "empty"
+    OTHER_SAFE = "other_safe"
+    NOT_AVAILABLE = "not_available"
+
+
+class SearchPlannerStrictParseSubtype(str, Enum):
+    """Closed strict-parse subtype beneath INVALID_JSON / JSON_STRICT_PARSE_FAILED."""
+
+    JSON_DECODE_ERROR = "json_decode_error"
+    DUPLICATE_MEMBER = "duplicate_member"
+    NONFINITE_CONSTANT = "nonfinite_constant"
+    EMPTY_INPUT = "empty_input"
+    OTHER_SAFE = "other_safe"
+    NOT_APPLICABLE = "not_applicable"
+
+
+class _StrictJsonDuplicateMemberError(ValueError):
+    """Repository-owned signal that strict JSON rejected a duplicate member."""
+
+
+class _StrictJsonNonfiniteConstantError(ValueError):
+    """Repository-owned signal that strict JSON rejected a nonfinite constant."""
 
 
 class SearchPlannerModelAdapterPredicateId(str, Enum):
@@ -1073,6 +1104,9 @@ class SearchPlannerModelAdapterFailureMetadata:
     mechanical_rule_id: str | None = None
     predicate_registry_version: str | None = None
     predicate_id: SearchPlannerModelAdapterPredicateId | None = None
+    provider_completion_posture: SearchPlannerProviderCompletionPosture | None = None
+    strict_parse_subtype: SearchPlannerStrictParseSubtype | None = None
+    cleaner_modified: bool | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(
@@ -1090,9 +1124,27 @@ class SearchPlannerModelAdapterFailureMetadata:
             raise ValueError("failure_stage does not match failure_code")
         if self.mechanical_rule_id != expected_rule:
             raise ValueError("mechanical_rule_id does not match failure_code")
+        if self.provider_completion_posture is not None and not isinstance(
+            self.provider_completion_posture,
+            SearchPlannerProviderCompletionPosture,
+        ):
+            raise TypeError("provider_completion_posture must be a closed enum")
+        if self.strict_parse_subtype is not None and not isinstance(
+            self.strict_parse_subtype,
+            SearchPlannerStrictParseSubtype,
+        ):
+            raise TypeError("strict_parse_subtype must be a closed enum")
+        if self.cleaner_modified is not None and not isinstance(self.cleaner_modified, bool):
+            raise TypeError("cleaner_modified must be a boolean when present")
         if expected_rule is None:
             if self.predicate_registry_version is not None or self.predicate_id is not None:
                 raise ValueError("infrastructure failures must not carry predicate metadata")
+            if (
+                self.provider_completion_posture is not None
+                or self.strict_parse_subtype is not None
+                or self.cleaner_modified is not None
+            ):
+                raise ValueError("infrastructure failures must not carry parse diagnostics")
             return
         if self.predicate_registry_version is None or self.predicate_id is None:
             raise ValueError("mechanical failures require predicate metadata")
@@ -1109,6 +1161,29 @@ class SearchPlannerModelAdapterFailureMetadata:
             or registration.mechanical_rule_id != self.mechanical_rule_id
         ):
             raise ValueError("predicate metadata does not match its registration")
+        if self.failure_code is SearchPlannerModelAdapterFailureCode.INVALID_JSON:
+            if self.strict_parse_subtype is None:
+                object.__setattr__(
+                    self,
+                    "strict_parse_subtype",
+                    SearchPlannerStrictParseSubtype.OTHER_SAFE,
+                )
+            if self.provider_completion_posture is None:
+                object.__setattr__(
+                    self,
+                    "provider_completion_posture",
+                    SearchPlannerProviderCompletionPosture.NOT_AVAILABLE,
+                )
+            if self.cleaner_modified is None:
+                object.__setattr__(self, "cleaner_modified", False)
+            if self.strict_parse_subtype is SearchPlannerStrictParseSubtype.NOT_APPLICABLE:
+                raise ValueError("INVALID_JSON failures cannot use not_applicable subtype")
+        elif (
+            self.provider_completion_posture is not None
+            or self.strict_parse_subtype is not None
+            or self.cleaner_modified is not None
+        ):
+            raise ValueError("parse diagnostics are reserved for INVALID_JSON failures")
 
 
 class SearchPlannerModelAdapterError(SearchPlannerRuntimeError):
@@ -1122,6 +1197,9 @@ class SearchPlannerModelAdapterError(SearchPlannerRuntimeError):
         *,
         failure_code: SearchPlannerModelAdapterFailureCode,
         predicate_id: SearchPlannerModelAdapterPredicateId | None,
+        provider_completion_posture: SearchPlannerProviderCompletionPosture | None = None,
+        strict_parse_subtype: SearchPlannerStrictParseSubtype | None = None,
+        cleaner_modified: bool | None = None,
     ) -> None:
         super().__init__(message)
         try:
@@ -1131,12 +1209,24 @@ class SearchPlannerModelAdapterError(SearchPlannerRuntimeError):
         registration = SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY.get(predicate_id) if predicate_id is not None else None
         if predicate_id is not None and registration is None:
             raise ValueError("predicate_id is not registered")
+        if failure_code is SearchPlannerModelAdapterFailureCode.INVALID_JSON:
+            if provider_completion_posture is None:
+                provider_completion_posture = (
+                    SearchPlannerProviderCompletionPosture.NOT_AVAILABLE
+                )
+            if strict_parse_subtype is None:
+                strict_parse_subtype = SearchPlannerStrictParseSubtype.OTHER_SAFE
+            if cleaner_modified is None:
+                cleaner_modified = False
         self._failure_metadata = SearchPlannerModelAdapterFailureMetadata(
             failure_stage=failure_stage,
             failure_code=failure_code,
             mechanical_rule_id=mechanical_rule_id,
             predicate_registry_version=(registration.predicate_registry_version if registration is not None else None),
             predicate_id=predicate_id,
+            provider_completion_posture=provider_completion_posture,
+            strict_parse_subtype=strict_parse_subtype,
+            cleaner_modified=cleaner_modified,
         )
 
     def __setattr__(self, name: str, value: Any) -> None:
@@ -1167,6 +1257,18 @@ class SearchPlannerModelAdapterError(SearchPlannerRuntimeError):
     @property
     def predicate_id(self) -> SearchPlannerModelAdapterPredicateId | None:
         return self._failure_metadata.predicate_id
+
+    @property
+    def provider_completion_posture(self) -> SearchPlannerProviderCompletionPosture | None:
+        return self._failure_metadata.provider_completion_posture
+
+    @property
+    def strict_parse_subtype(self) -> SearchPlannerStrictParseSubtype | None:
+        return self._failure_metadata.strict_parse_subtype
+
+    @property
+    def cleaner_modified(self) -> bool | None:
+        return self._failure_metadata.cleaner_modified
 
 
 @dataclass(frozen=True, slots=True)
@@ -1606,6 +1708,18 @@ class SearchPlannerModelAdapter:
         }
         if self.max_tokens is not None:
             model_kwargs["max_tokens"] = self.max_tokens
+        completion_holder: dict[str, SearchPlannerProviderCompletionPosture] = {
+            "posture": SearchPlannerProviderCompletionPosture.NOT_AVAILABLE,
+        }
+
+        def _safe_response_envelope_sink(envelope: Mapping[str, Any]) -> None:
+            raw_posture = envelope.get("provider_completion_posture")
+            completion_holder["posture"] = _coerce_provider_completion_posture(
+                raw_posture
+            )
+
+        if _callable_accepts_keyword(self.ask_model, "safe_response_envelope_sink"):
+            model_kwargs["safe_response_envelope_sink"] = _safe_response_envelope_sink
         try:
             raw = self.ask_model(
                 prompt,
@@ -1621,7 +1735,11 @@ class SearchPlannerModelAdapter:
                 predicate_id=None,
             ) from exc
 
-        parsed = _parse_model_output(raw, clean_json_response=self.clean_json_response)
+        parsed, cleaner_modified = _parse_model_output(
+            raw,
+            clean_json_response=self.clean_json_response,
+            provider_completion_posture=completion_holder["posture"],
+        )
         proposal = validate_and_sanitize_model_output(parsed)
         proposal["planner_model_metadata"] = _planner_model_metadata(
             prompt_meta=metadata,
@@ -1629,39 +1747,91 @@ class SearchPlannerModelAdapter:
             model=self.model,
             effort=self.effort,
             use_reasoning=self.use_reasoning,
+            provider_completion_posture=completion_holder["posture"],
+            strict_parse_subtype=SearchPlannerStrictParseSubtype.NOT_APPLICABLE,
+            cleaner_modified=cleaner_modified,
         )
         return proposal
+
+
+def _callable_accepts_keyword(fn: Callable[..., Any], name: str) -> bool:
+    try:
+        signature = inspect.signature(fn)
+    except (TypeError, ValueError):
+        return False
+    if name in signature.parameters:
+        return True
+    return any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    )
+
+
+def _coerce_provider_completion_posture(
+    value: Any,
+) -> SearchPlannerProviderCompletionPosture:
+    if isinstance(value, SearchPlannerProviderCompletionPosture):
+        return value
+    if isinstance(value, str):
+        try:
+            return SearchPlannerProviderCompletionPosture(value)
+        except ValueError:
+            return SearchPlannerProviderCompletionPosture.OTHER_SAFE
+    return SearchPlannerProviderCompletionPosture.NOT_AVAILABLE
 
 
 def _parse_model_output(
     raw: Any,
     *,
     clean_json_response: Callable[[str], str] | None,
-) -> Mapping[str, Any]:
+    provider_completion_posture: SearchPlannerProviderCompletionPosture,
+) -> tuple[Mapping[str, Any], bool]:
     text = str(raw or "")
+    cleaner_modified = False
     if clean_json_response is not None:
         try:
-            text = clean_json_response(text)
+            cleaned = clean_json_response(text)
         except Exception as exc:
             raise SearchPlannerModelAdapterError(
                 f"search planner model output cleaning failed closed: {type(exc).__name__}",
                 failure_code=(_FailureCode.OUTPUT_CLEANING_FAILED),
                 predicate_id=None,
             ) from exc
-    parse_failed = False
+        cleaner_modified = cleaned != text
+        text = cleaned
+    if not text.strip():
+        raise SearchPlannerModelAdapterError(
+            "search planner model output was not valid JSON",
+            failure_code=_FailureCode.INVALID_JSON,
+            predicate_id=_PredicateId.JSON_STRICT_PARSE_FAILED,
+            provider_completion_posture=provider_completion_posture,
+            strict_parse_subtype=SearchPlannerStrictParseSubtype.EMPTY_INPUT,
+            cleaner_modified=cleaner_modified,
+        )
+    parse_subtype: SearchPlannerStrictParseSubtype | None = None
+    parsed: Any = None
     try:
         parsed = json.loads(
             text,
             parse_constant=_reject_nonfinite_json_constant,
             object_pairs_hook=_reject_duplicate_json_members,
         )
+    except _StrictJsonDuplicateMemberError:
+        parse_subtype = SearchPlannerStrictParseSubtype.DUPLICATE_MEMBER
+    except _StrictJsonNonfiniteConstantError:
+        parse_subtype = SearchPlannerStrictParseSubtype.NONFINITE_CONSTANT
+    except json.JSONDecodeError:
+        parse_subtype = SearchPlannerStrictParseSubtype.JSON_DECODE_ERROR
     except Exception:
-        parse_failed = True
-    if parse_failed:
+        parse_subtype = SearchPlannerStrictParseSubtype.OTHER_SAFE
+    if parse_subtype is not None:
         raise SearchPlannerModelAdapterError(
             "search planner model output was not valid JSON",
             failure_code=_FailureCode.INVALID_JSON,
             predicate_id=_PredicateId.JSON_STRICT_PARSE_FAILED,
+            provider_completion_posture=provider_completion_posture,
+            strict_parse_subtype=parse_subtype,
+            cleaner_modified=cleaner_modified,
         )
     if not isinstance(parsed, Mapping):
         raise SearchPlannerModelAdapterError(
@@ -1669,18 +1839,22 @@ def _parse_model_output(
             failure_code=(_FailureCode.JSON_VALUE_NOT_OBJECT),
             predicate_id=_PredicateId.JSON_TOP_LEVEL_OBJECT_REQUIRED,
         )
-    return parsed
+    return parsed, cleaner_modified
 
 
 def _reject_nonfinite_json_constant(_token: str) -> None:
-    raise ValueError("strict JSON parsing rejected a nonfinite constant")
+    raise _StrictJsonNonfiniteConstantError(
+        "strict JSON parsing rejected a nonfinite constant"
+    )
 
 
 def _reject_duplicate_json_members(members: list[tuple[str, Any]]) -> dict[str, Any]:
     parsed: dict[str, Any] = {}
     for key, value in members:
         if key in parsed:
-            raise ValueError("strict JSON parsing rejected a duplicate member")
+            raise _StrictJsonDuplicateMemberError(
+                "strict JSON parsing rejected a duplicate member"
+            )
         parsed[key] = value
     return parsed
 
@@ -2689,6 +2863,9 @@ def _planner_model_metadata(
     model: str | None,
     effort: str,
     use_reasoning: bool,
+    provider_completion_posture: SearchPlannerProviderCompletionPosture,
+    strict_parse_subtype: SearchPlannerStrictParseSubtype,
+    cleaner_modified: bool,
 ) -> dict[str, Any]:
     return {
         "planner_model_adapter_schema_version": SEARCH_PLANNER_MODEL_ADAPTER_SCHEMA_VERSION,
@@ -2700,6 +2877,9 @@ def _planner_model_metadata(
         "effort": _clean_text(effort),
         "use_reasoning": bool(use_reasoning),
         "require_json": True,
+        "provider_completion_posture": provider_completion_posture.value,
+        "strict_parse_subtype": strict_parse_subtype.value,
+        "cleaner_modified": bool(cleaner_modified),
         "raw_prompt_retained": False,
         "raw_model_response_retained": False,
         "provider_payload_retained": False,
@@ -3096,5 +3276,7 @@ __all__ = [
     "SearchPlannerModelAdapterFailureStage",
     "SearchPlannerModelAdapterPredicateId",
     "SearchPlannerModelAdapterPredicateRegistration",
+    "SearchPlannerProviderCompletionPosture",
+    "SearchPlannerStrictParseSubtype",
     "validate_and_sanitize_model_output",
 ]

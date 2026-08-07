@@ -19,6 +19,8 @@ from core.search_planner_model_adapter import (
     SearchPlannerModelAdapterError,
     SearchPlannerModelAdapterFailureStage,
     SearchPlannerModelAdapterPredicateId,
+    SearchPlannerProviderCompletionPosture,
+    SearchPlannerStrictParseSubtype,
 )
 from core.search_planner_model_prompt import SEARCH_PLANNER_MODEL_SYSTEM_PROMPT
 
@@ -151,6 +153,9 @@ class ProductBoundaryObservation:
     observer_parsed_model_output: bool = False
     canonical_failure_predicate_registry_version: str | None = None
     canonical_failure_predicate_id: str | None = None
+    provider_completion_posture: str | None = None
+    strict_parse_subtype: str | None = None
+    cleaner_modified: bool | None = None
 
     def __post_init__(self) -> None:
         if self.schema_version != PRODUCT_BOUNDARY_OBSERVER_SCHEMA_VERSION:
@@ -216,6 +221,23 @@ class ProductBoundaryObservation:
             not in {item.value for item in SearchPlannerModelAdapterPredicateId}
         ):
             raise ValueError("canonical failure predicate identity is unsupported")
+        if (
+            self.provider_completion_posture is not None
+            and self.provider_completion_posture
+            not in {item.value for item in SearchPlannerProviderCompletionPosture}
+        ):
+            raise ValueError("provider_completion_posture is unsupported")
+        if (
+            self.strict_parse_subtype is not None
+            and self.strict_parse_subtype
+            not in {item.value for item in SearchPlannerStrictParseSubtype}
+        ):
+            raise ValueError("strict_parse_subtype is unsupported")
+        if self.cleaner_modified is not None and not isinstance(
+            self.cleaner_modified,
+            bool,
+        ):
+            raise ValueError("cleaner_modified must be a boolean when present")
         if any(
             (
                 self.raw_prompt_retained,
@@ -376,6 +398,9 @@ class CanonicalProductSearchPlannerBoundaryObserver:
                 predicate_registry_version
             ),
             canonical_failure_predicate_id=predicate_id,
+            provider_completion_posture=_safe_provider_completion_posture(failure),
+            strict_parse_subtype=_safe_strict_parse_subtype(failure),
+            cleaner_modified=_safe_cleaner_modified(failure),
         )
 
 
@@ -527,6 +552,26 @@ def _canonical_failure_predicate_fields(
         failure.predicate_registry_version,
         predicate_id.value if predicate_id is not None else None,
     )
+
+
+def _safe_provider_completion_posture(failure: Exception | None) -> str | None:
+    if not isinstance(failure, SearchPlannerModelAdapterError):
+        return None
+    posture = failure.provider_completion_posture
+    return posture.value if posture is not None else None
+
+
+def _safe_strict_parse_subtype(failure: Exception | None) -> str | None:
+    if not isinstance(failure, SearchPlannerModelAdapterError):
+        return None
+    subtype = failure.strict_parse_subtype
+    return subtype.value if subtype is not None else None
+
+
+def _safe_cleaner_modified(failure: Exception | None) -> bool | None:
+    if not isinstance(failure, SearchPlannerModelAdapterError):
+        return None
+    return failure.cleaner_modified
 
 
 def _downstream_posture(
