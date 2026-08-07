@@ -8,6 +8,7 @@ No test in this file is integration- or secrets-backed.
 
 from __future__ import annotations
 
+import json
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from decimal import Decimal
@@ -1620,6 +1621,46 @@ def test_ordinary_pipeline_executes_bounded_isclose_with_explicit_policy(
     assert success["answer_present"] is True
     assert success["physical_envelope"]["physical_attempts"] > 0
     assert "profile_name" not in success
+    projection = dict(success["searchos_n1_causal_projection"])
+    assert projection["schema_version"] == "bounded_searchos_n1_causal_projection_v1"
+    assert projection["projection_status"] == "available"
+    assert int(projection["required_slot_count"]) >= 1
+    assert len(projection["slots"]) == int(projection["required_slot_count"])
+    disabled = compatibility_cli._bounded_success_payload(
+        entrypoint=entrypoint,
+        config=config,
+        outcome=outcome,
+        compiled_authorization=compiled,
+        include_searchos_n1_causal_projection=False,
+    )
+    ignore_keys = {"searchos_n1_causal_projection", "physical_envelope"}
+    enabled_core = {
+        key: value for key, value in success.items() if key not in ignore_keys
+    }
+    disabled_core = {
+        key: value for key, value in disabled.items() if key not in ignore_keys
+    }
+    assert disabled_core == enabled_core
+    assert "searchos_n1_causal_projection" not in disabled
+    assert success["answer"] == disabled["answer"]
+    assert success["answer_present"] == disabled["answer_present"]
+    assert success["citation_count"] == disabled["citation_count"]
+    assert (
+        success["physical_envelope"]["physical_attempts"]
+        == disabled["physical_envelope"]["physical_attempts"]
+    )
+    serialized = json.dumps(success, sort_keys=True)
+    for sentinel in (
+        "fictional-raw-query-text-sentinel",
+        "https://fixture.invalid/private-url",
+        "fictional-passage-text-sentinel",
+        "fictional-read-content-sentinel",
+        "fictional-model-output-sentinel",
+        "fictional-provider-payload-sentinel",
+        "fictional-exception-text-sentinel",
+        "fictional-embedding-vector-sentinel",
+    ):
+        assert sentinel not in serialized
 
 
 @pytest.mark.parametrize(

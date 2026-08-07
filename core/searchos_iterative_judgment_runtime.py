@@ -315,6 +315,7 @@ def build_searchos_initial_state(
             raise SearchOSRuntimeError("SearchOS slot required-versus-optional posture is ambiguous") from exc
         component_ref = _required_ref(slot.get("component_ref"), "component_ref")
         obligation_ref = _required_ref(slot.get("source_obligation_ref"), "source_obligation_ref")
+        support_kind = _bounded_optional(slot.get("support_kind"), 80)
         slot_core = {
             "slot_id": slot_id,
             "slot_ordinal": ordinal,
@@ -338,6 +339,8 @@ def build_searchos_initial_state(
             "satisfaction_claimed": False,
             "coverage_upgrade_claimed": False,
         }
+        if support_kind:
+            slot_core["support_kind"] = support_kind
         if policy.get("navigation_runtime_open") is True:
             slot_core.update(
                 {
@@ -2137,8 +2140,10 @@ def build_searchos_slice_a_readiness_v1(
         record = {
             "slot_ref": deepcopy(slot["slot_ref"]),
             "requirement_posture": slot["requirement_posture"],
+            "support_kind": slot.get("support_kind"),
             "latest_judgment_posture": slot["posture"],
             "latest_judgment_reason": slot["latest_reason"],
+            "judgment_call_count": int(slot.get("judgment_call_count") or 0),
             "action_history": deepcopy(slot["action_history"]),
             "candidate_state_ref": deepcopy(slot["current_candidate_state_ref"]),
             "custody_refs": deepcopy(slot["custody_refs"]),

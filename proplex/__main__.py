@@ -120,6 +120,10 @@ from core.run_cap_authorization import (  # noqa: E402
 )
 from core.run_config import RunConfig, RunDeps  # noqa: E402
 from core.search_planner_model_adapter import SearchPlannerModelAdapterError  # noqa: E402
+from core.searchos_slice_a_product_runtime import (  # noqa: E402
+    SEARCHOS_SLICE_A_TRACE_KEY,
+    build_bounded_searchos_n1_causal_projection,
+)
 from core.strict_accounted_model_route import (  # noqa: E402
     build_strict_accounted_fast_model_planning_route,
 )
@@ -675,6 +679,7 @@ def _bounded_success_payload(
     config: RunConfig,
     outcome: Any,
     compiled_authorization: CompiledRunCapAuthorization,
+    include_searchos_n1_causal_projection: bool = True,
 ) -> dict[str, object]:
     policy = config.cap_policy
     if policy is None or not policy.bounded:
@@ -687,7 +692,7 @@ def _bounded_success_payload(
             report,
         )
     )
-    return {
+    payload: dict[str, object] = {
         "schema_version": "bounded_product_cli_result_v1",
         "status": "completed",
         "terminal_status": "completed",
@@ -720,6 +725,18 @@ def _bounded_success_payload(
             "database": False,
         },
     }
+    causal_projection = build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=dict(
+            dict(getattr(outcome, "execution_trace", {}) or {}).get(
+                SEARCHOS_SLICE_A_TRACE_KEY
+            )
+            or {}
+        ),
+        enabled=include_searchos_n1_causal_projection,
+    )
+    if causal_projection is not None:
+        payload["searchos_n1_causal_projection"] = causal_projection
+    return payload
 
 def _bounded_terminal_payload(
     *,
