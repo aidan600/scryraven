@@ -3502,21 +3502,17 @@ def test_model_prompt_embeds_the_exact_output_contract_and_version() -> None:
     prompt = search_planner_model_prompt.build_search_planner_model_prompt(planner_input)
     prompt_packet = json.loads(prompt.split("Sanitized planner input JSON:\n", 1)[1])
 
-    assert SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION == "search_planner_model_prompt_ag_search_planner_model_01_v4"
+    assert SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION == "search_planner_model_prompt_ag_search_planner_model_01_v5"
     assert SEARCH_PLANNER_MODEL_ADAPTER_SCHEMA_VERSION == "search_planner_model_adapter_ag_search_planner_model_01_v1"
     assert prompt_packet["schema_version"] == SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION
-    assert prompt_packet["output_schema"] == search_planner_model_prompt.SEARCH_PLANNER_MODEL_OUTPUT_SCHEMA
-    assert _schema_paths_with_adapter_normalization(
-        prompt_packet["output_schema"],
-        _REQUIRED_NARRATIVE_TEXT_NORMALIZATION,
-    ) == {field[2] for field in _REQUIRED_NARRATIVE_TEXT_FIELDS}
-    assert (
-        "Every enum field must use an exact value listed in output_schema. "
-        "Every required object or array must satisfy its declared type and "
-        "cardinality. Omit an optional field rather than inventing an unsupported "
-        "value."
-    ) in prompt
-    assert _REQUIRED_NARRATIVE_TEXT_PROMPT_RULE in prompt
+    assert prompt_packet["output_schema"] == json.loads(
+        json.dumps(
+            search_planner_model_prompt.SEARCH_PLANNER_MODEL_OUTPUT_SCHEMA,
+            sort_keys=True,
+        )
+    )
+    assert "Author only semantic choices in output_schema" in prompt
+    assert "Do not invent stable IDs" in prompt
 
 
 def test_strict_json_contract_is_shared_by_system_prompt_and_serialized_schema() -> None:
@@ -3548,7 +3544,7 @@ def test_strict_json_contract_is_shared_by_system_prompt_and_serialized_schema()
 
 
 def test_required_narrative_text_schema_contract_is_explicit_and_exactly_scoped() -> None:
-    schema = search_planner_model_prompt.SEARCH_PLANNER_MODEL_OUTPUT_SCHEMA
+    schema = search_planner_model_prompt.SEARCH_PLANNER_RICH_INTERNAL_OUTPUT_SCHEMA
     expected_schema_paths = {field[2] for field in _REQUIRED_NARRATIVE_TEXT_FIELDS}
 
     assert len(_REQUIRED_NARRATIVE_TEXT_FIELDS) == 7
@@ -3726,15 +3722,15 @@ def test_required_narrative_text_uses_normalized_length_boundaries(
 
 
 def test_visible_output_contract_and_adapter_contract_constants_stay_in_lockstep() -> None:
-    schema = search_planner_model_prompt.SEARCH_PLANNER_MODEL_OUTPUT_SCHEMA
+    schema = search_planner_model_prompt.SEARCH_PLANNER_RICH_INTERNAL_OUTPUT_SCHEMA
     top_level = schema["top_level"]
 
     assert top_level["required_fields"] == list(
-        search_planner_model_prompt.SEARCH_PLANNER_MODEL_REQUIRED_TOP_LEVEL_FIELDS
+        search_planner_model_prompt.SEARCH_PLANNER_RICH_REQUIRED_TOP_LEVEL_FIELDS
     )
     assert set(top_level["fields"]) == {
-        *search_planner_model_prompt.SEARCH_PLANNER_MODEL_REQUIRED_TOP_LEVEL_FIELDS,
-        *search_planner_model_prompt.SEARCH_PLANNER_MODEL_OPTIONAL_TOP_LEVEL_FIELDS,
+        *search_planner_model_prompt.SEARCH_PLANNER_RICH_REQUIRED_TOP_LEVEL_FIELDS,
+        *search_planner_model_prompt.SEARCH_PLANNER_RICH_OPTIONAL_TOP_LEVEL_FIELDS,
     }
 
     enum_contracts = (
@@ -3833,7 +3829,7 @@ def test_visible_output_contract_and_adapter_contract_constants_stay_in_lockstep
 
     assert (
         search_planner_model_adapter._TOP_LEVEL_REQUIRED
-        is search_planner_model_prompt.SEARCH_PLANNER_MODEL_REQUIRED_TOP_LEVEL_FIELDS
+        is search_planner_model_prompt.SEARCH_PLANNER_RICH_REQUIRED_TOP_LEVEL_FIELDS
     )
     assert (
         search_planner_model_adapter.SEARCH_PLANNER_MODEL_TEXT_LIMITS
@@ -4294,7 +4290,10 @@ def test_visible_output_contract_and_adapter_contract_constants_stay_in_lockstep
 def test_prompt_contract_preserves_sanitized_proposal_and_typed_m02_rejections() -> None:
     valid_output = _planner_output()
     expected_sanitized = search_planner_model_adapter.validate_and_sanitize_model_output(deepcopy(valid_output))
-    produced = _adapter(FakeAskModel(json.dumps(valid_output))).produce(_planner_input(_kernel()).to_adapter_payload())
+    planner_input = _planner_input(_kernel()).to_adapter_payload()
+    expected_prompt = search_planner_model_prompt.build_search_planner_model_prompt(planner_input)
+    expected_prompt_meta = search_planner_model_prompt.prompt_metadata(expected_prompt)
+    produced = _adapter(FakeAskModel(json.dumps(valid_output))).produce(planner_input)
     metadata = produced.pop("planner_model_metadata")
 
     assert produced == expected_sanitized
@@ -4305,11 +4304,9 @@ def test_prompt_contract_preserves_sanitized_proposal_and_typed_m02_rejections()
     assert metadata["planner_model_prompt_schema_version"] == (SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION)
     assert metadata == {
         "planner_model_adapter_schema_version": ("search_planner_model_adapter_ag_search_planner_model_01_v1"),
-        "planner_model_prompt_schema_version": ("search_planner_model_prompt_ag_search_planner_model_01_v4"),
-        "prompt_hash": (
-            "75348a01138644c46f1d59bc8904da45f8a731bbc55a37ea5ae5a1a3d7536104"  # pragma: allowlist secret
-        ),
-        "prompt_length": 23224,
+        "planner_model_prompt_schema_version": SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION,
+        "prompt_hash": expected_prompt_meta["prompt_hash"],
+        "prompt_length": expected_prompt_meta["prompt_length"],
         "provider": "FakeProvider",
         "model": "fake-fast-model",
         "effort": "low",

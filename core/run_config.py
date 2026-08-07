@@ -40,6 +40,8 @@ class RunConfig:
     fast_model: str = "gpt-5.4-mini"
     smart_provider: str = "OpenAI"
     smart_model: str = "gpt-5.4"
+    fast_reasoning_effort: str = "medium"
+    smart_reasoning_effort: str = "medium"
     embed_provider: str = "OpenAI"
     embed_model: str = "text-embedding-3-small"
     local_url: str = "http://localhost:1234/v1"

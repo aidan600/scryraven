@@ -24,7 +24,6 @@ from core.search_planner_model_prompt import (
     SEARCH_PLANNER_MODEL_QUERY_CANDIDATE_KINDS,
     SEARCH_PLANNER_MODEL_QUERY_ROLES,
     SEARCH_PLANNER_MODEL_RECON_POSTURES,
-    SEARCH_PLANNER_MODEL_REQUIRED_TOP_LEVEL_FIELDS,
     SEARCH_PLANNER_MODEL_REQUIREMENT_POSTURES,
     SEARCH_PLANNER_MODEL_SEMANTIC_SLOT_KINDS,
     SEARCH_PLANNER_MODEL_SEMANTIC_SLOT_STATUSES,
@@ -33,6 +32,7 @@ from core.search_planner_model_prompt import (
     SEARCH_PLANNER_MODEL_SUPPORT_KINDS,
     SEARCH_PLANNER_MODEL_SYSTEM_PROMPT,
     SEARCH_PLANNER_MODEL_TEXT_LIMITS,
+    SEARCH_PLANNER_RICH_REQUIRED_TOP_LEVEL_FIELDS,
     build_search_planner_model_prompt,
     prompt_metadata,
 )
@@ -40,11 +40,17 @@ from core.search_planner_runtime import (
     SEARCH_PLANNER_MAX_ANSWER_COMPONENTS,
     SearchPlannerRuntimeError,
 )
+from core.search_planner_semantic_compiler import (
+    SearchPlannerSemanticProposalError,
+    compile_semantic_planner_proposal,
+    is_semantic_planner_proposal,
+    validate_semantic_planner_proposal,
+)
 
 SEARCH_PLANNER_MODEL_ADAPTER_SCHEMA_VERSION = "search_planner_model_adapter_ag_search_planner_model_01_v1"
 SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY_VERSION = "search_planner_model_adapter_predicate_registry_v1"
 
-_TOP_LEVEL_REQUIRED = SEARCH_PLANNER_MODEL_REQUIRED_TOP_LEVEL_FIELDS
+_TOP_LEVEL_REQUIRED = SEARCH_PLANNER_RICH_REQUIRED_TOP_LEVEL_FIELDS
 _SEMANTIC_SLOT_KINDS = SEARCH_PLANNER_MODEL_SEMANTIC_SLOT_KINDS
 _SEMANTIC_SLOT_STATUSES = SEARCH_PLANNER_MODEL_SEMANTIC_SLOT_STATUSES
 _MATERIALITY_VALUES = SEARCH_PLANNER_MODEL_MATERIALITY_VALUES
@@ -1664,7 +1670,7 @@ class SearchPlannerModelAdapter:
     clean_json_response: Callable[[str], str] | None = None
     provider: str | None = None
     model: str | None = None
-    effort: str = "low"
+    effort: str = "medium"
     use_reasoning: bool = True
     max_tokens: int | None = None
     enabled: bool = False
@@ -1740,7 +1746,7 @@ class SearchPlannerModelAdapter:
             clean_json_response=self.clean_json_response,
             provider_completion_posture=completion_holder["posture"],
         )
-        proposal = validate_and_sanitize_model_output(parsed)
+        proposal = accept_planner_model_output(parsed)
         proposal["planner_model_metadata"] = _planner_model_metadata(
             prompt_meta=metadata,
             provider=self.provider,
@@ -1857,6 +1863,23 @@ def _reject_duplicate_json_members(members: list[tuple[str, Any]]) -> dict[str, 
             )
         parsed[key] = value
     return parsed
+
+
+def accept_planner_model_output(model_output: Mapping[str, Any]) -> dict[str, Any]:
+    """Accept model output via semantic compile or direct rich validation."""
+
+    if is_semantic_planner_proposal(model_output):
+        try:
+            semantic = validate_semantic_planner_proposal(model_output)
+            compiled = compile_semantic_planner_proposal(semantic)
+        except SearchPlannerSemanticProposalError as exc:
+            raise SearchPlannerModelAdapterError(
+                f"search planner semantic proposal failed closed: {exc}",
+                failure_code=_FailureCode.INVALID_COMPONENT_SUPPORT_MATRIX,
+                predicate_id=None,
+            ) from exc
+        return validate_and_sanitize_model_output(compiled)
+    return validate_and_sanitize_model_output(model_output)
 
 
 def validate_and_sanitize_model_output(model_output: Mapping[str, Any]) -> dict[str, Any]:
@@ -3279,4 +3302,5 @@ __all__ = [
     "SearchPlannerProviderCompletionPosture",
     "SearchPlannerStrictParseSubtype",
     "validate_and_sanitize_model_output",
+    "accept_planner_model_output",
 ]

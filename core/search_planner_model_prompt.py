@@ -23,7 +23,7 @@ from core.semantic_contract_foundation import (
     SupportKind,
 )
 
-SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION = "search_planner_model_prompt_ag_search_planner_model_01_v4"
+SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION = "search_planner_model_prompt_ag_search_planner_model_01_v5"
 
 SEARCH_PLANNER_MODEL_STRICT_JSON_OUTPUT_CONTRACT = (
     "Return exactly one JSON object.",
@@ -49,6 +49,18 @@ SEARCH_PLANNER_MODEL_SYSTEM_PROMPT = (
 )
 
 SEARCH_PLANNER_MODEL_REQUIRED_TOP_LEVEL_FIELDS = (
+    "interpretation",
+    "components",
+)
+SEARCH_PLANNER_MODEL_OPTIONAL_TOP_LEVEL_FIELDS = (
+    "material_ambiguity",
+    "caveats",
+    "prohibited_upgrades",
+    "assumptions",
+    "normalization_notes",
+    "deferred_outputs",
+)
+SEARCH_PLANNER_RICH_REQUIRED_TOP_LEVEL_FIELDS = (
     "question_meaning_summary",
     "requested_output",
     "semantic_slots",
@@ -62,7 +74,7 @@ SEARCH_PLANNER_MODEL_REQUIRED_TOP_LEVEL_FIELDS = (
     "assumptions",
     "unsupported_or_deferred_outputs",
 )
-SEARCH_PLANNER_MODEL_OPTIONAL_TOP_LEVEL_FIELDS = (
+SEARCH_PLANNER_RICH_OPTIONAL_TOP_LEVEL_FIELDS = (
     "contract_amendment_candidates",
     "relationship_hypotheses",
 )
@@ -151,7 +163,7 @@ _REQUIRED_NARRATIVE_TEXT_NORMALIZATION = (
 )
 
 
-def _text_contract(
+def text_contract(
     limit_key: str,
     *,
     required: bool,
@@ -172,7 +184,7 @@ def _text_contract(
     return contract
 
 
-def _text_array_contract(
+def text_array_contract(
     limit_key: str,
     *,
     required: bool,
@@ -183,7 +195,7 @@ def _text_array_contract(
         "json_type": "array",
         "required": required,
         "minimum_nonempty_items": minimum_items,
-        "items": _text_contract(
+        "items": text_contract(
             limit_key,
             required=True,
             enum_values=enum_values,
@@ -192,7 +204,7 @@ def _text_array_contract(
     }
 
 
-def _object_contract(
+def object_contract(
     *,
     required: bool,
     required_fields: tuple[str, ...],
@@ -206,14 +218,19 @@ def _object_contract(
     }
 
 
-SEARCH_PLANNER_MODEL_OUTPUT_SCHEMA: dict[str, Any] = {
+_text_contract = text_contract
+_text_array_contract = text_array_contract
+_object_contract = object_contract
+
+# Preserved rich internal contract used after deterministic compilation.
+SEARCH_PLANNER_RICH_INTERNAL_OUTPUT_SCHEMA: dict[str, Any] = {
     "contract_format": "static_model_visible_output_contract_v1",
     "strict_json_output_contract": list(
         SEARCH_PLANNER_MODEL_STRICT_JSON_OUTPUT_CONTRACT
     ),
     "top_level": _object_contract(
         required=True,
-        required_fields=SEARCH_PLANNER_MODEL_REQUIRED_TOP_LEVEL_FIELDS,
+        required_fields=SEARCH_PLANNER_RICH_REQUIRED_TOP_LEVEL_FIELDS,
         fields={
             "question_meaning_summary": _text_contract(
                 "question_meaning_summary",
@@ -751,10 +768,25 @@ SEARCH_PLANNER_MODEL_OUTPUT_SCHEMA: dict[str, Any] = {
 }
 
 
+def _semantic_model_output_schema() -> dict[str, Any]:
+    from core.search_planner_semantic_compiler import (
+        SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA,
+    )
+
+    return SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA
+
+
+def __getattr__(name: str) -> Any:
+    if name == "SEARCH_PLANNER_MODEL_OUTPUT_SCHEMA":
+        return _semantic_model_output_schema()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 def build_search_planner_model_prompt(planner_input: Mapping[str, Any]) -> str:
     """Build a strict JSON planner prompt from sanitized adapter input."""
 
     query_text = str(planner_input.get("user_query_text_for_planning") or "")
+    output_schema = _semantic_model_output_schema()
     prompt_payload = {
         "schema_version": SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION,
         "planner_input": {
@@ -769,7 +801,7 @@ def build_search_planner_model_prompt(planner_input: Mapping[str, Any]) -> str:
             "parent_contract_refs": planner_input.get("parent_contract_refs"),
             "closed_surface_flags": planner_input.get("closed_surface_flags"),
         },
-        "output_schema": SEARCH_PLANNER_MODEL_OUTPUT_SCHEMA,
+        "output_schema": output_schema,
     }
     instructions = [
         "SEARCHPLANNER MODEL TASK",
@@ -777,7 +809,8 @@ def build_search_planner_model_prompt(planner_input: Mapping[str, Any]) -> str:
         "",
         "Role and authority:",
         "- You are SearchPlanner, not Author.",
-        "- Interpret the user query into a structured search and answer contract plan.",
+        "- Interpret the user query into a compact semantic planning proposal.",
+        "- A deterministic compiler expands your proposal into the rich internal plan.",
         "- You may propose; RunKernel governs.",
         "- Existing reducers own accepted state.",
         "- Do not answer the user.",
@@ -791,37 +824,24 @@ def build_search_planner_model_prompt(planner_input: Mapping[str, Any]) -> str:
         "- Do not create or mutate initial_answer_contract or current_answer_contract.",
         "- Do not create FinalAnswerPacket, Author input, citations, SemanticObservation, ComponentCoverage, or EvidenceLedger custody.",
         "",
-        "Planning rules:",
-        "- Every enum field must use an exact value listed in output_schema. Every required object or array must satisfy its declared type and cardinality. Omit an optional field rather than inventing an unsupported value.",
-        "- The seven required narrative fields must contain meaningful non-whitespace text after whitespace normalization; never emit empty or whitespace-only values, and keep normalized text within each declared max_length.",
-        "- You own the intended question, the distinction between request and context, and the warranted component structure.",
-        "- Propose from one through five required answer components; five is a ceiling, never a target.",
+        "Semantic authorship rules:",
+        "- Author only semantic choices in output_schema. Do not invent stable IDs, revisions, digests, or inverse cross-reference bindings.",
+        "- Do not emit answer_components, semantic_slots, source_obligation_candidates, component_search_requirements, relationship_hypotheses, or contract_amendment_candidates arrays.",
+        "- Nest slots and source/search intent under each component. Use local_id only for proposal-local dependency references.",
+        "- Every enum field must use an exact value listed in output_schema. Omit optional fields when semantically irrelevant.",
+        "- interpretation must be meaningful non-whitespace text after whitespace normalization.",
+        "- Propose from one through five components; five is a ceiling, never a target.",
         "- Use one component for one central intention even when the utterance is long, narrated, imprecise, or self-correcting.",
-        "- Use multiple components only for genuinely distinct answer needs; do not turn background, examples, qualifications, or explanatory asides into components.",
-        "- Treat safe-context and supplied-context references or summaries as planning context, not evidence and not automatic components.",
-        "- Represent dependencies only through dependency_component_ids that name components in this same proposal; do not invent a new graph schema.",
+        "- Use multiple components only for genuinely distinct answer needs.",
         "- Classify every component as user_facing_answer_target or supporting_premise.",
-        "- Keep component purpose orthogonal to direct versus inferred support.",
-        "- Direct-only components require max_inference_depth 0 and exactly one component-owned source obligation.",
-        "- Inferred-only components require dependencies, max_inference_depth of at least 1, and no source obligation or component-local search work.",
-        "- Direct-or-inferred components require dependencies, max_inference_depth of at least 1, and exactly one direct-route source obligation.",
-        "- Use only [direct], [inferred], or [direct, inferred] as allowed_support_kinds, in that order.",
+        "- Direct-only components require source + search.primary_query and omit depends_on.",
+        "- Inferred-only components require depends_on local_ids, omit source/search, and use max_inference_depth >= 1.",
+        "- Direct-or-inferred components require depends_on, source, search, and max_inference_depth >= 1.",
+        "- Use only [direct], [inferred], or [direct, inferred] as support_kinds, in that order.",
         "- Fast and Balanced allow semantic inference depth 1; Deep allows depth 2.",
-        "- Use only the source-obligation kinds and strictness values listed in the output schema.",
-        "- Represent uncertainty as semantic slots, material ambiguity, assumptions, or deferred outputs.",
-        "- You may identify that disambiguation is needed later without activating Scout.",
-        "- You may propose component_search_requirements, but they are non-executing requirements only.",
-        "- Do not create component_search_requirements for inferred-only components.",
-        "- Put bounded provider-neutral initial query strategies under each requirement's metadata.query_strategy_candidates.",
-        "- Give every required answer component one distinct primary candidate; do not rely on one broad query to cover unnamed components.",
-        "- A secondary candidate requires a materially distinct accepted component or source-obligation need and an explicit distinct_need_justification.",
-        "- Do not create a secondary merely because capacity may be available.",
-        "- Use only initial, official_bias, canonical_bias, recency, disambiguation, or recon_rewrite as requested roles.",
-        "- A query strategy may request domain/date/document-family constraints, but it must not select a provider, provider order, depth, variant, model, or fallback.",
-        "- Recon needs must identify distinct unresolved dimensions and remain non-evidence direction material.",
-        "- Do not encode Fast/Balanced/Deep query totals; allocation cardinality is owned by a separate versioned runtime policy.",
-        "- contract_amendment_candidates, if present, are deferred/proposal-only.",
-        "- relationship_hypotheses, if present, are bounded local noncanonical planning hypotheses only; they do not support an answer, create graph authority, or construct search work.",
+        "- Include at least one slot somewhere in the proposal.",
+        "- Primary query text must be exact searchable text. Secondary query requires a distinct justification.",
+        "- Do not select a provider, provider order, depth, variant, model, or fallback.",
         "- Use concise rationale fields only; do not include chain-of-thought.",
         "Strict JSON output contract:",
         *(
@@ -851,7 +871,6 @@ __all__ = [
     "SEARCH_PLANNER_MODEL_ALLOWED_SUPPORT_KIND_COMBINATIONS",
     "SEARCH_PLANNER_MODEL_COMPONENT_PURPOSES",
     "SEARCH_PLANNER_MODEL_MATERIALITY_VALUES",
-    "SEARCH_PLANNER_MODEL_OUTPUT_SCHEMA",
     "SEARCH_PLANNER_MODEL_OPTIONAL_TOP_LEVEL_FIELDS",
     "SEARCH_PLANNER_MODEL_PARTIAL_ANSWER_POLICIES",
     "SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION",
@@ -868,6 +887,12 @@ __all__ = [
     "SEARCH_PLANNER_MODEL_SUPPORT_KINDS",
     "SEARCH_PLANNER_MODEL_SYSTEM_PROMPT",
     "SEARCH_PLANNER_MODEL_TEXT_LIMITS",
+    "SEARCH_PLANNER_RICH_INTERNAL_OUTPUT_SCHEMA",
+    "SEARCH_PLANNER_RICH_OPTIONAL_TOP_LEVEL_FIELDS",
+    "SEARCH_PLANNER_RICH_REQUIRED_TOP_LEVEL_FIELDS",
     "build_search_planner_model_prompt",
+    "object_contract",
     "prompt_metadata",
+    "text_array_contract",
+    "text_contract",
 ]

@@ -255,6 +255,28 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Smart model name",
     )
     p.add_argument(
+        "--fast-reasoning-effort",
+        default=get_env_alias(
+            "SCRYRAVEN_FAST_REASONING_EFFORT",
+            "PROPLEX_FAST_REASONING_EFFORT",
+            "medium",
+        ),
+        choices=("low", "medium", "high"),
+        metavar="EFFORT",
+        help="Reasoning effort for the FAST model profile (low|medium|high)",
+    )
+    p.add_argument(
+        "--smart-reasoning-effort",
+        default=get_env_alias(
+            "SCRYRAVEN_SMART_REASONING_EFFORT",
+            "PROPLEX_SMART_REASONING_EFFORT",
+            "medium",
+        ),
+        choices=("low", "medium", "high"),
+        metavar="EFFORT",
+        help="Reasoning effort for the SMART model profile (low|medium|high)",
+    )
+    p.add_argument(
         "--embed-provider",
         default=get_env_alias("SCRYRAVEN_EMBED_PROVIDER", "PROPLEX_EMBED_PROVIDER", "OpenAI"),
         metavar="PROVIDER",
@@ -638,6 +660,8 @@ def _build_run_config(
         fast_model=args.fast_model,
         smart_provider=args.smart_provider,
         smart_model=args.smart_model,
+        fast_reasoning_effort=args.fast_reasoning_effort,
+        smart_reasoning_effort=args.smart_reasoning_effort,
         embed_provider=args.embed_provider,
         embed_model=args.embed_model,
         local_url=args.local_url,

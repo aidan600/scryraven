@@ -284,6 +284,7 @@ def _role_runtime_kwargs(runtime_scope: Mapping[str, Any]) -> dict[str, Any]:
         "provider": canonical_provider,
         "model": model,
         "use_reasoning": bool(runtime_scope.get("use_reasoning")),
+        "effort": str(runtime_scope.get("smart_reasoning_effort") or "medium"),
     }
 
 
