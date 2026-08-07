@@ -1246,6 +1246,7 @@ def _active_slots(run_kernel: RunKernel) -> list[dict[str, Any]]:
                     "component_ref": component_ref,
                     "source_obligation_ref": obligation_ref,
                     "requirement_posture": slot_requirement,
+                    "support_kind": str(obligation.get("kind") or "").strip(),
                 }
             )
     if not slots:
@@ -2609,11 +2610,303 @@ def _digest(value: Any) -> str:
     return sha256(encoded.encode("utf-8")).hexdigest()
 
 
+BOUNDED_SEARCHOS_N1_CAUSAL_PROJECTION_SCHEMA = (
+    "bounded_searchos_n1_causal_projection_v1"
+)
+
+_SAFE_FAILURE_CLASS_PREFIXES: tuple[tuple[str, str], ...] = (
+    ("model_transport_failed", "model_transport_failed"),
+    ("model_output_malformed", "model_output_malformed"),
+    ("model_output_invalid", "model_output_invalid"),
+    ("read_transport_failure", "read_transport_failure"),
+    ("read_unusable_or_invalid_material", "read_unusable_or_invalid_material"),
+    ("read_authority_or_route_blocked", "read_authority_or_route_blocked"),
+)
+
+_SAFE_SUPPORT_KINDS = frozenset(
+    {
+        "official_current",
+        "legal_current_primary",
+        "canonical_documentation",
+        "source_bound_numeric",
+        "peer_reviewed",
+        "reputable_secondary",
+        "conflict_resolution",
+        "date_bound_currentness",
+        "user_document",
+        "no_special_obligation",
+        "not_available",
+    }
+)
+
+_SAFE_SLOT_POSTURES = frozenset(
+    {
+        "active_unjudged",
+        "awaiting_navigation_admission",
+        "awaiting_navigation_execution",
+        "awaiting_read",
+        "awaiting_followup_discover",
+        "ready_for_semantic_evaluation",
+        "semantically_handed_off",
+        "unresolved_handoff",
+        "judgment_failed",
+        "budget_exhausted",
+        "stale_or_invalid",
+    }
+)
+
+_SAFE_RECEIVER_FAILURE_CLASSES = frozenset(
+    {
+        "OrdinaryMulticomponentRuntimeError",
+        "SearchOSExistingGapRecoveryError",
+        "none",
+        "other_safe",
+    }
+)
+
+
+def _opaque_identity_digest(token: Any) -> str:
+    text = str(token or "").strip()
+    if not text:
+        return sha256(b"").hexdigest()
+    return sha256(text.encode("utf-8")).hexdigest()
+
+
+def _allowlisted_support_kind(value: Any) -> str:
+    token = str(value or "").strip().casefold()
+    if token in _SAFE_SUPPORT_KINDS:
+        return token
+    return "not_available"
+
+
+def _allowlisted_slot_posture(value: Any) -> str:
+    token = str(value or "").strip()
+    if token in _SAFE_SLOT_POSTURES:
+        return token
+    return "stale_or_invalid"
+
+
+def _project_safe_failure_class(*, posture: str, reason: Any) -> str:
+    if posture in {
+        "semantically_handed_off",
+        "ready_for_semantic_evaluation",
+        "active_unjudged",
+        "awaiting_read",
+        "awaiting_followup_discover",
+        "awaiting_navigation_admission",
+        "awaiting_navigation_execution",
+    }:
+        return "none"
+    if posture == "budget_exhausted":
+        return "budget_exhausted"
+    if posture == "unresolved_handoff":
+        return "unresolved_handoff"
+    if posture == "stale_or_invalid":
+        return "stale_or_invalid"
+    text = str(reason or "").strip()
+    if not text:
+        return "other_safe" if posture == "judgment_failed" else "none"
+    lowered = text.casefold()
+    for prefix, safe_class in _SAFE_FAILURE_CLASS_PREFIXES:
+        if lowered == prefix or lowered.startswith(prefix + ":") or lowered.startswith(prefix + "_"):
+            return safe_class
+    if "budget" in lowered and "exhaust" in lowered:
+        return "budget_exhausted"
+    if "unresolved" in lowered:
+        return "unresolved_handoff"
+    if "stale" in lowered or "invalid_nomination" in lowered:
+        return "stale_or_invalid"
+    return "other_safe"
+
+
+def _slot_read_custody_observed(record: Mapping[str, Any]) -> bool:
+    custody_refs = record.get("custody_refs") or ()
+    if isinstance(custody_refs, Sequence) and len(custody_refs) > 0:
+        return True
+    history = record.get("action_history") or ()
+    if not isinstance(history, Sequence):
+        return False
+    return any(
+        isinstance(item, Mapping) and item.get("event") == "read_custody_admitted"
+        for item in history
+    )
+
+
+def _slot_judgment_counts(record: Mapping[str, Any]) -> tuple[int, int]:
+    history = [
+        item for item in (record.get("action_history") or ()) if isinstance(item, Mapping)
+    ]
+    failure_count = sum(1 for item in history if item.get("event") == "judgment_failed")
+    decision_count = sum(
+        1
+        for item in history
+        if item.get("judgment_decision_ref") or item.get("event") == "judgment_failed"
+    )
+    call_count = int(record.get("judgment_call_count") or 0)
+    return max(call_count, decision_count), failure_count
+
+
+def _project_required_slot_summary(
+    *,
+    record: Mapping[str, Any],
+    outcome: Mapping[str, Any],
+) -> dict[str, Any]:
+    slot_ref = dict(record.get("slot_ref") or {})
+    admission_ref = dict(outcome.get("semantic_admission_outcome_ref") or {})
+    coverage_ref = dict(admission_ref.get("component_coverage_ref") or {})
+    handoff_ref = dict(outcome.get("semantic_handoff_ref") or record.get("semantic_handoff_ref") or {})
+    dprime_ref = dict(
+        outcome.get("component_dprime_validation_ref")
+        or record.get("component_dprime_validation_ref")
+        or {}
+    )
+    final_posture = _allowlisted_slot_posture(record.get("latest_judgment_posture"))
+    judgment_event_count, judgment_failure_count = _slot_judgment_counts(record)
+    admission_status = str(outcome.get("semantic_admission_status") or "not_admitted")
+    if admission_status not in {"admitted", "not_admitted", "admitted_with_caveats"}:
+        admission_status = "not_admitted"
+    analyst_status = str(outcome.get("component_analyst_proposal_status") or "not_proposed")
+    if analyst_status not in {"proposed", "not_proposed"}:
+        analyst_status = "not_proposed"
+    coverage_satisfied = bool(
+        admission_status in {"admitted", "admitted_with_caveats"}
+        and (
+            coverage_ref.get("coverage_state") == "satisfied"
+            or record.get("slice_a_ready") is True
+        )
+    )
+    return {
+        "slot_identity_digest": str(
+            slot_ref.get("slot_digest") or _opaque_identity_digest(slot_ref.get("slot_id"))
+        ),
+        "component_identity_digest": _opaque_identity_digest(slot_ref.get("component_id")),
+        "source_obligation_identity_digest": _opaque_identity_digest(
+            slot_ref.get("source_obligation_id")
+        ),
+        "required": True,
+        "support_kind": _allowlisted_support_kind(record.get("support_kind")),
+        "final_posture": final_posture,
+        "safe_failure_class": _project_safe_failure_class(
+            posture=final_posture,
+            reason=record.get("latest_judgment_reason"),
+        ),
+        "judgment_event_count": judgment_event_count,
+        "judgment_failure_count": judgment_failure_count,
+        "read_custody_observed": _slot_read_custody_observed(record),
+        "semantic_handoff_present": bool(handoff_ref),
+        "handoff_material_consumed": bool(
+            outcome.get("searchos_handoff_material_consumed") is True
+        ),
+        "component_analyst_proposal_status": analyst_status,
+        "component_dprime_validation_present": bool(dprime_ref),
+        "semantic_admission_status": (
+            "admitted" if admission_status in {"admitted", "admitted_with_caveats"} else admission_status
+        ),
+        "component_coverage_satisfied": coverage_satisfied,
+    }
+
+
+def build_bounded_searchos_n1_causal_projection(
+    *,
+    searchos_slice_a_projection: Mapping[str, Any] | None,
+    enabled: bool = True,
+) -> dict[str, Any] | None:
+    """Project allowlisted SearchOS N=1 causal facts for bounded product output."""
+
+    if not enabled:
+        return None
+    if not isinstance(searchos_slice_a_projection, Mapping) or not searchos_slice_a_projection:
+        return {
+            "schema_version": BOUNDED_SEARCHOS_N1_CAUSAL_PROJECTION_SCHEMA,
+            "projection_status": "not_applicable",
+            "active_slot_count": 0,
+            "required_slot_count": 0,
+            "all_required_slots_ready": False,
+            "component_receiver_selected": False,
+            "component_receiver_failure_class": "none",
+            "logical_call_correlation": "not_directly_available",
+            "slots": [],
+        }
+
+    readiness = dict(searchos_slice_a_projection.get("readiness_projection") or {})
+    outcomes = dict(searchos_slice_a_projection.get("semantic_outcomes_by_slot") or {})
+    slot_records = [
+        dict(item)
+        for item in readiness.get("slot_records") or ()
+        if isinstance(item, Mapping)
+    ]
+    if not readiness or not slot_records:
+        return {
+            "schema_version": BOUNDED_SEARCHOS_N1_CAUSAL_PROJECTION_SCHEMA,
+            "projection_status": "insufficient",
+            "active_slot_count": len(dict(searchos_slice_a_projection.get("slot_postures") or {})),
+            "required_slot_count": int(readiness.get("required_slot_count") or 0),
+            "all_required_slots_ready": False,
+            "component_receiver_selected": False,
+            "component_receiver_failure_class": "none",
+            "logical_call_correlation": "not_directly_available",
+            "slots": [],
+        }
+
+    required_records = [
+        record
+        for record in slot_records
+        if str(record.get("requirement_posture") or "") == "required"
+    ]
+    slots: list[dict[str, Any]] = []
+    for record in required_records:
+        slot_id = str(dict(record.get("slot_ref") or {}).get("slot_id") or "")
+        outcome = dict(outcomes.get(slot_id) or {})
+        slots.append(_project_required_slot_summary(record=record, outcome=outcome))
+
+    receiver_failure = searchos_slice_a_projection.get("component_receiver_failure")
+    receiver_failure_class = "none"
+    if receiver_failure is not None:
+        token = str(receiver_failure).strip()
+        receiver_failure_class = (
+            token if token in _SAFE_RECEIVER_FAILURE_CLASSES else "other_safe"
+        )
+    receiver_selected = bool(
+        receiver_failure is not None
+        or any(
+            item.get("component_analyst_proposal_status") == "proposed"
+            or item.get("semantic_admission_status") == "admitted"
+            or item.get("semantic_handoff_present") is True
+            for item in slots
+        )
+        or any(
+            str(record.get("latest_judgment_posture") or "")
+            in {
+                "semantically_handed_off",
+                "ready_for_semantic_evaluation",
+            }
+            for record in required_records
+        )
+    )
+
+    return {
+        "schema_version": BOUNDED_SEARCHOS_N1_CAUSAL_PROJECTION_SCHEMA,
+        "projection_status": "available",
+        "active_slot_count": int(
+            readiness.get("required_slot_count") or 0
+        )
+        + int(readiness.get("optional_slot_count") or 0),
+        "required_slot_count": int(readiness.get("required_slot_count") or len(required_records)),
+        "all_required_slots_ready": readiness.get("all_required_slots_slice_a_ready") is True,
+        "component_receiver_selected": receiver_selected,
+        "component_receiver_failure_class": receiver_failure_class,
+        "logical_call_correlation": "not_directly_available",
+        "slots": slots,
+    }
+
+
 __all__ = [
+    "BOUNDED_SEARCHOS_N1_CAUSAL_PROJECTION_SCHEMA",
     "SEARCHOS_JUDGMENT_DECISION_CONTRACT_SCHEMA_VERSION",
     "SEARCHOS_JUDGMENT_SYSTEM_PROMPT",
     "SEARCHOS_SLICE_A_TRACE_KEY",
     "SearchOSSliceAProductResult",
+    "build_bounded_searchos_n1_causal_projection",
     "build_searchos_judgment_decision_contract_v1",
     "build_searchos_required_needs_blocked_fap_projection",
     "build_searchos_semantic_outcomes_by_slot",

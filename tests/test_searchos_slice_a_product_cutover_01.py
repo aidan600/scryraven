@@ -34,6 +34,7 @@ from core.searchos_iterative_judgment_runtime import (
 from core.searchos_slice_a_product_runtime import (
     SEARCHOS_JUDGMENT_DECISION_CONTRACT_SCHEMA_VERSION,
     SEARCHOS_JUDGMENT_SYSTEM_PROMPT,
+    build_bounded_searchos_n1_causal_projection,
     build_searchos_judgment_decision_contract_v1,
 )
 from tests.helpers.offline_ordinary_pipeline import (
@@ -831,3 +832,266 @@ def test_two_components_use_one_shared_n_component_receiver(
     assert ROLE_SYSTEM_PROMPTS[ROLE_SYNTHESIS_DPRIME] in prompts
     assert searchos["all_passages_iteration_append_count"] == 0
     assert len(harness.search_calls) == 1
+
+
+def _required_causal_slot(projection: dict[str, Any]) -> dict[str, Any]:
+    assert projection["projection_status"] == "available"
+    assert projection["required_slot_count"] == 1
+    assert len(projection["slots"]) == 1
+    return dict(projection["slots"][0])
+
+
+def test_bounded_searchos_n1_causal_projection_successful_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _establish_official_current_qualification_truth(monkeypatch)
+    outcome, _harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        mode="Balanced",
+        query="What is Alpha's current official operating rule?",
+        core_topic="Alpha current official operating rule",
+        primary_entity="Alpha",
+        researcher_queries=["Alpha current official operating rule"],
+        raw_author_response=(
+            "Alpha's current official operating rule is supported. "
+            "[[1]](https://alpha.example/report-1)"
+        ),
+    )
+
+    projection = build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=dict(outcome.execution_trace["searchos_slice_a"]),
+    )
+    assert projection is not None
+    slot = _required_causal_slot(projection)
+    assert projection["all_required_slots_ready"] is True
+    assert slot["semantic_handoff_present"] is True
+    assert slot["handoff_material_consumed"] is True
+    assert slot["component_analyst_proposal_status"] == "proposed"
+    assert slot["component_dprime_validation_present"] is True
+    assert slot["semantic_admission_status"] == "admitted"
+    assert slot["component_coverage_satisfied"] is True
+    assert slot["read_custody_observed"] is True
+    assert slot["support_kind"] == "official_current"
+    assert slot["final_posture"] == "semantically_handed_off"
+    assert slot["safe_failure_class"] == "none"
+
+
+@pytest.mark.parametrize(
+    ("decision", "expected_posture", "expected_failure_class"),
+    [
+        ("MALFORMED", "judgment_failed", "model_output_malformed"),
+        ("WRAPPED_JSON", "judgment_failed", "model_output_malformed"),
+        ("INVALID_NOMINATION", "stale_or_invalid", "stale_or_invalid"),
+    ],
+)
+def test_bounded_searchos_n1_causal_projection_judgment_failure_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    decision: str,
+    expected_posture: str,
+    expected_failure_class: str,
+) -> None:
+    outcome, _harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        mode="Fast",
+        query="What is Alpha's current official operating rule?",
+        core_topic="Alpha current official operating rule",
+        primary_entity="Alpha",
+        researcher_queries=["Alpha current official operating rule"],
+        read_assessment_decision=decision,
+    )
+
+    projection = build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=dict(outcome.execution_trace["searchos_slice_a"]),
+    )
+    assert projection is not None
+    slot = _required_causal_slot(projection)
+    assert slot["final_posture"] == expected_posture
+    assert slot["safe_failure_class"] == expected_failure_class
+    assert slot["semantic_handoff_present"] is False
+    assert slot["semantic_admission_status"] != "admitted"
+    assert slot["component_coverage_satisfied"] is False
+    assert slot["read_custody_observed"] is False
+    serialized = json.dumps(projection, sort_keys=True)
+    assert "fictional-" not in serialized
+    assert "Traceback" not in serialized
+    assert "Exception" not in serialized
+
+
+def test_bounded_searchos_n1_causal_projection_read_then_receiver_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _establish_official_current_qualification_truth(monkeypatch)
+
+    def fail_component_receiver(*_args: Any, **_kwargs: Any) -> None:
+        raise pipeline_orchestrator.OrdinaryMulticomponentRuntimeError(
+            "forced component receiver validation failure"
+        )
+
+    monkeypatch.setattr(
+        pipeline_orchestrator,
+        "execute_ordinary_semantic_or_multicomponent_handoff_from_scope",
+        fail_component_receiver,
+    )
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        mode="Balanced",
+        query="What is Alpha's current official operating rule?",
+        core_topic="Alpha current official operating rule",
+        primary_entity="Alpha",
+        researcher_queries=["Alpha current official operating rule"],
+    )
+
+    projection = build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=dict(outcome.execution_trace["searchos_slice_a"]),
+    )
+    assert projection is not None
+    slot = _required_causal_slot(projection)
+    assert slot["read_custody_observed"] is True
+    assert slot["semantic_handoff_present"] is True
+    assert slot["handoff_material_consumed"] is False
+    assert slot["component_analyst_proposal_status"] == "not_proposed"
+    assert slot["component_dprime_validation_present"] is False
+    assert slot["semantic_admission_status"] != "admitted"
+    assert slot["component_coverage_satisfied"] is False
+    assert projection["component_receiver_selected"] is True
+    assert projection["component_receiver_failure_class"] == (
+        "OrdinaryMulticomponentRuntimeError"
+    )
+    assert harness.read_transport_calls
+
+
+def test_bounded_searchos_n1_causal_projection_privacy_allowlist() -> None:
+    sentinels = (
+        "fictional-raw-query-text-sentinel",
+        "https://fixture.invalid/private-url",
+        "fictional-passage-text-sentinel",
+        "fictional-read-content-sentinel",
+        "fictional-model-output-sentinel",
+        "fictional-provider-payload-sentinel",
+        "fictional-exception-text-sentinel",
+        "fictional-embedding-vector-sentinel",
+    )
+    fixture = {
+        "slot_postures": {"slot-1": "judgment_failed"},
+        "component_receiver_failure": "OrdinaryMulticomponentRuntimeError",
+        "component_receiver_failure_reason": sentinels[6],
+        "semantic_material_refs": [
+            {
+                "source_id": "src-1",
+                "url": sentinels[1],
+                "bounded_character_count": 12,
+                "slot_ref": {"slot_id": "slot-1"},
+            }
+        ],
+        "semantic_outcomes_by_slot": {
+            "slot-1": {
+                "semantic_handoff_ref": {},
+                "component_analyst_proposal_ref": {},
+                "component_analyst_proposal_status": "not_proposed",
+                "component_dprime_validation_ref": {},
+                "component_dprime_validation_status": "not_accepted",
+                "semantic_admission_outcome_ref": {},
+                "semantic_admission_status": "not_admitted",
+                "searchos_handoff_material_consumed": False,
+            }
+        },
+        "readiness_projection": {
+            "required_slot_count": 1,
+            "optional_slot_count": 0,
+            "all_required_slots_slice_a_ready": False,
+            "slot_records": [
+                {
+                    "slot_ref": {
+                        "slot_id": "slot-1",
+                        "slot_digest": "abc",
+                        "component_id": "component-1",
+                        "source_obligation_id": "obligation-1",
+                    },
+                    "requirement_posture": "required",
+                    "support_kind": "official_current",
+                    "latest_judgment_posture": "judgment_failed",
+                    "latest_judgment_reason": (
+                        "model_transport_failed:RuntimeError:" + sentinels[6]
+                    ),
+                    "judgment_call_count": 1,
+                    "action_history": [
+                        {
+                            "event": "judgment_failed",
+                            "reason": sentinels[4],
+                        }
+                    ],
+                    "custody_refs": [
+                        {
+                            "read_custody_material_id": "custody-1",
+                            "normalized_url": sentinels[1],
+                            "read_content": sentinels[3],
+                        }
+                    ],
+                    "semantic_handoff_ref": {},
+                    "slice_a_ready": False,
+                }
+            ],
+        },
+        "private_raw": {
+            "query": sentinels[0],
+            "passage": sentinels[2],
+            "provider_payload": sentinels[5],
+            "embedding": sentinels[7],
+        },
+    }
+    projection = build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=fixture,
+    )
+    assert projection is not None
+    serialized = json.dumps(projection, sort_keys=True)
+    for sentinel in sentinels:
+        assert sentinel not in serialized
+    slot = _required_causal_slot(projection)
+    assert slot["safe_failure_class"] == "model_transport_failed"
+    assert slot["read_custody_observed"] is True
+    assert "custody_refs" not in slot
+    assert "action_history" not in slot
+    assert "latest_judgment_reason" not in slot
+    assert "normalized_url" not in serialized
+    assert "private_raw" not in serialized
+
+
+def test_bounded_searchos_n1_causal_projection_ordinary_output_parity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _establish_official_current_qualification_truth(monkeypatch)
+    outcome, _harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        mode="Balanced",
+        query="What is Alpha's current official operating rule?",
+        core_topic="Alpha current official operating rule",
+        primary_entity="Alpha",
+        researcher_queries=["Alpha current official operating rule"],
+        raw_author_response=(
+            "Alpha's current official operating rule is supported. "
+            "[[1]](https://alpha.example/report-1)"
+        ),
+    )
+    enabled = build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=dict(outcome.execution_trace["searchos_slice_a"]),
+        enabled=True,
+    )
+    disabled = build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=dict(outcome.execution_trace["searchos_slice_a"]),
+        enabled=False,
+    )
+    assert enabled is not None
+    assert disabled is None
+    assert outcome.report
+    assert "searchos_n1_causal_projection" not in outcome.execution_trace
+    searchos = dict(outcome.execution_trace["searchos_slice_a"])
+    assert "readiness_projection" in searchos
+    assert "semantic_outcomes_by_slot" in searchos
