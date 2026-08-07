@@ -824,6 +824,17 @@ def _bounded_terminal_payload(
                 if exc.predicate_id is not None
                 else None
             ),
+            "provider_completion_posture": (
+                exc.provider_completion_posture.value
+                if exc.provider_completion_posture is not None
+                else None
+            ),
+            "strict_parse_subtype": (
+                exc.strict_parse_subtype.value
+                if exc.strict_parse_subtype is not None
+                else None
+            ),
+            "cleaner_modified": exc.cleaner_modified,
         }
     policy = config.cap_policy if config is not None else None
     payload: dict[str, object] = {

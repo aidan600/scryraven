@@ -1433,7 +1433,7 @@ def test_public_bounded_cli_preserves_safe_search_planner_failure_identity(
         payload = json.loads(output.strip().splitlines()[-1])
         terminal = payload["terminal"]
         assert terminal["code"] == "bounded_run_failed"
-        assert terminal["search_planner_failure"] == {
+        expected_projection = {
             "failure_stage": expected_failure.failure_stage.value,
             "failure_code": expected_failure.failure_code.value,
             "mechanical_rule_id": expected_failure.mechanical_rule_id,
@@ -1445,7 +1445,19 @@ def test_public_bounded_cli_preserves_safe_search_planner_failure_identity(
                 if expected_failure.predicate_id is not None
                 else None
             ),
+            "provider_completion_posture": (
+                expected_failure.provider_completion_posture.value
+                if expected_failure.provider_completion_posture is not None
+                else None
+            ),
+            "strict_parse_subtype": (
+                expected_failure.strict_parse_subtype.value
+                if expected_failure.strict_parse_subtype is not None
+                else None
+            ),
+            "cleaner_modified": expected_failure.cleaner_modified,
         }
+        assert terminal["search_planner_failure"] == expected_projection
         for private_fragment in private_fragments:
             assert private_fragment not in json.dumps(payload, sort_keys=True)
 

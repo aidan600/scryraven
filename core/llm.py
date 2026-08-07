@@ -6,7 +6,7 @@ import logging
 import os
 import time
 from functools import lru_cache, wraps
-from typing import Any, Callable, Generator, List, Optional, Union
+from typing import Any, Callable, Generator, List, Mapping, Optional, Union
 
 import numpy as np
 from exa_py import Exa
@@ -28,6 +28,30 @@ from core.cap_enforcement import (
 from core.cost_accounting import CostAccumulator, estimate_tokens, extract_usage_tokens
 
 logger = logging.getLogger(__name__)
+
+# Closed, repository-owned provider-completion postures. Never retain the raw
+# provider finish/status token; unknown values collapse to other_safe.
+PROVIDER_COMPLETION_POSTURE_COMPLETED = "completed"
+PROVIDER_COMPLETION_POSTURE_LENGTH_LIMITED = "length_limited"
+PROVIDER_COMPLETION_POSTURE_CONTENT_FILTERED = "content_filtered"
+PROVIDER_COMPLETION_POSTURE_EMPTY = "empty"
+PROVIDER_COMPLETION_POSTURE_OTHER_SAFE = "other_safe"
+PROVIDER_COMPLETION_POSTURE_NOT_AVAILABLE = "not_available"
+_PROVIDER_COMPLETION_POSTURES = frozenset(
+    {
+        PROVIDER_COMPLETION_POSTURE_COMPLETED,
+        PROVIDER_COMPLETION_POSTURE_LENGTH_LIMITED,
+        PROVIDER_COMPLETION_POSTURE_CONTENT_FILTERED,
+        PROVIDER_COMPLETION_POSTURE_EMPTY,
+        PROVIDER_COMPLETION_POSTURE_OTHER_SAFE,
+        PROVIDER_COMPLETION_POSTURE_NOT_AVAILABLE,
+    }
+)
+_CHAT_FINISH_REASON_TO_POSTURE = {
+    "stop": PROVIDER_COMPLETION_POSTURE_COMPLETED,
+    "length": PROVIDER_COMPLETION_POSTURE_LENGTH_LIMITED,
+    "content_filter": PROVIDER_COMPLETION_POSTURE_CONTENT_FILTERED,
+}
 
 
 @lru_cache(maxsize=1)
@@ -214,6 +238,73 @@ def response_text(resp: Any) -> str:
     return str(resp)
 
 
+def normalize_safe_provider_completion_posture(
+    *,
+    output_text: str,
+    finish_reason: Any = None,
+    finish_reason_present: bool = False,
+) -> str:
+    """Return one closed completion posture; never echo provider tokens."""
+
+    text = output_text if isinstance(output_text, str) else ""
+    if not finish_reason_present:
+        return PROVIDER_COMPLETION_POSTURE_NOT_AVAILABLE
+    if isinstance(finish_reason, str):
+        mapped = _CHAT_FINISH_REASON_TO_POSTURE.get(finish_reason.strip().casefold())
+        if mapped == PROVIDER_COMPLETION_POSTURE_LENGTH_LIMITED:
+            return PROVIDER_COMPLETION_POSTURE_LENGTH_LIMITED
+        if mapped == PROVIDER_COMPLETION_POSTURE_CONTENT_FILTERED:
+            return PROVIDER_COMPLETION_POSTURE_CONTENT_FILTERED
+        if mapped == PROVIDER_COMPLETION_POSTURE_COMPLETED:
+            if text == "":
+                return PROVIDER_COMPLETION_POSTURE_EMPTY
+            return PROVIDER_COMPLETION_POSTURE_COMPLETED
+        if text == "":
+            return PROVIDER_COMPLETION_POSTURE_EMPTY
+        return PROVIDER_COMPLETION_POSTURE_OTHER_SAFE
+    if text == "":
+        return PROVIDER_COMPLETION_POSTURE_EMPTY
+    return PROVIDER_COMPLETION_POSTURE_OTHER_SAFE
+
+
+def _chat_completions_finish_reason(response: Any) -> tuple[bool, Any]:
+    """Return (present, value) for Chat Completions-style finish_reason only."""
+
+    choices = getattr(response, "choices", None)
+    if not choices:
+        return False, None
+    choice = choices[0]
+    if not hasattr(choice, "finish_reason"):
+        return False, None
+    return True, getattr(choice, "finish_reason", None)
+
+
+def _emit_safe_response_envelope(
+    sink: Callable[[Mapping[str, str]], None] | None,
+    *,
+    output_text: str,
+    response: Any | None = None,
+    finish_reason_present: bool = False,
+    finish_reason: Any = None,
+) -> None:
+    """Notify an optional sink with only closed completion-posture metadata."""
+
+    if sink is None:
+        return
+    present = finish_reason_present
+    reason = finish_reason
+    if response is not None and not present:
+        present, reason = _chat_completions_finish_reason(response)
+    posture = normalize_safe_provider_completion_posture(
+        output_text=output_text,
+        finish_reason=reason,
+        finish_reason_present=present,
+    )
+    if posture not in _PROVIDER_COMPLETION_POSTURES:
+        posture = PROVIDER_COMPLETION_POSTURE_OTHER_SAFE
+    sink({"provider_completion_posture": posture})
+
+
 def _record_model_cost(
     cost_accumulator: Optional[CostAccumulator],
     *,
@@ -298,6 +389,7 @@ def ask_model(
     temperature: Optional[float] = None,
     cap_policy: RunCapPolicy | None = None,
     logical_call_id: str | None = None,
+    safe_response_envelope_sink: Callable[[Mapping[str, str]], None] | None = None,
     _physical_retry_index: int = 0,
 ) -> Union[str, Generator[str, None, None]]:
     messages = [
@@ -334,6 +426,11 @@ def ask_model(
             lambda: local_client.chat.completions.create(**kwargs),
         )
         if stream:
+            _emit_safe_response_envelope(
+                safe_response_envelope_sink,
+                output_text="",
+                finish_reason_present=False,
+            )
 
             def generator():
                 try:
@@ -363,6 +460,11 @@ def ask_model(
             system_prompt=system_prompt,
             response=resp,
             output_text=text,
+        )
+        _emit_safe_response_envelope(
+            safe_response_envelope_sink,
+            output_text=text,
+            response=resp,
         )
         return text
 
@@ -397,6 +499,11 @@ def ask_model(
             lambda: or_client.chat.completions.create(**kwargs),
         )
         if stream:
+            _emit_safe_response_envelope(
+                safe_response_envelope_sink,
+                output_text="",
+                finish_reason_present=False,
+            )
 
             def generator():
                 try:
@@ -426,6 +533,11 @@ def ask_model(
             system_prompt=system_prompt,
             response=resp,
             output_text=text,
+        )
+        _emit_safe_response_envelope(
+            safe_response_envelope_sink,
+            output_text=text,
+            response=resp,
         )
         return text
 
@@ -475,6 +587,11 @@ def ask_model(
                     **stream_kwargs,
                     stream=True,
                 ),
+            )
+            _emit_safe_response_envelope(
+                safe_response_envelope_sink,
+                output_text="",
+                finish_reason_present=False,
             )
 
             def generator():
@@ -552,6 +669,12 @@ def ask_model(
                 final_text = response_text(resp)
                 usage_response = resp
 
+            _emit_safe_response_envelope(
+                safe_response_envelope_sink,
+                output_text=final_text,
+                response=usage_response,
+            )
+
             def fake_generator():
                 chunk_size = 20
                 for i in range(0, len(final_text), chunk_size):
@@ -596,6 +719,11 @@ def ask_model(
             response=resp,
             output_text=text,
         )
+        _emit_safe_response_envelope(
+            safe_response_envelope_sink,
+            output_text=text,
+            response=resp,
+        )
         return text
     except RunCapExceeded:
         raise
@@ -635,6 +763,11 @@ def ask_model(
             system_prompt=system_prompt,
             response=resp,
             output_text=text,
+        )
+        _emit_safe_response_envelope(
+            safe_response_envelope_sink,
+            output_text=text,
+            response=resp,
         )
         return text
 
