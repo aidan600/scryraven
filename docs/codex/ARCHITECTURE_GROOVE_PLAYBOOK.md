@@ -73,6 +73,27 @@ Default workflow:
 11. Return one final phase bundle immediately; Strategy/Review owns later inspection.
 ```
 
+## Post-merge local phase cleanup
+
+Use the repository-owned merged-phase cleanup command after an approved PR is
+merged. Do not reconstruct post-merge worktree/branch/phase-root cleanup as an
+ad-hoc PowerShell sequence. Supply the exact reviewed phase head, phase branch,
+and phase root. The helper is merge-gated, non-destructive, state-aware,
+resumable, idempotent, and prints its result. Troubleshoot only from its safe
+blocker output.
+
+Canonical Windows operator invocation:
+
+```powershell
+& 'C:\Users\aidan\ScryRaven\scripts\cleanup_merged_phase.ps1' `
+  -ReviewedHead '<exact-reviewed-head>' `
+  -PhaseBranch '<phase-branch>' `
+  -PhaseRoot 'C:\Users\aidan\sr-phases\<phase>'
+```
+
+Owners: `scripts/cleanup_merged_phase.py`, `scripts/cleanup_merged_phase.ps1`,
+and [Windows Sandbox Publication Rule](CODEX_LOCAL_WINDOWS_SANDBOX_PUBLICATION_RULE.md).
+
 Final-candidate local validation is completed in step 7. Normal exact-head PR CI
 is a merge gate, not a handoff gate, unless a phase explicitly states a stronger
 branch-attributable rule. Publication does not restart the local validation

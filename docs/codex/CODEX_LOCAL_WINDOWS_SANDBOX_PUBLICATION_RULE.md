@@ -74,3 +74,34 @@ Do not merge, rebase, force-push, delete branches, destructively clean, mutate
 `main`, or repair auth/ACL/sandbox during implementation. If the existing
 publication path fails, report the exact failure rather than attempting
 authentication, ACL, SSH, OAuth, or sandbox repair.
+
+## Post-merge local phase cleanup
+
+After an approved phase PR merges, use the repository-owned cleanup command.
+Do not reconstruct Git/worktree/filesystem cleanup as an ad-hoc PowerShell
+block unless the canonical helper itself reports an unsupported state.
+
+```powershell
+& 'C:\Users\aidan\ScryRaven\scripts\cleanup_merged_phase.ps1' `
+  -ReviewedHead '<exact-reviewed-head>' `
+  -PhaseBranch '<phase-branch>' `
+  -PhaseRoot 'C:\Users\aidan\sr-phases\<phase>'
+```
+
+The helper owns merge-gated, state-aware, resumable cleanup of one explicit
+merged phase. It prints a complete result to the console and best-effort copies
+that same text to the clipboard. Clipboard failure is nonfatal.
+
+Hard stops enforced by the helper:
+
+```text
+no --force
+no -D
+no reset
+no rebase
+no blind git clean
+no ad-hoc replacement cleanup block unless the canonical helper itself reports an unsupported state
+```
+
+Python engine: `scripts/cleanup_merged_phase.py`.
+PowerShell wrapper: `scripts/cleanup_merged_phase.ps1`.
