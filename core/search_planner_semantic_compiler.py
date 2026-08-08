@@ -836,6 +836,10 @@ def compile_semantic_planner_proposal(
                 search["recon"],
                 component_index=index,
             )
+            # Component-level recon is model-authored once. Attach the actionable
+            # rich candidate payload to the primary strategy only so downstream
+            # per-component aggregation does not see duplicated dimension IDs
+            # when a secondary initial-query strategy also exists.
             strategies: list[dict[str, Any]] = [
                 {
                     "strategy_id": f"strategy:{index:02d}:primary",
@@ -862,7 +866,7 @@ def compile_semantic_planner_proposal(
                         "requested_role": secondary["role"],
                         "source_obligation_candidate_ids": list(obligation_ids),
                         "distinct_need_justification": secondary["justification"],
-                        "recon_requirement": _copy_recon_requirement(recon_requirement),
+                        "recon_requirement": _empty_not_needed_recon_requirement(),
                     }
                 )
             requirement: dict[str, Any] = {
@@ -1376,6 +1380,17 @@ def _copy_recon_requirement(recon_requirement: Mapping[str, Any]) -> dict[str, A
         "required_for_truthful_targeting": bool(
             recon_requirement["required_for_truthful_targeting"]
         ),
+    }
+
+
+def _empty_not_needed_recon_requirement() -> dict[str, Any]:
+    """Mechanical empty recon carrier for non-primary strategies of one component."""
+
+    return {
+        "posture": "not_needed",
+        "unresolved_dimension_ids": [],
+        "candidate_queries": [],
+        "required_for_truthful_targeting": False,
     }
 
 

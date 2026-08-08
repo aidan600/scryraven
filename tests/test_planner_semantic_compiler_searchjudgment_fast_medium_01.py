@@ -477,6 +477,88 @@ def test_scout_case_f_no_mechanical_authorship_in_recon() -> None:
     assert "mechanical identity" in message or "unknown fields" in message
 
 
+def _direct_semantic_proposal_with_secondary() -> dict[str, Any]:
+    proposal = _direct_semantic_proposal()
+    proposal["components"][0]["search"]["secondary_query"] = {
+        "text": "Example Permit official filing threshold 2026 site:gov",
+        "role": "official_bias",
+        "justification": (
+            "Secondary official-domain probe remains distinct from the primary "
+            "threshold query."
+        ),
+    }
+    return proposal
+
+
+def test_primary_secondary_one_recon_attaches_actionable_payload_to_primary_only() -> None:
+    proposal = _with_recon(
+        _direct_semantic_proposal_with_secondary(),
+        {
+            "posture": "required",
+            "dimensions": [
+                {
+                    "kind": "entity_identity",
+                    "query": "Old Example New Example identity",
+                }
+            ],
+        },
+    )
+    rich = accept_planner_model_output(proposal)
+    strategies = rich["component_search_requirements"][0]["metadata"][
+        "query_strategy_candidates"
+    ]
+    assert len(strategies) == 2
+    primary_recon = strategies[0]["recon_requirement"]
+    secondary_recon = strategies[1]["recon_requirement"]
+    assert strategies[0]["candidate_kind"] == "primary"
+    assert strategies[1]["candidate_kind"] == "secondary"
+    assert primary_recon["posture"] == "required"
+    assert primary_recon["unresolved_dimension_ids"] == [
+        "dimension:01:01:entity_identity"
+    ]
+    assert primary_recon["candidate_queries"] == [
+        {
+            "dimension_id": "dimension:01:01:entity_identity",
+            "candidate_query_text": "Old Example New Example identity",
+            "query_kind": "all_time",
+        }
+    ]
+    assert primary_recon["required_for_truthful_targeting"] is True
+    assert secondary_recon == {
+        "posture": "not_needed",
+        "unresolved_dimension_ids": [],
+        "candidate_queries": [],
+        "required_for_truthful_targeting": False,
+    }
+
+
+def test_conflicting_repeated_recon_identity_structurally_impossible_from_compiler() -> None:
+    proposal = _with_recon(
+        _direct_semantic_proposal_with_secondary(),
+        {
+            "posture": "optional",
+            "dimensions": [
+                {
+                    "kind": "entity_identity",
+                    "query": "Example identity probe",
+                }
+            ],
+        },
+    )
+    rich = accept_planner_model_output(proposal)
+    strategies = rich["component_search_requirements"][0]["metadata"][
+        "query_strategy_candidates"
+    ]
+    actionable = [
+        candidate
+        for strategy in strategies
+        for candidate in strategy["recon_requirement"]["candidate_queries"]
+    ]
+    dimension_ids = [item["dimension_id"] for item in actionable]
+    assert dimension_ids == ["dimension:01:01:entity_identity"]
+    assert len(dimension_ids) == len(set(dimension_ids))
+
+
 def test_planner_burden_reduction_floors() -> None:
     schema = SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA
     static_chars = len(json.dumps(schema, sort_keys=True, separators=(",", ":")))
