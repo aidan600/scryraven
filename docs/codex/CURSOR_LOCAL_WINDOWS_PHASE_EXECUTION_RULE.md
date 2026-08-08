@@ -76,15 +76,18 @@ environment variable to redirect it.
 
 ## Deterministic phase close
 
+After the phase PR merges, use the repository-owned merged-phase cleanup command
+rather than reconstructing an ad-hoc PowerShell cleanup sequence. See
+[Post-merge local phase cleanup](ARCHITECTURE_GROOVE_PLAYBOOK.md#post-merge-local-phase-cleanup)
+and [Windows Sandbox Publication Rule](CODEX_LOCAL_WINDOWS_SANDBOX_PUBLICATION_RULE.md).
+
+Pre-cleanup operator checklist remains:
+
 1. Finish or stop all phase commands.
 2. Record the expected Git status and final commit.
 3. Re-root Cursor and terminal working directories away from `Worktree`.
-4. Confirm no generated cache, temporary, log, DB, or output trees exist beneath
-   `Worktree`.
-5. Preserve `Evidence` and `Final`.
-6. Remove the clean worktree without force.
-7. Prune worktree metadata.
-8. Remove only the exact sibling `Cache` and `Tmp` paths when authorized.
-9. Treat branch deletion as a separate maintainer-authorized action.
-10. On a lock, path, or cleanup failure, stop and report. Do not improvise with
-    force removal, long-path deletion, process killing, reset, or clean.
+4. Confirm the exact reviewed head, phase branch, and phase root before invoking
+   `scripts/cleanup_merged_phase.ps1`.
+5. Troubleshoot only from the helper's safe blocker output. Do not improvise with
+   force removal, long-path deletion, process killing, reset, clean, `-D`, or
+   `worktree remove --force`.
