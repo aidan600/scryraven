@@ -16,6 +16,7 @@ from core.query_plan_runtime_adapter import build_query_plan_runtime_adapter
 from core.query_production_runtime import (
     QUERY_PRODUCTION_STAGE,
     QueryStrategyConvergenceError,
+    _recon_work_by_component,
     _strategies_with_authorized_revisions,
     execute_initial_query_strategy_convergence,
     execute_query_plan_admission_action,
@@ -30,6 +31,7 @@ from core.run_kernel import (
     RunKernel,
     RunStageStatus,
 )
+from core.search_planner_model_adapter import accept_planner_model_output
 from core.search_planner_runtime import SEARCH_PLANNER_SCHEMA_VERSION
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -560,6 +562,153 @@ def test_optional_recon_unavailable_retains_conservative_primary() -> None:
     assert convergence.recon_summary[0]["status"] == ("optional_unavailable_primary_strategy_retained")
     assert kernel.state.scout_disambiguation_report_state == {}
     assert len(admission.current_queries) == 1
+
+
+def _semantic_primary_secondary_recon_proposal(
+    *,
+    posture: str,
+    dimensions: list[dict[str, str]],
+) -> dict[str, Any]:
+    return {
+        "interpretation": (
+            "Resolve Example identity before answering the official filing threshold."
+        ),
+        "components": [
+            {
+                "purpose": "user_facing_answer_target",
+                "label": "Official threshold",
+                "question": (
+                    "What is the official current filing threshold for the requested program?"
+                ),
+                "requirement_posture": "required",
+                "acceptance_criteria": [
+                    "state the threshold",
+                    "bind the answer to an official current source",
+                ],
+                "support_kinds": ["direct"],
+                "materiality": "material",
+                "slots": [
+                    {
+                        "kind": "entity",
+                        "status": "explicit",
+                        "selected_value": "Example Permit",
+                        "materiality": "material",
+                    }
+                ],
+                "source": {"kind": "official_current", "strictness": "required"},
+                "search": {
+                    "summary": "Find the official current source for the threshold.",
+                    "preferred_source_kinds": ["official"],
+                    "primary_query": {
+                        "text": "Example Permit official filing threshold 2026",
+                        "role": "official_bias",
+                    },
+                    "secondary_query": {
+                        "text": "Example Permit official filing threshold 2026 site:gov",
+                        "role": "canonical_bias",
+                        "justification": (
+                            "Secondary canonical-domain probe remains distinct from "
+                            "the primary official threshold query."
+                        ),
+                    },
+                    "recon": {
+                        "posture": posture,
+                        "dimensions": dimensions,
+                    },
+                },
+            }
+        ],
+        "material_ambiguity": "directional_recon_optional",
+    }
+
+
+def test_semantic_primary_secondary_one_recon_aggregates_to_single_component_workload() -> None:
+    rich = accept_planner_model_output(
+        _semantic_primary_secondary_recon_proposal(
+            posture="optional",
+            dimensions=[
+                {
+                    "kind": "entity_identity",
+                    "query": "Old Example New Example identity",
+                }
+            ],
+        )
+    )
+    strategies = rich["component_search_requirements"][0]["metadata"][
+        "query_strategy_candidates"
+    ]
+    assert len(strategies) == 2
+    work = _recon_work_by_component(
+        strategies,
+        policy=DEFAULT_INITIAL_QUERY_ALLOCATION_POLICY,
+    )
+    component_id = rich["answer_components"][0]["component_id"]
+    assert set(work) == {component_id}
+    component_work = work[component_id]
+    assert component_work["posture"] == "optional"
+    assert component_work["unresolved_dimension_ids"] == [
+        "dimension:01:01:entity_identity"
+    ]
+    assert component_work["candidate_queries"] == [
+        {
+            "dimension_id": "dimension:01:01:entity_identity",
+            "candidate_query_text": "Old Example New Example identity",
+            "query_kind": "all_time",
+        }
+    ]
+
+    kernel, convergence = _converge(rich)
+    assert convergence.recon_summary[0]["status"] == (
+        "optional_unavailable_primary_strategy_retained"
+    )
+    assert len(convergence.recon_summary) == 1
+
+
+def test_semantic_primary_secondary_two_distinct_recon_dimensions_are_preserved() -> None:
+    rich = accept_planner_model_output(
+        _semantic_primary_secondary_recon_proposal(
+            posture="optional",
+            dimensions=[
+                {
+                    "kind": "entity_identity",
+                    "query": "Old Example New Example identity",
+                },
+                {
+                    "kind": "time_version_currentness",
+                    "query": "Example Permit current 2026 threshold version",
+                },
+            ],
+        )
+    )
+    strategies = rich["component_search_requirements"][0]["metadata"][
+        "query_strategy_candidates"
+    ]
+    work = _recon_work_by_component(
+        strategies,
+        policy=DEFAULT_INITIAL_QUERY_ALLOCATION_POLICY,
+    )
+    component_id = rich["answer_components"][0]["component_id"]
+    component_work = work[component_id]
+    assert component_work["unresolved_dimension_ids"] == [
+        "dimension:01:01:entity_identity",
+        "dimension:01:02:time_version_currentness",
+    ]
+    assert component_work["candidate_queries"] == [
+        {
+            "dimension_id": "dimension:01:01:entity_identity",
+            "candidate_query_text": "Old Example New Example identity",
+            "query_kind": "all_time",
+        },
+        {
+            "dimension_id": "dimension:01:02:time_version_currentness",
+            "candidate_query_text": "Example Permit current 2026 threshold version",
+            "query_kind": "recent_current",
+        },
+    ]
+    kernel, convergence = _converge(rich)
+    assert convergence.recon_summary[0]["status"] == (
+        "optional_unavailable_primary_strategy_retained"
+    )
 
 
 def test_required_identity_recon_without_adapter_fails_before_query_production() -> None:
