@@ -199,6 +199,10 @@ def test_forbidden_git_tokens_absent_from_engine_source() -> None:
     # Ensure we never construct a force worktree-remove call site.
     assert "worktree remove --force" not in source or "forbidden" in source
     assert '["worktree", "remove", "--force"' not in source.split("if ")[0]
+    # Python 3.11 compatibility: no pathlib follow_symlinks keyword forms.
+    assert re.search(r"\.(?:exists|is_dir|is_file)\(\s*follow_symlinks\s*=", source) is None
+    assert "lexists_no_follow" in source
+    assert "is_dir_no_follow" in source
 
 
 def test_case_a_ordinary_merged_phase(tmp_path: Path) -> None:
@@ -584,3 +588,91 @@ def test_runtime_guards_refuse_force_branch_delete(tmp_path: Path) -> None:
         mod.run_git(fx.repo, ["reset", "--hard"])
     with pytest.raises(mod.CleanupBlocked):
         mod.run_git(fx.repo, ["rebase", "origin/main"])
+
+
+def test_case_w_unrelated_registered_worktree_at_expected_path(tmp_path: Path) -> None:
+    """Expected path occupied by clean unrelated registered worktree must fail closed."""
+    fx = build_merged_phase_fixture(tmp_path)
+    _git(fx.repo, "worktree", "remove", str(fx.phase_worktree))
+    _git(fx.repo, "branch", "unrelated-branch", "main")
+    _git(fx.repo, "worktree", "add", str(fx.phase_worktree), "unrelated-branch")
+    # Ignored artifact inside the unrelated worktree must not be deleted.
+    cache = fx.phase_worktree / ".pytest_cache"
+    cache.mkdir()
+    marker = cache / "keep.bin"
+    marker.write_bytes(b"keep")
+
+    tip = _git(fx.repo, "rev-parse", f"refs/heads/{fx.phase_branch}").stdout.strip().lower()
+    assert tip == fx.reviewed_head
+
+    result = run_cleanup(fx)
+    assert result.returncode == 9, result.stdout + result.stderr
+    assert "worktree identity gate = failed" in result.stdout
+    assert f"refs/heads/{fx.phase_branch}" in result.stdout
+    assert "refs/heads/unrelated-branch" in result.stdout
+    assert fx.reviewed_head in result.stdout
+    assert fx.phase_worktree.exists()
+    assert marker.exists()
+    assert _git(
+        fx.repo, "show-ref", "--verify", "--quiet", f"refs/heads/{fx.phase_branch}", check=False
+    ).returncode == 0
+    assert fx.phase_root.exists()
+    assert "removed phase worktree" not in result.stdout
+    assert "deleted phase branch" not in result.stdout
+
+
+def test_case_x_detached_or_wrong_worktree_head(tmp_path: Path) -> None:
+    """Detached expected-path worktree, and matching-branch/wrong-HEAD entries, fail closed."""
+    fx = build_merged_phase_fixture(tmp_path)
+    old_main = _git(fx.repo, "rev-parse", "main").stdout.strip().lower()
+    assert old_main != fx.reviewed_head
+    _git(fx.repo, "worktree", "remove", str(fx.phase_worktree))
+    _git(fx.repo, "worktree", "add", "--detach", str(fx.phase_worktree), old_main)
+
+    result = run_cleanup(fx)
+    assert result.returncode == 9, result.stdout + result.stderr
+    assert "worktree identity gate = failed" in result.stdout
+    assert fx.phase_worktree.exists()
+    assert _git(
+        fx.repo, "show-ref", "--verify", "--quiet", f"refs/heads/{fx.phase_branch}", check=False
+    ).returncode == 0
+    assert fx.phase_root.exists()
+
+    # Direct gate proof: correct branch field with wrong HEAD still fails closed.
+    sys.path.insert(0, str(ENGINE.parent))
+    import cleanup_merged_phase as mod
+
+    report = mod.CleanupReport()
+    with pytest.raises(mod.CleanupBlocked) as raised:
+        mod.prove_registered_worktree_identity(
+            {
+                "worktree": str(fx.phase_worktree),
+                "branch": f"refs/heads/{fx.phase_branch}",
+                "HEAD": "0" * 40,
+            },
+            phase_worktree=fx.phase_worktree,
+            phase_branch=fx.phase_branch,
+            reviewed_head=fx.reviewed_head,
+            report=report,
+        )
+    assert raised.value.code == mod.EXIT_WORKTREE_IDENTITY
+    assert "worktree identity gate = failed" in raised.value.message
+    assert report.worktree_identity == "failed"
+
+
+def test_case_y_invalid_cli_invocation_exit_matches_summary() -> None:
+    """Invalid CLI invocation must print Exit code matching the process return code."""
+    result = subprocess.run(
+        [sys.executable, str(ENGINE)],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        shell=False,
+    )
+    assert result.returncode != 0
+    assert "Result: safely blocked" in result.stdout
+    assert f"Exit code: {result.returncode}" in result.stdout
+    assert "invalid arguments" in result.stdout.lower()
+    assert result.returncode == 1

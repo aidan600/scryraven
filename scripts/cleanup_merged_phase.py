@@ -27,6 +27,7 @@ EXIT_GIT_OP = 5
 EXIT_PATH_BOUNDARY = 6
 EXIT_REVIEW_IDENTITY = 7
 EXIT_INVARIANT = 8
+EXIT_WORKTREE_IDENTITY = 9
 
 SHA40_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 
@@ -78,6 +79,7 @@ class CleanupReport:
     origin_main: str = ""
     merge_gate: str = ""
     review_identity: str = ""
+    worktree_identity: str = ""
     actions: list[str] = field(default_factory=list)
     final_branch: str = ""
     final_status: str = ""
@@ -114,6 +116,7 @@ class CleanupReport:
             f"origin/main: {self.origin_main}",
             f"Merge gate result: {self.merge_gate}",
             f"Review identity result: {self.review_identity}",
+            f"Worktree identity result: {self.worktree_identity}",
             "Actions performed:",
         ]
         if self.actions:
@@ -197,6 +200,31 @@ def is_strict_descendant(parent: Path, child: Path) -> bool:
         return False
 
 
+def lexists_no_follow(path: Path) -> bool:
+    """True if path exists as a directory entry without following links."""
+    try:
+        os.lstat(path)
+    except (FileNotFoundError, NotADirectoryError):
+        return False
+    except OSError:
+        return False
+    return True
+
+
+def is_dir_no_follow(path: Path) -> bool:
+    """True if path is a real directory, not a symlink/reparse, without following."""
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return False
+    if stat.S_ISLNK(st.st_mode):
+        return False
+    attrs = getattr(st, "st_file_attributes", 0)
+    if attrs & FILE_ATTRIBUTE_REPARSE_POINT:
+        return False
+    return stat.S_ISDIR(st.st_mode)
+
+
 def is_reparse_or_symlink(path: Path) -> bool:
     try:
         st = os.lstat(path)
@@ -211,7 +239,7 @@ def is_reparse_or_symlink(path: Path) -> bool:
 
 
 def reject_reparse(path: Path, label: str) -> None:
-    if path.exists(follow_symlinks=False) and is_reparse_or_symlink(path):
+    if lexists_no_follow(path) and is_reparse_or_symlink(path):
         raise CleanupBlocked(
             EXIT_UNSAFE_FS,
             f"{label} is a symlink/junction/reparse point: {path}",
@@ -356,7 +384,7 @@ def prove_phase_path_boundaries(
         ("phase root", root_n),
         ("phase worktree", wt_n),
     ):
-        if path.exists(follow_symlinks=False):
+        if lexists_no_follow(path):
             reject_reparse(path, label)
             # Also reject reparse on each existing ancestor component under parent.
             _reject_reparse_components(path, stop_at=parent_n.parent)
@@ -368,7 +396,7 @@ def _reject_reparse_components(path: Path, *, stop_at: Path) -> None:
     current = lexical_normalize(path)
     stop = lexical_normalize(stop_at)
     while True:
-        if current.exists(follow_symlinks=False):
+        if lexists_no_follow(current):
             reject_reparse(current, f"path component {current}")
         if paths_equal(current, stop) or current.parent == current:
             break
@@ -590,10 +618,10 @@ def list_dirty_and_untracked(worktree: Path) -> tuple[list[str], list[str]]:
 
 def _rmtree_no_follow(path: Path) -> None:
     """Recursively delete without following symlinks/reparse points."""
-    if not path.exists(follow_symlinks=False):
+    if not lexists_no_follow(path):
         return
     reject_reparse(path, "delete target")
-    if path.is_dir(follow_symlinks=False) and not path.is_symlink():
+    if is_dir_no_follow(path) and not path.is_symlink():
         # Walk top-down; reject any reparse/symlink entry before descending.
         for root, dirs, files in os.walk(path, topdown=True, followlinks=False):
             root_path = Path(root)
@@ -643,18 +671,72 @@ def remove_allowlisted_ignored(worktree: Path, ignored: Iterable[str], report: C
             tops.add(str(Path(*parts[: idx + 1])))
     for top in sorted(tops, key=lambda s: s.count("/"), reverse=True):
         target = worktree / top
-        if target.exists(follow_symlinks=False):
+        if lexists_no_follow(target):
             _rmtree_no_follow(target)
             report.add_action(f"removed allowlisted ignored path: {top}")
 
 
+def prove_registered_worktree_identity(
+    entry: dict[str, str],
+    *,
+    phase_worktree: Path,
+    phase_branch: str,
+    reviewed_head: str,
+    report: CleanupReport,
+) -> None:
+    """Bind registered worktree path/branch/HEAD to the exact reviewed phase."""
+    expected_branch = f"refs/heads/{phase_branch}"
+    expected_head = reviewed_head.lower()
+    registered_path = entry.get("worktree", "")
+    registered_branch = entry.get("branch", "")
+    registered_head = (entry.get("HEAD") or "").strip().lower()
+    detached = "detached" in entry and not registered_branch
+
+    def _fail(reason: str) -> None:
+        report.worktree_identity = "failed"
+        raise CleanupBlocked(
+            EXIT_WORKTREE_IDENTITY,
+            "worktree identity gate = failed: "
+            f"{reason}; "
+            f"expected phase branch={expected_branch}; "
+            f"registered worktree branch={registered_branch or ('detached' if detached else '(missing)')}; "
+            f"expected reviewed head={expected_head}; "
+            f"registered worktree HEAD={registered_head or '(missing)'}",
+        )
+
+    if not registered_path:
+        _fail("registered worktree path missing")
+    if not paths_equal(lexical_normalize(Path(registered_path)), phase_worktree):
+        _fail("registered worktree path does not match expected phase worktree")
+    if detached or not registered_branch:
+        _fail("registered worktree is detached or missing branch field")
+    if registered_branch != expected_branch:
+        _fail("registered worktree branch does not equal expected phase branch")
+    if not registered_head:
+        _fail("registered worktree HEAD missing")
+    if registered_head != expected_head:
+        _fail("registered worktree HEAD does not equal reviewed head")
+
+    report.worktree_identity = "passed"
+    report.add_action(
+        "worktree identity passed: "
+        f"path={phase_worktree}; branch={expected_branch}; HEAD={expected_head}"
+    )
+
+
 def cleanup_phase_worktree(
-    repo: Path, phase_worktree: Path, report: CleanupReport
+    repo: Path,
+    phase_worktree: Path,
+    *,
+    phase_branch: str,
+    reviewed_head: str,
+    report: CleanupReport,
 ) -> None:
     entry, _entries = find_worktree_entry(repo, phase_worktree)
-    path_exists = phase_worktree.exists(follow_symlinks=False)
+    path_exists = lexists_no_follow(phase_worktree)
 
     if entry is None and not path_exists:
+        report.worktree_identity = "satisfied (phase worktree absent)"
         report.add_action("phase worktree already absent (satisfied)")
         return
 
@@ -671,7 +753,8 @@ def cleanup_phase_worktree(
         _ = prune
         report.add_action("pruned stale worktree metadata (path absent)")
         entry2, _ = find_worktree_entry(repo, phase_worktree)
-        if entry2 is None and not phase_worktree.exists(follow_symlinks=False):
+        if entry2 is None and not lexists_no_follow(phase_worktree):
+            report.worktree_identity = "satisfied (phase worktree absent)"
             report.add_action("phase worktree absent after prune (satisfied)")
             return
         raise CleanupBlocked(
@@ -680,13 +763,14 @@ def cleanup_phase_worktree(
         )
 
     reject_reparse(phase_worktree, "phase worktree")
-    # Confirm registered path matches expected target.
-    registered = lexical_normalize(Path(entry["worktree"]))
-    if not paths_equal(registered, phase_worktree):
-        raise CleanupBlocked(
-            EXIT_PATH_BOUNDARY,
-            "registered worktree path does not match expected phase worktree",
-        )
+    # Identity gate must pass before any ignored-artifact deletion or removal.
+    prove_registered_worktree_identity(
+        entry,
+        phase_worktree=phase_worktree,
+        phase_branch=phase_branch,
+        reviewed_head=reviewed_head,
+        report=report,
+    )
 
     dirty, untracked = list_dirty_and_untracked(phase_worktree)
     if dirty:
@@ -739,11 +823,11 @@ def delete_phase_branch(repo: Path, phase_branch: str, report: CleanupReport) ->
 
 
 def cleanup_phase_root(phase_root: Path, report: CleanupReport) -> None:
-    if not phase_root.exists(follow_symlinks=False):
+    if not lexists_no_follow(phase_root):
         report.add_action("phase root already absent (satisfied)")
         return
     reject_reparse(phase_root, "phase root")
-    if not phase_root.is_dir(follow_symlinks=False):
+    if not is_dir_no_follow(phase_root):
         raise CleanupBlocked(
             EXIT_UNSAFE_FS,
             f"phase root exists but is not a directory: {phase_root}",
@@ -774,7 +858,7 @@ def cleanup_phase_root(phase_root: Path, report: CleanupReport) -> None:
         report.add_action(f"removed phase-root disposable child: {name}")
 
     # Remove phase root only when empty.
-    remaining = list(phase_root.iterdir()) if phase_root.exists(follow_symlinks=False) else []
+    remaining = list(phase_root.iterdir()) if lexists_no_follow(phase_root) else []
     if remaining:
         raise CleanupBlocked(
             EXIT_UNSAFE_FS,
@@ -820,12 +904,12 @@ def verify_final_invariants(
     ).ok
     report.phase_branch_exists = "yes" if branch_exists else "no"
     wt_registered, _ = find_worktree_entry(repo, phase_worktree)
-    wt_exists = phase_worktree.exists(follow_symlinks=False)
+    wt_exists = lexists_no_follow(phase_worktree)
     report.phase_worktree_exists = (
         "yes" if (wt_registered is not None or wt_exists) else "no"
     )
     report.phase_root_exists = (
-        "yes" if phase_root.exists(follow_symlinks=False) else "no"
+        "yes" if lexists_no_follow(phase_root) else "no"
     )
 
     blockers: list[str] = []
@@ -849,7 +933,7 @@ def verify_final_invariants(
         blockers.append(f"phase branch still exists: {phase_branch}")
     if wt_registered is not None or wt_exists:
         blockers.append(f"phase worktree still present: {phase_worktree}")
-    if phase_root.exists(follow_symlinks=False):
+    if lexists_no_follow(phase_root):
         blockers.append(f"phase root still present: {phase_root}")
 
     if blockers:
@@ -862,7 +946,13 @@ def verify_final_invariants(
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    class _CleanupArgumentParser(argparse.ArgumentParser):
+        """Convert argparse usage errors into controlled CleanupBlocked failures."""
+
+        def error(self, message: str) -> None:  # type: ignore[override]
+            raise CleanupBlocked(EXIT_USAGE, f"invalid arguments: {message}")
+
+    parser = _CleanupArgumentParser(
         description="Safely clean one explicitly identified merged ScryRaven phase.",
         allow_abbrev=False,
     )
@@ -933,7 +1023,13 @@ def run_cleanup(argv: Sequence[str] | None = None) -> int:
         sync_main_ff_only(repo, remote, main_branch, report)
         review_identity_gate(repo, phase_branch, reviewed_head, report)
 
-        cleanup_phase_worktree(repo, phase_worktree, report)
+        cleanup_phase_worktree(
+            repo,
+            phase_worktree,
+            phase_branch=phase_branch,
+            reviewed_head=reviewed_head,
+            report=report,
+        )
         delete_phase_branch(repo, phase_branch, report)
         cleanup_phase_root(phase_root, report)
 
@@ -1006,12 +1102,12 @@ def run_cleanup(argv: Sequence[str] | None = None) -> int:
                         pwt = Path(report.phase_worktree)
                         reg, _ = find_worktree_entry(repo_path, pwt)
                         report.phase_worktree_exists = (
-                            "yes" if reg is not None or pwt.exists(follow_symlinks=False) else "no"
+                            "yes" if reg is not None or lexists_no_follow(pwt) else "no"
                         )
                     if report.phase_root:
                         report.phase_root_exists = (
                             "yes"
-                            if Path(report.phase_root).exists(follow_symlinks=False)
+                            if lexists_no_follow(Path(report.phase_root))
                             else "no"
                         )
                     if not report.final_origin_main and report.remote and report.main_branch:
