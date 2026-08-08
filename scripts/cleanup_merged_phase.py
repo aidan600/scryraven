@@ -37,6 +37,7 @@ WORKTREE_DISPOSABLE_TOPS = frozenset(
 PHASE_ROOT_DISPOSABLE_CHILDREN = frozenset({"cache", "tmp", "evidence", "final"})
 
 FILE_ATTRIBUTE_REPARSE_POINT = 0x400
+FILE_ATTRIBUTE_READONLY = 0x1
 
 
 class CleanupBlocked(Exception):
@@ -729,15 +730,64 @@ def _rmtree_phase_root_disposable_child(path: Path) -> None:
                     f"unable to remove disposable directory {entry}: {exc}",
                 ) from exc
             return
-        try:
-            entry.unlink()
-        except OSError as exc:
-            raise CleanupBlocked(
-                EXIT_UNSAFE_FS,
-                f"unable to remove disposable file {entry}: {exc}",
-            ) from exc
+        _unlink_phase_root_regular_file(entry, st)
 
     _delete_entry(path)
+
+
+
+
+def _unlink_phase_root_regular_file(path: Path, st: os.stat_result) -> None:
+    """Unlink an authorized phase-root disposable regular file.
+
+    On Windows, if the first unlink fails and the file mechanically carries
+    FILE_ATTRIBUTE_READONLY, clear only that bit and retry unlink once.
+    Generic PermissionError without a proven read-only attribute fails closed.
+    """
+    if is_reparse_or_symlink(path):
+        raise CleanupBlocked(
+            EXIT_UNSAFE_FS,
+            f"refusing unlink of reparse/symlink as regular file: {path}",
+        )
+    if not stat.S_ISREG(st.st_mode):
+        raise CleanupBlocked(
+            EXIT_UNSAFE_FS,
+            f"refusing non-regular disposable entry as file: {path}",
+        )
+    try:
+        path.unlink()
+        return
+    except OSError as first_exc:
+        # Re-inspect without following links; unknown state remains fail-closed.
+        st2 = _lstat_no_follow(path)
+        if st2 is None:
+            return
+        if is_reparse_or_symlink(path) or not stat.S_ISREG(st2.st_mode):
+            raise CleanupBlocked(
+                EXIT_UNSAFE_FS,
+                f"unable to remove disposable file {path}: {first_exc}",
+            ) from first_exc
+        attrs = getattr(st2, "st_file_attributes", 0)
+        if os.name != "nt" or not (attrs & FILE_ATTRIBUTE_READONLY):
+            raise CleanupBlocked(
+                EXIT_UNSAFE_FS,
+                f"unable to remove disposable file {path}: {first_exc}",
+            ) from first_exc
+        try:
+            # Clear only the Windows read-only posture; do not alter ACLs/ownership.
+            os.chmod(path, stat.S_IWRITE)
+        except OSError as chmod_exc:
+            raise CleanupBlocked(
+                EXIT_UNSAFE_FS,
+                f"unable to clear read-only attribute on disposable file {path}: {chmod_exc}",
+            ) from chmod_exc
+        try:
+            path.unlink()
+        except OSError as retry_exc:
+            raise CleanupBlocked(
+                EXIT_UNSAFE_FS,
+                f"unable to remove disposable file after clearing read-only {path}: {retry_exc}",
+            ) from retry_exc
 
 
 def remove_allowlisted_ignored(worktree: Path, ignored: Iterable[str], report: CleanupReport) -> None:
