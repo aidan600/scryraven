@@ -626,7 +626,10 @@ def list_dirty_and_untracked(worktree: Path) -> tuple[list[str], list[str]]:
 
 
 def _rmtree_no_follow(path: Path) -> None:
-    """Recursively delete without following symlinks/reparse points."""
+    """Recursively delete worktree ignored artifacts without following links.
+
+    Any nested symlink/junction/reparse under an ignored worktree path fails closed.
+    """
     if not lexists_no_follow(path):
         return
     reject_reparse(path, "delete target")
@@ -655,6 +658,86 @@ def _rmtree_no_follow(path: Path) -> None:
         shutil.rmtree(path)
     else:
         path.unlink()
+
+
+def _remove_link_object_no_follow(path: Path) -> None:
+    """Remove a symlink/junction/reparse leaf object without traversing its target."""
+    if not is_reparse_or_symlink(path):
+        raise CleanupBlocked(
+            EXIT_UNSAFE_FS,
+            f"expected symlink/junction/reparse leaf at {path}",
+        )
+    # Symlinks usually unlink; Windows directory junctions typically need rmdir.
+    try:
+        os.unlink(path)
+        return
+    except OSError:
+        pass
+    try:
+        os.rmdir(path)
+        return
+    except OSError as exc:
+        raise CleanupBlocked(
+            EXIT_UNSAFE_FS,
+            f"unable to remove nested link/reparse object without traversal: {path}: {exc}",
+        ) from exc
+
+
+def _rmtree_phase_root_disposable_child(path: Path) -> None:
+    """Delete a real phase-root disposable child.
+
+    The immediate path must be a normal directory (not a reparse). Nested
+    symlink/junction/reparse entries are removed as leaf link objects only —
+    never enumerated or followed into their targets.
+    """
+    if not lexists_no_follow(path):
+        return
+    if is_reparse_or_symlink(path):
+        raise CleanupBlocked(
+            EXIT_UNSAFE_FS,
+            f"phase-root disposable child is symlink/reparse: {path}",
+        )
+    if not is_dir_no_follow(path):
+        raise CleanupBlocked(
+            EXIT_UNSAFE_FS,
+            f"phase-root disposable child is not a directory: {path}",
+        )
+
+    def _delete_entry(entry: Path) -> None:
+        st = _lstat_no_follow(entry)
+        if st is None:
+            return
+        # Identify links before any directory enumeration to avoid target traversal.
+        if is_reparse_or_symlink(entry):
+            _remove_link_object_no_follow(entry)
+            return
+        if stat.S_ISDIR(st.st_mode):
+            try:
+                children = list(entry.iterdir())
+            except OSError as exc:
+                raise CleanupBlocked(
+                    EXIT_UNSAFE_FS,
+                    f"unable to enumerate disposable path {entry}: {exc}",
+                ) from exc
+            for child in children:
+                _delete_entry(child)
+            try:
+                entry.rmdir()
+            except OSError as exc:
+                raise CleanupBlocked(
+                    EXIT_UNSAFE_FS,
+                    f"unable to remove disposable directory {entry}: {exc}",
+                ) from exc
+            return
+        try:
+            entry.unlink()
+        except OSError as exc:
+            raise CleanupBlocked(
+                EXIT_UNSAFE_FS,
+                f"unable to remove disposable file {entry}: {exc}",
+            ) from exc
+
+    _delete_entry(path)
 
 
 def remove_allowlisted_ignored(worktree: Path, ignored: Iterable[str], report: CleanupReport) -> None:
@@ -862,8 +945,9 @@ def cleanup_phase_root(phase_root: Path, report: CleanupReport) -> None:
                 EXIT_UNSAFE_FS,
                 f"phase-root child is symlink/reparse: {child}",
             )
-        # Reject reparse anywhere underneath, then remove without reading contents.
-        _rmtree_no_follow(child)
+        # Immediate child is a real directory. Nested link/reparse leaves may be
+        # removed as objects without following their targets.
+        _rmtree_phase_root_disposable_child(child)
         report.add_action(f"removed phase-root disposable child: {name}")
 
     # Remove phase root only when empty.
