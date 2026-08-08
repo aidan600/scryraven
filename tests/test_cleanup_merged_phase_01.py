@@ -732,3 +732,53 @@ def test_case_z_indeterminate_lstat_fails_closed(
     assert "removed allowlisted ignored path" not in captured
     assert "removed phase worktree" not in captured
     assert "deleted phase branch" not in captured
+
+
+def test_case_aa_nested_phase_root_reparse_leaf_removal(tmp_path: Path) -> None:
+    """Nested junction under real phase-root\\tmp is removed without traversing target."""
+    fx = build_merged_phase_fixture(tmp_path)
+    _git(fx.repo, "worktree", "remove", str(fx.phase_worktree))
+    _git(fx.repo, "merge", "--ff-only", "origin/main")
+    _git(fx.repo, "branch", "-d", "--", fx.phase_branch)
+
+    external = tmp_path / "external-target"
+    external.mkdir()
+    precious = external / "precious.txt"
+    precious.write_text("do-not-delete\n", encoding="utf-8")
+
+    nested = fx.phase_root / "tmp" / "pytest-output" / "fixture" / "worktree"
+    nested.mkdir(parents=True, exist_ok=True)
+    _try_link_dir(nested / "tmp", external)
+
+    result = run_cleanup(fx)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not fx.phase_root.exists()
+    assert external.exists()
+    assert precious.exists()
+    assert precious.read_text(encoding="utf-8") == "do-not-delete\n"
+    assert "safely blocked" not in result.stdout
+
+
+def test_case_ab_immediate_phase_root_tmp_reparse_fails_closed(tmp_path: Path) -> None:
+    """phase-root\\tmp as an immediate junction/symlink must still fail closed."""
+    fx = build_merged_phase_fixture(tmp_path)
+    _git(fx.repo, "worktree", "remove", str(fx.phase_worktree))
+    _git(fx.repo, "merge", "--ff-only", "origin/main")
+    _git(fx.repo, "branch", "-d", "--", fx.phase_branch)
+
+    external = tmp_path / "external-target"
+    external.mkdir()
+    precious = external / "precious.txt"
+    precious.write_text("do-not-delete\n", encoding="utf-8")
+
+    link = fx.phase_root / "tmp"
+    _try_link_dir(link, external)
+
+    result = run_cleanup(fx)
+    assert result.returncode != 0
+    assert "Result: safely blocked" in result.stdout
+    assert "symlink/reparse" in result.stdout.lower()
+    assert link.exists()
+    assert external.exists()
+    assert precious.exists()
+    assert precious.read_text(encoding="utf-8") == "do-not-delete\n"
