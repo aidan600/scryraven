@@ -676,3 +676,59 @@ def test_case_y_invalid_cli_invocation_exit_matches_summary() -> None:
     assert f"Exit code: {result.returncode}" in result.stdout
     assert "invalid arguments" in result.stdout.lower()
     assert result.returncode == 1
+
+
+def test_case_z_indeterminate_lstat_fails_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Unexpected os.lstat errors must fail closed, never look like absence."""
+    fx = build_merged_phase_fixture(tmp_path)
+    cache = fx.phase_worktree / ".pytest_cache"
+    cache.mkdir()
+    marker = cache / "keep.bin"
+    marker.write_bytes(b"keep")
+
+    sys.path.insert(0, str(ENGINE.parent))
+    import cleanup_merged_phase as mod
+
+    real_lstat = os.lstat
+    target_key = os.path.normcase(os.path.normpath(str(fx.phase_worktree)))
+
+    def flaky_lstat(path: str | bytes | os.PathLike[str], *args: object, **kwargs: object):
+        key = os.path.normcase(os.path.normpath(os.fsdecode(path)))
+        if key == target_key or key.startswith(target_key + os.sep):
+            raise PermissionError("simulated access denied")
+        return real_lstat(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "lstat", flaky_lstat)
+    # In-process CLI path so the lstat monkeypatch is visible to the engine.
+    code = mod.run_cleanup(
+        [
+            "--reviewed-head",
+            fx.reviewed_head,
+            "--phase-branch",
+            fx.phase_branch,
+            "--phase-root",
+            str(fx.phase_root),
+            "--repo",
+            str(fx.repo),
+            "--phase-parent",
+            str(fx.phase_parent),
+        ]
+    )
+    captured = capsys.readouterr().out
+    assert code != 0
+    assert "Result: safely blocked" in captured
+    assert "indeterminate filesystem state" in captured.lower()
+    assert f"Exit code: {code}" in captured
+    assert fx.phase_worktree.exists()
+    assert marker.exists()
+    assert _git(
+        fx.repo, "show-ref", "--verify", "--quiet", f"refs/heads/{fx.phase_branch}", check=False
+    ).returncode == 0
+    assert fx.phase_root.exists()
+    assert "removed allowlisted ignored path" not in captured
+    assert "removed phase worktree" not in captured
+    assert "deleted phase branch" not in captured

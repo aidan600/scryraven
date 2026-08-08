@@ -200,22 +200,32 @@ def is_strict_descendant(parent: Path, child: Path) -> bool:
         return False
 
 
+def _lstat_no_follow(path: Path) -> os.stat_result | None:
+    """lstat without following links.
+
+    Returns None only when the path is genuinely absent.
+    Any other OSError is indeterminate and must fail closed.
+    """
+    try:
+        return os.lstat(path)
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+    except OSError as exc:
+        raise CleanupBlocked(
+            EXIT_UNSAFE_FS,
+            f"indeterminate filesystem state for {path}: {exc}",
+        ) from exc
+
+
 def lexists_no_follow(path: Path) -> bool:
     """True if path exists as a directory entry without following links."""
-    try:
-        os.lstat(path)
-    except (FileNotFoundError, NotADirectoryError):
-        return False
-    except OSError:
-        return False
-    return True
+    return _lstat_no_follow(path) is not None
 
 
 def is_dir_no_follow(path: Path) -> bool:
     """True if path is a real directory, not a symlink/reparse, without following."""
-    try:
-        st = os.lstat(path)
-    except OSError:
+    st = _lstat_no_follow(path)
+    if st is None:
         return False
     if stat.S_ISLNK(st.st_mode):
         return False
@@ -226,9 +236,8 @@ def is_dir_no_follow(path: Path) -> bool:
 
 
 def is_reparse_or_symlink(path: Path) -> bool:
-    try:
-        st = os.lstat(path)
-    except OSError:
+    st = _lstat_no_follow(path)
+    if st is None:
         return False
     if stat.S_ISLNK(st.st_mode):
         return True
