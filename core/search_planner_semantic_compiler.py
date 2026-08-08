@@ -9,11 +9,15 @@ from __future__ import annotations
 
 from typing import Any, Mapping, Sequence
 
+from core.initial_query_allocation_policy import (
+    DEFAULT_INITIAL_QUERY_ALLOCATION_POLICY,
+)
 from core.search_planner_model_prompt import (
     SEARCH_PLANNER_MODEL_COMPONENT_PURPOSES,
     SEARCH_PLANNER_MODEL_MATERIALITY_VALUES,
     SEARCH_PLANNER_MODEL_PARTIAL_ANSWER_POLICIES,
     SEARCH_PLANNER_MODEL_QUERY_ROLES,
+    SEARCH_PLANNER_MODEL_RECON_POSTURES,
     SEARCH_PLANNER_MODEL_REQUIREMENT_POSTURES,
     SEARCH_PLANNER_MODEL_SEMANTIC_SLOT_KINDS,
     SEARCH_PLANNER_MODEL_SEMANTIC_SLOT_STATUSES,
@@ -57,6 +61,11 @@ _FORBIDDEN_MECHANICAL_IDENTITY_KEYS = frozenset(
         "artifact_digest",
         "stable_ref",
         "lineage_id",
+        "dimension_id",
+        "unresolved_dimension_ids",
+        "query_kind",
+        "required_for_truthful_targeting",
+        "recon_requirement",
         "semantic_slot_ids",
         "source_obligation_candidate_ids",
         "component_candidate_ids",
@@ -64,6 +73,31 @@ _FORBIDDEN_MECHANICAL_IDENTITY_KEYS = frozenset(
         "target_component_id",
         "premise_component_ids",
     }
+)
+
+# Reuse the installed Scout ambiguity-dimension vocabulary; do not invent a new ontology.
+SEARCH_PLANNER_SEMANTIC_RECON_DIMENSION_KINDS = frozenset(
+    {
+        "entity_identity",
+        "jurisdiction",
+        "time_version_currentness",
+        "rename_alias",
+        "official_target_direction",
+        "unknown_or_other",
+    }
+)
+
+_RECON_DIMENSION_KIND_TO_QUERY_KIND = {
+    "entity_identity": "all_time",
+    "jurisdiction": "jurisdiction_probe",
+    "time_version_currentness": "recent_current",
+    "rename_alias": "alias_probe",
+    "official_target_direction": "official_domain_probe",
+    "unknown_or_other": "unknown_or_other",
+}
+
+_SEMANTIC_RECON_DIMENSION_CEILING = (
+    DEFAULT_INITIAL_QUERY_ALLOCATION_POLICY.recon_candidate_ceiling_per_affected_component
 )
 
 _FORBIDDEN_TOP_LEVEL_KEYS = frozenset(
@@ -340,7 +374,7 @@ SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA: dict[str, Any] = {
             "search": {
                 "json_type": "object",
                 "required": False,
-                "required_fields": ["summary", "primary_query"],
+                "required_fields": ["summary", "primary_query", "recon"],
                 "fields": {
                     "summary": _text_contract(
                         "component_search_requirement_summary",
@@ -378,6 +412,25 @@ SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA: dict[str, Any] = {
                             ),
                         },
                     },
+                    "recon": {
+                        "json_type": "object",
+                        "required": True,
+                        "required_fields": ["posture", "dimensions"],
+                        "fields": {
+                            "posture": _text_contract(
+                                "default_text",
+                                required=True,
+                                enum_values=SEARCH_PLANNER_MODEL_RECON_POSTURES,
+                            ),
+                            "dimensions": {
+                                "json_type": "array",
+                                "required": True,
+                                "minimum_items": 0,
+                                "maximum_items": _SEMANTIC_RECON_DIMENSION_CEILING,
+                                "item_contract": "semantic_recon_dimension",
+                            },
+                        },
+                    },
                 },
             },
             "caveats": _text_array_contract(
@@ -410,6 +463,21 @@ SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA: dict[str, Any] = {
                 "answer_component_calculation_policy",
                 required=False,
                 nonempty=False,
+            ),
+        },
+    ),
+    "semantic_recon_dimension": _object_contract(
+        required=True,
+        required_fields=("kind", "query"),
+        fields={
+            "kind": _text_contract(
+                "default_text",
+                required=True,
+                enum_values=SEARCH_PLANNER_SEMANTIC_RECON_DIMENSION_KINDS,
+            ),
+            "query": _text_contract(
+                "recon_candidate_query",
+                required=True,
             ),
         },
     ),
@@ -764,6 +832,10 @@ def compile_semantic_planner_proposal(
                     f"component {component_id} with direct support requires search"
                 )
             primary = search["primary_query"]
+            recon_requirement = _compile_recon_requirement(
+                search["recon"],
+                component_index=index,
+            )
             strategies: list[dict[str, Any]] = [
                 {
                     "strategy_id": f"strategy:{index:02d}:primary",
@@ -776,11 +848,7 @@ def compile_semantic_planner_proposal(
                         primary.get("justification")
                         or "Primary query for the accepted component."
                     ),
-                    "recon_requirement": {
-                        "posture": "not_needed",
-                        "unresolved_dimension_ids": [],
-                        "candidate_queries": [],
-                    },
+                    "recon_requirement": _copy_recon_requirement(recon_requirement),
                 }
             ]
             secondary = search.get("secondary_query")
@@ -794,11 +862,7 @@ def compile_semantic_planner_proposal(
                         "requested_role": secondary["role"],
                         "source_obligation_candidate_ids": list(obligation_ids),
                         "distinct_need_justification": secondary["justification"],
-                        "recon_requirement": {
-                            "posture": "not_needed",
-                            "unresolved_dimension_ids": [],
-                            "candidate_queries": [],
-                        },
+                        "recon_requirement": _copy_recon_requirement(recon_requirement),
                     }
                 )
             requirement: dict[str, Any] = {
@@ -1137,7 +1201,11 @@ def _validate_search(item: Mapping[str, Any], *, index: int) -> dict[str, Any]:
     )
     if justification:
         primary["justification"] = justification
-    result: dict[str, Any] = {"summary": summary, "primary_query": primary}
+    result: dict[str, Any] = {
+        "summary": summary,
+        "primary_query": primary,
+        "recon": _validate_recon(item.get("recon"), index=index),
+    }
     preferred = _optional_text_list(
         item,
         "preferred_source_kinds",
@@ -1184,6 +1252,131 @@ def _validate_search(item: Mapping[str, Any], *, index: int) -> dict[str, Any]:
             "search must not select provider/model authority: " + ", ".join(forbidden)
         )
     return result
+
+
+def _validate_recon(item: Any, *, index: int) -> dict[str, Any]:
+    if item is None:
+        raise SearchPlannerSemanticProposalError(
+            f"components[{index}].search.recon is required; "
+            "omitted recon is not equivalent to not_needed"
+        )
+    if not isinstance(item, Mapping):
+        raise SearchPlannerSemanticProposalError(
+            f"components[{index}].search.recon must be an object"
+        )
+    unknown = sorted(
+        key for key in item.keys() if key not in {"posture", "dimensions"}
+    )
+    if unknown:
+        raise SearchPlannerSemanticProposalError(
+            f"components[{index}].search.recon has unknown fields: "
+            + ", ".join(unknown)
+        )
+    posture = _required_text(
+        item,
+        "posture",
+        limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS["default_text"],
+        allowed=SEARCH_PLANNER_MODEL_RECON_POSTURES,
+    )
+    dimensions_raw = item.get("dimensions")
+    if not isinstance(dimensions_raw, list):
+        raise SearchPlannerSemanticProposalError(
+            f"components[{index}].search.recon.dimensions must be an array"
+        )
+    if len(dimensions_raw) > _SEMANTIC_RECON_DIMENSION_CEILING:
+        raise SearchPlannerSemanticProposalError(
+            f"components[{index}].search.recon.dimensions exceeds "
+            f"per-affected-component ceiling {_SEMANTIC_RECON_DIMENSION_CEILING}"
+        )
+    if posture == "not_needed" and dimensions_raw:
+        raise SearchPlannerSemanticProposalError(
+            f"components[{index}].search.recon posture not_needed requires empty dimensions"
+        )
+    if posture in {"optional", "required"} and not dimensions_raw:
+        raise SearchPlannerSemanticProposalError(
+            f"components[{index}].search.recon posture {posture} requires at least "
+            "one ambiguity dimension"
+        )
+    dimensions: list[dict[str, str]] = []
+    seen_kinds: set[str] = set()
+    for dim_index, raw_dimension in enumerate(dimensions_raw):
+        if not isinstance(raw_dimension, Mapping):
+            raise SearchPlannerSemanticProposalError(
+                f"components[{index}].search.recon.dimensions[{dim_index}] must be an object"
+            )
+        unknown_dim = sorted(
+            key for key in raw_dimension.keys() if key not in {"kind", "query"}
+        )
+        if unknown_dim:
+            raise SearchPlannerSemanticProposalError(
+                f"components[{index}].search.recon.dimensions[{dim_index}] has unknown "
+                f"fields: " + ", ".join(unknown_dim)
+            )
+        kind = _required_text(
+            raw_dimension,
+            "kind",
+            limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS["default_text"],
+            allowed=SEARCH_PLANNER_SEMANTIC_RECON_DIMENSION_KINDS,
+        )
+        if kind in seen_kinds:
+            raise SearchPlannerSemanticProposalError(
+                f"components[{index}].search.recon.dimensions duplicates kind {kind}"
+            )
+        seen_kinds.add(kind)
+        query = _required_text(
+            raw_dimension,
+            "query",
+            limit=SEARCH_PLANNER_MODEL_TEXT_LIMITS["recon_candidate_query"],
+        )
+        dimensions.append({"kind": kind, "query": query})
+    return {"posture": posture, "dimensions": dimensions}
+
+
+def _compile_recon_requirement(
+    recon: Mapping[str, Any],
+    *,
+    component_index: int,
+) -> dict[str, Any]:
+    posture = str(recon["posture"])
+    unresolved_dimension_ids: list[str] = []
+    candidate_queries: list[dict[str, str]] = []
+    for dim_index, dimension in enumerate(recon.get("dimensions") or (), start=1):
+        kind = str(dimension["kind"])
+        dimension_id = f"dimension:{component_index:02d}:{dim_index:02d}:{kind}"
+        unresolved_dimension_ids.append(dimension_id)
+        candidate_queries.append(
+            {
+                "dimension_id": dimension_id,
+                "candidate_query_text": str(dimension["query"]),
+                "query_kind": _RECON_DIMENSION_KIND_TO_QUERY_KIND[kind],
+            }
+        )
+    return {
+        "posture": posture,
+        "unresolved_dimension_ids": unresolved_dimension_ids,
+        "candidate_queries": candidate_queries,
+        "required_for_truthful_targeting": posture == "required",
+    }
+
+
+def _copy_recon_requirement(recon_requirement: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "posture": str(recon_requirement["posture"]),
+        "unresolved_dimension_ids": list(
+            recon_requirement["unresolved_dimension_ids"]
+        ),
+        "candidate_queries": [
+            {
+                "dimension_id": str(item["dimension_id"]),
+                "candidate_query_text": str(item["candidate_query_text"]),
+                "query_kind": str(item["query_kind"]),
+            }
+            for item in recon_requirement["candidate_queries"]
+        ],
+        "required_for_truthful_targeting": bool(
+            recon_requirement["required_for_truthful_targeting"]
+        ),
+    }
 
 
 def _normalize_whitespace(value: str) -> str:
@@ -1330,6 +1523,7 @@ __all__ = [
     "SEARCH_PLANNER_SEMANTIC_PROPOSAL_REQUIRED_TOP_LEVEL_FIELDS",
     "SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA",
     "SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA_VERSION",
+    "SEARCH_PLANNER_SEMANTIC_RECON_DIMENSION_KINDS",
     "SearchPlannerSemanticProposalError",
     "compile_semantic_planner_proposal",
     "count_model_authored_mechanical_identity_keys",

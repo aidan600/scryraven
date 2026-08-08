@@ -39,6 +39,7 @@ from core.run_kernel import Observation, ObservationType, RunKernel, RunStageSta
 from core.search_planner_model_adapter import (
     SearchPlannerModelAdapter,
     SearchPlannerModelAdapterError,
+    accept_planner_model_output,
 )
 from core.search_planner_model_prompt import SEARCH_PLANNER_MODEL_SYSTEM_PROMPT
 from core.search_planner_runtime import DeterministicSearchPlannerAdapter
@@ -71,8 +72,9 @@ class ModelOwnedPipelineHarness(PostRetirementOrdinaryPipelineHarness):
         cost_phase: str = "model",
         max_tokens: int | None = None,
         temperature: float | None = None,
+        **kwargs: Any,
     ) -> str:
-        kwargs = {
+        call_kwargs = {
             "provider": provider,
             "model": model,
             "effort": effort,
@@ -85,11 +87,12 @@ class ModelOwnedPipelineHarness(PostRetirementOrdinaryPipelineHarness):
             "cost_phase": cost_phase,
             "max_tokens": max_tokens,
             "temperature": temperature,
+            **kwargs,
         }
         if system_prompt == SEARCH_PLANNER_MODEL_SYSTEM_PROMPT:
-            self._record_model_call(system_prompt, kwargs)
+            self._record_model_call(system_prompt, call_kwargs)
             self.planner_prompts.append(prompt)
-            self.planner_kwargs.append(dict(kwargs))
+            self.planner_kwargs.append(dict(call_kwargs))
             if provider == "OpenRouter" and not api_key:
                 raise ValueError("OpenRouter API key is missing")
             if provider == "Local (LM Studio)" and not str(base_url or "").startswith(
@@ -102,6 +105,9 @@ class ModelOwnedPipelineHarness(PostRetirementOrdinaryPipelineHarness):
                 response = self.planner_response
             else:
                 response = json.dumps(self.planner_response)
+            sink = kwargs.get("safe_response_envelope_sink")
+            if callable(sink):
+                sink({"provider_completion_posture": "completed"})
             if cost_accumulator is not None:
                 cost_accumulator.record_model_call(
                     phase=cost_phase,
@@ -110,7 +116,7 @@ class ModelOwnedPipelineHarness(PostRetirementOrdinaryPipelineHarness):
                     output_tokens=7,
                 )
             return response
-        return super().ask_model(prompt, system_prompt, **kwargs)
+        return super().ask_model(prompt, system_prompt, **call_kwargs)
 
 
 class ResponseOnlyPlannerAdapter:
@@ -157,8 +163,20 @@ class ResponseOnlyScoutAdapter:
 
 
 class ResponseOnlyRevisionAdapter:
-    def __init__(self, *, query_text: str) -> None:
+    def __init__(
+        self,
+        *,
+        query_text: str,
+        component_id: str = "component:model:1",
+        obligation_id: str = "obligation:model:1",
+        requirement_id: str = "requirement:model:1:revised",
+        strategy_id: str = "strategy:model:1:revised",
+    ) -> None:
         self.query_text = query_text
+        self.component_id = component_id
+        self.obligation_id = obligation_id
+        self.requirement_id = requirement_id
+        self.strategy_id = strategy_id
         self.calls: list[dict[str, Any]] = []
 
     def produce(self, revision_input: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -169,20 +187,20 @@ class ResponseOnlyRevisionAdapter:
             ),
             "component_search_requirement_updates": [
                 {
-                    "component_id": "component:model:1",
-                    "requirement_id": "requirement:model:1:revised",
+                    "component_id": self.component_id,
+                    "requirement_id": self.requirement_id,
                     "requirement_summary": "Target the resolved official name.",
-                    "source_obligation_candidate_ids": ["obligation:model:1"],
+                    "source_obligation_candidate_ids": [self.obligation_id],
                     "metadata": {
                         "query_strategy_candidates": [
                             {
-                                "strategy_id": "strategy:model:1:revised",
-                                "component_id": "component:model:1",
+                                "strategy_id": self.strategy_id,
+                                "component_id": self.component_id,
                                 "candidate_kind": "primary",
                                 "candidate_query_text": self.query_text,
                                 "requested_role": "official_bias",
                                 "source_obligation_candidate_ids": [
-                                    "obligation:model:1"
+                                    self.obligation_id
                                 ],
                                 "official_canonical_intent": "official_source",
                                 "distinct_need_justification": (
@@ -574,7 +592,7 @@ def test_default_planner_receives_selected_transport_and_run_accounting(
     planner_kwargs = harness.planner_kwargs[0]
     assert planner_kwargs["provider"] == provider
     assert planner_kwargs["model"] == model
-    assert planner_kwargs["effort"] == "low"
+    assert planner_kwargs["effort"] == "medium"
     assert planner_kwargs["base_url"] == local_url
     assert planner_kwargs["api_key"] == api_key
     assert planner_kwargs["cost_accumulator"] is accumulator
@@ -915,6 +933,119 @@ def test_explicit_response_only_planner_scout_and_revision_cross_real_pipeline(
     assert scout_projection["author_input_created"] is False
     assert '"final_answer_packet":{' not in scout_json
     assert '"author_input":{' not in scout_json
+    assert capture["evidence_at_convergence"].get("evidence_items", []) == []
+    revision_projection = capture["revision_projection_at_convergence"]
+    assert revision_projection["revision_effect_class"] == (
+        "query_direction_only_non_contractual"
+    )
+
+
+def test_scout_case_c_required_recon_semantic_proposal_reaches_injected_scout_lane(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    semantic_proposal = {
+        "interpretation": (
+            "Resolve which Example entity is intended before searching the current rule."
+        ),
+        "components": [
+            {
+                "purpose": "user_facing_answer_target",
+                "label": "Current rule",
+                "question": "What current official rule applies to the intended Example?",
+                "requirement_posture": "required",
+                "acceptance_criteria": ["state the current official rule"],
+                "support_kinds": ["direct"],
+                "materiality": "material",
+                "slots": [
+                    {
+                        "kind": "entity",
+                        "status": "ambiguous",
+                        "materiality": "material",
+                        "candidate_values": ["Old Example", "New Example"],
+                    }
+                ],
+                "source": {"kind": "official_current", "strictness": "required"},
+                "search": {
+                    "summary": "Find the current official rule for the intended Example.",
+                    "primary_query": {
+                        "text": "Unresolved Example official identity",
+                        "role": "disambiguation",
+                    },
+                    "recon": {
+                        "posture": "required",
+                        "dimensions": [
+                            {
+                                "kind": "entity_identity",
+                                "query": "Old Example New Example identity",
+                            }
+                        ],
+                    },
+                },
+            }
+        ],
+        "material_ambiguity": "material_entity_ambiguity",
+    }
+    compiled = accept_planner_model_output(semantic_proposal)
+    component_id = compiled["answer_components"][0]["component_id"]
+    obligation_id = compiled["source_obligation_candidates"][0]["candidate_id"]
+    recon = compiled["component_search_requirements"][0]["metadata"][
+        "query_strategy_candidates"
+    ][0]["recon_requirement"]
+    assert recon["posture"] == "required"
+    assert recon["required_for_truthful_targeting"] is True
+    assert recon["unresolved_dimension_ids"] == [
+        "dimension:01:01:entity_identity"
+    ]
+
+    fake_model = FakePlannerModel(semantic_proposal)
+    planner = SearchPlannerModelAdapter(
+        ask_model=fake_model,
+        clean_json_response=lambda value: value,
+        provider="selected-offline-fast-provider",
+        model="selected-offline-fast-model",
+        use_reasoning=False,
+        enabled=True,
+        licensed=True,
+    )
+    scout = ResponseOnlyScoutAdapter()
+    revised_query = "Resolved Example official current rule"
+    revision = ResponseOnlyRevisionAdapter(
+        query_text=revised_query,
+        component_id=component_id,
+        obligation_id=obligation_id,
+        requirement_id="searchreq:01:revised",
+        strategy_id="strategy:01:revised",
+    )
+    config, deps, harness, capture = _pipeline_fixture(
+        tmp_path,
+        monkeypatch,
+        query="I may have the old name; what current rule applies?",
+        planner_response=semantic_proposal,
+        planner_adapter=planner,
+        scout_adapter=scout,
+        revision_adapter=revision,
+        use_default_model=False,
+    )
+    accumulator = CostAccumulator()
+    orchestrator.run_pipeline(
+        config,
+        deps,
+        NullStatusWriter(),
+        accumulator,
+    )
+
+    assert len(fake_model.calls) == 1
+    assert len(scout.calls) == 1
+    assert len(revision.calls) == 1
+    assert scout.calls[0]["candidate_queries"]
+    assert capture["query_plan_admission"].current_queries == [revised_query]
+    scout_projection = capture["scout_projection_at_convergence"]
+    assert scout_projection["evidence_admitted"] is False
+    assert scout_projection["citation_eligible"] is False
+    assert scout_projection["source_obligation_satisfied"] is False
+    assert scout_projection["final_answer_packet_created"] is False
+    assert scout_projection["author_input_created"] is False
     assert capture["evidence_at_convergence"].get("evidence_items", []) == []
     revision_projection = capture["revision_projection_at_convergence"]
     assert revision_projection["revision_effect_class"] == (

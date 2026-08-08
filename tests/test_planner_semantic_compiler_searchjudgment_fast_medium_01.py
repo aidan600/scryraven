@@ -25,6 +25,7 @@ from core.search_planner_model_prompt import (
 )
 from core.search_planner_semantic_compiler import (
     SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA,
+    SearchPlannerSemanticProposalError,
     compile_semantic_planner_proposal,
     count_model_authored_mechanical_identity_keys,
     validate_semantic_planner_proposal,
@@ -84,6 +85,7 @@ def _direct_semantic_proposal() -> dict[str, Any]:
                         "text": "Example Permit official filing threshold 2026",
                         "role": "official_bias",
                     },
+                    "recon": {"posture": "not_needed", "dimensions": []},
                 },
                 "caveats": ["Keep the answer source-bound."],
                 "prohibited_upgrades": ["Do not substitute a non-official estimate."],
@@ -126,6 +128,7 @@ def _multicomponent_semantic_proposal() -> dict[str, Any]:
                         "text": "Example Permit program year 2026",
                         "role": "recency",
                     },
+                    "recon": {"posture": "not_needed", "dimensions": []},
                 },
             },
             {
@@ -184,6 +187,7 @@ def _ambiguity_currentness_proposal() -> dict[str, Any]:
                         "text": "Example Permit current official fee schedule",
                         "role": "recency",
                     },
+                    "recon": {"posture": "not_needed", "dimensions": []},
                 },
             }
         ],
@@ -229,6 +233,12 @@ def test_direct_factual_semantic_proposal_compiles_to_rich_authority() -> None:
         "Example Permit official filing threshold 2026"
     )
     assert strategies[0]["strategy_id"].startswith("strategy:")
+    assert strategies[0]["recon_requirement"] == {
+        "posture": "not_needed",
+        "unresolved_dimension_ids": [],
+        "candidate_queries": [],
+        "required_for_truthful_targeting": False,
+    }
     assert component["component_id"].startswith("component:")
     assert component["component_revision"] == "1"
 
@@ -373,6 +383,100 @@ def test_slotless_component_is_rejected_not_bound_to_all_slots() -> None:
     assert error.mechanical_rule_id == "M02"
 
 
+def _with_recon(proposal: dict[str, Any], recon: dict[str, Any]) -> dict[str, Any]:
+    mutated = json.loads(json.dumps(proposal))
+    mutated["components"][0]["search"]["recon"] = recon
+    return mutated
+
+
+def test_scout_case_a_clear_query_not_needed_is_model_authored() -> None:
+    rich = accept_planner_model_output(_direct_semantic_proposal())
+    recon = rich["component_search_requirements"][0]["metadata"][
+        "query_strategy_candidates"
+    ][0]["recon_requirement"]
+    assert recon["posture"] == "not_needed"
+    assert recon["unresolved_dimension_ids"] == []
+    assert recon["candidate_queries"] == []
+    assert recon["required_for_truthful_targeting"] is False
+
+
+def test_scout_case_b_optional_ambiguity_compiles_to_rich_downstream_shape() -> None:
+    proposal = _with_recon(
+        _direct_semantic_proposal(),
+        {
+            "posture": "optional",
+            "dimensions": [
+                {
+                    "kind": "entity_identity",
+                    "query": "Example Permit former current official name",
+                }
+            ],
+        },
+    )
+    rich = accept_planner_model_output(proposal)
+    recon = rich["component_search_requirements"][0]["metadata"][
+        "query_strategy_candidates"
+    ][0]["recon_requirement"]
+    assert recon["posture"] == "optional"
+    assert recon["required_for_truthful_targeting"] is False
+    assert recon["unresolved_dimension_ids"] == [
+        "dimension:01:01:entity_identity"
+    ]
+    assert recon["candidate_queries"] == [
+        {
+            "dimension_id": "dimension:01:01:entity_identity",
+            "candidate_query_text": "Example Permit former current official name",
+            "query_kind": "all_time",
+        }
+    ]
+
+
+def test_scout_case_d_omitted_recon_fails_closed() -> None:
+    proposal = _direct_semantic_proposal()
+    del proposal["components"][0]["search"]["recon"]
+    with pytest.raises(SearchPlannerSemanticProposalError) as caught:
+        validate_semantic_planner_proposal(proposal)
+    assert "recon is required" in str(caught.value)
+    assert "not_needed" in str(caught.value)
+
+
+def test_scout_case_e_malformed_recon_contradictions_fail_closed() -> None:
+    contradictions = (
+        {
+            "posture": "not_needed",
+            "dimensions": [
+                {"kind": "entity_identity", "query": "should not appear"}
+            ],
+        },
+        {"posture": "required", "dimensions": []},
+        {"posture": "optional", "dimensions": []},
+    )
+    for recon in contradictions:
+        proposal = _with_recon(_direct_semantic_proposal(), recon)
+        with pytest.raises(SearchPlannerSemanticProposalError):
+            validate_semantic_planner_proposal(proposal)
+
+
+def test_scout_case_f_no_mechanical_authorship_in_recon() -> None:
+    proposal = _with_recon(
+        _direct_semantic_proposal(),
+        {
+            "posture": "optional",
+            "dimensions": [
+                {
+                    "kind": "entity_identity",
+                    "query": "Example identity probe",
+                    "dimension_id": "dimension:hacked",
+                }
+            ],
+        },
+    )
+    with pytest.raises(SearchPlannerSemanticProposalError) as caught:
+        validate_semantic_planner_proposal(proposal)
+    message = str(caught.value)
+    assert "mechanical identity" in message or "unknown fields" in message
+
+
 def test_planner_burden_reduction_floors() -> None:
     schema = SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA
     static_chars = len(json.dumps(schema, sort_keys=True, separators=(",", ":")))
@@ -388,7 +492,9 @@ def test_planner_burden_reduction_floors() -> None:
     assert SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION.endswith("_v5")
     assert static_chars < _BEFORE_STATIC_CONTRACT_CHARS
     assert assembled_chars < _BEFORE_ASSEMBLED_REQUEST_CHARS
-    assert static_reduction >= 0.50
+    # Compact recon restoration adds required search.recon authorship fields while
+    # remaining far below the pre-compiler rich static contract.
+    assert static_reduction >= 0.45
     assert assembled_reduction >= 0.30
     # Rich internal authority schema remains available post-compile.
     rich_chars = len(
