@@ -73,6 +73,7 @@ def execute_route_request_action(
     use_reasoning: bool,
     measure_context_stage: Callable[..., Any],
     allow_model_retry: bool = True,
+    effort: str = "medium",
 ) -> RouteRequestRuntimeResult:
     """Execute the existing router behavior after RunKernel authorization."""
 
@@ -94,7 +95,7 @@ def execute_route_request_action(
         default_system["router"],
         provider=fast_provider,
         model=fast_model,
-        effort="low",
+        effort=effort,
         base_url=local_url,
         api_key=api_key,
         require_json=True,
@@ -120,7 +121,7 @@ def execute_route_request_action(
             default_system["router"],
             provider=fast_provider,
             model=fast_model,
-            effort="low",
+            effort=effort,
             base_url=local_url,
             api_key=api_key,
             require_json=True,

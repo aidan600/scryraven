@@ -214,6 +214,7 @@ class PreparedMulticomponentTransportCall:
     clean_json_response: Callable[[str], str] | None = field(
         default=None, repr=False, compare=False
     )
+    effort: str = "medium"
     raw_retention: bool = False
 
 
@@ -672,6 +673,7 @@ def prepare_multicomponent_transport_call(
     provider: str,
     model: str,
     use_reasoning: bool,
+    effort: str = "medium",
 ) -> PreparedMulticomponentTransportCall:
     """Bind one committed child action to its exact transient transport input."""
 
@@ -734,6 +736,7 @@ def prepare_multicomponent_transport_call(
         provider=canonical_provider,
         model=str(model or ""),
         use_reasoning=bool(use_reasoning),
+        effort=str(effort or "medium"),
         strict_one_shot_transport=strict_one_shot_transport,
         clean_json_response=clean_json_response,
     )
@@ -797,7 +800,7 @@ def execute_prepared_multicomponent_transport(
             system_prompt,
             provider=prepared.provider,
             model=prepared.model,
-            effort="high",
+            effort=prepared.effort,
             require_json=True,
             use_reasoning=prepared.use_reasoning,
         )
@@ -1104,6 +1107,7 @@ def execute_multicomponent_role_call(
     output_schema_variant: str | None = None,
     lease_id: str | None = None,
     searchos_recovery_cycle_ref: Mapping[str, Any] | None = None,
+    effort: str = "medium",
 ) -> dict[str, Any]:
     """Authorize, execute, parse, bind, and reduce one semantic role call."""
 
@@ -1199,7 +1203,7 @@ def execute_multicomponent_role_call(
             system_prompt,
             provider=canonical_provider,
             model=model,
-            effort="high",
+            effort=effort,
             require_json=True,
             use_reasoning=use_reasoning,
         )

@@ -632,6 +632,8 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     fast_model = config.fast_model
     smart_provider = config.smart_provider
     smart_model = config.smart_model
+    fast_reasoning_effort = config.fast_reasoning_effort
+    smart_reasoning_effort = config.smart_reasoning_effort
     embed_provider = config.embed_provider
     embed_model = config.embed_model
     local_url = config.local_url
@@ -951,6 +953,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         local_url=local_url,
         api_key=or_api_key,
         use_reasoning=use_reasoning,
+        effort=fast_reasoning_effort,
         measure_context_stage=_measure_context_stage,
         allow_model_retry=not (
             cap_policy is not None and cap_policy.should_disable_model_retry()
@@ -986,7 +989,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         model=smart_model,
         base_url=local_url,
         api_key=or_api_key,
-        effort="low",
+        effort=smart_reasoning_effort,
         use_reasoning=use_reasoning,
         measure_context_stage=_measure_context_stage,
     )
@@ -1049,7 +1052,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         )
         session_title = ask_model(
             title_prompt, "You are a concise title generator.",
-            provider=fast_provider, model=fast_model, effort="low",
+            provider=fast_provider, model=fast_model, effort=fast_reasoning_effort,
             base_url=local_url, api_key=or_api_key, use_reasoning=False,
         ).replace('"', "").strip()
         if not session_title:
@@ -1074,6 +1077,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             clean_json_response=deps.clean_json_response,
             provider=fast_provider,
             model=fast_model,
+            effort=fast_reasoning_effort,
             use_reasoning=use_reasoning,
             enabled=True,
             licensed=True,
@@ -2468,7 +2472,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 expander_text = deps.clean_json_response(
                     ask_model(
                         expander_prompt, expander_sys,
-                        provider=fast_provider, model=fast_model, effort="low",
+                        provider=fast_provider, model=fast_model, effort=fast_reasoning_effort,
                         base_url=local_url, api_key=or_api_key, require_json=True, use_reasoning=False,
                     )
                 )
@@ -2563,7 +2567,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 eval_text = deps.clean_json_response(
                     ask_model(
                         eval_prompt, DEFAULT_SYSTEM["evaluator"],
-                        provider=fast_provider, model=fast_model, effort="low",
+                        provider=fast_provider, model=fast_model, effort=fast_reasoning_effort,
                         base_url=local_url, api_key=or_api_key, require_json=True, use_reasoning=use_reasoning,
                     )
                 )
@@ -3029,10 +3033,11 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 _ask(phase="searchos_iterative_judgment"),
                 "search_judgment",
             ),
-            provider=smart_provider,
-            model=smart_model,
+            provider=fast_provider,
+            model=fast_model,
             base_url=local_url,
             api_key=or_api_key,
+            effort=fast_reasoning_effort,
             use_reasoning=use_reasoning,
             available_providers=(provider_availability_snapshot.to_capability_available_keys()),
             acquisition_transports=deps.searchos_read_acquisition_transports,
@@ -3280,7 +3285,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 model=smart_model,
                 base_url=local_url,
                 api_key=or_api_key,
-                effort="high",
+                effort=smart_reasoning_effort,
                 use_reasoning=use_reasoning,
                 measure_context_stage=_measure_context_stage,
             )
@@ -3820,10 +3825,11 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                                 ),
                                 "search_judgment",
                             ),
-                            provider=smart_provider,
-                            model=smart_model,
+                            provider=fast_provider,
+                            model=fast_model,
                             base_url=local_url,
                             api_key=or_api_key,
+                            effort=fast_reasoning_effort,
                             use_reasoning=use_reasoning,
                             available_providers=(
                                 provider_availability_snapshot
@@ -4616,7 +4622,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         model=smart_model,
         base_url=local_url,
         api_key=or_api_key,
-        effort="high",
+        effort=smart_reasoning_effort,
         use_reasoning=use_reasoning,
         measure_context_stage=_measure_context_stage,
     )
@@ -4704,7 +4710,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             model=smart_model,
             base_url=local_url,
             api_key=or_api_key,
-            effort="high",
+            effort=smart_reasoning_effort,
             use_reasoning=use_reasoning,
             measure_context_stage=_measure_context_stage,
         )

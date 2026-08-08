@@ -833,6 +833,11 @@ _M02_COMPONENT_COUNT: _WitnessMetadata = (
     SearchPlannerModelAdapterFailureCode.INVALID_COMPONENT_COUNT,
     "M02",
 )
+_M02_SEMANTIC_PROPOSAL: _WitnessMetadata = (
+    SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION,
+    SearchPlannerModelAdapterFailureCode.INVALID_SEMANTIC_PROPOSAL,
+    "M02",
+)
 _M03: _WitnessMetadata = (
     SearchPlannerModelAdapterFailureStage.CROSS_REFERENCE_VALIDATION,
     SearchPlannerModelAdapterFailureCode.INVALID_ID_OR_CROSS_REFERENCE,
@@ -1138,6 +1143,35 @@ def _raw_model_output_error(raw: str) -> SearchPlannerModelAdapterError:
     return caught.value
 
 
+def _semantic_proposal_validation_error() -> SearchPlannerModelAdapterError:
+    """Emit canonical semantic-proposal validation failure through the adapter path."""
+
+    proposal = {
+        "interpretation": "Determine the official current threshold.",
+        "components": [
+            {
+                "purpose": "user_facing_answer_target",
+                "label": "Official threshold",
+                "question": "What is the official current filing threshold?",
+                "requirement_posture": "required",
+                "acceptance_criteria": ["state the threshold"],
+                "support_kinds": ["direct"],
+                "materiality": "material",
+                "slots": [],
+                "source": {"kind": "official_current", "strictness": "required"},
+                "search": {
+                    "summary": "Find the official current source for the threshold.",
+                    "primary_query": {
+                        "text": "Example Permit official filing threshold",
+                        "role": "official_bias",
+                    },
+                },
+            }
+        ],
+    }
+    return _model_output_error(proposal)
+
+
 def _mutated_model_output_error(
     mutate: Callable[[dict[str, Any]], None],
 ) -> SearchPlannerModelAdapterError:
@@ -1239,6 +1273,16 @@ def _field_condition_witness_inventory() -> tuple[_FieldConditionWitness, ...]:
             predicate_id=SearchPlannerModelAdapterPredicateId.JSON_TOP_LEVEL_OBJECT_REQUIRED,
             metadata=_M01_ROOT_OBJECT,
             emit=lambda: _raw_model_output_error("[]"),
+            scope="universal",
+        ),
+        _direct_witness(
+            field_path="semantic_proposal",
+            condition="validation_failed",
+            predicate_id=(
+                SearchPlannerModelAdapterPredicateId.SEMANTIC_PROPOSAL_VALIDATION_FAILED
+            ),
+            metadata=_M02_SEMANTIC_PROPOSAL,
+            emit=_semantic_proposal_validation_error,
             scope="universal",
         ),
     ]
@@ -3502,21 +3546,17 @@ def test_model_prompt_embeds_the_exact_output_contract_and_version() -> None:
     prompt = search_planner_model_prompt.build_search_planner_model_prompt(planner_input)
     prompt_packet = json.loads(prompt.split("Sanitized planner input JSON:\n", 1)[1])
 
-    assert SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION == "search_planner_model_prompt_ag_search_planner_model_01_v4"
+    assert SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION == "search_planner_model_prompt_ag_search_planner_model_01_v5"
     assert SEARCH_PLANNER_MODEL_ADAPTER_SCHEMA_VERSION == "search_planner_model_adapter_ag_search_planner_model_01_v1"
     assert prompt_packet["schema_version"] == SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION
-    assert prompt_packet["output_schema"] == search_planner_model_prompt.SEARCH_PLANNER_MODEL_OUTPUT_SCHEMA
-    assert _schema_paths_with_adapter_normalization(
-        prompt_packet["output_schema"],
-        _REQUIRED_NARRATIVE_TEXT_NORMALIZATION,
-    ) == {field[2] for field in _REQUIRED_NARRATIVE_TEXT_FIELDS}
-    assert (
-        "Every enum field must use an exact value listed in output_schema. "
-        "Every required object or array must satisfy its declared type and "
-        "cardinality. Omit an optional field rather than inventing an unsupported "
-        "value."
-    ) in prompt
-    assert _REQUIRED_NARRATIVE_TEXT_PROMPT_RULE in prompt
+    assert prompt_packet["output_schema"] == json.loads(
+        json.dumps(
+            search_planner_model_prompt.SEARCH_PLANNER_MODEL_OUTPUT_SCHEMA,
+            sort_keys=True,
+        )
+    )
+    assert "Author only semantic choices in output_schema" in prompt
+    assert "Do not invent stable IDs" in prompt
 
 
 def test_strict_json_contract_is_shared_by_system_prompt_and_serialized_schema() -> None:
@@ -3548,7 +3588,7 @@ def test_strict_json_contract_is_shared_by_system_prompt_and_serialized_schema()
 
 
 def test_required_narrative_text_schema_contract_is_explicit_and_exactly_scoped() -> None:
-    schema = search_planner_model_prompt.SEARCH_PLANNER_MODEL_OUTPUT_SCHEMA
+    schema = search_planner_model_prompt.SEARCH_PLANNER_RICH_INTERNAL_OUTPUT_SCHEMA
     expected_schema_paths = {field[2] for field in _REQUIRED_NARRATIVE_TEXT_FIELDS}
 
     assert len(_REQUIRED_NARRATIVE_TEXT_FIELDS) == 7
@@ -3726,15 +3766,15 @@ def test_required_narrative_text_uses_normalized_length_boundaries(
 
 
 def test_visible_output_contract_and_adapter_contract_constants_stay_in_lockstep() -> None:
-    schema = search_planner_model_prompt.SEARCH_PLANNER_MODEL_OUTPUT_SCHEMA
+    schema = search_planner_model_prompt.SEARCH_PLANNER_RICH_INTERNAL_OUTPUT_SCHEMA
     top_level = schema["top_level"]
 
     assert top_level["required_fields"] == list(
-        search_planner_model_prompt.SEARCH_PLANNER_MODEL_REQUIRED_TOP_LEVEL_FIELDS
+        search_planner_model_prompt.SEARCH_PLANNER_RICH_REQUIRED_TOP_LEVEL_FIELDS
     )
     assert set(top_level["fields"]) == {
-        *search_planner_model_prompt.SEARCH_PLANNER_MODEL_REQUIRED_TOP_LEVEL_FIELDS,
-        *search_planner_model_prompt.SEARCH_PLANNER_MODEL_OPTIONAL_TOP_LEVEL_FIELDS,
+        *search_planner_model_prompt.SEARCH_PLANNER_RICH_REQUIRED_TOP_LEVEL_FIELDS,
+        *search_planner_model_prompt.SEARCH_PLANNER_RICH_OPTIONAL_TOP_LEVEL_FIELDS,
     }
 
     enum_contracts = (
@@ -3833,7 +3873,7 @@ def test_visible_output_contract_and_adapter_contract_constants_stay_in_lockstep
 
     assert (
         search_planner_model_adapter._TOP_LEVEL_REQUIRED
-        is search_planner_model_prompt.SEARCH_PLANNER_MODEL_REQUIRED_TOP_LEVEL_FIELDS
+        is search_planner_model_prompt.SEARCH_PLANNER_RICH_REQUIRED_TOP_LEVEL_FIELDS
     )
     assert (
         search_planner_model_adapter.SEARCH_PLANNER_MODEL_TEXT_LIMITS
@@ -4294,7 +4334,10 @@ def test_visible_output_contract_and_adapter_contract_constants_stay_in_lockstep
 def test_prompt_contract_preserves_sanitized_proposal_and_typed_m02_rejections() -> None:
     valid_output = _planner_output()
     expected_sanitized = search_planner_model_adapter.validate_and_sanitize_model_output(deepcopy(valid_output))
-    produced = _adapter(FakeAskModel(json.dumps(valid_output))).produce(_planner_input(_kernel()).to_adapter_payload())
+    planner_input = _planner_input(_kernel()).to_adapter_payload()
+    expected_prompt = search_planner_model_prompt.build_search_planner_model_prompt(planner_input)
+    expected_prompt_meta = search_planner_model_prompt.prompt_metadata(expected_prompt)
+    produced = _adapter(FakeAskModel(json.dumps(valid_output))).produce(planner_input)
     metadata = produced.pop("planner_model_metadata")
 
     assert produced == expected_sanitized
@@ -4305,11 +4348,9 @@ def test_prompt_contract_preserves_sanitized_proposal_and_typed_m02_rejections()
     assert metadata["planner_model_prompt_schema_version"] == (SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION)
     assert metadata == {
         "planner_model_adapter_schema_version": ("search_planner_model_adapter_ag_search_planner_model_01_v1"),
-        "planner_model_prompt_schema_version": ("search_planner_model_prompt_ag_search_planner_model_01_v4"),
-        "prompt_hash": (
-            "75348a01138644c46f1d59bc8904da45f8a731bbc55a37ea5ae5a1a3d7536104"  # pragma: allowlist secret
-        ),
-        "prompt_length": 23224,
+        "planner_model_prompt_schema_version": SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION,
+        "prompt_hash": expected_prompt_meta["prompt_hash"],
+        "prompt_length": expected_prompt_meta["prompt_length"],
         "provider": "FakeProvider",
         "model": "fake-fast-model",
         "effort": "low",
@@ -4469,6 +4510,7 @@ _UNIVERSAL_OR_DYNAMIC_PREDICATE_IDS = frozenset(
     {
         SearchPlannerModelAdapterPredicateId.JSON_STRICT_PARSE_FAILED,
         SearchPlannerModelAdapterPredicateId.JSON_TOP_LEVEL_OBJECT_REQUIRED,
+        SearchPlannerModelAdapterPredicateId.SEMANTIC_PROPOSAL_VALIDATION_FAILED,
         SearchPlannerModelAdapterPredicateId.QUERY_STRATEGY_PROVIDER_MODEL_AUTHORITY_FORBIDDEN,
         SearchPlannerModelAdapterPredicateId.CLOSED_AUTHORITY_FIELD_FORBIDDEN,
         SearchPlannerModelAdapterPredicateId.CLOSED_RUNTIME_CLAIM_FORBIDDEN,
@@ -4490,14 +4532,14 @@ def test_field_condition_witness_inventory_is_complete_and_one_to_one() -> None:
     exempt_ids = {witness.predicate_id for witness in _FIELD_CONDITION_WITNESS_INVENTORY if witness.scope != "field"}
 
     assert len(inventory_ids) == len(set(inventory_ids))
-    assert len(inventory_ids) == 304
+    assert len(inventory_ids) == 305
     assert set(inventory_ids) == set(SearchPlannerModelAdapterPredicateId)
     assert set(inventory_ids) == set(SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY)
     assert Counter(
         registration.mechanical_rule_id for registration in SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY.values()
     ) == {
         "M01": 14,
-        "M02": 164,
+        "M02": 165,
         "M03": 49,
         "M04": 8,
         "M05": 9,
@@ -5284,6 +5326,7 @@ def test_adapter_failure_code_inventory_is_stable_and_repository_owned() -> None
         "INVALID_NESTED_TYPE",
         "INVALID_ENUM_OR_BOUNDED_VALUE",
         "INVALID_COMPONENT_COUNT",
+        "INVALID_SEMANTIC_PROPOSAL",
         "INVALID_COMPONENT_SUPPORT_MATRIX",
         "INVALID_COMPONENT_PURPOSE_OR_SOURCE_TARGET_SEPARATION",
         "INVALID_ID_OR_CROSS_REFERENCE",
@@ -5318,6 +5361,7 @@ def test_every_adapter_error_construction_supplies_a_registered_code() -> None:
         SearchPlannerModelAdapterFailureCode.INVALID_NESTED_TYPE: "M02",
         SearchPlannerModelAdapterFailureCode.INVALID_ENUM_OR_BOUNDED_VALUE: "M02",
         SearchPlannerModelAdapterFailureCode.INVALID_COMPONENT_COUNT: "M02",
+        SearchPlannerModelAdapterFailureCode.INVALID_SEMANTIC_PROPOSAL: "M02",
         SearchPlannerModelAdapterFailureCode.INVALID_ID_OR_CROSS_REFERENCE: "M03",
         SearchPlannerModelAdapterFailureCode.INVALID_DEPENDENCY_OR_INFERENCE_DEPTH: "M04",
         SearchPlannerModelAdapterFailureCode.INVALID_COMPONENT_SUPPORT_MATRIX: "M05",

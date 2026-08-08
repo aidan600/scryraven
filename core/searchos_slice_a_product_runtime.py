@@ -358,6 +358,7 @@ def execute_searchos_slice_a_iterative_judgment(
     execute_followup_discover: FollowupDiscover | None,
     before_transport: Callable[[], Any] | None = None,
     measure_context_stage: Callable[..., Any] | None = None,
+    effort: str = "medium",
 ) -> SearchOSSliceAProductResult:
     locator_store = navigation_runtime.EphemeralNavigationLocatorStore(
         run_id=run_kernel.state.run_id, request_id=run_kernel.state.request_id
@@ -388,6 +389,7 @@ def execute_searchos_recovery_cycle(
     execute_followup_discover: FollowupDiscover | None,
     before_transport: Callable[[], Any] | None = None,
     measure_context_stage: Callable[..., Any] | None = None,
+    effort: str = "medium",
 ) -> SearchOSSliceAProductResult:
     """Consume an already-admitted SearchOS recovery lease through the same loop."""
 
@@ -411,6 +413,7 @@ def execute_searchos_recovery_cycle(
             base_url=base_url,
             api_key=api_key,
             use_reasoning=use_reasoning,
+            effort=effort,
             available_providers=available_providers,
             acquisition_transports=acquisition_transports,
             execute_followup_discover=execute_followup_discover,
@@ -442,6 +445,7 @@ def _execute_searchos_slice_a_iterative_judgment(
     measure_context_stage: Callable[..., Any] | None = None,
     prior_result: SearchOSSliceAProductResult | None = None,
     recovery_cycle_ref: Mapping[str, Any] | None = None,
+    effort: str = "medium",
 ) -> SearchOSSliceAProductResult:
     """Run the canonical post-first-wave Slice A loop under RunKernel."""
 
@@ -723,6 +727,7 @@ def _execute_searchos_slice_a_iterative_judgment(
                     model=model,
                     base_url=base_url,
                     api_key=api_key,
+                    effort=effort,
                     use_reasoning=use_reasoning,
                     measure_context_stage=measure_context_stage,
                 )
@@ -1979,6 +1984,7 @@ def _invoke_judgment_model(
     api_key: str | None,
     use_reasoning: bool,
     measure_context_stage: Callable[..., Any] | None,
+    effort: str = "medium",
 ) -> Any:
     if ask_model is None:
         raise SearchOSRuntimeError("model_unavailable")
@@ -2014,7 +2020,7 @@ def _invoke_judgment_model(
         system_prompt,
         provider=provider,
         model=model,
-        effort="high",
+        effort=effort,
         base_url=base_url,
         api_key=api_key,
         require_json=True,
