@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -782,3 +783,85 @@ def test_case_ab_immediate_phase_root_tmp_reparse_fails_closed(tmp_path: Path) -
     assert external.exists()
     assert precious.exists()
     assert precious.read_text(encoding="utf-8") == "do-not-delete\n"
+
+
+def test_case_ac_windows_readonly_file_under_phase_tmp(tmp_path: Path) -> None:
+    """Windows read-only regular file under trusted phase-root\\tmp is removed."""
+    if os.name != "nt":
+        pytest.skip("Windows read-only attribute semantics required")
+    fx = build_merged_phase_fixture(tmp_path)
+    _git(fx.repo, "worktree", "remove", str(fx.phase_worktree))
+    _git(fx.repo, "merge", "--ff-only", "origin/main")
+    _git(fx.repo, "branch", "-d", "--", fx.phase_branch)
+
+    obj_dir = fx.phase_root / "tmp" / "pytest-output" / "origin.git" / "objects" / "ab"
+    obj_dir.mkdir(parents=True, exist_ok=True)
+    obj = obj_dir / "cdef0123456789"
+    obj.write_bytes(b"git-object-bytes")
+    # Mechanically mark the regular file read-only (Windows FILE_ATTRIBUTE_READONLY).
+    os.chmod(obj, stat.S_IREAD)
+    st = os.lstat(obj)
+    attrs = getattr(st, "st_file_attributes", 0)
+    assert attrs & 0x1, "test setup failed to set FILE_ATTRIBUTE_READONLY"
+
+    result = run_cleanup(fx)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not obj.exists()
+    assert not fx.phase_root.exists()
+
+
+def test_case_ad_generic_permission_error_does_not_chmod(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Generic PermissionError without proven read-only attribute fails closed."""
+    fx = build_merged_phase_fixture(tmp_path)
+    _git(fx.repo, "worktree", "remove", str(fx.phase_worktree))
+    _git(fx.repo, "merge", "--ff-only", "origin/main")
+    _git(fx.repo, "branch", "-d", "--", fx.phase_branch)
+
+    target = fx.phase_root / "tmp" / "pytest-output" / "blocked.bin"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(b"keep-me")
+
+    sys.path.insert(0, str(ENGINE.parent))
+    import cleanup_merged_phase as mod
+
+    real_unlink = Path.unlink
+    chmod_calls: list[Path] = []
+
+    def flaky_unlink(self: Path, *args: object, **kwargs: object) -> None:
+        key = os.path.normcase(os.path.normpath(str(self)))
+        target_key = os.path.normcase(os.path.normpath(str(target)))
+        if key == target_key:
+            raise PermissionError(5, "simulated access denied", str(self))
+        return real_unlink(self, *args, **kwargs)
+
+    def tracking_chmod(path: str | bytes | os.PathLike[str], mode: int) -> None:
+        chmod_calls.append(Path(os.fsdecode(path)))
+        raise AssertionError("chmod must not run for non-readonly PermissionError")
+
+    monkeypatch.setattr(Path, "unlink", flaky_unlink)
+    monkeypatch.setattr(os, "chmod", tracking_chmod)
+
+    code = mod.run_cleanup(
+        [
+            "--reviewed-head",
+            fx.reviewed_head,
+            "--phase-branch",
+            fx.phase_branch,
+            "--phase-root",
+            str(fx.phase_root),
+            "--repo",
+            str(fx.repo),
+            "--phase-parent",
+            str(fx.phase_parent),
+        ]
+    )
+    captured = capsys.readouterr().out
+    assert code != 0
+    assert "Result: safely blocked" in captured
+    assert chmod_calls == []
+    assert target.exists()
+    assert fx.phase_root.exists()
