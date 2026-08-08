@@ -2692,6 +2692,51 @@ _SAFE_TRANSPORT_EXCEPTION_CLASSES = frozenset(
     }
 )
 _TRANSPORT_FAILURE_PREFIX = "model_transport_failed:"
+_MODEL_OUTPUT_INVALID_PREFIX = "model_output_invalid:"
+
+# Closed allowlist: exact normalized `_failure_reason()` suffixes produced from
+# fixed `validate_searchos_judgment_model_output` SearchOSRuntimeError messages.
+# Unknown / private-looking / future suffixes collapse to other_safe.
+_SAFE_MODEL_OUTPUT_INVALID_SUBTYPE_BY_SUFFIX: dict[str, str] = {
+    "judgment_request_schema_version_mismatch": "schema_version_mismatch",
+    "judgment_output_contains_unsupported_fields": "unsupported_fields",
+    "judgment_output_schema_version_mismatch": "schema_version_mismatch",
+    "judgment_nomination_is_stale": "request_identity_mismatch",
+    "judgment_nomination_slot_is_stale": "slot_identity_mismatch",
+    "judgment_action_is_not_in_the_neutral_vocabulary": "action_vocabulary_invalid",
+    "judgment_action_is_not_currently_authorized": "action_not_authorized",
+    "semantic_handoff_repeats_read_custody": "semantic_handoff_payload_invalid",
+    "read_custody_assessment_shape_is_invalid": "custody_assessment_shape_invalid",
+    "read_custody_assessment_is_stale_or_altered": "custody_assessment_ref_invalid",
+    "read_custody_assessment_disposition_is_invalid": (
+        "custody_assessment_disposition_invalid"
+    ),
+    "read_custody_assessment_repeats_material": "custody_assessment_duplicate",
+    "read_nomination_is_outside_current_candidate_window": (
+        "read_nomination_outside_window"
+    ),
+    "read_nomination_ref_is_stale_or_altered": "read_nomination_ref_invalid",
+    "read_nomination_contains_incompatible_payload": "read_nomination_payload_invalid",
+    "navigation_nomination_requires_navigation_request": "navigation_nomination_invalid",
+    "navigation_nomination_is_outside_current_navigation_window": (
+        "navigation_nomination_invalid"
+    ),
+    "navigation_nomination_ref_is_stale_or_altered": "navigation_nomination_invalid",
+    "navigation_nomination_contains_incompatible_payload": "navigation_payload_invalid",
+    "follow-up_nomination_payload_is_invalid": "followup_payload_invalid",
+    "semantic_handoff_requires_exact_read_custody_refs": (
+        "semantic_handoff_payload_invalid"
+    ),
+    "semantic_handoff_nominated_stale_or_altered_read_custody": (
+        "semantic_handoff_ref_invalid"
+    ),
+    "unresolved_handoff_payload_is_invalid": "unresolved_payload_invalid",
+    "post-read_action_requires_exact_read_insufficient_assessments": (
+        "post_read_assessment_incomplete"
+    ),
+    "pre-read_action_cannot_assess_custody": "pre_read_assessment_forbidden",
+    "navigation_judgment_action_fields_are_not_exact": "exact_action_fields_invalid",
+}
 
 
 def _opaque_identity_digest(token: Any) -> str:
@@ -2785,6 +2830,20 @@ def _project_safe_transport_exception_class(*, posture: str, reason: Any) -> str
     return "other_safe"
 
 
+def _project_safe_model_output_invalid_subtype(*, posture: str, reason: Any) -> str:
+    """Project a closed safe subtype for model_output_invalid SearchJudgment failures."""
+
+    if _project_safe_failure_class(posture=posture, reason=reason) != "model_output_invalid":
+        return "none"
+    text = str(reason or "").strip().casefold()
+    if not text.startswith(_MODEL_OUTPUT_INVALID_PREFIX):
+        return "other_safe"
+    suffix = text[len(_MODEL_OUTPUT_INVALID_PREFIX) :]
+    if not suffix:
+        return "other_safe"
+    return _SAFE_MODEL_OUTPUT_INVALID_SUBTYPE_BY_SUFFIX.get(suffix, "other_safe")
+
+
 def _slot_read_custody_observed(record: Mapping[str, Any]) -> bool:
     custody_refs = record.get("custody_refs") or ()
     if isinstance(custody_refs, Sequence) and len(custody_refs) > 0:
@@ -2859,6 +2918,10 @@ def _project_required_slot_summary(
         "final_posture": final_posture,
         "safe_failure_class": safe_failure_class,
         "safe_transport_exception_class": _project_safe_transport_exception_class(
+            posture=final_posture,
+            reason=reason,
+        ),
+        "safe_model_output_invalid_subtype": _project_safe_model_output_invalid_subtype(
             posture=final_posture,
             reason=reason,
         ),

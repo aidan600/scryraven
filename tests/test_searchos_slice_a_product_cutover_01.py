@@ -877,6 +877,7 @@ def test_bounded_searchos_n1_causal_projection_successful_path(
     assert slot["final_posture"] == "semantically_handed_off"
     assert slot["safe_failure_class"] == "none"
     assert slot["safe_transport_exception_class"] == "none"
+    assert slot["safe_model_output_invalid_subtype"] == "none"
 
 
 @pytest.mark.parametrize(
@@ -913,6 +914,7 @@ def test_bounded_searchos_n1_causal_projection_judgment_failure_path(
     assert slot["final_posture"] == expected_posture
     assert slot["safe_failure_class"] == expected_failure_class
     assert slot["safe_transport_exception_class"] == "none"
+    assert slot["safe_model_output_invalid_subtype"] == "none"
     assert slot["semantic_handoff_present"] is False
     assert slot["semantic_admission_status"] != "admitted"
     assert slot["component_coverage_satisfied"] is False
@@ -1062,6 +1064,7 @@ def test_bounded_searchos_n1_causal_projection_privacy_allowlist() -> None:
     slot = _required_causal_slot(projection)
     assert slot["safe_failure_class"] == "model_transport_failed"
     assert slot["safe_transport_exception_class"] == "other_safe"
+    assert slot["safe_model_output_invalid_subtype"] == "none"
     assert slot["read_custody_observed"] is True
     assert "custody_refs" not in slot
     assert "action_history" not in slot
@@ -1173,6 +1176,165 @@ def test_bounded_searchos_n1_causal_projection_transport_exception_class(
     slot = _required_causal_slot(projection)
     assert slot["safe_failure_class"] == expected_failure_class
     assert slot["safe_transport_exception_class"] == expected_transport_class
+    assert slot["safe_model_output_invalid_subtype"] == "none"
+    serialized = json.dumps(projection, sort_keys=True)
+    assert "latest_judgment_reason" not in serialized
+    for token in forbidden_tokens:
+        assert token not in serialized
+
+
+@pytest.mark.parametrize(
+    (
+        "reason",
+        "posture",
+        "expected_failure_class",
+        "expected_transport_class",
+        "expected_subtype",
+        "forbidden_tokens",
+    ),
+    [
+        (
+            # Case A — exact post-READ assessment omission
+            (
+                "model_output_invalid:"
+                "post-read_action_requires_exact_read_insufficient_assessments"
+            ),
+            "judgment_failed",
+            "model_output_invalid",
+            "none",
+            "post_read_assessment_incomplete",
+            (
+                "post-read_action_requires_exact_read_insufficient_assessments",
+                "post-READ action requires exact read_insufficient assessments",
+            ),
+        ),
+        (
+            # Case B — semantic handoff payload invalid
+            "model_output_invalid:semantic_handoff_requires_exact_read_custody_refs",
+            "judgment_failed",
+            "model_output_invalid",
+            "none",
+            "semantic_handoff_payload_invalid",
+            ("semantic_handoff_requires_exact_read_custody_refs",),
+        ),
+        (
+            # Case C — semantic handoff custody ref stale/altered
+            (
+                "model_output_invalid:"
+                "semantic_handoff_nominated_stale_or_altered_read_custody"
+            ),
+            "judgment_failed",
+            "model_output_invalid",
+            "none",
+            "semantic_handoff_ref_invalid",
+            ("semantic_handoff_nominated_stale_or_altered_read_custody",),
+        ),
+        (
+            # Case D — unsupported fields
+            "model_output_invalid:judgment_output_contains_unsupported_fields",
+            "judgment_failed",
+            "model_output_invalid",
+            "none",
+            "unsupported_fields",
+            ("judgment_output_contains_unsupported_fields",),
+        ),
+        (
+            # Case E — non-model-output transport failure
+            "model_transport_failed:APITimeoutError",
+            "judgment_failed",
+            "model_transport_failed",
+            "APITimeoutError",
+            "none",
+            (),
+        ),
+        (
+            # Case F — successful / handed-off posture
+            "",
+            "semantically_handed_off",
+            "none",
+            "none",
+            "none",
+            (),
+        ),
+        (
+            # Case G — unknown future validation reason
+            "model_output_invalid:some_unknown_future_rule",
+            "judgment_failed",
+            "model_output_invalid",
+            "none",
+            "other_safe",
+            ("some_unknown_future_rule",),
+        ),
+        (
+            # Case H — private-looking suffix
+            "model_output_invalid:secret_private_sentinel_value",
+            "judgment_failed",
+            "model_output_invalid",
+            "none",
+            "other_safe",
+            ("secret_private_sentinel_value",),
+        ),
+        (
+            # Case I — malformed / empty reason under failed posture
+            "",
+            "judgment_failed",
+            "other_safe",
+            "none",
+            "none",
+            (),
+        ),
+        (
+            # Case I — nonmatching reason under failed posture
+            "not_a_recognized_failure_shape",
+            "judgment_failed",
+            "other_safe",
+            "none",
+            "none",
+            ("not_a_recognized_failure_shape",),
+        ),
+        (
+            # Case I — model_output_invalid with empty suffix
+            "model_output_invalid:",
+            "judgment_failed",
+            "model_output_invalid",
+            "none",
+            "other_safe",
+            (),
+        ),
+        (
+            # Case F — active unjudged posture
+            "",
+            "active_unjudged",
+            "none",
+            "none",
+            "none",
+            (),
+        ),
+    ],
+)
+def test_bounded_searchos_n1_causal_projection_model_output_invalid_subtype(
+    reason: str,
+    posture: str,
+    expected_failure_class: str,
+    expected_transport_class: str,
+    expected_subtype: str,
+    forbidden_tokens: tuple[str, ...],
+) -> None:
+    projection = build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=_transport_cause_fixture(
+            reason=reason,
+            posture=posture,
+        ),
+    )
+    assert projection is not None
+    assert projection["schema_version"] == "bounded_searchos_n1_causal_projection_v1"
+    slot = _required_causal_slot(projection)
+    # Case J — broad class preserved; subtype only refines model_output_invalid
+    assert slot["safe_failure_class"] == expected_failure_class
+    assert slot["safe_transport_exception_class"] == expected_transport_class
+    assert slot["safe_model_output_invalid_subtype"] == expected_subtype
+    if expected_failure_class == "model_output_invalid":
+        assert expected_subtype != "none"
     serialized = json.dumps(projection, sort_keys=True)
     assert "latest_judgment_reason" not in serialized
     for token in forbidden_tokens:
@@ -1204,6 +1366,7 @@ def test_bounded_searchos_n1_causal_projection_transport_field_parity(
     slot = _required_causal_slot(projection)
     assert slot["safe_failure_class"] == "none"
     assert slot["safe_transport_exception_class"] == "none"
+    assert slot["safe_model_output_invalid_subtype"] == "none"
     assert slot["semantic_handoff_present"] is True
     assert slot["handoff_material_consumed"] is True
     assert slot["component_analyst_proposal_status"] == "proposed"
@@ -1213,6 +1376,7 @@ def test_bounded_searchos_n1_causal_projection_transport_field_parity(
     assert set(slot) >= {
         "safe_failure_class",
         "safe_transport_exception_class",
+        "safe_model_output_invalid_subtype",
         "read_custody_observed",
         "semantic_handoff_present",
         "handoff_material_consumed",
