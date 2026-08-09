@@ -2831,17 +2831,22 @@ def _project_safe_transport_exception_class(*, posture: str, reason: Any) -> str
 
 
 def _project_safe_model_output_invalid_subtype(*, posture: str, reason: Any) -> str:
-    """Project a closed safe subtype for model_output_invalid SearchJudgment failures."""
+    """Project a closed safe subtype for model_output_invalid SearchJudgment failures.
 
+    Subtype projection is driven by the canonical ``model_output_invalid:`` reason
+    prefix so a known validator cause remains visible when the slot lifecycle
+    posture (and therefore ``safe_failure_class``) is ``stale_or_invalid``.
+    """
+
+    text = str(reason or "").strip().casefold()
+    if text.startswith(_MODEL_OUTPUT_INVALID_PREFIX):
+        suffix = text[len(_MODEL_OUTPUT_INVALID_PREFIX) :]
+        if not suffix:
+            return "other_safe"
+        return _SAFE_MODEL_OUTPUT_INVALID_SUBTYPE_BY_SUFFIX.get(suffix, "other_safe")
     if _project_safe_failure_class(posture=posture, reason=reason) != "model_output_invalid":
         return "none"
-    text = str(reason or "").strip().casefold()
-    if not text.startswith(_MODEL_OUTPUT_INVALID_PREFIX):
-        return "other_safe"
-    suffix = text[len(_MODEL_OUTPUT_INVALID_PREFIX) :]
-    if not suffix:
-        return "other_safe"
-    return _SAFE_MODEL_OUTPUT_INVALID_SUBTYPE_BY_SUFFIX.get(suffix, "other_safe")
+    return "other_safe"
 
 
 def _slot_read_custody_observed(record: Mapping[str, Any]) -> bool:
