@@ -881,11 +881,16 @@ def test_bounded_searchos_n1_causal_projection_successful_path(
 
 
 @pytest.mark.parametrize(
-    ("decision", "expected_posture", "expected_failure_class"),
+    ("decision", "expected_posture", "expected_failure_class", "expected_subtype"),
     [
-        ("MALFORMED", "judgment_failed", "model_output_malformed"),
-        ("WRAPPED_JSON", "judgment_failed", "model_output_malformed"),
-        ("INVALID_NOMINATION", "stale_or_invalid", "stale_or_invalid"),
+        ("MALFORMED", "judgment_failed", "model_output_malformed", "none"),
+        ("WRAPPED_JSON", "judgment_failed", "model_output_malformed", "none"),
+        (
+            "INVALID_NOMINATION",
+            "stale_or_invalid",
+            "stale_or_invalid",
+            "read_nomination_outside_window",
+        ),
     ],
 )
 def test_bounded_searchos_n1_causal_projection_judgment_failure_path(
@@ -894,6 +899,7 @@ def test_bounded_searchos_n1_causal_projection_judgment_failure_path(
     decision: str,
     expected_posture: str,
     expected_failure_class: str,
+    expected_subtype: str,
 ) -> None:
     outcome, _harness = run_post_retirement_ordinary_pipeline(
         tmp_path,
@@ -914,7 +920,7 @@ def test_bounded_searchos_n1_causal_projection_judgment_failure_path(
     assert slot["final_posture"] == expected_posture
     assert slot["safe_failure_class"] == expected_failure_class
     assert slot["safe_transport_exception_class"] == "none"
-    assert slot["safe_model_output_invalid_subtype"] == "none"
+    assert slot["safe_model_output_invalid_subtype"] == expected_subtype
     assert slot["semantic_handoff_present"] is False
     assert slot["semantic_admission_status"] != "admitted"
     assert slot["component_coverage_satisfied"] is False
@@ -1310,6 +1316,72 @@ def test_bounded_searchos_n1_causal_projection_transport_exception_class(
             "none",
             (),
         ),
+        (
+            # Stale posture — request identity mismatch remains visible
+            "model_output_invalid:judgment_nomination_is_stale",
+            "stale_or_invalid",
+            "stale_or_invalid",
+            "none",
+            "request_identity_mismatch",
+            ("judgment_nomination_is_stale",),
+        ),
+        (
+            # Stale posture — slot identity mismatch remains visible
+            "model_output_invalid:judgment_nomination_slot_is_stale",
+            "stale_or_invalid",
+            "stale_or_invalid",
+            "none",
+            "slot_identity_mismatch",
+            ("judgment_nomination_slot_is_stale",),
+        ),
+        (
+            # Stale posture — read nomination outside window remains visible
+            (
+                "model_output_invalid:"
+                "read_nomination_is_outside_current_candidate_window"
+            ),
+            "stale_or_invalid",
+            "stale_or_invalid",
+            "none",
+            "read_nomination_outside_window",
+            ("read_nomination_is_outside_current_candidate_window",),
+        ),
+        (
+            # Stale posture — read nomination ref invalid remains visible
+            "model_output_invalid:read_nomination_ref_is_stale_or_altered",
+            "stale_or_invalid",
+            "stale_or_invalid",
+            "none",
+            "read_nomination_ref_invalid",
+            ("read_nomination_ref_is_stale_or_altered",),
+        ),
+        (
+            # Stale posture — installed navigation stale-ref subtype remains allowlisted
+            "model_output_invalid:navigation_nomination_ref_is_stale_or_altered",
+            "stale_or_invalid",
+            "stale_or_invalid",
+            "none",
+            "navigation_nomination_invalid",
+            ("navigation_nomination_ref_is_stale_or_altered",),
+        ),
+        (
+            # Stale posture — unknown model_output_invalid suffix collapses
+            "model_output_invalid:some_unknown_stale_future_rule",
+            "stale_or_invalid",
+            "stale_or_invalid",
+            "none",
+            "other_safe",
+            ("some_unknown_stale_future_rule",),
+        ),
+        (
+            # Stale posture — non-model-output stale reason keeps subtype none
+            "stale_lineage_runtime_failure",
+            "stale_or_invalid",
+            "stale_or_invalid",
+            "none",
+            "none",
+            ("stale_lineage_runtime_failure",),
+        ),
     ],
 )
 def test_bounded_searchos_n1_causal_projection_model_output_invalid_subtype(
@@ -1329,12 +1401,15 @@ def test_bounded_searchos_n1_causal_projection_model_output_invalid_subtype(
     assert projection is not None
     assert projection["schema_version"] == "bounded_searchos_n1_causal_projection_v1"
     slot = _required_causal_slot(projection)
-    # Case J — broad class preserved; subtype only refines model_output_invalid
+    # Broad class preserved; subtype refines model_output_invalid reasons,
+    # including when lifecycle posture collapses the class to stale_or_invalid.
     assert slot["safe_failure_class"] == expected_failure_class
     assert slot["safe_transport_exception_class"] == expected_transport_class
     assert slot["safe_model_output_invalid_subtype"] == expected_subtype
     if expected_failure_class == "model_output_invalid":
         assert expected_subtype != "none"
+    if expected_subtype not in {"none", "other_safe"}:
+        assert reason.casefold().startswith("model_output_invalid:")
     serialized = json.dumps(projection, sort_keys=True)
     assert "latest_judgment_reason" not in serialized
     for token in forbidden_tokens:
