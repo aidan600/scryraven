@@ -7,6 +7,7 @@ No test in this file is integration- or secrets-backed.
 
 from __future__ import annotations
 
+import ast
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -23,11 +24,9 @@ from core.initial_query_strategy_failure import (
     classify_initial_query_strategy_failure,
     invoke_run_kernel_initial_planning,
     project_initial_query_strategy_failure_for_terminal,
-    query_strategy_convergence_failure,
     run_kernel_initial_planning_failure,
     scout_disambiguation_runtime_failure,
     search_planner_revision_runtime_failure,
-    search_planner_runtime_failure,
 )
 from core.query_production_runtime import (
     QueryStrategyConvergenceError,
@@ -45,10 +44,10 @@ from core.search_planner_runtime import (
     SearchPlannerRuntimeSafeFailureCode,
 )
 
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 _ISCLOSE_QUERY = (
     "Does Python's math.isclose use relative tolerance, absolute tolerance, or both?"
 )
-
 _PRIVATE_FRAGMENTS = (
     "fictional-raw-exception-message-sentinel",
     "fictional-raw-prompt-sentinel",
@@ -57,74 +56,140 @@ _PRIVATE_FRAGMENTS = (
 )
 
 
-def test_owner_authored_safe_codes_are_closed_on_exception_types() -> None:
-    assert (
-        SearchPlannerRuntimeError.SAFE_FAILURE_CODE
-        is SearchPlannerRuntimeSafeFailureCode.SEARCH_PLANNER_RUNTIME_ERROR
-    )
-    assert SearchPlannerRuntimeError.SAFE_FAILURE_ORIGIN == "planner_runtime"
-    assert (
-        QueryStrategyConvergenceError.SAFE_FAILURE_CODE
-        is QueryStrategyConvergenceFailureCode.QUERY_STRATEGY_CONVERGENCE_ERROR
-    )
-    assert (
-        QueryStrategyConvergenceError.SAFE_FAILURE_ORIGIN
-        == "query_strategy_convergence"
-    )
+def _raise_failure_codes(path: Path, exception_name: str) -> list[str]:
+    src = path.read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    codes: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Raise) or not isinstance(node.exc, ast.Call):
+            continue
+        func = node.exc.func
+        name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", None)
+        if name != exception_name:
+            continue
+        code_value: str | None = None
+        for keyword in node.exc.keywords:
+            if keyword.arg != "failure_code":
+                continue
+            value = keyword.value
+            if isinstance(value, ast.Attribute) and isinstance(value.value, ast.Name):
+                code_value = value.attr
+            break
+        if code_value is None:
+            raise AssertionError(
+                f"{path.name}:{node.lineno} {exception_name} raise lacks failure_code="
+            )
+        codes.append(code_value)
+    return codes
 
 
-def test_classify_projects_closed_origin_and_code_only() -> None:
+def test_every_ordinary_reachable_runtime_raise_supplies_closed_code() -> None:
+    path = _REPO_ROOT / "core" / "search_planner_runtime.py"
+    codes = _raise_failure_codes(path, "SearchPlannerRuntimeError")
+    assert codes
+    allowed = {member.name for member in SearchPlannerRuntimeSafeFailureCode}
+    assert set(codes) == allowed
+
+
+def test_every_ordinary_reachable_convergence_raise_supplies_closed_code() -> None:
+    path = _REPO_ROOT / "core" / "query_production_runtime.py"
+    codes = _raise_failure_codes(path, "QueryStrategyConvergenceError")
+    assert codes
+    allowed = {member.name for member in QueryStrategyConvergenceFailureCode}
+    assert set(codes) <= allowed
+    assert set(codes) == allowed
+
+
+def test_materially_different_runtime_categories_project_different_codes() -> None:
+    first = SearchPlannerRuntimeError(
+        "private: " + _PRIVATE_FRAGMENTS[0],
+        failure_code=SearchPlannerRuntimeSafeFailureCode.ADAPTER_UNAVAILABLE,
+    )
+    second = SearchPlannerRuntimeError(
+        "private: " + _PRIVATE_FRAGMENTS[0],
+        failure_code=SearchPlannerRuntimeSafeFailureCode.PROPOSAL_DIGEST_MISMATCH,
+    )
+    first_proj = project_initial_query_strategy_failure_for_terminal(first)
+    second_proj = project_initial_query_strategy_failure_for_terminal(second)
+    assert first_proj is not None and second_proj is not None
+    assert first_proj["failure_origin"] == "planner_runtime"
+    assert second_proj["failure_origin"] == "planner_runtime"
+    assert first_proj["failure_code"] == "adapter_unavailable"
+    assert second_proj["failure_code"] == "proposal_digest_mismatch"
+    assert first_proj["failure_code"] != second_proj["failure_code"]
+
+
+def test_materially_different_convergence_categories_project_different_codes() -> None:
+    first = QueryStrategyConvergenceError(
+        "private: " + _PRIVATE_FRAGMENTS[0],
+        failure_code=(
+            QueryStrategyConvergenceFailureCode.REQUIRED_SCOUT_ADAPTER_UNAVAILABLE
+        ),
+    )
+    second = QueryStrategyConvergenceError(
+        "private: " + _PRIVATE_FRAGMENTS[0],
+        failure_code=(
+            QueryStrategyConvergenceFailureCode.QUESTION_MEANING_RECORD_MISSING
+        ),
+    )
+    first_proj = project_initial_query_strategy_failure_for_terminal(first)
+    second_proj = project_initial_query_strategy_failure_for_terminal(second)
+    assert first_proj is not None and second_proj is not None
+    assert first_proj["failure_code"] == "required_scout_adapter_unavailable"
+    assert second_proj["failure_code"] == "question_meaning_record_missing"
+    assert first_proj["failure_code"] != second_proj["failure_code"]
+
+
+def test_classifier_consumes_owner_authored_code_not_generic_rebuild() -> None:
     runtime = SearchPlannerRuntimeError(
-        "private: " + " | ".join(_PRIVATE_FRAGMENTS)
+        "private runtime",
+        failure_code=SearchPlannerRuntimeSafeFailureCode.DUPLICATE_PROPOSAL,
     )
     convergence = QueryStrategyConvergenceError(
-        "private: " + " | ".join(_PRIVATE_FRAGMENTS)
+        "private convergence",
+        failure_code=QueryStrategyConvergenceFailureCode.RECON_CEILING_EXCEEDED,
     )
+    runtime_failure = classify_initial_query_strategy_failure(runtime)
+    convergence_failure = classify_initial_query_strategy_failure(convergence)
+    assert runtime_failure is not None
+    assert convergence_failure is not None
+    assert runtime_failure.failure_origin is InitialQueryStrategyFailureOrigin.PLANNER_RUNTIME
+    assert (
+        convergence_failure.failure_origin
+        is InitialQueryStrategyFailureOrigin.QUERY_STRATEGY_CONVERGENCE
+    )
+    assert runtime_failure.failure_code == runtime.failure_code.value
+    assert convergence_failure.failure_code == convergence.failure_code.value
+    assert runtime_failure.failure_code != "search_planner_runtime_error"
+    assert convergence_failure.failure_code != "query_strategy_convergence_error"
+
+
+def test_run_kernel_and_scout_revision_projection_unchanged() -> None:
     translated = InitialQueryStrategyFailureError(
         run_kernel_initial_planning_failure(operation="search_planner_production")
     )
-    adapter = SearchPlannerModelAdapterError(
-        "private: " + " | ".join(_PRIVATE_FRAGMENTS),
-        failure_code=SearchPlannerModelAdapterFailureCode.MODEL_CALL_FAILED,
-        predicate_id=None,
-    )
-
-    runtime_failure = classify_initial_query_strategy_failure(runtime)
-    assert runtime_failure is not None
-    assert runtime_failure == search_planner_runtime_failure()
-    assert runtime_failure.to_terminal_projection() == {
+    assert translated.to_terminal_projection() == {
         "schema_version": "initial_query_strategy_failure_v1",
         "boundary": "initial_query_strategy",
-        "failure_origin": InitialQueryStrategyFailureOrigin.PLANNER_RUNTIME.value,
-        "failure_code": (
-            InitialQueryStrategyFailureCode.SEARCH_PLANNER_RUNTIME_ERROR.value
-        ),
+        "failure_origin": "run_kernel",
+        "failure_code": "search_planner_production_transition",
     }
-
-    convergence_failure = classify_initial_query_strategy_failure(convergence)
-    assert convergence_failure == query_strategy_convergence_failure()
-    assert classify_initial_query_strategy_failure(translated) == translated.failure
-    assert classify_initial_query_strategy_failure(adapter) is None
-    assert classify_initial_query_strategy_failure(RuntimeError("unknown")) is None
-    assert classify_initial_query_strategy_failure(None) is None
-
-    for failure in (
-        runtime_failure,
-        convergence_failure,
-        translated.failure,
-        scout_disambiguation_runtime_failure(),
-        search_planner_revision_runtime_failure(),
-    ):
-        projected = failure.to_terminal_projection()
-        encoded = json.dumps(projected, sort_keys=True)
-        for fragment in _PRIVATE_FRAGMENTS:
-            assert fragment not in encoded
-        assert set(projected) == {
-            "schema_version",
-            "boundary",
-            "failure_origin",
-            "failure_code",
-        }
+    assert scout_disambiguation_runtime_failure().to_terminal_projection() == {
+        "schema_version": "initial_query_strategy_failure_v1",
+        "boundary": "initial_query_strategy",
+        "failure_origin": "scout_disambiguation_runtime",
+        "failure_code": "scout_disambiguation_runtime_error",
+    }
+    assert search_planner_revision_runtime_failure().to_terminal_projection() == {
+        "schema_version": "initial_query_strategy_failure_v1",
+        "boundary": "initial_query_strategy",
+        "failure_origin": "search_planner_revision_runtime",
+        "failure_code": "search_planner_revision_runtime_error",
+    }
+    assert (
+        InitialQueryStrategyFailureCode.SEARCH_PLANNER_PRODUCTION_TRANSITION.value
+        == "search_planner_production_transition"
+    )
 
 
 def test_invoke_run_kernel_translates_only_allowlisted_operations() -> None:
@@ -142,15 +207,20 @@ def test_invoke_run_kernel_translates_only_allowlisted_operations() -> None:
     for fragment in _PRIVATE_FRAGMENTS:
         assert fragment not in encoded
 
-    with pytest.raises(ValueError, match="not allowlisted"):
-        run_kernel_initial_planning_failure(operation="not_a_corridor_operation")
 
-
-def test_bounded_terminal_projects_initial_planning_failure_without_private_material() -> None:
+def test_bounded_terminal_projects_owner_codes_without_private_material() -> None:
     private_message = "private: " + " | ".join(_PRIVATE_FRAGMENTS)
     cases = (
-        SearchPlannerRuntimeError(private_message),
-        QueryStrategyConvergenceError(private_message),
+        SearchPlannerRuntimeError(
+            private_message,
+            failure_code=SearchPlannerRuntimeSafeFailureCode.ADAPTER_PROPOSAL_EMPTY,
+        ),
+        QueryStrategyConvergenceError(
+            private_message,
+            failure_code=(
+                QueryStrategyConvergenceFailureCode.INITIAL_STRATEGIES_EMPTY
+            ),
+        ),
         InitialQueryStrategyFailureError(
             run_kernel_initial_planning_failure(
                 operation="search_work_plan_construction"
@@ -188,15 +258,37 @@ def test_bounded_terminal_preserves_adapter_rich_path_exclusively() -> None:
         config=RunConfig(query=_ISCLOSE_QUERY),
     )
     terminal = payload["terminal"]
-    assert "search_planner_failure" in terminal
+    assert terminal["search_planner_failure"] == {
+        "failure_stage": adapter.failure_stage.value,
+        "failure_code": adapter.failure_code.value,
+        "mechanical_rule_id": adapter.mechanical_rule_id,
+        "predicate_registry_version": adapter.predicate_registry_version,
+        "predicate_id": None,
+        "provider_completion_posture": None,
+        "strict_parse_subtype": None,
+        "cleaner_modified": None,
+    }
     assert INITIAL_QUERY_STRATEGY_FAILURE_TERMINAL_KEY not in terminal
+    assert classify_initial_query_strategy_failure(adapter) is None
     encoded = json.dumps(payload, sort_keys=True)
     for fragment in _PRIVATE_FRAGMENTS:
         assert fragment not in encoded
 
 
+def test_unknown_failure_remains_generic_without_attribution() -> None:
+    payload = compatibility_cli._bounded_terminal_payload(
+        entrypoint="scryraven",
+        exc=None,
+        config=RunConfig(query=_ISCLOSE_QUERY),
+    )
+    assert payload["terminal"]["code"] == "bounded_run_failed"
+    assert INITIAL_QUERY_STRATEGY_FAILURE_TERMINAL_KEY not in payload["terminal"]
+    assert "search_planner_failure" not in payload["terminal"]
+    assert classify_initial_query_strategy_failure(RuntimeError("unknown")) is None
+
+
 @pytest.mark.parametrize("entrypoint", ["proplex", "scryraven"])
-def test_public_bounded_cli_projects_initial_planning_failure_identity(
+def test_public_bounded_cli_projects_decision_grade_failure_identity(
     entrypoint: str,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -229,7 +321,10 @@ def test_public_bounded_cli_projects_initial_planning_failure_identity(
     )
 
     private_message = "SearchPlanner fixture failure: " + " | ".join(_PRIVATE_FRAGMENTS)
-    failure_to_raise: BaseException = SearchPlannerRuntimeError(private_message)
+    failure_to_raise: BaseException = SearchPlannerRuntimeError(
+        private_message,
+        failure_code=SearchPlannerRuntimeSafeFailureCode.SCHEMA_BINDING_INVALID,
+    )
 
     def fail_pipeline(*_args: Any, **_kwargs: Any) -> Any:
         raise failure_to_raise
@@ -258,8 +353,14 @@ def test_public_bounded_cli_projects_initial_planning_failure_identity(
     ]
 
     expected_failures: tuple[BaseException, ...] = (
-        SearchPlannerRuntimeError(private_message),
-        QueryStrategyConvergenceError(private_message),
+        SearchPlannerRuntimeError(
+            private_message,
+            failure_code=SearchPlannerRuntimeSafeFailureCode.SCHEMA_BINDING_INVALID,
+        ),
+        QueryStrategyConvergenceError(
+            private_message,
+            failure_code=QueryStrategyConvergenceFailureCode.RECON_CEILING_EXCEEDED,
+        ),
         InitialQueryStrategyFailureError(
             run_kernel_initial_planning_failure(operation="query_plan_admission")
         ),

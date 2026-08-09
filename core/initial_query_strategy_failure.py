@@ -30,10 +30,13 @@ class InitialQueryStrategyFailureOrigin(str, Enum):
 
 
 class InitialQueryStrategyFailureCode(str, Enum):
-    """Closed failure codes for the ordinary initial-planning corridor."""
+    """Closed codes for corridor translations that are not owner-exception fields.
 
-    SEARCH_PLANNER_RUNTIME_ERROR = "search_planner_runtime_error"
-    QUERY_STRATEGY_CONVERGENCE_ERROR = "query_strategy_convergence_error"
+    ``SearchPlannerRuntimeError`` and ``QueryStrategyConvergenceError`` author
+    their own typed codes; those values are projected directly and are not
+    duplicated here.
+    """
+
     SCOUT_DISAMBIGUATION_RUNTIME_ERROR = "scout_disambiguation_runtime_error"
     SEARCH_PLANNER_REVISION_RUNTIME_ERROR = "search_planner_revision_runtime_error"
     SEARCH_PLANNER_PRODUCTION_TRANSITION = "search_planner_production_transition"
@@ -87,14 +90,22 @@ class InitialQueryStrategyFailure:
     """An allowlisted, message-free terminal attribution."""
 
     failure_origin: InitialQueryStrategyFailureOrigin
-    failure_code: InitialQueryStrategyFailureCode
+    failure_code: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.failure_origin, InitialQueryStrategyFailureOrigin):
+            raise TypeError("failure_origin must be a closed corridor origin")
+        if not isinstance(self.failure_code, str) or not self.failure_code.strip():
+            raise ValueError("failure_code must be a non-empty closed token")
+        if self.failure_code != self.failure_code.strip():
+            raise ValueError("failure_code must not carry surrounding whitespace")
 
     def to_terminal_projection(self) -> dict[str, str]:
         return {
             "schema_version": INITIAL_QUERY_STRATEGY_FAILURE_SCHEMA_VERSION,
             "boundary": INITIAL_QUERY_STRATEGY_FAILURE_BOUNDARY,
             "failure_origin": self.failure_origin.value,
-            "failure_code": self.failure_code.value,
+            "failure_code": self.failure_code,
         }
 
 
@@ -121,24 +132,12 @@ class InitialQueryStrategyFailureError(RuntimeError):
         return self._failure.to_terminal_projection()
 
 
-def search_planner_runtime_failure() -> InitialQueryStrategyFailure:
-    return InitialQueryStrategyFailure(
-        failure_origin=InitialQueryStrategyFailureOrigin.PLANNER_RUNTIME,
-        failure_code=InitialQueryStrategyFailureCode.SEARCH_PLANNER_RUNTIME_ERROR,
-    )
-
-
-def query_strategy_convergence_failure() -> InitialQueryStrategyFailure:
-    return InitialQueryStrategyFailure(
-        failure_origin=InitialQueryStrategyFailureOrigin.QUERY_STRATEGY_CONVERGENCE,
-        failure_code=InitialQueryStrategyFailureCode.QUERY_STRATEGY_CONVERGENCE_ERROR,
-    )
-
-
 def scout_disambiguation_runtime_failure() -> InitialQueryStrategyFailure:
     return InitialQueryStrategyFailure(
         failure_origin=InitialQueryStrategyFailureOrigin.SCOUT_DISAMBIGUATION_RUNTIME,
-        failure_code=InitialQueryStrategyFailureCode.SCOUT_DISAMBIGUATION_RUNTIME_ERROR,
+        failure_code=(
+            InitialQueryStrategyFailureCode.SCOUT_DISAMBIGUATION_RUNTIME_ERROR.value
+        ),
     )
 
 
@@ -146,7 +145,7 @@ def search_planner_revision_runtime_failure() -> InitialQueryStrategyFailure:
     return InitialQueryStrategyFailure(
         failure_origin=InitialQueryStrategyFailureOrigin.SEARCH_PLANNER_REVISION_RUNTIME,
         failure_code=(
-            InitialQueryStrategyFailureCode.SEARCH_PLANNER_REVISION_RUNTIME_ERROR
+            InitialQueryStrategyFailureCode.SEARCH_PLANNER_REVISION_RUNTIME_ERROR.value
         ),
     )
 
@@ -159,7 +158,7 @@ def run_kernel_initial_planning_failure(
         raise ValueError("initial planning RunKernel operation is not allowlisted")
     return InitialQueryStrategyFailure(
         failure_origin=InitialQueryStrategyFailureOrigin.RUN_KERNEL,
-        failure_code=code,
+        failure_code=code.value,
     )
 
 
@@ -184,7 +183,9 @@ def classify_initial_query_strategy_failure(
     """Return the closed corridor cause, or None for unknown/untyped failures.
 
     ``SearchPlannerModelAdapterError`` remains on the existing rich terminal path
-    and is intentionally excluded here.
+    and is intentionally excluded here. Runtime and convergence causes consume
+    the exception's owner-authored identity; this classifier does not invent a
+    second generic code for those families.
     """
 
     if exc is None:
@@ -199,9 +200,19 @@ def classify_initial_query_strategy_failure(
     if isinstance(exc, InitialQueryStrategyFailureError):
         return exc.failure
     if isinstance(exc, QueryStrategyConvergenceError):
-        return query_strategy_convergence_failure()
+        return InitialQueryStrategyFailure(
+            failure_origin=InitialQueryStrategyFailureOrigin(
+                QueryStrategyConvergenceError.SAFE_FAILURE_ORIGIN
+            ),
+            failure_code=exc.failure_code.value,
+        )
     if isinstance(exc, SearchPlannerRuntimeError):
-        return search_planner_runtime_failure()
+        return InitialQueryStrategyFailure(
+            failure_origin=InitialQueryStrategyFailureOrigin(
+                SearchPlannerRuntimeError.SAFE_FAILURE_ORIGIN
+            ),
+            failure_code=exc.failure_code.value,
+        )
     return None
 
 
@@ -235,9 +246,7 @@ __all__ = [
     "initial_query_strategy_failure_from_safe_metadata",
     "invoke_run_kernel_initial_planning",
     "project_initial_query_strategy_failure_for_terminal",
-    "query_strategy_convergence_failure",
     "run_kernel_initial_planning_failure",
     "scout_disambiguation_runtime_failure",
     "search_planner_revision_runtime_failure",
-    "search_planner_runtime_failure",
 ]

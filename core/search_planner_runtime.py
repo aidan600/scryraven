@@ -234,14 +234,66 @@ class SearchPlannerRuntimeSafeFailureCode(str, Enum):
     projected through the existing bounded ``search_planner_failure`` path.
     """
 
-    SEARCH_PLANNER_RUNTIME_ERROR = "search_planner_runtime_error"
+    ADAPTER_UNAVAILABLE = "adapter_unavailable"
+    ADAPTER_PROPOSAL_EMPTY = "adapter_proposal_empty"
+    ADAPTER_PROPOSAL_TYPE_INVALID = "adapter_proposal_type_invalid"
+    DETERMINISTIC_ADAPTER_COMPOSITION_INVALID = "deterministic_adapter_composition_invalid"
+    INPUT_IDENTITY_MISSING = "input_identity_missing"
+    INPUT_CLOSED_SURFACE_OPENED = "input_closed_surface_opened"
+    ACTION_UNAUTHORIZED_OR_MISBOUND = "action_unauthorized_or_misbound"
+    ACTION_QUERY_DIGEST_MISMATCH = "action_query_digest_mismatch"
+    ACTION_SCHEMA_BINDING_MISMATCH = "action_schema_binding_mismatch"
+    OBSERVATION_ENVELOPE_INVALID = "observation_envelope_invalid"
+    RUN_REQUEST_BINDING_INVALID = "run_request_binding_invalid"
+    QUERY_DIGEST_BINDING_INVALID = "query_digest_binding_invalid"
+    SCHEMA_BINDING_INVALID = "schema_binding_invalid"
+    PROPOSAL_DIGEST_MISSING = "proposal_digest_missing"
+    PROPOSAL_DIGEST_MISMATCH = "proposal_digest_mismatch"
+    DUPLICATE_PROPOSAL = "duplicate_proposal"
+    PROPOSAL_SHAPE_INVALID = "proposal_shape_invalid"
+    PROPOSAL_CLOSED_SURFACE_OPENED = "proposal_closed_surface_opened"
+    QMR_PASSIVITY_VIOLATION = "qmr_passivity_violation"
+    QMR_IDENTITY_OR_VALIDATION_FAILED = "qmr_identity_or_validation_failed"
+    PARENT_DIGEST_STALE = "parent_digest_stale"
+    INITIAL_STRATEGY_CONTRACT_INVALID = "initial_strategy_contract_invalid"
+    INITIAL_STRATEGY_REQUIREMENT_INVALID = "initial_strategy_requirement_invalid"
+    INITIAL_STRATEGY_IDENTITY_INVALID = "initial_strategy_identity_invalid"
+    STRATEGY_CANDIDATE_INVALID = "strategy_candidate_invalid"
+    RECON_REQUIREMENT_INVALID = "recon_requirement_invalid"
 
 
 class SearchPlannerRuntimeError(ValueError):
     """Raised when planner execution, binding validation, or reduction fails."""
 
     SAFE_FAILURE_ORIGIN = "planner_runtime"
-    SAFE_FAILURE_CODE = SearchPlannerRuntimeSafeFailureCode.SEARCH_PLANNER_RUNTIME_ERROR
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        failure_code: SearchPlannerRuntimeSafeFailureCode | None = None,
+    ) -> None:
+        super().__init__(message)
+        if type(self) is SearchPlannerRuntimeError:
+            if failure_code is None:
+                raise TypeError(
+                    "SearchPlannerRuntimeError requires failure_code="
+                )
+            if not isinstance(failure_code, SearchPlannerRuntimeSafeFailureCode):
+                raise TypeError(
+                    "failure_code must be a SearchPlannerRuntimeSafeFailureCode"
+                )
+            self._failure_code = failure_code
+        else:
+            # Subclasses such as SearchPlannerModelAdapterError call
+            # super().__init__(message) and own a distinct failure taxonomy.
+            self._failure_code = failure_code
+
+    @property
+    def failure_code(self) -> SearchPlannerRuntimeSafeFailureCode:
+        if self._failure_code is None:
+            raise AttributeError("failure_code is not set on this exception")
+        return self._failure_code
 
 
 class SearchPlannerAdapter(Protocol):
@@ -279,7 +331,8 @@ class DeterministicSearchPlannerAdapter:
         )
         if not contract_id or not route_facts or not query_text:
             raise SearchPlannerRuntimeError(
-                "deterministic SearchPlanner requires explicit route, run-contract, and query composition"
+                "deterministic SearchPlanner requires explicit route, run-contract, and query composition",
+                failure_code=SearchPlannerRuntimeSafeFailureCode.DETERMINISTIC_ADAPTER_COMPOSITION_INVALID,
             )
 
         records = build_deterministic_search_work_runtime_records(
@@ -582,12 +635,18 @@ class SearchPlannerInput:
         run_id = _clean_token(self.run_id)
         request_id = _clean_token(self.request_id)
         if not run_id or not request_id:
-            raise SearchPlannerRuntimeError("search planner input requires run_id and request_id")
+            raise SearchPlannerRuntimeError(
+                "search planner input requires run_id and request_id",
+                failure_code=SearchPlannerRuntimeSafeFailureCode.INPUT_IDENTITY_MISSING,
+            )
         query_digest = self.user_query_digest
         closed_flags = {**_CLOSED_SURFACE_FLAGS, **_safe_mapping(self.closed_surface_flags)}
         closed_flags = {key: bool(value) for key, value in closed_flags.items()}
         if any(value for value in closed_flags.values()):
-            raise SearchPlannerRuntimeError("search planner input cannot open closed runtime surfaces")
+            raise SearchPlannerRuntimeError(
+                "search planner input cannot open closed runtime surfaces",
+                failure_code=SearchPlannerRuntimeSafeFailureCode.INPUT_CLOSED_SURFACE_OPENED,
+            )
         return {
             "schema_version": self.planner_schema_version,
             "run_id": run_id,
@@ -634,7 +693,10 @@ def execute_search_planner_action(
     """
 
     if adapter is None:
-        raise SearchPlannerRuntimeError("search planner requires an explicitly injected adapter")
+        raise SearchPlannerRuntimeError(
+            "search planner requires an explicitly injected adapter",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.ADAPTER_UNAVAILABLE,
+        )
     _validate_action_like(action=action, planner_input=planner_input)
     adapter_input = planner_input.to_adapter_payload()
     adapter_result = _call_adapter(adapter, adapter_input)
@@ -656,7 +718,10 @@ def build_search_planner_observation_payload(
     planner_input_ref = _planner_input_ref_for_observation(planner_input)
     result = _safe_mapping(adapter_result)
     if not result:
-        raise SearchPlannerRuntimeError("search planner adapter returned no proposal")
+        raise SearchPlannerRuntimeError(
+            "search planner adapter returned no proposal",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.ADAPTER_PROPOSAL_EMPTY,
+        )
     _reject_forbidden_surface_claims(result)
 
     qmr = _question_meaning_record_from_adapter_result(
@@ -766,7 +831,10 @@ def build_search_planner_proposal_state(
     clean_run_id = _clean_token(run_id)
     clean_request_id = _clean_token(request_id)
     if not clean_action_id or not clean_run_id or not clean_request_id:
-        raise SearchPlannerRuntimeError("search planner proposal reduction requires action_id, run_id, and request_id")
+        raise SearchPlannerRuntimeError(
+            "search planner proposal reduction requires action_id, run_id, and request_id",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.OBSERVATION_ENVELOPE_INVALID,
+        )
 
     inputs = _safe_mapping(action_inputs)
     payload = _safe_mapping(observation_payload)
@@ -775,33 +843,58 @@ def build_search_planner_proposal_state(
     qmr_payload = _safe_mapping(proposal.get("question_meaning_record") or payload.get("question_meaning_record"))
     if not planner_input or not proposal or not qmr_payload:
         raise SearchPlannerRuntimeError(
-            "search planner proposal observation requires planner_input, planner_proposal, and question_meaning_record"
+            "search planner proposal observation requires planner_input, planner_proposal, and question_meaning_record",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.OBSERVATION_ENVELOPE_INVALID,
         )
     if payload.get("schema_version") != SEARCH_PLANNER_OBSERVATION_SCHEMA_VERSION:
-        raise SearchPlannerRuntimeError("search planner observation schema version does not match")
+        raise SearchPlannerRuntimeError(
+            "search planner observation schema version does not match",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.OBSERVATION_ENVELOPE_INVALID,
+        )
     _reject_forbidden_surface_claims(payload)
     _validate_action_inputs(inputs)
 
     if planner_input.get("run_id") != clean_run_id or proposal.get("run_id") != clean_run_id:
-        raise SearchPlannerRuntimeError("search planner proposal run_id does not match the run")
+        raise SearchPlannerRuntimeError(
+            "search planner proposal run_id does not match the run",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.RUN_REQUEST_BINDING_INVALID,
+        )
     if planner_input.get("request_id") != clean_request_id or proposal.get("request_id") != clean_request_id:
-        raise SearchPlannerRuntimeError("search planner proposal request_id does not match the request")
+        raise SearchPlannerRuntimeError(
+            "search planner proposal request_id does not match the request",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.RUN_REQUEST_BINDING_INVALID,
+        )
     if qmr_payload.get("run_id") != clean_run_id or qmr_payload.get("request_id") != clean_request_id:
-        raise SearchPlannerRuntimeError("question meaning record run/request binding does not match the run")
+        raise SearchPlannerRuntimeError(
+            "question meaning record run/request binding does not match the run",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.RUN_REQUEST_BINDING_INVALID,
+        )
 
     query_ref = _safe_mapping(planner_input.get("user_query_ref"))
     bound_query_digest = _clean_token(inputs.get("user_query_digest"), limit=128)
     query_digest = _clean_token(query_ref.get("digest"), limit=128)
     if not bound_query_digest or not query_digest:
-        raise SearchPlannerRuntimeError("search planner proposal requires a user query digest binding")
+        raise SearchPlannerRuntimeError(
+            "search planner proposal requires a user query digest binding",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.QUERY_DIGEST_BINDING_INVALID,
+        )
     if bound_query_digest != query_digest or qmr_payload.get("request_digest") != query_digest:
-        raise SearchPlannerRuntimeError("stale query digest: planner proposal does not match authorization")
+        raise SearchPlannerRuntimeError(
+            "stale query digest: planner proposal does not match authorization",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.QUERY_DIGEST_BINDING_INVALID,
+        )
 
     bound_schema = _clean_token(inputs.get("planner_schema_version"))
     if bound_schema != SEARCH_PLANNER_SCHEMA_VERSION:
-        raise SearchPlannerRuntimeError("search planner action binds the wrong planner schema version")
+        raise SearchPlannerRuntimeError(
+            "search planner action binds the wrong planner schema version",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.SCHEMA_BINDING_INVALID,
+        )
     if planner_input.get("schema_version") != bound_schema or proposal.get("planner_schema_version") != bound_schema:
-        raise SearchPlannerRuntimeError("planner schema version binding does not match proposal")
+        raise SearchPlannerRuntimeError(
+            "planner schema version binding does not match proposal",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.SCHEMA_BINDING_INVALID,
+        )
 
     _validate_parent_contract_bindings(
         action_inputs=inputs,
@@ -812,10 +905,16 @@ def build_search_planner_proposal_state(
 
     declared_digest = _clean_token(proposal.get("proposal_digest"), limit=128)
     if not declared_digest:
-        raise SearchPlannerRuntimeError("search planner proposal requires proposal_digest")
+        raise SearchPlannerRuntimeError(
+            "search planner proposal requires proposal_digest",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.PROPOSAL_DIGEST_MISSING,
+        )
     recomputed = _digest_json(_proposal_digest_payload(proposal))
     if declared_digest != recomputed:
-        raise SearchPlannerRuntimeError("stale planner proposal: proposal digest does not match payload content")
+        raise SearchPlannerRuntimeError(
+            "stale planner proposal: proposal digest does not match payload content",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.PROPOSAL_DIGEST_MISMATCH,
+        )
 
     _validate_question_meaning_payload(qmr_payload, query_digest=query_digest)
 
@@ -829,7 +928,8 @@ def build_search_planner_proposal_state(
         history_item = _safe_mapping(item)
         if history_item.get("dedupe_key") == dedupe_key:
             raise SearchPlannerRuntimeError(
-                "duplicate search planner proposal for the same query and parent contract context"
+                "duplicate search planner proposal for the same query and parent contract context",
+                failure_code=SearchPlannerRuntimeSafeFailureCode.DUPLICATE_PROPOSAL,
             )
 
     state = {
@@ -982,25 +1082,49 @@ def _planner_input_ref_for_observation(planner_input: Mapping[str, Any]) -> dict
 
 def _validate_action_like(*, action: Any, planner_input: SearchPlannerInput) -> None:
     if action is None:
-        raise SearchPlannerRuntimeError("search planner requires an authorized action")
+        raise SearchPlannerRuntimeError(
+            "search planner requires an authorized action",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.ACTION_UNAUTHORIZED_OR_MISBOUND,
+        )
     stage = getattr(action, "stage", None)
     action_type = _enum_or_text(getattr(action, "action_type", None))
     expected_observation_type = _enum_or_text(getattr(action, "expected_observation_type", None))
     inputs = _safe_mapping(getattr(action, "inputs", None))
     if stage != SEARCH_PLANNER_PRODUCTION_STAGE:
-        raise SearchPlannerRuntimeError("search planner action stage does not match")
+        raise SearchPlannerRuntimeError(
+            "search planner action stage does not match",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.ACTION_UNAUTHORIZED_OR_MISBOUND,
+        )
     if action_type != _EXPECTED_ACTION_TYPE:
-        raise SearchPlannerRuntimeError("search planner action type does not match")
+        raise SearchPlannerRuntimeError(
+            "search planner action type does not match",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.ACTION_UNAUTHORIZED_OR_MISBOUND,
+        )
     if expected_observation_type != _EXPECTED_OBSERVATION_TYPE:
-        raise SearchPlannerRuntimeError("search planner expected observation type does not match")
+        raise SearchPlannerRuntimeError(
+            "search planner expected observation type does not match",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.ACTION_UNAUTHORIZED_OR_MISBOUND,
+        )
     if _clean_token(getattr(action, "run_id", None)) != _clean_token(planner_input.run_id):
-        raise SearchPlannerRuntimeError("search planner action run_id does not match input")
+        raise SearchPlannerRuntimeError(
+            "search planner action run_id does not match input",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.ACTION_UNAUTHORIZED_OR_MISBOUND,
+        )
     if _clean_token(inputs.get("request_id")) != _clean_token(planner_input.request_id):
-        raise SearchPlannerRuntimeError("search planner action request_id does not match input")
+        raise SearchPlannerRuntimeError(
+            "search planner action request_id does not match input",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.ACTION_UNAUTHORIZED_OR_MISBOUND,
+        )
     if _clean_token(inputs.get("user_query_digest"), limit=128) != planner_input.user_query_digest:
-        raise SearchPlannerRuntimeError("search planner action user query digest does not match input")
+        raise SearchPlannerRuntimeError(
+            "search planner action user query digest does not match input",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.ACTION_QUERY_DIGEST_MISMATCH,
+        )
     if _clean_token(inputs.get("planner_schema_version")) != planner_input.planner_schema_version:
-        raise SearchPlannerRuntimeError("search planner action planner schema version does not match input")
+        raise SearchPlannerRuntimeError(
+            "search planner action planner schema version does not match input",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.ACTION_SCHEMA_BINDING_MISMATCH,
+        )
 
 
 def _call_adapter(
@@ -1012,7 +1136,10 @@ def _call_adapter(
     else:
         result = adapter(adapter_input)  # type: ignore[misc]
     if not isinstance(result, Mapping):
-        raise SearchPlannerRuntimeError("search planner adapter must return a mapping")
+        raise SearchPlannerRuntimeError(
+            "search planner adapter must return a mapping",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.ADAPTER_PROPOSAL_TYPE_INVALID,
+        )
     return result
 
 
@@ -1024,11 +1151,17 @@ def _question_meaning_record_from_adapter_result(
     query_ref = _safe_mapping(planner_input.get("user_query_ref"))
     request_digest = _clean_token(query_ref.get("digest"), limit=128)
     if not request_digest:
-        raise SearchPlannerRuntimeError("search planner input requires user_query_ref.digest")
+        raise SearchPlannerRuntimeError(
+            "search planner input requires user_query_ref.digest",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.INPUT_IDENTITY_MISSING,
+        )
     run_id = _clean_token(planner_input.get("run_id"))
     request_id = _clean_token(planner_input.get("request_id"))
     if not run_id or not request_id:
-        raise SearchPlannerRuntimeError("search planner input requires run_id and request_id")
+        raise SearchPlannerRuntimeError(
+            "search planner input requires run_id and request_id",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.INPUT_IDENTITY_MISSING,
+        )
 
     slots = _semantic_slots(adapter_result.get("semantic_slots"))
     components = _answer_components(adapter_result.get("answer_components"))
@@ -1231,15 +1364,24 @@ def _deterministic_query_shape_metadata(
 def _semantic_slots(value: Any) -> list[SemanticSlot]:
     items = _safe_list(value)
     if not items:
-        raise SearchPlannerRuntimeError("search planner proposal requires at least one semantic slot")
+        raise SearchPlannerRuntimeError(
+            "search planner proposal requires at least one semantic slot",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.PROPOSAL_SHAPE_INVALID,
+        )
     slots: list[SemanticSlot] = []
     for item in items:
         mapping = _safe_mapping(item)
         if not mapping:
-            raise SearchPlannerRuntimeError("semantic slot proposal must be a mapping")
+            raise SearchPlannerRuntimeError(
+                "semantic slot proposal must be a mapping",
+                failure_code=SearchPlannerRuntimeSafeFailureCode.PROPOSAL_SHAPE_INVALID,
+            )
         slot_id = _clean_token(mapping.get("slot_id"))
         if not slot_id:
-            raise SearchPlannerRuntimeError("semantic slot proposal requires slot_id")
+            raise SearchPlannerRuntimeError(
+                "semantic slot proposal requires slot_id",
+                failure_code=SearchPlannerRuntimeSafeFailureCode.PROPOSAL_SHAPE_INVALID,
+            )
         slots.append(
             SemanticSlot(
                 slot_id=slot_id,
@@ -1259,22 +1401,30 @@ def _semantic_slots(value: Any) -> list[SemanticSlot]:
 def _answer_components(value: Any) -> list[AnswerComponentContract]:
     items = _safe_list(value)
     if not items:
-        raise SearchPlannerRuntimeError("search planner proposal requires at least one answer component")
+        raise SearchPlannerRuntimeError(
+            "search planner proposal requires at least one answer component",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.PROPOSAL_SHAPE_INVALID,
+        )
     if len(items) > SEARCH_PLANNER_MAX_ANSWER_COMPONENTS:
         raise SearchPlannerRuntimeError(
-            "search planner proposal exceeds the five-component acceptance ceiling"
+            "search planner proposal exceeds the five-component acceptance ceiling",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.PROPOSAL_SHAPE_INVALID,
         )
     components: list[AnswerComponentContract] = []
     for item in items:
         mapping = _safe_mapping(item)
         if not mapping:
-            raise SearchPlannerRuntimeError("answer component proposal must be a mapping")
+            raise SearchPlannerRuntimeError(
+                "answer component proposal must be a mapping",
+                failure_code=SearchPlannerRuntimeSafeFailureCode.PROPOSAL_SHAPE_INVALID,
+            )
         component_id = _clean_token(mapping.get("component_id"))
         label = _clean_text(mapping.get("user_facing_label"), limit=180)
         question = _clean_text(mapping.get("user_facing_question"), limit=400)
         if not component_id or not label or not question:
             raise SearchPlannerRuntimeError(
-                "answer component proposal requires component_id, user_facing_label, and user_facing_question"
+                "answer component proposal requires component_id, user_facing_label, and user_facing_question",
+                failure_code=SearchPlannerRuntimeSafeFailureCode.PROPOSAL_SHAPE_INVALID,
             )
         components.append(
             AnswerComponentContract(
@@ -1320,7 +1470,10 @@ def _source_obligation_refs(
             mapping = _safe_mapping(item)
             candidate_id = _clean_token(mapping.get("candidate_id"))
             if not candidate_id:
-                raise SearchPlannerRuntimeError("source obligation candidate requires candidate_id")
+                raise SearchPlannerRuntimeError(
+                    "source obligation candidate requires candidate_id",
+                    failure_code=SearchPlannerRuntimeSafeFailureCode.PROPOSAL_SHAPE_INVALID,
+                )
             refs.append(
                 SourceObligationCandidateRef(
                     candidate_id=candidate_id,
@@ -1425,7 +1578,10 @@ def initial_query_strategies_from_planner_state(
         if _safe_mapping(item)
     ]
     if not state or not accepted_components:
-        raise SearchPlannerRuntimeError("initial query strategy requires planner state and an accepted contract")
+        raise SearchPlannerRuntimeError(
+            "initial query strategy requires planner state and an accepted contract",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.INITIAL_STRATEGY_CONTRACT_INVALID,
+        )
 
     planner_ref = {
         "proposal_id": state.get("proposal_id"),
@@ -1446,7 +1602,8 @@ def initial_query_strategies_from_planner_state(
     if not required_components:
         raise SearchPlannerRuntimeError(
             "initial query strategy requires at least one direct-capable "
-            "accepted required component"
+            "accepted required component",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.INITIAL_STRATEGY_CONTRACT_INVALID,
         )
 
     strategies: list[dict[str, Any]] = []
@@ -1454,7 +1611,10 @@ def initial_query_strategies_from_planner_state(
     for component in required_components:
         component_id = _clean_token(component.get("component_id"))
         if not component_id:
-            raise SearchPlannerRuntimeError("accepted required component is missing component_id")
+            raise SearchPlannerRuntimeError(
+                "accepted required component is missing component_id",
+                failure_code=SearchPlannerRuntimeSafeFailureCode.INITIAL_STRATEGY_CONTRACT_INVALID,
+            )
         accepted_source_ids = set(
             _text_list(
                 component.get("source_obligation_candidate_ids") or component.get("source_obligation_candidate_refs"),
@@ -1474,10 +1634,14 @@ def initial_query_strategies_from_planner_state(
                 )
             )
             if not requirement_id:
-                raise SearchPlannerRuntimeError(f"component {component_id} search requirement is missing identity")
+                raise SearchPlannerRuntimeError(
+                    f"component {component_id} search requirement is missing identity",
+                    failure_code=SearchPlannerRuntimeSafeFailureCode.INITIAL_STRATEGY_REQUIREMENT_INVALID,
+                )
             if not requirement_source_ids.issubset(accepted_source_ids):
                 raise SearchPlannerRuntimeError(
-                    f"component {component_id} search requirement references an unaccepted source obligation"
+                    f"component {component_id} search requirement references an unaccepted source obligation",
+                    failure_code=SearchPlannerRuntimeSafeFailureCode.INITIAL_STRATEGY_REQUIREMENT_INVALID,
                 )
             requirement_ref = {
                 "requirement_id": requirement_id,
@@ -1498,14 +1662,21 @@ def initial_query_strategies_from_planner_state(
                 strategy = _safe_mapping(raw_strategy)
                 strategy_id = _clean_token(strategy.get("strategy_id"))
                 if not strategy_id:
-                    raise SearchPlannerRuntimeError(f"component {component_id} query strategy requires strategy_id")
+                    raise SearchPlannerRuntimeError(
+                        f"component {component_id} query strategy requires strategy_id",
+                        failure_code=SearchPlannerRuntimeSafeFailureCode.INITIAL_STRATEGY_IDENTITY_INVALID,
+                    )
                 if strategy_id in seen_strategy_ids:
-                    raise SearchPlannerRuntimeError(f"duplicate initial query strategy id: {strategy_id}")
+                    raise SearchPlannerRuntimeError(
+                        f"duplicate initial query strategy id: {strategy_id}",
+                        failure_code=SearchPlannerRuntimeSafeFailureCode.INITIAL_STRATEGY_IDENTITY_INVALID,
+                    )
                 seen_strategy_ids.add(strategy_id)
                 strategy_component_id = _clean_token(strategy.get("component_id"))
                 if strategy_component_id != component_id:
                     raise SearchPlannerRuntimeError(
-                        f"initial query strategy component binding does not match accepted component {component_id}"
+                        f"initial query strategy component binding does not match accepted component {component_id}",
+                        failure_code=SearchPlannerRuntimeSafeFailureCode.INITIAL_STRATEGY_IDENTITY_INVALID,
                     )
                 strategy_source_ids = set(
                     _text_list(
@@ -1515,7 +1686,8 @@ def initial_query_strategies_from_planner_state(
                 )
                 if not strategy_source_ids.issubset(accepted_source_ids):
                     raise SearchPlannerRuntimeError(
-                        f"strategy {strategy_id} references an unaccepted source obligation"
+                        f"strategy {strategy_id} references an unaccepted source obligation",
+                        failure_code=SearchPlannerRuntimeSafeFailureCode.INITIAL_STRATEGY_REQUIREMENT_INVALID,
                     )
                 component_strategies.append(
                     {
@@ -1535,7 +1707,10 @@ def initial_query_strategies_from_planner_state(
             policy.required_component_floor_enabled
             and primary_count < policy.primary_query_target_per_required_component
         ):
-            raise SearchPlannerRuntimeError(f"accepted required component {component_id} has no primary query strategy")
+            raise SearchPlannerRuntimeError(
+                f"accepted required component {component_id} has no primary query strategy",
+                failure_code=SearchPlannerRuntimeSafeFailureCode.INITIAL_STRATEGY_IDENTITY_INVALID,
+            )
         strategies.extend(component_strategies)
     return strategies
 
@@ -1595,16 +1770,28 @@ def _normalize_query_strategy_candidate(
         limit=300,
     )
     if not strategy_id or not query_text:
-        raise SearchPlannerRuntimeError("query strategy candidate requires strategy_id and bounded query text")
+        raise SearchPlannerRuntimeError(
+            "query strategy candidate requires strategy_id and bounded query text",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.STRATEGY_CANDIDATE_INVALID,
+        )
     bound_component_id = _clean_token(candidate.get("component_id")) or component_id
     if not bound_component_id or (component_id and bound_component_id != component_id):
-        raise SearchPlannerRuntimeError("query strategy candidate component binding is missing or stale")
+        raise SearchPlannerRuntimeError(
+            "query strategy candidate component binding is missing or stale",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.STRATEGY_CANDIDATE_INVALID,
+        )
     requested_role = _clean_token(candidate.get("requested_role")) or "initial"
     if requested_role not in _ALLOWED_INITIAL_QUERY_ROLES:
-        raise SearchPlannerRuntimeError(f"unsupported initial query role requested: {requested_role}")
+        raise SearchPlannerRuntimeError(
+            f"unsupported initial query role requested: {requested_role}",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.STRATEGY_CANDIDATE_INVALID,
+        )
     candidate_kind = _clean_token(candidate.get("candidate_kind")) or "primary"
     if candidate_kind not in {"primary", "secondary"}:
-        raise SearchPlannerRuntimeError("query strategy candidate_kind must be primary or secondary")
+        raise SearchPlannerRuntimeError(
+            "query strategy candidate_kind must be primary or secondary",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.STRATEGY_CANDIDATE_INVALID,
+        )
     recon = _normalize_recon_requirement(candidate.get("recon_requirement"))
     recon_candidates = [
         _safe_mapping(item) for item in _safe_list(recon.get("candidate_queries")) if _safe_mapping(item)
@@ -1670,7 +1857,10 @@ def normalize_provider_neutral_query_strategy_candidate(
         requirement_id=requirement_id,
     )
     if not normalized:
-        raise SearchPlannerRuntimeError("query strategy candidate did not survive provider-neutral validation")
+        raise SearchPlannerRuntimeError(
+            "query strategy candidate did not survive provider-neutral validation",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.STRATEGY_CANDIDATE_INVALID,
+        )
     return normalized
 
 
@@ -1680,7 +1870,10 @@ def _normalize_recon_requirement(value: Any) -> dict[str, Any]:
         return {"posture": "not_needed", "required_for_truthful_targeting": False}
     posture = _clean_token(recon.get("posture")) or "not_needed"
     if posture not in _ALLOWED_RECON_POSTURES:
-        raise SearchPlannerRuntimeError(f"unsupported recon requirement posture: {posture}")
+        raise SearchPlannerRuntimeError(
+            f"unsupported recon requirement posture: {posture}",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.RECON_REQUIREMENT_INVALID,
+        )
     dimension_ids = _text_list(
         recon.get("unresolved_dimension_ids") or recon.get("dimension_ids"),
         limit=160,
@@ -1695,9 +1888,15 @@ def _normalize_recon_requirement(value: Any) -> dict[str, Any]:
             limit=300,
         )
         if not dimension_id or not query_text:
-            raise SearchPlannerRuntimeError("recon candidate requires dimension_id and bounded query text")
+            raise SearchPlannerRuntimeError(
+                "recon candidate requires dimension_id and bounded query text",
+                failure_code=SearchPlannerRuntimeSafeFailureCode.RECON_REQUIREMENT_INVALID,
+            )
         if dimension_id in seen_dimensions:
-            raise SearchPlannerRuntimeError("recon candidates must address distinct unresolved dimensions")
+            raise SearchPlannerRuntimeError(
+                "recon candidates must address distinct unresolved dimensions",
+                failure_code=SearchPlannerRuntimeSafeFailureCode.RECON_REQUIREMENT_INVALID,
+            )
         seen_dimensions.add(dimension_id)
         candidates.append(
             {
@@ -1832,10 +2031,16 @@ def _planner_model_metadata(adapter_result: Mapping[str, Any]) -> dict[str, Any]
 def _validate_action_inputs(inputs: Mapping[str, Any]) -> None:
     missing = [key for key in _REQUIRED_ACTION_INPUT_KEYS if key not in inputs]
     if missing:
-        raise SearchPlannerRuntimeError("search planner action missing required bindings: " + ", ".join(missing))
+        raise SearchPlannerRuntimeError(
+            "search planner action missing required bindings: " + ", ".join(missing),
+            failure_code=SearchPlannerRuntimeSafeFailureCode.ACTION_UNAUTHORIZED_OR_MISBOUND,
+        )
     for key in ("run_id", "request_id", "user_query_digest", "planner_schema_version"):
         if not _clean_token(inputs.get(key), limit=128):
-            raise SearchPlannerRuntimeError(f"search planner action requires {key} binding")
+            raise SearchPlannerRuntimeError(
+                f"search planner action requires {key} binding",
+                failure_code=SearchPlannerRuntimeSafeFailureCode.ACTION_UNAUTHORIZED_OR_MISBOUND,
+            )
 
 
 def _validate_parent_contract_bindings(
@@ -1887,33 +2092,66 @@ def _validate_one_parent_binding(
 
     if expected_ref:
         if action_version_text != expected_version or action_digest_text != expected_digest:
-            raise SearchPlannerRuntimeError(f"stale parent digest: {label} action binding is not current")
+            raise SearchPlannerRuntimeError(
+                f"stale parent digest: {label} action binding is not current",
+                failure_code=SearchPlannerRuntimeSafeFailureCode.PARENT_DIGEST_STALE,
+            )
         if planner_version != expected_version or planner_digest != expected_digest:
-            raise SearchPlannerRuntimeError(f"stale parent digest: {label} planner input is not current")
+            raise SearchPlannerRuntimeError(
+                f"stale parent digest: {label} planner input is not current",
+                failure_code=SearchPlannerRuntimeSafeFailureCode.PARENT_DIGEST_STALE,
+            )
         return
     if action_version_text or action_digest_text or planner_version or planner_digest:
-        raise SearchPlannerRuntimeError(f"stale parent digest: {label} was bound but no current parent exists")
+        raise SearchPlannerRuntimeError(
+            f"stale parent digest: {label} was bound but no current parent exists",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.PARENT_DIGEST_STALE,
+        )
 
 
 def _validate_question_meaning_payload(qmr_payload: Mapping[str, Any], *, query_digest: str) -> None:
     if qmr_payload.get("passive") is not True:
-        raise SearchPlannerRuntimeError("search planner QMR must remain passive")
+        raise SearchPlannerRuntimeError(
+            "search planner QMR must remain passive",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.QMR_PASSIVITY_VIOLATION,
+        )
     if qmr_payload.get("canonical_state") is True:
-        raise SearchPlannerRuntimeError("search planner QMR cannot be canonical state")
+        raise SearchPlannerRuntimeError(
+            "search planner QMR cannot be canonical state",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.QMR_PASSIVITY_VIOLATION,
+        )
     if qmr_payload.get("runtime_behavior_changed") is True:
-        raise SearchPlannerRuntimeError("search planner QMR must not change runtime behavior")
+        raise SearchPlannerRuntimeError(
+            "search planner QMR must not change runtime behavior",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.QMR_PASSIVITY_VIOLATION,
+        )
     if qmr_payload.get("provider_search_behavior_changed") is True:
-        raise SearchPlannerRuntimeError("search planner QMR must not change provider search behavior")
+        raise SearchPlannerRuntimeError(
+            "search planner QMR must not change provider search behavior",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.QMR_PASSIVITY_VIOLATION,
+        )
     if qmr_payload.get("request_digest") != query_digest:
-        raise SearchPlannerRuntimeError("search planner QMR request digest does not match query digest")
+        raise SearchPlannerRuntimeError(
+            "search planner QMR request digest does not match query digest",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.QMR_IDENTITY_OR_VALIDATION_FAILED,
+        )
     validation = _safe_mapping(qmr_payload.get("validation"))
     if validation.get("ok") is False:
         errors = validation.get("errors") or []
-        raise SearchPlannerRuntimeError("search planner QMR failed validation: " + ", ".join(map(str, errors)))
+        raise SearchPlannerRuntimeError(
+            "search planner QMR failed validation: " + ", ".join(map(str, errors)),
+            failure_code=SearchPlannerRuntimeSafeFailureCode.QMR_IDENTITY_OR_VALIDATION_FAILED,
+        )
     if not qmr_payload.get("record_id") or not qmr_payload.get("record_digest"):
-        raise SearchPlannerRuntimeError("search planner QMR requires record_id and record_digest")
+        raise SearchPlannerRuntimeError(
+            "search planner QMR requires record_id and record_digest",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.QMR_IDENTITY_OR_VALIDATION_FAILED,
+        )
     if not _safe_list(qmr_payload.get("answer_components")):
-        raise SearchPlannerRuntimeError("search planner QMR requires answer components")
+        raise SearchPlannerRuntimeError(
+            "search planner QMR requires answer components",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.QMR_IDENTITY_OR_VALIDATION_FAILED,
+        )
 
 
 def _dedupe_key(
@@ -1956,11 +2194,15 @@ def _reject_forbidden_surface_claims(value: Any) -> None:
     forbidden = sorted(keys & _FORBIDDEN_AUTHORITY_KEYS)
     if forbidden:
         raise SearchPlannerRuntimeError(
-            "search planner proposal includes closed authority fields: " + ", ".join(forbidden)
+            "search planner proposal includes closed authority fields: " + ", ".join(forbidden),
+            failure_code=SearchPlannerRuntimeSafeFailureCode.PROPOSAL_CLOSED_SURFACE_OPENED,
         )
     dangerous = sorted(_dangerous_true_claims(value))
     if dangerous:
-        raise SearchPlannerRuntimeError("search planner proposal opens closed surfaces: " + ", ".join(dangerous))
+        raise SearchPlannerRuntimeError(
+            "search planner proposal opens closed surfaces: " + ", ".join(dangerous),
+            failure_code=SearchPlannerRuntimeSafeFailureCode.PROPOSAL_CLOSED_SURFACE_OPENED,
+        )
 
 
 def _dangerous_true_claims(value: Any) -> set[str]:
