@@ -115,6 +115,7 @@ from core.final_evidence_bundle_builder import (
     final_evidence_handoff_from_legacy_review,
     require_complete_final_material_runtime_handoff,
 )
+from core.initial_query_strategy_failure import invoke_run_kernel_initial_planning
 from core.kb_review_persistence_context import build_kb_review_persistence_context
 
 # AG-90K lifecycle projection sits beside retrieval_stop_trace_projection seams.
@@ -1147,18 +1148,21 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         clean=_clean_query,
     )
 
-    query_admission_action = run_kernel.authorize_query_plan_admission(
-        inputs={
-            "query_production_action_id": query_production_action.action_id,
-            "candidate_source": query_plan_inputs.candidate_source,
-            "candidate_count": len(query_plan_inputs.candidate_queries),
-            "query_plan_id": query_authority.plan.plan_id,
-            "allocation_policy_version": (
-                query_plan_inputs.initial_query_allocation_policy.policy_version
-            ),
-            "legacy_downstream_max_queries": query_plan_inputs.max_queries,
-            "small_global_initial_query_cap_applied": False,
-        }
+    query_admission_action = invoke_run_kernel_initial_planning(
+        "query_plan_admission",
+        lambda: run_kernel.authorize_query_plan_admission(
+            inputs={
+                "query_production_action_id": query_production_action.action_id,
+                "candidate_source": query_plan_inputs.candidate_source,
+                "candidate_count": len(query_plan_inputs.candidate_queries),
+                "query_plan_id": query_authority.plan.plan_id,
+                "allocation_policy_version": (
+                    query_plan_inputs.initial_query_allocation_policy.policy_version
+                ),
+                "legacy_downstream_max_queries": query_plan_inputs.max_queries,
+                "small_global_initial_query_cap_applied": False,
+            }
+        ),
     )
     query_admission_result = execute_query_plan_admission_action(
         query_admission_action,
@@ -1176,7 +1180,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             query_plan_inputs.initial_query_allocation_policy
         ),
     )
-    run_kernel.reduce(query_admission_result.observation)
+    invoke_run_kernel_initial_planning(
+        "query_plan_admission",
+        lambda: run_kernel.reduce(query_admission_result.observation),
+    )
     queries = query_admission_result.queries
     current_queries = query_admission_result.current_queries
     provider_job_execution_handoff = dict(

@@ -227,8 +227,21 @@ _CLOSED_SURFACE_FLAGS = {
 }
 
 
+class SearchPlannerRuntimeSafeFailureCode(str, Enum):
+    """Closed owner-authored safe code for plain SearchPlanner runtime failures.
+
+    ``SearchPlannerModelAdapterError`` keeps its richer adapter taxonomy and is
+    projected through the existing bounded ``search_planner_failure`` path.
+    """
+
+    SEARCH_PLANNER_RUNTIME_ERROR = "search_planner_runtime_error"
+
+
 class SearchPlannerRuntimeError(ValueError):
     """Raised when planner execution, binding validation, or reduction fails."""
+
+    SAFE_FAILURE_ORIGIN = "planner_runtime"
+    SAFE_FAILURE_CODE = SearchPlannerRuntimeSafeFailureCode.SEARCH_PLANNER_RUNTIME_ERROR
 
 
 class SearchPlannerAdapter(Protocol):
@@ -2202,6 +2215,7 @@ __all__ = [
     "SearchPlannerExecutionResult",
     "SearchPlannerInput",
     "SearchPlannerRuntimeError",
+    "SearchPlannerRuntimeSafeFailureCode",
     "build_search_planner_observation_payload",
     "build_search_planner_proposal_projection",
     "build_search_planner_proposal_state",

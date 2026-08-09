@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping, MutableSequence, Sequence
 from dataclasses import dataclass
+from enum import Enum
 from hashlib import sha256
 from typing import Any
 
@@ -18,6 +19,12 @@ from core.anchor_resolution import build_shadow_anchor_packet
 from core.initial_query_allocation_policy import (
     DEFAULT_INITIAL_QUERY_ALLOCATION_POLICY,
     InitialQueryAllocationPolicy,
+)
+from core.initial_query_strategy_failure import (
+    InitialQueryStrategyFailureError,
+    invoke_run_kernel_initial_planning,
+    scout_disambiguation_runtime_failure,
+    search_planner_revision_runtime_failure,
 )
 from core.nutrition_lookup import detect_nutrition_lookup_telemetry
 from core.query_plan import (
@@ -44,6 +51,7 @@ from core.run_kernel import (
 from core.scout_disambiguation_runtime import (
     ScoutDisambiguationAdapter,
     ScoutDisambiguationInput,
+    ScoutDisambiguationRuntimeError,
     execute_scout_disambiguation_action,
     planner_ref_from_search_planner_state,
 )
@@ -53,6 +61,7 @@ from core.scout_disambiguation_runtime import (
 from core.search_planner_revision_runtime import (
     SearchPlannerRevisionAdapter,
     SearchPlannerRevisionInput,
+    SearchPlannerRevisionRuntimeError,
     execute_search_planner_revision_action,
     revision_ref_from_revision_state,
     scout_ref_from_scout_report_state,
@@ -185,8 +194,19 @@ class QueryProductionResult:
         return int(self.effective_route_posture["max_iterations"])
 
 
+class QueryStrategyConvergenceFailureCode(str, Enum):
+    """Closed owner-authored safe code for ordinary initial convergence failures."""
+
+    QUERY_STRATEGY_CONVERGENCE_ERROR = "query_strategy_convergence_error"
+
+
 class QueryStrategyConvergenceError(ValueError):
     """Raised before dispatch when the required initial chain cannot converge."""
+
+    SAFE_FAILURE_ORIGIN = "query_strategy_convergence"
+    SAFE_FAILURE_CODE = (
+        QueryStrategyConvergenceFailureCode.QUERY_STRATEGY_CONVERGENCE_ERROR
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -450,32 +470,44 @@ def _admit_and_apply_revision_amendment(
     record_digest = str(record.get("record_digest") or "").strip()
     if not record_id or not record_digest:
         raise QueryStrategyConvergenceError("revision amendment candidate is missing record identity")
-    admission_action = run_kernel.authorize_contract_amendment_admission(
-        amendment_record_id=record_id,
-        amendment_record_digest=record_digest,
-        inputs=_revision_lineage_inputs(revision),
+    admission_action = invoke_run_kernel_initial_planning(
+        "contract_amendment_admission",
+        lambda: run_kernel.authorize_contract_amendment_admission(
+            amendment_record_id=record_id,
+            amendment_record_digest=record_digest,
+            inputs=_revision_lineage_inputs(revision),
+        ),
     )
-    run_kernel.reduce(
-        Observation.from_action(
-            admission_action,
-            observation_type=ObservationType.CONTRACT_AMENDMENT_ADMITTED,
-            status=RunStageStatus.COMPLETED,
-            payload={"contract_amendment_record": record},
-        )
+    invoke_run_kernel_initial_planning(
+        "contract_amendment_admission",
+        lambda: run_kernel.reduce(
+            Observation.from_action(
+                admission_action,
+                observation_type=ObservationType.CONTRACT_AMENDMENT_ADMITTED,
+                status=RunStageStatus.COMPLETED,
+                payload={"contract_amendment_record": record},
+            )
+        ),
     )
     admission = run_kernel.state.contract_amendment_admission_projection
-    application_action = run_kernel.authorize_contract_amendment_application(
-        amendment_record_id=record_id,
-        amendment_record_digest=record_digest,
-        admission_digest=str(admission.get("admission_digest") or ""),
+    application_action = invoke_run_kernel_initial_planning(
+        "contract_amendment_application",
+        lambda: run_kernel.authorize_contract_amendment_application(
+            amendment_record_id=record_id,
+            amendment_record_digest=record_digest,
+            admission_digest=str(admission.get("admission_digest") or ""),
+        ),
     )
-    run_kernel.reduce(
-        Observation.from_action(
-            application_action,
-            observation_type=ObservationType.CONTRACT_AMENDMENT_APPLIED,
-            status=RunStageStatus.COMPLETED,
-            payload={},
-        )
+    invoke_run_kernel_initial_planning(
+        "contract_amendment_application",
+        lambda: run_kernel.reduce(
+            Observation.from_action(
+                application_action,
+                observation_type=ObservationType.CONTRACT_AMENDMENT_APPLIED,
+                status=RunStageStatus.COMPLETED,
+                payload={},
+            )
+        ),
     )
     return {
         **dict(revision),
@@ -593,25 +625,36 @@ def _execute_recon_and_revisions(
                 "non_evidence": True,
             },
         )
-        scout_action = run_kernel.authorize_scout_disambiguation(
-            component_id=component_id,
-            ambiguity_dimension_ids=dimensions,
-            max_queries_per_component=(policy.recon_candidate_ceiling_per_affected_component),
-            max_dimensions_per_component=(policy.recon_candidate_ceiling_per_affected_component),
-            inputs={"allocation_policy_version": policy.policy_version},
+        scout_action = invoke_run_kernel_initial_planning(
+            "scout_disambiguation",
+            lambda: run_kernel.authorize_scout_disambiguation(
+                component_id=component_id,
+                ambiguity_dimension_ids=dimensions,
+                max_queries_per_component=(policy.recon_candidate_ceiling_per_affected_component),
+                max_dimensions_per_component=(policy.recon_candidate_ceiling_per_affected_component),
+                inputs={"allocation_policy_version": policy.policy_version},
+            ),
         )
-        scout_result = execute_scout_disambiguation_action(
-            action=scout_action,
-            scout_input=scout_input,
-            adapter=scout_adapter,
-        )
-        run_kernel.reduce(
-            Observation.from_action(
-                scout_action,
-                observation_type=ObservationType.SCOUT_DISAMBIGUATION_REPORTED,
-                status=RunStageStatus.COMPLETED,
-                payload=scout_result.observation_payload,
+        try:
+            scout_result = execute_scout_disambiguation_action(
+                action=scout_action,
+                scout_input=scout_input,
+                adapter=scout_adapter,
             )
+        except ScoutDisambiguationRuntimeError as exc:
+            raise InitialQueryStrategyFailureError(
+                scout_disambiguation_runtime_failure()
+            ) from exc
+        invoke_run_kernel_initial_planning(
+            "scout_disambiguation",
+            lambda: run_kernel.reduce(
+                Observation.from_action(
+                    scout_action,
+                    observation_type=ObservationType.SCOUT_DISAMBIGUATION_REPORTED,
+                    status=RunStageStatus.COMPLETED,
+                    payload=scout_result.observation_payload,
+                )
+            ),
         )
         report = dict(run_kernel.state.scout_disambiguation_report_projection)
         executed_count = int(report.get("executed_query_count") or 0)
@@ -669,24 +712,35 @@ def _execute_recon_and_revisions(
                 "allocation_policy_version": policy.policy_version,
             },
         )
-        revision_action = run_kernel.authorize_search_planner_revision(
-            component_id=component_id,
-            consumed_ambiguity_dimension_ids=dimensions,
-            consumed_scout_hint_ids=hint_ids,
-            inputs={"allocation_policy_version": policy.policy_version},
+        revision_action = invoke_run_kernel_initial_planning(
+            "search_planner_revision",
+            lambda: run_kernel.authorize_search_planner_revision(
+                component_id=component_id,
+                consumed_ambiguity_dimension_ids=dimensions,
+                consumed_scout_hint_ids=hint_ids,
+                inputs={"allocation_policy_version": policy.policy_version},
+            ),
         )
-        revision_result = execute_search_planner_revision_action(
-            action=revision_action,
-            revision_input=revision_input,
-            adapter=revision_adapter,
-        )
-        run_kernel.reduce(
-            Observation.from_action(
-                revision_action,
-                observation_type=ObservationType.SEARCH_PLANNER_REVISED,
-                status=RunStageStatus.COMPLETED,
-                payload=revision_result.observation_payload,
+        try:
+            revision_result = execute_search_planner_revision_action(
+                action=revision_action,
+                revision_input=revision_input,
+                adapter=revision_adapter,
             )
+        except SearchPlannerRevisionRuntimeError as exc:
+            raise InitialQueryStrategyFailureError(
+                search_planner_revision_runtime_failure()
+            ) from exc
+        invoke_run_kernel_initial_planning(
+            "search_planner_revision",
+            lambda: run_kernel.reduce(
+                Observation.from_action(
+                    revision_action,
+                    observation_type=ObservationType.SEARCH_PLANNER_REVISED,
+                    status=RunStageStatus.COMPLETED,
+                    payload=revision_result.observation_payload,
+                )
+            ),
         )
         revision = dict(run_kernel.state.search_planner_revision_projection)
         if revision.get("amendment_candidates"):
@@ -1188,47 +1242,59 @@ def execute_initial_query_strategy_convergence(
             source="current_answer_contract",
         ),
     )
-    planner_action = run_kernel.authorize_search_planner_production(
-        user_query_digest=planner_input.user_query_digest,
-        planner_schema_version=SEARCH_PLANNER_SCHEMA_VERSION,
-        inputs={
-            "route_id": route_projection.get("route_id"),
-            "run_contract_id": run_contract_projection.get("contract_id"),
-            "allocation_policy_version": (initial_query_allocation_policy.policy_version),
-        },
+    planner_action = invoke_run_kernel_initial_planning(
+        "search_planner_production",
+        lambda: run_kernel.authorize_search_planner_production(
+            user_query_digest=planner_input.user_query_digest,
+            planner_schema_version=SEARCH_PLANNER_SCHEMA_VERSION,
+            inputs={
+                "route_id": route_projection.get("route_id"),
+                "run_contract_id": run_contract_projection.get("contract_id"),
+                "allocation_policy_version": (initial_query_allocation_policy.policy_version),
+            },
+        ),
     )
     planner_result = execute_search_planner_action(
         action=planner_action,
         planner_input=planner_input,
         adapter=planner_adapter,
     )
-    run_kernel.reduce(
-        Observation.from_action(
-            planner_action,
-            observation_type=ObservationType.SEARCH_PLANNER_PRODUCED,
-            status=RunStageStatus.COMPLETED,
-            payload=planner_result.observation_payload,
-        )
+    invoke_run_kernel_initial_planning(
+        "search_planner_production",
+        lambda: run_kernel.reduce(
+            Observation.from_action(
+                planner_action,
+                observation_type=ObservationType.SEARCH_PLANNER_PRODUCED,
+                status=RunStageStatus.COMPLETED,
+                payload=planner_result.observation_payload,
+            )
+        ),
     )
 
     qmr = dict(run_kernel.state.search_planner_proposal_state.get("question_meaning_record") or {})
     if not qmr:
         raise QueryStrategyConvergenceError("SearchPlanner reduction did not produce a QuestionMeaningRecord")
-    acceptance_action = run_kernel.authorize_initial_answer_contract_acceptance(
-        parent_question_meaning_record_id=str(qmr.get("record_id") or ""),
-        parent_proposal_digest=str(qmr.get("record_digest") or ""),
-        inputs={
-            "planner_action_id": planner_action.action_id,
-            "allocation_policy_version": (initial_query_allocation_policy.policy_version),
-        },
+    acceptance_action = invoke_run_kernel_initial_planning(
+        "initial_answer_contract_acceptance",
+        lambda: run_kernel.authorize_initial_answer_contract_acceptance(
+            parent_question_meaning_record_id=str(qmr.get("record_id") or ""),
+            parent_proposal_digest=str(qmr.get("record_digest") or ""),
+            inputs={
+                "planner_action_id": planner_action.action_id,
+                "allocation_policy_version": (initial_query_allocation_policy.policy_version),
+            },
+        ),
     )
-    run_kernel.reduce(
-        Observation.from_action(
-            acceptance_action,
-            observation_type=ObservationType.INITIAL_ANSWER_CONTRACT_ACCEPTED,
-            status=RunStageStatus.COMPLETED,
-            payload={"question_meaning_record": qmr},
-        )
+    invoke_run_kernel_initial_planning(
+        "initial_answer_contract_acceptance",
+        lambda: run_kernel.reduce(
+            Observation.from_action(
+                acceptance_action,
+                observation_type=ObservationType.INITIAL_ANSWER_CONTRACT_ACCEPTED,
+                status=RunStageStatus.COMPLETED,
+                payload={"question_meaning_record": qmr},
+            )
+        ),
     )
     accepted_contract = run_kernel.state.current_answer_contract or run_kernel.state.initial_answer_contract
     base_candidate_strategies = initial_query_strategies_from_planner_state(
@@ -1250,13 +1316,16 @@ def execute_initial_query_strategy_convergence(
         accepted_contract=accepted_contract,
     )
 
-    search_work_action = run_kernel.authorize_search_work_plan_construction(
-        reason="contract_bound_search_work_plan_before_query_plan",
-        inputs={
-            "planner_proposal_digest": (run_kernel.state.search_planner_proposal_state.get("proposal_digest")),
-            "accepted_contract_digest": accepted_contract.get("accepted_contract_digest"),
-            "allocation_policy_version": (initial_query_allocation_policy.policy_version),
-        },
+    search_work_action = invoke_run_kernel_initial_planning(
+        "search_work_plan_construction",
+        lambda: run_kernel.authorize_search_work_plan_construction(
+            reason="contract_bound_search_work_plan_before_query_plan",
+            inputs={
+                "planner_proposal_digest": (run_kernel.state.search_planner_proposal_state.get("proposal_digest")),
+                "accepted_contract_digest": accepted_contract.get("accepted_contract_digest"),
+                "allocation_policy_version": (initial_query_allocation_policy.policy_version),
+            },
+        ),
     )
     search_work_observation = observe_contract_bound_search_work_plan_construction(
         search_work_action,
@@ -1269,19 +1338,25 @@ def execute_initial_query_strategy_convergence(
         policy=initial_query_allocation_policy,
         revision_projections=revision_projections,
     )
-    run_kernel.reduce(search_work_observation)
+    invoke_run_kernel_initial_planning(
+        "search_work_plan_construction",
+        lambda: run_kernel.reduce(search_work_observation),
+    )
 
-    query_production_action = run_kernel.authorize_query_production(
-        reason="search_planner_strategy_projection_before_queryplan_consumption",
-        inputs={
-            "planner_action_id": planner_action.action_id,
-            "initial_contract_acceptance_action_id": acceptance_action.action_id,
-            "search_work_action_id": search_work_action.action_id,
-            "candidate_count": len(candidate_strategies),
-            "required_component_count": len(accepted_contract.get("accepted_answer_component_refs") or ()),
-            "allocation_policy_version": (initial_query_allocation_policy.policy_version),
-            "small_global_initial_query_cap_applied": False,
-        },
+    query_production_action = invoke_run_kernel_initial_planning(
+        "query_production",
+        lambda: run_kernel.authorize_query_production(
+            reason="search_planner_strategy_projection_before_queryplan_consumption",
+            inputs={
+                "planner_action_id": planner_action.action_id,
+                "initial_contract_acceptance_action_id": acceptance_action.action_id,
+                "search_work_action_id": search_work_action.action_id,
+                "candidate_count": len(candidate_strategies),
+                "required_component_count": len(accepted_contract.get("accepted_answer_component_refs") or ()),
+                "allocation_policy_version": (initial_query_allocation_policy.policy_version),
+                "small_global_initial_query_cap_applied": False,
+            },
+        ),
     )
     query_production_result = execute_query_production_action(
         query_production_action,
@@ -1303,7 +1378,10 @@ def execute_initial_query_strategy_convergence(
         waste_flags=waste_flags,
         run_contract_projection=run_contract_projection,
     )
-    run_kernel.reduce(query_production_result.observation)
+    invoke_run_kernel_initial_planning(
+        "query_production",
+        lambda: run_kernel.reduce(query_production_result.observation),
+    )
     return InitialQueryStrategyConvergenceResult(
         query_production_action=query_production_action,
         query_production_result=query_production_result,
@@ -1753,6 +1831,7 @@ __all__ = [
     "QueryProductionResult",
     "QueryPlanAdmissionResult",
     "QueryStrategyConvergenceError",
+    "QueryStrategyConvergenceFailureCode",
     "execute_initial_query_strategy_convergence",
     "execute_query_production_action",
     "execute_query_plan_admission_action",
