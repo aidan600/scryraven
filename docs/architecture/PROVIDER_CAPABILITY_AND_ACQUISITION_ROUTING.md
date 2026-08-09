@@ -85,7 +85,10 @@ does not negate later accepted contract lineage or contract-bound historical
 SearchExecutor flows. It is reachable through the
 unflagged Fast/Balanced/Deep CLI/backend composition and does not use the
 separate `live_search_validation` origin. Serper
-`lightweight_disambiguation` remains excluded.
+`lightweight_disambiguation` remains excluded from this post-DISCOVER
+candidate-packet origin. The separate pre-QueryPlan
+`SEARCHOS-REQUIRED-SCOUT-ORDINARY-COMPOSITION-01` lane may consume it only as
+bounded non-evidence query direction.
 
 The ordinary packet digest binds the ordered candidate-record digests. Its
 compact RunKernel ref retains that aggregate digest and lineage/count fields,

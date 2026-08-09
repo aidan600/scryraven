@@ -185,6 +185,9 @@ from core.ordinary_multicomponent_synthesis_runtime import (
     record_analyst_query_resolution_downstream_refs,
     resolve_next_searched_premise_recovery_posture,
 )
+from core.ordinary_scout_disambiguation_adapter import (
+    build_ordinary_scout_disambiguation_adapter,
+)
 from core.persistence_side_effects import (
     execute_persistence_side_effects,
 )
@@ -306,6 +309,7 @@ from core.search_judgment_read_assessment_runtime import (
     build_full_search_judgment_containment_projection,
 )
 from core.search_planner_model_adapter import SearchPlannerModelAdapter
+from core.search_planner_revision_model_adapter import SearchPlannerRevisionModelAdapter
 from core.search_planner_runtime import contract_ref_from_contract
 from core.search_result_candidate_packet import (
     SEARCH_RESULT_CANDIDATE_PACKET_TRACE_KEY,
@@ -1084,7 +1088,37 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             licensed=True,
         )
     scout_adapter = deps.scout_disambiguation_adapter
+    if scout_adapter is None:
+        scout_adapter = build_ordinary_scout_disambiguation_adapter(
+            available_providers=(
+                provider_availability_snapshot.to_capability_available_keys()
+            ),
+            cap_policy=cap_policy,
+            cost_accumulator=accumulator,
+        )
     revision_adapter = deps.search_planner_revision_adapter
+    if revision_adapter is None:
+        revision_model_transport = _ask(phase="search_planner_revision")
+
+        def ask_search_planner_revision_model(*args: Any, **kwargs: Any) -> Any:
+            """Bind per-run transport and accounting facts without retaining them."""
+
+            kwargs["base_url"] = local_url
+            kwargs["api_key"] = or_api_key
+            kwargs["cost_accumulator"] = accumulator
+            kwargs["cost_phase"] = "search_planner_revision"
+            return revision_model_transport(*args, **kwargs)
+
+        revision_adapter = SearchPlannerRevisionModelAdapter(
+            revision_model_callable=ask_search_planner_revision_model,
+            clean_json_response=deps.clean_json_response,
+            provider=fast_provider,
+            model=fast_model,
+            effort=fast_reasoning_effort,
+            use_reasoning=use_reasoning,
+            enabled=True,
+            licensed=True,
+        )
     convergence = execute_initial_query_strategy_convergence(
         run_kernel=run_kernel,
         router_query_preparation_contract=router_query_preparation_contract,

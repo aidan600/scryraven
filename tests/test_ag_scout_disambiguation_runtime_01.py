@@ -526,6 +526,59 @@ def test_scout_disambiguation_report_reduces_to_run_kernel_state_projection_hist
     assert kernel.state.projections[SCOUT_DISAMBIGUATION_STAGE] == projection
 
 
+
+def test_scout_report_truthfully_projects_ordinary_live_execution() -> None:
+    kernel = _kernel()
+    _produce_planner(kernel)
+    live_query = deepcopy(_scout_result()["scout_queries"][0])
+    live_query["execution_status"] = "executed"
+    live_query["not_live"] = False
+
+    _reduce_scout(
+        kernel,
+        adapter=FakeScoutAdapter(
+            _scout_result(
+                queries=[live_query],
+                extra={
+                    "scout_execution_posture": "executed",
+                    "route_available": True,
+                },
+            )
+        ),
+    )
+
+    report = kernel.state.scout_disambiguation_report_state
+    assert report["scout_execution_posture"] == "executed"
+    assert report["route_available"] is True
+    assert report["live_provider_calls_executed"] is True
+    assert report["scout_queries"][0]["execution_status"] == "executed"
+    assert report["scout_queries"][0]["not_live"] is False
+    assert "live_provider_calls_executed" not in report["closed_surface_flags"]
+    assert report["evidence_admitted"] is False
+    assert report["citation_eligible"] is False
+
+
+
+
+def test_scout_report_rejects_execution_posture_that_hides_executed_work() -> None:
+    kernel = _kernel()
+    _produce_planner(kernel)
+    live_query = deepcopy(_scout_result()["scout_queries"][0])
+    live_query["execution_status"] = "executed"
+    live_query["not_live"] = False
+
+    with pytest.raises(RunKernelTransitionError, match="omits executed query work"):
+        _reduce_scout(
+            kernel,
+            adapter=FakeScoutAdapter(
+                _scout_result(
+                    queries=[live_query],
+                    extra={"scout_execution_posture": "deferred"},
+                )
+            ),
+        )
+
+
 def test_scout_report_binds_to_parent_planner_proposal_and_qmr() -> None:
     kernel = _kernel()
     _produce_planner(kernel)
@@ -986,10 +1039,11 @@ def test_static_closed_surface_guard_for_scout_disambiguation_runtime() -> None:
 
 def test_docs_record_product_consumed_non_evidence_scout_posture() -> None:
     required = (
-        "SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01",
+        "SEARCHOS-REQUIRED-SCOUT-ORDINARY-COMPOSITION-01",
+        "ordinary provider-neutral Scout adapter",
+        "DISCOVER(lightweight_disambiguation)",
         "Scout reports remain non-evidence",
-        "optional injected response-only Scout adapter",
-        "required truthful-targeting ambiguity fails closed",
+        "required truthful-targeting",
         "No live provider, model, search, recon, fetch/read, or retrieval call was made",
     )
     forbidden = (

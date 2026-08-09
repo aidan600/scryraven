@@ -110,7 +110,7 @@ configuration.
 | `PROVIDER-CAPABILITY-ROUTING` | `core.routing` owns one deterministic capability catalog and code-owned route policy. Ordinary DISCOVER consumes completed ProviderPlan decisions. `retrieval.DiscoverySourceResultIdentity` and `retrieval.DiscoveryResultMaterialStore` preserve bounded provider-result occurrence truth before chunking/ranking; existing ranking and selection populate the canonical ordinary `RunKernel.SearchResultCandidatePacket` with zero separate candidate-URL transport. Candidate selection remains a nontrigger. The post-selection RunKernel controller and typed Linkup/Tavily adapters remain installed for a future independent material-need producer. Focused Extract, Map, Crawl, and general Linkup Deep remain PRODUCT-blocked with exact controller blockers. |
 | `GENERIC-PROVIDER-EXECUTION-BROKER-V2` | One tracked loopback-only broker consumes the versioned explicit-route `scryraven_provider_execution_request_v2` / response family. It supports Serper and Tavily `search.query` plus OpenAI `model.generate`; only the broker child parses the private environment file, while session tokens stay out of argv and the generic client persists safe completion, exact cache/reasoning/usage accounting, elapsed time, and output digest/length rather than output text. Caller/evaluator owns route selection, exact reasoning-effort authorization, prompts/query, retries/timeouts/caps, pricing, cost ceilings, interpretation, and durable sanitization. Incomplete generation is published as `REVIEW_REQUIRED / INCOMPLETE_GENERATION` before parser or semantic scoring and stops later calls. The job/profile bouncer is fail-closed, and new AnalystOS addenda select the provider-neutral brokered model-origination transport rather than the direct OpenAI fallback. |
 | `SEARCHPLANNER-BOUNDARY-INTEGRITY` | The ordinary SearchPlanner adapter exposes one visible/enforced strict JSON contract, rejects duplicate members and invalid model-visible types, validates every bounded scalar and `allowed_support_kinds` item, and attaches immutable privacy-safe stage/code/rule plus field-exact predicate identity to mechanical failure. The canonical boundary observer consumes those identities without retaining prompts, responses, provider payloads, or private material. |
-| `SEARCHOS-QUERY-CONVERGENCE` | `SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01` installs one ordinary initial planning chain from the selected fast-model SearchPlanner through deterministic validation, RunKernel initial AnswerContract acceptance, optional bounded non-evidence Scout/revision handling, an active contract-bound SearchWorkPlan, QueryPlan admission, and first DISCOVER. The model owns semantic interpretation and warranted one-to-five component/query-strategy proposal; deterministic machinery validates and binds without manufacturing a plan. One versioned code-owned policy gives every accepted required component one primary and permits at most two initial candidates per component by default; only one primary per component is dispatched by default. |
+| `SEARCHOS-QUERY-CONVERGENCE` | `SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01` installs one ordinary initial planning chain from the selected fast-model SearchPlanner through deterministic validation, RunKernel initial AnswerContract acceptance, an active contract-bound SearchWorkPlan, QueryPlan admission, and first DISCOVER. `SEARCHOS-REQUIRED-SCOUT-ORDINARY-COMPOSITION-01` composes the bounded provider-neutral Scout-to-FAST-PlannerRevision lane before QueryPlan when recon is needed: each authorized candidate routes through `DISCOVER(lightweight_disambiguation)`, produces direction-only non-evidence material, and reaches revision through canonical report/component/dimension/hint lineage. A genuinely unavailable lawful route leaves optional work conservative and fails required truthful-targeting recon closed. The model owns semantic interpretation and warranted one-to-five component/query-strategy proposal; deterministic machinery validates and binds without manufacturing a plan. One versioned code-owned policy gives every accepted required component one primary and permits at most two initial candidates per component by default; only one primary per component is dispatched by default. |
 | `SEARCHOS-SLICE-A-CUTOVER` | `SEARCHOS-FIRST-WAVE-AND-ITERATIVE-JUDGMENT-CUTOVER-01` installs one neutral RunKernel-owned SearchJudgment after exactly one first DISCOVER wave. Immutable revision 1 plus append-only iteration candidate sets feed exact candidate windows and the closed four-action vocabulary. Follow-up query text is model-proposed and admitted unchanged through QueryPlan; exact candidate READ reuses existing routing, adapters, terminal receipt, and EvidenceLedger custody. DISCOVER remains directional non-support context. READ custody may enter only the shared N-component Analyst / D-prime / RunKernel receiver through a SearchOS semantic handoff. Required slots that do not reach current semantic admission produce the typed Slice A required-needs block and the existing safe blocked non-Author product terminal. Evaluator, expander, disambiguation retry, weak-corpus recovery, and AG-92B have no forward post-first-wave authority. |
 | `SEARCHOS-ONE-HOP-NAVIGATION` | PR #517 installs bounded one-hop breadcrumb navigation and the qualification/source-truth path. Fresh candidate-origin READ custody may expose safe same-site URL-free navigation refs; one selected destination reuses the existing navigation, acquisition, FetchRead, EvidenceLedger, SearchOS custody, semantic, Sufficiency, FinalAnswerPacket, and Author owners. |
 | `SEARCHOS-EXISTING-GAP-RECOVERY` | `SEARCHOS-EXISTING-GAP-RECOVERY-AND-STOP-FOUNDATION-01` installs canonical SearchOS as the sole ordinary SearchOS authority for one required existing-component/source-obligation recovery cycle per whole run in Fast, Balanced, and Deep. A typed post-analysis gap basis and materially novel evidence purpose grant one exact lease; the prior slot stays byte-identical and a new append-only SearchOS slot reuses QueryPlan, SEARCH, READ/custody, navigation, the unchanged same-component Analyst and D-prime, and ComponentCoverage. Exact replay admits no new work. The lease closes as recovered or exhausted-insufficient, and ordinary Sufficiency remains the only final stopping authority. Scrutineer input, derived-component recovery, ContractAmendment, graph mutation, Specialist execution, and general inference remain excluded. |
@@ -366,8 +366,9 @@ packet and persists it through canonical trace and JSONL state. The affected
 scalar telemetry retains SQLite parity; SQLite does not store the full packet.
 This origin does not use `live_search_validation`; the default-disabled
 structured/live-validation branch remains separate. Serper
-`lightweight_disambiguation` is excluded pending its later acquisition
-checkpoint.
+`lightweight_disambiguation` remains excluded from this post-DISCOVER
+candidate-packet origin; the separate pre-QueryPlan Scout composition owns it
+only as bounded non-evidence query direction.
 
 Provider-returned title, snippet, excerpt/summary, URL, and scalar source/date
 metadata remain DISCOVER output labeled `provider_returned_snippet` or
@@ -448,8 +449,10 @@ That verbatim historical pre-search record is distinct from the new ordinary
 post-discovery reference-only origin; its old gate clause is not current roadmap
 authority.
 
-Focused Extract, Serper connection, Map, Crawl, compatibility rename, and new
-SearchOS evidence/final authority remain uninstalled. Exact-candidate READ,
+Focused Extract, Serper evidence/custody connection, Map, Crawl, compatibility
+rename, and new SearchOS evidence/final authority remain uninstalled. The
+separate pre-QueryPlan Scout lane uses Serper only as bounded non-evidence
+direction and adds none of those authorities. Exact-candidate READ,
 custody, and governed component semantic handoff are installed; custody alone
 still ends before support authority. Compatibility names such as `proplex`, `python -m proplex`,
 `PROPLEX_*`, `proplex.db`, and `proplex_*` remain supported. No live provider,
@@ -536,20 +539,35 @@ downstream retrieval-loop posture is unchanged and cannot truncate required
 component primaries.
 
 Recon runs only for a planner-identified affected component and distinct
-unresolved dimensions through an optional injected response-only Scout adapter.
-Scout reports remain non-evidence, non-citation, and non-source-obligation
-satisfaction. Optional unavailable recon keeps an already admitted conservative
-primary; required truthful-targeting ambiguity fails closed. SearchPlannerRevision
-query-direction-only changes cannot mutate the AnswerContract. A contractual
-revision reaches planning only after existing amendment admission and
-application. No live provider, model, search, recon, fetch/read, or retrieval
-call was made, and no provider, READ, evidence, citation, Author, recovery,
-continuation, supplemental, or remediation authority changed.
+unresolved dimensions. `SEARCHOS-REQUIRED-SCOUT-ORDINARY-COMPOSITION-01` composes the
+ordinary provider-neutral Scout adapter when no injected adapter is supplied.
+It turns each authorized candidate into `DISCOVER(lightweight_disambiguation)`
+through `core.routing` and passes the selected route to the existing
+cap-aware Scout search exactly once per candidate. Ordinary execution is
+truthful (`executed` / `not_live=false`); injected response-only fixtures remain
+explicitly non-live. No recon creates zero Scout or PlannerRevision calls.
 
-Scout/revision mechanics remain uncomposed by default. Whenever ordinary Scout
-reconnaissance is activated later, semantic interpretation of its hints and
-revision of the plan must be model-driven; deterministic code may validate and
-admit the revision but may not semantically rewrite the plan.
+A genuinely unavailable lawful route produces a blocked Scout report rather
+than an executed-empty report. Optional recon preserves an already admitted
+conservative primary; required truthful-targeting ambiguity fails closed.
+Scout reports remain non-evidence, non-citation, and non-source-obligation
+satisfaction. They do not activate READ, custody, citations, FinalAnswerPacket,
+Analyst evidence, Author material, or source-obligation satisfaction.
+
+The ordinary FAST PlannerRevision adapter receives actual sanitized directional
+Scout material through canonical lineage-bound Scout directional context:
+report/component/dimension/hint lineage. It receives bounded
+title/domain/hint-kind/currentness/interpretation/confidence
+fields, never raw provider payloads, snippets, links, evidence, citations, or
+source-obligation authority. SearchPlannerRevision query-direction-only changes
+cannot mutate the AnswerContract. A contractual revision reaches planning only
+after existing amendment admission and application. Semantic interpretation of
+Scout hints and revision of the plan remains model-driven; deterministic code
+may validate and admit the revision but may not semantically rewrite the plan.
+
+No live provider, model, search, recon, fetch/read, or retrieval call was made
+for this offline composition build, and no provider, READ, evidence, citation,
+Author, recovery, continuation, supplemental, or remediation authority changed.
 
 ## Installed SearchOS Slice A Iterative Judgment
 

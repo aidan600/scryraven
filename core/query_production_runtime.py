@@ -62,6 +62,7 @@ from core.search_planner_revision_runtime import (
     SearchPlannerRevisionAdapter,
     SearchPlannerRevisionInput,
     SearchPlannerRevisionRuntimeError,
+    build_scout_directional_context,
     execute_search_planner_revision_action,
     revision_ref_from_revision_state,
     scout_ref_from_scout_report_state,
@@ -199,6 +200,7 @@ class QueryStrategyConvergenceFailureCode(str, Enum):
 
     REQUIRED_SCOUT_ADAPTER_UNAVAILABLE = "required_scout_adapter_unavailable"
     REVISION_ADAPTER_REQUIRED_WITH_SCOUT = "revision_adapter_required_with_scout"
+    REQUIRED_SCOUT_ROUTE_UNAVAILABLE = "required_scout_route_unavailable"
     RECON_COMPONENT_BINDING_MISSING = "recon_component_binding_missing"
     RECON_DIMENSION_DUPLICATE = "recon_dimension_duplicate"
     RECON_STRATEGY_MALFORMED = "recon_strategy_malformed"
@@ -740,11 +742,37 @@ def _execute_recon_and_revisions(
             ),
         )
         report = dict(run_kernel.state.scout_disambiguation_report_projection)
+        if (
+            report.get("scout_execution_posture") == "blocked"
+            and report.get("route_available") is False
+        ):
+            if required:
+                raise QueryStrategyConvergenceError(
+                    f"required Scout recon for component {component_id} has no lawful route",
+                    failure_code=(
+                        QueryStrategyConvergenceFailureCode.REQUIRED_SCOUT_ROUTE_UNAVAILABLE
+                    ),
+                )
+            summaries.append(
+                {
+                    "component_id": component_id,
+                    "posture": component_work["posture"],
+                    "status": "optional_route_unavailable_primary_strategy_retained",
+                    "unresolved_dimension_ids": dimensions,
+                    "candidate_count": len(candidates),
+                    "executed_query_count": 0,
+                    "route_available": False,
+                    "evidence_admitted": False,
+                    "source_obligation_satisfied": False,
+                    "citation_eligible": False,
+                }
+            )
+            continue
         executed_count = int(report.get("executed_query_count") or 0)
         if executed_count == 0:
             if required:
                 raise QueryStrategyConvergenceError(
-                    f"required Scout recon for component {component_id} returned no executed offline response",
+                    f"required Scout recon for component {component_id} returned no executed result",
                     failure_code=(
                         QueryStrategyConvergenceFailureCode.REQUIRED_SCOUT_EXECUTION_EMPTY
                     ),
@@ -765,15 +793,45 @@ def _execute_recon_and_revisions(
             continue
 
         hint_ids = _scout_hint_ids(report)
+        if not hint_ids:
+            if required:
+                raise QueryStrategyConvergenceError(
+                    f"required Scout recon for component {component_id} returned no usable direction",
+                    failure_code=(
+                        QueryStrategyConvergenceFailureCode.REQUIRED_SCOUT_EXECUTION_EMPTY
+                    ),
+                )
+            summaries.append(
+                {
+                    "component_id": component_id,
+                    "posture": component_work["posture"],
+                    "status": "optional_unavailable_primary_strategy_retained",
+                    "unresolved_dimension_ids": dimensions,
+                    "candidate_count": len(candidates),
+                    "executed_query_count": executed_count,
+                    "evidence_admitted": False,
+                    "source_obligation_satisfied": False,
+                    "citation_eligible": False,
+                }
+            )
+            continue
+        parent_scout_ref = scout_ref_from_scout_report_state(
+            run_kernel.state.scout_disambiguation_report_state
+        )
+        scout_directional_context = build_scout_directional_context(
+            scout_report=run_kernel.state.scout_disambiguation_report_state,
+            parent_scout_disambiguation_report_ref=parent_scout_ref,
+            component_id=component_id,
+            consumed_ambiguity_dimension_ids=dimensions,
+            consumed_scout_hint_ids=hint_ids,
+        )
         revision_input = SearchPlannerRevisionInput(
             run_id=run_kernel.state.run_id,
             request_id=run_kernel.state.request_id,
             parent_search_planner_proposal_ref=(
                 planner_ref_from_search_planner_state(run_kernel.state.search_planner_proposal_state)
             ),
-            parent_scout_disambiguation_report_ref=(
-                scout_ref_from_scout_report_state(run_kernel.state.scout_disambiguation_report_state)
-            ),
+            parent_scout_disambiguation_report_ref=parent_scout_ref,
             parent_initial_contract_ref=planner_contract_ref_from_contract(
                 run_kernel.state.initial_answer_contract,
                 source="initial_answer_contract",
@@ -785,15 +843,14 @@ def _execute_recon_and_revisions(
             component_id=component_id,
             consumed_ambiguity_dimension_ids=dimensions,
             consumed_scout_hint_ids=hint_ids,
+            scout_directional_context=scout_directional_context,
             safe_revision_context={
                 "answer_component_ref": accepted_component,
                 "parent_question_meaning_record": dict(
                     run_kernel.state.search_planner_proposal_state.get("question_meaning_record") or {}
                 ),
                 "user_query_ref": dict(run_kernel.state.search_planner_proposal_state.get("user_query_ref") or {}),
-                "scout_report_ref": scout_ref_from_scout_report_state(
-                    run_kernel.state.scout_disambiguation_report_state
-                ),
+                "scout_report_ref": parent_scout_ref,
                 "non_evidence": True,
                 "allocation_policy_version": policy.policy_version,
             },

@@ -11,11 +11,13 @@ from core.initial_query_allocation_policy import (
     DEFAULT_INITIAL_QUERY_ALLOCATION_POLICY,
     INITIAL_QUERY_ALLOCATION_POLICY_VERSION,
 )
+from core.ordinary_scout_disambiguation_adapter import OrdinaryScoutDisambiguationAdapter
 from core.query_plan import QUERY_PLAN_TRACE_KEY
 from core.query_plan_runtime_adapter import build_query_plan_runtime_adapter
 from core.query_production_runtime import (
     QUERY_PRODUCTION_STAGE,
     QueryStrategyConvergenceError,
+    QueryStrategyConvergenceFailureCode,
     _recon_work_by_component,
     _strategies_with_authorized_revisions,
     execute_initial_query_strategy_convergence,
@@ -741,6 +743,65 @@ def test_required_identity_recon_without_adapter_fails_before_query_production()
     assert kernel.state.search_work_plan == {}
 
 
+
+def test_required_recon_route_unavailable_fails_closed_after_scout_authorization() -> None:
+    revision = ResponseOnlyRevisionAdapter()
+    blocked_scout = OrdinaryScoutDisambiguationAdapter(
+        available_providers={"serper": False}
+    )
+
+    with pytest.raises(QueryStrategyConvergenceError) as captured:
+        _converge(
+            _planner_payload(recon="required", required_recon=True),
+            scout_adapter=blocked_scout,
+            revision_adapter=revision,
+        )
+
+    assert (
+        captured.value.failure_code
+        is QueryStrategyConvergenceFailureCode.REQUIRED_SCOUT_ROUTE_UNAVAILABLE
+    )
+    assert revision.calls == []
+
+
+def test_optional_recon_route_unavailable_retains_primary_without_revision() -> None:
+    revision = ResponseOnlyRevisionAdapter()
+    kernel, convergence = _converge(
+        _planner_payload(recon="optional"),
+        scout_adapter=OrdinaryScoutDisambiguationAdapter(
+            available_providers={"serper": False}
+        ),
+        revision_adapter=revision,
+    )
+
+    assert revision.calls == []
+    assert convergence.recon_summary[0]["status"] == (
+        "optional_route_unavailable_primary_strategy_retained"
+    )
+    assert kernel.state.scout_disambiguation_report_projection["route_available"] is False
+
+
+def test_required_recon_empty_executed_scout_fails_closed_without_revision() -> None:
+    revision = ResponseOnlyRevisionAdapter()
+    empty_scout = OrdinaryScoutDisambiguationAdapter(
+        available_providers={"serper": True},
+        scout_search=lambda **_kwargs: [],
+    )
+
+    with pytest.raises(QueryStrategyConvergenceError) as captured:
+        _converge(
+            _planner_payload(recon="required", required_recon=True),
+            scout_adapter=empty_scout,
+            revision_adapter=revision,
+        )
+
+    assert (
+        captured.value.failure_code
+        is QueryStrategyConvergenceFailureCode.REQUIRED_SCOUT_EXECUTION_EMPTY
+    )
+    assert revision.calls == []
+
+
 def test_required_recon_posture_alone_fails_closed_without_adapter() -> None:
     kernel = _kernel_after_run_contract()
 
@@ -776,6 +837,14 @@ def test_injected_recon_revises_query_direction_and_remains_non_evidence() -> No
     _, admission = _admit(kernel, convergence)
 
     assert scout.calls and revision.calls
+    directional = revision.calls[0]["scout_directional_context"]
+    assert directional["non_evidence"] is True
+    assert directional["scout_hints_are_evidence"] is False
+    assert directional["evidence_admitted"] is False
+    assert directional["citation_eligible"] is False
+    assert directional["directional_hints"]
+    assert "snippet" not in directional["directional_hints"][0]
+    assert "link" not in directional["directional_hints"][0]
     assert convergence.query_production_result.candidate_queries == ["Renamed Example official current component 1"]
     assert admission.current_queries == ["Renamed Example official current component 1"]
     assert convergence.recon_summary[0]["status"] == "query_direction_revised"

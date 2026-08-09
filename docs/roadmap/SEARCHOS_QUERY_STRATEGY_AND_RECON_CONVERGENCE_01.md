@@ -108,7 +108,9 @@ repository-visible but cannot be reached from this ordinary initial callsite.
   fallback after model/configuration/JSON/schema/strategy failure.
 - `RunDeps` declares typed optional `search_planner_adapter`,
   `scout_disambiguation_adapter`, and `search_planner_revision_adapter` seams.
-  Scout/revision remain uncomposed by default.
+  `SEARCHOS-REQUIRED-SCOUT-ORDINARY-COMPOSITION-01` composes the ordinary
+  provider-neutral Scout and FAST PlannerRevision defaults when no adapter is
+  injected; injected seams remain bounded offline/test overrides.
 - Invalid or unavailable model planning fails closed before accepted planner
   state, initial AnswerContract acceptance, SearchWorkPlan activation,
   QueryPlan admission, or first search dispatch.
@@ -204,28 +206,41 @@ do not cross the immediate execution boundary in this phase.
 
 Recon is need-based for entity identity, alias/rename, jurisdiction,
 currentness, official domain, or canonical publication venue. It does not run
-for every component. An optional injected response-only Scout adapter consumes
-only policy-bounded sanitized queries. Each query binds a distinct unresolved
-dimension, and the policy ceiling is checked per affected component before
-adapter execution.
+for every component. `SEARCHOS-REQUIRED-SCOUT-ORDINARY-COMPOSITION-01`
+composes `OrdinaryScoutDisambiguationAdapter` whenever the ordinary pipeline has
+no injected Scout adapter. It consumes only policy-bounded sanitized queries;
+each query binds a distinct unresolved dimension and the policy ceiling is
+checked per affected component before adapter execution.
+
+The ordinary provider-neutral Scout adapter maps each authorized candidate to
+`core.routing` `DISCOVER(lightweight_disambiguation)`, accepts only the selected
+lawful route, and calls the existing cap-aware `search_scout_results` once per
+candidate. Its report records real dispatch as `execution_status=executed` and
+`not_live=false`; injected response-only fixtures retain
+`executed_by_fake_adapter` and `not_live=true`. A blocked lawful route is
+distinct from an executed empty result: optional recon retains the admitted
+primary, while required truthful-targeting recon fails closed.
 
 Scout reports remain non-evidence: they do not enter EvidenceLedger, support,
 custody, citations, FinalAnswerPacket, Analyst evidence, Author material, or
-source-obligation satisfaction. They do not select the DISCOVER provider or
-activate READ, Focused Extract, Map, Crawl, Deep, or fallback. When no adapter is
-composed, optional recon preserves a conservative admitted primary; required
-truthful-targeting ambiguity fails closed. The legacy Brave recon path is not an
-ordinary fallback.
+source-obligation satisfaction. They do not activate READ, Focused Extract, Map,
+Crawl, Deep, or fallback. The legacy Brave recon path is not an ordinary
+fallback.
 
+The ordinary FAST `SearchPlannerRevisionModelAdapter` receives only canonical
+lineage-bound Scout directional context: report/component/dimension/hint refs
+and bounded title/domain/hint-kind/currentness/interpretation/confidence
+fields. Snippets, links, raw provider payloads, evidence authority, citation
+authority, and source-obligation satisfaction do not cross that boundary.
 Query-direction-only revision is explicitly non-contractual. Contractual
 revision remains passive until the existing amendment-admission owner accepts
 it and the existing application owner creates the current derived contract.
 Unsupported, stale, or multiple contractual candidates do not affect planning
 or dispatch.
 
-Whenever ordinary Scout reconnaissance is activated, semantic interpretation
-of its hints and revision of the plan must be model-driven. Deterministic code
-may validate and admit the revision but may not semantically rewrite the plan.
+Semantic interpretation of Scout hints and revision of the plan remains
+model-driven. Deterministic code may validate and admit the revision but may
+not semantically rewrite the plan.
 
 The planner input boundary preserves the complete normalized user utterance up
 to 12,000 characters plus bounded safe context, route/run references, and

@@ -1,7 +1,7 @@
 """RunKernel-authorized Scout disambiguation runtime.
 
 Scout is a narrow reconnaissance worker. It accepts an explicitly injected
-adapter, normalizes Serper-shaped result metadata into direction hints, and
+adapter, normalizes provider-neutral result metadata into direction hints, and
 returns a DisambiguationReport for RunKernel reduction.
 
 This module does not import RunKernel, legacy Scout, search providers, fetch/read
@@ -22,13 +22,13 @@ from core.initial_query_allocation_policy import (
 )
 
 SCOUT_DISAMBIGUATION_SCHEMA_VERSION = (
-    "scout_disambiguation_runtime_ag_scout_disambiguation_runtime_01_v1"
+    "scout_disambiguation_runtime_ag_scout_disambiguation_runtime_01_v2"
 )
 SCOUT_DISAMBIGUATION_REPORT_SCHEMA_VERSION = (
-    "scout_disambiguation_report_ag_scout_disambiguation_runtime_01_v1"
+    "scout_disambiguation_report_ag_scout_disambiguation_runtime_01_v2"
 )
 SCOUT_DISAMBIGUATION_OBSERVATION_SCHEMA_VERSION = (
-    "scout_disambiguation_observation_ag_scout_disambiguation_runtime_01_v1"
+    "scout_disambiguation_observation_ag_scout_disambiguation_runtime_01_v2"
 )
 SCOUT_DISAMBIGUATION_STAGE = "scout_disambiguation"
 SCOUT_DISAMBIGUATION_REASON = (
@@ -75,7 +75,18 @@ _ALLOWED_QUERY_KINDS = frozenset(
 )
 
 _ALLOWED_QUERY_STATUSES = frozenset(
-    {"executed_by_fake_adapter", "skipped_budget", "deferred", "blocked"}
+    {
+        "executed",
+        "executed_by_fake_adapter",
+        "skipped_budget",
+        "deferred",
+        "blocked",
+    }
+)
+
+_EXECUTED_QUERY_STATUSES = frozenset({"executed", "executed_by_fake_adapter"})
+_ALLOWED_EXECUTION_POSTURES = frozenset(
+    {"executed", "skipped_budget", "deferred", "blocked"}
 )
 
 _ALLOWED_HINT_KINDS = frozenset(
@@ -191,7 +202,6 @@ _REQUIRED_FALSE_FLAGS = {
     "final_answer_packet_created": False,
     "author_input_created": False,
     "live_validation_run": False,
-    "live_provider_calls_executed": False,
     "raw_provider_payload_retained": False,
     "raw_search_response_retained": False,
     "raw_prompt_retained": False,
@@ -256,7 +266,7 @@ class ScoutDisambiguationAdapter(Protocol):
     """Injected Scout adapter boundary."""
 
     def produce(self, scout_input: Mapping[str, Any]) -> Mapping[str, Any]:
-        """Return sanitized Serper-shaped Scout result hints."""
+        """Return sanitized provider-neutral Scout result hints."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -440,10 +450,20 @@ def build_scout_disambiguation_report_payload(
     recommendations = _normalize_recommended_planner_revision_inputs(
         result.get("recommended_planner_revision_inputs")
     )
+    execution_posture = _normalize_execution_posture(
+        result.get("scout_execution_posture"),
+        scout_queries=scout_queries,
+    )
+    route_available = _optional_bool(result.get("route_available"))
+    if result.get("route_available") is not None and route_available is None:
+        raise ScoutDisambiguationRuntimeError(
+            "Scout adapter route_available must be boolean"
+        )
+    live_provider_calls_executed = _live_provider_calls_executed(scout_queries)
     non_executed = [
         query
         for query in scout_queries
-        if query.get("execution_status") != "executed_by_fake_adapter"
+        if query.get("execution_status") not in _EXECUTED_QUERY_STATUSES
     ]
 
     report_base = {
@@ -469,6 +489,10 @@ def build_scout_disambiguation_report_payload(
         "ambiguity_dimensions": dimensions,
         "query_budget": query_budget,
         "executed_query_count": executed_query_count,
+        "scout_execution_posture": execution_posture,
+        "route_available": route_available,
+        "scout_route": _safe_shallow_mapping(result.get("scout_route")),
+        "live_provider_calls_executed": live_provider_calls_executed,
         "scout_queries": scout_queries,
         "non_executed_candidate_queries": non_executed,
         "scout_result_hints": scout_result_hints,
@@ -661,6 +685,7 @@ def build_scout_disambiguation_report_state(
         dimensions=dimensions,
         queries=scout_queries,
     )
+    _validate_execution_posture(report=report, queries=scout_queries)
     _validate_closed_report_flags(report)
 
     dedupe_key = _dedupe_key(report)
@@ -697,6 +722,10 @@ def build_scout_disambiguation_report_state(
         "executed_query_count": _non_negative_int(
             report.get("executed_query_count")
         ),
+        "scout_execution_posture": report.get("scout_execution_posture"),
+        "route_available": _optional_bool(report.get("route_available")),
+        "scout_route": _safe_shallow_mapping(report.get("scout_route")),
+        "live_provider_calls_executed": bool(report.get("live_provider_calls_executed")),
         "scout_queries": scout_queries,
         "non_executed_candidate_queries": _safe_list(
             report.get("non_executed_candidate_queries")
@@ -761,6 +790,10 @@ def build_scout_disambiguation_report_projection(
         "executed_query_count": _non_negative_int(
             state.get("executed_query_count")
         ),
+        "scout_execution_posture": state.get("scout_execution_posture"),
+        "route_available": _optional_bool(state.get("route_available")),
+        "scout_route": _safe_shallow_mapping(state.get("scout_route")),
+        "live_provider_calls_executed": bool(state.get("live_provider_calls_executed")),
         "scout_queries": _safe_list(state.get("scout_queries")),
         "non_executed_candidate_queries": _safe_list(
             state.get("non_executed_candidate_queries")
@@ -935,6 +968,10 @@ def _call_adapter(
     return result
 
 
+def _scout_input_ref_for_observation(scout_input: Mapping[str, Any]) -> dict[str, Any]:
+    return _safe_mapping(scout_input)
+
+
 def _normalize_dimensions(
     value: Any,
     *,
@@ -1048,9 +1085,14 @@ def _normalize_candidate_queries(
             raise ScoutDisambiguationRuntimeError(
                 f"unsupported Scout query execution status: {status}"
             )
-        if mapping.get("not_live") is False:
+        is_live = status == "executed"
+        if mapping.get("not_live") is False and not is_live:
             raise ScoutDisambiguationRuntimeError(
-                f"Scout query {query_id} claims live execution"
+                f"Scout query {query_id} claims live execution without live status"
+            )
+        if mapping.get("not_live") is True and is_live:
+            raise ScoutDisambiguationRuntimeError(
+                f"Scout query {query_id} marks executed live work as not_live"
             )
         if mapping.get("provider_payload_retained") is True:
             raise ScoutDisambiguationRuntimeError(
@@ -1079,7 +1121,7 @@ def _normalize_candidate_queries(
                     "locale": _clean_token(mapping.get("locale")),
                     "country": _clean_token(mapping.get("country")),
                     "language": _clean_token(mapping.get("language")),
-                    "not_live": True,
+                    "not_live": not is_live,
                     "provider_payload_retained": False,
                     "fetch_read_retrieval_behavior_changed": False,
                     "source_obligation_satisfied": False,
@@ -1146,7 +1188,9 @@ def _normalize_query_budget(
         "skipped_query_count": skipped,
         "remaining_query_budget": remaining,
         "budget_exhausted": remaining == 0,
-        "live_provider_calls_executed": False,
+        "live_provider_calls_executed": _live_provider_calls_executed(
+            candidate_queries
+        ),
     }
 
 
@@ -1628,6 +1672,7 @@ def _validate_queries(
         if isinstance(item, Mapping) and item.get("dimension_id")
     ]
     executed_count = 0
+    live_executed_count = 0
     query_ids: list[str] = []
     for item in queries:
         query = _required_mapping(item, "Scout query")
@@ -1643,9 +1688,20 @@ def _validate_queries(
             )
         query_ids.append(query_id)
         _require_related_dimensions(related_ids, dimension_ids, context="Scout query")
-        if query.get("not_live") is not True:
+        status = _clean_token(query.get("execution_status"))
+        if status not in _ALLOWED_QUERY_STATUSES:
             raise ScoutDisambiguationRuntimeError(
-                "Scout query must be explicitly marked not_live"
+                "Scout query execution status is unsupported"
+            )
+        if status == "executed":
+            if query.get("not_live") is not False:
+                raise ScoutDisambiguationRuntimeError(
+                    "executed Scout query must be truthfully marked live"
+                )
+            live_executed_count += 1
+        elif query.get("not_live") is not True:
+            raise ScoutDisambiguationRuntimeError(
+                "non-executed Scout query must be explicitly marked not_live"
             )
         if query.get("provider_payload_retained", False) is not False:
             raise ScoutDisambiguationRuntimeError(
@@ -1659,7 +1715,7 @@ def _validate_queries(
             raise ScoutDisambiguationRuntimeError(
                 "Scout query claims source-obligation satisfaction"
             )
-        if query.get("execution_status") == "executed_by_fake_adapter":
+        if status in _EXECUTED_QUERY_STATUSES:
             executed_count += 1
     if len(set(query_ids)) != len(query_ids):
         raise ScoutDisambiguationRuntimeError("duplicate Scout query id")
@@ -1675,9 +1731,11 @@ def _validate_queries(
         raise ScoutDisambiguationRuntimeError(
             "Scout report executed more queries than authorized"
         )
-    if query_budget.get("live_provider_calls_executed") is not False:
+    if query_budget.get("live_provider_calls_executed") is not bool(
+        live_executed_count
+    ):
         raise ScoutDisambiguationRuntimeError(
-            "Scout query budget must not claim live provider calls"
+            "Scout query budget does not truthfully represent live provider calls"
         )
 
 
@@ -1744,8 +1802,35 @@ def _validate_closed_report_flags(report: Mapping[str, Any]) -> None:
         )
 
 
-def _scout_input_ref_for_observation(scout_input: Mapping[str, Any]) -> dict[str, Any]:
-    return _safe_mapping(scout_input)
+def _validate_execution_posture(
+    *,
+    report: Mapping[str, Any],
+    queries: Sequence[Mapping[str, Any]],
+) -> None:
+    posture = _clean_token(report.get("scout_execution_posture"))
+    if posture not in _ALLOWED_EXECUTION_POSTURES:
+        raise ScoutDisambiguationRuntimeError("Scout report execution posture is unsupported")
+    executed_count = _executed_query_count(queries)
+    live_calls = _live_provider_calls_executed(queries)
+    if executed_count and posture != "executed":
+        raise ScoutDisambiguationRuntimeError(
+            "Scout report execution posture omits executed query work"
+        )
+    if posture == "executed" and executed_count == 0:
+        raise ScoutDisambiguationRuntimeError("executed Scout report has no executed query")
+    if posture == "blocked" and executed_count:
+        raise ScoutDisambiguationRuntimeError("blocked Scout report cannot contain executed queries")
+    route_available = _optional_bool(report.get("route_available"))
+    if report.get("route_available") is not None and route_available is None:
+        raise ScoutDisambiguationRuntimeError("Scout report route_available must be boolean")
+    if route_available is False and posture != "blocked":
+        raise ScoutDisambiguationRuntimeError("unavailable Scout route must be blocked")
+    if route_available is False and any(
+        query.get("execution_status") != "blocked" for query in queries
+    ):
+        raise ScoutDisambiguationRuntimeError("unavailable Scout route must not dispatch")
+    if report.get("live_provider_calls_executed") is not live_calls:
+        raise ScoutDisambiguationRuntimeError("Scout report live-call telemetry is not truthful")
 
 
 def _planner_ref_or_raise(value: Any) -> dict[str, Any]:
@@ -1977,6 +2062,12 @@ def _non_negative_int(value: Any) -> int:
         return 0
 
 
+def _optional_bool(value: Any) -> bool | None:
+    if value is None:
+        return None
+    return value if isinstance(value, bool) else None
+
+
 def _optional_int(value: Any) -> int | None:
     if value is None:
         return None
@@ -1990,8 +2081,37 @@ def _executed_query_count(queries: Sequence[Mapping[str, Any]]) -> int:
     return sum(
         1
         for query in queries
-        if query.get("execution_status") == "executed_by_fake_adapter"
+        if query.get("execution_status") in _EXECUTED_QUERY_STATUSES
     )
+
+
+def _live_provider_calls_executed(
+    queries: Sequence[Mapping[str, Any]],
+) -> bool:
+    return any(query.get("execution_status") == "executed" for query in queries)
+
+
+def _normalize_execution_posture(
+    value: Any,
+    *,
+    scout_queries: Sequence[Mapping[str, Any]],
+) -> str:
+    posture = _clean_token(value)
+    if posture:
+        if posture not in _ALLOWED_EXECUTION_POSTURES:
+            raise ScoutDisambiguationRuntimeError(
+                f"unsupported Scout execution posture: {posture}"
+            )
+        return posture
+    if _executed_query_count(scout_queries):
+        return "executed"
+    statuses = {str(query.get("execution_status") or "") for query in scout_queries}
+    if statuses == {"blocked"}:
+        return "blocked"
+    if statuses == {"skipped_budget"}:
+        return "skipped_budget"
+    return "deferred"
+
 
 
 def _require_related_dimensions(

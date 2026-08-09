@@ -16,6 +16,7 @@ from enum import Enum
 from hashlib import sha256
 from typing import Any, Callable, Mapping, Protocol, Sequence
 
+from core.cap_enforcement import RunCapExceeded
 from core.contract_amendment_record import (
     CONTRACT_AMENDMENT_RECORD_SCHEMA_VERSION,
     AffectedComponentRef,
@@ -33,13 +34,13 @@ from core.contract_amendment_record import (
 )
 
 SEARCH_PLANNER_REVISION_SCHEMA_VERSION = (
-    "search_planner_revision_runtime_ag_search_planner_revision_01_v1"
+    "search_planner_revision_runtime_ag_search_planner_revision_01_v2"
 )
 SEARCH_PLANNER_REVISION_PROPOSAL_SCHEMA_VERSION = (
-    "search_planner_revision_proposal_ag_search_planner_revision_01_v1"
+    "search_planner_revision_proposal_ag_search_planner_revision_01_v2"
 )
 SEARCH_PLANNER_REVISION_OBSERVATION_SCHEMA_VERSION = (
-    "search_planner_revision_observation_ag_search_planner_revision_01_v1"
+    "search_planner_revision_observation_ag_search_planner_revision_01_v2"
 )
 SEARCH_PLANNER_REVISION_STAGE = "search_planner_revision"
 SEARCH_PLANNER_REVISION_REASON = (
@@ -47,6 +48,8 @@ SEARCH_PLANNER_REVISION_REASON = (
 )
 SEARCH_PLANNER_REVISION_TRACE_KEY = "search_planner_revision"
 SEARCH_PLANNER_REVISION_OWNER = "RunKernel.SearchPlannerRevision"
+SCOUT_DIRECTIONAL_CONTEXT_SCHEMA_VERSION = "search_planner_revision_scout_directional_context_v1"
+SCOUT_DIRECTIONAL_CONTEXT_MAX_HINTS = 25
 
 _EXPECTED_ACTION_TYPE = "search_planner_revise"
 _EXPECTED_OBSERVATION_TYPE = "search_planner_revised"
@@ -242,6 +245,7 @@ class SearchPlannerRevisionInput:
     component_id: str = ""
     consumed_ambiguity_dimension_ids: Sequence[str] = field(default_factory=tuple)
     consumed_scout_hint_ids: Sequence[str] = field(default_factory=tuple)
+    scout_directional_context: Mapping[str, Any] = field(default_factory=dict)
     safe_revision_context: Mapping[str, Any] = field(default_factory=dict)
     closed_surface_flags: Mapping[str, Any] = field(default_factory=dict)
 
@@ -267,6 +271,17 @@ class SearchPlannerRevisionInput:
             raise SearchPlannerRevisionRuntimeError(
                 "planner revision input requires consumed ambiguity dimensions"
             )
+        directional_context = _normalize_scout_directional_context(
+            self.scout_directional_context,
+            parent_scout_ref=parent_scout_ref,
+            component_id=component_id,
+            consumed_dimension_ids=dimension_ids,
+            consumed_hint_ids=hint_ids,
+        )
+        if hint_ids and not directional_context:
+            raise SearchPlannerRevisionRuntimeError(
+                "planner revision input requires lineage-bound Scout direction"
+            )
         closed_flags = {**_REQUIRED_FALSE_FLAGS, **_safe_mapping(self.closed_surface_flags)}
         if any(bool(value) for value in closed_flags.values()):
             raise SearchPlannerRevisionRuntimeError(
@@ -291,6 +306,7 @@ class SearchPlannerRevisionInput:
             "component_id": component_id,
             "consumed_ambiguity_dimension_ids": dimension_ids,
             "consumed_scout_hint_ids": hint_ids,
+            "scout_directional_context": directional_context,
             "safe_revision_context": _json_safe(self.safe_revision_context),
             "closed_surface_flags": {
                 key: bool(value) for key, value in closed_flags.items()
@@ -659,6 +675,14 @@ def build_search_planner_revision_state(
         scout_report=scout_report,
         action_inputs=inputs,
     )
+    _validate_scout_directional_context(
+        revision_input.get("scout_directional_context"),
+        parent_scout_ref=parent_scout_ref,
+        component_id=component_id,
+        consumed_dimension_ids=consumed_dimensions,
+        consumed_hint_ids=consumed_hints,
+        scout_report=scout_report,
+    )
     _validate_closed_revision_flags(revision)
     amendment_candidates = _safe_amendment_candidates(
         revision.get("amendment_candidates")
@@ -946,6 +970,24 @@ def scout_ref_from_scout_report_state(
     }
 
 
+def build_scout_directional_context(
+    *,
+    scout_report: Mapping[str, Any],
+    parent_scout_disambiguation_report_ref: Mapping[str, Any],
+    component_id: str,
+    consumed_ambiguity_dimension_ids: Sequence[str],
+    consumed_scout_hint_ids: Sequence[str],
+) -> dict[str, Any]:
+    """Build bounded non-evidence direction tied to one stored Scout report."""
+
+    return _build_scout_directional_context(
+        scout_report=_safe_mapping(scout_report),
+        parent_scout_ref=_scout_ref_or_raise(parent_scout_disambiguation_report_ref),
+        component_id=_required_token(component_id, "planner revision requires component_id"),
+        consumed_dimension_ids=_text_list(consumed_ambiguity_dimension_ids),
+        consumed_hint_ids=_text_list(consumed_scout_hint_ids),
+        require_context=True,
+    )
 def contract_ref_from_contract(
     contract: Mapping[str, Any] | None,
     *,
@@ -1416,6 +1458,144 @@ def _validate_action_parent_scout_bindings(
             )
 
 
+def _normalize_scout_directional_context(
+    value: Any,
+    *,
+    parent_scout_ref: Mapping[str, Any],
+    component_id: str,
+    consumed_dimension_ids: Sequence[str],
+    consumed_hint_ids: Sequence[str],
+) -> dict[str, Any]:
+    context = _safe_mapping(value)
+    if not context:
+        return {}
+    _reject_forbidden_surface_claims(
+        context,
+        context="planner revision Scout directional context",
+    )
+    if context.get("schema_version") != SCOUT_DIRECTIONAL_CONTEXT_SCHEMA_VERSION:
+        raise SearchPlannerRevisionRuntimeError(
+            "planner revision Scout directional context has the wrong schema"
+        )
+    if _scout_ref_or_raise(context.get("parent_scout_disambiguation_report_ref")) != dict(parent_scout_ref):
+        raise SearchPlannerRevisionRuntimeError(
+            "planner revision Scout directional context has stale parent lineage"
+        )
+    if _clean_token(context.get("component_id")) != component_id:
+        raise SearchPlannerRevisionRuntimeError(
+            "planner revision Scout directional context has the wrong component"
+        )
+    if _text_list(context.get("consumed_ambiguity_dimension_ids")) != list(consumed_dimension_ids):
+        raise SearchPlannerRevisionRuntimeError(
+            "planner revision Scout directional context has stale dimensions"
+        )
+    if _text_list(context.get("consumed_scout_hint_ids")) != list(consumed_hint_ids):
+        raise SearchPlannerRevisionRuntimeError(
+            "planner revision Scout directional context has stale hint ids"
+        )
+    directional_hints = [
+        _normalize_directional_hint(item, strict_keys=True)
+        for item in _safe_list(context.get("directional_hints"))
+    ]
+    if len(directional_hints) != len(consumed_hint_ids) or len(directional_hints) > SCOUT_DIRECTIONAL_CONTEXT_MAX_HINTS:
+        raise SearchPlannerRevisionRuntimeError(
+            "planner revision Scout directional context exceeds its bounded shape"
+        )
+    if [item["hint_id"] for item in directional_hints] != list(consumed_hint_ids):
+        raise SearchPlannerRevisionRuntimeError(
+            "planner revision Scout directional context has stale hint material"
+        )
+    if context.get("non_evidence") is not True:
+        raise SearchPlannerRevisionRuntimeError(
+            "planner revision Scout directional context must remain non-evidence"
+        )
+    for key in (
+        "scout_hints_are_evidence",
+        "evidence_admitted",
+        "citation_eligible",
+        "source_obligation_satisfied",
+    ):
+        if context.get(key) is not False:
+            raise SearchPlannerRevisionRuntimeError(
+                "planner revision Scout directional context opens authority"
+            )
+    return {
+        "schema_version": SCOUT_DIRECTIONAL_CONTEXT_SCHEMA_VERSION,
+        "parent_scout_disambiguation_report_ref": dict(parent_scout_ref),
+        "component_id": component_id,
+        "consumed_ambiguity_dimension_ids": list(consumed_dimension_ids),
+        "consumed_scout_hint_ids": list(consumed_hint_ids),
+        "directional_hints": directional_hints,
+        "non_evidence": True,
+        "scout_hints_are_evidence": False,
+        "evidence_admitted": False,
+        "citation_eligible": False,
+        "source_obligation_satisfied": False,
+    }
+
+def _build_scout_directional_context(
+    *,
+    scout_report: Mapping[str, Any],
+    parent_scout_ref: Mapping[str, Any],
+    component_id: str,
+    consumed_dimension_ids: Sequence[str],
+    consumed_hint_ids: Sequence[str],
+    require_context: bool,
+) -> dict[str, Any]:
+    report_ref = scout_ref_from_scout_report_state(scout_report)
+    if report_ref != dict(parent_scout_ref):
+        raise SearchPlannerRevisionRuntimeError(
+            "Scout directional context is stale against its parent report"
+        )
+    if _clean_token(scout_report.get("component_id")) != component_id:
+        raise SearchPlannerRevisionRuntimeError(
+            "Scout directional context component does not match its report"
+        )
+    if not consumed_dimension_ids:
+        raise SearchPlannerRevisionRuntimeError(
+            "Scout directional context requires consumed ambiguity dimensions"
+        )
+    if require_context and not consumed_hint_ids:
+        raise SearchPlannerRevisionRuntimeError(
+            "Scout directional context requires consumed hints"
+        )
+    if len(consumed_hint_ids) > SCOUT_DIRECTIONAL_CONTEXT_MAX_HINTS:
+        raise SearchPlannerRevisionRuntimeError(
+            "Scout directional context exceeds its bounded hint limit"
+        )
+    dimension_ids = _scout_dimension_ids(scout_report)
+    missing_dimensions = [item for item in consumed_dimension_ids if item not in dimension_ids]
+    if missing_dimensions:
+        raise SearchPlannerRevisionRuntimeError(
+            "Scout directional context consumes unknown dimensions: "
+            + ", ".join(missing_dimensions)
+        )
+    hints_by_id = _scout_hints_by_id(scout_report)
+    missing_hints = [item for item in consumed_hint_ids if item not in hints_by_id]
+    if missing_hints:
+        raise SearchPlannerRevisionRuntimeError(
+            "Scout directional context consumes unknown hints: "
+            + ", ".join(missing_hints)
+        )
+    directional_hints = [
+        _normalize_directional_hint(hints_by_id[hint_id], strict_keys=False)
+        for hint_id in consumed_hint_ids
+    ]
+    return {
+        "schema_version": SCOUT_DIRECTIONAL_CONTEXT_SCHEMA_VERSION,
+        "parent_scout_disambiguation_report_ref": dict(parent_scout_ref),
+        "component_id": component_id,
+        "consumed_ambiguity_dimension_ids": list(consumed_dimension_ids),
+        "consumed_scout_hint_ids": list(consumed_hint_ids),
+        "directional_hints": directional_hints,
+        "non_evidence": True,
+        "scout_hints_are_evidence": False,
+        "evidence_admitted": False,
+        "citation_eligible": False,
+        "source_obligation_satisfied": False,
+    }
+
+
 def _validate_consumed_scout_refs(
     *,
     consumed_dimension_ids: Sequence[str],
@@ -1472,6 +1652,120 @@ def _collect_scout_hint_ids(scout_report: Mapping[str, Any]) -> set[str]:
             hint_ids.update(_text_list(item.get("supporting_hint_ids")))
     return hint_ids
 
+
+def _scout_dimension_ids(scout_report: Mapping[str, Any]) -> set[str]:
+    return {
+        str(item.get("dimension_id"))
+        for item in _safe_list(scout_report.get("ambiguity_dimensions"))
+        if isinstance(item, Mapping) and item.get("dimension_id")
+    }
+
+def _scout_hints_by_id(scout_report: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
+    hints: dict[str, Mapping[str, Any]] = {}
+    for key in (
+        "scout_result_hints",
+        "likely_official_target_hints",
+        "currentness_hints",
+    ):
+        for item in _safe_list(scout_report.get(key)):
+            if not isinstance(item, Mapping):
+                continue
+            hint_id = _clean_token(item.get("hint_id"))
+            if hint_id and hint_id not in hints:
+                hints[hint_id] = item
+    return hints
+
+def _normalize_directional_hint(
+    value: Any,
+    *,
+    strict_keys: bool,
+) -> dict[str, Any]:
+    hint = _safe_mapping(value)
+    if not hint:
+        raise SearchPlannerRevisionRuntimeError(
+            "Scout directional context contains an invalid hint"
+        )
+    _reject_forbidden_surface_claims(
+        hint,
+        context="planner revision Scout directional hint",
+    )
+    allowed_keys = {
+        "hint_id",
+        "query_id",
+        "related_dimension_ids",
+        "title",
+        "domain",
+        "hint_kind",
+        "official_target_hint",
+        "currentness_hint",
+        "interpretation_hint",
+        "confidence_posture",
+    }
+    if strict_keys and set(hint) - allowed_keys:
+        raise SearchPlannerRevisionRuntimeError(
+            "Scout directional context contains fields outside its bounded shape"
+        )
+    hint_id = _required_token(
+        hint.get("hint_id"),
+        "Scout directional context hint requires hint_id",
+    )
+    return {
+        "hint_id": hint_id,
+        "query_id": _clean_token(hint.get("query_id")),
+        "related_dimension_ids": _text_list(hint.get("related_dimension_ids")),
+        "title": _clean_token(hint.get("title"), limit=320),
+        "domain": _clean_token(hint.get("domain"), limit=240),
+        "hint_kind": _clean_token(hint.get("hint_kind")) or "unknown_or_other",
+        "official_target_hint": _clean_token(
+            hint.get("official_target_hint"),
+            limit=420,
+        ),
+        "currentness_hint": _clean_token(hint.get("currentness_hint"), limit=420),
+        "interpretation_hint": _clean_token(
+            hint.get("interpretation_hint"),
+            limit=420,
+        ),
+        "confidence_posture": _clean_token(
+            hint.get("confidence_posture"),
+            limit=120,
+        )
+        or "hint_only",
+    }
+
+def _validate_scout_directional_context(
+    value: Any,
+    *,
+    parent_scout_ref: Mapping[str, Any],
+    component_id: str,
+    consumed_dimension_ids: Sequence[str],
+    consumed_hint_ids: Sequence[str],
+    scout_report: Mapping[str, Any],
+) -> None:
+    context = _normalize_scout_directional_context(
+        value,
+        parent_scout_ref=parent_scout_ref,
+        component_id=component_id,
+        consumed_dimension_ids=consumed_dimension_ids,
+        consumed_hint_ids=consumed_hint_ids,
+    )
+    if not context:
+        if consumed_hint_ids:
+            raise SearchPlannerRevisionRuntimeError(
+                "planner revision requires lineage-bound Scout direction"
+            )
+        return
+    expected = _build_scout_directional_context(
+        scout_report=scout_report,
+        parent_scout_ref=parent_scout_ref,
+        component_id=component_id,
+        consumed_dimension_ids=consumed_dimension_ids,
+        consumed_hint_ids=consumed_hint_ids,
+        require_context=True,
+    )
+    if context != expected:
+        raise SearchPlannerRevisionRuntimeError(
+            "planner revision Scout directional context is stale or noncanonical"
+        )
 
 def _validate_parent_contract_bindings(
     *,
@@ -1735,6 +2029,8 @@ def _call_adapter(
             result = adapter.produce(adapter_input)  # type: ignore[union-attr]
         else:
             result = adapter(adapter_input)  # type: ignore[misc]
+    except RunCapExceeded:
+        raise
     except SearchPlannerRevisionRuntimeError:
         raise
     except Exception as exc:
@@ -2040,6 +2336,8 @@ def _digest_json(value: Any) -> str:
 
 
 __all__ = [
+    "SCOUT_DIRECTIONAL_CONTEXT_MAX_HINTS",
+    "SCOUT_DIRECTIONAL_CONTEXT_SCHEMA_VERSION",
     "SEARCH_PLANNER_REVISION_OBSERVATION_SCHEMA_VERSION",
     "SEARCH_PLANNER_REVISION_OWNER",
     "SEARCH_PLANNER_REVISION_PROPOSAL_SCHEMA_VERSION",
@@ -2051,6 +2349,7 @@ __all__ = [
     "SearchPlannerRevisionExecutionResult",
     "SearchPlannerRevisionInput",
     "SearchPlannerRevisionRuntimeError",
+    "build_scout_directional_context",
     "build_search_planner_revision_observation_payload",
     "build_search_planner_revision_projection",
     "build_search_planner_revision_state",

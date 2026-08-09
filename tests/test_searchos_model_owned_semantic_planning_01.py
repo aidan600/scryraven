@@ -42,6 +42,9 @@ from core.search_planner_model_adapter import (
     accept_planner_model_output,
 )
 from core.search_planner_model_prompt import SEARCH_PLANNER_MODEL_SYSTEM_PROMPT
+from core.search_planner_revision_model_prompt import (
+    SEARCH_PLANNER_REVISION_MODEL_SYSTEM_PROMPT,
+)
 from core.search_planner_runtime import DeterministicSearchPlannerAdapter
 from tests.helpers.offline_ordinary_pipeline import (
     PostRetirementOrdinaryPipelineHarness,
@@ -55,6 +58,8 @@ class ModelOwnedPipelineHarness(PostRetirementOrdinaryPipelineHarness):
     planner_response: Any = field(default_factory=dict)
     planner_prompts: list[str] = field(default_factory=list)
     planner_kwargs: list[dict[str, Any]] = field(default_factory=list)
+    revision_prompts: list[str] = field(default_factory=list)
+    revision_kwargs: list[dict[str, Any]] = field(default_factory=list)
 
     def ask_model(
         self,
@@ -89,6 +94,23 @@ class ModelOwnedPipelineHarness(PostRetirementOrdinaryPipelineHarness):
             "temperature": temperature,
             **kwargs,
         }
+        if system_prompt == SEARCH_PLANNER_REVISION_MODEL_SYSTEM_PROMPT:
+            self._record_model_call(system_prompt, call_kwargs)
+            self.revision_prompts.append(prompt)
+            self.revision_kwargs.append(dict(call_kwargs))
+            prompt_payload = json.loads(
+                prompt.rsplit("Sanitized revision input JSON:\n", maxsplit=1)[-1]
+            )
+            revision_input = dict(prompt_payload["revision_input"])
+            if cost_accumulator is not None:
+                cost_accumulator.record_model_call(
+                    phase=cost_phase,
+                    model=model,
+                    input_tokens=11,
+                    output_tokens=7,
+                )
+            return json.dumps(_revision_model_response(revision_input))
+
         if system_prompt == SEARCH_PLANNER_MODEL_SYSTEM_PROMPT:
             self._record_model_call(system_prompt, call_kwargs)
             self.planner_prompts.append(prompt)
@@ -242,6 +264,68 @@ class FakePlannerModel:
             }
         )
         return json.dumps(self.response)
+
+
+
+def _revision_model_response(
+    revision_input: Mapping[str, Any],
+) -> dict[str, Any]:
+    component_id = str(revision_input["component_id"])
+    consumed_dimensions = list(
+        revision_input["consumed_ambiguity_dimension_ids"]
+    )
+    consumed_hints = list(revision_input["consumed_scout_hint_ids"])
+    return {
+        "revised_question_meaning_summary": (
+            "Use the bounded Scout direction only to focus the initial source "
+            "query; it remains non-evidence."
+        ),
+        "semantic_slot_updates": [],
+        "answer_component_updates": [],
+        "component_search_requirement_updates": [
+            {
+                "component_id": component_id,
+                "requirement_id": "requirement:model:1:revised-default",
+                "requirement_summary": (
+                    "Target the bounded identity direction with source support."
+                ),
+                "source_obligation_candidate_ids": ["obligation:model:1"],
+                "metadata": {
+                    "query_strategy_candidates": [
+                        {
+                            "strategy_id": "strategy:model:1:revised-default",
+                            "component_id": component_id,
+                            "candidate_kind": "primary",
+                            "candidate_query_text": (
+                                "Offline revised Example identity direction"
+                            ),
+                            "requested_role": "official_bias",
+                            "source_obligation_candidate_ids": [
+                                "obligation:model:1"
+                            ],
+                            "official_canonical_intent": "official_source",
+                            "distinct_need_justification": (
+                                "Bounded Scout direction focused the "
+                                "identity target."
+                            ),
+                        }
+                    ]
+                },
+            }
+        ],
+        "mandatory_caveats": ["Scout direction remains non-evidence."],
+        "prohibited_upgrades": ["Do not cite Scout direction."],
+        "normalization_obligations": [],
+        "assumptions": [],
+        "unresolved_ambiguities": [],
+        "consumed_ambiguity_dimension_ids": consumed_dimensions,
+        "consumed_scout_hint_ids": consumed_hints,
+        "amendment_candidates": [],
+        "closed_surface_flags": {},
+        "confidence_posture": "directional",
+        "revision_posture": "proposal_only",
+    }
+
 
 
 def _planner_payload(
@@ -607,6 +691,105 @@ def test_default_planner_receives_selected_transport_and_run_accounting(
     }
     assert cost_snapshot["total_calls"] == 3
     assert outcome.cost_snapshot == cost_snapshot
+
+
+
+def test_default_fast_revision_consumes_scout_direction_on_ordinary_pipeline(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    scout = ResponseOnlyScoutAdapter()
+    factory_calls: list[dict[str, Any]] = []
+
+    def build_scout(**kwargs: Any) -> ResponseOnlyScoutAdapter:
+        factory_calls.append(dict(kwargs))
+        return scout
+
+    monkeypatch.setattr(
+        orchestrator,
+        "build_ordinary_scout_disambiguation_adapter",
+        build_scout,
+    )
+    config, deps, harness, capture = _pipeline_fixture(
+        tmp_path,
+        monkeypatch,
+        query="What is the current Example identity rule?",
+        planner_response=_planner_payload(recon_posture="optional"),
+    )
+    accumulator = CostAccumulator()
+
+    outcome = orchestrator.run_pipeline(
+        config,
+        deps,
+        NullStatusWriter(),
+        accumulator,
+    )
+
+    assert outcome.report
+    assert factory_calls
+    assert scout.calls
+    assert len(harness.revision_kwargs) == 1
+    revision_kwargs = harness.revision_kwargs[0]
+    assert revision_kwargs["provider"] == config.fast_provider
+    assert revision_kwargs["model"] == config.fast_model
+    assert revision_kwargs["effort"] == config.fast_reasoning_effort
+    assert revision_kwargs["cost_phase"] == "search_planner_revision"
+    assert revision_kwargs["cost_accumulator"] is accumulator
+    assert revision_kwargs["require_json"] is True
+    assert revision_kwargs["use_reasoning"] is True
+
+    revision_prompt = harness.revision_prompts[0]
+    assert "Offline direction hint 1" in revision_prompt
+    assert "Sanitized response-only identity direction." not in revision_prompt
+    assert "https://example.invalid/hint-1" not in revision_prompt
+
+    revision = capture["revision_projection_at_convergence"]
+    assert revision["planner_revision_metadata"]["provider"] == config.fast_provider
+    assert revision["planner_revision_metadata"]["model"] == config.fast_model
+    assert revision["planner_revision_metadata"]["effort"] == (
+        config.fast_reasoning_effort
+    )
+    assert capture["convergence"].recon_summary[0]["status"] == (
+        "query_direction_revised"
+    )
+
+
+def test_ordinary_no_recon_makes_zero_scout_and_revision_calls(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    factory_calls: list[dict[str, Any]] = []
+    sentinel_scout = ResponseOnlyScoutAdapter()
+
+    def build_scout(**kwargs: Any) -> ResponseOnlyScoutAdapter:
+        factory_calls.append(dict(kwargs))
+        return sentinel_scout
+
+    monkeypatch.setattr(
+        orchestrator,
+        "build_ordinary_scout_disambiguation_adapter",
+        build_scout,
+    )
+    config, deps, harness, _capture = _pipeline_fixture(
+        tmp_path,
+        monkeypatch,
+        query="What is the current Example rule?",
+        planner_response=_planner_payload(),
+    )
+
+    outcome = orchestrator.run_pipeline(
+        config,
+        deps,
+        NullStatusWriter(),
+        CostAccumulator(),
+    )
+
+    assert outcome.report
+    assert factory_calls
+    assert sentinel_scout.calls == []
+    assert harness.revision_prompts == []
+    assert harness.revision_kwargs == []
+
 
 
 def test_default_planner_transport_facts_are_not_retained(
