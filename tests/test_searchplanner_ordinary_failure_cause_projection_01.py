@@ -18,6 +18,7 @@ import pytest
 import proplex.__main__ as compatibility_cli
 from core.initial_query_strategy_failure import (
     INITIAL_QUERY_STRATEGY_FAILURE_TERMINAL_KEY,
+    InitialQueryStrategyFailure,
     InitialQueryStrategyFailureCode,
     InitialQueryStrategyFailureError,
     InitialQueryStrategyFailureOrigin,
@@ -162,6 +163,166 @@ def test_classifier_consumes_owner_authored_code_not_generic_rebuild() -> None:
     assert convergence_failure.failure_code == convergence.failure_code.value
     assert runtime_failure.failure_code != "search_planner_runtime_error"
     assert convergence_failure.failure_code != "query_strategy_convergence_error"
+
+
+def test_carrier_rejects_arbitrary_and_cross_origin_codes() -> None:
+    with pytest.raises(ValueError, match="not licensed"):
+        InitialQueryStrategyFailure(
+            failure_origin=InitialQueryStrategyFailureOrigin.PLANNER_RUNTIME,
+            failure_code="fictional-private-code",
+        )
+    with pytest.raises(ValueError, match="not licensed"):
+        InitialQueryStrategyFailure(
+            failure_origin=InitialQueryStrategyFailureOrigin.QUERY_STRATEGY_CONVERGENCE,
+            failure_code="fictional-private-code",
+        )
+    with pytest.raises(ValueError, match="not licensed"):
+        InitialQueryStrategyFailure(
+            failure_origin=InitialQueryStrategyFailureOrigin.PLANNER_RUNTIME,
+            failure_code=(
+                QueryStrategyConvergenceFailureCode.RECON_CEILING_EXCEEDED.value
+            ),
+        )
+    with pytest.raises(ValueError, match="not licensed"):
+        InitialQueryStrategyFailure(
+            failure_origin=InitialQueryStrategyFailureOrigin.QUERY_STRATEGY_CONVERGENCE,
+            failure_code=(
+                SearchPlannerRuntimeSafeFailureCode.PROPOSAL_DIGEST_MISMATCH.value
+            ),
+        )
+    with pytest.raises(ValueError, match="not licensed"):
+        InitialQueryStrategyFailure(
+            failure_origin=InitialQueryStrategyFailureOrigin.RUN_KERNEL,
+            failure_code=(
+                InitialQueryStrategyFailureCode.SCOUT_DISAMBIGUATION_RUNTIME_ERROR.value
+            ),
+        )
+    with pytest.raises(ValueError, match="not licensed"):
+        InitialQueryStrategyFailure(
+            failure_origin=InitialQueryStrategyFailureOrigin.SCOUT_DISAMBIGUATION_RUNTIME,
+            failure_code=(
+                InitialQueryStrategyFailureCode.SEARCH_PLANNER_PRODUCTION_TRANSITION.value
+            ),
+        )
+    with pytest.raises(ValueError, match="not licensed"):
+        InitialQueryStrategyFailure(
+            failure_origin=(
+                InitialQueryStrategyFailureOrigin.SEARCH_PLANNER_REVISION_RUNTIME
+            ),
+            failure_code=(
+                InitialQueryStrategyFailureCode.SCOUT_DISAMBIGUATION_RUNTIME_ERROR.value
+            ),
+        )
+
+
+def test_carrier_licenses_every_owner_enum_value_for_its_origin_only() -> None:
+    for member in SearchPlannerRuntimeSafeFailureCode:
+        failure = InitialQueryStrategyFailure(
+            failure_origin=InitialQueryStrategyFailureOrigin.PLANNER_RUNTIME,
+            failure_code=member.value,
+        )
+        assert failure.failure_code == member.value
+        with pytest.raises(ValueError, match="not licensed"):
+            InitialQueryStrategyFailure(
+                failure_origin=(
+                    InitialQueryStrategyFailureOrigin.QUERY_STRATEGY_CONVERGENCE
+                ),
+                failure_code=member.value,
+            )
+
+    for member in QueryStrategyConvergenceFailureCode:
+        failure = InitialQueryStrategyFailure(
+            failure_origin=(
+                InitialQueryStrategyFailureOrigin.QUERY_STRATEGY_CONVERGENCE
+            ),
+            failure_code=member.value,
+        )
+        assert failure.failure_code == member.value
+        with pytest.raises(ValueError, match="not licensed"):
+            InitialQueryStrategyFailure(
+                failure_origin=InitialQueryStrategyFailureOrigin.PLANNER_RUNTIME,
+                failure_code=member.value,
+            )
+
+
+def test_carrier_licenses_run_kernel_scout_and_revision_exact_codes() -> None:
+    run_kernel_codes = {
+        InitialQueryStrategyFailureCode.SEARCH_PLANNER_PRODUCTION_TRANSITION,
+        InitialQueryStrategyFailureCode.INITIAL_ANSWER_CONTRACT_ACCEPTANCE_TRANSITION,
+        InitialQueryStrategyFailureCode.SCOUT_DISAMBIGUATION_TRANSITION,
+        InitialQueryStrategyFailureCode.SEARCH_PLANNER_REVISION_TRANSITION,
+        InitialQueryStrategyFailureCode.CONTRACT_AMENDMENT_ADMISSION_TRANSITION,
+        InitialQueryStrategyFailureCode.CONTRACT_AMENDMENT_APPLICATION_TRANSITION,
+        InitialQueryStrategyFailureCode.SEARCH_WORK_PLAN_CONSTRUCTION_TRANSITION,
+        InitialQueryStrategyFailureCode.QUERY_PRODUCTION_TRANSITION,
+        InitialQueryStrategyFailureCode.QUERY_PLAN_ADMISSION_TRANSITION,
+    }
+    for member in run_kernel_codes:
+        failure = InitialQueryStrategyFailure(
+            failure_origin=InitialQueryStrategyFailureOrigin.RUN_KERNEL,
+            failure_code=member.value,
+        )
+        assert failure.to_terminal_projection()["failure_code"] == member.value
+        with pytest.raises(ValueError, match="not licensed"):
+            InitialQueryStrategyFailure(
+                failure_origin=InitialQueryStrategyFailureOrigin.PLANNER_RUNTIME,
+                failure_code=member.value,
+            )
+
+    scout = InitialQueryStrategyFailure(
+        failure_origin=InitialQueryStrategyFailureOrigin.SCOUT_DISAMBIGUATION_RUNTIME,
+        failure_code=(
+            InitialQueryStrategyFailureCode.SCOUT_DISAMBIGUATION_RUNTIME_ERROR.value
+        ),
+    )
+    assert scout.failure_code == "scout_disambiguation_runtime_error"
+    with pytest.raises(ValueError, match="not licensed"):
+        InitialQueryStrategyFailure(
+            failure_origin=InitialQueryStrategyFailureOrigin.RUN_KERNEL,
+            failure_code=scout.failure_code,
+        )
+
+    revision = InitialQueryStrategyFailure(
+        failure_origin=(
+            InitialQueryStrategyFailureOrigin.SEARCH_PLANNER_REVISION_RUNTIME
+        ),
+        failure_code=(
+            InitialQueryStrategyFailureCode.SEARCH_PLANNER_REVISION_RUNTIME_ERROR.value
+        ),
+    )
+    assert revision.failure_code == "search_planner_revision_runtime_error"
+    with pytest.raises(ValueError, match="not licensed"):
+        InitialQueryStrategyFailure(
+            failure_origin=InitialQueryStrategyFailureOrigin.SCOUT_DISAMBIGUATION_RUNTIME,
+            failure_code=revision.failure_code,
+        )
+
+
+def test_unknown_runtime_subclass_remains_generic_without_leaks() -> None:
+    class _UnlicensedPlannerRuntimeFailure(SearchPlannerRuntimeError):
+        """Fixture subclass without a licensed owner-authored safe code."""
+
+    private_message = "private subclass: " + " | ".join(_PRIVATE_FRAGMENTS)
+    exc = _UnlicensedPlannerRuntimeFailure(private_message)
+    assert classify_initial_query_strategy_failure(exc) is None
+    assert project_initial_query_strategy_failure_for_terminal(exc) is None
+
+    # CLI recognizes SearchPlannerRuntimeError subclasses, but projection stays
+    # generic unless the typed owner-authored safe code is present and licensed.
+    payload = compatibility_cli._bounded_terminal_payload(
+        entrypoint="scryraven",
+        exc=exc,
+        config=RunConfig(query=_ISCLOSE_QUERY),
+    )
+    terminal = payload["terminal"]
+    assert terminal["code"] == "bounded_run_failed"
+    assert INITIAL_QUERY_STRATEGY_FAILURE_TERMINAL_KEY not in terminal
+    assert "search_planner_failure" not in terminal
+    encoded = json.dumps(payload, sort_keys=True)
+    assert type(exc).__name__ not in encoded
+    assert "_UnlicensedPlannerRuntimeFailure" not in encoded
+    for fragment in _PRIVATE_FRAGMENTS:
+        assert fragment not in encoded
 
 
 def test_run_kernel_and_scout_revision_projection_unchanged() -> None:

@@ -84,6 +84,44 @@ _RUN_KERNEL_CODE_BY_OPERATION: Final[dict[str, InitialQueryStrategyFailureCode]]
     ),
 }
 
+_RUN_KERNEL_TRANSITION_CODES: Final[frozenset[str]] = frozenset(
+    code.value for code in _RUN_KERNEL_CODE_BY_OPERATION.values()
+)
+_SCOUT_DISAMBIGUATION_RUNTIME_CODES: Final[frozenset[str]] = frozenset(
+    {InitialQueryStrategyFailureCode.SCOUT_DISAMBIGUATION_RUNTIME_ERROR.value}
+)
+_SEARCH_PLANNER_REVISION_RUNTIME_CODES: Final[frozenset[str]] = frozenset(
+    {InitialQueryStrategyFailureCode.SEARCH_PLANNER_REVISION_RUNTIME_ERROR.value}
+)
+
+
+def _licensed_failure_codes_for_origin(
+    origin: InitialQueryStrategyFailureOrigin,
+) -> frozenset[str]:
+    """Return the finite codes licensed for one closed corridor origin.
+
+    Owner enums remain defined in their owner modules. This helper only
+    licenses their values for terminal projection.
+    """
+
+    if origin is InitialQueryStrategyFailureOrigin.PLANNER_RUNTIME:
+        from core.search_planner_runtime import SearchPlannerRuntimeSafeFailureCode
+
+        return frozenset(member.value for member in SearchPlannerRuntimeSafeFailureCode)
+    if origin is InitialQueryStrategyFailureOrigin.QUERY_STRATEGY_CONVERGENCE:
+        from core.query_production_runtime import QueryStrategyConvergenceFailureCode
+
+        return frozenset(
+            member.value for member in QueryStrategyConvergenceFailureCode
+        )
+    if origin is InitialQueryStrategyFailureOrigin.RUN_KERNEL:
+        return _RUN_KERNEL_TRANSITION_CODES
+    if origin is InitialQueryStrategyFailureOrigin.SCOUT_DISAMBIGUATION_RUNTIME:
+        return _SCOUT_DISAMBIGUATION_RUNTIME_CODES
+    if origin is InitialQueryStrategyFailureOrigin.SEARCH_PLANNER_REVISION_RUNTIME:
+        return _SEARCH_PLANNER_REVISION_RUNTIME_CODES
+    raise ValueError("failure_origin is not a closed corridor origin")
+
 
 @dataclass(frozen=True, slots=True)
 class InitialQueryStrategyFailure:
@@ -99,6 +137,11 @@ class InitialQueryStrategyFailure:
             raise ValueError("failure_code must be a non-empty closed token")
         if self.failure_code != self.failure_code.strip():
             raise ValueError("failure_code must not carry surrounding whitespace")
+        licensed = _licensed_failure_codes_for_origin(self.failure_origin)
+        if self.failure_code not in licensed:
+            raise ValueError(
+                "failure_code is not licensed for the closed failure_origin"
+            )
 
     def to_terminal_projection(self) -> dict[str, str]:
         return {
@@ -185,34 +228,56 @@ def classify_initial_query_strategy_failure(
     ``SearchPlannerModelAdapterError`` remains on the existing rich terminal path
     and is intentionally excluded here. Runtime and convergence causes consume
     the exception's owner-authored identity; this classifier does not invent a
-    second generic code for those families.
+    second generic code for those families. Subclasses that lack a licensed
+    owner-authored runtime safe code remain generic ``bounded_run_failed``.
     """
 
     if exc is None:
         return None
 
-    from core.query_production_runtime import QueryStrategyConvergenceError
+    from core.query_production_runtime import (
+        QueryStrategyConvergenceError,
+        QueryStrategyConvergenceFailureCode,
+    )
     from core.search_planner_model_adapter import SearchPlannerModelAdapterError
-    from core.search_planner_runtime import SearchPlannerRuntimeError
+    from core.search_planner_runtime import (
+        SearchPlannerRuntimeError,
+        SearchPlannerRuntimeSafeFailureCode,
+    )
 
     if isinstance(exc, SearchPlannerModelAdapterError):
         return None
     if isinstance(exc, InitialQueryStrategyFailureError):
         return exc.failure
     if isinstance(exc, QueryStrategyConvergenceError):
-        return InitialQueryStrategyFailure(
-            failure_origin=InitialQueryStrategyFailureOrigin(
-                QueryStrategyConvergenceError.SAFE_FAILURE_ORIGIN
-            ),
-            failure_code=exc.failure_code.value,
-        )
+        code = exc.failure_code
+        if not isinstance(code, QueryStrategyConvergenceFailureCode):
+            return None
+        try:
+            return InitialQueryStrategyFailure(
+                failure_origin=InitialQueryStrategyFailureOrigin(
+                    QueryStrategyConvergenceError.SAFE_FAILURE_ORIGIN
+                ),
+                failure_code=code.value,
+            )
+        except (TypeError, ValueError):
+            return None
     if isinstance(exc, SearchPlannerRuntimeError):
-        return InitialQueryStrategyFailure(
-            failure_origin=InitialQueryStrategyFailureOrigin(
-                SearchPlannerRuntimeError.SAFE_FAILURE_ORIGIN
-            ),
-            failure_code=exc.failure_code.value,
-        )
+        try:
+            code = exc.failure_code
+        except AttributeError:
+            return None
+        if not isinstance(code, SearchPlannerRuntimeSafeFailureCode):
+            return None
+        try:
+            return InitialQueryStrategyFailure(
+                failure_origin=InitialQueryStrategyFailureOrigin(
+                    SearchPlannerRuntimeError.SAFE_FAILURE_ORIGIN
+                ),
+                failure_code=code.value,
+            )
+        except (TypeError, ValueError):
+            return None
     return None
 
 
