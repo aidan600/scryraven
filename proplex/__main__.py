@@ -91,6 +91,11 @@ from core.generic_query_to_relation_planning import (  # noqa: E402
     MVP_QUERY_PLANNING_OUTPUT_DIR,
     build_generic_query_plan_status_output,
 )
+from core.initial_query_strategy_failure import (  # noqa: E402
+    INITIAL_QUERY_STRATEGY_FAILURE_TERMINAL_KEY,
+    InitialQueryStrategyFailureError,
+    project_initial_query_strategy_failure_for_terminal,
+)
 from core.llm import ask_model, compute_similarities, embed_texts  # noqa: E402
 from core.official_canonical_recovery_visibility_export import (  # noqa: E402
     append_official_canonical_recovery_diagnostics_section,
@@ -106,6 +111,7 @@ from core.provider_validation import missing_required_api_keys  # noqa: E402
 from core.quantitative_specialist_product_activation import (  # noqa: E402
     compose_quantitative_specialist_product_deps,
 )
+from core.query_production_runtime import QueryStrategyConvergenceError  # noqa: E402
 from core.retrieval import (  # noqa: E402
     ACADEMIC_DOMAINS,
     NEWS_PREFERRED_DOMAINS,
@@ -120,6 +126,7 @@ from core.run_cap_authorization import (  # noqa: E402
 )
 from core.run_config import RunConfig, RunDeps  # noqa: E402
 from core.search_planner_model_adapter import SearchPlannerModelAdapterError  # noqa: E402
+from core.search_planner_runtime import SearchPlannerRuntimeError  # noqa: E402
 from core.searchos_slice_a_product_runtime import (  # noqa: E402
     SEARCHOS_SLICE_A_TRACE_KEY,
     build_bounded_searchos_n1_causal_projection,
@@ -769,6 +776,9 @@ def _bounded_terminal_payload(
         RunCapExceeded
         | BoundedRunAuthorizationError
         | SearchPlannerModelAdapterError
+        | InitialQueryStrategyFailureError
+        | QueryStrategyConvergenceError
+        | SearchPlannerRuntimeError
         | None
     ),
     config: RunConfig | None,
@@ -860,6 +870,14 @@ def _bounded_terminal_payload(
             ),
             "cleaner_modified": exc.cleaner_modified,
         }
+    else:
+        initial_planning_failure = project_initial_query_strategy_failure_for_terminal(
+            exc
+        )
+        if initial_planning_failure is not None:
+            terminal[INITIAL_QUERY_STRATEGY_FAILURE_TERMINAL_KEY] = (
+                initial_planning_failure
+            )
     policy = config.cap_policy if config is not None else None
     payload: dict[str, object] = {
         "schema_version": "bounded_product_cli_terminal_v1",
@@ -1437,7 +1455,15 @@ def main(
                     entrypoint=entrypoint,
                     exc=(
                         exc
-                        if isinstance(exc, SearchPlannerModelAdapterError)
+                        if isinstance(
+                            exc,
+                            (
+                                SearchPlannerModelAdapterError,
+                                InitialQueryStrategyFailureError,
+                                QueryStrategyConvergenceError,
+                                SearchPlannerRuntimeError,
+                            ),
+                        )
                         else None
                     ),
                     config=config,
