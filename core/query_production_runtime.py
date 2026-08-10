@@ -872,7 +872,7 @@ def _execute_recon_and_revisions(
             )
         except SearchPlannerRevisionRuntimeError as exc:
             raise InitialQueryStrategyFailureError(
-                search_planner_revision_runtime_failure()
+                search_planner_revision_runtime_failure(failure_code=exc.failure_code)
             ) from exc
         invoke_run_kernel_initial_planning(
             "search_planner_revision",

@@ -10,13 +10,18 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Final, TypeVar
+from typing import TYPE_CHECKING, Any, Final, TypeVar
 
 INITIAL_QUERY_STRATEGY_FAILURE_SCHEMA_VERSION: Final = "initial_query_strategy_failure_v1"
 INITIAL_QUERY_STRATEGY_FAILURE_BOUNDARY: Final = "initial_query_strategy"
 INITIAL_QUERY_STRATEGY_FAILURE_TERMINAL_KEY: Final = "initial_query_strategy_failure"
 
 _T = TypeVar("_T")
+
+if TYPE_CHECKING:
+    from core.search_planner_revision_runtime import (
+        SearchPlannerRevisionRuntimeSafeFailureCode,
+    )
 
 
 class InitialQueryStrategyFailureOrigin(str, Enum):
@@ -38,7 +43,6 @@ class InitialQueryStrategyFailureCode(str, Enum):
     """
 
     SCOUT_DISAMBIGUATION_RUNTIME_ERROR = "scout_disambiguation_runtime_error"
-    SEARCH_PLANNER_REVISION_RUNTIME_ERROR = "search_planner_revision_runtime_error"
     SEARCH_PLANNER_PRODUCTION_TRANSITION = "search_planner_production_transition"
     INITIAL_ANSWER_CONTRACT_ACCEPTANCE_TRANSITION = (
         "initial_answer_contract_acceptance_transition"
@@ -90,10 +94,6 @@ _RUN_KERNEL_TRANSITION_CODES: Final[frozenset[str]] = frozenset(
 _SCOUT_DISAMBIGUATION_RUNTIME_CODES: Final[frozenset[str]] = frozenset(
     {InitialQueryStrategyFailureCode.SCOUT_DISAMBIGUATION_RUNTIME_ERROR.value}
 )
-_SEARCH_PLANNER_REVISION_RUNTIME_CODES: Final[frozenset[str]] = frozenset(
-    {InitialQueryStrategyFailureCode.SEARCH_PLANNER_REVISION_RUNTIME_ERROR.value}
-)
-
 
 def _licensed_failure_codes_for_origin(
     origin: InitialQueryStrategyFailureOrigin,
@@ -119,7 +119,13 @@ def _licensed_failure_codes_for_origin(
     if origin is InitialQueryStrategyFailureOrigin.SCOUT_DISAMBIGUATION_RUNTIME:
         return _SCOUT_DISAMBIGUATION_RUNTIME_CODES
     if origin is InitialQueryStrategyFailureOrigin.SEARCH_PLANNER_REVISION_RUNTIME:
-        return _SEARCH_PLANNER_REVISION_RUNTIME_CODES
+        from core.search_planner_revision_runtime import (
+            SearchPlannerRevisionRuntimeSafeFailureCode,
+        )
+
+        return frozenset(
+            member.value for member in SearchPlannerRevisionRuntimeSafeFailureCode
+        )
     raise ValueError("failure_origin is not a closed corridor origin")
 
 
@@ -184,12 +190,33 @@ def scout_disambiguation_runtime_failure() -> InitialQueryStrategyFailure:
     )
 
 
-def search_planner_revision_runtime_failure() -> InitialQueryStrategyFailure:
+def search_planner_revision_runtime_failure(
+    *,
+    failure_code: SearchPlannerRevisionRuntimeSafeFailureCode | None = None,
+) -> InitialQueryStrategyFailure:
+    """Translate one owner-authored PlannerRevision code for this corridor.
+
+    The default preserves the historic coarse token solely for an untyped
+    compatibility caller; ordinary PlannerRevision failures supply their exact
+    owner-authored ``failure_code``.
+    """
+
+    from core.search_planner_revision_runtime import (
+        SearchPlannerRevisionRuntimeSafeFailureCode,
+    )
+
+    code = (
+        SearchPlannerRevisionRuntimeSafeFailureCode.SEARCH_PLANNER_REVISION_RUNTIME_ERROR
+        if failure_code is None
+        else failure_code
+    )
+    if not isinstance(code, SearchPlannerRevisionRuntimeSafeFailureCode):
+        raise TypeError(
+            "failure_code must be a SearchPlannerRevisionRuntimeSafeFailureCode"
+        )
     return InitialQueryStrategyFailure(
         failure_origin=InitialQueryStrategyFailureOrigin.SEARCH_PLANNER_REVISION_RUNTIME,
-        failure_code=(
-            InitialQueryStrategyFailureCode.SEARCH_PLANNER_REVISION_RUNTIME_ERROR.value
-        ),
+        failure_code=code.value,
     )
 
 
@@ -240,6 +267,10 @@ def classify_initial_query_strategy_failure(
         QueryStrategyConvergenceFailureCode,
     )
     from core.search_planner_model_adapter import SearchPlannerModelAdapterError
+    from core.search_planner_revision_runtime import (
+        SearchPlannerRevisionRuntimeError,
+        SearchPlannerRevisionRuntimeSafeFailureCode,
+    )
     from core.search_planner_runtime import (
         SearchPlannerRuntimeError,
         SearchPlannerRuntimeSafeFailureCode,
@@ -273,6 +304,19 @@ def classify_initial_query_strategy_failure(
             return InitialQueryStrategyFailure(
                 failure_origin=InitialQueryStrategyFailureOrigin(
                     SearchPlannerRuntimeError.SAFE_FAILURE_ORIGIN
+                ),
+                failure_code=code.value,
+            )
+        except (TypeError, ValueError):
+            return None
+    if isinstance(exc, SearchPlannerRevisionRuntimeError):
+        code = exc.failure_code
+        if not isinstance(code, SearchPlannerRevisionRuntimeSafeFailureCode):
+            return None
+        try:
+            return InitialQueryStrategyFailure(
+                failure_origin=InitialQueryStrategyFailureOrigin(
+                    SearchPlannerRevisionRuntimeError.SAFE_FAILURE_ORIGIN
                 ),
                 failure_code=code.value,
             )
