@@ -13,6 +13,15 @@ from enum import Enum
 from typing import Any, Callable, Mapping, Sequence
 
 from core.cap_enforcement import RunCapExceeded
+from core.search_planner_revision_model_output_contract import (
+    SEARCH_PLANNER_REVISION_ALLOWED_AMENDMENT_OPERATION_KINDS,
+    SEARCH_PLANNER_REVISION_DANGEROUS_TRUE_MEMBER_NAMES,
+    SEARCH_PLANNER_REVISION_FORBIDDEN_AMENDMENT_OPERATION_KINDS,
+    SEARCH_PLANNER_REVISION_FORBIDDEN_AUTHORITY_MEMBER_NAMES,
+    SEARCH_PLANNER_REVISION_MODEL_TEXT_LIMITS,
+    SEARCH_PLANNER_REVISION_REQUIRED_TOP_LEVEL_FIELDS,
+    SEARCH_PLANNER_REVISION_SENSITIVE_RAW_PRIVATE_MEMBER_NAMES,
+)
 from core.search_planner_revision_model_prompt import (
     SEARCH_PLANNER_REVISION_MODEL_PROMPT_SCHEMA_VERSION,
     SEARCH_PLANNER_REVISION_MODEL_SYSTEM_PROMPT,
@@ -28,57 +37,12 @@ SEARCH_PLANNER_REVISION_MODEL_ADAPTER_SCHEMA_VERSION = (
     "search_planner_revision_model_adapter_ag_search_planner_revision_01_v2"
 )
 
-_TOP_LEVEL_REQUIRED = (
-    "revised_question_meaning_summary",
-    "semantic_slot_updates",
-    "answer_component_updates",
-    "component_search_requirement_updates",
-    "mandatory_caveats",
-    "prohibited_upgrades",
-    "normalization_obligations",
-    "assumptions",
-    "unresolved_ambiguities",
-    "consumed_ambiguity_dimension_ids",
-    "consumed_scout_hint_ids",
-    "amendment_candidates",
-    "closed_surface_flags",
-)
-
-_SENSITIVE_KEYS = frozenset(
-    {
-        "api_key",
-        "cache",
-        "cache_row",
-        "db",
-        "db_row",
-        "env",
-        "full_prompt",
-        "full_trace",
-        "log",
-        "logs",
-        "model_response",
-        "output_packet",
-        "password",
-        "private_log",
-        "prompt",
-        "provider_payload",
-        "raw_content",
-        "raw_model_response",
-        "raw_page",
-        "raw_payload",
-        "raw_prompt",
-        "raw_provider_payload",
-        "raw_response",
-        "raw_search_response",
-        "raw_text",
-        "raw_trace",
-        "secret",
-        "secrets",
-        "token",
-        "unbounded_text",
-    }
-)
-
+_TOP_LEVEL_REQUIRED = SEARCH_PLANNER_REVISION_REQUIRED_TOP_LEVEL_FIELDS
+_SENSITIVE_KEYS = SEARCH_PLANNER_REVISION_SENSITIVE_RAW_PRIVATE_MEMBER_NAMES
+_FORBIDDEN_AUTHORITY_KEYS = SEARCH_PLANNER_REVISION_FORBIDDEN_AUTHORITY_MEMBER_NAMES
+_DANGEROUS_TRUE_KEYS = SEARCH_PLANNER_REVISION_DANGEROUS_TRUE_MEMBER_NAMES
+_FORBIDDEN_OPERATION_KINDS = SEARCH_PLANNER_REVISION_FORBIDDEN_AMENDMENT_OPERATION_KINDS
+_ALLOWED_OPERATION_KINDS = SEARCH_PLANNER_REVISION_ALLOWED_AMENDMENT_OPERATION_KINDS
 _PRIVATE_VALUE_MARKERS = frozenset(
     {
         "api_key",
@@ -93,86 +57,6 @@ _PRIVATE_VALUE_MARKERS = frozenset(
         "secret",
     }
 )
-
-_FORBIDDEN_AUTHORITY_KEYS = frozenset(
-    {
-        "accepted_amendment",
-        "accepted_contract",
-        "answer",
-        "author_input",
-        "canonical_coverage",
-        "citation",
-        "citations",
-        "component_coverage_record",
-        "current_answer_contract",
-        "evidence",
-        "evidence_ledger_admission",
-        "final_answer",
-        "final_answer_packet",
-        "initial_answer_contract",
-        "search_executor",
-        "search_judgment_decision",
-        "semantic_observation",
-        "source_obligation_support",
-        "sufficiency_decision",
-        "sufficiency_judgment",
-    }
-)
-
-_DANGEROUS_TRUE_KEYS = frozenset(
-    {
-        "accepted_authority",
-        "amendment_admitted",
-        "amendment_applied",
-        "author_behavior_changed",
-        "author_executor_invoked",
-        "author_input_created",
-        "citation_behavior_changed",
-        "citation_eligible",
-        "citation_rendered",
-        "component_satisfied",
-        "constructs_search_work_plan",
-        "contract_mutation_applied",
-        "current_answer_contract_mutated",
-        "evidence_admitted",
-        "fetch_read_retrieval_behavior_changed",
-        "final_answer_packet_created",
-        "initial_answer_contract_mutated",
-        "live_model_called",
-        "live_provider_calls_executed",
-        "live_validation_run",
-        "model_called",
-        "partial_answer_readiness_changed",
-        "provider_called",
-        "provider_search_behavior_changed",
-        "query_plan_activated",
-        "raw_model_response_retained",
-        "raw_prompt_retained",
-        "raw_provider_payload_retained",
-        "raw_search_response_retained",
-        "raw_trace_retained",
-        "runtime_behavior_changed",
-        "scout_hints_are_evidence",
-        "scout_runtime_activated",
-        "search_executed",
-        "search_executor_runtime_activated",
-        "search_judgment_decided",
-        "search_work_plan_activated",
-        "search_work_plan_constructed",
-        "source_obligation_satisfied",
-        "sufficiency_decided",
-    }
-)
-
-_FORBIDDEN_OPERATION_KINDS = frozenset(
-    {
-        "mark_requirement_satisfied",
-        "mark_source_obligation_satisfied",
-        "resolve_slot",
-    }
-)
-_ALLOWED_OPERATION_KINDS = frozenset({"add_caveat", "strengthen_source_obligation"})
-
 
 class SearchPlannerRevisionModelAdapterError(SearchPlannerRevisionRuntimeError):
     """Raised when the model adapter fails closed before revision observation."""
@@ -279,7 +163,7 @@ def validate_and_sanitize_model_output(model_output: Mapping[str, Any]) -> dict[
         "revised_question_meaning_summary": _required_text(
             model_output,
             "revised_question_meaning_summary",
-            limit=500,
+            limit=SEARCH_PLANNER_REVISION_MODEL_TEXT_LIMITS["revised_question_meaning_summary"],
         ),
         "semantic_slot_updates": _mapping_list(
             model_output.get("semantic_slot_updates"),
@@ -296,25 +180,25 @@ def validate_and_sanitize_model_output(model_output: Mapping[str, Any]) -> dict[
         "mandatory_caveats": _required_text_list(
             model_output,
             "mandatory_caveats",
-            limit=360,
+            limit=SEARCH_PLANNER_REVISION_MODEL_TEXT_LIMITS["mandatory_caveats"],
             allow_empty=True,
         ),
         "prohibited_upgrades": _required_text_list(
             model_output,
             "prohibited_upgrades",
-            limit=260,
+            limit=SEARCH_PLANNER_REVISION_MODEL_TEXT_LIMITS["prohibited_upgrades"],
             allow_empty=True,
         ),
         "normalization_obligations": _required_text_list(
             model_output,
             "normalization_obligations",
-            limit=260,
+            limit=SEARCH_PLANNER_REVISION_MODEL_TEXT_LIMITS["normalization_obligations"],
             allow_empty=True,
         ),
         "assumptions": _required_text_list(
             model_output,
             "assumptions",
-            limit=260,
+            limit=SEARCH_PLANNER_REVISION_MODEL_TEXT_LIMITS["assumptions"],
             allow_empty=True,
         ),
         "unresolved_ambiguities": _mapping_list(
@@ -348,15 +232,15 @@ def validate_and_sanitize_model_output(model_output: Mapping[str, Any]) -> dict[
         ),
         "planner_revision_notes": _optional_text_list(
             model_output.get("planner_revision_notes"),
-            limit=300,
+            limit=SEARCH_PLANNER_REVISION_MODEL_TEXT_LIMITS["planner_revision_notes"],
         ),
         "confidence_posture": _clean_text(
             model_output.get("confidence_posture"),
-            limit=120,
+            limit=SEARCH_PLANNER_REVISION_MODEL_TEXT_LIMITS["confidence_posture"],
         ),
         "revision_posture": _clean_text(
             model_output.get("revision_posture"),
-            limit=120,
+            limit=SEARCH_PLANNER_REVISION_MODEL_TEXT_LIMITS["revision_posture"],
         ),
     }
 
@@ -382,12 +266,18 @@ def _amendment_candidates(value: Any) -> list[dict[str, Any]]:
         candidate = {
             "candidate_id": _clean_text(mapping.get("candidate_id")),
             "operation_kind": normalized_kind,
-            "caveat": _clean_text(mapping.get("caveat"), limit=360),
+            "caveat": _clean_text(
+                mapping.get("caveat"),
+                limit=SEARCH_PLANNER_REVISION_MODEL_TEXT_LIMITS["amendment_candidate_caveat"],
+            ),
             "required_caveats": _optional_text_list(
                 mapping.get("required_caveats"),
-                limit=360,
+                limit=SEARCH_PLANNER_REVISION_MODEL_TEXT_LIMITS["amendment_candidate_caveat"],
             ),
-            "summary": _clean_text(mapping.get("summary"), limit=300),
+            "summary": _clean_text(
+                mapping.get("summary"),
+                limit=SEARCH_PLANNER_REVISION_MODEL_TEXT_LIMITS["amendment_candidate_summary"],
+            ),
             "component_id": _clean_text(mapping.get("component_id")),
             "proposal_only": True,
             "passive": True,
@@ -474,7 +364,12 @@ def _required_sequence(value: Any, label: str) -> list[Any]:
     return list(value)
 
 
-def _required_text(mapping: Mapping[str, Any], key: str, *, limit: int = 160) -> str:
+def _required_text(
+    mapping: Mapping[str, Any],
+    key: str,
+    *,
+    limit: int = SEARCH_PLANNER_REVISION_MODEL_TEXT_LIMITS["identifier"],
+) -> str:
     if key not in mapping:
         raise SearchPlannerRevisionModelAdapterError(
             f"missing required field: {key}",
@@ -493,7 +388,7 @@ def _required_text_list(
     mapping: Mapping[str, Any],
     key: str,
     *,
-    limit: int = 160,
+    limit: int = SEARCH_PLANNER_REVISION_MODEL_TEXT_LIMITS["identifier"],
     allow_empty: bool = False,
 ) -> list[str]:
     if key not in mapping:
@@ -510,7 +405,11 @@ def _required_text_list(
     return out
 
 
-def _optional_text_list(value: Any, *, limit: int = 160) -> list[str]:
+def _optional_text_list(
+    value: Any,
+    *,
+    limit: int = SEARCH_PLANNER_REVISION_MODEL_TEXT_LIMITS["identifier"],
+) -> list[str]:
     if value is None:
         return []
     if isinstance(value, str | bytes) or not isinstance(value, Sequence):
@@ -591,7 +490,11 @@ def _json_safe(value: Any, *, depth: int = 0) -> Any:
     return _clean_text(value, limit=300)
 
 
-def _clean_text(value: Any, *, limit: int = 160) -> str | None:
+def _clean_text(
+    value: Any,
+    *,
+    limit: int = SEARCH_PLANNER_REVISION_MODEL_TEXT_LIMITS["identifier"],
+) -> str | None:
     if value is None:
         return None
     text = " ".join(str(value).strip().split())

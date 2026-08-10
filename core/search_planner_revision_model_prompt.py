@@ -10,49 +10,29 @@ import json
 from hashlib import sha256
 from typing import Any, Mapping
 
+from core.search_planner_revision_model_output_contract import (
+    SEARCH_PLANNER_REVISION_MODEL_STRICT_JSON_OUTPUT_CONTRACT,
+    build_search_planner_revision_model_visible_output_contract,
+)
+
 SEARCH_PLANNER_REVISION_MODEL_PROMPT_SCHEMA_VERSION = (
-    "search_planner_revision_model_prompt_ag_search_planner_revision_01_v2"
+    "search_planner_revision_model_prompt_ag_search_planner_revision_01_v3"
+)
+
+_STRICT_JSON_OUTPUT_CONTRACT_TEXT = "\n".join(
+    f"- {requirement}" for requirement in SEARCH_PLANNER_REVISION_MODEL_STRICT_JSON_OUTPUT_CONTRACT
 )
 
 SEARCH_PLANNER_REVISION_MODEL_SYSTEM_PROMPT = (
     "You are SearchPlannerRevision. You are not Author, Scout, SearchExecutor, "
     "a citation formatter, or an evidence ledger. Return only strict JSON "
-    "planner-revision proposal data."
+    "planner-revision proposal data. Follow the strict JSON output contract:\n"
+    f"{_STRICT_JSON_OUTPUT_CONTRACT_TEXT}"
 )
 
-SEARCH_PLANNER_REVISION_MODEL_OUTPUT_SCHEMA: dict[str, Any] = {
-    "required_top_level_fields": [
-        "revised_question_meaning_summary",
-        "semantic_slot_updates",
-        "answer_component_updates",
-        "component_search_requirement_updates",
-        "mandatory_caveats",
-        "prohibited_upgrades",
-        "normalization_obligations",
-        "assumptions",
-        "unresolved_ambiguities",
-        "consumed_ambiguity_dimension_ids",
-        "consumed_scout_hint_ids",
-        "amendment_candidates",
-        "closed_surface_flags",
-    ],
-    "optional_top_level_fields": [
-        "revised_source_obligation_candidates",
-        "source_obligation_focus_updates",
-        "planner_revision_notes",
-        "confidence_posture",
-        "revision_posture",
-    ],
-    "allowed_amendment_operation_kinds": [
-        "add_caveat",
-        "strengthen_source_obligation",
-    ],
-    "forbidden_operation_kinds": [
-        "resolve_slot",
-        "mark_requirement_satisfied",
-        "mark_source_obligation_satisfied",
-    ],
-}
+SEARCH_PLANNER_REVISION_MODEL_OUTPUT_SCHEMA: dict[str, Any] = (
+    build_search_planner_revision_model_visible_output_contract()
+)
 
 
 def build_search_planner_revision_model_prompt(
@@ -113,6 +93,20 @@ def build_search_planner_revision_model_prompt(
         "- Do not create EvidenceLedger custody.",
         "- Do not create FinalAnswerPacket or Author input.",
         "",
+        "Strict JSON output contract:",
+        *(f"- {requirement}" for requirement in SEARCH_PLANNER_REVISION_MODEL_STRICT_JSON_OUTPUT_CONTRACT),
+        "",
+        "Model-visible output contract:",
+        "- output_schema is the complete static model-visible JSON contract.",
+        "- Return every required top-level field and use only the listed optional top-level fields when relevant.",
+        "- Do not invent additional top-level fields merely to explain reasoning or authority posture.",
+        "- All global_member_name_rules apply everywhere, including nested objects and metadata.",
+        "- Do not emit a forbidden authority member, a sensitive/raw/private member, or any raw_* member anywhere.",
+        "- Do not include raw or private provider, cache, database, prompt, trace, payload, credential, or secret content anywhere in values or member names.",
+        "- A dangerous-true member may never be JSON true. If it is not otherwise forbidden, JSON false is the only permitted value; prefer omitting it.",
+        "- Return consumed_ambiguity_dimension_ids and consumed_scout_hint_ids by copying the exact supplied IDs in the exact supplied order. Do not invent, omit, rename, or reorder them.",
+        "- Use {} as the preferred closed_surface_flags output. Do not add flags merely to demonstrate compliance.",
+        "",
         "Revision rules:",
         "- Produce revision proposal data and passive amendment candidates only.",
         "- The preferred proof amendment is add_caveat.",
@@ -120,6 +114,8 @@ def build_search_planner_revision_model_prompt(
         "- Do not emit resolve_slot.",
         "- Do not emit mark_requirement_satisfied.",
         "- Every amendment candidate must keep scout_hints_are_evidence, citation_eligible, source_obligation_satisfied, evidence_admitted, and contract_mutation_applied false.",
+        "- An add_caveat candidate needs a usable nonempty caveat for downstream runtime use.",
+        "- Do not author runtime-derived amendment lineage, admission, application, or mutation fields.",
         "- Use concise rationale fields only; do not include chain-of-thought.",
         "- Return strict JSON only. Do not wrap it in Markdown fences.",
         "",
