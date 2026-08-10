@@ -8,6 +8,7 @@ from typing import Any, Mapping
 
 import pytest
 
+from core.cap_enforcement import ExternalCallFamily, RunCapExceeded
 from core.run_kernel import (
     SCOUT_DISAMBIGUATION_STAGE,
     Observation,
@@ -500,6 +501,53 @@ def test_scout_disambiguation_requires_adapter_and_fails_closed_without_one() ->
     assert kernel.state.scout_disambiguation_report_state == {}
     assert kernel.state.scout_disambiguation_report_projection == {}
     assert kernel.state.scout_disambiguation_report_history == []
+
+
+def test_unexpected_scout_adapter_failure_is_wrapped_without_raw_detail() -> None:
+    kernel = _kernel()
+    _produce_planner(kernel)
+    scout_input = _scout_input(kernel)
+    action = _authorize_scout(kernel, scout_input)
+
+    def failing_adapter(_: Mapping[str, Any]) -> Mapping[str, Any]:
+        raise RuntimeError("private-provider-detail")
+
+    with pytest.raises(ScoutDisambiguationRuntimeError) as captured:
+        execute_scout_disambiguation_action(
+            action=action,
+            scout_input=scout_input,
+            adapter=failing_adapter,
+        )
+
+    assert str(captured.value) == "Scout disambiguation adapter failed closed"
+    assert "private-provider-detail" not in str(captured.value)
+    assert kernel.state.scout_disambiguation_report_state == {}
+    assert kernel.state.scout_disambiguation_report_projection == {}
+    assert kernel.state.scout_disambiguation_report_history == []
+
+
+def test_scout_adapter_cap_terminal_propagates_unchanged() -> None:
+    kernel = _kernel()
+    _produce_planner(kernel)
+    scout_input = _scout_input(kernel)
+    action = _authorize_scout(kernel, scout_input)
+    terminal = RunCapExceeded(
+        "search_attempt_cap",
+        family=ExternalCallFamily.SEARCH,
+    )
+
+    def exhausted_adapter(_: Mapping[str, Any]) -> Mapping[str, Any]:
+        raise terminal
+
+    with pytest.raises(RunCapExceeded) as captured:
+        execute_scout_disambiguation_action(
+            action=action,
+            scout_input=scout_input,
+            adapter=exhausted_adapter,
+        )
+
+    assert captured.value is terminal
+    assert kernel.state.scout_disambiguation_report_projection == {}
 
 
 def test_scout_disambiguation_report_reduces_to_run_kernel_state_projection_history() -> None:

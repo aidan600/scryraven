@@ -17,6 +17,7 @@ from hashlib import sha256
 from typing import Any, Callable, Mapping, Protocol, Sequence
 from urllib.parse import urlparse
 
+from core.cap_enforcement import RunCapExceeded
 from core.initial_query_allocation_policy import (
     DEFAULT_INITIAL_QUERY_ALLOCATION_POLICY,
 )
@@ -957,10 +958,19 @@ def _call_adapter(
     adapter: ScoutDisambiguationAdapter | Callable[[Mapping[str, Any]], Mapping[str, Any]],
     adapter_input: Mapping[str, Any],
 ) -> Mapping[str, Any]:
-    if hasattr(adapter, "produce"):
-        result = adapter.produce(adapter_input)  # type: ignore[union-attr]
-    else:
-        result = adapter(adapter_input)  # type: ignore[misc]
+    try:
+        if hasattr(adapter, "produce"):
+            result = adapter.produce(adapter_input)  # type: ignore[union-attr]
+        else:
+            result = adapter(adapter_input)  # type: ignore[misc]
+    except RunCapExceeded:
+        raise
+    except ScoutDisambiguationRuntimeError:
+        raise
+    except Exception as exc:
+        raise ScoutDisambiguationRuntimeError(
+            "Scout disambiguation adapter failed closed"
+        ) from exc
     if not isinstance(result, Mapping):
         raise ScoutDisambiguationRuntimeError(
             "Scout disambiguation adapter must return a mapping"

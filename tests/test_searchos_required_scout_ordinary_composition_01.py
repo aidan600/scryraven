@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
@@ -43,6 +44,7 @@ from core.routing import (
     DiscoverQualifier,
     route_provider_capability,
 )
+from core.search_providers import search_scout_results
 
 
 def _scout_input(*, query_count: int = 1) -> dict[str, Any]:
@@ -141,6 +143,7 @@ def test_ordinary_scout_routes_bounded_live_direction_without_raw_authority() ->
     assert call["cost_phase"] == "scout_disambiguation"
     assert str(call["logical_call_id"]).startswith("scout_disambiguation:")
 
+    assert call["strict_failure"] is True
     assert result["scout_execution_posture"] == "executed"
     assert result["route_available"] is True
     assert result["scout_queries"][0]["execution_status"] == "executed"
@@ -165,6 +168,43 @@ def test_ordinary_scout_truncates_over_returned_provider_results() -> None:
     ).produce(_scout_input())
 
     assert [item["title"] for item in result["organic_results"]] == ["first"]
+
+
+def test_strict_scout_provider_failure_propagates_without_retry() -> None:
+    cap_policy = _bounded_cap_policy()
+    cap_policy.activate(
+        run_id="run:test-strict-scout",
+        request_id="request:test-strict-scout",
+    )
+    logical_call_id = cap_policy.new_logical_call_id("test_strict_scout")
+
+    with patch.dict(
+        "os.environ",
+        {"SERPER_API_KEY": "test-key"},  # pragma: allowlist secret
+        clear=False,
+    ):
+        with patch(
+            "core.search_providers.requests.post",
+            side_effect=RuntimeError("private-provider-detail"),
+        ) as post:
+            with pytest.raises(RuntimeError, match="private-provider-detail"):
+                search_scout_results(
+                    provider="serper",
+                    query="Example identity direction",
+                    max_results=1,
+                    cap_policy=cap_policy,
+                    logical_call_id=logical_call_id,
+                    strict_failure=True,
+                )
+
+    assert cap_policy.envelope.max_retries == 0
+    assert cap_policy.envelope.max_fallbacks == 0
+    assert post.call_count == 1
+    snapshot = cap_policy.physical_snapshot()
+    assert snapshot["physical_attempts_by_family"]["search"] == 1
+    assert snapshot["retry_attempts"] == 0
+    assert snapshot["fallback_attempts"] == 0
+
 
 def test_ordinary_scout_route_unavailable_blocks_without_dispatch() -> None:
     search_calls: list[dict[str, Any]] = []
@@ -213,3 +253,4 @@ def test_ordinary_scout_propagates_cap_terminal_without_retry() -> None:
     assert str(search_calls[0]["logical_call_id"]).startswith(
         "scout_disambiguation:"
     )
+    assert search_calls[0]["strict_failure"] is True

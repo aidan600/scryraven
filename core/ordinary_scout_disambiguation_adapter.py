@@ -84,6 +84,7 @@ class OrdinaryScoutDisambiguationAdapter:
                 cost_phase=self.cost_phase,
                 cap_policy=self.cap_policy,
                 logical_call_id=logical_call_id,
+                strict_failure=True,
             )
             completed_queries.append(
                 _completed_query(candidate, status="executed", provider=provider)
