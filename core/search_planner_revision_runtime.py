@@ -223,8 +223,51 @@ _FORBIDDEN_OPERATION_KINDS = frozenset(
 )
 
 
+class SearchPlannerRevisionRuntimeSafeFailureCode(str, Enum):
+    """Closed owner-authored cause for ordinary PlannerRevision failures.
+
+    These codes distinguish repair owners without exposing model, provider,
+    Scout, prompt, or exception text in a bounded terminal.
+    """
+
+    ADAPTER_UNAVAILABLE = "adapter_unavailable"
+    MODEL_CALL_FAILED = "model_call_failed"
+    MODEL_OUTPUT_INVALID_JSON = "model_output_invalid_json"
+    MODEL_OUTPUT_NOT_OBJECT = "model_output_not_object"
+    MODEL_OUTPUT_MISSING_REQUIRED_FIELDS = "model_output_missing_required_fields"
+    MODEL_OUTPUT_INVALID_FIELD_SHAPE = "model_output_invalid_field_shape"
+    MODEL_OUTPUT_UNSAFE_OR_CLOSED_AUTHORITY = (
+        "model_output_unsafe_or_closed_authority"
+    )
+    MODEL_OUTPUT_INVALID_AMENDMENT = "model_output_invalid_amendment"
+    SCOUT_DIRECTIONAL_CONTEXT_INVALID = "scout_directional_context_invalid"
+    REVISION_ACTION_BINDING_INVALID = "revision_action_binding_invalid"
+    REVISION_OBSERVATION_BINDING_INVALID = "revision_observation_binding_invalid"
+    SEARCH_PLANNER_REVISION_RUNTIME_ERROR = "search_planner_revision_runtime_error"
+
+
 class SearchPlannerRevisionRuntimeError(ValueError):
     """Raised when revision execution, binding validation, or reduction fails."""
+
+    SAFE_FAILURE_ORIGIN = "search_planner_revision_runtime"
+    __slots__ = ("_failure_code",)
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        failure_code: SearchPlannerRevisionRuntimeSafeFailureCode,
+    ) -> None:
+        super().__init__(message)
+        if not isinstance(failure_code, SearchPlannerRevisionRuntimeSafeFailureCode):
+            raise TypeError(
+                "failure_code must be a SearchPlannerRevisionRuntimeSafeFailureCode"
+            )
+        self._failure_code = failure_code
+
+    @property
+    def failure_code(self) -> SearchPlannerRevisionRuntimeSafeFailureCode:
+        return self._failure_code
 
 
 class SearchPlannerRevisionAdapter(Protocol):
@@ -250,14 +293,25 @@ class SearchPlannerRevisionInput:
     closed_surface_flags: Mapping[str, Any] = field(default_factory=dict)
 
     def to_adapter_payload(self) -> dict[str, Any]:
-        run_id = _required_token(self.run_id, "planner revision input requires run_id")
+        run_id = _required_token(
+            self.run_id, "planner revision input requires run_id",
+            failure_code=(
+                SearchPlannerRevisionRuntimeSafeFailureCode.REVISION_ACTION_BINDING_INVALID,
+            ),
+        )
         request_id = _required_token(
             self.request_id,
             "planner revision input requires request_id",
+            failure_code=(
+                SearchPlannerRevisionRuntimeSafeFailureCode.REVISION_ACTION_BINDING_INVALID,
+            ),
         )
         component_id = _required_token(
             self.component_id,
             "planner revision input requires component_id",
+            failure_code=(
+                SearchPlannerRevisionRuntimeSafeFailureCode.REVISION_ACTION_BINDING_INVALID,
+            ),
         )
         parent_planner_ref = _planner_ref_or_raise(
             self.parent_search_planner_proposal_ref
@@ -269,7 +323,8 @@ class SearchPlannerRevisionInput:
         hint_ids = _text_list(self.consumed_scout_hint_ids)
         if not dimension_ids:
             raise SearchPlannerRevisionRuntimeError(
-                "planner revision input requires consumed ambiguity dimensions"
+                "planner revision input requires consumed ambiguity dimensions",
+                failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID,
             )
         directional_context = _normalize_scout_directional_context(
             self.scout_directional_context,
@@ -280,16 +335,21 @@ class SearchPlannerRevisionInput:
         )
         if hint_ids and not directional_context:
             raise SearchPlannerRevisionRuntimeError(
-                "planner revision input requires lineage-bound Scout direction"
+                "planner revision input requires lineage-bound Scout direction",
+                failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID,
             )
         closed_flags = {**_REQUIRED_FALSE_FLAGS, **_safe_mapping(self.closed_surface_flags)}
         if any(bool(value) for value in closed_flags.values()):
             raise SearchPlannerRevisionRuntimeError(
-                "planner revision input cannot open closed runtime surfaces"
+                "planner revision input cannot open closed runtime surfaces",
+                failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.REVISION_ACTION_BINDING_INVALID,
             )
         _reject_forbidden_surface_claims(
             self.safe_revision_context,
             context="planner revision input",
+            failure_code=(
+                SearchPlannerRevisionRuntimeSafeFailureCode.REVISION_ACTION_BINDING_INVALID
+            ),
         )
         return {
             "schema_version": SEARCH_PLANNER_REVISION_SCHEMA_VERSION,
@@ -332,7 +392,8 @@ def execute_search_planner_revision_action(
 
     if adapter is None:
         raise SearchPlannerRevisionRuntimeError(
-            "search planner revision requires an explicitly injected adapter"
+            "search planner revision requires an explicitly injected adapter",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.ADAPTER_UNAVAILABLE,
         )
     _validate_action_like(action=action, revision_input=revision_input)
     adapter_input = revision_input.to_adapter_payload()
@@ -355,10 +416,18 @@ def build_search_planner_revision_observation_payload(
     authorized_action_id: str | None = None,
 ) -> dict[str, Any]:
     revision_input_ref = _safe_mapping(revision_input)
-    result = _required_mapping(adapter_result, "planner revision adapter result")
+    result = _required_mapping(
+        adapter_result, "planner revision adapter result",
+        failure_code=(
+            SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_NOT_OBJECT,
+        ),
+    )
     _reject_forbidden_surface_claims(
         result,
         context="planner revision adapter result",
+        failure_code=(
+            SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_UNSAFE_OR_CLOSED_AUTHORITY
+        ),
     )
     _validate_required_adapter_fields(result)
     input_dimension_ids = _text_list(
@@ -369,11 +438,13 @@ def build_search_planner_revision_observation_payload(
     consumed_hints = _text_list(result.get("consumed_scout_hint_ids"))
     if consumed_dimensions != input_dimension_ids:
         raise SearchPlannerRevisionRuntimeError(
-            "planner revision consumed dimensions do not match input"
+            "planner revision consumed dimensions do not match input",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID,
         )
     if consumed_hints != input_hint_ids:
         raise SearchPlannerRevisionRuntimeError(
-            "planner revision consumed Scout hint ids do not match input"
+            "planner revision consumed Scout hint ids do not match input",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID,
         )
     closed_flags = {
         **_REQUIRED_FALSE_FLAGS,
@@ -381,7 +452,8 @@ def build_search_planner_revision_observation_payload(
     }
     if any(bool(value) for value in closed_flags.values()):
         raise SearchPlannerRevisionRuntimeError(
-            "planner revision output cannot open closed runtime surfaces"
+            "planner revision output cannot open closed runtime surfaces",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_UNSAFE_OR_CLOSED_AUTHORITY,
         )
 
     revision_base = {
@@ -521,16 +593,30 @@ def build_search_planner_revision_state(
         action_id,
         "planner revision reduction requires action_id",
         limit=200,
+        failure_code=(
+            SearchPlannerRevisionRuntimeSafeFailureCode.REVISION_OBSERVATION_BINDING_INVALID,
+        ),
     )
-    clean_run_id = _required_token(run_id, "planner revision reduction requires run_id")
+    clean_run_id = _required_token(
+        run_id, "planner revision reduction requires run_id",
+        failure_code=(
+            SearchPlannerRevisionRuntimeSafeFailureCode.REVISION_OBSERVATION_BINDING_INVALID,
+        ),
+    )
     clean_request_id = _required_token(
         request_id,
         "planner revision reduction requires request_id",
+        failure_code=(
+            SearchPlannerRevisionRuntimeSafeFailureCode.REVISION_OBSERVATION_BINDING_INVALID,
+        ),
     )
     inputs = _safe_mapping(action_inputs)
     raw_payload = _required_mapping(
         observation_payload,
         "planner revision observation payload",
+        failure_code=(
+            SearchPlannerRevisionRuntimeSafeFailureCode.REVISION_OBSERVATION_BINDING_INVALID,
+        ),
     )
     payload_shell = {
         key: raw_payload[key]
@@ -542,53 +628,68 @@ def build_search_planner_revision_state(
     revision = _safe_planner_revision_payload(raw_payload.get("planner_revision"))
     if payload.get("schema_version") != SEARCH_PLANNER_REVISION_OBSERVATION_SCHEMA_VERSION:
         raise SearchPlannerRevisionRuntimeError(
-            "planner revision observation schema version does not match"
+            "planner revision observation schema version does not match",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.REVISION_OBSERVATION_BINDING_INVALID,
         )
     if not revision_input or not revision:
         raise SearchPlannerRevisionRuntimeError(
-            "planner revision observation requires revision_input and planner_revision"
+            "planner revision observation requires revision_input and planner_revision",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.REVISION_OBSERVATION_BINDING_INVALID,
         )
     _reject_forbidden_surface_claims(
         raw_payload,
         context="planner revision observation",
+        failure_code=(
+            SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_UNSAFE_OR_CLOSED_AUTHORITY
+        ),
     )
     _validate_action_inputs(inputs)
 
     if revision_input.get("run_id") != clean_run_id or revision.get("run_id") != clean_run_id:
         raise SearchPlannerRevisionRuntimeError(
-            "planner revision run_id does not match the run"
+            "planner revision run_id does not match the run",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.REVISION_OBSERVATION_BINDING_INVALID,
         )
     if (
         revision_input.get("request_id") != clean_request_id
         or revision.get("request_id") != clean_request_id
     ):
         raise SearchPlannerRevisionRuntimeError(
-            "planner revision request_id does not match the request"
+            "planner revision request_id does not match the request",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.REVISION_OBSERVATION_BINDING_INVALID,
         )
     if revision.get("authorized_action_id") != clean_action_id:
         raise SearchPlannerRevisionRuntimeError(
-            "planner revision action_id binding does not match authorization"
+            "planner revision action_id binding does not match authorization",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.REVISION_OBSERVATION_BINDING_INVALID,
         )
     if revision_input.get("schema_version") != SEARCH_PLANNER_REVISION_SCHEMA_VERSION:
         raise SearchPlannerRevisionRuntimeError(
-            "planner revision input schema version does not match"
+            "planner revision input schema version does not match",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.REVISION_OBSERVATION_BINDING_INVALID,
         )
     if revision.get("schema_version") != SEARCH_PLANNER_REVISION_PROPOSAL_SCHEMA_VERSION:
         raise SearchPlannerRevisionRuntimeError(
-            "planner revision proposal schema version does not match"
+            "planner revision proposal schema version does not match",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.REVISION_OBSERVATION_BINDING_INVALID,
         )
     if revision.get("owner") != SEARCH_PLANNER_REVISION_OWNER:
-        raise SearchPlannerRevisionRuntimeError("planner revision owner does not match")
+        raise SearchPlannerRevisionRuntimeError(
+            "planner revision owner does not match",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.REVISION_OBSERVATION_BINDING_INVALID,
+        )
 
     declared_digest = _clean_token(revision.get("revision_digest"), limit=128)
     if not declared_digest:
         raise SearchPlannerRevisionRuntimeError(
-            "planner revision requires revision_digest"
+            "planner revision requires revision_digest",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.REVISION_OBSERVATION_BINDING_INVALID,
         )
     recomputed_digest = _digest_json(_revision_digest_payload(revision))
     if declared_digest != recomputed_digest:
         raise SearchPlannerRevisionRuntimeError(
-            "stale planner revision: revision digest does not match payload content"
+            "stale planner revision: revision digest does not match payload content",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.REVISION_OBSERVATION_BINDING_INVALID,
         )
 
     parent_planner_ref = _planner_ref_or_raise(
@@ -599,14 +700,16 @@ def build_search_planner_revision_state(
     )
     if parent_planner_ref != input_parent_planner_ref:
         raise SearchPlannerRevisionRuntimeError(
-            "planner revision parent planner ref does not match input"
+            "planner revision parent planner ref does not match input",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.REVISION_ACTION_BINDING_INVALID,
         )
     current_parent_ref = planner_ref_from_search_planner_state(
         current_search_planner_proposal_state
     )
     if parent_planner_ref != current_parent_ref:
         raise SearchPlannerRevisionRuntimeError(
-            "stale parent planner digest: planner revision does not match current planner proposal"
+            "stale parent planner digest: planner revision does not match current planner proposal",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.REVISION_ACTION_BINDING_INVALID,
         )
     _validate_action_parent_planner_bindings(
         action_inputs=inputs,
@@ -621,14 +724,16 @@ def build_search_planner_revision_state(
     )
     if parent_scout_ref != input_parent_scout_ref:
         raise SearchPlannerRevisionRuntimeError(
-            "planner revision parent Scout ref does not match input"
+            "planner revision parent Scout ref does not match input",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID,
         )
     current_scout_ref = scout_ref_from_scout_report_state(
         current_scout_disambiguation_report_state
     )
     if parent_scout_ref != current_scout_ref:
         raise SearchPlannerRevisionRuntimeError(
-            "stale Scout report digest: planner revision does not match current Scout report"
+            "stale Scout report digest: planner revision does not match current Scout report",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID,
         )
     _validate_action_parent_scout_bindings(
         action_inputs=inputs,
@@ -636,17 +741,20 @@ def build_search_planner_revision_state(
     )
     if _safe_mapping(parent_scout_ref.get("parent_search_planner_proposal_ref")) != parent_planner_ref:
         raise SearchPlannerRevisionRuntimeError(
-            "Scout report is not bound to the current parent planner/QMR"
+            "Scout report is not bound to the current parent planner/QMR",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID,
         )
 
     component_id = _clean_token(revision.get("component_id"))
     if not component_id or component_id != _clean_token(revision_input.get("component_id")):
         raise SearchPlannerRevisionRuntimeError(
-            "planner revision component_id does not match input"
+            "planner revision component_id does not match input",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.REVISION_ACTION_BINDING_INVALID,
         )
     if component_id != parent_scout_ref.get("component_id"):
         raise SearchPlannerRevisionRuntimeError(
-            "planner revision component_id does not match Scout report"
+            "planner revision component_id does not match Scout report",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID,
         )
     qmr = _safe_mapping(
         _safe_mapping(current_search_planner_proposal_state).get(
@@ -656,7 +764,8 @@ def build_search_planner_revision_state(
     component = _component_from_qmr(qmr, component_id=component_id)
     if not component:
         raise SearchPlannerRevisionRuntimeError(
-            "planner revision component_id is not present in parent QMR"
+            "planner revision component_id is not present in parent QMR",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.REVISION_ACTION_BINDING_INVALID,
         )
     _validate_parent_contract_bindings(
         action_inputs=inputs,
@@ -710,7 +819,8 @@ def build_search_planner_revision_state(
     for item in existing_revision_history:
         if _safe_mapping(item).get("dedupe_key") == dedupe_key:
             raise SearchPlannerRevisionRuntimeError(
-                "duplicate search planner revision for the same Scout/planner context"
+                "duplicate search planner revision for the same Scout/planner context",
+                failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.REVISION_OBSERVATION_BINDING_INVALID,
             )
 
     state = {
@@ -983,7 +1093,12 @@ def build_scout_directional_context(
     return _build_scout_directional_context(
         scout_report=_safe_mapping(scout_report),
         parent_scout_ref=_scout_ref_or_raise(parent_scout_disambiguation_report_ref),
-        component_id=_required_token(component_id, "planner revision requires component_id"),
+        component_id=_required_token(
+            component_id, "planner revision requires component_id",
+            failure_code=(
+                SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID,
+            ),
+        ),
         consumed_dimension_ids=_text_list(consumed_ambiguity_dimension_ids),
         consumed_hint_ids=_text_list(consumed_scout_hint_ids),
         require_context=True,
@@ -1009,19 +1124,26 @@ def _normalize_amendment_candidates(
 ) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
     for index, item in enumerate(_safe_list(value), start=1):
-        mapping = _required_mapping(item, "amendment candidate")
+        mapping = _required_mapping(
+            item, "amendment candidate",
+            failure_code=(
+                SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_INVALID_AMENDMENT,
+            ),
+        )
         operation_kind = _normalize_operation_kind(
             mapping.get("operation_kind") or "add_caveat"
         )
         if operation_kind in _FORBIDDEN_OPERATION_KINDS:
             raise SearchPlannerRevisionRuntimeError(
                 "planner revision cannot emit forbidden amendment operation: "
-                + operation_kind
+                + operation_kind,
+                failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_INVALID_AMENDMENT,
             )
         if operation_kind not in _ALLOWED_OPERATION_KINDS:
             raise SearchPlannerRevisionRuntimeError(
                 "planner revision emitted unsupported amendment operation: "
-                + operation_kind
+                + operation_kind,
+                failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_INVALID_AMENDMENT,
             )
         record = _build_amendment_record(
             candidate=mapping,
@@ -1084,11 +1206,17 @@ def _build_amendment_record(
     parent_version = _required_token(
         parent_contract_ref.get("contract_version"),
         "planner revision amendment requires parent initial contract version",
+        failure_code=(
+            SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_INVALID_AMENDMENT,
+        ),
     )
     parent_digest = _required_token(
         parent_contract_ref.get("contract_digest"),
         "planner revision amendment requires parent initial contract digest",
         limit=128,
+        failure_code=(
+            SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_INVALID_AMENDMENT,
+        ),
     )
     parent_planner_ref = _planner_ref_or_raise(
         revision_input.get("parent_search_planner_proposal_ref")
@@ -1096,6 +1224,9 @@ def _build_amendment_record(
     component_id = _required_token(
         candidate.get("component_id") or revision_input.get("component_id"),
         "planner revision amendment requires component_id",
+        failure_code=(
+            SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_INVALID_AMENDMENT,
+        ),
     )
     caveats = _text_list(
         candidate.get("required_caveats")
@@ -1106,7 +1237,8 @@ def _build_amendment_record(
     )
     if operation_kind == "add_caveat" and not caveats:
         raise SearchPlannerRevisionRuntimeError(
-            "add_caveat amendment candidate requires a caveat"
+            "add_caveat amendment candidate requires a caveat",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_INVALID_AMENDMENT,
         )
     operation_payload = {
         "normalized_operation_kind": operation_kind,
@@ -1273,7 +1405,8 @@ def _request_digest_from_revision_context(revision_input: Mapping[str, Any]) -> 
     if digest:
         return digest
     raise SearchPlannerRevisionRuntimeError(
-        "planner revision amendment requires parent request digest"
+        "planner revision amendment requires parent request digest",
+        failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_INVALID_AMENDMENT,
     )
 
 
@@ -1323,7 +1456,8 @@ def _validate_required_adapter_fields(result: Mapping[str, Any]) -> None:
     if missing:
         raise SearchPlannerRevisionRuntimeError(
             "planner revision adapter result missing required fields: "
-            + ", ".join(missing)
+            + ", ".join(missing),
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_MISSING_REQUIRED_FIELDS,
         )
 
 
@@ -1337,45 +1471,59 @@ def _validate_revision_amendment_candidates(
     consumed_hint_ids: Sequence[str],
 ) -> None:
     for item in candidates:
-        candidate = _required_mapping(item, "planner revision amendment candidate")
+        candidate = _required_mapping(
+            item, "planner revision amendment candidate",
+            failure_code=(
+                SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_INVALID_AMENDMENT,
+            ),
+        )
         if candidate.get("passive") is not True or candidate.get("proposal_only") is not True:
             raise SearchPlannerRevisionRuntimeError(
-                "planner revision amendment candidate must remain passive/proposal-only"
+                "planner revision amendment candidate must remain passive/proposal-only",
+                failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_INVALID_AMENDMENT,
             )
         for key, expected in _REQUIRED_FALSE_FLAGS.items():
             if candidate.get(key) is not expected:
                 raise SearchPlannerRevisionRuntimeError(
-                    f"planner revision amendment candidate must keep {key} false"
+                    f"planner revision amendment candidate must keep {key} false",
+                    failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_INVALID_AMENDMENT,
                 )
         if candidate.get("planner_revision_id") != revision_id:
             raise SearchPlannerRevisionRuntimeError(
-                "planner revision amendment candidate revision lineage does not match"
+                "planner revision amendment candidate revision lineage does not match",
+                failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_INVALID_AMENDMENT,
             )
         if _safe_mapping(candidate.get("parent_search_planner_proposal_ref")) != _safe_mapping(parent_planner_ref):
             raise SearchPlannerRevisionRuntimeError(
-                "planner revision amendment candidate parent planner lineage does not match"
+                "planner revision amendment candidate parent planner lineage does not match",
+                failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_INVALID_AMENDMENT,
             )
         if _safe_mapping(candidate.get("parent_scout_disambiguation_report_ref")) != _safe_mapping(parent_scout_ref):
             raise SearchPlannerRevisionRuntimeError(
-                "planner revision amendment candidate Scout lineage does not match"
+                "planner revision amendment candidate Scout lineage does not match",
+                failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_INVALID_AMENDMENT,
             )
         if _text_list(candidate.get("consumed_ambiguity_dimension_ids")) != list(consumed_dimension_ids):
             raise SearchPlannerRevisionRuntimeError(
-                "planner revision amendment candidate consumed dimensions do not match"
+                "planner revision amendment candidate consumed dimensions do not match",
+                failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_INVALID_AMENDMENT,
             )
         if _text_list(candidate.get("consumed_scout_hint_ids")) != list(consumed_hint_ids):
             raise SearchPlannerRevisionRuntimeError(
-                "planner revision amendment candidate consumed Scout hints do not match"
+                "planner revision amendment candidate consumed Scout hints do not match",
+                failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_INVALID_AMENDMENT,
             )
         record = _safe_mapping(candidate.get("contract_amendment_record"))
         if record.get("passive") is not True or record.get("canonical_state") is True:
             raise SearchPlannerRevisionRuntimeError(
-                "planner revision amendment record must remain passive"
+                "planner revision amendment record must remain passive",
+                failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_INVALID_AMENDMENT,
             )
         operations = _safe_list(record.get("operations"))
         if not operations:
             raise SearchPlannerRevisionRuntimeError(
-                "planner revision amendment record requires operations"
+                "planner revision amendment record requires operations",
+                failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_INVALID_AMENDMENT,
             )
         for operation in operations:
             mapping = _safe_mapping(operation)
@@ -1392,11 +1540,13 @@ def _validate_revision_amendment_candidates(
             )
             if operation_kind in _FORBIDDEN_OPERATION_KINDS or normalized_payload_kind in _FORBIDDEN_OPERATION_KINDS:
                 raise SearchPlannerRevisionRuntimeError(
-                    "planner revision amendment cannot resolve slots or satisfy requirements"
+                    "planner revision amendment cannot resolve slots or satisfy requirements",
+                    failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_INVALID_AMENDMENT,
                 )
             if operation_kind not in _ALLOWED_OPERATION_KINDS:
                 raise SearchPlannerRevisionRuntimeError(
-                    "planner revision amendment operation is unsupported"
+                    "planner revision amendment operation is unsupported",
+                    failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_INVALID_AMENDMENT,
                 )
 
 
@@ -1408,11 +1558,13 @@ def _validate_action_inputs(inputs: Mapping[str, Any]) -> None:
     ]
     if missing:
         raise SearchPlannerRevisionRuntimeError(
-            "planner revision action missing required bindings: " + ", ".join(missing)
+            "planner revision action missing required bindings: " + ", ".join(missing),
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.REVISION_ACTION_BINDING_INVALID,
         )
     if inputs.get("revision_schema_version") != SEARCH_PLANNER_REVISION_SCHEMA_VERSION:
         raise SearchPlannerRevisionRuntimeError(
-            "planner revision action binds the wrong schema version"
+            "planner revision action binds the wrong schema version",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.REVISION_ACTION_BINDING_INVALID,
         )
 
 
@@ -1436,7 +1588,8 @@ def _validate_action_parent_planner_bindings(
     for key, value in expected.items():
         if action_inputs.get(key) != value:
             raise SearchPlannerRevisionRuntimeError(
-                "planner revision action parent planner binding is stale"
+                "planner revision action parent planner binding is stale",
+                failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.REVISION_ACTION_BINDING_INVALID,
             )
 
 
@@ -1454,7 +1607,8 @@ def _validate_action_parent_scout_bindings(
     for key, value in expected.items():
         if action_inputs.get(key) != value:
             raise SearchPlannerRevisionRuntimeError(
-                "planner revision action Scout report binding is stale"
+                "planner revision action Scout report binding is stale",
+                failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID,
             )
 
 
@@ -1472,26 +1626,34 @@ def _normalize_scout_directional_context(
     _reject_forbidden_surface_claims(
         context,
         context="planner revision Scout directional context",
+        failure_code=(
+            SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID
+        ),
     )
     if context.get("schema_version") != SCOUT_DIRECTIONAL_CONTEXT_SCHEMA_VERSION:
         raise SearchPlannerRevisionRuntimeError(
-            "planner revision Scout directional context has the wrong schema"
+            "planner revision Scout directional context has the wrong schema",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID,
         )
     if _scout_ref_or_raise(context.get("parent_scout_disambiguation_report_ref")) != dict(parent_scout_ref):
         raise SearchPlannerRevisionRuntimeError(
-            "planner revision Scout directional context has stale parent lineage"
+            "planner revision Scout directional context has stale parent lineage",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID,
         )
     if _clean_token(context.get("component_id")) != component_id:
         raise SearchPlannerRevisionRuntimeError(
-            "planner revision Scout directional context has the wrong component"
+            "planner revision Scout directional context has the wrong component",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID,
         )
     if _text_list(context.get("consumed_ambiguity_dimension_ids")) != list(consumed_dimension_ids):
         raise SearchPlannerRevisionRuntimeError(
-            "planner revision Scout directional context has stale dimensions"
+            "planner revision Scout directional context has stale dimensions",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID,
         )
     if _text_list(context.get("consumed_scout_hint_ids")) != list(consumed_hint_ids):
         raise SearchPlannerRevisionRuntimeError(
-            "planner revision Scout directional context has stale hint ids"
+            "planner revision Scout directional context has stale hint ids",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID,
         )
     directional_hints = [
         _normalize_directional_hint(item, strict_keys=True)
@@ -1499,15 +1661,18 @@ def _normalize_scout_directional_context(
     ]
     if len(directional_hints) != len(consumed_hint_ids) or len(directional_hints) > SCOUT_DIRECTIONAL_CONTEXT_MAX_HINTS:
         raise SearchPlannerRevisionRuntimeError(
-            "planner revision Scout directional context exceeds its bounded shape"
+            "planner revision Scout directional context exceeds its bounded shape",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID,
         )
     if [item["hint_id"] for item in directional_hints] != list(consumed_hint_ids):
         raise SearchPlannerRevisionRuntimeError(
-            "planner revision Scout directional context has stale hint material"
+            "planner revision Scout directional context has stale hint material",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID,
         )
     if context.get("non_evidence") is not True:
         raise SearchPlannerRevisionRuntimeError(
-            "planner revision Scout directional context must remain non-evidence"
+            "planner revision Scout directional context must remain non-evidence",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID,
         )
     for key in (
         "scout_hints_are_evidence",
@@ -1517,7 +1682,8 @@ def _normalize_scout_directional_context(
     ):
         if context.get(key) is not False:
             raise SearchPlannerRevisionRuntimeError(
-                "planner revision Scout directional context opens authority"
+                "planner revision Scout directional context opens authority",
+                failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID,
             )
     return {
         "schema_version": SCOUT_DIRECTIONAL_CONTEXT_SCHEMA_VERSION,
@@ -1545,37 +1711,44 @@ def _build_scout_directional_context(
     report_ref = scout_ref_from_scout_report_state(scout_report)
     if report_ref != dict(parent_scout_ref):
         raise SearchPlannerRevisionRuntimeError(
-            "Scout directional context is stale against its parent report"
+            "Scout directional context is stale against its parent report",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID,
         )
     if _clean_token(scout_report.get("component_id")) != component_id:
         raise SearchPlannerRevisionRuntimeError(
-            "Scout directional context component does not match its report"
+            "Scout directional context component does not match its report",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID,
         )
     if not consumed_dimension_ids:
         raise SearchPlannerRevisionRuntimeError(
-            "Scout directional context requires consumed ambiguity dimensions"
+            "Scout directional context requires consumed ambiguity dimensions",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID,
         )
     if require_context and not consumed_hint_ids:
         raise SearchPlannerRevisionRuntimeError(
-            "Scout directional context requires consumed hints"
+            "Scout directional context requires consumed hints",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID,
         )
     if len(consumed_hint_ids) > SCOUT_DIRECTIONAL_CONTEXT_MAX_HINTS:
         raise SearchPlannerRevisionRuntimeError(
-            "Scout directional context exceeds its bounded hint limit"
+            "Scout directional context exceeds its bounded hint limit",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID,
         )
     dimension_ids = _scout_dimension_ids(scout_report)
     missing_dimensions = [item for item in consumed_dimension_ids if item not in dimension_ids]
     if missing_dimensions:
         raise SearchPlannerRevisionRuntimeError(
             "Scout directional context consumes unknown dimensions: "
-            + ", ".join(missing_dimensions)
+            + ", ".join(missing_dimensions),
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID,
         )
     hints_by_id = _scout_hints_by_id(scout_report)
     missing_hints = [item for item in consumed_hint_ids if item not in hints_by_id]
     if missing_hints:
         raise SearchPlannerRevisionRuntimeError(
             "Scout directional context consumes unknown hints: "
-            + ", ".join(missing_hints)
+            + ", ".join(missing_hints),
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID,
         )
     directional_hints = [
         _normalize_directional_hint(hints_by_id[hint_id], strict_keys=False)
@@ -1607,13 +1780,15 @@ def _validate_consumed_scout_refs(
         consumed_dimension_ids
     ):
         raise SearchPlannerRevisionRuntimeError(
-            "planner revision action consumed dimensions do not match revision"
+            "planner revision action consumed dimensions do not match revision",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID,
         )
     if _text_list(action_inputs.get("consumed_scout_hint_ids")) != list(
         consumed_hint_ids
     ):
         raise SearchPlannerRevisionRuntimeError(
-            "planner revision action consumed Scout hints do not match revision"
+            "planner revision action consumed Scout hints do not match revision",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID,
         )
     dimension_ids = {
         str(item.get("dimension_id"))
@@ -1624,14 +1799,16 @@ def _validate_consumed_scout_refs(
     if missing_dimensions:
         raise SearchPlannerRevisionRuntimeError(
             "planner revision consumes unknown Scout dimensions: "
-            + ", ".join(missing_dimensions)
+            + ", ".join(missing_dimensions),
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID,
         )
     hint_ids = _collect_scout_hint_ids(scout_report)
     missing_hints = [item for item in consumed_hint_ids if item not in hint_ids]
     if missing_hints:
         raise SearchPlannerRevisionRuntimeError(
             "planner revision consumes unknown Scout hints: "
-            + ", ".join(missing_hints)
+            + ", ".join(missing_hints),
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID,
         )
 
 
@@ -1683,11 +1860,15 @@ def _normalize_directional_hint(
     hint = _safe_mapping(value)
     if not hint:
         raise SearchPlannerRevisionRuntimeError(
-            "Scout directional context contains an invalid hint"
+            "Scout directional context contains an invalid hint",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID,
         )
     _reject_forbidden_surface_claims(
         hint,
         context="planner revision Scout directional hint",
+        failure_code=(
+            SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID
+        ),
     )
     allowed_keys = {
         "hint_id",
@@ -1703,11 +1884,15 @@ def _normalize_directional_hint(
     }
     if strict_keys and set(hint) - allowed_keys:
         raise SearchPlannerRevisionRuntimeError(
-            "Scout directional context contains fields outside its bounded shape"
+            "Scout directional context contains fields outside its bounded shape",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID,
         )
     hint_id = _required_token(
         hint.get("hint_id"),
         "Scout directional context hint requires hint_id",
+        failure_code=(
+            SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID,
+        ),
     )
     return {
         "hint_id": hint_id,
@@ -1751,7 +1936,8 @@ def _validate_scout_directional_context(
     if not context:
         if consumed_hint_ids:
             raise SearchPlannerRevisionRuntimeError(
-                "planner revision requires lineage-bound Scout direction"
+                "planner revision requires lineage-bound Scout direction",
+                failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID,
             )
         return
     expected = _build_scout_directional_context(
@@ -1764,7 +1950,8 @@ def _validate_scout_directional_context(
     )
     if context != expected:
         raise SearchPlannerRevisionRuntimeError(
-            "planner revision Scout directional context is stale or noncanonical"
+            "planner revision Scout directional context is stale or noncanonical",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID,
         )
 
 def _validate_parent_contract_bindings(
@@ -1821,15 +2008,18 @@ def _validate_one_contract_binding(
     if expected_ref:
         if action_version_text != expected_version or action_digest_text != expected_digest:
             raise SearchPlannerRevisionRuntimeError(
-                f"stale parent digest: {label} action binding is not current"
+                f"stale parent digest: {label} action binding is not current",
+                failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.REVISION_ACTION_BINDING_INVALID,
             )
         if input_version != expected_version or input_digest != expected_digest:
             raise SearchPlannerRevisionRuntimeError(
-                f"stale parent digest: {label} input is not current"
+                f"stale parent digest: {label} input is not current",
+                failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.REVISION_ACTION_BINDING_INVALID,
             )
         if revision_version != expected_version or revision_digest != expected_digest:
             raise SearchPlannerRevisionRuntimeError(
-                f"stale parent digest: {label} revision is not current"
+                f"stale parent digest: {label} revision is not current",
+                failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.REVISION_ACTION_BINDING_INVALID,
             )
         return
     if (
@@ -1841,7 +2031,8 @@ def _validate_one_contract_binding(
         or revision_digest
     ):
         raise SearchPlannerRevisionRuntimeError(
-            f"stale parent digest: {label} was bound but no current parent exists"
+            f"stale parent digest: {label} was bound but no current parent exists",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.REVISION_ACTION_BINDING_INVALID,
         )
 
 
@@ -1850,14 +2041,16 @@ def _validate_closed_revision_flags(revision: Mapping[str, Any]) -> None:
         value = revision.get(key, False if key in _SAFE_FALSE_RETENTION_KEYS else None)
         if value is not expected:
             raise SearchPlannerRevisionRuntimeError(
-                f"planner revision must keep {key} false"
+                f"planner revision must keep {key} false",
+                failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_UNSAFE_OR_CLOSED_AUTHORITY,
             )
     flags = _safe_mapping(revision.get("closed_surface_flags"))
     for key, expected in _REQUIRED_FALSE_FLAGS.items():
         value = flags.get(key, False if key in _SAFE_FALSE_RETENTION_KEYS else None)
         if value is not expected:
             raise SearchPlannerRevisionRuntimeError(
-                f"planner revision closed-surface flag {key} must be false"
+                f"planner revision closed-surface flag {key} must be false",
+                failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_UNSAFE_OR_CLOSED_AUTHORITY,
             )
 
 
@@ -1974,11 +2167,13 @@ def _validate_action_like(
     )
     if action_type != _EXPECTED_ACTION_TYPE:
         raise SearchPlannerRevisionRuntimeError(
-            "planner revision action type does not match"
+            "planner revision action type does not match",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.REVISION_ACTION_BINDING_INVALID,
         )
     if expected_observation_type != _EXPECTED_OBSERVATION_TYPE:
         raise SearchPlannerRevisionRuntimeError(
-            "planner revision expected observation type does not match"
+            "planner revision expected observation type does not match",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.REVISION_ACTION_BINDING_INVALID,
         )
     inputs = _safe_mapping(getattr(action, "inputs", {}))
     revision_payload = revision_input.to_adapter_payload()
@@ -2015,7 +2210,8 @@ def _validate_action_like(
     for key, value in expected.items():
         if inputs.get(key) != value:
             raise SearchPlannerRevisionRuntimeError(
-                f"planner revision action binding does not match input: {key}"
+                f"planner revision action binding does not match input: {key}",
+                failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.REVISION_ACTION_BINDING_INVALID,
             )
 
 
@@ -2035,11 +2231,13 @@ def _call_adapter(
         raise
     except Exception as exc:
         raise SearchPlannerRevisionRuntimeError(
-            f"search planner revision adapter failed closed: {type(exc).__name__}"
+            f"search planner revision adapter failed closed: {type(exc).__name__}",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.SEARCH_PLANNER_REVISION_RUNTIME_ERROR,
         ) from exc
     if not isinstance(result, Mapping):
         raise SearchPlannerRevisionRuntimeError(
-            "search planner revision adapter must return a mapping"
+            "search planner revision adapter must return a mapping",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_NOT_OBJECT,
         )
     return result
 
@@ -2048,7 +2246,8 @@ def _planner_ref_or_raise(value: Any) -> dict[str, Any]:
     ref = _planner_ref_or_empty(value)
     if not ref:
         raise SearchPlannerRevisionRuntimeError(
-            "planner revision input requires parent planner proposal and QMR refs"
+            "planner revision input requires parent planner proposal and QMR refs",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.REVISION_ACTION_BINDING_INVALID,
         )
     return ref
 
@@ -2073,7 +2272,8 @@ def _scout_ref_or_raise(value: Any) -> dict[str, Any]:
     ref = _scout_ref_or_empty(value)
     if not ref:
         raise SearchPlannerRevisionRuntimeError(
-            "planner revision input requires parent Scout report ref"
+            "planner revision input requires parent Scout report ref",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.SCOUT_DIRECTIONAL_CONTEXT_INVALID,
         )
     return ref
 
@@ -2118,22 +2318,30 @@ def _contract_ref_or_empty(value: Any) -> dict[str, Any]:
     }
 
 
-def _reject_forbidden_surface_claims(value: Any, *, context: str) -> None:
+def _reject_forbidden_surface_claims(
+    value: Any,
+    *,
+    context: str,
+    failure_code: SearchPlannerRevisionRuntimeSafeFailureCode,
+) -> None:
     keys = _collect_keys(value)
     sensitive = sorted(key for key in keys if _is_sensitive_key(key))
     if sensitive:
         raise SearchPlannerRevisionRuntimeError(
-            f"{context} contains raw/private fields: " + ", ".join(sensitive)
+            f"{context} contains raw/private fields: " + ", ".join(sensitive),
+            failure_code=failure_code,
         )
     forbidden = sorted(keys & _FORBIDDEN_AUTHORITY_KEYS)
     if forbidden:
         raise SearchPlannerRevisionRuntimeError(
-            f"{context} includes closed authority fields: " + ", ".join(forbidden)
+            f"{context} includes closed authority fields: " + ", ".join(forbidden),
+            failure_code=failure_code,
         )
     dangerous = sorted(_dangerous_true_claims(value))
     if dangerous:
         raise SearchPlannerRevisionRuntimeError(
-            f"{context} opens closed runtime surfaces: " + ", ".join(dangerous)
+            f"{context} opens closed runtime surfaces: " + ", ".join(dangerous),
+            failure_code=failure_code,
         )
 
 
@@ -2264,16 +2472,33 @@ def _json_safe(value: Any, *, depth: int = 0) -> Any:
     return _clean_token(value, limit=300)
 
 
-def _required_mapping(value: Any, label: str) -> Mapping[str, Any]:
+def _required_mapping(
+    value: Any,
+    label: str,
+    *,
+    failure_code: SearchPlannerRevisionRuntimeSafeFailureCode,
+) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
-        raise SearchPlannerRevisionRuntimeError(f"{label} must be a mapping")
+        raise SearchPlannerRevisionRuntimeError(
+            f"{label} must be a mapping",
+            failure_code=failure_code,
+        )
     return value
 
 
-def _required_token(value: Any, message: str, *, limit: int = 160) -> str:
+def _required_token(
+    value: Any,
+    message: str,
+    *,
+    limit: int = 160,
+    failure_code: SearchPlannerRevisionRuntimeSafeFailureCode,
+) -> str:
     text = _clean_token(value, limit=limit)
     if not text:
-        raise SearchPlannerRevisionRuntimeError(message)
+        raise SearchPlannerRevisionRuntimeError(
+            message,
+            failure_code=failure_code,
+        )
     return text
 
 
@@ -2349,6 +2574,7 @@ __all__ = [
     "SearchPlannerRevisionExecutionResult",
     "SearchPlannerRevisionInput",
     "SearchPlannerRevisionRuntimeError",
+    "SearchPlannerRevisionRuntimeSafeFailureCode",
     "build_scout_directional_context",
     "build_search_planner_revision_observation_payload",
     "build_search_planner_revision_projection",

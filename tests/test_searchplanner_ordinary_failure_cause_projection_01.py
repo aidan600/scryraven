@@ -40,6 +40,9 @@ from core.search_planner_model_adapter import (
     SearchPlannerModelAdapterError,
     SearchPlannerModelAdapterFailureCode,
 )
+from core.search_planner_revision_runtime import (
+    SearchPlannerRevisionRuntimeSafeFailureCode,
+)
 from core.search_planner_runtime import (
     SearchPlannerRuntimeError,
     SearchPlannerRuntimeSafeFailureCode,
@@ -287,7 +290,7 @@ def test_carrier_licenses_run_kernel_scout_and_revision_exact_codes() -> None:
             InitialQueryStrategyFailureOrigin.SEARCH_PLANNER_REVISION_RUNTIME
         ),
         failure_code=(
-            InitialQueryStrategyFailureCode.SEARCH_PLANNER_REVISION_RUNTIME_ERROR.value
+            SearchPlannerRevisionRuntimeSafeFailureCode.SEARCH_PLANNER_REVISION_RUNTIME_ERROR.value
         ),
     )
     assert revision.failure_code == "search_planner_revision_runtime_error"

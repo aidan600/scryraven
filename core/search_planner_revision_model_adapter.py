@@ -19,7 +19,10 @@ from core.search_planner_revision_model_prompt import (
     build_search_planner_revision_model_prompt,
     prompt_metadata,
 )
-from core.search_planner_revision_runtime import SearchPlannerRevisionRuntimeError
+from core.search_planner_revision_runtime import (
+    SearchPlannerRevisionRuntimeError,
+    SearchPlannerRevisionRuntimeSafeFailureCode,
+)
 
 SEARCH_PLANNER_REVISION_MODEL_ADAPTER_SCHEMA_VERSION = (
     "search_planner_revision_model_adapter_ag_search_planner_revision_01_v2"
@@ -196,7 +199,8 @@ class SearchPlannerRevisionModelAdapter:
             or self.revision_model_callable is None
         ):
             raise SearchPlannerRevisionModelAdapterError(
-                "search planner revision model adapter is not explicitly enabled"
+                "search planner revision model adapter is not explicitly enabled",
+                failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.ADAPTER_UNAVAILABLE,
             )
 
         prompt = build_search_planner_revision_model_prompt(revision_input)
@@ -220,7 +224,8 @@ class SearchPlannerRevisionModelAdapter:
             raise
         except Exception as exc:
             raise SearchPlannerRevisionModelAdapterError(
-                f"search planner revision model call failed closed: {type(exc).__name__}"
+                f"search planner revision model call failed closed: {type(exc).__name__}",
+                failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_CALL_FAILED,
             ) from exc
 
         parsed = _parse_model_output(raw, clean_json_response=self.clean_json_response)
@@ -247,11 +252,13 @@ def _parse_model_output(
         parsed = json.loads(text)
     except Exception as exc:
         raise SearchPlannerRevisionModelAdapterError(
-            "search planner revision model output was not valid JSON"
+            "search planner revision model output was not valid JSON",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_INVALID_JSON,
         ) from exc
     if not isinstance(parsed, Mapping):
         raise SearchPlannerRevisionModelAdapterError(
-            "search planner revision model output must be a JSON object"
+            "search planner revision model output must be a JSON object",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_NOT_OBJECT,
         )
     return parsed
 
@@ -264,7 +271,8 @@ def validate_and_sanitize_model_output(model_output: Mapping[str, Any]) -> dict[
     if missing:
         raise SearchPlannerRevisionModelAdapterError(
             "search planner revision model output missing required fields: "
-            + ", ".join(missing)
+            + ", ".join(missing),
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_MISSING_REQUIRED_FIELDS,
         )
 
     return {
@@ -362,12 +370,14 @@ def _amendment_candidates(value: Any) -> list[dict[str, Any]]:
         if normalized_kind in _FORBIDDEN_OPERATION_KINDS:
             raise SearchPlannerRevisionModelAdapterError(
                 "search planner revision model output emits forbidden amendment operation: "
-                + normalized_kind
+                + normalized_kind,
+                failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_INVALID_AMENDMENT,
             )
         if normalized_kind not in _ALLOWED_OPERATION_KINDS:
             raise SearchPlannerRevisionModelAdapterError(
                 "search planner revision model output emits unsupported amendment operation: "
-                + normalized_kind
+                + normalized_kind,
+                failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_INVALID_AMENDMENT,
             )
         candidate = {
             "candidate_id": _clean_text(mapping.get("candidate_id")),
@@ -398,19 +408,22 @@ def _reject_unsafe_payload(value: Any) -> None:
     if sensitive:
         raise SearchPlannerRevisionModelAdapterError(
             "search planner revision model output contains raw/private fields: "
-            + ", ".join(sensitive)
+            + ", ".join(sensitive),
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_UNSAFE_OR_CLOSED_AUTHORITY,
         )
     forbidden = sorted(keys & _FORBIDDEN_AUTHORITY_KEYS)
     if forbidden:
         raise SearchPlannerRevisionModelAdapterError(
             "search planner revision model output contains closed authority fields: "
-            + ", ".join(forbidden)
+            + ", ".join(forbidden),
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_UNSAFE_OR_CLOSED_AUTHORITY,
         )
     dangerous = sorted(_dangerous_true_claims(value))
     if dangerous:
         raise SearchPlannerRevisionModelAdapterError(
             "search planner revision model output opens closed runtime surfaces: "
-            + ", ".join(dangerous)
+            + ", ".join(dangerous),
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_UNSAFE_OR_CLOSED_AUTHORITY,
         )
 
 
@@ -445,22 +458,34 @@ def _planner_revision_model_metadata(
 
 def _required_mapping(value: Any, label: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
-        raise SearchPlannerRevisionModelAdapterError(f"{label} must be a JSON object")
+        raise SearchPlannerRevisionModelAdapterError(
+            f"{label} must be a JSON object",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_INVALID_FIELD_SHAPE,
+        )
     return value
 
 
 def _required_sequence(value: Any, label: str) -> list[Any]:
     if isinstance(value, str | bytes) or not isinstance(value, Sequence):
-        raise SearchPlannerRevisionModelAdapterError(f"{label} must be a JSON array")
+        raise SearchPlannerRevisionModelAdapterError(
+            f"{label} must be a JSON array",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_INVALID_FIELD_SHAPE,
+        )
     return list(value)
 
 
 def _required_text(mapping: Mapping[str, Any], key: str, *, limit: int = 160) -> str:
     if key not in mapping:
-        raise SearchPlannerRevisionModelAdapterError(f"missing required field: {key}")
+        raise SearchPlannerRevisionModelAdapterError(
+            f"missing required field: {key}",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_MISSING_REQUIRED_FIELDS,
+        )
     text = _clean_text(mapping.get(key), limit=limit)
     if not text:
-        raise SearchPlannerRevisionModelAdapterError(f"required field is empty: {key}")
+        raise SearchPlannerRevisionModelAdapterError(
+            f"required field is empty: {key}",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_INVALID_FIELD_SHAPE,
+        )
     return text
 
 
@@ -472,11 +497,15 @@ def _required_text_list(
     allow_empty: bool = False,
 ) -> list[str]:
     if key not in mapping:
-        raise SearchPlannerRevisionModelAdapterError(f"missing required field: {key}")
+        raise SearchPlannerRevisionModelAdapterError(
+            f"missing required field: {key}",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_MISSING_REQUIRED_FIELDS,
+        )
     out = _optional_text_list(mapping.get(key), limit=limit)
     if not out and not allow_empty:
         raise SearchPlannerRevisionModelAdapterError(
-            f"required field must contain text values: {key}"
+            f"required field must contain text values: {key}",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_INVALID_FIELD_SHAPE,
         )
     return out
 
@@ -485,7 +514,10 @@ def _optional_text_list(value: Any, *, limit: int = 160) -> list[str]:
     if value is None:
         return []
     if isinstance(value, str | bytes) or not isinstance(value, Sequence):
-        raise SearchPlannerRevisionModelAdapterError("expected an array of strings")
+        raise SearchPlannerRevisionModelAdapterError(
+            "expected an array of strings",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_INVALID_FIELD_SHAPE,
+        )
     out: list[str] = []
     for item in value:
         text = _clean_text(item, limit=limit)
@@ -513,7 +545,8 @@ def _false_flag_mapping(value: Any) -> dict[str, bool]:
         clean_key = _normalize_key(key)
         if clean_key and bool(item):
             raise SearchPlannerRevisionModelAdapterError(
-                f"closed surface flag must remain false: {clean_key}"
+                f"closed surface flag must remain false: {clean_key}",
+                failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_UNSAFE_OR_CLOSED_AUTHORITY,
             )
         if clean_key:
             flags[clean_key] = False
@@ -524,7 +557,10 @@ def _safe_metadata(value: Any) -> dict[str, Any]:
     if value is None:
         return {}
     if not isinstance(value, Mapping):
-        raise SearchPlannerRevisionModelAdapterError("metadata must be a JSON object")
+        raise SearchPlannerRevisionModelAdapterError(
+            "metadata must be a JSON object",
+            failure_code=SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_INVALID_FIELD_SHAPE,
+        )
     _reject_unsafe_payload(value)
     safe = _json_safe(dict(value))
     return dict(safe) if isinstance(safe, Mapping) else {}

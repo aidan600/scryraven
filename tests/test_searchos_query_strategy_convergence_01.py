@@ -36,6 +36,10 @@ from core.run_kernel import (
     RunStageStatus,
 )
 from core.search_planner_model_adapter import accept_planner_model_output
+from core.search_planner_revision_runtime import (
+    SearchPlannerRevisionRuntimeError,
+    SearchPlannerRevisionRuntimeSafeFailureCode,
+)
 from core.search_planner_runtime import SEARCH_PLANNER_SCHEMA_VERSION
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -878,6 +882,35 @@ def test_required_recon_provider_failure_uses_safe_scout_runtime_corridor() -> N
     assert kernel.state.search_work_plan == {}
     assert kernel.state.current_answer_contract == {}
     assert kernel.state.evidence_ledger.to_projection().to_dict().get("evidence_items", []) == []
+
+
+def test_required_recon_projects_exact_plannerrevision_owner_code() -> None:
+    private_detail = "offline-revision-private-detail"
+
+    class FailingRevisionAdapter:
+        def produce(self, _revision_input: Mapping[str, Any]) -> Mapping[str, Any]:
+            raise SearchPlannerRevisionRuntimeError(
+                private_detail,
+                failure_code=(
+                    SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_INVALID_JSON
+                ),
+            )
+
+    with pytest.raises(InitialQueryStrategyFailureError) as captured:
+        _converge(
+            _planner_payload(recon="required", required_recon=True),
+            scout_adapter=ResponseOnlyScoutAdapter(),
+            revision_adapter=FailingRevisionAdapter(),
+        )
+
+    terminal = captured.value.to_terminal_projection()
+    assert terminal == {
+        "schema_version": "initial_query_strategy_failure_v1",
+        "boundary": "initial_query_strategy",
+        "failure_origin": "search_planner_revision_runtime",
+        "failure_code": "model_output_invalid_json",
+    }
+    assert private_detail not in json.dumps(terminal, sort_keys=True)
 
 
 def test_required_recon_cap_terminal_propagates_unchanged_without_revision() -> None:
