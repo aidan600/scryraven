@@ -31,6 +31,7 @@ import os
 import re
 import sys
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -704,6 +705,21 @@ def _build_run_deps(log: logging.Logger) -> RunDeps:
     return compose_quantitative_specialist_product_deps(deps)
 
 
+class BoundedEntrypointSetupFailureCode(str, Enum):
+    """Closed call-site-owned setup stages for the bounded ordinary CLI."""
+
+    RUN_CONFIG_INITIALIZATION = "run_config_initialization"
+    PROVIDER_PREREQUISITE_VALIDATION = "provider_prerequisite_validation"
+    RUN_DEPS_COMPOSITION = "run_deps_composition"
+    RUNTIME_SUPPORT_INITIALIZATION = "runtime_support_initialization"
+
+
+_BOUNDED_ENTRYPOINT_SETUP_FAILURE_SCHEMA_VERSION = (
+    "bounded_entrypoint_setup_failure_v1"
+)
+_BOUNDED_ENTRYPOINT_SETUP_FAILURE_BOUNDARY = "bounded_entrypoint_setup"
+
+
 def _bounded_success_payload(
     *,
     entrypoint: str,
@@ -783,6 +799,7 @@ def _bounded_terminal_payload(
     ),
     config: RunConfig | None,
     code: str | None = None,
+    setup_failure_code: BoundedEntrypointSetupFailureCode | None = None,
     compiled_authorization: CompiledRunCapAuthorization | None = None,
     authorization_id: str | None = None,
     authorization_digest: str | None = None,
@@ -806,6 +823,14 @@ def _bounded_terminal_payload(
         authorization_id = authorization_id or exc.authorization_id
         authorization_digest = authorization_digest or exc.authorization_digest
         observed_query_digest = observed_query_digest or exc.observed_query_digest
+    elif setup_failure_code is not None:
+        terminal_core = {
+            "code": "bounded_entrypoint_setup_failed",
+            "message": (
+                "The bounded entrypoint stopped during setup without retaining raw "
+                "diagnostics."
+            ),
+        }
     elif exc is not None and config is None:
         assert isinstance(exc, RunCapExceeded)
         terminal_core = {
@@ -833,7 +858,10 @@ def _bounded_terminal_payload(
             pricing_fact_set_id or compiled_authorization.pricing_fact_set_id
         )
         repository_sha = repository_sha or compiled_authorization.repository_sha
-    if isinstance(exc, RunCapExceeded) and not configuration_failure:
+    if setup_failure_code is not None:
+        terminal_owner = "proplex.__main__.main"
+        terminal_classification = "entrypoint_setup_failure"
+    elif isinstance(exc, RunCapExceeded) and not configuration_failure:
         terminal_owner = "core.cap_enforcement.RunCapPolicy"
         terminal_classification = "cap_enforcement"
     elif configuration_failure:
@@ -847,6 +875,12 @@ def _bounded_terminal_payload(
         "owner": terminal_owner,
         "classification": terminal_classification,
     }
+    if setup_failure_code is not None:
+        terminal["bounded_entrypoint_setup_failure"] = {
+            "schema_version": _BOUNDED_ENTRYPOINT_SETUP_FAILURE_SCHEMA_VERSION,
+            "boundary": _BOUNDED_ENTRYPOINT_SETUP_FAILURE_BOUNDARY,
+            "failure_code": setup_failure_code.value,
+        }
     if isinstance(exc, SearchPlannerModelAdapterError):
         terminal["search_planner_failure"] = {
             "failure_stage": exc.failure_stage.value,
@@ -929,6 +963,26 @@ def _bounded_terminal_payload(
 
 def _print_bounded_payload(payload: dict[str, object]) -> None:
     print(json.dumps(payload, sort_keys=True, ensure_ascii=True))
+
+
+def _print_bounded_entrypoint_setup_failure(
+    *,
+    entrypoint: str,
+    config: RunConfig | None,
+    compiled_authorization: CompiledRunCapAuthorization,
+    failure_code: BoundedEntrypointSetupFailureCode,
+) -> None:
+    """Emit one sanitized bounded terminal for a known setup call site."""
+
+    _print_bounded_payload(
+        _bounded_terminal_payload(
+            entrypoint=entrypoint,
+            exc=None,
+            config=config,
+            setup_failure_code=failure_code,
+            compiled_authorization=compiled_authorization,
+        )
+    )
 
 
 def _argv_requests_ordinary_live_dry_run(argv: list[str] | None) -> bool:
@@ -1380,7 +1434,7 @@ def main(
     config: RunConfig | None = None
     try:
         config = _build_run_config(args, compiled_authorization=compiled)
-    except RunCapExceeded as exc:
+    except (RunCapExceeded, BoundedRunAuthorizationError) as exc:
         if bounded:
             _print_bounded_payload(
                 _bounded_terminal_payload(
@@ -1392,16 +1446,56 @@ def main(
             )
             return 2
         raise
+    except Exception:
+        if bounded:
+            assert compiled is not None
+            _print_bounded_entrypoint_setup_failure(
+                entrypoint=entrypoint,
+                config=None,
+                compiled_authorization=compiled,
+                failure_code=(
+                    BoundedEntrypointSetupFailureCode.RUN_CONFIG_INITIALIZATION
+                ),
+            )
+            return 1
+        raise
 
     # Validate required model-provider keys early so the error message is clean.
     # Bounded posture skips dotenv and inspects only process-environment presence.
-    missing_keys = missing_required_api_keys(
-        fast_provider=args.fast_provider,
-        smart_provider=args.smart_provider,
-        embed_provider=args.embed_provider,
-        active_search_providers=None,
-    )
-    if "OPENAI_API_KEY" in missing_keys:
+    try:
+        missing_keys = missing_required_api_keys(
+            fast_provider=args.fast_provider,
+            smart_provider=args.smart_provider,
+            embed_provider=args.embed_provider,
+            active_search_providers=None,
+        )
+        openai_prerequisite_missing = "OPENAI_API_KEY" in missing_keys
+    except (RunCapExceeded, BoundedRunAuthorizationError) as exc:
+        if bounded:
+            _print_bounded_payload(
+                _bounded_terminal_payload(
+                    entrypoint=entrypoint,
+                    exc=exc,
+                    config=config,
+                    compiled_authorization=compiled,
+                )
+            )
+            return 2
+        raise
+    except Exception:
+        if bounded:
+            assert compiled is not None
+            _print_bounded_entrypoint_setup_failure(
+                entrypoint=entrypoint,
+                config=config,
+                compiled_authorization=compiled,
+                failure_code=(
+                    BoundedEntrypointSetupFailureCode.PROVIDER_PREREQUISITE_VALIDATION
+                ),
+            )
+            return 1
+        raise
+    if openai_prerequisite_missing:
         if bounded:
             _print_bounded_payload(
                 _bounded_terminal_payload(
@@ -1416,10 +1510,60 @@ def main(
         print("ERROR: OPENAI_API_KEY is required for OpenAI models.", file=sys.stderr)
         return 1
 
-    deps = _build_run_deps(log)
+    try:
+        deps = _build_run_deps(log)
+    except (RunCapExceeded, BoundedRunAuthorizationError) as exc:
+        if bounded:
+            _print_bounded_payload(
+                _bounded_terminal_payload(
+                    entrypoint=entrypoint,
+                    exc=exc,
+                    config=config,
+                    compiled_authorization=compiled,
+                )
+            )
+            return 2
+        raise
+    except Exception:
+        if bounded:
+            assert compiled is not None
+            _print_bounded_entrypoint_setup_failure(
+                entrypoint=entrypoint,
+                config=config,
+                compiled_authorization=compiled,
+                failure_code=BoundedEntrypointSetupFailureCode.RUN_DEPS_COMPOSITION,
+            )
+            return 1
+        raise
 
-    status = NullStatusWriter()
-    accumulator = CostAccumulator()
+    try:
+        status = NullStatusWriter()
+        accumulator = CostAccumulator()
+    except (RunCapExceeded, BoundedRunAuthorizationError) as exc:
+        if bounded:
+            _print_bounded_payload(
+                _bounded_terminal_payload(
+                    entrypoint=entrypoint,
+                    exc=exc,
+                    config=config,
+                    compiled_authorization=compiled,
+                )
+            )
+            return 2
+        raise
+    except Exception:
+        if bounded:
+            assert compiled is not None
+            _print_bounded_entrypoint_setup_failure(
+                entrypoint=entrypoint,
+                config=config,
+                compiled_authorization=compiled,
+                failure_code=(
+                    BoundedEntrypointSetupFailureCode.RUNTIME_SUPPORT_INITIALIZATION
+                ),
+            )
+            return 1
+        raise
 
     try:
         outcome = run_pipeline(config, deps, status, accumulator)

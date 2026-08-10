@@ -60,7 +60,11 @@ from core.routing import (
 from core.run_authority_search_judgment_runtime import (
     execute_run_authority_search_judgment_action,
 )
-from core.run_cap_authorization import CompiledRunCapAuthorization, query_sha256
+from core.run_cap_authorization import (
+    BoundedRunAuthorizationError,
+    CompiledRunCapAuthorization,
+    query_sha256,
+)
 from core.run_config import RunConfig, RunDeps
 from core.run_kernel import ObservationType
 from core.strict_one_shot_model_transport import (
@@ -2100,3 +2104,345 @@ def test_public_cli_executes_bounded_isclose_with_authorization_file(
         for family in ExternalCallFamily
     )
     assert harness.forbidden_live_calls == []
+
+
+def _bounded_entrypoint_setup_argv(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[str]:
+    """Build a fictional bounded CLI invocation without live dependencies."""
+
+    fixture_sha = "f" * 40
+    auth_path = tmp_path / "offline-setup-auth.json"
+    auth_path.write_text(
+        json.dumps(_offline_proof_authorization_document(repository_sha=fixture_sha)),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "core.run_cap_authorization.resolve_local_repository_identity",
+        lambda _repo_root: fixture_sha,
+    )
+    monkeypatch.setattr(
+        compatibility_cli,
+        "_build_logger",
+        lambda *_args, **_kwargs: SimpleNamespace(),
+    )
+    return [
+        _ISCLOSE_QUERY,
+        "--mode",
+        "Balanced",
+        "--include-domains",
+        "docs.python.org",
+        "--fast-provider",
+        "OpenAI",
+        "--fast-model",
+        "gpt-5.4-mini",
+        "--smart-provider",
+        "OpenAI",
+        "--smart-model",
+        "gpt-5.4",
+        "--embed-provider",
+        "OpenAI",
+        "--embed-model",
+        "text-embedding-3-small",
+        "--bounded-run-authorization",
+        str(auth_path),
+    ]
+
+
+@pytest.mark.parametrize("entrypoint", ["proplex", "scryraven"])
+@pytest.mark.parametrize(
+    ("seam", "failure_code", "config_available"),
+    [
+        ("run_config", "run_config_initialization", False),
+        (
+            "provider_prerequisite",
+            "provider_prerequisite_validation",
+            True,
+        ),
+        ("run_deps", "run_deps_composition", True),
+        ("runtime_status", "runtime_support_initialization", True),
+        ("runtime_accumulator", "runtime_support_initialization", True),
+    ],
+)
+def test_public_bounded_cli_projects_private_setup_failures(
+    entrypoint: str,
+    seam: str,
+    failure_code: str,
+    config_available: bool,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Each owned setup seam emits only its installed bounded identity."""
+
+    private_sentinel = "fixture-private-entrypoint-setup-sentinel"
+    argv = _bounded_entrypoint_setup_argv(tmp_path, monkeypatch)
+    pipeline_calls: list[tuple[Any, ...]] = []
+
+    def fail_setup(*_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError(private_sentinel)
+
+    def forbidden_pipeline(*args: Any, **_kwargs: Any) -> Any:
+        pipeline_calls.append(args)
+        raise AssertionError("setup failure entered run_pipeline")
+
+    monkeypatch.setattr(compatibility_cli, "run_pipeline", forbidden_pipeline)
+    if seam == "run_config":
+        monkeypatch.setattr(compatibility_cli, "_build_run_config", fail_setup)
+    else:
+        monkeypatch.setattr(
+            compatibility_cli,
+            "missing_required_api_keys",
+            lambda **_kwargs: [],
+        )
+        if seam == "provider_prerequisite":
+            monkeypatch.setattr(
+                compatibility_cli,
+                "missing_required_api_keys",
+                fail_setup,
+            )
+        elif seam == "run_deps":
+            monkeypatch.setattr(compatibility_cli, "_build_run_deps", fail_setup)
+        else:
+            monkeypatch.setattr(
+                compatibility_cli,
+                "_build_run_deps",
+                lambda _log: SimpleNamespace(),
+            )
+            failing_support = type(
+                "FailingRuntimeSupport",
+                (),
+                {"__init__": fail_setup},
+            )
+            support_name = (
+                "NullStatusWriter"
+                if seam == "runtime_status"
+                else "CostAccumulator"
+            )
+            monkeypatch.setattr(compatibility_cli, support_name, failing_support)
+
+    assert compatibility_cli.main(argv, entrypoint=entrypoint) == 1
+    captured = capsys.readouterr()
+    assert len(captured.out.strip().splitlines()) == 1
+    payload = json.loads(captured.out)
+    terminal = payload["terminal"]
+    assert terminal["code"] == "bounded_entrypoint_setup_failed"
+    assert terminal["owner"] == "proplex.__main__.main"
+    assert terminal["classification"] == "entrypoint_setup_failure"
+    assert terminal["bounded_entrypoint_setup_failure"] == {
+        "schema_version": "bounded_entrypoint_setup_failure_v1",
+        "boundary": "bounded_entrypoint_setup",
+        "failure_code": failure_code,
+    }
+    assert payload["authorization_id"] == "offline-isclose-auth-v1"
+    assert payload["authorization_digest"]
+    assert payload["pricing_fact_set_id"] == "offline-isclose-pricing-v1"
+    assert payload["repository_sha"] == "f" * 40
+    if config_available:
+        assert payload["physical_envelope"]["enforcement"] == (
+            "physical_attempt_envelope"
+        )
+    else:
+        assert "physical_envelope" not in payload
+    assert pipeline_calls == []
+    serialized = json.dumps(payload, sort_keys=True)
+    assert private_sentinel not in captured.out
+    assert private_sentinel not in captured.err
+    assert private_sentinel not in serialized
+    assert "RuntimeError" not in captured.out
+    assert "RuntimeError" not in captured.err
+    assert "RuntimeError" not in serialized
+
+
+@pytest.mark.parametrize("entrypoint", ["proplex", "scryraven"])
+def test_public_bounded_cli_preserves_missing_openai_key_terminal(
+    entrypoint: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The known provider prerequisite remains a configuration result."""
+
+    argv = _bounded_entrypoint_setup_argv(tmp_path, monkeypatch)
+    pipeline_calls: list[tuple[Any, ...]] = []
+
+    def forbidden_pipeline(*args: Any, **_kwargs: Any) -> Any:
+        pipeline_calls.append(args)
+        raise AssertionError("missing-key result entered run_pipeline")
+
+    monkeypatch.setattr(
+        compatibility_cli,
+        "missing_required_api_keys",
+        lambda **_kwargs: ["OPENAI_API_KEY"],
+    )
+    monkeypatch.setattr(compatibility_cli, "run_pipeline", forbidden_pipeline)
+
+    assert compatibility_cli.main(argv, entrypoint=entrypoint) == 2
+    captured = capsys.readouterr()
+    assert len(captured.out.strip().splitlines()) == 1
+    payload = json.loads(captured.out)
+    assert payload["terminal"] == {
+        "code": "bounded_configuration_unavailable",
+        "message": "The bounded run stopped without retaining raw diagnostics.",
+        "owner": "core.run_cap_authorization",
+        "classification": "configuration",
+    }
+    assert "bounded_entrypoint_setup_failure" not in payload["terminal"]
+    assert payload["physical_envelope"]["enforcement"] == (
+        "physical_attempt_envelope"
+    )
+    assert pipeline_calls == []
+    assert captured.err == ""
+
+
+@pytest.mark.parametrize("entrypoint", ["proplex", "scryraven"])
+def test_public_bounded_cli_preserves_setup_run_cap_terminal(
+    entrypoint: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """An owned cap exception keeps its pre-existing cap terminal."""
+
+    argv = _bounded_entrypoint_setup_argv(tmp_path, monkeypatch)
+    expected = RunCapExceeded("fixture_setup_cap")
+    pipeline_calls: list[tuple[Any, ...]] = []
+
+    def raise_cap(*_args: Any, **_kwargs: Any) -> Any:
+        raise expected
+
+    def forbidden_pipeline(*args: Any, **_kwargs: Any) -> Any:
+        pipeline_calls.append(args)
+        raise AssertionError("setup cap terminal entered run_pipeline")
+
+    monkeypatch.setattr(
+        compatibility_cli,
+        "missing_required_api_keys",
+        lambda **_kwargs: [],
+    )
+    monkeypatch.setattr(compatibility_cli, "_build_run_deps", raise_cap)
+    monkeypatch.setattr(compatibility_cli, "run_pipeline", forbidden_pipeline)
+
+    assert compatibility_cli.main(argv, entrypoint=entrypoint) == 2
+    captured = capsys.readouterr()
+    assert len(captured.out.strip().splitlines()) == 1
+    payload = json.loads(captured.out)
+    assert payload["terminal"] == {
+        **expected.terminal_payload(),
+        "owner": "core.cap_enforcement.RunCapPolicy",
+        "classification": "cap_enforcement",
+    }
+    assert "bounded_entrypoint_setup_failure" not in payload["terminal"]
+    assert payload["physical_envelope"]["enforcement"] == (
+        "physical_attempt_envelope"
+    )
+    assert pipeline_calls == []
+    assert captured.err == ""
+
+
+@pytest.mark.parametrize("entrypoint", ["proplex", "scryraven"])
+def test_public_bounded_cli_enters_pipeline_once_after_successful_setup(
+    entrypoint: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Successful setup retains the established pipeline-failure boundary."""
+
+    private_sentinel = "fixture-private-pipeline-sentinel"
+    argv = _bounded_entrypoint_setup_argv(tmp_path, monkeypatch)
+    pipeline_calls: list[tuple[Any, ...]] = []
+
+    def fail_pipeline(*args: Any, **_kwargs: Any) -> Any:
+        pipeline_calls.append(args)
+        raise RuntimeError(private_sentinel)
+
+    monkeypatch.setattr(
+        compatibility_cli,
+        "missing_required_api_keys",
+        lambda **_kwargs: [],
+    )
+    monkeypatch.setattr(
+        compatibility_cli,
+        "_build_run_deps",
+        lambda _log: SimpleNamespace(),
+    )
+    monkeypatch.setattr(compatibility_cli, "run_pipeline", fail_pipeline)
+
+    assert compatibility_cli.main(argv, entrypoint=entrypoint) == 1
+    captured = capsys.readouterr()
+    assert len(captured.out.strip().splitlines()) == 1
+    payload = json.loads(captured.out)
+    assert payload["terminal"] == {
+        "code": "bounded_run_failed",
+        "message": "The bounded run stopped without retaining raw diagnostics.",
+        "owner": "core.pipeline_orchestrator.run_pipeline",
+        "classification": "pipeline_failure",
+    }
+    assert "bounded_entrypoint_setup_failure" not in payload["terminal"]
+    assert payload["physical_envelope"]["enforcement"] == (
+        "physical_attempt_envelope"
+    )
+    assert len(pipeline_calls) == 1
+    serialized = json.dumps(payload, sort_keys=True)
+    assert private_sentinel not in captured.out
+    assert private_sentinel not in captured.err
+    assert private_sentinel not in serialized
+    assert "RuntimeError" not in captured.out
+    assert "RuntimeError" not in captured.err
+    assert "RuntimeError" not in serialized
+
+
+@pytest.mark.parametrize("entrypoint", ["proplex", "scryraven"])
+def test_public_bounded_cli_preserves_setup_authorization_terminal(
+    entrypoint: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A typed authorization error stays in its existing configuration lane."""
+
+    argv = _bounded_entrypoint_setup_argv(tmp_path, monkeypatch)
+    expected = BoundedRunAuthorizationError(
+        "fixture_authorization_rejected",
+        authorization_id="fixture-setup-authorization-id",
+        authorization_digest="fixture-setup-authorization-digest",
+    )
+    pipeline_calls: list[tuple[Any, ...]] = []
+
+    def raise_authorization(*_args: Any, **_kwargs: Any) -> Any:
+        raise expected
+
+    def forbidden_pipeline(*args: Any, **_kwargs: Any) -> Any:
+        pipeline_calls.append(args)
+        raise AssertionError("setup authorization terminal entered run_pipeline")
+
+    monkeypatch.setattr(
+        compatibility_cli,
+        "missing_required_api_keys",
+        lambda **_kwargs: [],
+    )
+    monkeypatch.setattr(
+        compatibility_cli,
+        "_build_run_deps",
+        raise_authorization,
+    )
+    monkeypatch.setattr(compatibility_cli, "run_pipeline", forbidden_pipeline)
+
+    assert compatibility_cli.main(argv, entrypoint=entrypoint) == 2
+    captured = capsys.readouterr()
+    assert len(captured.out.strip().splitlines()) == 1
+    payload = json.loads(captured.out)
+    assert payload["terminal"] == {
+        "code": "bounded_configuration_unavailable",
+        "message": "The bounded-run authorization is incomplete or unsupported.",
+        "reason": "fixture_authorization_rejected",
+        "owner": "core.run_cap_authorization",
+        "classification": "configuration",
+    }
+    assert payload["authorization_id"] == "fixture-setup-authorization-id"
+    assert payload["authorization_digest"] == "fixture-setup-authorization-digest"
+    assert "bounded_entrypoint_setup_failure" not in payload["terminal"]
+    assert pipeline_calls == []
+    assert captured.err == ""
