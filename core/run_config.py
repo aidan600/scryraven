@@ -143,8 +143,8 @@ class RunDeps:
     component_gap_recovery_adapter: Callable[..., Any] | None = None
 
     # Typed semantic-planning composition seams. Ordinary execution composes
-    # the selected fast-model SearchPlanner when no planner adapter is supplied;
-    # Scout and revision remain unavailable unless explicitly injected.
+    # the selected fast-model planner, bounded provider-neutral Scout, and FAST
+    # PlannerRevision when no adapter is supplied; injected seams override them.
     search_planner_adapter: Any | None = None
     scout_disambiguation_adapter: Any | None = None
     search_planner_revision_adapter: Any | None = None

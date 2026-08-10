@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 from copy import deepcopy
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -24,6 +25,7 @@ from core.search_planner_revision_runtime import (
     SEARCH_PLANNER_REVISION_PROPOSAL_SCHEMA_VERSION,
     SearchPlannerRevisionInput,
     SearchPlannerRevisionRuntimeError,
+    build_scout_directional_context,
     build_search_planner_revision_observation_payload,
     contract_ref_from_contract,
     execute_search_planner_revision_action,
@@ -477,6 +479,17 @@ def _revision_input(kernel: RunKernel) -> SearchPlannerRevisionInput:
         component_id=COMPONENT_ID,
         consumed_ambiguity_dimension_ids=CONSUMED_DIMENSION_IDS,
         consumed_scout_hint_ids=CONSUMED_HINT_IDS,
+        scout_directional_context=build_scout_directional_context(
+            scout_report=kernel.state.scout_disambiguation_report_state,
+            parent_scout_disambiguation_report_ref=(
+                scout_ref_from_scout_report_state(
+                    kernel.state.scout_disambiguation_report_state
+                )
+            ),
+            component_id=COMPONENT_ID,
+            consumed_ambiguity_dimension_ids=CONSUMED_DIMENSION_IDS,
+            consumed_scout_hint_ids=CONSUMED_HINT_IDS,
+        ),
         safe_revision_context={
             "parent_question_meaning_record": qmr,
             "answer_component_ref": qmr["answer_components"][0],
@@ -801,6 +814,84 @@ def test_revision_consumes_scout_hints_as_non_evidence() -> None:
     assert kernel.state.followup_citation_eligibility_history == citation_before
 
 
+
+def test_revision_adapter_receives_lineage_bound_scout_directional_context() -> None:
+    kernel = _prepare_kernel()
+    scout_ref = scout_ref_from_scout_report_state(
+        kernel.state.scout_disambiguation_report_state
+    )
+    context = build_scout_directional_context(
+        scout_report=kernel.state.scout_disambiguation_report_state,
+        parent_scout_disambiguation_report_ref=scout_ref,
+        component_id=COMPONENT_ID,
+        consumed_ambiguity_dimension_ids=CONSUMED_DIMENSION_IDS,
+        consumed_scout_hint_ids=CONSUMED_HINT_IDS,
+    )
+    revision_input = replace(
+        _revision_input(kernel),
+        scout_directional_context=context,
+    )
+    adapter = FakeRevisionAdapter()
+    action = _authorize_revision(kernel, revision_input)
+
+    execute_search_planner_revision_action(
+        action=action,
+        revision_input=revision_input,
+        adapter=adapter,
+    )
+
+    assert adapter.calls
+    delivered = adapter.calls[0]["scout_directional_context"]
+    assert delivered == context
+    assert delivered["non_evidence"] is True
+    assert delivered["scout_hints_are_evidence"] is False
+    assert delivered["evidence_admitted"] is False
+    assert delivered["citation_eligible"] is False
+    hint = delivered["directional_hints"][0]
+    assert set(hint) == {
+        "hint_id",
+        "query_id",
+        "related_dimension_ids",
+        "title",
+        "domain",
+        "hint_kind",
+        "official_target_hint",
+        "currentness_hint",
+        "interpretation_hint",
+        "confidence_posture",
+    }
+    assert "snippet" not in hint
+    assert "link" not in hint
+
+
+def test_scout_directional_context_rejects_stale_parent_report_before_revision() -> None:
+    kernel = _prepare_kernel()
+    scout_ref = scout_ref_from_scout_report_state(
+        kernel.state.scout_disambiguation_report_state
+    )
+    stale_ref = {**scout_ref, "report_digest": "stale-scout-report"}
+
+    with pytest.raises(
+        SearchPlannerRevisionRuntimeError,
+        match="stale against its parent report",
+    ):
+        build_scout_directional_context(
+            scout_report=kernel.state.scout_disambiguation_report_state,
+            parent_scout_disambiguation_report_ref=stale_ref,
+            component_id=COMPONENT_ID,
+            consumed_ambiguity_dimension_ids=CONSUMED_DIMENSION_IDS,
+            consumed_scout_hint_ids=CONSUMED_HINT_IDS,
+        )
+
+
+
+def test_revision_requires_directional_context_for_consumed_hints() -> None:
+    kernel = _prepare_kernel()
+    revision_input = replace(_revision_input(kernel), scout_directional_context={})
+
+    with pytest.raises(SearchPlannerRevisionRuntimeError, match="requires lineage-bound Scout direction"):
+        revision_input.to_adapter_payload()
+
 def test_revision_emits_qmr_compatible_or_revision_compatible_payload() -> None:
     kernel = _prepare_kernel()
     planner_before = deepcopy(kernel.state.search_planner_proposal_state)
@@ -1033,7 +1124,8 @@ def test_static_closed_surface_guard_for_search_planner_revision() -> None:
 
 def test_docs_record_revision_authority_split() -> None:
     required = (
-        "SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01",
+        "SEARCHOS-REQUIRED-SCOUT-ORDINARY-COMPOSITION-01",
+        "lineage-bound Scout directional context",
         "SearchPlannerRevision query-direction-only changes cannot mutate the AnswerContract",
         "contractual revision reaches planning only after existing amendment admission and application",
         "Scout reports remain non-evidence",

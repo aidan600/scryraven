@@ -156,8 +156,10 @@ Telemetry meanings are exact:
   and remains zero for this handoff.
 
 Serper `lightweight_disambiguation` remains excluded from this ordinary packet
-origin. Planner-disambiguation acquisition remains a later checkpoint. The
-public ScryRaven name is unchanged; compatibility names including `proplex`,
+origin. The separate pre-QueryPlan
+`SEARCHOS-REQUIRED-SCOUT-ORDINARY-COMPOSITION-01` Scout lane owns it only as
+bounded non-evidence direction; it does not add packet or custody authority.
+The public ScryRaven name is unchanged; compatibility names including `proplex`,
 `python -m proplex`, `PROPLEX_*`, `proplex.db`, and `proplex_*` remain supported.
 Any compatibility rename is deferred.
 

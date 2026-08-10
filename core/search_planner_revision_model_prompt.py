@@ -11,7 +11,7 @@ from hashlib import sha256
 from typing import Any, Mapping
 
 SEARCH_PLANNER_REVISION_MODEL_PROMPT_SCHEMA_VERSION = (
-    "search_planner_revision_model_prompt_ag_search_planner_revision_01_v1"
+    "search_planner_revision_model_prompt_ag_search_planner_revision_01_v2"
 )
 
 SEARCH_PLANNER_REVISION_MODEL_SYSTEM_PROMPT = (
@@ -82,6 +82,7 @@ def build_search_planner_revision_model_prompt(
                 "consumed_ambiguity_dimension_ids"
             ),
             "consumed_scout_hint_ids": revision_input.get("consumed_scout_hint_ids"),
+            "scout_directional_context": revision_input.get("scout_directional_context"),
             "safe_revision_context": revision_input.get("safe_revision_context"),
             "closed_surface_flags": revision_input.get("closed_surface_flags"),
         },

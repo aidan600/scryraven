@@ -7,15 +7,19 @@ from typing import Any, Mapping
 
 import pytest
 
+from core.cap_enforcement import ExternalCallFamily, RunCapExceeded
 from core.initial_query_allocation_policy import (
     DEFAULT_INITIAL_QUERY_ALLOCATION_POLICY,
     INITIAL_QUERY_ALLOCATION_POLICY_VERSION,
 )
+from core.initial_query_strategy_failure import InitialQueryStrategyFailureError
+from core.ordinary_scout_disambiguation_adapter import OrdinaryScoutDisambiguationAdapter
 from core.query_plan import QUERY_PLAN_TRACE_KEY
 from core.query_plan_runtime_adapter import build_query_plan_runtime_adapter
 from core.query_production_runtime import (
     QUERY_PRODUCTION_STAGE,
     QueryStrategyConvergenceError,
+    QueryStrategyConvergenceFailureCode,
     _recon_work_by_component,
     _strategies_with_authorized_revisions,
     execute_initial_query_strategy_convergence,
@@ -318,11 +322,12 @@ def _router_state() -> Any:
 def _converge(
     payload: Mapping[str, Any],
     *,
-    scout_adapter: ResponseOnlyScoutAdapter | None = None,
-    revision_adapter: ResponseOnlyRevisionAdapter | None = None,
+    scout_adapter: Any | None = None,
+    revision_adapter: Any | None = None,
+    run_kernel: RunKernel | None = None,
     policy=DEFAULT_INITIAL_QUERY_ALLOCATION_POLICY,
 ):
-    kernel = _kernel_after_run_contract()
+    kernel = run_kernel if run_kernel is not None else _kernel_after_run_contract()
     result = execute_initial_query_strategy_convergence(
         run_kernel=kernel,
         router_query_preparation_contract=_router_state(),
@@ -741,6 +746,170 @@ def test_required_identity_recon_without_adapter_fails_before_query_production()
     assert kernel.state.search_work_plan == {}
 
 
+
+def test_required_recon_route_unavailable_fails_closed_after_scout_authorization() -> None:
+    revision = ResponseOnlyRevisionAdapter()
+    search_calls: list[dict[str, Any]] = []
+
+    def blocked_search(**kwargs: Any) -> list[dict[str, Any]]:
+        search_calls.append(dict(kwargs))
+        raise AssertionError("an unavailable Scout route must not dispatch")
+
+    blocked_scout = OrdinaryScoutDisambiguationAdapter(
+        available_providers={"serper": False},
+        scout_search=blocked_search,
+    )
+    kernel = _kernel_after_run_contract()
+
+    with pytest.raises(QueryStrategyConvergenceError) as captured:
+        _converge(
+            _planner_payload(recon="required", required_recon=True),
+            scout_adapter=blocked_scout,
+            revision_adapter=revision,
+            run_kernel=kernel,
+        )
+
+    assert (
+        captured.value.failure_code
+        is QueryStrategyConvergenceFailureCode.REQUIRED_SCOUT_ROUTE_UNAVAILABLE
+    )
+    assert revision.calls == []
+    assert search_calls == []
+    report = kernel.state.scout_disambiguation_report_projection
+    assert report["route_available"] is False
+    assert report["executed_query_count"] == 0
+
+
+def test_optional_recon_route_unavailable_retains_primary_without_revision() -> None:
+    revision = ResponseOnlyRevisionAdapter()
+    kernel, convergence = _converge(
+        _planner_payload(recon="optional"),
+        scout_adapter=OrdinaryScoutDisambiguationAdapter(
+            available_providers={"serper": False}
+        ),
+        revision_adapter=revision,
+    )
+
+    assert revision.calls == []
+    assert convergence.recon_summary[0]["status"] == (
+        "optional_route_unavailable_primary_strategy_retained"
+    )
+    assert kernel.state.scout_disambiguation_report_projection["route_available"] is False
+
+
+def test_required_recon_empty_executed_scout_fails_closed_without_revision() -> None:
+    revision = ResponseOnlyRevisionAdapter()
+    search_calls: list[dict[str, Any]] = []
+
+    def empty_search(**kwargs: Any) -> list[dict[str, Any]]:
+        search_calls.append(dict(kwargs))
+        return []
+
+    empty_scout = OrdinaryScoutDisambiguationAdapter(
+        available_providers={"serper": True},
+        scout_search=empty_search,
+    )
+    kernel = _kernel_after_run_contract()
+
+    with pytest.raises(QueryStrategyConvergenceError) as captured:
+        _converge(
+            _planner_payload(recon="required", required_recon=True),
+            scout_adapter=empty_scout,
+            revision_adapter=revision,
+            run_kernel=kernel,
+        )
+
+    assert (
+        captured.value.failure_code
+        is QueryStrategyConvergenceFailureCode.REQUIRED_SCOUT_EXECUTION_EMPTY
+    )
+    assert revision.calls == []
+    assert len(search_calls) == 1
+    assert search_calls[0]["strict_failure"] is True
+    report = kernel.state.scout_disambiguation_report_projection
+    assert report["route_available"] is True
+    assert report["scout_execution_posture"] == "executed"
+    assert report["executed_query_count"] == 1
+    assert report["live_provider_calls_executed"] is True
+    for key in (
+        "evidence_admitted",
+        "citation_eligible",
+        "source_obligation_satisfied",
+        "fetch_read_retrieval_behavior_changed",
+    ):
+        assert report[key] is False
+    assert kernel.state.evidence_ledger.to_projection().to_dict().get("evidence_items", []) == []
+
+
+def test_required_recon_provider_failure_uses_safe_scout_runtime_corridor() -> None:
+    revision = ResponseOnlyRevisionAdapter()
+    search_calls: list[dict[str, Any]] = []
+    kernel = _kernel_after_run_contract()
+
+    def failing_search(**kwargs: Any) -> list[dict[str, Any]]:
+        search_calls.append(dict(kwargs))
+        raise RuntimeError("private-provider-detail")
+
+    with pytest.raises(InitialQueryStrategyFailureError) as captured:
+        _converge(
+            _planner_payload(recon="required", required_recon=True),
+            scout_adapter=OrdinaryScoutDisambiguationAdapter(
+                available_providers={"serper": True},
+                scout_search=failing_search,
+            ),
+            revision_adapter=revision,
+            run_kernel=kernel,
+        )
+
+    terminal = captured.value.to_terminal_projection()
+    assert terminal["failure_origin"] == "scout_disambiguation_runtime"
+    assert terminal["failure_code"] == "scout_disambiguation_runtime_error"
+    assert "private-provider-detail" not in str(captured.value)
+    assert "private-provider-detail" not in json.dumps(terminal, sort_keys=True)
+    assert "required_scout_execution_empty" not in terminal.values()
+    assert "required_scout_route_unavailable" not in terminal.values()
+    assert len(search_calls) == 1
+    assert search_calls[0]["strict_failure"] is True
+    assert revision.calls == []
+    assert kernel.state.scout_disambiguation_report_state == {}
+    assert kernel.state.scout_disambiguation_report_projection == {}
+    assert kernel.state.scout_disambiguation_report_history == []
+    assert QUERY_PRODUCTION_STAGE not in kernel.state.projections
+    assert kernel.state.search_work_plan == {}
+    assert kernel.state.current_answer_contract == {}
+    assert kernel.state.evidence_ledger.to_projection().to_dict().get("evidence_items", []) == []
+
+
+def test_required_recon_cap_terminal_propagates_unchanged_without_revision() -> None:
+    revision = ResponseOnlyRevisionAdapter()
+    search_calls: list[dict[str, Any]] = []
+    terminal = RunCapExceeded(
+        "search_attempt_cap",
+        family=ExternalCallFamily.SEARCH,
+    )
+    kernel = _kernel_after_run_contract()
+
+    def exhausted_search(**kwargs: Any) -> list[dict[str, Any]]:
+        search_calls.append(dict(kwargs))
+        raise terminal
+
+    with pytest.raises(RunCapExceeded) as captured:
+        _converge(
+            _planner_payload(recon="required", required_recon=True),
+            scout_adapter=OrdinaryScoutDisambiguationAdapter(
+                available_providers={"serper": True},
+                scout_search=exhausted_search,
+            ),
+            revision_adapter=revision,
+            run_kernel=kernel,
+        )
+
+    assert captured.value is terminal
+    assert len(search_calls) == 1
+    assert revision.calls == []
+    assert kernel.state.scout_disambiguation_report_projection == {}
+
+
 def test_required_recon_posture_alone_fails_closed_without_adapter() -> None:
     kernel = _kernel_after_run_contract()
 
@@ -776,6 +945,14 @@ def test_injected_recon_revises_query_direction_and_remains_non_evidence() -> No
     _, admission = _admit(kernel, convergence)
 
     assert scout.calls and revision.calls
+    directional = revision.calls[0]["scout_directional_context"]
+    assert directional["non_evidence"] is True
+    assert directional["scout_hints_are_evidence"] is False
+    assert directional["evidence_admitted"] is False
+    assert directional["citation_eligible"] is False
+    assert directional["directional_hints"]
+    assert "snippet" not in directional["directional_hints"][0]
+    assert "link" not in directional["directional_hints"][0]
     assert convergence.query_production_result.candidate_queries == ["Renamed Example official current component 1"]
     assert admission.current_queries == ["Renamed Example official current component 1"]
     assert convergence.recon_summary[0]["status"] == "query_direction_revised"

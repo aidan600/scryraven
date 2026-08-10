@@ -553,6 +553,7 @@ def search_scout_results(
     cost_phase: str = "scout",
     cap_policy: RunCapPolicy | None = None,
     logical_call_id: str | None = None,
+    strict_failure: bool = False,
 ) -> list[dict[str, Any]]:
     """Provider-neutral lightweight scout search.
 
@@ -560,6 +561,10 @@ def search_scout_results(
     candidate-discovery contract without becoming separate evidence roles.
     Freshness is supplied by the caller's search-job policy and is omitted when
     no policy value is present.
+
+    ``strict_failure`` is internal Scout transport posture: it preserves a
+    provider failure for the owning Scout runtime to classify. The default
+    retains legacy bounded suppression for other callers.
     """
 
     provider_name = (provider or "").casefold()
@@ -582,6 +587,7 @@ def search_scout_results(
             log_context="Brave scout search",
             cap_policy=cap_policy,
             logical_call_id=logical_call_id,
+            strict_failure=strict_failure,
         )
     if provider_name == "serper":
         return _serper_search_results(
@@ -592,6 +598,7 @@ def search_scout_results(
             cost_phase=cost_phase,
             cap_policy=cap_policy,
             logical_call_id=logical_call_id,
+            strict_failure=strict_failure,
         )
     raise ValueError(f"unsupported scout provider: {provider}")
 
@@ -631,6 +638,7 @@ def _brave_search_results(
     log_context: str = "Brave scout search",
     cap_policy: RunCapPolicy | None = None,
     logical_call_id: str | None = None,
+    strict_failure: bool = False,
 ) -> list[dict[str, Any]]:
     import httpx
 
@@ -675,6 +683,8 @@ def _brave_search_results(
     except RunCapExceeded:
         raise
     except Exception as e:
+        if strict_failure:
+            raise
         if cap_policy is not None and cap_policy.bounded:
             logger.error("Bounded Brave provider request failed.")
             return []
@@ -717,6 +727,7 @@ def _serper_search_results(
     cost_phase: str = "scout",
     cap_policy: RunCapPolicy | None = None,
     logical_call_id: str | None = None,
+    strict_failure: bool = False,
 ) -> list[dict[str, Any]]:
     key = api_key or os.getenv("SERPER_API_KEY")
     if not key:
@@ -757,6 +768,8 @@ def _serper_search_results(
     except RunCapExceeded:
         raise
     except Exception as e:
+        if strict_failure:
+            raise
         if cap_policy is not None and cap_policy.bounded:
             logger.error("Bounded Serper provider request failed.")
             return []

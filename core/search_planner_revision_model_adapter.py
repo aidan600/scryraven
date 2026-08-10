@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable, Mapping, Sequence
 
+from core.cap_enforcement import RunCapExceeded
 from core.search_planner_revision_model_prompt import (
     SEARCH_PLANNER_REVISION_MODEL_PROMPT_SCHEMA_VERSION,
     SEARCH_PLANNER_REVISION_MODEL_SYSTEM_PROMPT,
@@ -21,7 +22,7 @@ from core.search_planner_revision_model_prompt import (
 from core.search_planner_revision_runtime import SearchPlannerRevisionRuntimeError
 
 SEARCH_PLANNER_REVISION_MODEL_ADAPTER_SCHEMA_VERSION = (
-    "search_planner_revision_model_adapter_ag_search_planner_revision_01_v1"
+    "search_planner_revision_model_adapter_ag_search_planner_revision_01_v2"
 )
 
 _TOP_LEVEL_REQUIRED = (
@@ -215,6 +216,8 @@ class SearchPlannerRevisionModelAdapter:
                 SEARCH_PLANNER_REVISION_MODEL_SYSTEM_PROMPT,
                 **model_kwargs,
             )
+        except RunCapExceeded:
+            raise
         except Exception as exc:
             raise SearchPlannerRevisionModelAdapterError(
                 f"search planner revision model call failed closed: {type(exc).__name__}"

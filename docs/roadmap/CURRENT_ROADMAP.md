@@ -335,8 +335,10 @@ remains the sole provider selector.
 Ordinary composition now uses the selected fast-model SearchPlanner. The model
 owns warranted one-to-five semantic decomposition and provider-neutral strategy
 proposal; deterministic machinery validates and binds without manufacturing a
-fallback plan. Typed planner, Scout, and revision `RunDeps` seams are installed,
-while Scout/revision remain uncomposed by default.
+fallback plan. Typed planner, Scout, and revision `RunDeps` seams are installed.
+`SEARCHOS-REQUIRED-SCOUT-ORDINARY-COMPOSITION-01` now composes the ordinary
+provider-neutral Scout and FAST PlannerRevision defaults when no adapter is
+injected.
 
 The default planner's selected OpenAI, OpenRouter, or Local connection facts
 are supplied through a transient non-retained wrapper, and its logical model
@@ -348,9 +350,29 @@ immediate primary by default, permits up to two initial candidates per component
 when a distinct need is recorded, and retains non-immediate secondary candidates
 for later SearchJudgment. It applies no small global initial-query truncation;
 the legacy `2 / 2 / 3` values are not SearchOS initial-allocation product policy.
-Recon is optional, response-only in offline proof, non-evidence, and bounded per
-affected component. No post-result follow-up loop, provider policy, READ,
-navigation, evidence/citation/Author change, or live call was installed.
+Recon remains need-based, non-evidence, and bounded per affected component.
+The later ordinary composition routes authorized Scout candidates through
+`DISCOVER(lightweight_disambiguation)` and hands only sanitized direction to
+FAST PlannerRevision; it adds no post-result follow-up loop, READ, navigation,
+evidence/citation/Author authority, or live validation in this build.
+
+## Implemented Build: SEARCHOS-REQUIRED-SCOUT-ORDINARY-COMPOSITION-01
+
+`SEARCHOS-REQUIRED-SCOUT-ORDINARY-COMPOSITION-01` completes the ordinary
+Scout-to-PlannerRevision lane without changing the SearchPlanner prompt or
+downgrading required recon. When Planner identifies recon, `run_pipeline()`
+uses the existing availability snapshot and `core.routing`
+`DISCOVER(lightweight_disambiguation)` decision, makes one cap-accounted
+`search_scout_results` call per authorized candidate, and records real work as
+`executed` / `not_live=false`. A missing lawful route is a blocked Scout result:
+optional recon keeps the primary and required recon fails closed.
+
+Only bounded sanitized directional fields are handed to the default FAST
+PlannerRevision model adapter through report/component/dimension/hint lineage.
+Scout material remains non-evidence and non-citation; it does not satisfy a
+source obligation, activate READ, alter retrieval, create custody, or create an
+Author input. Offline validation made no live provider, model, search, recon,
+fetch/read, or retrieval call.
 
 ## Completed Build: SEARCHOS-READ-SOURCE-AND-CUSTODY-01
 
@@ -444,18 +466,23 @@ the installed acquisition and custody owners.
 Immediate sequence:
 
 ```text
-complete PR #541 review and merge
--> verify current official prices for exact intended routes
+complete SEARCHOS-REQUIRED-SCOUT-ORDINARY-COMPOSITION-01 review and merge
+-> verify current official prices for exact intended routes, including Scout
 -> prepare one proposed local authorization
 -> obtain explicit maintainer approval
--> execute one bounded ordinary-product run
+-> execute one bounded ordinary-product pulse
 -> localize through the existing front or back half
 ```
 
 Repository-owned live-run price tables and numerical live-run defaults are not
-acceptable user authority. Bounded activation requires one complete explicit
-per-run authorization file; no reusable mode profiles exist. Do not add another
-infrastructure or calibration phase before the pulse.
+acceptable user authority. The proposed authorization must establish an
+acceptable, finite, enforceable product-level envelope across model, embedding,
+search, READ, retry, and dollar-bearing execution. The existing tracked bounded
+ordinary-product runner already provides that envelope; repair only the smallest
+ordinary-product cap surface required; Cap repair is permitted only when the
+existing runner lacks the required envelope. Bounded activation requires one
+complete explicit per-run authorization file; no reusable mode profiles exist.
+Do not add another infrastructure or calibration phase before the pulse.
 
 This gate remains active until supported-product evidence is obtained. Each
 implementation or live step requires its own authority.

@@ -787,8 +787,9 @@ def test_searchos_slice_a_is_installed_and_navigation_remains_active() -> None:
         "Planner transport matrix: selected OpenAI provider/model; exact OpenRouter key; exact Local base URL",
         "Planner cost accounting: 1 search_planner phase model-call entry; 0 double-counted entries",
         "Planner connection retention: 0 credential, endpoint, or accumulator objects in governed retained surfaces",
-        "Scout/revision remain uncomposed by default",
-        "semantic interpretation of its hints and revision of the plan must be model-driven",
+        "SEARCHOS-REQUIRED-SCOUT-ORDINARY-COMPOSITION-01",
+        "The ordinary provider-neutral Scout adapter maps each authorized candidate",
+        "Semantic interpretation of Scout hints and revision of the plan remains model-driven",
         "not semantic quality on arbitrary real-world requests",
         "Messy narrated one-intent request: 1 model-proposed and accepted component",
         "Invalid/unavailable model fixtures: 0 QueryPlan admissions; 0 search dispatches; 0 deterministic or legacy fallbacks",
@@ -804,6 +805,7 @@ def test_searchos_slice_a_is_installed_and_navigation_remains_active() -> None:
     ):
         assert phrase in brief
 
+    assert "Implemented Build: SEARCHOS-REQUIRED-SCOUT-ORDINARY-COMPOSITION-01" in roadmap
     assert "Completed Build: SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01" in roadmap
     assert "Completed Build: SEARCHOS-READ-SOURCE-AND-CUSTODY-01" in roadmap
     assert "Completed Build: SEARCHOS-FIRST-WAVE-AND-ITERATIVE-JUDGMENT-CUTOVER-01" in roadmap
