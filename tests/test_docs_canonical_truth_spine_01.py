@@ -235,12 +235,19 @@ def test_searchos_target_owner_is_unique_routed_and_nonactivating() -> None:
         "Search-result material",
         "Read-source material",
         "Navigation material",
+        "`DISCOVER job_class=orientation`",
+        "`DISCOVER job_class=standard_discovery`",
+        "`DISCOVER job_class=deep_discovery`",
+        "`RECON` and `SEARCH` may remain installed implementation terms during migration",
+        "They are not separate durable target pipelines or competing target query authorities",
+        "orientation is represented by `DISCOVER job_class=orientation` inside the unified acquisition loop",
         "Linkup Fetch and Tavily Extract are peer implementations",
         "Adaptive retrieval is approved but uninstalled",
         "The provider owns DNS",
         "No SearchOS infrastructure may be added merely",
     ):
         assert phrase in normalized
+    assert "**`RECON`**: non-evidence direction" not in normalized
 
     guidance = _read(GUIDANCE)
     assert SEARCHOS.name in guidance

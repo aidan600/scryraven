@@ -174,11 +174,14 @@ authority merely because a provider returned it.
 
 ## Provider-Neutral Operations
 
-The target SearchOS vocabulary is:
+The selected target SearchOS vocabulary is:
 
-- **`RECON`**: non-evidence direction for entity, alias, jurisdiction,
-  currentness, official venue, and query refinement.
-- **`SEARCH`**: candidate URLs plus bounded provider context.
+- **`DISCOVER job_class=orientation`**: non-evidence direction for entity,
+  alias, jurisdiction, currentness, official venue, and query refinement.
+- **`DISCOVER job_class=standard_discovery`**: ordinary candidate URL
+  acquisition plus bounded provider context.
+- **`DISCOVER job_class=deep_discovery`**: deeper candidate acquisition when
+  the component's acquisition need warrants it.
 - **`READ_PAGE`**: fuller material for one known URL.
 - **`NAVIGATE`**: one exact next URL derived from a read source; it remains a
   candidate until separately read.
@@ -186,10 +189,17 @@ The target SearchOS vocabulary is:
 - **`CRAWL_SITE`**: bounded page collection with one identity and custody
   record per page.
 
-These are target architectural operations. They do not rename installed runtime
-enum values. Linkup Fetch and Tavily Extract are peer implementations of
-`READ_PAGE`; neither is a distinct research authority. A provider-reported URL
-is useful optional metadata, not network-path attestation.
+These are selected target architectural operations. `RECON` and `SEARCH` may
+remain installed implementation terms during migration. They are not separate
+durable target pipelines or competing target query authorities. Cheap
+orientation is represented by `DISCOVER job_class=orientation` inside the
+unified acquisition loop.
+
+The selected target does not rename installed runtime enum values or claim that
+current main already implements these job classes. Linkup Fetch and Tavily
+Extract are peer implementations of `READ_PAGE`; neither is a distinct research
+authority. A provider-reported URL is useful optional metadata, not network-path
+attestation.
 
 ## Iterative SearchOS Loop
 
