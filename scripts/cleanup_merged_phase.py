@@ -468,7 +468,11 @@ def working_tree_dirty(repo: Path) -> bool:
 
 
 def ensure_ordinary_on_main(
-    repo: Path, main_branch: str, report: CleanupReport
+    repo: Path,
+    main_branch: str,
+    phase_branch: str,
+    reviewed_head: str,
+    report: CleanupReport,
 ) -> None:
     posture, head, detached = ordinary_head_state(repo)
     report.initial_ordinary_posture = posture
@@ -488,6 +492,28 @@ def ensure_ordinary_on_main(
                 f"detached ordinary checkout could not switch to {main_branch}: {detail}",
             )
         report.add_action(f"switched detached ordinary checkout to {main_branch}")
+        return
+    if (
+        posture == phase_branch
+        and head == reviewed_head
+        and report.merge_gate == "passed"
+        and report.review_identity == "passed"
+    ):
+        # This recovery is deliberately available only after the caller has
+        # proven both the reviewed commit's merge and the phase branch's exact
+        # review identity. Branch-name equality alone is never authorization.
+        switch = run_git(repo, ["switch", main_branch])
+        if not switch.ok:
+            detail = (switch.stderr or switch.stdout).strip()
+            raise CleanupBlocked(
+                EXIT_GIT_STATE,
+                "exact reviewed merged phase branch ordinary checkout could not "
+                f"switch to {main_branch}: {detail}",
+            )
+        report.add_action(
+            "switched exact reviewed merged phase branch ordinary checkout to "
+            f"{main_branch}"
+        )
         return
     if posture != main_branch:
         raise CleanupBlocked(
@@ -1162,9 +1188,15 @@ def run_cleanup(argv: Sequence[str] | None = None) -> int:
         report.phase_worktree = str(phase_worktree)
 
         merge_gate(repo, remote, main_branch, reviewed_head, report)
-        ensure_ordinary_on_main(repo, main_branch, report)
-        sync_main_ff_only(repo, remote, main_branch, report)
         review_identity_gate(repo, phase_branch, reviewed_head, report)
+        ensure_ordinary_on_main(
+            repo,
+            main_branch,
+            phase_branch,
+            reviewed_head,
+            report,
+        )
+        sync_main_ff_only(repo, remote, main_branch, report)
 
         cleanup_phase_worktree(
             repo,

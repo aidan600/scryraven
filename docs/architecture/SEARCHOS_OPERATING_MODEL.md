@@ -45,6 +45,103 @@ Narrower owners remain subordinate:
 
 Sufficiency does not independently mutate or terminate run state.
 
+## Selected Front-Half Rebaseline (Target; Not Installed)
+
+On 2026-08-11 the maintainer selected **Option C modified into a unified
+iterative loop** as the SearchOS front-half target architecture. This replaces
+exception-by-exception Scout / PlannerRevision repair as the forward direction;
+it does not describe current installed behavior. Current `main` may still
+contain and execute `ScoutDisambiguation`, `PlannerRevision`, `SearchWorkPlan`,
+and `QueryProduction`. [ScryRaven Current State](SCRYRAVEN_CURRENT_STATE.md)
+remains the exclusive owner of installed truth.
+
+The target ordinary shape is:
+
+```text
+User request
+-> compact model-owned SearchPlanner semantic proposal
+-> deterministic semantic compiler
+-> uncertainty-aware AnswerContract
+-> one RunKernel component worklist
+-> QueryPlan
+   - exact executable query
+   - provider-neutral discovery job class
+   - component/slot lineage
+-> core.routing
+-> DISCOVER
+-> SearchJudgment
+   - refine or escalate discovery
+   - request READ
+   - propose bounded factual InterpretationBinding
+   - request clarification
+   - semantic handoff
+   - honest unresolved blocker
+```
+
+There is no target ordinary `ScoutDisambiguation -> PlannerRevision -> initial
+routine ContractAmendment -> return to ordinary search` lane. Search-assisted
+ambiguity handling belongs inside this same acquisition loop; components do not
+receive separate ambiguity pipelines.
+
+### Target authority boundaries
+
+- **SearchPlanner** owns semantic interpretation only.
+- The **deterministic semantic compiler** mechanically constructs lawful state
+  after a semantic proposal.
+- **AnswerContract** owns canonical requested obligations, constraints, stable
+  slots, and explicit unresolved factual slots.
+- **QueryPlan** is the sole exact executable-query identity and carries the
+  provider-neutral discovery job class plus component/slot lineage.
+- **`core.routing`** selects provider and operation.
+- **SearchJudgment** is the unified acquisition judgment after `DISCOVER` or
+  `READ`.
+- **RunKernel** owns admission and canonical state.
+- **InterpretationBinding** is a small append-only, RunKernel-admitted filling
+  of an already-declared factual slot.
+- **EvidenceLedger, Analyst, D-prime, Sufficiency, FinalAnswerPacket, and
+  Author** retain their existing downstream authorities.
+
+SearchJudgment may propose a factual binding, but it may not create or redefine
+components, change requested scope, facts, or obligations, select providers,
+admit its own binding, admit evidence, claim support, decide Sufficiency, or
+author an answer.
+
+### Target uncertainty behavior
+
+The target distinguishes clear semantic intent, acquisition uncertainty,
+factually resolvable identity/currentness/version/terminology uncertainty, true
+user-intent ambiguity, and mixed multi-component uncertainty.
+
+- A clear request, such as the default `rel_tol` and `abs_tol` values for
+  `math.isclose()` in the official Python documentation, takes ordinary
+  discovery without a special ambiguity pipeline.
+- A factually orientable request, such as a recent Galloway controversy, may
+  use bounded orientation discovery or READ to support binding Scott Galloway
+  only when contextual and current fit strongly dominates materially plausible
+  alternatives. Popularity alone is insufficient.
+- For a truly ambiguous request such as "Tell me about Mercury," a bounded
+  orientation attempt may occur, but clarification remains appropriate when
+  the planet, element, automobile/brand, or other meanings are materially
+  plausible.
+- In mixed requests, stable components may discover/read while factually
+  unresolved components orient/bind/discover and materially ambiguous
+  components request clarification, all within one component worklist.
+
+### Provider-neutral target job direction
+
+The selected target job vocabulary is `orientation`, `standard_discovery`, and
+`deep_discovery`. These name acquisition need, not a provider brand;
+`core.routing` remains the provider mapper. The target does not encode policy
+such as `orientation = Serper`, `standard = Linkup`, or `deep = Exa/Tavily`.
+Provider mapping requires later calibration and evidence. `READ` remains a
+separate known-URL capability and may assist orientation without automatically
+becoming semantic support.
+
+Implementation order, SearchPlanner request remeasurement, and retirement of
+the current ordinary compatibility carriers are owned by the
+[Current Roadmap](../roadmap/CURRENT_ROADMAP.md). Nothing in this section
+installs the target loop or authorizes a live call.
+
 ## Minimum Shared Provider Contract
 
 SearchOS is designed around the minimum shared search result:
@@ -77,11 +174,14 @@ authority merely because a provider returned it.
 
 ## Provider-Neutral Operations
 
-The target SearchOS vocabulary is:
+The selected target SearchOS vocabulary is:
 
-- **`RECON`**: non-evidence direction for entity, alias, jurisdiction,
-  currentness, official venue, and query refinement.
-- **`SEARCH`**: candidate URLs plus bounded provider context.
+- **`DISCOVER job_class=orientation`**: non-evidence direction for entity,
+  alias, jurisdiction, currentness, official venue, and query refinement.
+- **`DISCOVER job_class=standard_discovery`**: ordinary candidate URL
+  acquisition plus bounded provider context.
+- **`DISCOVER job_class=deep_discovery`**: deeper candidate acquisition when
+  the component's acquisition need warrants it.
 - **`READ_PAGE`**: fuller material for one known URL.
 - **`NAVIGATE`**: one exact next URL derived from a read source; it remains a
   candidate until separately read.
@@ -89,10 +189,17 @@ The target SearchOS vocabulary is:
 - **`CRAWL_SITE`**: bounded page collection with one identity and custody
   record per page.
 
-These are target architectural operations. They do not rename installed runtime
-enum values. Linkup Fetch and Tavily Extract are peer implementations of
-`READ_PAGE`; neither is a distinct research authority. A provider-reported URL
-is useful optional metadata, not network-path attestation.
+These are selected target architectural operations. `RECON` and `SEARCH` may
+remain installed implementation terms during migration. They are not separate
+durable target pipelines or competing target query authorities. Cheap
+orientation is represented by `DISCOVER job_class=orientation` inside the
+unified acquisition loop.
+
+The selected target does not rename installed runtime enum values or claim that
+current main already implements these job classes. Linkup Fetch and Tavily
+Extract are peer implementations of `READ_PAGE`; neither is a distinct research
+authority. A provider-reported URL is useful optional metadata, not network-path
+attestation.
 
 ## Iterative SearchOS Loop
 

@@ -236,6 +236,228 @@ def test_case_b_detached_ordinary_checkout(tmp_path: Path) -> None:
     assert not fx.phase_root.exists()
 
 
+def test_exact_reviewed_merged_phase_branch_recovers_to_main(tmp_path: Path) -> None:
+    """A clean ordinary checkout on the exact reviewed phase branch is recoverable."""
+    fx = build_merged_phase_fixture(tmp_path, with_worktree=False)
+    _git(fx.repo, "switch", fx.phase_branch)
+
+    result = run_cleanup(fx)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "switched exact reviewed merged phase branch ordinary checkout to main" in result.stdout
+    assert _git(fx.repo, "symbolic-ref", "--short", "HEAD").stdout.strip() == "main"
+    assert not fx.phase_root.exists()
+    assert _git(
+        fx.repo,
+        "show-ref",
+        "--verify",
+        "--quiet",
+        f"refs/heads/{fx.phase_branch}",
+        check=False,
+    ).returncode != 0
+
+
+def test_dirty_exact_phase_branch_does_not_auto_switch(tmp_path: Path) -> None:
+    fx = build_merged_phase_fixture(tmp_path, with_worktree=False)
+    _git(fx.repo, "switch", fx.phase_branch)
+    _write(fx.repo / "keep-local.txt", "preserve\n")
+
+    result = run_cleanup(fx)
+
+    assert result.returncode != 0
+    assert "ordinary checkout is dirty" in result.stdout.lower()
+    assert "switched exact reviewed merged phase branch" not in result.stdout
+    assert _git(fx.repo, "symbolic-ref", "--short", "HEAD").stdout.strip() == fx.phase_branch
+    assert (fx.repo / "keep-local.txt").exists()
+    assert fx.phase_root.exists()
+
+
+def test_unrelated_ordinary_branch_does_not_auto_switch(tmp_path: Path) -> None:
+    fx = build_merged_phase_fixture(tmp_path, with_worktree=False)
+    _git(fx.repo, "branch", "unrelated-branch", "main")
+    _git(fx.repo, "switch", "unrelated-branch")
+
+    result = run_cleanup(fx)
+
+    assert result.returncode != 0
+    assert "unexpected branch" in result.stdout.lower()
+    assert "switched exact reviewed merged phase branch" not in result.stdout
+    assert _git(fx.repo, "symbolic-ref", "--short", "HEAD").stdout.strip() == "unrelated-branch"
+    assert fx.phase_root.exists()
+
+
+def test_exact_phase_branch_head_mismatch_blocks_before_switch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The recovery check requires the ordinary HEAD, not just the branch name."""
+    fx = build_merged_phase_fixture(tmp_path, with_worktree=False)
+    _git(fx.repo, "switch", fx.phase_branch)
+    sys.path.insert(0, str(ENGINE.parent))
+    import cleanup_merged_phase as mod
+
+    real_ordinary_head_state = mod.ordinary_head_state
+
+    def mismatched_ordinary_head_state(repo: Path) -> tuple[str, str, bool]:
+        posture, _head, detached = real_ordinary_head_state(repo)
+        if repo == fx.repo and posture == fx.phase_branch:
+            return posture, "0" * 40, detached
+        return posture, _head, detached
+
+    monkeypatch.setattr(mod, "ordinary_head_state", mismatched_ordinary_head_state)
+    code = mod.run_cleanup(
+        [
+            "--reviewed-head",
+            fx.reviewed_head,
+            "--phase-branch",
+            fx.phase_branch,
+            "--phase-root",
+            str(fx.phase_root),
+            "--repo",
+            str(fx.repo),
+            "--phase-parent",
+            str(fx.phase_parent),
+        ]
+    )
+    captured = capsys.readouterr().out
+
+    assert code == mod.EXIT_GIT_STATE
+    assert "ordinary checkout is on unexpected branch" in captured.lower()
+    assert "switched exact reviewed merged phase branch" not in captured
+    assert _git(fx.repo, "symbolic-ref", "--short", "HEAD").stdout.strip() == fx.phase_branch
+    assert fx.phase_root.exists()
+
+
+def test_phase_branch_review_identity_mismatch_blocks_before_switch(tmp_path: Path) -> None:
+    fx = build_merged_phase_fixture(tmp_path, with_worktree=False)
+    _git(fx.repo, "switch", fx.phase_branch)
+    _write(fx.repo / "unreviewed.txt", "unreviewed\n")
+    _git(fx.repo, "add", "unreviewed.txt")
+    _git(fx.repo, "commit", "-m", "unreviewed local advance")
+
+    result = run_cleanup(fx)
+
+    assert result.returncode == 7
+    assert "review-identity" in result.stdout.lower() or "identity" in result.stdout.lower()
+    assert "switched exact reviewed merged phase branch" not in result.stdout
+    assert _git(fx.repo, "symbolic-ref", "--short", "HEAD").stdout.strip() == fx.phase_branch
+    assert fx.phase_root.exists()
+
+
+def test_unmerged_exact_phase_branch_does_not_auto_switch(tmp_path: Path) -> None:
+    fx = build_merged_phase_fixture(
+        tmp_path,
+        with_worktree=False,
+        merge_to_origin_main=False,
+    )
+    _git(fx.repo, "switch", fx.phase_branch)
+
+    result = run_cleanup(fx)
+
+    assert result.returncode == 2
+    assert "merge gate" in result.stdout.lower()
+    assert "switched exact reviewed merged phase branch" not in result.stdout
+    assert _git(fx.repo, "symbolic-ref", "--short", "HEAD").stdout.strip() == fx.phase_branch
+    assert fx.phase_root.exists()
+
+
+def test_exact_phase_branch_main_switch_failure_blocks_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fx = build_merged_phase_fixture(tmp_path, with_worktree=False)
+    _git(fx.repo, "switch", fx.phase_branch)
+    sys.path.insert(0, str(ENGINE.parent))
+    import cleanup_merged_phase as mod
+
+    real_run_git = mod.run_git
+
+    def fail_main_switch(
+        repo: Path, args: list[str], *, check: bool = False
+    ) -> mod.GitResult:
+        if repo == fx.repo and args == ["switch", "main"]:
+            return mod.GitResult(
+                args=args,
+                returncode=1,
+                stdout="",
+                stderr="simulated switch failure",
+            )
+        return real_run_git(repo, args, check=check)
+
+    monkeypatch.setattr(mod, "run_git", fail_main_switch)
+    code = mod.run_cleanup(
+        [
+            "--reviewed-head",
+            fx.reviewed_head,
+            "--phase-branch",
+            fx.phase_branch,
+            "--phase-root",
+            str(fx.phase_root),
+            "--repo",
+            str(fx.repo),
+            "--phase-parent",
+            str(fx.phase_parent),
+        ]
+    )
+    captured = capsys.readouterr().out
+
+    assert code == mod.EXIT_GIT_STATE
+    assert "could not switch to main" in captured.lower()
+    assert "switched exact reviewed merged phase branch" not in captured
+    assert _git(fx.repo, "symbolic-ref", "--short", "HEAD").stdout.strip() == fx.phase_branch
+    assert fx.phase_root.exists()
+
+
+def test_exact_phase_branch_ff_only_failure_blocks_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fx = build_merged_phase_fixture(tmp_path, with_worktree=False)
+    _git(fx.repo, "switch", fx.phase_branch)
+    sys.path.insert(0, str(ENGINE.parent))
+    import cleanup_merged_phase as mod
+
+    real_run_git = mod.run_git
+
+    def fail_ff_only(
+        repo: Path, args: list[str], *, check: bool = False
+    ) -> mod.GitResult:
+        if repo == fx.repo and args == ["merge", "--ff-only", "origin/main"]:
+            return mod.GitResult(
+                args=args,
+                returncode=1,
+                stdout="",
+                stderr="simulated ff-only failure",
+            )
+        return real_run_git(repo, args, check=check)
+
+    monkeypatch.setattr(mod, "run_git", fail_ff_only)
+    code = mod.run_cleanup(
+        [
+            "--reviewed-head",
+            fx.reviewed_head,
+            "--phase-branch",
+            fx.phase_branch,
+            "--phase-root",
+            str(fx.phase_root),
+            "--repo",
+            str(fx.repo),
+            "--phase-parent",
+            str(fx.phase_parent),
+        ]
+    )
+    captured = capsys.readouterr().out
+
+    assert code == mod.EXIT_GIT_OP
+    assert "fast-forward sync of main failed" in captured.lower()
+    assert "switched exact reviewed merged phase branch ordinary checkout to main" in captured
+    assert _git(fx.repo, "symbolic-ref", "--short", "HEAD").stdout.strip() == "main"
+    assert fx.phase_root.exists()
+
+
 def test_case_c_main_behind_origin(tmp_path: Path) -> None:
     fx = build_merged_phase_fixture(tmp_path)
     # Local main intentionally behind origin/main after merge push.

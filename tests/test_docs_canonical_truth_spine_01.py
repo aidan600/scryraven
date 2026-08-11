@@ -235,12 +235,19 @@ def test_searchos_target_owner_is_unique_routed_and_nonactivating() -> None:
         "Search-result material",
         "Read-source material",
         "Navigation material",
+        "`DISCOVER job_class=orientation`",
+        "`DISCOVER job_class=standard_discovery`",
+        "`DISCOVER job_class=deep_discovery`",
+        "`RECON` and `SEARCH` may remain installed implementation terms during migration",
+        "They are not separate durable target pipelines or competing target query authorities",
+        "orientation is represented by `DISCOVER job_class=orientation` inside the unified acquisition loop",
         "Linkup Fetch and Tavily Extract are peer implementations",
         "Adaptive retrieval is approved but uninstalled",
         "The provider owns DNS",
         "No SearchOS infrastructure may be added merely",
     ):
         assert phrase in normalized
+    assert "**`RECON`**: non-evidence direction" not in normalized
 
     guidance = _read(GUIDANCE)
     assert SEARCHOS.name in guidance
@@ -458,7 +465,7 @@ def test_structured_route_qualification_is_current_and_narrow() -> None:
 
     assert "No route-qualification repair was performed." not in current
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
-    assert "Active Decision Gate: Bounded Product Pulse" in roadmap
+    assert "Active Decision Gate: Unified SearchOS Front-Half Rebaseline" in roadmap
 
 
 def test_current_state_has_all_installed_capability_markers() -> None:
@@ -524,7 +531,7 @@ def test_mode_policy_recovery_custody_is_installed_and_narrow() -> None:
     assert "Completed Repair: Mode-Policy Recovery Authority Containment" in roadmap
     assert "Completed Repair: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01" in roadmap
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
-    assert "Active Decision Gate: Bounded Product Pulse" in roadmap
+    assert "Active Decision Gate: Unified SearchOS Front-Half Rebaseline" in roadmap
     assert "No live recovery" in roadmap
 
 
@@ -641,7 +648,7 @@ def test_acquisition_runtime_convergence_truth_is_consistent_across_spine() -> N
 
     assert roadmap.count("## Active Next:") == 0
     assert roadmap.count("## Blocked Next:") == 0
-    assert "## Active Decision Gate: Bounded Product Pulse" in roadmap
+    assert "## Active Decision Gate: Unified SearchOS Front-Half Rebaseline" in roadmap
     for stale in (
         "## Active Next: KNOWN-URL-READ-FOUNDATION-01",
         "### TAVILY-EXTRACT-AND-MAP-ADAPTERS-01",
@@ -731,7 +738,7 @@ def test_discovery_retirement_and_candidate_handoff_truth_is_consistent() -> Non
     navigation_index = roadmap_folded.index(
         "## completed build: searchos-one-hop-navigation-product-activation-01"
     )
-    active_index = roadmap_folded.index("## active decision gate: bounded product pulse")
+    active_index = roadmap_folded.index("## active decision gate: unified searchos front-half rebaseline")
     assert (
         handoff_index
         < query_index
@@ -810,9 +817,10 @@ def test_searchos_slice_a_is_installed_and_navigation_remains_active() -> None:
     assert "Completed Build: SEARCHOS-READ-SOURCE-AND-CUSTODY-01" in roadmap
     assert "Completed Build: SEARCHOS-FIRST-WAVE-AND-ITERATIVE-JUDGMENT-CUTOVER-01" in roadmap
     assert "Completed Build: SEARCHOS-ONE-HOP-NAVIGATION-PRODUCT-ACTIVATION-01" in roadmap
-    assert "## Active Decision Gate: Bounded Product Pulse" in roadmap
-    assert "one bounded ordinary-product pulse" in roadmap
-    assert "Cap repair is permitted only when" in roadmap
+    assert "## Active Decision Gate: Unified SearchOS Front-Half Rebaseline" in roadmap
+    assert "Phase 1 - Sparse uncertainty-aware planning" in roadmap
+    assert "Phase 2 - Unified iterative acquisition" in roadmap
+    assert "Phase 3 - Carrier consolidation + product proof" in roadmap
     assert "SEARCHOS-OPERATING-MODEL.md" not in _read(QUERY_CONVERGENCE_BRIEF)
 
 
@@ -898,7 +906,7 @@ def test_provider_offerings_census_is_current_complete_and_records_installed_rou
     roadmap = _read(ROADMAP)
     assert roadmap.count("## Active Next:") == 0
     assert roadmap.count("## Blocked Next:") == 0
-    assert "## Active Decision Gate: Bounded Product Pulse" in roadmap
+    assert "## Active Decision Gate: Unified SearchOS Front-Half Rebaseline" in roadmap
     assert "## Completed Repair: PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01" in roadmap
     assert "Linkup `standard/searchResults` first" in roadmap
 
@@ -927,7 +935,7 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
     acquisition_control = roadmap.index("## Completed Build: RUNKERNEL-ACQUISITION-CONTROL-FOUNDATION-01")
     discovery_retirement = roadmap.index("## Completed Build: INITIAL-DISCOVERY-SELECTIVE-FETCH-RETIREMENT-01")
     candidate_handoff = roadmap.index("## Completed Build: DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01")
-    convergence = roadmap.index("## Active Decision Gate: Bounded Product Pulse")
+    convergence = roadmap.index("## Active Decision Gate: Unified SearchOS Front-Half Rebaseline")
     assert (
         s0
         < s1
@@ -982,7 +990,7 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
             assert marker not in roadmap
 
 
-def test_bounded_product_pulse_gate_and_searchplanner_record_are_exclusive() -> None:
+def test_unified_searchos_rebaseline_gate_and_searchplanner_record_are_exclusive() -> None:
     roadmap_raw = _read(ROADMAP)
     roadmap = _collapsed(ROADMAP)
     tracker = _collapsed(SEARCHPLANNER_TRACKER)
@@ -993,7 +1001,7 @@ def test_bounded_product_pulse_gate_and_searchplanner_record_are_exclusive() -> 
         roadmap_raw,
         re.MULTILINE,
     )
-    assert active_gates == ["## Active Decision Gate: Bounded Product Pulse"]
+    assert active_gates == ["## Active Decision Gate: Unified SearchOS Front-Half Rebaseline"]
     assert "Runtime-audit-through:" not in roadmap
     assert "Verified-against-runtime:" not in roadmap
 
@@ -1006,12 +1014,12 @@ def test_bounded_product_pulse_gate_and_searchplanner_record_are_exclusive() -> 
         assert transient not in roadmap
 
     for phrase in (
-        "acceptable, finite, enforceable product-level envelope",
-        "model, embedding, search, READ, retry, and dollar-bearing execution",
-        "existing tracked bounded ordinary-product runner already provides that envelope",
-        "repair only the smallest ordinary-product cap surface required",
-        "Cap repair is permitted only when the existing runner lacks the required envelope",
-        "This gate remains active until supported-product evidence is obtained",
+        "Option C modified into a unified iterative loop",
+        "Current `main` may still contain and execute",
+        "one RunKernel component worklist",
+        "direct_simple | sparse components",
+        "Phase 2 - Unified iterative acquisition",
+        "93-96% invariant",
         "supported-product evidence",
         "existing front- or back-half localization",
         "smallest owning repair",
@@ -1086,10 +1094,10 @@ def test_semantic_scout_and_provider_synthesis_retirement_is_current_and_narrow(
     assert roadmap.count("## Active Next:") == 0
     assert roadmap.count("## Blocked Next:") == 0
     assert "## Completed Repair: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01" in roadmap
-    assert "## Active Decision Gate: Bounded Product Pulse" in roadmap
+    assert "## Active Decision Gate: Unified SearchOS Front-Half Rebaseline" in roadmap
     assert "## Active Next: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01" not in roadmap
     assert roadmap.index("## Completed Repair: PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01") < roadmap.index(
-        "## Active Decision Gate: Bounded Product Pulse"
+        "## Active Decision Gate: Unified SearchOS Front-Half Rebaseline"
     )
     for noninstalled in (
         "provider-failure retry",
@@ -1124,7 +1132,7 @@ def test_legacy_economist_ordinary_execution_retirement_is_current_and_narrow() 
     assert "Completed Repair: Mode-Policy Recovery Authority Containment" in roadmap
     assert "Completed Repair: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01" in roadmap
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
-    assert "Active Decision Gate: Bounded Product Pulse" in roadmap
+    assert "Active Decision Gate: Unified SearchOS Front-Half Rebaseline" in roadmap
     assert "answer-producing paths" in roadmap
     assert "remaining orchestrator authority islands" in roadmap
 

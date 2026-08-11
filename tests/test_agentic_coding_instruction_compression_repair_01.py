@@ -386,17 +386,17 @@ def test_execution_surfaces_are_command_level_and_bound_product_claims() -> None
     assert "Claim forbidden:" in proof
 
 
-def test_revised_roadmap_has_one_bounded_product_pulse_gate() -> None:
+def test_revised_roadmap_has_one_unified_searchos_rebaseline_gate() -> None:
     roadmap = _read(ROADMAP)
 
     assert "Completed Proof: Post-Retirement Product Topology" in roadmap
     assert "Completed Repair: Validation and Execution-Surface Ergonomics Closure" in roadmap
-    assert roadmap.count("## Active Decision Gate: Bounded Product Pulse") == 1
+    assert roadmap.count("## Active Decision Gate: Unified SearchOS Front-Half Rebaseline") == 1
     assert roadmap.count("## Active Next:") == 0
-    assert "acceptable, finite, enforceable product-level envelope" in roadmap
-    assert "one bounded ordinary-product pulse" in roadmap
-    assert "Cap repair is permitted only when" in roadmap
-    assert "This gate remains active until supported-product evidence is obtained" in roadmap
+    assert "Option C modified into a unified iterative loop" in roadmap
+    assert "Phase 1 - Sparse uncertainty-aware planning" in roadmap
+    assert "Phase 2 - Unified iterative acquisition" in roadmap
+    assert "Phase 3 - Carrier consolidation + product proof" in roadmap
     assert "smallest owning repair" in roadmap
     assert "another product pulse" in roadmap
 
