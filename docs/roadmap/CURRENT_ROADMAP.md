@@ -461,31 +461,143 @@ and recursive-navigation limit calibration are not installed, are not part of
 the one-hop MVP, and have no ordinary product caller. Any later phase must reuse
 the installed acquisition and custody owners.
 
-## Active Decision Gate: Bounded Product Pulse
+## Active Decision Gate: Unified SearchOS Front-Half Rebaseline
 
-Immediate sequence:
+The maintainer has selected **Option C modified into a unified iterative loop**
+as the SearchOS front-half target. This supersedes the previous immediate
+bounded-product-pulse sequence. The bounded cleanup/documentation repair that
+records this decision changes no product runtime behavior.
+
+### Installed versus selected target
+
+The selected architecture is a future target, not a claim about `main` today.
+Current `main` may still contain and execute `ScoutDisambiguation`,
+`PlannerRevision`, `SearchWorkPlan`, and `QueryProduction`. Installed truth is
+owned by [ScryRaven Current State](../architecture/SCRYRAVEN_CURRENT_STATE.md),
+while the target architecture is owned by the
+[SearchOS Operating Model](../architecture/SEARCHOS_OPERATING_MODEL.md).
+
+The target ordinary shape is one unified component worklist:
 
 ```text
-complete SEARCHOS-REQUIRED-SCOUT-ORDINARY-COMPOSITION-01 review and merge
--> verify current official prices for exact intended routes, including Scout
--> prepare one proposed local authorization
--> obtain explicit maintainer approval
--> execute one bounded ordinary-product pulse
--> localize through the existing front or back half
+user request
+-> compact SearchPlanner semantic proposal
+-> deterministic semantic compiler
+-> uncertainty-aware AnswerContract
+-> one RunKernel component worklist
+-> QueryPlan exact query + provider-neutral job class + component/slot lineage
+-> core.routing
+-> DISCOVER / READ
+-> SearchJudgment iteration
+-> InterpretationBinding, clarification, semantic handoff, or honest blocker
 ```
 
-Repository-owned live-run price tables and numerical live-run defaults are not
-acceptable user authority. The proposed authorization must establish an
-acceptable, finite, enforceable product-level envelope across model, embedding,
-search, READ, retry, and dollar-bearing execution. The existing tracked bounded
-ordinary-product runner already provides that envelope; repair only the smallest
-ordinary-product cap surface required; Cap repair is permitted only when the
-existing runner lacks the required envelope. Bounded activation requires one
-complete explicit per-run authorization file; no reusable mode profiles exist.
-Do not add another infrastructure or calibration phase before the pulse.
+Search-assisted ambiguity belongs in that loop. It does not create an ordinary
+ScoutDisambiguation / PlannerRevision / routine ContractAmendment return lane.
+`orientation`, `standard_discovery`, and `deep_discovery` are target
+provider-neutral job concepts; they express acquisition need, not a provider
+brand. `core.routing` remains the provider mapper, and `READ` remains a
+separate known-URL capability that may assist orientation without automatically
+becoming semantic support.
 
-This gate remains active until supported-product evidence is obtained. Each
-implementation or live step requires its own authority.
+### Product-phase packaging doctrine
+
+The selected sequence is capability-sized:
+
+```text
+capability-sized phase
+-> deterministic/offline proof
+-> representative corpus/product proof where genuinely needed
+-> coherent PR
+```
+
+It must not return to `safe subtype -> micro repair -> PR -> pulse -> next
+subtype`. A newly exposed safe failure within this licensed architectural
+corridor remains in the same phase unless it proves a different owner or
+requires a new architecture decision.
+
+### Phase 1 - Sparse uncertainty-aware planning
+
+Completion line:
+
+```text
+user request
+-> sparse SearchPlanner proposal
+-> deterministic compiler
+-> uncertainty-aware AnswerContract
+```
+
+Phase 1 immediately consumes the SearchPlanner simplification finding; it is
+not merely a schema addition. The ordinary interface becomes complexity-scaled
+and fail-closed: `direct_simple | sparse components`. A routine request may be
+as small as `{"disposition":"direct_simple"}`; sparse source/freshness/dependency/uncertainty
+exceptions. The model authors meaning;
+code authors deterministic IDs, digests, lineage references, mechanical
+bindings/defaults, and other administrative construction. Existing downstream
+legacy carriers are temporary compatibility consumers only.
+
+The static architecture audit found approximately 93-96% invariant,
+static, or administrative ordinary SearchPlanner request material, depending on
+fixture and attribution method. The selected target is approximately an 84-87%
+reduction in ordinary request size. These are architecture measurements, not
+live proof or achieved acceptance facts. Phase 1 must remeasure and report:
+
+- baseline total request size;
+- baseline static/administrative size;
+- candidate total request size;
+- candidate static/administrative size;
+- absolute reduction; and
+- percentage reduction.
+
+Failure to materially simplify the Planner contract defeats Phase 1's purpose.
+Routine model-authored IDs, digests, lineage references, administrative empty
+arrays, mechanical defaults/bindings, closed-surface flags, provider brands,
+recon queries, revision records, and exact executable-query identity are not
+part of the target model-owned semantic proposal. Unresolved factual slots and
+their resolution policy remain explicit in AnswerContract.
+
+### Phase 2 - Unified iterative acquisition
+
+Completion line:
+
+```text
+AnswerContract
+-> QueryPlan job
+-> routing
+-> DISCOVER / READ
+-> SearchJudgment iteration
+-> InterpretationBinding or clarification
+-> semantic handoff
+```
+
+Phase 2 implements provider-neutral discovery job classes, one unified
+SearchJudgment refinement loop, bounded factual InterpretationBinding,
+clarification, READ-assisted orientation without evidence laundering, and
+component/slot-local budgets and cursors in one component worklist. It has no
+special ambiguity pipeline.
+
+Its primary retirement target is the ordinary `ScoutDisambiguation`, ordinary
+`PlannerRevision`, initial routine `PlannerRevision` ContractAmendment lane,
+and recon bureaucracy used only by those lanes.
+
+### Phase 3 - Carrier consolidation + product proof
+
+Completion line:
+
+```text
+AnswerContract
+-> QueryPlan
+```
+
+Phase 3 removes redundant ordinary semantic/query carrier round trips after
+deterministic parity. Its primary folding targets are the rich `SearchWorkPlan`
+duplicate carrier, `QueryProduction` duplicated query projection, rich Planner
+compatibility, and legacy recon states/actions. This phase owns bounded
+representative corpus/product proof after deterministic parity.
+
+No live provider, model, search, fetch/read, retrieval, or product call is
+authorized by this roadmap. Any later live proof still requires its own explicit
+authorization.
 
 
 ## Durable Evidence Loop
@@ -508,7 +620,7 @@ infrastructure PR, its immediate successor should consume that infrastructure
 unless an architectural review explicitly changes the sequence. This is PR
 cadence, not a calendar deadline.
 
-This roadmap does not authorize or execute that pulse. It grants no provider,
+This roadmap does not authorize or execute a product pulse. It grants no provider,
 model, embedding, search, fetch/READ, retrieval, or dollar-bearing live-call
 authority. The deferred SearchPlanner evaluator operator is not a substitute for
 adequate product-level cap enforcement.
@@ -531,8 +643,8 @@ unproved, as does current real-model Component/Cross-Component Analyst behavior.
 Future SearchPlanner component evaluation is activated only if supported-product
 evidence localizes a blocker to that boundary or an architectural review records
 an approved hard prerequisite. It may not independently alter the active
-decision gate, intervene before the product pulse, or substitute for product-
-level cap enforcement.
+decision gate, displace the selected three-phase sequence, or substitute for
+product-level cap enforcement.
 
 ## Deferred Evidence-Dependent Trajectory
 
