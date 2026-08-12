@@ -72,105 +72,23 @@ from scripts.evaluation.search_planner_semantic_judgment import (
 )
 from tests.fixtures.searchos_analystos_offline_scenarios import (
     SCENARIOS,
-    planner_payload,
 )
 
 SYNTHETIC_VARIANT_INSTRUCTION = (
-    "SYNTHETIC SEARCHPLANNER TEST INSTRUCTIONS\n"
-    "Return only a contract-valid JSON planning proposal.\n\n"
+    "SYNTHETIC SEARCHPLANNER TEST INSTRUCTIONS\nReturn only a contract-valid JSON planning proposal.\n\n"
 )
 
 # Fixed opaque literals for the bounded test schedules in this phase. Their
 # tuple order allocates identities but their values encode no schedule facts.
 OPAQUE_SEMANTIC_CALL_IDS = (
-    (
-        "semantic-call:"
-        "d0daa435"
-        "b1727dda"
-        "33398f01"
-        "480b4215"
-        "37bd9594"
-        "a8e798f5"
-        "1cdae028"
-        "aa6d1784"
-    ),
-    (
-        "semantic-call:"
-        "505fcc0e"
-        "2c2fcbf9"
-        "26164626"
-        "ea04add6"
-        "e914bd51"
-        "d815f202"
-        "0971d6e8"
-        "074abbeb"
-    ),
-    (
-        "semantic-call:"
-        "3203bde5"
-        "8464a731"
-        "c0da1546"
-        "1c2b4c78"
-        "845c063f"
-        "1989e916"
-        "57c34aeb"
-        "755d15dd"
-    ),
-    (
-        "semantic-call:"
-        "69c4bfc4"
-        "507e56c0"
-        "01ee0605"
-        "8b183a3b"
-        "ce01cfd2"
-        "0e889561"
-        "823e5ef0"
-        "f3524e15"
-    ),
-    (
-        "semantic-call:"
-        "da8df851"
-        "f077d616"
-        "7c28545e"
-        "a4c3de49"
-        "dac6a805"
-        "a2cb5e15"
-        "a51bc1e4"
-        "d9a5daf1"
-    ),
-    (
-        "semantic-call:"
-        "7b5bb361"
-        "a4c985e9"
-        "ae638e6b"
-        "e52988d1"
-        "848bedc7"
-        "ec2bb4be"
-        "51104eb7"
-        "06c707d6"
-    ),
-    (
-        "semantic-call:"
-        "e5fbdd7c"
-        "983590a3"
-        "63b06bb8"
-        "6650eed6"
-        "b3d94080"
-        "a0134031"
-        "7eed2821"
-        "198d79c1"
-    ),
-    (
-        "semantic-call:"
-        "992c334d"
-        "b9ff4dd2"
-        "38357a3b"
-        "3fada521"
-        "aa7f8258"
-        "9aea5793"
-        "6f10900c"
-        "1ba53b9e"
-    ),
+    ("semantic-call:d0daa435b1727dda33398f01480b421537bd9594a8e798f51cdae028aa6d1784"),
+    ("semantic-call:505fcc0e2c2fcbf926164626ea04add6e914bd51d815f2020971d6e8074abbeb"),
+    ("semantic-call:3203bde58464a731c0da15461c2b4c78845c063f1989e91657c34aeb755d15dd"),
+    ("semantic-call:69c4bfc4507e56c001ee06058b183a3bce01cfd20e889561823e5ef0f3524e15"),
+    ("semantic-call:da8df851f077d6167c28545ea4c3de49dac6a805a2cb5e15a51bc1e4d9a5daf1"),
+    ("semantic-call:7b5bb361a4c985e9ae638e6be52988d1848bedc7ec2bb4be51104eb706c707d6"),
+    ("semantic-call:e5fbdd7c983590a363b06bb86650eed6b3d94080a01340317eed2821198d79c1"),
+    ("semantic-call:992c334db9ff4dd238357a3b3fada521aa7f82589aea57936f10900c1ba53b9e"),
 )
 
 
@@ -200,9 +118,7 @@ def scenario_packet() -> OwnerSpecificScenarioPacket:
                     record_id="harbor-bulletin",
                     label="Northstar Bulletin 26",
                     information_need="Identify the fictional filing-route constraints.",
-                    fictional_summary=(
-                        "Fictional current bulletin retained only for planning."
-                    ),
+                    fictional_summary=("Fictional current bulletin retained only for planning."),
                     source_obligation_requirement_id="harbor-bulletin-source",
                 ),
             ),
@@ -233,9 +149,7 @@ def owner_identities() -> InstalledOwnerIdentities:
         report_schema_version=EVALUATION_REPORT_SCHEMA_VERSION,
         prompt_variant_contract_version=PROMPT_VARIANT_CONTRACT_VERSION,
         orchestrator_version=OWNER_SPECIFIC_ORCHESTRATOR_VERSION,
-        semantic_execution_observation_version=(
-            SEMANTIC_EXECUTION_OBSERVATION_VERSION
-        ),
+        semantic_execution_observation_version=(SEMANTIC_EXECUTION_OBSERVATION_VERSION),
     )
 
 
@@ -247,23 +161,17 @@ def requirement_packet() -> SemanticRequirementPacket:
         essential_requirements=(
             EssentialRequirement(
                 requirement_id="requirement:filing-route",
-                normalized_requirement=(
-                    "The plan must represent the requested filing-route assignment."
-                ),
+                normalized_requirement=("The plan must represent the requested filing-route assignment."),
                 requirement_kind="FACT",
             ),
             EssentialRequirement(
                 requirement_id="requirement:authority",
-                normalized_requirement=(
-                    "The plan must preserve the current fictional bulletin source need."
-                ),
+                normalized_requirement=("The plan must preserve the current fictional bulletin source need."),
                 requirement_kind="AUTHORITY",
             ),
             EssentialRequirement(
                 requirement_id="requirement:answer-capability",
-                normalized_requirement=(
-                    "The plan must support a truthful answer to the whole request."
-                ),
+                normalized_requirement=("The plan must support a truthful answer to the whole request."),
                 requirement_kind="ANSWER_CAPABILITY",
             ),
         ),
@@ -295,19 +203,11 @@ def authorization_bundle(
     scenario = scenario_packet()
     control = "installed-control"
     variant = "synthetic-prefix-variant"
-    order = schedule_arm_order or tuple(
-        arm
-        for _ in range(required_observations_per_arm)
-        for arm in (control, variant)
-    )
+    order = schedule_arm_order or tuple(arm for _ in range(required_observations_per_arm) for arm in (control, variant))
     semantic_id_count = len(order) * 2
     if semantic_id_count > len(OPAQUE_SEMANTIC_CALL_IDS):
-        raise ValueError(
-            "test schedule exceeds its predeclared opaque semantic identities"
-        )
-    semantic_call_ids = iter(
-        OPAQUE_SEMANTIC_CALL_IDS[:semantic_id_count]
-    )
+        raise ValueError("test schedule exceeds its predeclared opaque semantic identities")
+    semantic_call_ids = iter(OPAQUE_SEMANTIC_CALL_IDS[:semantic_id_count])
     schedule = tuple(
         TrialScheduleEntry(
             trial_id=f"trial-{index:02d}",
@@ -323,9 +223,7 @@ def authorization_bundle(
         control_arm_id=control,
         variant_arm_id=variant,
         variant_instruction_text=SYNTHETIC_VARIANT_INSTRUCTION,
-        variant_instruction_sha256=sha256(
-            SYNTHETIC_VARIANT_INSTRUCTION.encode("utf-8")
-        ).hexdigest(),
+        variant_instruction_sha256=sha256(SYNTHETIC_VARIANT_INSTRUCTION.encode("utf-8")).hexdigest(),
         maximum_instruction_characters=1000,
     )
     placeholder_policy = f"owner-specific-policy:{'0' * 64}"
@@ -335,11 +233,7 @@ def authorization_bundle(
         variant_arm_id=variant,
         trial_schedule=schedule,
         required_observations_per_arm=required_observations_per_arm,
-        design_kind=(
-            "SINGLE_PAIR"
-            if required_observations_per_arm == 1
-            else "RANDOMIZED_REPEATED"
-        ),
+        design_kind=("SINGLE_PAIR" if required_observations_per_arm == 1 else "RANDOMIZED_REPEATED"),
         sampling_policy="maintainer_precommitted_schedule_v1",
         randomized_order=required_observations_per_arm > 1,
         blinded_judging=True,
@@ -417,11 +311,7 @@ def authorization_bundle(
         canonical_operator_command=command,
         canonical_operator_command_digest=command_digest,
     )
-    total_cost = (
-        required_observations_per_arm
-        * 2
-        * (0.10 + 0.05 + 0.05)
-    )
+    total_cost = required_observations_per_arm * 2 * (0.10 + 0.05 + 0.05)
     authorization = OwnerSpecificLiveAuthorization(
         schema_version=OWNER_SPECIFIC_AUTHORIZATION_SCHEMA_VERSION,
         evaluation_identity=evaluation_identity,
@@ -470,17 +360,18 @@ class FakeOwnerSpecificBrokerFactory:
         usage_observed: bool = True,
         cost_usd: str = "0.01",
     ) -> None:
-        default_packet = planner_payload(SCENARIOS[0])
-        default_packet.pop("planner_model_metadata", None)
-        for obligation in default_packet["source_obligation_candidates"]:
-            obligation["obligation_kind"] = "official_current"
-            obligation["strictness"] = "required"
+        default_packet = {
+            "disposition": "components",
+            "components": [
+                {
+                    "need": "Report the official current fictional filing value",
+                    "source": {"kind": "official_current", "strictness": "required"},
+                    "freshness": "current for the scenario date",
+                }
+            ],
+        }
         default_payload = json.dumps(default_packet)
-        self.planner_outputs = list(
-            planner_outputs
-            if planner_outputs is not None
-            else [default_payload] * 20
-        )
+        self.planner_outputs = list(planner_outputs if planner_outputs is not None else [default_payload] * 20)
         self.semantic_outputs = list(semantic_outputs or [])
         self.usage_observed = usage_observed
         self.cost_usd = cost_usd
@@ -525,11 +416,7 @@ class FakeOwnerSpecificBrokerFactory:
                     raise AssertionError("no fake Planner output remains")
                 output = self.planner_outputs.pop(0)
             else:
-                output = (
-                    self.semantic_outputs.pop(0)
-                    if self.semantic_outputs
-                    else _semantic_met_output(prompt)
-                )
+                output = self.semantic_outputs.pop(0) if self.semantic_outputs else _semantic_met_output(prompt)
             return _transport_response(
                 output=output,
                 provider=provider,
@@ -546,18 +433,12 @@ def _semantic_met_output(prompt: str) -> str:
     packet = json.loads(prompt)
     request = packet["semantic_judgment_request"]
     proposed_plan = request["proposed_plan"]
-    proposal_path = (
-        "/answer_components/0"
-        if proposed_plan.get("answer_components")
-        else "/question_meaning_summary"
-    )
+    proposal_path = "/answer_components/0" if proposed_plan.get("answer_components") else "/question_meaning_summary"
     mappings = [
         {
             "requirement_id": item["requirement_id"],
             "proposal_paths": [proposal_path],
-            "bounded_explanation": (
-                "The canonical plan contains bounded material for this requirement."
-            ),
+            "bounded_explanation": ("The canonical plan contains bounded material for this requirement."),
         }
         for item in request["essential_requirements"]
     ]
@@ -597,9 +478,7 @@ def _transport_response(
         reasoning_tokens=10 if usage_observed else None,
         non_reasoning_output_tokens=40 if usage_observed else None,
         total_tokens=150 if usage_observed else None,
-        caller_calculated_route_priced_cost_usd=(
-            cost_usd if usage_observed else None
-        ),
+        caller_calculated_route_priced_cost_usd=(cost_usd if usage_observed else None),
         cost_posture="exact" if usage_observed else "unknown",
         output_token_utilization="0.01" if usage_observed else None,
         reasoning_token_share="0.2" if usage_observed else None,

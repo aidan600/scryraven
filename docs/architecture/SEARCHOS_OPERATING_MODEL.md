@@ -1,6 +1,6 @@
 # SearchOS Operating Model
 
-Status: current target architecture
+Status: current architecture; unified front-half Phases 1-2 installed
 Authority: canonical:searchos-operating-model
 Default-read: no
 Applies-to: SearchOS architecture and SearchOS-facing provider, acquisition, navigation, and recovery work
@@ -45,17 +45,20 @@ Narrower owners remain subordinate:
 
 Sufficiency does not independently mutate or terminate run state.
 
-## Selected Front-Half Rebaseline (Target; Not Installed)
+## Unified Front-Half Rebaseline (Phases 1-2 Installed)
 
 On 2026-08-11 the maintainer selected **Option C modified into a unified
-iterative loop** as the SearchOS front-half target architecture. This replaces
-exception-by-exception Scout / PlannerRevision repair as the forward direction;
-it does not describe current installed behavior. Current `main` may still
-contain and execute `ScoutDisambiguation`, `PlannerRevision`, `SearchWorkPlan`,
-and `QueryProduction`. [ScryRaven Current State](SCRYRAVEN_CURRENT_STATE.md)
-remains the exclusive owner of installed truth.
+iterative loop** as the SearchOS front-half architecture. Phases 1 and 2 are now
+installed in ordinary product execution. Exception-by-exception Scout /
+PlannerRevision repair is retired from the ordinary front half, including its
+routine initial ContractAmendment return lane. Physical legacy/evaluation
+modules may remain, but they have zero ordinary reachability. SearchWorkPlan,
+QueryProduction, rich downstream compatibility projection, and dead carrier
+fields remain temporary until Phase 3. [ScryRaven Current
+State](SCRYRAVEN_CURRENT_STATE.md) remains the exclusive owner of detailed
+installed truth.
 
-The target ordinary shape is:
+The installed authority shape is:
 
 ```text
 User request
@@ -78,12 +81,12 @@ User request
    - honest unresolved blocker
 ```
 
-There is no target ordinary `ScoutDisambiguation -> PlannerRevision -> initial
-routine ContractAmendment -> return to ordinary search` lane. Search-assisted
-ambiguity handling belongs inside this same acquisition loop; components do not
-receive separate ambiguity pipelines.
+There is no ordinary `ScoutDisambiguation -> PlannerRevision -> initial routine
+ContractAmendment -> return to ordinary search` lane. Search-assisted ambiguity
+handling belongs inside this same acquisition loop; components do not receive
+separate ambiguity pipelines.
 
-### Target authority boundaries
+### Installed authority boundaries
 
 - **SearchPlanner** owns semantic interpretation only.
 - The **deterministic semantic compiler** mechanically constructs lawful state
@@ -91,7 +94,8 @@ receive separate ambiguity pipelines.
 - **AnswerContract** owns canonical requested obligations, constraints, stable
   slots, and explicit unresolved factual slots.
 - **QueryPlan** is the sole exact executable-query identity and carries the
-  provider-neutral discovery job class plus component/slot lineage.
+  provider-neutral discovery job class plus component and plural semantic-slot
+  lineage. One physical query may serve multiple semantic obligations.
 - **`core.routing`** selects provider and operation.
 - **SearchJudgment** is the unified acquisition judgment after `DISCOVER` or
   `READ`.
@@ -106,11 +110,21 @@ components, change requested scope, facts, or obligations, select providers,
 admit its own binding, admit evidence, claim support, decide Sufficiency, or
 author an answer.
 
-### Target uncertainty behavior
+### Installed uncertainty behavior
 
-The target distinguishes clear semantic intent, acquisition uncertainty,
+The runtime distinguishes clear semantic intent, acquisition uncertainty,
 factually resolvable identity/currentness/version/terminology uncertainty, true
-user-intent ambiguity, and mixed multi-component uncertainty.
+user-intent ambiguity, and mixed uncertainty both within one component and
+across multiple components. Every accepted semantic slot remains a distinct
+obligation keyed by component and semantic-slot identity; semantic cardinality
+is not inferred from the number of physical discovery jobs.
+
+The bounded binding map is `entity -> identity_alias`,
+`variant|time_period -> currentness_version`,
+`source_basis -> document_lineage`, and materially unresolved
+`unknown_or_other -> externally_verifiable_terminology`. An explicit default
+`unknown_or_other` subject remains stable and takes standard discovery; the
+last mapping does not turn unspecified stable meaning into uncertainty.
 
 - A clear request, such as the default `rel_tol` and `abs_tol` values for
   `math.isclose()` in the official Python documentation, takes ordinary
@@ -119,28 +133,45 @@ user-intent ambiguity, and mixed multi-component uncertainty.
   use bounded orientation discovery or READ to support binding Scott Galloway
   only when contextual and current fit strongly dominates materially plausible
   alternatives. Popularity alone is insufficient.
-- For a truly ambiguous request such as "Tell me about Mercury," a bounded
-  orientation attempt may occur, but clarification remains appropriate when
-  the planet, element, automobile/brand, or other meanings are materially
-  plausible.
+- For a truly ambiguous request such as "Tell me about Mercury," explicit
+  user-confirmation posture withholds provider dispatch and records typed,
+  slot-local clarification when the planet, element, automobile/brand, or
+  other meanings remain materially plausible.
 - In mixed requests, stable components may discover/read while factually
   unresolved components orient/bind/discover and materially ambiguous
   components request clarification, all within one component worklist.
+- Within one component, all material unresolved factual slots independently
+  remain active even when one physical orientation query serves them together.
+  Binding or clarification targets exactly one slot. A component may hand off
+  only after every relevant material slot is stable/resolved or has its own
+  admitted factual binding; any pending or confirmation-required slot blocks
+  that handoff without erasing or suppressing its peers.
 
-### Provider-neutral target job direction
+### Installed provider-neutral job direction
 
-The selected target job vocabulary is `orientation`, `standard_discovery`, and
-`deep_discovery`. These name acquisition need, not a provider brand;
-`core.routing` remains the provider mapper. The target does not encode policy
-such as `orientation = Serper`, `standard = Linkup`, or `deep = Exa/Tavily`.
-Provider mapping requires later calibration and evidence. `READ` remains a
-separate known-URL capability and may assist orientation without automatically
-becoming semantic support.
+The installed QueryPlan job vocabulary is exactly `orientation`,
+`standard_discovery`, and `deep_discovery`. These name acquisition need, not a
+provider brand; `core.routing` remains the sole provider mapper. Initial jobs
+are derived only from the accepted AnswerContract. Orientation reuses the
+existing lightweight-disambiguation route, standard discovery reuses ordinary
+route derivation, and deep discovery sets the existing
+`general_deep_requested` policy input. It reaches the existing authorization
+and requester blocks; this phase installs no premium license or new Deep
+executor. No new provider preference
+or economics policy is encoded in QueryPlan. Later comparative calibration may
+change code-owned mapping without changing the job vocabulary. `READ` remains
+a separate known-URL capability and may assist orientation without
+automatically becoming semantic support.
 
-Implementation order, SearchPlanner request remeasurement, and retirement of
-the current ordinary compatibility carriers are owned by the
-[Current Roadmap](../roadmap/CURRENT_ROADMAP.md). Nothing in this section
-installs the target loop or authorizes a live call.
+The canonical SearchOS state owns plural semantic obligations independently of
+physical component/source slots. QueryPlan items and SearchOS physical slots
+carry plural references; no singular compatibility field is an alternate
+semantic authority. SearchWorkPlan and QueryProduction remain Phase-3 carriers
+and do not change that installed ownership.
+
+Phase-3 carrier consolidation and product proof are owned by the [Current
+Roadmap](../roadmap/CURRENT_ROADMAP.md). Nothing in this section authorizes a
+live call.
 
 ## Minimum Shared Provider Contract
 
@@ -174,7 +205,7 @@ authority merely because a provider returned it.
 
 ## Provider-Neutral Operations
 
-The selected target SearchOS vocabulary is:
+The SearchOS vocabulary is:
 
 - **`DISCOVER job_class=orientation`**: non-evidence direction for entity,
   alias, jurisdiction, currentness, official venue, and query refinement.
@@ -189,21 +220,21 @@ The selected target SearchOS vocabulary is:
 - **`CRAWL_SITE`**: bounded page collection with one identity and custody
   record per page.
 
-These are selected target architectural operations. `RECON` and `SEARCH` may
-remain installed implementation terms during migration. They are not separate
-durable target pipelines or competing target query authorities. Cheap
-orientation is represented by `DISCOVER job_class=orientation` inside the
-unified acquisition loop.
+The three DISCOVER job classes are installed runtime enum values owned by
+QueryPlan and consumed by the unified loop. `RECON` and `SEARCH` may remain
+compatibility implementation terms, but they are not separate durable pipelines
+or competing query authorities. Cheap orientation is represented only by
+`DISCOVER job_class=orientation` inside the unified acquisition loop.
 
-The selected target does not rename installed runtime enum values or claim that
-current main already implements these job classes. Linkup Fetch and Tavily
-Extract are peer implementations of `READ_PAGE`; neither is a distinct research
+READ and bounded one-hop navigation are installed under their existing owners;
+Map and Crawl remain non-product capabilities. Linkup Fetch and Tavily Extract
+are peer implementations of `READ_PAGE`; neither is a distinct research
 authority. A provider-reported URL is useful optional metadata, not network-path
 attestation.
 
 ## Iterative SearchOS Loop
 
-The shared target loop is:
+The installed shared loop is:
 
 ```text
 find candidate
@@ -221,6 +252,25 @@ Search results need not contain a complete page. A successful read that lacks
 the needed information is source insufficiency, not a transport failure: return
 to search, another source, or bounded navigation rather than extracting the
 same page repeatedly.
+
+### Factual binding, clarification, and slot-local progress
+
+SearchJudgment may propose one bounded factual filling only for an already
+declared unresolved material slot of kind entity, variant, time period, or
+source basis. The value must be one of the accepted candidate values and must
+cite exact current candidate or READ-custody basis. RunKernel validates and
+append-only admits `searchos_interpretation_binding_v1`; exact replay is
+idempotent, while a conflicting second binding or changed component/slot scope
+fails closed. The base AnswerContract never changes. An effective semantic-slot
+view is an acquisition-planning projection only and is not evidence, support,
+coverage, satisfaction, citation, or final-answer authority.
+
+Slots marked `user_confirmation_required` do not bind or dispatch. They record
+typed clarification and remain local to their component. Stable and factually
+orientable peers continue through the same worklist, with independent candidate
+ancestry, budget, and cursor state. An empty initial orientation result records
+exact provider/query/action lineage and may refine orientation once within the
+existing policy before reaching an honest unresolved or exhausted posture.
 
 ## Installed One-Hop Navigation Boundary
 

@@ -324,6 +324,11 @@ remain deferred. No live call was made.
 
 Runtime/test commit `2d346a73251f28a1187fb2958028db51117bf0c0`
 
+Historical status: this milestone's ordinary Scout/PlannerRevision portion was
+later superseded and retired by the unified SearchOS Phase-2 cutover. The
+paragraphs below record what that completed milestone installed, not current
+ordinary reachability.
+
 [SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01](SEARCHOS_QUERY_STRATEGY_AND_RECON_CONVERGENCE_01.md)
 installs one ordinary initial planning chain from validated passive SearchPlanner
 output through RunKernel initial AnswerContract acceptance, optional bounded
@@ -356,7 +361,7 @@ The later ordinary composition routes authorized Scout candidates through
 FAST PlannerRevision; it adds no post-result follow-up loop, READ, navigation,
 evidence/citation/Author authority, or live validation in this build.
 
-## Implemented Build: SEARCHOS-REQUIRED-SCOUT-ORDINARY-COMPOSITION-01
+## Superseded Build: SEARCHOS-REQUIRED-SCOUT-ORDINARY-COMPOSITION-01
 
 `SEARCHOS-REQUIRED-SCOUT-ORDINARY-COMPOSITION-01` completes the ordinary
 Scout-to-PlannerRevision lane without changing the SearchPlanner prompt or
@@ -373,6 +378,10 @@ Scout material remains non-evidence and non-citation; it does not satisfy a
 source obligation, activate READ, alter retrieval, create custody, or create an
 Author input. Offline validation made no live provider, model, search, recon,
 fetch/read, or retrieval call.
+
+The unified SearchOS Phase-2 cutover later removed this ordinary call path.
+The old action names and adapters remain only where required for bounded
+compatibility or validation and are not an ordinary acquisition fallback.
 
 ## Completed Build: SEARCHOS-READ-SOURCE-AND-CUSTODY-01
 
@@ -461,23 +470,27 @@ and recursive-navigation limit calibration are not installed, are not part of
 the one-hop MVP, and have no ordinary product caller. Any later phase must reuse
 the installed acquisition and custody owners.
 
-## Active Decision Gate: Unified SearchOS Front-Half Rebaseline
+## Active Decision Gate: SearchOS Carrier Consolidation + Product Proof
 
-The maintainer has selected **Option C modified into a unified iterative loop**
-as the SearchOS front-half target. This supersedes the previous immediate
-bounded-product-pulse sequence. The bounded cleanup/documentation repair that
-records this decision changes no product runtime behavior.
+The maintainer-selected **Option C modified into a unified iterative loop** is
+installed through SearchOS Phases 1 and 2. The active next checkpoint is Phase
+3: fold the retained compatibility carriers after deterministic parity and run
+the bounded representative product proof owned by that phase.
 
 ### Installed versus selected target
 
-The selected architecture is a future target, not a claim about `main` today.
-Current `main` may still contain and execute `ScoutDisambiguation`,
-`PlannerRevision`, `SearchWorkPlan`, and `QueryProduction`. Installed truth is
+Phases 1 and 2 are installed at runtime/test checkpoint
+`5db9ae8e14ba3858ddd1c84abea8440357a53675`; this includes the focused
+multi-slot semantic-cardinality repair. Phase 3 remains the selected next
+target. Ordinary initial and iterative acquisition no longer executes
+`ScoutDisambiguation`, `PlannerRevision`, or the routine initial
+ContractAmendment return lane. `SearchWorkPlan` and `QueryProduction` remain
+temporary ordinary compatibility carriers pending Phase 3. Installed truth is
 owned by [ScryRaven Current State](../architecture/SCRYRAVEN_CURRENT_STATE.md),
-while the target architecture is owned by the
+while architecture ownership remains with the
 [SearchOS Operating Model](../architecture/SEARCHOS_OPERATING_MODEL.md).
 
-The target ordinary shape is one unified component worklist:
+The installed ordinary front-half shape is one unified component worklist:
 
 ```text
 user request
@@ -494,7 +507,7 @@ user request
 
 Search-assisted ambiguity belongs in that loop. It does not create an ordinary
 ScoutDisambiguation / PlannerRevision / routine ContractAmendment return lane.
-`orientation`, `standard_discovery`, and `deep_discovery` are target
+`orientation`, `standard_discovery`, and `deep_discovery` are installed
 provider-neutral job concepts; they express acquisition need, not a provider
 brand. `core.routing` remains the provider mapper, and `READ` remains a
 separate known-URL capability that may assist orientation without automatically
@@ -516,7 +529,7 @@ subtype`. A newly exposed safe failure within this licensed architectural
 corridor remains in the same phase unless it proves a different owner or
 requires a new architecture decision.
 
-### Phase 1 - Sparse uncertainty-aware planning
+### Installed Phase 1 - Sparse uncertainty-aware planning
 
 Completion line:
 
@@ -527,36 +540,33 @@ user request
 -> uncertainty-aware AnswerContract
 ```
 
-Phase 1 immediately consumes the SearchPlanner simplification finding; it is
-not merely a schema addition. The ordinary interface becomes complexity-scaled
-and fail-closed: `direct_simple | sparse components`. A routine request may be
-as small as `{"disposition":"direct_simple"}`; sparse source/freshness/dependency/uncertainty
-exceptions. The model authors meaning;
-code authors deterministic IDs, digests, lineage references, mechanical
-bindings/defaults, and other administrative construction. Existing downstream
-legacy carriers are temporary compatibility consumers only.
+`SEARCHPLANNER-SPARSE-UNCERTAINTY-AWARE-PLANNING-01` installs the fail-closed
+`direct_simple | components` ordinary model language. The model authors only
+meaningful semantic differences; code owns mechanical identity, bindings,
+defaults, mode ceilings, initial query copies, and temporary rich compatibility.
+Factual uncertainty, candidate values, selected values, explicit confirmation
+posture, and component normalization/calculation policies survive canonical
+AnswerContract acceptance.
+Unresolved facts do not automatically request user confirmation.
 
-The static architecture audit found approximately 93-96% invariant,
-static, or administrative ordinary SearchPlanner request material, depending on
-fixture and attribution method. The selected target is approximately an 84-87%
-reduction in ordinary request size. These are architecture measurements, not
-live proof or achieved acceptance facts. Phase 1 must remeasure and report:
+The strictly paired clear-direct measurement used the same query, requested
+mode, bounded safe context, serialization, counting function, and attribution
+categories at baseline and candidate. Total request size fell from `15,705` to
+`2,509` characters (`13,196`, `84.02%`); static/administrative material fell
+from `15,516` to `2,320` characters (`13,196`, `85.05%`). The reusable corpus
+proves contract/parser/compiler/canonical-state representability only. It makes
+no real-model accuracy, false-ambiguity, selection-accuracy, or product-quality
+claim, and no live call was run.
 
-- baseline total request size;
-- baseline static/administrative size;
-- candidate total request size;
-- candidate static/administrative size;
-- absolute reduction; and
-- percentage reduction.
+The compiler projects only neutral `not_needed` legacy recon. Sparse uncertainty
+or confirmation semantics do not create Scout or PlannerRevision reachability.
+At the Phase-1 checkpoint, rich SearchWorkPlan, QueryProduction, and old
+query/recon surfaces remained compatibility consumers. Phase 2 subsequently
+retired ordinary Scout, PlannerRevision, routine initial ContractAmendment, and
+recon execution; SearchWorkPlan and QueryProduction are the remaining Phase-3
+carrier boundary.
 
-Failure to materially simplify the Planner contract defeats Phase 1's purpose.
-Routine model-authored IDs, digests, lineage references, administrative empty
-arrays, mechanical defaults/bindings, closed-surface flags, provider brands,
-recon queries, revision records, and exact executable-query identity are not
-part of the target model-owned semantic proposal. Unresolved factual slots and
-their resolution policy remain explicit in AnswerContract.
-
-### Phase 2 - Unified iterative acquisition
+### Installed Phase 2 - Unified iterative acquisition
 
 Completion line:
 
@@ -570,17 +580,38 @@ AnswerContract
 -> semantic handoff
 ```
 
-Phase 2 implements provider-neutral discovery job classes, one unified
-SearchJudgment refinement loop, bounded factual InterpretationBinding,
-clarification, READ-assisted orientation without evidence laundering, and
-component/slot-local budgets and cursors in one component worklist. It has no
-special ambiguity pipeline.
+Phase 2 derives exact provider-neutral jobs only from the accepted
+AnswerContract: stable semantic slots support `standard_discovery`, all material
+unresolved factual slots without confirmation drive `orientation`, and explicit
+confirmation-required ambiguity yields typed slot-local clarification without
+its own dispatch. One physical QueryPlan job may serve multiple same-component
+semantic obligations while preserving all of their identities. The job class
+and plural component/semantic lineage survive QueryPlan, ProviderPlan,
+homogeneous scheduler batches, dispatch, observation, and slot-local judgment.
 
-Its primary retirement target is the ordinary `ScoutDisambiguation`, ordinary
-`PlannerRevision`, initial routine `PlannerRevision` ContractAmendment lane,
-and recon bureaucracy used only by those lanes.
+One SearchOS worklist and one SearchJudgment owner now govern initial and
+iterative acquisition. Its exact non-navigation action tokens are
+`HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION`, `REQUEST_READ_PAGE`,
+`PROPOSE_FOLLOWUP_QUERY`, `PROPOSE_INTERPRETATION_BINDING`,
+`REQUIRE_CLARIFICATION`, and `HANDOFF_UNRESOLVED`; the existing one-hop boundary
+also permits `REQUEST_NAVIGATE_BREADCRUMB`. InterpretationBinding is bounded,
+append-only, replay-safe, component-scoped, and non-evidentiary; its effective
+view feeds the existing semantic handoff without mutating the accepted base
+contract. A zero-result orientation wave receives exactly one bounded
+refinement opportunity. Component/slot cursors prevent unrelated progress from
+masking an unresolved slot. Binding and clarification select one exact semantic
+slot, and a component-wide gate blocks semantic handoff while any relevant
+material slot remains unresolved or confirmation-required. The canonical plural
+obligation map is authoritative; no singular compatibility field competes with
+it. SearchWorkPlan and QueryProduction remain deferred Phase-3 carriers.
 
-### Phase 3 - Carrier consolidation + product proof
+The ordinary `ScoutDisambiguation`, `PlannerRevision`, routine initial
+`PlannerRevision` ContractAmendment lane, and their recon convergence execution
+are retired with an explicit zero-reachability regression guard. Durable Phase-2
+proof is owned by the sparse A/B/C and mixed-component corpus, exact action and
+binding contract tests, and the topology-focused convergence replacement tests.
+
+### Next Phase 3 - Carrier consolidation + product proof
 
 Completion line:
 

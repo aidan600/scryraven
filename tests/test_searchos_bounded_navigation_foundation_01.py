@@ -667,6 +667,8 @@ def test_canonical_boundary_closed_policy_and_state_include_boundary_a_recovery(
         "candidate_waves_per_slot": 3,
         "read_nominations_per_slot": 3,
         "followup_query_nominations_per_slot": 2,
+        "interpretation_bindings_per_semantic_obligation": 1,
+        "orientation_refinements_per_slot": 1,
         "navigation_runtime_open": False,
         "post_analyst_reentry_runtime_open": False,
         "existing_gap_recovery_policy": {
@@ -676,6 +678,18 @@ def test_canonical_boundary_closed_policy_and_state_include_boundary_a_recovery(
             "same_limits_for_all_profiles": True,
             "required_gaps_prioritized": True,
             "optional_gap_recovery_authorized": False,
+            "whole_run_lease_required": True,
+        },
+        "recovery_policy": {
+            "schema_version": "searchos_recovery_policy_v2",
+            "runtime_open": False,
+            "maximum_total_cycles_per_run": 2,
+            "maximum_existing_component_cycles_per_run": 1,
+            "maximum_searched_premise_cycles_per_run": 1,
+            "maximum_searched_generation": 2,
+            "one_linear_active_cycle": True,
+            "one_searched_premise_per_generation": True,
+            "generation_three_rejected_before_work": True,
             "whole_run_lease_required": True,
         },
         "provisional_maximum_leash": True,
@@ -689,9 +703,9 @@ def test_canonical_boundary_closed_policy_and_state_include_boundary_a_recovery(
         "prompt_can_override": False,
         "adapter_can_override": False,
         "environment_can_override": False,
-        "policy_snapshot_id": "searchos-policy:93f4f72e7e3b4c9ff873f248",
-        "policy_snapshot_digest": "93f4f72e7e3b4c9ff873f248104f27c0eac1ebf41ea04c2b5ec2cbd218c36d47",  # pragma: allowlist secret
-        "replay_identity": "searchos-policy:93f4f72e7e3b4c9ff873f248104f27c0eac1ebf41ea04c2b5ec2cbd218c36d47",  # pragma: allowlist secret
+        "policy_snapshot_id": "searchos-policy:9e644053264baac7c6a0c8d7",
+        "policy_snapshot_digest": "9e644053264baac7c6a0c8d7603f9d8f1934ac2e2e6e1a2ea7f3126f0e24d4a2",  # pragma: allowlist secret
+        "replay_identity": "searchos-policy:9e644053264baac7c6a0c8d7603f9d8f1934ac2e2e6e1a2ea7f3126f0e24d4a2",  # pragma: allowlist secret
     }
     policy = build_searchos_policy_snapshot(
         run_id="run-baseline-identity",
@@ -720,11 +734,11 @@ def test_canonical_boundary_closed_policy_and_state_include_boundary_a_recovery(
     )
     assert (
         state["state_digest"]
-        == "3053329357f989cdeb793614cf92a2cfc23f1d13d920e3fb3e1d6d179c87a8bb"  # pragma: allowlist secret
+        == "e3394f10c8a9694e78a461b94648bf4b7a7503a7055f63fb9250d9d1b3591a98"  # pragma: allowlist secret
     )
-    assert state["state_id"] == "searchos-state:3053329357f989cdeb793614"
+    assert state["state_id"] == "searchos-state:e3394f10c8a9694e78a461b9"
     assert state["replay_identity"] == (
-        "searchos-state:3053329357f989cdeb793614cf92a2cfc23f1d13d920e3fb3e1d6d179c87a8bb"  # pragma: allowlist secret
+        "searchos-state:e3394f10c8a9694e78a461b94648bf4b7a7503a7055f63fb9250d9d1b3591a98"  # pragma: allowlist secret
     )
     assert set(state) == {
         "schema_version",
@@ -739,10 +753,14 @@ def test_canonical_boundary_closed_policy_and_state_include_boundary_a_recovery(
         "iteration_candidate_set_refs",
         "active_slot_ids",
         "required_slot_ids",
+        "judgment_eligible_required_slot_ids",
         "optional_slot_ids",
         "slots_by_id",
+        "semantic_obligations_by_id",
+        "semantic_obligation_ids_by_component",
         "budget",
         "semantic_handoff_refs",
+        "interpretation_binding_history",
         "existing_gap_recovery_runtime_open",
         "existing_gap_recovery_purpose_refs",
         "existing_gap_recovery_lease_refs",
@@ -750,6 +768,13 @@ def test_canonical_boundary_closed_policy_and_state_include_boundary_a_recovery(
         "active_existing_gap_recovery_cycle_ref",
         "existing_gap_recovery_terminal_aggregate",
         "existing_gap_recovery_terminal_aggregate_ref",
+        "recovery_lease",
+        "recovery_lease_history",
+        "recovery_cycle_admission_history",
+        "recovery_cycle_terminal_history",
+        "recovery_expenditure_history",
+        "active_recovery_cycle_ref",
+        "recovery_terminal_aggregate",
         "readiness_projection_ref",
         "required_needs_block_ref",
         "required_needs_block",

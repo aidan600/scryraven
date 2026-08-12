@@ -198,25 +198,26 @@ def test_unknown_slot_and_dependency_references_are_rejected() -> None:
     assert any("depends on missing component component:missing" in error for error in errors)
 
 
-def test_material_ambiguous_slot_requires_user_confirmation() -> None:
-    invalid = _record(
+def test_factual_uncertainty_does_not_imply_user_confirmation() -> None:
+    factual_uncertainty = _record(
         slots=(
-            _entity_slot(status=SemanticSlotStatus.AMBIGUOUS, confirmation=False),
+            _entity_slot(status=SemanticSlotStatus.UNRESOLVED, confirmation=False),
             _time_slot(),
         )
-    )
-    valid = _record(
+    ).require_valid()
+    explicit_user_choice = _record(
         slots=(
             _entity_slot(status=SemanticSlotStatus.AMBIGUOUS, confirmation=True),
             _time_slot(),
         )
     ).require_valid()
 
-    errors = invalid.validate().errors
-
-    assert any("user confirmation is required" in error for error in errors)
-    assert valid.to_dict()["material_ambiguity_count"] == 1
-    assert valid.to_dict()["user_confirmation_required"] is True
+    factual_payload = factual_uncertainty.to_dict()
+    explicit_payload = explicit_user_choice.to_dict()
+    assert factual_payload["material_ambiguity_count"] == 1
+    assert factual_payload["user_confirmation_required"] is False
+    assert explicit_payload["material_ambiguity_count"] == 1
+    assert explicit_payload["user_confirmation_required"] is True
 
 
 def test_record_digest_is_deterministic_and_changes_with_meaningful_content() -> None:

@@ -39,7 +39,6 @@ from core.run_kernel import Observation, ObservationType, RunKernel, RunStageSta
 from core.search_planner_model_adapter import (
     SearchPlannerModelAdapter,
     SearchPlannerModelAdapterError,
-    accept_planner_model_output,
 )
 from core.search_planner_model_prompt import SEARCH_PLANNER_MODEL_SYSTEM_PROMPT
 from core.search_planner_revision_model_prompt import (
@@ -98,9 +97,7 @@ class ModelOwnedPipelineHarness(PostRetirementOrdinaryPipelineHarness):
             self._record_model_call(system_prompt, call_kwargs)
             self.revision_prompts.append(prompt)
             self.revision_kwargs.append(dict(call_kwargs))
-            prompt_payload = json.loads(
-                prompt.rsplit("Sanitized revision input JSON:\n", maxsplit=1)[-1]
-            )
+            prompt_payload = json.loads(prompt.rsplit("Sanitized revision input JSON:\n", maxsplit=1)[-1])
             revision_input = dict(prompt_payload["revision_input"])
             if cost_accumulator is not None:
                 cost_accumulator.record_model_call(
@@ -117,9 +114,7 @@ class ModelOwnedPipelineHarness(PostRetirementOrdinaryPipelineHarness):
             self.planner_kwargs.append(dict(call_kwargs))
             if provider == "OpenRouter" and not api_key:
                 raise ValueError("OpenRouter API key is missing")
-            if provider == "Local (LM Studio)" and not str(base_url or "").startswith(
-                ("http://", "https://")
-            ):
+            if provider == "Local (LM Studio)" and not str(base_url or "").startswith(("http://", "https://")):
                 raise ValueError("Local model endpoint is missing or invalid")
             if isinstance(self.planner_response, Exception):
                 raise self.planner_response
@@ -204,9 +199,7 @@ class ResponseOnlyRevisionAdapter:
     def produce(self, revision_input: Mapping[str, Any]) -> Mapping[str, Any]:
         self.calls.append(deepcopy(dict(revision_input)))
         return {
-            "revised_question_meaning_summary": (
-                "Use the bounded response-only identity direction for targeting."
-            ),
+            "revised_question_meaning_summary": ("Use the bounded response-only identity direction for targeting."),
             "component_search_requirement_updates": [
                 {
                     "component_id": self.component_id,
@@ -221,24 +214,16 @@ class ResponseOnlyRevisionAdapter:
                                 "candidate_kind": "primary",
                                 "candidate_query_text": self.query_text,
                                 "requested_role": "official_bias",
-                                "source_obligation_candidate_ids": [
-                                    self.obligation_id
-                                ],
+                                "source_obligation_candidate_ids": [self.obligation_id],
                                 "official_canonical_intent": "official_source",
-                                "distinct_need_justification": (
-                                    "Scout resolved the bounded identity target."
-                                ),
+                                "distinct_need_justification": ("Scout resolved the bounded identity target."),
                             }
                         ]
                     },
                 }
             ],
-            "consumed_ambiguity_dimension_ids": list(
-                revision_input["consumed_ambiguity_dimension_ids"]
-            ),
-            "consumed_scout_hint_ids": list(
-                revision_input["consumed_scout_hint_ids"]
-            ),
+            "consumed_ambiguity_dimension_ids": list(revision_input["consumed_ambiguity_dimension_ids"]),
+            "consumed_scout_hint_ids": list(revision_input["consumed_scout_hint_ids"]),
             "amendment_candidates": [],
             "mandatory_caveats": ["Scout hints remain non-evidence."],
             "prohibited_upgrades": ["Do not cite Scout hints."],
@@ -266,19 +251,15 @@ class FakePlannerModel:
         return json.dumps(self.response)
 
 
-
 def _revision_model_response(
     revision_input: Mapping[str, Any],
 ) -> dict[str, Any]:
     component_id = str(revision_input["component_id"])
-    consumed_dimensions = list(
-        revision_input["consumed_ambiguity_dimension_ids"]
-    )
+    consumed_dimensions = list(revision_input["consumed_ambiguity_dimension_ids"])
     consumed_hints = list(revision_input["consumed_scout_hint_ids"])
     return {
         "revised_question_meaning_summary": (
-            "Use the bounded Scout direction only to focus the initial source "
-            "query; it remains non-evidence."
+            "Use the bounded Scout direction only to focus the initial source query; it remains non-evidence."
         ),
         "semantic_slot_updates": [],
         "answer_component_updates": [],
@@ -286,9 +267,7 @@ def _revision_model_response(
             {
                 "component_id": component_id,
                 "requirement_id": "requirement:model:1:revised-default",
-                "requirement_summary": (
-                    "Target the bounded identity direction with source support."
-                ),
+                "requirement_summary": ("Target the bounded identity direction with source support."),
                 "source_obligation_candidate_ids": ["obligation:model:1"],
                 "metadata": {
                     "query_strategy_candidates": [
@@ -296,18 +275,11 @@ def _revision_model_response(
                             "strategy_id": "strategy:model:1:revised-default",
                             "component_id": component_id,
                             "candidate_kind": "primary",
-                            "candidate_query_text": (
-                                "Offline revised Example identity direction"
-                            ),
+                            "candidate_query_text": ("Offline revised Example identity direction"),
                             "requested_role": "official_bias",
-                            "source_obligation_candidate_ids": [
-                                "obligation:model:1"
-                            ],
+                            "source_obligation_candidate_ids": ["obligation:model:1"],
                             "official_canonical_intent": "official_source",
-                            "distinct_need_justification": (
-                                "Bounded Scout direction focused the "
-                                "identity target."
-                            ),
+                            "distinct_need_justification": ("Bounded Scout direction focused the identity target."),
                         }
                     ]
                 },
@@ -327,8 +299,33 @@ def _revision_model_response(
     }
 
 
-
 def _planner_payload(
+    *,
+    component_count: int = 1,
+    query_texts: Sequence[str] | None = None,
+    recon_posture: str = "not_needed",
+) -> dict[str, Any]:
+    queries = list(query_texts or ())
+    components: list[dict[str, Any]] = []
+    for index in range(1, component_count + 1):
+        need = queries[index - 1] if index <= len(queries) else f"Model-owned semantic need for component {index}"
+        component: dict[str, Any] = {
+            "key": f"component-{index}",
+            "need": need,
+        }
+        if index == 1 and recon_posture != "not_needed":
+            component["uncertainties"] = [
+                {
+                    "kind": "entity",
+                    "status": "unresolved",
+                    "candidates": ["Old Example", "New Example"],
+                }
+            ]
+        components.append(component)
+    return {"disposition": "components", "components": components}
+
+
+def _rich_planner_payload(
     *,
     component_count: int = 1,
     query_texts: Sequence[str] | None = None,
@@ -341,11 +338,7 @@ def _planner_payload(
     for index in range(1, component_count + 1):
         component_id = f"component:model:{index}"
         obligation_id = f"obligation:model:{index}"
-        query_text = (
-            queries[index - 1]
-            if index <= len(queries)
-            else f"Model owned exact query for component {index}"
-        )
+        query_text = queries[index - 1] if index <= len(queries) else f"Model owned exact query for component {index}"
         components.append(
             {
                 "component_id": component_id,
@@ -359,9 +352,7 @@ def _planner_payload(
                 "source_obligation_candidate_ids": [obligation_id],
                 "allowed_support_kinds": ["direct"],
                 "max_inference_depth": 0,
-                "dependency_component_ids": (
-                    [f"component:model:{index - 1}"] if index > 1 else []
-                ),
+                "dependency_component_ids": ([f"component:model:{index - 1}"] if index > 1 else []),
                 "materiality": "material",
             }
         )
@@ -380,9 +371,7 @@ def _planner_payload(
             "candidate_query_text": query_text,
             "requested_role": "initial",
             "source_obligation_candidate_ids": [obligation_id],
-            "distinct_need_justification": (
-                "Primary query for this model-proposed accepted component."
-            ),
+            "distinct_need_justification": ("Primary query for this model-proposed accepted component."),
             "recon_requirement": {
                 "posture": "not_needed",
                 "unresolved_dimension_ids": [],
@@ -416,9 +405,7 @@ def _planner_payload(
             }
         )
     return {
-        "question_meaning_summary": (
-            "Use exactly the warranted component structure in this model proposal."
-        ),
+        "question_meaning_summary": ("Use exactly the warranted component structure in this model proposal."),
         "requested_output": "A source-bound answer for every warranted component.",
         "semantic_slots": [
             {
@@ -433,18 +420,12 @@ def _planner_payload(
         "answer_components": components,
         "source_obligation_candidates": obligations,
         "component_search_requirements": requirements,
-        "material_ambiguity_posture": (
-            "directional_recon_optional"
-            if recon_posture == "optional"
-            else "none"
-        ),
+        "material_ambiguity_posture": ("directional_recon_optional" if recon_posture == "optional" else "none"),
         "mandatory_caveats": [],
         "prohibited_upgrades": ["Do not treat planning material as evidence."],
         "normalization_obligations": [],
         "assumptions": [],
-        "unsupported_or_deferred_outputs": [
-            "Later Analyst discoveries remain governed by amendment admission."
-        ],
+        "unsupported_or_deferred_outputs": ["Later Analyst discoveries remain governed by amendment admission."],
     }
 
 
@@ -458,21 +439,11 @@ def _install_chain_capture(monkeypatch: Any) -> dict[str, Any]:
         kernel = kwargs["run_kernel"]
         captured["run_kernel"] = kernel
         captured["convergence"] = result
-        captured["initial_contract_at_convergence"] = deepcopy(
-            kernel.state.initial_answer_contract
-        )
-        captured["planner_projection_at_convergence"] = deepcopy(
-            kernel.state.search_planner_proposal_projection
-        )
-        captured["scout_projection_at_convergence"] = deepcopy(
-            kernel.state.scout_disambiguation_report_projection
-        )
-        captured["revision_projection_at_convergence"] = deepcopy(
-            kernel.state.search_planner_revision_projection
-        )
-        captured["evidence_at_convergence"] = deepcopy(
-            kernel.state.evidence_ledger.to_projection().to_dict()
-        )
+        captured["initial_contract_at_convergence"] = deepcopy(kernel.state.initial_answer_contract)
+        captured["planner_projection_at_convergence"] = deepcopy(kernel.state.search_planner_proposal_projection)
+        captured["scout_projection_at_convergence"] = deepcopy(kernel.state.scout_disambiguation_report_projection)
+        captured["revision_projection_at_convergence"] = deepcopy(kernel.state.search_planner_revision_projection)
+        captured["evidence_at_convergence"] = deepcopy(kernel.state.evidence_ledger.to_projection().to_dict())
         return result
 
     def admission_wrapper(*args: Any, **kwargs: Any) -> Any:
@@ -514,8 +485,7 @@ def _pipeline_fixture(
         core_topic="Example central requirement",
         primary_entity="Example",
         raw_author_response=(
-            "The retrieved source supports the bounded answer. "
-            "[[1]](https://example.example/report-1)"
+            "The retrieved source supports the bounded answer. [[1]](https://example.example/report-1)"
         ),
         planner_response=planner_response,
         healthy=True,
@@ -591,9 +561,7 @@ def _contains_object_identity(value: Any, target: Any) -> bool:
     if value is target:
         return True
     if isinstance(value, Mapping):
-        return any(
-            _contains_object_identity(item, target) for item in value.values()
-        )
+        return any(_contains_object_identity(item, target) for item in value.values())
     if isinstance(value, list | tuple):
         return any(_contains_object_identity(item, target) for item in value)
     return False
@@ -614,7 +582,7 @@ def test_rundeps_declares_typed_planner_scout_and_revision_seams() -> None:
     assert "planner_adapter = deps.search_planner_adapter" in source
     assert "scout_adapter = deps.scout_disambiguation_adapter" in source
     assert "revision_adapter = deps.search_planner_revision_adapter" in source
-    assert "getattr(deps, \"search_planner_adapter\"" not in source
+    assert 'getattr(deps, "search_planner_adapter"' not in source
     assert "DeterministicSearchPlannerAdapter()" not in source
 
 
@@ -693,8 +661,7 @@ def test_default_planner_receives_selected_transport_and_run_accounting(
     assert outcome.cost_snapshot == cost_snapshot
 
 
-
-def test_default_fast_revision_consumes_scout_direction_on_ordinary_pipeline(
+def test_sparse_factual_uncertainty_does_not_reach_scout_or_revision(
     tmp_path: Path,
     monkeypatch: Any,
 ) -> None:
@@ -716,42 +683,24 @@ def test_default_fast_revision_consumes_scout_direction_on_ordinary_pipeline(
         query="What is the current Example identity rule?",
         planner_response=_planner_payload(recon_posture="optional"),
     )
-    accumulator = CostAccumulator()
 
     outcome = orchestrator.run_pipeline(
         config,
         deps,
         NullStatusWriter(),
-        accumulator,
+        CostAccumulator(),
     )
 
     assert outcome.report
     assert factory_calls
-    assert scout.calls
-    assert len(harness.revision_kwargs) == 1
-    revision_kwargs = harness.revision_kwargs[0]
-    assert revision_kwargs["provider"] == config.fast_provider
-    assert revision_kwargs["model"] == config.fast_model
-    assert revision_kwargs["effort"] == config.fast_reasoning_effort
-    assert revision_kwargs["cost_phase"] == "search_planner_revision"
-    assert revision_kwargs["cost_accumulator"] is accumulator
-    assert revision_kwargs["require_json"] is True
-    assert revision_kwargs["use_reasoning"] is True
-
-    revision_prompt = harness.revision_prompts[0]
-    assert "Offline direction hint 1" in revision_prompt
-    assert "Sanitized response-only identity direction." not in revision_prompt
-    assert "https://example.invalid/hint-1" not in revision_prompt
-
-    revision = capture["revision_projection_at_convergence"]
-    assert revision["planner_revision_metadata"]["provider"] == config.fast_provider
-    assert revision["planner_revision_metadata"]["model"] == config.fast_model
-    assert revision["planner_revision_metadata"]["effort"] == (
-        config.fast_reasoning_effort
-    )
-    assert capture["convergence"].recon_summary[0]["status"] == (
-        "query_direction_revised"
-    )
+    assert scout.calls == []
+    assert harness.revision_kwargs == []
+    assert harness.revision_prompts == []
+    slot = capture["initial_contract_at_convergence"]["accepted_semantic_slot_refs"][0]
+    assert slot["status"] == "unresolved"
+    assert slot["candidate_values"] == ["Old Example", "New Example"]
+    assert slot["user_confirmation_required"] is False
+    assert capture["convergence"].recon_summary == ()
 
 
 def test_ordinary_no_recon_makes_zero_scout_and_revision_calls(
@@ -789,7 +738,6 @@ def test_ordinary_no_recon_makes_zero_scout_and_revision_calls(
     assert sentinel_scout.calls == []
     assert harness.revision_prompts == []
     assert harness.revision_kwargs == []
-
 
 
 def test_default_planner_transport_facts_are_not_retained(
@@ -949,16 +897,9 @@ def test_default_model_planner_owns_long_narrated_request_and_first_dispatch(
     assert planner_kwargs["use_reasoning"] is True
     assert planner_kwargs["require_json"] is True
     initial = capture["initial_contract_at_convergence"]
-    assert [
-        item["component_id"]
-        for item in initial["accepted_answer_component_refs"]
-    ] == ["component:model:1"]
-    planner_metadata = capture["planner_projection_at_convergence"][
-        "question_meaning_record"
-    ]["metadata"]
-    assert planner_metadata["semantic_planning_owner"] == (
-        "selected fast-model SearchPlanner"
-    )
+    assert [item["component_id"] for item in initial["accepted_answer_component_refs"]] == ["component:01"]
+    planner_metadata = capture["planner_projection_at_convergence"]["question_meaning_record"]["metadata"]
+    assert planner_metadata["semantic_planning_owner"] == ("selected fast-model SearchPlanner")
     assert planner_metadata["model_proposed_component_count"] == 1
     assert capture["query_plan_admission_calls"] == 1
     assert capture["query_plan_admission"].current_queries == [model_query]
@@ -977,9 +918,7 @@ def test_bounded_supplied_context_reaches_model_without_becoming_evidence(
                 "kind": "future_document_summary_ref",
             }
         ],
-        "summaries": [
-            "The notes discuss an older Example alias and warn that the name changed."
-        ],
+        "summaries": ["The notes discuss an older Example alias and warn that the name changed."],
     }
     model_query = "Example current rule under renamed program"
     config, deps, harness, capture = _pipeline_fixture(
@@ -1012,7 +951,7 @@ def test_bounded_supplied_context_reaches_model_without_becoming_evidence(
 @pytest.mark.parametrize(
     ("planner_response", "match"),
     [
-        ({}, "missing required fields"),
+        ({}, "semantic proposal failed closed"),
         (RuntimeError("selected model unavailable"), "model call failed closed"),
     ],
 )
@@ -1050,7 +989,7 @@ def test_explicit_response_only_planner_scout_and_revision_cross_real_pipeline(
     monkeypatch: Any,
 ) -> None:
     planner = ResponseOnlyPlannerAdapter(
-        _planner_payload(
+        _rich_planner_payload(
             query_texts=["Unresolved Example official identity"],
             recon_posture="optional",
         )
@@ -1118,122 +1057,7 @@ def test_explicit_response_only_planner_scout_and_revision_cross_real_pipeline(
     assert '"author_input":{' not in scout_json
     assert capture["evidence_at_convergence"].get("evidence_items", []) == []
     revision_projection = capture["revision_projection_at_convergence"]
-    assert revision_projection["revision_effect_class"] == (
-        "query_direction_only_non_contractual"
-    )
-
-
-def test_scout_case_c_required_recon_semantic_proposal_reaches_injected_scout_lane(
-    tmp_path: Path,
-    monkeypatch: Any,
-) -> None:
-    semantic_proposal = {
-        "interpretation": (
-            "Resolve which Example entity is intended before searching the current rule."
-        ),
-        "components": [
-            {
-                "purpose": "user_facing_answer_target",
-                "label": "Current rule",
-                "question": "What current official rule applies to the intended Example?",
-                "requirement_posture": "required",
-                "acceptance_criteria": ["state the current official rule"],
-                "support_kinds": ["direct"],
-                "materiality": "material",
-                "slots": [
-                    {
-                        "kind": "entity",
-                        "status": "ambiguous",
-                        "materiality": "material",
-                        "candidate_values": ["Old Example", "New Example"],
-                    }
-                ],
-                "source": {"kind": "official_current", "strictness": "required"},
-                "search": {
-                    "summary": "Find the current official rule for the intended Example.",
-                    "primary_query": {
-                        "text": "Unresolved Example official identity",
-                        "role": "disambiguation",
-                    },
-                    "recon": {
-                        "posture": "required",
-                        "dimensions": [
-                            {
-                                "kind": "entity_identity",
-                                "query": "Old Example New Example identity",
-                            }
-                        ],
-                    },
-                },
-            }
-        ],
-        "material_ambiguity": "material_entity_ambiguity",
-    }
-    compiled = accept_planner_model_output(semantic_proposal)
-    component_id = compiled["answer_components"][0]["component_id"]
-    obligation_id = compiled["source_obligation_candidates"][0]["candidate_id"]
-    recon = compiled["component_search_requirements"][0]["metadata"][
-        "query_strategy_candidates"
-    ][0]["recon_requirement"]
-    assert recon["posture"] == "required"
-    assert recon["required_for_truthful_targeting"] is True
-    assert recon["unresolved_dimension_ids"] == [
-        "dimension:01:01:entity_identity"
-    ]
-
-    fake_model = FakePlannerModel(semantic_proposal)
-    planner = SearchPlannerModelAdapter(
-        ask_model=fake_model,
-        clean_json_response=lambda value: value,
-        provider="selected-offline-fast-provider",
-        model="selected-offline-fast-model",
-        use_reasoning=False,
-        enabled=True,
-        licensed=True,
-    )
-    scout = ResponseOnlyScoutAdapter()
-    revised_query = "Resolved Example official current rule"
-    revision = ResponseOnlyRevisionAdapter(
-        query_text=revised_query,
-        component_id=component_id,
-        obligation_id=obligation_id,
-        requirement_id="searchreq:01:revised",
-        strategy_id="strategy:01:revised",
-    )
-    config, deps, harness, capture = _pipeline_fixture(
-        tmp_path,
-        monkeypatch,
-        query="I may have the old name; what current rule applies?",
-        planner_response=semantic_proposal,
-        planner_adapter=planner,
-        scout_adapter=scout,
-        revision_adapter=revision,
-        use_default_model=False,
-    )
-    accumulator = CostAccumulator()
-    orchestrator.run_pipeline(
-        config,
-        deps,
-        NullStatusWriter(),
-        accumulator,
-    )
-
-    assert len(fake_model.calls) == 1
-    assert len(scout.calls) == 1
-    assert len(revision.calls) == 1
-    assert scout.calls[0]["candidate_queries"]
-    assert capture["query_plan_admission"].current_queries == [revised_query]
-    scout_projection = capture["scout_projection_at_convergence"]
-    assert scout_projection["evidence_admitted"] is False
-    assert scout_projection["citation_eligible"] is False
-    assert scout_projection["source_obligation_satisfied"] is False
-    assert scout_projection["final_answer_packet_created"] is False
-    assert scout_projection["author_input_created"] is False
-    assert capture["evidence_at_convergence"].get("evidence_items", []) == []
-    revision_projection = capture["revision_projection_at_convergence"]
-    assert revision_projection["revision_effect_class"] == (
-        "query_direction_only_non_contractual"
-    )
+    assert revision_projection["revision_effect_class"] == ("query_direction_only_non_contractual")
 
 
 def test_model_multipart_proposal_preserves_five_components_and_queryplan_floor() -> None:
@@ -1281,9 +1105,7 @@ def test_model_multipart_proposal_preserves_five_components_and_queryplan_floor(
         intent="general",
         clean=lambda value: " ".join(value.split()),
     )
-    action = kernel.authorize_query_plan_admission(
-        inputs={"candidate_count": len(inputs.candidate_queries)}
-    )
+    action = kernel.authorize_query_plan_admission(inputs={"candidate_count": len(inputs.candidate_queries)})
     admission = execute_query_plan_admission_action(
         action,
         query_authority=query_authority,
@@ -1300,26 +1122,16 @@ def test_model_multipart_proposal_preserves_five_components_and_queryplan_floor(
     )
 
     assert len(fake_model.calls) == 1
-    accepted = kernel.state.initial_answer_contract[
-        "accepted_answer_component_refs"
-    ]
-    assert [item["component_id"] for item in accepted] == [
-        f"component:model:{index}" for index in range(1, 6)
-    ]
-    assert accepted[1]["dependency_component_ids"] == ["component:model:1"]
-    metadata = kernel.state.search_planner_proposal_projection[
-        "question_meaning_record"
-    ]["metadata"]
+    accepted = kernel.state.initial_answer_contract["accepted_answer_component_refs"]
+    assert [item["component_id"] for item in accepted] == [f"component:{index:02d}" for index in range(1, 6)]
+    assert accepted[1]["dependency_component_ids"] == []
+    metadata = kernel.state.search_planner_proposal_projection["question_meaning_record"]["metadata"]
     assert metadata["model_proposed_component_count"] == 5
     assert metadata["explicit_factual_component_list"] is True
     assert metadata["deterministic_component_ids_match_model"] is False
-    assert metadata["deterministic_query_shape_role"] == (
-        "compatibility_observability_only"
-    )
+    assert metadata["deterministic_query_shape_role"] == ("compatibility_observability_only")
     assert len(admission.current_queries) == 5
-    assert admission.current_queries == [
-        f"Model owned exact query for component {index}" for index in range(1, 6)
-    ]
+    assert admission.current_queries == [f"Model-owned semantic need for component {index}" for index in range(1, 6)]
 
 
 def test_model_output_above_five_component_ceiling_fails_closed() -> None:
@@ -1334,7 +1146,7 @@ def test_model_output_above_five_component_ceiling_fails_closed() -> None:
         licensed=True,
     )
 
-    with pytest.raises(SearchPlannerModelAdapterError, match="five-component"):
+    with pytest.raises(SearchPlannerModelAdapterError, match="semantic proposal failed closed"):
         planner.produce(
             {
                 "user_query_text_for_planning": "A multipart request.",

@@ -716,6 +716,77 @@ def derive_provider_capability_request(
     )
 
 
+def derive_query_plan_discovery_capability_request(
+    *,
+    discovery_job_class: object,
+    query_type: str | None,
+    intent: str | None,
+    is_academic: bool,
+    include_domains: Sequence[str] = (),
+    exclude_domains: Sequence[str] = (),
+    general_deep_authorization: GeneralDeepAuthorization | None = None,
+) -> ProviderCapabilityRequest:
+    """Map one provider-neutral QueryPlan job onto the existing DISCOVER policy.
+
+    QueryPlan owns only the three stable job tokens.  This module remains the
+    sole owner of provider qualifiers, variants, availability, and typed route
+    blocking.
+    """
+
+    normalized_job = str(
+        getattr(discovery_job_class, "value", discovery_job_class) or ""
+    ).strip()
+    if normalized_job not in {
+        "orientation",
+        "standard_discovery",
+        "deep_discovery",
+    }:
+        raise ValueError(
+            "QueryPlan discovery job class must be orientation, "
+            "standard_discovery, or deep_discovery"
+        )
+    ordinary = derive_provider_capability_request(
+        query_type=query_type,
+        intent=intent,
+        is_academic=is_academic,
+        include_domains=include_domains,
+        exclude_domains=exclude_domains,
+    )
+    if normalized_job == "orientation":
+        return ProviderCapabilityRequest(
+            capability=AcquisitionCapability.DISCOVER,
+            qualifier=DiscoverQualifier.LIGHTWEIGHT_DISAMBIGUATION,
+            include_domains=ordinary.include_domains,
+            exclude_domains=ordinary.exclude_domains,
+            derivation_reason="query_plan_orientation_job",
+        )
+    if normalized_job == "standard_discovery":
+        return ProviderCapabilityRequest(
+            capability=ordinary.capability,
+            qualifier=ordinary.qualifier,
+            domain_constraints=ordinary.domain_constraints,
+            include_domains=ordinary.include_domains,
+            exclude_domains=ordinary.exclude_domains,
+            source_of_record_domain_constraints=(
+                ordinary.source_of_record_domain_constraints
+            ),
+            derivation_reason="query_plan_standard_discovery_job",
+        )
+    return ProviderCapabilityRequest(
+        capability=ordinary.capability,
+        qualifier=ordinary.qualifier,
+        domain_constraints=ordinary.domain_constraints,
+        include_domains=ordinary.include_domains,
+        exclude_domains=ordinary.exclude_domains,
+        source_of_record_domain_constraints=(
+            ordinary.source_of_record_domain_constraints
+        ),
+        derivation_reason="query_plan_deep_discovery_job",
+        general_deep_requested=True,
+        general_deep_authorization=general_deep_authorization,
+    )
+
+
 def _discover_preferences(
     qualifier: DiscoverQualifier,
     *,

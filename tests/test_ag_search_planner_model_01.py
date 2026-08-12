@@ -230,7 +230,6 @@ _CONTINUITY_TAIL_PREDICATE_IDS = (
     "ANSWER_COMPONENT_ALLOWED_SUPPORT_KINDS_NO_NONEMPTY_ITEMS",
     "ANSWER_COMPONENT_ACCEPTANCE_CRITERIA_NO_NONEMPTY_ITEMS",
     "SEMANTIC_SLOTS_MINIMUM_ITEMS_1",
-    "SEMANTIC_SLOT_MATERIAL_AMBIGUITY_CONFIRMATION_REQUIRED",
     "RELATIONSHIP_HYPOTHESES_MAXIMUM_ITEMS_5",
     "SOURCE_OBLIGATION_CANDIDATES_MINIMUM_ITEMS_1",
     "SEMANTIC_SLOT_STATUS_MISSING",
@@ -367,6 +366,20 @@ def _planner_output(*, extra: Mapping[str, Any] | None = None) -> dict[str, Any]
     if extra:
         payload.update(extra)
     return payload
+
+
+def _sparse_planner_output() -> dict[str, Any]:
+    return {
+        "disposition": "components",
+        "components": [
+            {
+                "need": "Report the official current filing threshold",
+                "source": {"kind": "official_current", "strictness": "required"},
+                "freshness": "current for 2026",
+                "caveat": "Keep the answer source-bound.",
+            }
+        ],
+    }
 
 
 def _narrative_text_model_output(field_path: tuple[str | int, ...]) -> dict[str, Any]:
@@ -521,10 +534,14 @@ def _model_output_error(
 ) -> SearchPlannerModelAdapterError:
     target_kernel = kernel or _kernel()
     with pytest.raises(SearchPlannerModelAdapterError) as caught:
-        _produce(
-            target_kernel,
-            _adapter(FakeAskModel(json.dumps(model_output))),
-        )
+        if "answer_components" in model_output or "source_obligation_candidates" in model_output:
+            # The rich contract is compiler-internal after the sparse cutover.
+            search_planner_model_adapter.validate_and_sanitize_model_output(model_output)
+        else:
+            _produce(
+                target_kernel,
+                _adapter(FakeAskModel(json.dumps(model_output))),
+            )
     return caught.value
 
 
@@ -582,8 +599,6 @@ def _continuity_seed_error(
         requirement["preferred_source_kinds"] = [over_limit_text]
     elif predicate_id == SearchPlannerModelAdapterPredicateId.SEMANTIC_SLOTS_MINIMUM_ITEMS_1:
         model_output["semantic_slots"] = []
-    elif predicate_id == SearchPlannerModelAdapterPredicateId.SEMANTIC_SLOT_MATERIAL_AMBIGUITY_CONFIRMATION_REQUIRED:
-        semantic_slot["status"] = "ambiguous"
     elif predicate_id == SearchPlannerModelAdapterPredicateId.RELATIONSHIP_HYPOTHESES_MAXIMUM_ITEMS_5:
         model_output["relationship_hypotheses"] = [
             {
@@ -1278,9 +1293,7 @@ def _field_condition_witness_inventory() -> tuple[_FieldConditionWitness, ...]:
         _direct_witness(
             field_path="semantic_proposal",
             condition="validation_failed",
-            predicate_id=(
-                SearchPlannerModelAdapterPredicateId.SEMANTIC_PROPOSAL_VALIDATION_FAILED
-            ),
+            predicate_id=(SearchPlannerModelAdapterPredicateId.SEMANTIC_PROPOSAL_VALIDATION_FAILED),
             metadata=_M02_SEMANTIC_PROPOSAL,
             emit=_semantic_proposal_validation_error,
             scope="universal",
@@ -2348,14 +2361,6 @@ def _field_condition_witness_inventory() -> tuple[_FieldConditionWitness, ...]:
                 value=[],
             ),
             _path_witness(
-                field_path="semantic_slot.user_confirmation_required",
-                path=("semantic_slots", 0, "status"),
-                condition="material_ambiguity_confirmation_required",
-                predicate_id=SearchPlannerModelAdapterPredicateId.SEMANTIC_SLOT_MATERIAL_AMBIGUITY_CONFIRMATION_REQUIRED,
-                metadata=_M02_VALUE,
-                value="ambiguous",
-            ),
-            _path_witness(
                 field_path="answer_components",
                 path=("answer_components",),
                 condition="minimum_items_1",
@@ -3045,7 +3050,7 @@ def _schema_paths_with_adapter_normalization(
 
 
 def test_model_adapter_requires_enabled_and_callable() -> None:
-    fake = FakeAskModel(json.dumps(_planner_output()))
+    fake = FakeAskModel(json.dumps(_sparse_planner_output()))
     disabled = SearchPlannerModelAdapter(ask_model=fake, enabled=False, licensed=True)
     unlicensed = SearchPlannerModelAdapter(ask_model=fake, enabled=True, licensed=False)
     missing_callable = SearchPlannerModelAdapter(ask_model=None, enabled=True, licensed=True)
@@ -3070,7 +3075,7 @@ def test_model_adapter_requires_enabled_and_callable() -> None:
 
 def test_model_adapter_calls_injected_model_with_json_requirement() -> None:
     query = "Q" * SEARCH_PLANNER_INPUT_PREVIEW_CHARS + LONG_SUFFIX
-    fake = FakeAskModel(json.dumps(_planner_output()))
+    fake = FakeAskModel(json.dumps(_sparse_planner_output()))
     adapter = _adapter(fake)
 
     adapter.produce(_planner_input(_kernel(), query=query).to_adapter_payload())
@@ -3079,15 +3084,11 @@ def test_model_adapter_calls_injected_model_with_json_requirement() -> None:
     args, kwargs = fake.calls[0]
     prompt = args[0]
     system_prompt = args[1]
-    assert "You are SearchPlanner, not Author" in prompt
-    assert "Do not answer the user" in prompt
-    assert "Do not cite sources" in prompt
-    assert "Do not invoke Scout" in prompt
+    assert "SEARCHPLANNER SEMANTIC TASK" in prompt
+    assert "Never author queries/recon/Scout/PlannerRevision" in prompt
+    assert "Unknown fields, old rich output" in prompt
     assert LONG_SUFFIX.strip() in prompt
-    assert "SearchPlanner" in system_prompt
-    for requirement in search_planner_model_prompt.SEARCH_PLANNER_MODEL_STRICT_JSON_OUTPUT_CONTRACT:
-        assert requirement in prompt
-        assert requirement in system_prompt
+    assert "semantic planning only" in system_prompt
     assert kwargs["require_json"] is True
     assert kwargs["provider"] == "FakeProvider"
     assert kwargs["model"] == "fake-fast-model"
@@ -3106,7 +3107,7 @@ def test_model_adapter_input_construction_failure_is_typed_and_sanitized(
         "build_search_planner_model_prompt",
         fail_prompt_construction,
     )
-    fake = FakeAskModel(json.dumps(_planner_output()))
+    fake = FakeAskModel(json.dumps(_sparse_planner_output()))
 
     with pytest.raises(
         SearchPlannerModelAdapterError,
@@ -3140,14 +3141,14 @@ def test_model_adapter_model_call_failure_is_typed_and_sanitized() -> None:
 
 def test_valid_fake_model_json_flows_through_search_planner_runtime_and_initial_contract_acceptance() -> None:
     kernel = _kernel()
-    fake = FakeAskModel(json.dumps(_planner_output()))
+    fake = FakeAskModel(json.dumps(_sparse_planner_output()))
 
     _produce(kernel, _adapter(fake))
     qmr = kernel.state.search_planner_proposal_projection["question_meaning_record"]
     _accept_planner_qmr(kernel, qmr)
 
     initial = kernel.state.initial_answer_contract
-    assert initial["accepted_answer_component_refs"][0]["component_id"] == "component:model-official-threshold"
+    assert initial["accepted_answer_component_refs"][0]["component_id"] == "component:01"
     assert kernel.state.search_planner_proposal_state["owner"] == "RunKernel.SearchPlannerProposal"
     assert kernel.state.search_planner_proposal_state["initial_answer_contract_mutated"] is False
     assert initial["owner"] == "RunKernel.InitialAnswerContract"
@@ -3301,13 +3302,13 @@ def test_unique_member_strict_json_reaches_ordinary_adapter_validation() -> None
         _produce(kernel, _adapter(fake))
 
     assert caught.value.failure_stage == SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION
-    assert caught.value.failure_code == SearchPlannerModelAdapterFailureCode.MISSING_REQUIRED_TOP_LEVEL_FIELDS
-    assert caught.value.mechanical_rule_id == "M01"
+    assert caught.value.failure_code == SearchPlannerModelAdapterFailureCode.INVALID_SEMANTIC_PROPOSAL
+    assert caught.value.mechanical_rule_id == "M02"
 
 
 def test_benign_response_cleaning_preserves_valid_strict_json() -> None:
     kernel = _kernel()
-    cleaned = json.dumps(_planner_output())
+    cleaned = json.dumps(_sparse_planner_output())
     fake = FakeAskModel("prefix:" + cleaned)
 
     _produce(
@@ -3347,51 +3348,31 @@ def test_response_cleaning_cannot_bypass_strict_json_parsing(
 
 def test_schema_invalid_model_output_fails_before_observation() -> None:
     kernel = _kernel()
-    invalid = deepcopy(_planner_output())
-    invalid.pop("answer_components")
-    fake = FakeAskModel(json.dumps(invalid))
+    fake = FakeAskModel(json.dumps({"disposition": "components"}))
 
-    with pytest.raises(
-        SearchPlannerModelAdapterError,
-        match="missing required fields",
-    ) as caught:
+    with pytest.raises(SearchPlannerModelAdapterError) as caught:
         _produce(kernel, _adapter(fake))
 
-    assert caught.value.failure_stage == SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION
-    assert caught.value.failure_code == SearchPlannerModelAdapterFailureCode.MISSING_REQUIRED_TOP_LEVEL_FIELDS
-    assert caught.value.mechanical_rule_id == "M01"
+    assert caught.value.failure_code is SearchPlannerModelAdapterFailureCode.INVALID_SEMANTIC_PROPOSAL
+    assert caught.value.predicate_id is SearchPlannerModelAdapterPredicateId.SEMANTIC_PROPOSAL_VALIDATION_FAILED
     assert kernel.state.search_planner_proposal_state == {}
 
 
 def test_model_output_forbidden_authority_fields_fail_closed() -> None:
     kernel = _kernel()
-    unsafe = _planner_output(
-        extra={
-            "current_answer_contract": {"mutated": True},
-            "initial_answer_contract": {},
-            "final_answer_packet": {},
-            "author_input": {},
-            "sufficiency_decision": "ready",
-            "evidence_ledger_admission": {},
-        }
-    )
-    fake = FakeAskModel(json.dumps(unsafe))
+    unsafe = _sparse_planner_output()
+    unsafe["current_answer_contract"] = {"mutated": True}
 
-    with pytest.raises(SearchPlannerModelAdapterError, match="closed authority fields"):
-        _produce(kernel, _adapter(fake))
+    with pytest.raises(SearchPlannerModelAdapterError) as caught:
+        _produce(kernel, _adapter(FakeAskModel(json.dumps(unsafe))))
 
+    assert caught.value.failure_code is SearchPlannerModelAdapterFailureCode.INVALID_SEMANTIC_PROPOSAL
     assert kernel.state.search_planner_proposal_state == {}
 
 
 def test_raw_prompt_model_response_provider_payload_not_retained() -> None:
     kernel = _kernel()
-    output = _planner_output(
-        extra={
-            "planner_notes": [RAW_RESPONSE_SENTINEL],
-            "model_confidence_posture": "low",
-        }
-    )
-    fake = FakeAskModel(json.dumps(output))
+    fake = FakeAskModel(json.dumps(_sparse_planner_output()))
     planner_input = _planner_input(
         kernel,
         query=f"What is this? {RAW_PROMPT_SENTINEL}",
@@ -3401,7 +3382,6 @@ def test_raw_prompt_model_response_provider_payload_not_retained() -> None:
 
     trace_json = json.dumps(kernel.trace_projection().to_dict(), sort_keys=True)
     assert RAW_PROMPT_SENTINEL not in trace_json
-    assert RAW_RESPONSE_SENTINEL not in trace_json
     assert RAW_PROVIDER_SENTINEL not in trace_json
     assert '"raw_prompt":' not in trace_json
     assert '"raw_model_response":' not in trace_json
@@ -3413,45 +3393,33 @@ def test_raw_prompt_model_response_provider_payload_not_retained() -> None:
 
 def test_raw_provider_payload_field_fails_closed() -> None:
     kernel = _kernel()
-    fake = FakeAskModel(json.dumps(_planner_output(extra={"raw_provider_payload": RAW_PROVIDER_SENTINEL})))
+    unsafe = _sparse_planner_output()
+    unsafe["raw_provider_payload"] = RAW_PROVIDER_SENTINEL
 
-    with pytest.raises(SearchPlannerModelAdapterError, match="raw/private fields"):
-        _produce(kernel, _adapter(fake))
+    with pytest.raises(SearchPlannerModelAdapterError) as caught:
+        _produce(kernel, _adapter(FakeAskModel(json.dumps(unsafe))))
 
+    assert caught.value.failure_code is SearchPlannerModelAdapterFailureCode.INVALID_SEMANTIC_PROPOSAL
+    assert RAW_PROVIDER_SENTINEL not in str(caught.value)
     assert kernel.state.search_planner_proposal_state == {}
 
 
-def test_contract_amendment_candidates_remain_deferred() -> None:
+def test_model_authored_contract_amendment_candidates_fail_closed() -> None:
     kernel = _kernel()
-    fake = FakeAskModel(
-        json.dumps(
-            _planner_output(
-                extra={
-                    "contract_amendment_candidates": [
-                        {
-                            "candidate_id": "deferred:caveat",
-                            "operation_kind": "add_caveat",
-                            "summary": "May require a caveat after evidence is read.",
-                        }
-                    ]
-                }
-            )
-        )
-    )
+    unsafe = _sparse_planner_output()
+    unsafe["contract_amendment_candidates"] = [{"summary": "unaccepted"}]
 
-    _produce(kernel, _adapter(fake))
+    with pytest.raises(SearchPlannerModelAdapterError) as caught:
+        _produce(kernel, _adapter(FakeAskModel(json.dumps(unsafe))))
 
-    projection = kernel.state.search_planner_proposal_projection
-    assert projection["amendment_path"]["status"] == "deferred"
-    assert projection["amendment_path"]["candidate_count"] == 1
+    assert caught.value.failure_code is SearchPlannerModelAdapterFailureCode.INVALID_SEMANTIC_PROPOSAL
     assert kernel.state.contract_amendment_admission_history == []
-    assert kernel.state.contract_amendment_application_history == []
     assert kernel.state.current_answer_contract == {}
 
 
 def test_model_adapter_component_search_requirements_remain_non_executing() -> None:
     kernel = _kernel()
-    fake = FakeAskModel(json.dumps(_planner_output()))
+    fake = FakeAskModel(json.dumps(_sparse_planner_output()))
 
     _produce(kernel, _adapter(fake))
 
@@ -3468,46 +3436,27 @@ def test_model_adapter_component_search_requirements_remain_non_executing() -> N
     assert kernel.state.search_work_plan_projection == {}
 
 
-def test_model_adapter_preserves_query_strategy_and_recon_metadata() -> None:
+def test_model_authored_query_strategy_and_recon_fail_closed() -> None:
     kernel = _kernel()
-    output = _planner_output()
-    strategy = output["component_search_requirements"][0]["metadata"]["query_strategy_candidates"][0]
-    strategy["recon_requirement"] = {
-        "posture": "optional",
-        "unresolved_dimension_ids": ["dimension:program-alias"],
-        "candidate_queries": [
-            {
-                "dimension_id": "dimension:program-alias",
-                "candidate_query_text": "Example Permit former current name",
-                "query_kind": "disambiguation_probe",
-            }
-        ],
-        "required_for_truthful_targeting": False,
-    }
-    fake = FakeAskModel(json.dumps(output))
+    unsafe = _sparse_planner_output()
+    unsafe["components"][0]["recon"] = {"posture": "optional"}
 
-    _produce(kernel, _adapter(fake))
+    with pytest.raises(SearchPlannerModelAdapterError) as caught:
+        _produce(kernel, _adapter(FakeAskModel(json.dumps(unsafe))))
 
-    preserved = kernel.state.search_planner_proposal_projection["component_search_requirements"][0]["metadata"][
-        "query_strategy_candidates"
-    ][0]
-    assert preserved["candidate_query_text"] == ("Example Permit official filing threshold 2026")
-    assert preserved["recon_posture"] == "optional"
-    assert preserved["recon_unresolved_dimension_ids"] == ["dimension:program-alias"]
-    assert preserved["recon_candidate_queries_by_dimension"] == {
-        "dimension:program-alias": "Example Permit former current name"
-    }
+    assert caught.value.failure_code is SearchPlannerModelAdapterFailureCode.INVALID_SEMANTIC_PROPOSAL
+    assert kernel.state.search_planner_proposal_state == {}
 
 
 def test_model_output_executing_component_requirement_fails_closed() -> None:
     kernel = _kernel()
-    unsafe = deepcopy(_planner_output())
-    unsafe["component_search_requirements"][0]["search_executed"] = True
-    fake = FakeAskModel(json.dumps(unsafe))
+    unsafe = _sparse_planner_output()
+    unsafe["components"][0]["search_executed"] = True
 
-    with pytest.raises(SearchPlannerModelAdapterError, match="closed runtime surfaces"):
-        _produce(kernel, _adapter(fake))
+    with pytest.raises(SearchPlannerModelAdapterError) as caught:
+        _produce(kernel, _adapter(FakeAskModel(json.dumps(unsafe))))
 
+    assert caught.value.failure_code is SearchPlannerModelAdapterFailureCode.INVALID_SEMANTIC_PROPOSAL
     assert kernel.state.search_planner_proposal_state == {}
 
 
@@ -3523,13 +3472,12 @@ def test_model_output_with_invented_source_obligation_enum_fails_before_observat
     value: str,
 ) -> None:
     kernel = _kernel()
-    invalid = deepcopy(_planner_output())
-    invalid["source_obligation_candidates"][0][field] = value
+    invalid = _sparse_planner_output()
+    invalid["components"][0]["source"][field] = value
     fake = FakeAskModel(json.dumps(invalid))
 
     with pytest.raises(
         SearchPlannerModelAdapterError,
-        match=f"unsupported value for {field}",
     ):
         _produce(kernel, _adapter(fake))
 
@@ -3541,50 +3489,32 @@ def test_model_output_with_invented_source_obligation_enum_fails_before_observat
 # New parity tests are phase_focus / component_harness_proof. They guard the
 # current product-consumed adapter contract and remain out of fast_pr because
 # they are detailed schema coverage rather than a broad execution sentinel.
-def test_model_prompt_embeds_the_exact_output_contract_and_version() -> None:
+def test_model_prompt_embeds_the_exact_sparse_contract_and_version() -> None:
     planner_input = _planner_input(_kernel()).to_adapter_payload()
     prompt = search_planner_model_prompt.build_search_planner_model_prompt(planner_input)
     prompt_packet = json.loads(prompt.split("Sanitized planner input JSON:\n", 1)[1])
 
-    assert SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION == "search_planner_model_prompt_ag_search_planner_model_01_v5"
-    assert SEARCH_PLANNER_MODEL_ADAPTER_SCHEMA_VERSION == "search_planner_model_adapter_ag_search_planner_model_01_v1"
+    assert SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION == "search_planner_sparse_model_prompt_v6"
+    assert SEARCH_PLANNER_MODEL_ADAPTER_SCHEMA_VERSION == "search_planner_model_adapter_ag_search_planner_model_01_v2"
     assert prompt_packet["schema_version"] == SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION
-    assert prompt_packet["output_schema"] == json.loads(
-        json.dumps(
-            search_planner_model_prompt.SEARCH_PLANNER_MODEL_OUTPUT_SCHEMA,
-            sort_keys=True,
-        )
-    )
-    assert "Author only semantic choices in output_schema" in prompt
-    assert "Do not invent stable IDs" in prompt
+    assert prompt_packet["output_schema"] == search_planner_model_prompt.SEARCH_PLANNER_MODEL_OUTPUT_SCHEMA
+    assert set(prompt_packet["planner_input"]) == {
+        "requested_mode",
+        "user_query_text_for_planning",
+        "safe_context",
+    }
+    assert "Never author queries/recon/Scout/PlannerRevision" in prompt
+    assert "runtime identity" in prompt
 
 
-def test_strict_json_contract_is_shared_by_system_prompt_and_serialized_schema() -> None:
+def test_sparse_prompt_and_parser_share_strict_json_boundary() -> None:
     planner_input = _planner_input(_kernel()).to_adapter_payload()
     prompt = search_planner_model_prompt.build_search_planner_model_prompt(planner_input)
-    prompt_packet = json.loads(prompt.split("Sanitized planner input JSON:\n", 1)[1])
-    strict_json_contract = (
-        "Return exactly one JSON object.",
-        "Return JSON only; emit no prose before or after the object.",
-        "Do not wrap the object in Markdown or code fences.",
-        (
-            "Within every JSON object, including nested objects and objects inside arrays, "
-            "use each member name at most once. Never emit duplicate keys."
-        ),
-        "Never emit NaN, Infinity, or -Infinity.",
-        "Use only standard finite JSON values.",
-    )
 
-    assert (
-        search_planner_model_prompt.SEARCH_PLANNER_MODEL_STRICT_JSON_OUTPUT_CONTRACT
-        == strict_json_contract
-    )
-    assert prompt_packet["output_schema"]["strict_json_output_contract"] == list(
-        strict_json_contract
-    )
-    for requirement in strict_json_contract:
-        assert requirement in search_planner_model_prompt.SEARCH_PLANNER_MODEL_SYSTEM_PROMPT
-        assert requirement in prompt
+    assert "Return one JSON object only" in prompt
+    assert "duplicate keys" in prompt
+    assert "nonfinite JSON fail closed" in prompt
+    assert "Return one JSON object" in search_planner_model_prompt.SEARCH_PLANNER_MODEL_SYSTEM_PROMPT
 
 
 def test_required_narrative_text_schema_contract_is_explicit_and_exactly_scoped() -> None:
@@ -3716,7 +3646,7 @@ def test_required_narrative_text_normalizes_before_proposal_preservation(
     model_output = _narrative_text_model_output(field_path)
     _set_narrative_text_field(model_output, field_path, "  meaningful   normalized\ntext  ")
 
-    proposal = _adapter(FakeAskModel(json.dumps(model_output))).produce(_planner_input(_kernel()).to_adapter_payload())
+    proposal = search_planner_model_adapter.validate_and_sanitize_model_output(model_output)
 
     assert _narrative_text_field_value(proposal, field_path) == "meaningful normalized text", field_name
 
@@ -3737,9 +3667,7 @@ def test_required_narrative_text_uses_normalized_length_boundaries(
     at_limit_text = "x" * expected_limit
     at_limit_output = _narrative_text_model_output(field_path)
     _set_narrative_text_field(at_limit_output, field_path, f" \t{at_limit_text}\n ")
-    proposal = _adapter(FakeAskModel(json.dumps(at_limit_output))).produce(
-        _planner_input(_kernel()).to_adapter_payload()
-    )
+    proposal = search_planner_model_adapter.validate_and_sanitize_model_output(at_limit_output)
     assert len(at_limit_text) == expected_limit
     assert _narrative_text_field_value(proposal, field_path) == at_limit_text, field_name
 
@@ -3959,15 +3887,7 @@ def test_visible_output_contract_and_adapter_contract_constants_stay_in_lockstep
         "minimum": 0,
         "adapter_normalization": ("adapter accepts integer-coercible values; emit a JSON integer"),
     }
-    assert schema["semantic_slot_cross_field_conditions"] == [
-        {
-            "if": {
-                "materiality": "material",
-                "status": {"one_of": ["ambiguous", "unresolved"]},
-            },
-            "then": {"user_confirmation_required": True},
-        }
-    ]
+    assert "semantic_slot_cross_field_conditions" not in schema
     assert schema["answer_component_cross_field_conditions"][:3] == [
         {
             "if": {"allowed_support_kinds": ["direct"]},
@@ -4331,101 +4251,40 @@ def test_visible_output_contract_and_adapter_contract_constants_stay_in_lockstep
         search_planner_model_prompt.SEARCH_PLANNER_MODEL_TEXT_LIMITS["default_text"] = 0
 
 
-def test_prompt_contract_preserves_sanitized_proposal_and_typed_m02_rejections() -> None:
-    valid_output = _planner_output()
-    expected_sanitized = search_planner_model_adapter.validate_and_sanitize_model_output(deepcopy(valid_output))
+def test_sparse_prompt_contract_and_internal_rich_validator_are_both_enforced() -> None:
+    valid_output = _sparse_planner_output()
     planner_input = _planner_input(_kernel()).to_adapter_payload()
     expected_prompt = search_planner_model_prompt.build_search_planner_model_prompt(planner_input)
     expected_prompt_meta = search_planner_model_prompt.prompt_metadata(expected_prompt)
+    expected_sanitized = search_planner_model_adapter.accept_planner_model_output(
+        valid_output,
+        user_query_text=QUERY,
+        requested_mode="balanced",
+    )
     produced = _adapter(FakeAskModel(json.dumps(valid_output))).produce(planner_input)
     metadata = produced.pop("planner_model_metadata")
 
     assert produced == expected_sanitized
-    assert (
-        sha256(json.dumps(produced, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
-        == "6d8ee61129489cd03e2c7b35d0c93f320322772929e5ebbb51d48d610aca4f90"  # pragma: allowlist secret
-    )
-    assert metadata["planner_model_prompt_schema_version"] == (SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION)
-    assert metadata == {
-        "planner_model_adapter_schema_version": ("search_planner_model_adapter_ag_search_planner_model_01_v1"),
-        "planner_model_prompt_schema_version": SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION,
-        "prompt_hash": expected_prompt_meta["prompt_hash"],
-        "prompt_length": expected_prompt_meta["prompt_length"],
-        "provider": "FakeProvider",
-        "model": "fake-fast-model",
-        "effort": "low",
-        "use_reasoning": False,
-        "require_json": True,
-        "provider_completion_posture": "not_available",
-        "strict_parse_subtype": "not_applicable",
-        "cleaner_modified": False,
-        "raw_prompt_retained": False,
-        "raw_model_response_retained": False,
-        "provider_payload_retained": False,
-        "model_adapter_enabled": True,
-    }
-    successful_payload = json.dumps(
-        {"proposal": produced, "planner_model_metadata": metadata},
-        sort_keys=True,
-    )
-    assert "predicate_id" not in successful_payload
-    assert "predicate_registry_version" not in successful_payload
-    successful_kernel = _kernel()
-    _produce(
-        successful_kernel,
-        _adapter(FakeAskModel(json.dumps(_planner_output()))),
-    )
-    successful_state = json.dumps(
-        {
-            "proposal_state": successful_kernel.state.search_planner_proposal_state,
-            "proposal_projection": (successful_kernel.state.search_planner_proposal_projection),
-            "proposal_history": successful_kernel.state.search_planner_proposal_history,
-            "trace_projection": successful_kernel.trace_projection().to_dict(),
-        },
-        sort_keys=True,
-    )
-    assert "predicate_id" not in successful_state
-    assert "predicate_registry_version" not in successful_state
+    assert metadata["planner_model_prompt_schema_version"] == SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION
+    assert metadata["prompt_hash"] == expected_prompt_meta["prompt_hash"]
+    assert metadata["prompt_length"] == expected_prompt_meta["prompt_length"]
+    assert metadata["require_json"] is True
+    assert metadata["raw_prompt_retained"] is False
+    assert metadata["raw_model_response_retained"] is False
+    assert metadata["provider_payload_retained"] is False
 
     invalid_cases = (
-        (
-            lambda output: output["answer_components"][0].pop("user_facing_label"),
-            "missing required field: user_facing_label",
-            SearchPlannerModelAdapterFailureCode.MISSING_REQUIRED_NESTED_FIELD,
-        ),
-        (
-            lambda output: output.__setitem__("semantic_slots", {}),
-            "semantic_slots must be a JSON array",
-            SearchPlannerModelAdapterFailureCode.INVALID_NESTED_TYPE,
-        ),
-        (
-            lambda output: output["semantic_slots"][0].__setitem__(
-                "status",
-                "unsupported_status",
-            ),
-            "unsupported value for status: unsupported_status",
-            SearchPlannerModelAdapterFailureCode.INVALID_ENUM_OR_BOUNDED_VALUE,
-        ),
-        (
-            lambda output: output.__setitem__("answer_components", []),
-            "search planner model output requires at least one answer component",
-            SearchPlannerModelAdapterFailureCode.INVALID_COMPONENT_COUNT,
-        ),
-        (
-            lambda output: output.__setitem__("question_meaning_summary", "x" * 421),
-            "required field exceeds bounded length: question_meaning_summary",
-            SearchPlannerModelAdapterFailureCode.INVALID_ENUM_OR_BOUNDED_VALUE,
-        ),
+        lambda output: output["answer_components"][0].pop("user_facing_label"),
+        lambda output: output.__setitem__("semantic_slots", {}),
+        lambda output: output["semantic_slots"][0].__setitem__("status", "unsupported_status"),
+        lambda output: output.__setitem__("answer_components", []),
+        lambda output: output.__setitem__("question_meaning_summary", "x" * 421),
     )
-    for mutate, expected_message, expected_code in invalid_cases:
+    for mutate in invalid_cases:
         invalid_output = _planner_output()
         mutate(invalid_output)
-        with pytest.raises(SearchPlannerModelAdapterError) as caught:
-            _adapter(FakeAskModel(json.dumps(invalid_output))).produce(_planner_input(_kernel()).to_adapter_payload())
-        assert str(caught.value) == expected_message
-        assert caught.value.failure_stage == (SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION)
-        assert caught.value.failure_code == expected_code
-        assert caught.value.mechanical_rule_id == "M02"
+        with pytest.raises(SearchPlannerModelAdapterError):
+            search_planner_model_adapter.validate_and_sanitize_model_output(invalid_output)
 
 
 def test_strict_type_predicate_matrix_covers_the_exact_licensed_partition() -> None:
@@ -4480,8 +4339,8 @@ def test_strict_type_predicate_matrix_covers_the_exact_licensed_partition() -> N
 
 
 def test_continuity_seed_predicate_registry_is_complete_and_closed() -> None:
-    assert len(_CONTINUITY_SEED_IDS) == 58
-    assert len(set(_CONTINUITY_SEED_IDS)) == 58
+    assert len(_CONTINUITY_SEED_IDS) == 57
+    assert len(set(_CONTINUITY_SEED_IDS)) == 57
     assert {predicate_id.value for predicate_id in _CONTINUITY_SEED_IDS} <= {
         predicate_id.value for predicate_id in SearchPlannerModelAdapterPredicateId
     }
@@ -4532,14 +4391,14 @@ def test_field_condition_witness_inventory_is_complete_and_one_to_one() -> None:
     exempt_ids = {witness.predicate_id for witness in _FIELD_CONDITION_WITNESS_INVENTORY if witness.scope != "field"}
 
     assert len(inventory_ids) == len(set(inventory_ids))
-    assert len(inventory_ids) == 305
+    assert len(inventory_ids) == 304
     assert set(inventory_ids) == set(SearchPlannerModelAdapterPredicateId)
     assert set(inventory_ids) == set(SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY)
     assert Counter(
         registration.mechanical_rule_id for registration in SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY.values()
     ) == {
         "M01": 14,
-        "M02": 165,
+        "M02": 164,
         "M03": 49,
         "M04": 8,
         "M05": 9,
@@ -4922,24 +4781,24 @@ def test_optional_scalar_omission_empty_and_whitespace_strings_remain_omissions(
 ) -> None:
     omitted = _planner_output()
     omit(omitted)
-    proposal = _adapter(FakeAskModel(json.dumps(omitted))).produce(_planner_input(_kernel()).to_adapter_payload())
+    proposal = search_planner_model_adapter.validate_and_sanitize_model_output(omitted)
     assert field_name not in result_container(proposal)
 
     for value in ("", "   "):
         supplied = _planner_output()
         set_value(supplied, value)
-        proposal = _adapter(FakeAskModel(json.dumps(supplied))).produce(_planner_input(_kernel()).to_adapter_payload())
+        proposal = search_planner_model_adapter.validate_and_sanitize_model_output(supplied)
         assert field_name not in result_container(proposal)
 
 
 def test_optional_text_list_omission_and_empty_array_remain_omissions() -> None:
     omitted = _planner_output()
-    proposal = _adapter(FakeAskModel(json.dumps(omitted))).produce(_planner_input(_kernel()).to_adapter_payload())
+    proposal = search_planner_model_adapter.validate_and_sanitize_model_output(omitted)
     assert "candidate_values" not in proposal["semantic_slots"][0]
 
     empty_array = _planner_output()
     empty_array["semantic_slots"][0]["candidate_values"] = []
-    proposal = _adapter(FakeAskModel(json.dumps(empty_array))).produce(_planner_input(_kernel()).to_adapter_payload())
+    proposal = search_planner_model_adapter.validate_and_sanitize_model_output(empty_array)
     assert "candidate_values" not in proposal["semantic_slots"][0]
 
 
@@ -4987,7 +4846,7 @@ def test_valid_string_arrays_remain_normalized_and_ordered() -> None:
     model_output["mandatory_caveats"] = ["  first caveat ", "second   caveat"]
     model_output["semantic_slots"][0]["candidate_values"] = ["  first value ", "second   value"]
 
-    proposal = _adapter(FakeAskModel(json.dumps(model_output))).produce(_planner_input(_kernel()).to_adapter_payload())
+    proposal = search_planner_model_adapter.validate_and_sanitize_model_output(model_output)
 
     assert proposal["mandatory_caveats"] == ["first caveat", "second caveat"]
     assert proposal["semantic_slots"][0]["candidate_values"] == [
@@ -5188,7 +5047,7 @@ def test_allowed_support_kinds_valid_tuples_remain_accepted_in_compatible_compon
 ) -> None:
     model_output, component_index = _planner_output_with_support_kind_variant(support_kinds)
 
-    proposal = _adapter(FakeAskModel(json.dumps(model_output))).produce(_planner_input(_kernel()).to_adapter_payload())
+    proposal = search_planner_model_adapter.validate_and_sanitize_model_output(model_output)
 
     assert component_index == expected_index
     assert proposal["answer_components"][component_index]["allowed_support_kinds"] == support_kinds
@@ -5201,7 +5060,7 @@ def test_allowed_support_kinds_preserves_existing_string_normalization_and_order
         " inferred  ",
     ]
 
-    proposal = _adapter(FakeAskModel(json.dumps(model_output))).produce(_planner_input(_kernel()).to_adapter_payload())
+    proposal = search_planner_model_adapter.validate_and_sanitize_model_output(model_output)
 
     assert proposal["answer_components"][component_index]["allowed_support_kinds"] == [
         "direct",
@@ -5254,7 +5113,7 @@ def test_allowed_support_kinds_repair_preserves_unrelated_text_array_empty_item_
     model_output = _planner_output()
     model_output["mandatory_caveats"] = ["valid text", ""]
 
-    proposal = _adapter(FakeAskModel(json.dumps(model_output))).produce(_planner_input(_kernel()).to_adapter_payload())
+    proposal = search_planner_model_adapter.validate_and_sanitize_model_output(model_output)
 
     assert proposal["mandatory_caveats"] == ["valid text"]
 
@@ -5297,18 +5156,13 @@ def test_wrong_type_errors_are_generic_and_do_not_retain_rejected_material() -> 
 
 def test_model_query_strategy_cannot_select_provider_or_model() -> None:
     kernel = _kernel()
-    unsafe = _planner_output()
-    strategy = unsafe["component_search_requirements"][0]["metadata"]["query_strategy_candidates"][0]
-    strategy["provider_name"] = "untrusted-provider"
-    strategy["model_selector"] = "untrusted-model"
-    fake = FakeAskModel(json.dumps(unsafe))
+    unsafe = _sparse_planner_output()
+    unsafe["components"][0]["provider_name"] = "untrusted-provider"
 
-    with pytest.raises(
-        SearchPlannerModelAdapterError,
-        match="forbidden provider/model authority",
-    ):
-        _produce(kernel, _adapter(fake))
+    with pytest.raises(SearchPlannerModelAdapterError) as caught:
+        _produce(kernel, _adapter(FakeAskModel(json.dumps(unsafe))))
 
+    assert caught.value.failure_code is SearchPlannerModelAdapterFailureCode.INVALID_SEMANTIC_PROPOSAL
     assert kernel.state.search_planner_proposal_state == {}
 
 

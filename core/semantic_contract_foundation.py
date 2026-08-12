@@ -36,20 +36,7 @@ _SENSITIVE_KEYS = frozenset(
         "token",
     }
 )
-_MATERIAL_CHOICE_SLOT_KINDS = frozenset(
-    {
-        "entity",
-        "variant",
-        "metric",
-        "time_period",
-        "geography",
-        "currency_basis",
-        "inflation_basis",
-        "configuration",
-        "load_factor",
-        "direct_vs_computed",
-    }
-)
+
 _NON_MATERIAL_ADDITION_KINDS = (
     "caveat_recording",
     "already_implied_normalization_note",
@@ -850,9 +837,9 @@ class QuestionMeaningRecord:
 
     @property
     def user_confirmation_required(self) -> bool:
-        return any(slot.user_confirmation_required for slot in self.semantic_slots) or any(
-            slot.materially_unresolved for slot in self.semantic_slots
-        )
+        # Unresolved factual state is not itself a user-choice request. The
+        # semantic owner must state confirmation posture explicitly.
+        return any(slot.user_confirmation_required for slot in self.semantic_slots)
 
     @property
     def record_digest(self) -> str:
@@ -871,18 +858,6 @@ class QuestionMeaningRecord:
             errors.append("at least one semantic slot is required")
         if not self.answer_components:
             errors.append("at least one answer component contract is required")
-
-        for slot in self.semantic_slots:
-            if slot.materially_unresolved and not slot.user_confirmation_required:
-                errors.append(
-                    f"semantic slot {slot.slot_id} is material and {slot.status.value}; user confirmation is required"
-                )
-            if (
-                slot.slot_kind.value in _MATERIAL_CHOICE_SLOT_KINDS
-                and slot.status in {SemanticSlotStatus.AMBIGUOUS, SemanticSlotStatus.UNRESOLVED}
-                and not slot.user_confirmation_required
-            ):
-                errors.append(f"semantic slot {slot.slot_id} represents a material choice requiring confirmation")
 
         for component in self.answer_components:
             for slot_id in component.semantic_slot_ids:

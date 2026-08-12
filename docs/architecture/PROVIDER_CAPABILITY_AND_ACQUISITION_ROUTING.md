@@ -5,7 +5,7 @@ Authority: canonical:provider-capability-acquisition-routing
 Default-read: yes
 Applies-to: current ordinary DISCOVER routing, shared acquisition contracts, ProviderPlan projection, retained RunKernel post-discovery routing, mechanical dispatch, and selected-candidate nontrigger behavior
 Does-not-authorize: live calls, provider-quality claims, provider-failure retry, provider synthesis, new product requesters, or downstream evidence/final authority
-Verified-against-runtime: 6fbca602afac5a00bb6bafa2a6888b6ec31d5065
+Verified-against-runtime: 96413c9a1f901dc191ecc94e6330014841ee4dda
 Update-trigger: change to capability vocabulary, catalog, request/artifact contracts, provider selection, adapter bounds, product consumption, or provider-material authority
 
 ## Purpose And Ownership
@@ -45,13 +45,14 @@ composes one boolean provider-
 availability snapshot from configured credential presence, or from explicitly
 injected offline-test facts, and passes it to ProviderPlan. Callables, transport
 objects, and ordered provider preferences do not establish availability. The
-same snapshot remains available to the retained future READ controller, but
-candidate selection alone creates no proposal and never reaches it. The
+same snapshot is available to the installed SearchOS READ controller, but
+candidate selection alone creates no proposal and never reaches it; an exact
+SearchJudgment material-need decision is independently required. The
 SearchResultCandidatePacket, FetchReadContentPacket, SanitizedContentReference,
 and EvidenceLedger owners remain unchanged.
 
 Current runtime/test provenance:
-`6fbca602afac5a00bb6bafa2a6888b6ec31d5065`.
+`96413c9a1f901dc191ecc94e6330014841ee4dda`.
 The initial-discovery transport retirement remains historically installed at
 `48a309124764d813cf27081bf5871d5a9612db79`.
 The mechanical adapter foundation remains historically installed at
@@ -84,11 +85,11 @@ source obligation at that exact snapshot point, so neither is fabricated. This
 does not negate later accepted contract lineage or contract-bound historical
 SearchExecutor flows. It is reachable through the
 unflagged Fast/Balanced/Deep CLI/backend composition and does not use the
-separate `live_search_validation` origin. Serper
-`lightweight_disambiguation` remains excluded from this post-DISCOVER
-candidate-packet origin. The separate pre-QueryPlan
-`SEARCHOS-REQUIRED-SCOUT-ORDINARY-COMPOSITION-01` lane may consume it only as
-bounded non-evidence query direction.
+separate `live_search_validation` origin. A QueryPlan `orientation` job routes
+to Serper `lightweight_disambiguation` through the same ProviderPlan boundary
+and ordinary candidate-packet mechanics. Its result remains bounded
+directional, non-evidence material despite that continuity. There is no
+separate pre-QueryPlan Scout acquisition lane.
 
 The ordinary packet digest binds the ordered candidate-record digests. Its
 compact RunKernel ref retains that aggregate digest and lineage/count fields,
@@ -101,38 +102,56 @@ and consumers, not credential presence or live availability.
 
 | Capability | Cataloged | Adapter installed | Typed-runtime reachable | Ordinary-product enabled | Ordinary-product reachable | Ordinary-product consumed |
 | --- | --- | --- | --- | --- | --- | --- |
-| `DISCOVER` | yes | yes | yes | yes | yes | yes, through current ProviderPlan, scheduler, dispatch, continuation, supplemental, and recovery consumers |
-| `READ` | yes | yes | yes | no | no ordinary material-need producer | no; selected candidate and URL provenance alone are a nontrigger |
+| `DISCOVER` | yes | yes | yes | yes | yes | yes, through QueryPlan `orientation` and `standard_discovery`; `deep_discovery` reaches the current general-Deep block through the same ProviderPlan/scheduler path |
+| `READ` | yes | yes | yes | yes | yes, only after an exact SearchJudgment material-need decision | yes, through existing FetchRead/EvidenceLedger custody; selected candidate and URL provenance alone remain a nontrigger |
 | `FOCUSED_EXTRACT` | yes | yes | yes | no | controller recognizes then returns `focused_extract_requester_not_installed` | no |
 | `MAP_SITE` | yes | yes | yes | no | controller recognizes then returns `map_candidate_reentry_not_installed` | no |
 | `CRAWL_SITE` | yes | yes | yes | no | controller recognizes then returns `crawl_page_custody_not_installed` | no |
-| General Linkup Deep | yes | mechanical support yes | authorized runtime only | no | no qualifying current requester | no |
+| General Linkup Deep | yes | mechanical support yes | authorized runtime only | request reaches the existing authorization gate | QueryPlan `deep_discovery` requests it; absent authorization it blocks before transport | no unlicensed transport |
 | Scrutineer Deep | yes | yes | yes | yes, behind existing remediation gates | yes | preserve existing bounded consumer |
 | `PROVIDER_SYNTHESIS` | yes, as disabled surfaces | disabled | blocked | no | no | no |
 
 Adapter installation or validation-constructed dispatch is not ordinary product
 consumption. No product requester was manufactured for focused extraction, site
-mapping, site crawling, or general Linkup Deep.
+mapping, or site crawling. A QueryPlan `deep_discovery` job creates an ordinary
+general-Deep request, but it is not a premium license or a new qualifying Deep
+executor and does not bypass either existing block.
 
-## Approved SearchOS Target (Not Installed)
+## Installed SearchOS Job Mapping And Remaining Target
 
-[SearchOS Operating Model](SEARCHOS_OPERATING_MODEL.md) owns the target
-architecture. Its minimum shared search-result contract is a title, URL,
+[SearchOS Operating Model](SEARCHOS_OPERATING_MODEL.md) owns the architecture.
+The installed initial and iterative acquisition front half uses one exact job
+vocabulary:
+
+| QueryPlan job | Provider-routing projection | Authority consequence |
+| --- | --- | --- |
+| `orientation` | `DISCOVER(lightweight_disambiguation)` | bounded non-evidence direction only |
+| `standard_discovery` | ordinary DISCOVER policy | ordinary provider selection and dispatch |
+| `deep_discovery` | general Deep requested | existing authorization/requester blocks; no implicit fallback or transport |
+
+The job class is preserved through ProviderPlan, homogeneous scheduler batches,
+dispatch, observations, and slot-local judgment. It is not re-inferred from
+query text or provider output. Confirmation-required ambiguity creates no job
+and therefore performs no provider selection or transport.
+
+The remaining target's minimum shared search-result contract is a title, URL,
 bounded relevant context, provider/result identity, and optional date or scalar
 metadata. Richer provider-attached content is an optional optimization; neither
 routing nor downstream research authority may assume every search result
 contains a complete page.
 
-In the target vocabulary, Linkup Fetch and Tavily Extract are peer
+In the shared vocabulary, Linkup Fetch and Tavily Extract are peer
 implementations of `READ_PAGE`. That equivalence does not change today's
-Linkup-first route policy or activate an ordinary READ consumer. Request-bound
+Linkup-first route policy or itself authorize the installed ordinary READ
+consumer. Request-bound
 provenance is sufficient for bounded provider-returned material. A provider-
 reported URL is optional metadata, not proof of DNS, connected address,
 redirect chain, or final/canonical network target.
 
-One alternate or stronger attempt after a typed retrieval-quality failure and
-bounded one-breadcrumb navigation are planned. Provider-failure fallback and
-navigation remain uninstalled. Versioned provider profiles are planned owners
+One alternate or stronger attempt after a typed retrieval-quality failure
+remains planned. Bounded one-breadcrumb navigation is installed behind its
+existing SearchOS action contract and authority gates. Provider-failure fallback
+remains uninstalled. Versioned provider profiles are planned owners
 of volatile capabilities, limits, optional outputs, costs, and availability;
 versioned routing policy is the planned owner of preferences, alternatives,
 attempt limits, mode budgets, and escalation order. Current policy remains the
@@ -189,7 +208,7 @@ Linkup-only remains valid for general/domain-targeted DISCOVER and preferred
 READ when configured. Provider subsets create no fan-out, and domain targeting
 grants no social interpretation or authority.
 
-## Selected-Candidate Nontrigger And Retained READ Route
+## Selected-Candidate Nontrigger And Installed READ Route
 
 The ordinary selected-candidate result is:
 
@@ -202,8 +221,8 @@ SearchResultCandidatePacket
 -> no work order, route, cap charge, adapter call, or custody
 ```
 
-If a future canonical surface supplies a separate current material need, the
-retained route is:
+When the installed SearchOS SearchJudgment supplies a separate exact current
+material need, the route is:
 
 ```text
 independent material need + selected URL provenance
@@ -223,10 +242,11 @@ independent material need + selected URL provenance
 
 The source-custody and main-RunKernel coverage flags default to false. Source
 custody returns `not_needed` before provider availability, RunKernel actions,
-cap accounting, or transport when no proposal is supplied. Late main coverage
-consumes prior custody and cannot reacquire. The historical live source-custody
-validation profile is non-executable. This is offline nontrigger proof, not
-default live CLI READ consumption or live validation.
+cap accounting, or transport when no proposal is supplied. SearchJudgment may
+create the exact independent proposal; late main coverage consumes prior
+custody and cannot reacquire. The historical live source-custody validation
+profile is non-executable. Offline fixtures prove the product route and
+nontrigger boundary, not live CLI READ quality or live validation.
 
 Linkup Fetch is preferred. Tavily Extract is selected only when the explicit
 composition snapshot says Linkup is unavailable before dispatch. Injecting a
@@ -289,10 +309,14 @@ general Deep. A validation-only authorization must prove:
 - at most two authorized queries and five results per query; and
 - mandatory `searchResults` output.
 
-The mechanical adapter accepts one authorized query per job. A valid record is
-typed-runtime reachable only; ordinary routing still blocks with
-`general_deep_no_ordinary_product_requester`. Scrutineer Deep remains separate
-and unchanged. The new post-discovery controller returns the earlier durable
+The mechanical adapter accepts one authorized query per job. QueryPlan
+`deep_discovery` projects `general_deep_requested` but creates neither premium
+authorization nor a new licensed ordinary Deep executor. Without the exact
+authorization record, routing blocks with
+`general_deep_authorization_required`; a validation-constructed authorization
+still remains subject to the existing
+`general_deep_no_ordinary_product_requester` boundary. Scrutineer Deep remains
+separate and unchanged. The post-discovery controller retains the durable
 PRODUCT blocker `premium_sequential_acquisition_not_licensed` for a proposed
 general premium-sequential need.
 
@@ -300,13 +324,17 @@ general premium-sequential need.
 
 Current PRODUCT consumers:
 
+- accepted AnswerContract components derive one QueryPlan acquisition worklist;
+  its `orientation`, `standard_discovery`, and `deep_discovery` jobs retain
+  component and semantic lineage through ProviderPlan, scheduling, dispatch,
+  observation, and slot-local judgment;
 - ordinary main, continuation, supplemental, and recovery DISCOVER work through
   ProviderPlan, scheduling, and dispatch, using provider-returned material with
   zero separate candidate-URL transport; the immutable initial selection feeds
   the ordinary revision-1 SearchExecutorHandoff and canonical candidate packet;
-- no selected-candidate READ/source-custody consumer; the default-disabled
-  composition is a nontrigger until an independent material-need producer is
-  installed; and
+- exact-candidate READ/source custody after an independent SearchJudgment
+  material-need decision; the selected candidate remains a nontrigger by
+  itself; and
 - the generic single-relation acquisition root, which now supplies a completed
   `core.routing` decision from an explicit provider-neutral DISCOVER qualifier
   and availability before provider-specific callables are invoked. Ordinary
@@ -361,10 +389,10 @@ transport and no ranked-passage reconstruction.
 
 The old combined exact-URL/final-custody checkpoint was superseded before
 implementation. [Current Roadmap](../roadmap/CURRENT_ROADMAP.md) exclusively
-owns current phase order. The approved sequence begins with SearchOS query
-strategy and reconnaissance, then read-source/custody, iterative navigation and
-retrieval judgment, and gap recovery/stopping. This routing owner does not
-independently reprioritize those phases.
+owns current phase order. The unified SearchOS initial and iterative acquisition
+front half is installed; the next phase consolidates the retained
+`SearchWorkPlan` and `QueryProduction` carriers under the new job/action/binding
+authority. This routing owner does not independently reprioritize that phase.
 
 This offline Build proves no live provider quality, availability, coverage,
 currentness, latency, price, reliability, or answer improvement. It does not

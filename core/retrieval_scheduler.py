@@ -363,7 +363,17 @@ def _bind_main_retrieval_lineage(
     iteration = scheduled_action.iteration
     if iteration is None:
         raise ValueError("ordinary main retrieval requires an iteration")
-    item_refs = tuple(query_plan.execution_item_refs(iteration))
+    discovery_job_class = scheduled_action.metadata.get(
+        "discovery_job_class"
+    )
+    item_refs = tuple(
+        query_plan.execution_item_refs(
+            iteration,
+            discovery_job_class=discovery_job_class,
+        )
+        if discovery_job_class is not None
+        else query_plan.execution_item_refs(iteration)
+    )
     authorized_queries = tuple(
         str(item_ref.get("authorized_query") or "") for item_ref in item_refs
     )
@@ -454,6 +464,7 @@ def schedule_main_retrieval_from_provider_record(
     provider_record: Any,
     recovery_active: bool,
     force_component_providers: Sequence[str] | None = None,
+    discovery_job_class: object | None = None,
 ) -> RetrievalScheduledAction:
     """Schedule a main-loop pass from QueryPlan queries and a ProviderPlan record."""
 
@@ -467,6 +478,11 @@ def schedule_main_retrieval_from_provider_record(
             recovery_active=recovery_active,
             metadata={
                 "force_component_providers_consumed": list(force_component_providers or ()),
+                "discovery_job_class": (
+                    str(getattr(discovery_job_class, "value", discovery_job_class))
+                    if discovery_job_class is not None
+                    else None
+                ),
             },
         )
     )
@@ -490,6 +506,7 @@ def schedule_main_retrieval_with_provider_plan(
     choose_search_depth: Callable[[str, str | None, int], str],
     include_domains: Sequence[str] = (),
     exclude_domains: Sequence[str] = (),
+    discovery_job_class: object | None = None,
     merge_provider_overrides: Callable[..., list[str] | None] | None = None,
     select_provider_list: Callable[..., list[str]] | None = None,
 ) -> RetrievalScheduledAction:
@@ -515,6 +532,7 @@ def schedule_main_retrieval_with_provider_plan(
         choose_search_depth=choose_search_depth,
         include_domains=include_domains,
         exclude_domains=exclude_domains,
+        discovery_job_class=discovery_job_class,
         **selector_kwargs,
     )
     return schedule_main_retrieval_from_provider_record(
@@ -524,6 +542,7 @@ def schedule_main_retrieval_with_provider_plan(
         provider_record=provider_record,
         recovery_active=recovery_active,
         force_component_providers=forced,
+        discovery_job_class=discovery_job_class,
     )
 
 
@@ -533,6 +552,7 @@ def schedule_main_retrieval_from_pipeline_scope(
     current_queries: Sequence[str],
     recovery_active: bool,
     choose_search_depth: Callable[[str, str | None, int], str],
+    discovery_job_class: object | None = None,
 ) -> RetrievalScheduledAction:
     """Schedule main retrieval from a fixed pipeline-local compatibility scope."""
 
@@ -573,6 +593,7 @@ def schedule_main_retrieval_from_pipeline_scope(
         choose_search_depth=choose_search_depth,
         include_domains=values["include_domains"],
         exclude_domains=values["exclude_domains"],
+        discovery_job_class=discovery_job_class,
         merge_provider_overrides=values["merge_provider_overrides"],
         select_provider_list=values["select_provider_list"],
     )
@@ -585,6 +606,7 @@ def schedule_main_retrieval_from_kernel_action(
     current_queries: Sequence[str],
     recovery_active: bool,
     choose_search_depth: Callable[[str, str | None, int], str],
+    discovery_job_class: object | None = None,
 ) -> RetrievalScheduledAction:
     """Schedule main retrieval only after RunKernel authorizes the pass."""
 
@@ -599,6 +621,7 @@ def schedule_main_retrieval_from_kernel_action(
         current_queries=current_queries,
         recovery_active=recovery_active,
         choose_search_depth=choose_search_depth,
+        discovery_job_class=discovery_job_class,
     )
     return _bind_main_retrieval_lineage(
         scheduled_action,
@@ -686,6 +709,7 @@ def schedule_provider_continuation_with_plan(
     override_is_user: bool,
     include_domains: Sequence[str] = (),
     exclude_domains: Sequence[str] = (),
+    discovery_job_class: object | None = None,
     select_provider_list: Callable[..., list[str]] | None = None,
 ) -> RetrievalScheduledAction:
     """Record continuation ProviderPlan facts and schedule the next pass."""
@@ -703,6 +727,7 @@ def schedule_provider_continuation_with_plan(
         override_is_user=override_is_user,
         include_domains=include_domains,
         exclude_domains=exclude_domains,
+        discovery_job_class=discovery_job_class,
         **selector_kwargs,
     )
     return schedule_provider_continuation_from_record(

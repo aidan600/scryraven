@@ -28,7 +28,7 @@ from core.semantic_contract_foundation import (
     validate_answer_component_contract_set,
 )
 
-INITIAL_ANSWER_CONTRACT_ACCEPTANCE_SCHEMA_VERSION = "initial_answer_contract_acceptance_ag_sem_05_v1"
+INITIAL_ANSWER_CONTRACT_ACCEPTANCE_SCHEMA_VERSION = "initial_answer_contract_acceptance_ag_sem_05_v2"
 INITIAL_ANSWER_CONTRACT_ACCEPTANCE_STAGE = "initial_answer_contract_acceptance"
 INITIAL_ANSWER_CONTRACT_ACCEPTANCE_REASON = "initial_answer_contract_acceptance_from_validated_passive_proposal"
 INITIAL_ANSWER_CONTRACT_ACCEPTANCE_TRACE_KEY = "initial_answer_contract_acceptance"
@@ -178,14 +178,9 @@ def _accepted_component_ref(component: Mapping[str, Any]) -> dict[str, Any]:
         "component_id": _clean_token(component.get("component_id")),
         "component_revision": _clean_token(component.get("component_revision")),
         "component_digest": _clean_token(component.get("component_digest"), limit=128),
-        "component_purpose": _clean_token(component.get("component_purpose"))
-        or "user_facing_answer_target",
-        "user_facing_label": _clean_text(
-            component.get("user_facing_label"), limit=220
-        ),
-        "user_facing_question": _clean_text(
-            component.get("user_facing_question"), limit=500
-        ),
+        "component_purpose": _clean_token(component.get("component_purpose")) or "user_facing_answer_target",
+        "user_facing_label": _clean_text(component.get("user_facing_label"), limit=220),
+        "user_facing_question": _clean_text(component.get("user_facing_question"), limit=500),
         "requirement_posture": _clean_token(component.get("requirement_posture")),
         "materiality": _clean_token(component.get("materiality")),
         "acceptance_criteria": _text_tuple(component.get("acceptance_criteria"), limit=320),
@@ -194,13 +189,10 @@ def _accepted_component_ref(component: Mapping[str, Any]) -> dict[str, Any]:
         "max_inference_depth": int(component.get("max_inference_depth") or 0),
         "source_obligation_candidate_ids": _text_tuple(component.get("source_obligation_candidate_ids")),
         "source_obligation_candidate_refs": _text_tuple(component.get("source_obligation_candidate_refs")),
-        "dependency_component_ids": _text_tuple(
-            component.get("dependency_component_ids")
-        ),
+        "dependency_component_ids": _text_tuple(component.get("dependency_component_ids")),
         "normalization_policy": _clean_text(component.get("normalization_policy"), limit=300),
         "calculation_policy": _clean_text(component.get("calculation_policy"), limit=300),
-        "partial_answer_policy": _clean_token(component.get("partial_answer_policy"))
-        or "qualify_visible_gap",
+        "partial_answer_policy": _clean_token(component.get("partial_answer_policy")) or "qualify_visible_gap",
         "mandatory_caveats": _text_tuple(component.get("mandatory_caveats"), limit=260),
         "prohibited_upgrades": _text_tuple(component.get("prohibited_upgrades"), limit=260),
         "metadata": _json_safe(component.get("metadata") or {}),
@@ -217,11 +209,14 @@ def _accepted_slot_ref(slot: Mapping[str, Any]) -> dict[str, Any]:
         "slot_kind": _clean_token(slot.get("slot_kind")),
         "status": status,
         "materiality": materiality,
+        "candidate_values": _text_tuple(slot.get("candidate_values"), limit=220),
+        "user_confirmation_required": bool(slot.get("user_confirmation_required", False)),
+        "normalization_notes": _text_tuple(slot.get("normalization_notes"), limit=260),
         "unresolved_material": unresolved_material,
     }
-    # Selected value is preserved only when the proposal already selected it.
-    # Material unresolved/ambiguous slots are never resolved here.
-    if selected_value is not None and not unresolved_material:
+    # Admission preserves an already-resolved selected value but never resolves
+    # any ambiguous/unresolved slot itself, regardless of materiality.
+    if selected_value is not None and status not in _MATERIAL_UNRESOLVED_STATUSES:
         projection["selected_value"] = selected_value
     return projection
 
@@ -409,39 +404,27 @@ def build_initial_answer_contract_acceptance_state(
                 component_id=component_id,
                 component_revision=component_revision,
                 component_digest=component_digest,
-                component_purpose=component.get("component_purpose")
-                or "user_facing_answer_target",
+                component_purpose=component.get("component_purpose") or "user_facing_answer_target",
                 user_facing_label=str(component.get("user_facing_label") or ""),
                 user_facing_question=str(component.get("user_facing_question") or ""),
                 requirement_posture=component.get("requirement_posture") or "required",
                 acceptance_criteria=tuple(component.get("acceptance_criteria") or ()),
                 semantic_slot_ids=tuple(component.get("semantic_slot_ids") or ()),
-                source_obligation_candidate_ids=tuple(
-                    component.get("source_obligation_candidate_ids") or ()
-                ),
-                source_obligation_candidate_refs=tuple(
-                    component.get("source_obligation_candidate_refs") or ()
-                ),
-                allowed_support_kinds=tuple(
-                    component.get("allowed_support_kinds") or ("direct",)
-                ),
+                source_obligation_candidate_ids=tuple(component.get("source_obligation_candidate_ids") or ()),
+                source_obligation_candidate_refs=tuple(component.get("source_obligation_candidate_refs") or ()),
+                allowed_support_kinds=tuple(component.get("allowed_support_kinds") or ("direct",)),
                 max_inference_depth=int(component.get("max_inference_depth") or 0),
                 normalization_policy=component.get("normalization_policy"),
                 calculation_policy=component.get("calculation_policy"),
-                dependency_component_ids=tuple(
-                    component.get("dependency_component_ids") or ()
-                ),
-                partial_answer_policy=component.get("partial_answer_policy")
-                or "qualify_visible_gap",
+                dependency_component_ids=tuple(component.get("dependency_component_ids") or ()),
+                partial_answer_policy=component.get("partial_answer_policy") or "qualify_visible_gap",
                 mandatory_caveats=tuple(component.get("mandatory_caveats") or ()),
                 prohibited_upgrades=tuple(component.get("prohibited_upgrades") or ()),
                 materiality=component.get("materiality") or "material",
                 metadata=dict(component.get("metadata") or {}),
             )
         except (TypeError, ValueError) as exc:
-            raise InitialAnswerContractAcceptanceError(
-                f"invalid answer component {component_id}: {exc}"
-            ) from exc
+            raise InitialAnswerContractAcceptanceError(f"invalid answer component {component_id}: {exc}") from exc
         component_contracts.append(contract)
         accepted_components.append(_accepted_component_ref(contract.to_dict()))
 
@@ -451,8 +434,7 @@ def build_initial_answer_contract_acceptance_state(
     )
     if not matrix_validation.ok:
         raise InitialAnswerContractAcceptanceError(
-            "invalid answer component contract matrix: "
-            + "; ".join(matrix_validation.errors)
+            "invalid answer component contract matrix: " + "; ".join(matrix_validation.errors)
         )
 
     accepted_slots: list[dict[str, Any]] = []
@@ -470,9 +452,7 @@ def build_initial_answer_contract_acceptance_state(
     materiality_policy = _json_safe(materiality_policy) if isinstance(materiality_policy, Mapping) else {}
     question_meaning_metadata = record.get("metadata")
     question_meaning_metadata = (
-        _json_safe(question_meaning_metadata)
-        if isinstance(question_meaning_metadata, Mapping)
-        else {}
+        _json_safe(question_meaning_metadata) if isinstance(question_meaning_metadata, Mapping) else {}
     )
 
     lineage = {
@@ -546,12 +526,8 @@ def build_initial_answer_contract_acceptance_projection(
             "materiality": ref.get("materiality"),
             "allowed_support_kinds": list(ref.get("allowed_support_kinds") or ()),
             "max_inference_depth": ref.get("max_inference_depth"),
-            "source_obligation_candidate_ids": list(
-                ref.get("source_obligation_candidate_ids") or ()
-            ),
-            "dependency_component_ids": list(
-                ref.get("dependency_component_ids") or ()
-            ),
+            "source_obligation_candidate_ids": list(ref.get("source_obligation_candidate_ids") or ()),
+            "dependency_component_ids": list(ref.get("dependency_component_ids") or ()),
         }
         for ref in acceptance_state.get("accepted_answer_component_refs", [])
         if isinstance(ref, Mapping)
@@ -562,6 +538,10 @@ def build_initial_answer_contract_acceptance_projection(
             "slot_kind": ref.get("slot_kind"),
             "status": ref.get("status"),
             "materiality": ref.get("materiality"),
+            "candidate_values": list(ref.get("candidate_values") or ()),
+            "selected_value": ref.get("selected_value"),
+            "user_confirmation_required": bool(ref.get("user_confirmation_required", False)),
+            "normalization_notes": list(ref.get("normalization_notes") or ()),
             "unresolved_material": ref.get("unresolved_material"),
         }
         for ref in acceptance_state.get("accepted_semantic_slot_refs", [])
@@ -587,9 +567,7 @@ def build_initial_answer_contract_acceptance_projection(
         "accepted_semantic_slot_count": len(slot_refs),
         "material_ambiguity_count": acceptance_state.get("material_ambiguity_count", 0),
         "material_ambiguity_preserved": acceptance_state.get("material_ambiguity_preserved", True),
-        "question_meaning_metadata": acceptance_state.get(
-            "question_meaning_metadata", {}
-        ),
+        "question_meaning_metadata": acceptance_state.get("question_meaning_metadata", {}),
         "lineage": acceptance_state.get("lineage", {}),
         "coverage_created": False,
         "amendment_created": False,

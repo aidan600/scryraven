@@ -123,12 +123,23 @@ def test_transient_decision_contract_describes_every_action_and_input_role() -> 
     action_expectations = {
         "REQUEST_READ_PAGE": (
             [*shared, "candidate_use_option_ref"],
-            {"read_custody_refs", "followup_query"},
+            {
+                "read_custody_refs",
+                "followup_query",
+                "discovery_job_class",
+                "interpretation_binding",
+                "semantic_slot_ref",
+            },
             "required_exact_if_current_custody_else_absent",
         ),
         "PROPOSE_FOLLOWUP_QUERY": (
-            [*shared, "followup_query"],
-            {"candidate_use_option_ref", "read_custody_refs"},
+            [*shared, "followup_query", "discovery_job_class"],
+            {
+                "candidate_use_option_ref",
+                "read_custody_refs",
+                "interpretation_binding",
+                "semantic_slot_ref",
+            },
             "required_exact_if_current_custody_else_absent",
         ),
         "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION": (
@@ -137,12 +148,45 @@ def test_transient_decision_contract_describes_every_action_and_input_role() -> 
                 "candidate_use_option_ref",
                 "followup_query",
                 "read_custody_assessments",
+                "discovery_job_class",
+                "interpretation_binding",
+                "semantic_slot_ref",
             },
             "forbidden",
         ),
         "HANDOFF_UNRESOLVED": (
             shared,
-            {"candidate_use_option_ref", "read_custody_refs", "followup_query"},
+            {
+                "candidate_use_option_ref",
+                "read_custody_refs",
+                "followup_query",
+                "discovery_job_class",
+                "interpretation_binding",
+                "semantic_slot_ref",
+            },
+            "required_exact_if_current_custody_else_absent",
+        ),
+        "PROPOSE_INTERPRETATION_BINDING": (
+            [*shared, "interpretation_binding"],
+            {
+                "candidate_use_option_ref",
+                "read_custody_refs",
+                "followup_query",
+                "discovery_job_class",
+                "read_custody_assessments",
+                "semantic_slot_ref",
+            },
+            "forbidden",
+        ),
+        "REQUIRE_CLARIFICATION": (
+            [*shared, "semantic_slot_ref"],
+            {
+                "candidate_use_option_ref",
+                "read_custody_refs",
+                "followup_query",
+                "discovery_job_class",
+                "interpretation_binding",
+            },
             "required_exact_if_current_custody_else_absent",
         ),
     }
@@ -384,7 +428,9 @@ def test_one_component_read_credits_only_exact_owned_obligation(
             "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION",
             "HANDOFF_UNRESOLVED",
             "PROPOSE_FOLLOWUP_QUERY",
+            "PROPOSE_INTERPRETATION_BINDING",
             "REQUEST_READ_PAGE",
+            "REQUIRE_CLARIFICATION",
         ]
         for item in harness.read_assessment_calls
     )

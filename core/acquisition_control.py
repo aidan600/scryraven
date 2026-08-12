@@ -1766,6 +1766,7 @@ def build_acquisition_authority_snapshot(
     initial_answer_contract: Mapping[str, Any] | None = None,
     search_executor_handoff_state: Mapping[str, Any],
     search_work_plan: Mapping[str, Any] | None = None,
+    allow_no_dispatch_planning_snapshot: bool = False,
 ) -> dict[str, Any]:
     current = _json_clone(current_answer_contract or {})
     initial = _json_clone(initial_answer_contract or {})
@@ -1823,10 +1824,23 @@ def build_acquisition_authority_snapshot(
     handoff = _mapping(
         search_executor_handoff_state, "search_executor_handoff_state_missing"
     )
-    if handoff.get("run_id") != run_id or handoff.get("request_id") != request_id:
+    no_dispatch_planning = bool(
+        allow_no_dispatch_planning_snapshot and not handoff
+    )
+    if not no_dispatch_planning and (
+        handoff.get("run_id") != run_id
+        or handoff.get("request_id") != request_id
+    ):
         raise AcquisitionControlError("search_executor_handoff_identity_mismatch")
-    if handoff.get("origin_kind") == "ordinary_query_provider":
-        if _contract_ref(handoff.get("answer_contract_ref")) != contract_ref:
+    if (
+        handoff.get("origin_kind") == "ordinary_query_provider"
+        or no_dispatch_planning
+    ):
+        if (
+            not no_dispatch_planning
+            and _contract_ref(handoff.get("answer_contract_ref"))
+            != contract_ref
+        ):
             raise AcquisitionControlError(
                 "ordinary_search_executor_handoff_contract_ref_mismatch"
             )
@@ -1964,7 +1978,11 @@ def build_acquisition_authority_snapshot(
             "answer_contract_ref": contract_ref,
             "components_by_id": components,
             "source_obligations_by_id": obligations,
-            "lineage_posture": "pre_acquisition_only_no_satisfaction_authority",
+            "lineage_posture": (
+                "pre_dispatch_planning_only_no_satisfaction_authority"
+                if no_dispatch_planning
+                else "pre_acquisition_only_no_satisfaction_authority"
+            ),
         }
         return {
             **snapshot_core,

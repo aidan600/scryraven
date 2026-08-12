@@ -15,8 +15,10 @@ from typing import Any, Mapping, Sequence
 from core.component_coverage_reduction_runtime import (
     ledger_qualification_blockers_for_satisfied_coverage,
 )
+from core.query_plan import DiscoveryJobClass
 from core.searchos_iterative_judgment_runtime import (
     SEARCHOS_OWNER,
+    SEARCHOS_SEMANTIC_OBLIGATION_SCHEMA_VERSION,
     SearchOSRequirementPosture,
     SearchOSSlotPosture,
     validate_searchos_state,
@@ -63,6 +65,185 @@ class SearchOSExistingGapRecoveryError(ValueError):
 
 def _mapping(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _recovery_slot_uncertainty_lineage(
+    *,
+    state: Mapping[str, Any],
+    slot_id: str,
+    component_ref: Mapping[str, Any],
+    prior_slot: Mapping[str, Any] | None = None,
+) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    """Project one recovery slot into the unified acquisition lineage."""
+
+    canonical = _mapping(state)
+    prior = _mapping(prior_slot)
+    component = deepcopy(_mapping(component_ref))
+    component_id = _token(
+        component.get("component_id"),
+        "component_id",
+    )
+    obligations_by_id = _mapping(
+        canonical.get("semantic_obligations_by_id")
+    )
+    semantic_obligation_ids = [
+        str(item)
+        for item in prior.get("semantic_obligation_ids") or ()
+        if str(item or "").strip()
+    ]
+    legacy_lineage_defaulted = not bool(prior)
+    semantic_obligations_to_admit: dict[str, dict[str, Any]] = {}
+    if semantic_obligation_ids:
+        for semantic_obligation_id in semantic_obligation_ids:
+            semantic_obligation = deepcopy(
+                _mapping(
+                    obligations_by_id.get(semantic_obligation_id)
+                )
+            )
+            if not semantic_obligation:
+                raise SearchOSExistingGapRecoveryError(
+                    "recovery slot inherits an orphaned semantic obligation"
+                )
+            if (
+                semantic_obligation.get("binding_posture")
+                == "unbound_required"
+                or _mapping(
+                    semantic_obligation.get(
+                        "clarification_posture"
+                    )
+                ).get("clarification_required")
+                is True
+            ):
+                raise SearchOSExistingGapRecoveryError(
+                    "recovery slot cannot inherit unresolved semantic obligations"
+                )
+            semantic_obligations_to_admit[
+                semantic_obligation_id
+            ] = semantic_obligation
+        legacy_lineage_defaulted = bool(
+            prior.get("legacy_semantic_obligations_defaulted")
+        )
+    elif prior:
+        raise SearchOSExistingGapRecoveryError(
+            "recovery slot lacks canonical semantic obligations"
+        )
+    else:
+        semantic_slot_ref = {
+            "slot_id": f"{slot_id}:legacy-semantic",
+            "slot_kind": "unknown_or_other",
+            "status": "explicit",
+            "materiality": "material",
+            "candidate_values": [],
+            "selected_value": None,
+            "user_confirmation_required": False,
+            "unresolved_material": False,
+        }
+        semantic_obligation_id = (
+            "searchos-semantic-obligation:"
+            f"{component_id}:{semantic_slot_ref['slot_id']}"
+        )
+        semantic_obligation_core = {
+            "schema_version": (
+                SEARCHOS_SEMANTIC_OBLIGATION_SCHEMA_VERSION
+            ),
+            "owner": SEARCHOS_OWNER,
+            "semantic_obligation_id": semantic_obligation_id,
+            "component_ref": component,
+            "semantic_slot_ref": semantic_slot_ref,
+            "acquisition_driving": True,
+            "initial_discovery_job_class": (
+                DiscoveryJobClass.STANDARD_DISCOVERY.value
+            ),
+            "binding_posture": "not_required",
+            "interpretation_binding_ref": {},
+            "interpretation_binding_count": 0,
+            "clarification_posture": {
+                "clarification_required": False,
+                "component_ref": component,
+                "semantic_slot_ref": semantic_slot_ref,
+                "declared_candidates": [],
+                "reason": None,
+                "provider_dispatch_allowed": False,
+            },
+            "base_answer_contract_mutated": False,
+            "satisfaction_claimed": False,
+        }
+        semantic_obligations_to_admit[semantic_obligation_id] = {
+            **semantic_obligation_core,
+            "semantic_obligation_digest": _digest(
+                semantic_obligation_core
+            ),
+        }
+        semantic_obligation_ids = [semantic_obligation_id]
+    try:
+        discovery_job_class = DiscoveryJobClass(
+            str(
+                prior.get("current_discovery_job_class")
+                or DiscoveryJobClass.STANDARD_DISCOVERY.value
+            )
+        )
+    except ValueError as exc:
+        raise SearchOSExistingGapRecoveryError(
+            "recovery slot has invalid provider-neutral discovery job lineage"
+        ) from exc
+    return {
+        "semantic_obligation_ids": list(
+            semantic_obligation_ids
+        ),
+        "current_discovery_semantic_obligation_ids": list(
+            semantic_obligation_ids
+        ),
+        "current_query_plan_item_refs": [
+            deepcopy(_mapping(item))
+            for item in prior.get("current_query_plan_item_refs") or ()
+            if _mapping(item)
+        ],
+        "current_discovery_job_class": discovery_job_class.value,
+        "orientation_refinement_count": 0,
+        "current_candidate_zero_useful_result": False,
+        "legacy_semantic_obligations_defaulted": (
+            legacy_lineage_defaulted
+        ),
+    }, semantic_obligations_to_admit
+
+
+def _admit_recovery_semantic_obligations(
+    *,
+    state: dict[str, Any],
+    component_id: str,
+    semantic_obligation_ids: Sequence[str],
+    semantic_obligations: Mapping[str, Mapping[str, Any]],
+) -> None:
+    obligations_by_id = state.setdefault(
+        "semantic_obligations_by_id",
+        {},
+    )
+    for semantic_obligation_id in semantic_obligation_ids:
+        incoming = deepcopy(
+            _mapping(
+                semantic_obligations.get(semantic_obligation_id)
+            )
+        )
+        existing = _mapping(
+            obligations_by_id.get(semantic_obligation_id)
+        )
+        if existing and existing != incoming:
+            raise SearchOSExistingGapRecoveryError(
+                "recovery semantic obligation conflicts with canonical state"
+            )
+        obligations_by_id[semantic_obligation_id] = incoming
+    ids_by_component = state.setdefault(
+        "semantic_obligation_ids_by_component",
+        {},
+    )
+    existing_ids = list(ids_by_component.get(component_id) or ())
+    if existing_ids and existing_ids != list(semantic_obligation_ids):
+        raise SearchOSExistingGapRecoveryError(
+            "recovery component semantic cardinality conflicts with canonical state"
+        )
+    ids_by_component[component_id] = list(
+        semantic_obligation_ids
+    )
 
 
 def _digest(value: Any) -> str:
@@ -885,15 +1066,28 @@ def admit_searchos_existing_gap_recovery_cycle(
     }
     slot_identity_digest = _digest(slot_identity)
     recovery_slot_id = f"searchos-recovery-slot:{slot_identity_digest[:24]}"
+    (
+        uncertainty_lineage,
+        semantic_obligations_to_admit,
+    ) = _recovery_slot_uncertainty_lineage(
+        state=canonical,
+        slot_id=recovery_slot_id,
+        component_ref=basis["component_ref"],
+        prior_slot=prior_slot,
+    )
     recovery_slot_core = {
         "slot_id": recovery_slot_id,
         "slot_ordinal": len(canonical["active_slot_ids"]) + 1,
         "component_ref": deepcopy(basis["component_ref"]),
         "source_obligation_ref": deepcopy(basis["source_obligation_ref"]),
         "requirement_posture": SearchOSRequirementPosture.REQUIRED.value,
+        **uncertainty_lineage,
         "posture": SearchOSSlotPosture.ACTIVE_UNJUDGED.value,
         "latest_reason": None,
-        "current_candidate_state_ref": deepcopy(canonical["current_candidate_state_ref"]),
+        "current_candidate_state_ref": deepcopy(
+            prior_slot.get("current_candidate_state_ref")
+            or canonical["initial_candidate_state_ref"]
+        ),
         "current_window_ref": {},
         "candidate_use_option_refs": [],
         "candidate_option_dispositions": {},
@@ -921,12 +1115,26 @@ def admit_searchos_existing_gap_recovery_cycle(
         "prior_terminal_slot_ref": deepcopy(prior_slot_ref),
         "prior_terminal_slot_state_digest": prior_slot["slot_state_digest"],
     }
-    recovery_slot_core["slot_ref"] = {
+    recovery_slot_ref_identity = {
         "slot_id": recovery_slot_id,
-        "slot_digest": _digest(slot_identity),
         "component_id": prior_slot_ref["component_id"],
         "source_obligation_id": prior_slot_ref["source_obligation_id"],
+        "component_ref": deepcopy(basis["component_ref"]),
+        "source_obligation_ref": deepcopy(basis["source_obligation_ref"]),
+        "semantic_obligation_ids": deepcopy(
+            uncertainty_lineage["semantic_obligation_ids"]
+        ),
+        "query_plan_item_refs": deepcopy(
+            uncertainty_lineage["current_query_plan_item_refs"]
+        ),
+        "discovery_job_class": uncertainty_lineage[
+            "current_discovery_job_class"
+        ],
         "recovery_cycle_id": cycle_id,
+    }
+    recovery_slot_core["slot_ref"] = {
+        **recovery_slot_ref_identity,
+        "slot_digest": _digest(recovery_slot_ref_identity),
     }
     recovery_slot_core["slot_state_digest"] = _digest(recovery_slot_core)
     budget = deepcopy(canonical["budget"])
@@ -980,6 +1188,14 @@ def admit_searchos_existing_gap_recovery_cycle(
         prefix="searchos-recovery-cycle-record",
     )
     candidate = deepcopy(canonical)
+    _admit_recovery_semantic_obligations(
+        state=candidate,
+        component_id=prior_slot_ref["component_id"],
+        semantic_obligation_ids=uncertainty_lineage[
+            "semantic_obligation_ids"
+        ],
+        semantic_obligations=semantic_obligations_to_admit,
+    )
     candidate["slots_by_id"][recovery_slot_id] = recovery_slot_core
     candidate["active_slot_ids"].append(recovery_slot_id)
     candidate["required_slot_ids"].append(recovery_slot_id)
@@ -1716,6 +1932,7 @@ def admit_searchos_recovery_cycle(
         raise SearchOSExistingGapRecoveryError(
             "searched-premise recovery cannot fabricate a prior slot"
         )
+    prior_slot: dict[str, Any] = {}
     if recovery_classification == "existing_component_gap":
         prior_slot_id = _token(
             prior_slot_ref.get("slot_id"),
@@ -1900,12 +2117,22 @@ def admit_searchos_recovery_cycle(
         "source_obligation_ref": source_obligation_ref,
     }
     slot_id = "searchos-recovery-slot:" + _digest(slot_seed)[:24]
+    (
+        uncertainty_lineage,
+        semantic_obligations_to_admit,
+    ) = _recovery_slot_uncertainty_lineage(
+        state=canonical,
+        slot_id=slot_id,
+        component_ref=component_ref,
+        prior_slot=prior_slot,
+    )
     slot_core = {
         "slot_id": slot_id,
         "slot_ordinal": len(canonical.get("slots_by_id") or {}) + 1,
         "component_ref": deepcopy(_mapping(component_ref)),
         "source_obligation_ref": deepcopy(_mapping(source_obligation_ref)),
         "requirement_posture": SearchOSRequirementPosture.REQUIRED.value,
+        **uncertainty_lineage,
         "posture": SearchOSSlotPosture.ACTIVE_UNJUDGED.value,
         "latest_reason": None,
         "current_candidate_state_ref": {},
@@ -1931,9 +2158,8 @@ def admit_searchos_recovery_cycle(
         "prior_slot_absent": recovery_classification == "searched_premise",
         "prior_terminal_slot_ref": prior_slot_ref,
     }
-    slot_core["slot_ref"] = {
+    slot_ref_identity = {
         "slot_id": slot_id,
-        "slot_digest": _digest(slot_seed),
         "component_id": _token(
             _mapping(component_ref).get("component_id"),
             "component_id",
@@ -1943,7 +2169,24 @@ def admit_searchos_recovery_cycle(
             or _mapping(source_obligation_ref).get("candidate_id"),
             "source_obligation_id",
         ),
+        "component_ref": deepcopy(_mapping(component_ref)),
+        "source_obligation_ref": deepcopy(
+            _mapping(source_obligation_ref)
+        ),
+        "semantic_obligation_ids": deepcopy(
+            uncertainty_lineage["semantic_obligation_ids"]
+        ),
+        "query_plan_item_refs": deepcopy(
+            uncertainty_lineage["current_query_plan_item_refs"]
+        ),
+        "discovery_job_class": uncertainty_lineage[
+            "current_discovery_job_class"
+        ],
         "recovery_cycle_id": cycle_id,
+    }
+    slot_core["slot_ref"] = {
+        **slot_ref_identity,
+        "slot_digest": _digest(slot_ref_identity),
     }
     slot_core["slot_state_digest"] = _digest(slot_core)
     admission_core = {
@@ -1972,7 +2215,25 @@ def admit_searchos_recovery_cycle(
         digest_field="cycle_admission_digest",
         prefix="searchos-recovery-cycle-admission",
     )
+    slot_core["current_candidate_state_ref"] = deepcopy(
+        _mapping(prior_slot.get("current_candidate_state_ref"))
+        or _mapping(canonical.get("initial_candidate_state_ref"))
+        or _recovery_cycle_admission_ref(admission)
+    )
+    slot_core.pop("slot_state_digest", None)
+    slot_core["slot_state_digest"] = _digest(slot_core)
     candidate = deepcopy(canonical)
+    _admit_recovery_semantic_obligations(
+        state=candidate,
+        component_id=_token(
+            _mapping(component_ref).get("component_id"),
+            "component_id",
+        ),
+        semantic_obligation_ids=uncertainty_lineage[
+            "semantic_obligation_ids"
+        ],
+        semantic_obligations=semantic_obligations_to_admit,
+    )
     candidate["answer_contract_ref"] = deepcopy(
         _mapping(current_contract_ref)
     )
