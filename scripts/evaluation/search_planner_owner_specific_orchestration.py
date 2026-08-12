@@ -272,9 +272,11 @@ class SearchPlannerBrokerBridge:
             raise OwnerSpecificOrchestrationError(
                 "product ask_model call omitted the canonical cost seam"
             )
+        completion_sink = kwargs.get("safe_response_envelope_sink")
         unknown = set(kwargs) - {
             *expected,
             "cost_accumulator",
+            "safe_response_envelope_sink",
         }
         if unknown:
             prompt = ""
@@ -370,6 +372,17 @@ class SearchPlannerBrokerBridge:
                 "provider_payload_retained": False,
             },
         )
+        if callable(completion_sink):
+            posture = (
+                "completed"
+                if response.generation_status == "completed" and output_text
+                else "length_limited"
+                if response.max_output_tokens_reached
+                else "empty"
+                if not output_text
+                else "other_safe"
+            )
+            completion_sink({"provider_completion_posture": posture})
         if (
             response.generation_status != "completed"
             or not response.output_text_present

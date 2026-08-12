@@ -20,7 +20,6 @@ from core.query_production_runtime import (
     QUERY_PRODUCTION_STAGE,
     QueryStrategyConvergenceError,
     QueryStrategyConvergenceFailureCode,
-    _recon_work_by_component,
     _strategies_with_authorized_revisions,
     execute_initial_query_strategy_convergence,
     execute_query_plan_admission_action,
@@ -35,7 +34,6 @@ from core.run_kernel import (
     RunKernel,
     RunStageStatus,
 )
-from core.search_planner_model_adapter import accept_planner_model_output
 from core.search_planner_revision_runtime import (
     SearchPlannerRevisionRuntimeError,
     SearchPlannerRevisionRuntimeSafeFailureCode,
@@ -427,66 +425,6 @@ def test_search_work_plan_carries_refs_but_never_complete_query_text() -> None:
     assert kernel.state.search_work_plan == plan
 
 
-def test_secondary_is_prepared_not_dispatched_without_immediate_proof() -> None:
-    kernel, convergence = _converge(_planner_payload(secondary=True))
-    _, admission = _admit(kernel, convergence)
-
-    allocation = admission.initial_query_admission
-    assert len(allocation.admitted_candidate_queries) == 2
-    assert len(allocation.immediate_dispatch_queries) == 1
-    assert len(allocation.prepared_secondary_candidates) == 1
-    prepared = allocation.prepared_secondary_candidates[0]
-    assert prepared["later_authorizer"] == "SearchJudgment"
-    assert prepared["distinct_need_justification"]
-    assert prepared["authorized_query"] not in admission.current_queries
-    assert admission.queries == admission.current_queries
-    assert admission.observation.payload["post_result_followup_dispatched"] is False
-
-
-def test_distinct_source_need_can_put_secondary_in_immediate_wave() -> None:
-    kernel, convergence = _converge(_planner_payload(secondary=True, immediate_secondary=True))
-    _, admission = _admit(kernel, convergence)
-
-    assert len(admission.current_queries) == 2
-    assert admission.initial_query_admission.prepared_secondary_candidates == ()
-    assert admission.current_queries[1] == "Example component 1 official current rule"
-
-
-def test_exact_duplicate_is_rejected_and_contributor_lineage_is_retained() -> None:
-    kernel, convergence = _converge(_planner_payload(secondary=True, duplicate_secondary=True))
-    adapter, admission = _admit(kernel, convergence)
-
-    allocation = admission.initial_query_admission
-    assert len(allocation.admitted_candidate_queries) == 1
-    assert len(allocation.duplicate_candidates_rejected) == 1
-    trace = adapter.to_trace_fragment()[QUERY_PLAN_TRACE_KEY]
-    survivor = next(
-        item
-        for item in trace["items"]
-        if item.get("status") == "finalized" and item.get("phase") == "initial_component_query_admission"
-    )
-    assert survivor["metadata"]["duplicate_contributor_count"] == 1
-    assert len(survivor["metadata"]["contributor_lineage"]) == 2
-
-
-def test_materially_equivalent_candidate_without_distinct_need_is_rejected() -> None:
-    payload = _planner_payload(secondary=True)
-    secondary = payload["component_search_requirements"][0]["metadata"]["query_strategy_candidates"][1]
-    secondary["candidate_query_text"] = "Example required component 1 primary source official"
-    secondary["requested_role"] = "initial"
-    secondary["source_obligation_candidate_ids"] = ["obligation:1:general"]
-    secondary.pop("official_canonical_intent")
-    secondary.pop("document_family")
-
-    kernel, convergence = _converge(payload)
-    _, admission = _admit(kernel, convergence)
-
-    rejected = admission.initial_query_admission.duplicate_candidates_rejected
-    assert len(rejected) == 1
-    assert rejected[0]["duplicate_kind"] == "materially_equivalent"
-    assert admission.current_queries == ["Example required component 1 primary source"]
-
-
 def test_second_primary_cannot_bypass_distinct_need_requirement() -> None:
     payload = _planner_payload()
     strategies = payload["component_search_requirements"][0]["metadata"]["query_strategy_candidates"]
@@ -573,153 +511,6 @@ def test_optional_recon_unavailable_retains_conservative_primary() -> None:
     assert len(admission.current_queries) == 1
 
 
-def _semantic_primary_secondary_recon_proposal(
-    *,
-    posture: str,
-    dimensions: list[dict[str, str]],
-) -> dict[str, Any]:
-    return {
-        "interpretation": (
-            "Resolve Example identity before answering the official filing threshold."
-        ),
-        "components": [
-            {
-                "purpose": "user_facing_answer_target",
-                "label": "Official threshold",
-                "question": (
-                    "What is the official current filing threshold for the requested program?"
-                ),
-                "requirement_posture": "required",
-                "acceptance_criteria": [
-                    "state the threshold",
-                    "bind the answer to an official current source",
-                ],
-                "support_kinds": ["direct"],
-                "materiality": "material",
-                "slots": [
-                    {
-                        "kind": "entity",
-                        "status": "explicit",
-                        "selected_value": "Example Permit",
-                        "materiality": "material",
-                    }
-                ],
-                "source": {"kind": "official_current", "strictness": "required"},
-                "search": {
-                    "summary": "Find the official current source for the threshold.",
-                    "preferred_source_kinds": ["official"],
-                    "primary_query": {
-                        "text": "Example Permit official filing threshold 2026",
-                        "role": "official_bias",
-                    },
-                    "secondary_query": {
-                        "text": "Example Permit official filing threshold 2026 site:gov",
-                        "role": "canonical_bias",
-                        "justification": (
-                            "Secondary canonical-domain probe remains distinct from "
-                            "the primary official threshold query."
-                        ),
-                    },
-                    "recon": {
-                        "posture": posture,
-                        "dimensions": dimensions,
-                    },
-                },
-            }
-        ],
-        "material_ambiguity": "directional_recon_optional",
-    }
-
-
-def test_semantic_primary_secondary_one_recon_aggregates_to_single_component_workload() -> None:
-    rich = accept_planner_model_output(
-        _semantic_primary_secondary_recon_proposal(
-            posture="optional",
-            dimensions=[
-                {
-                    "kind": "entity_identity",
-                    "query": "Old Example New Example identity",
-                }
-            ],
-        )
-    )
-    strategies = rich["component_search_requirements"][0]["metadata"][
-        "query_strategy_candidates"
-    ]
-    assert len(strategies) == 2
-    work = _recon_work_by_component(
-        strategies,
-        policy=DEFAULT_INITIAL_QUERY_ALLOCATION_POLICY,
-    )
-    component_id = rich["answer_components"][0]["component_id"]
-    assert set(work) == {component_id}
-    component_work = work[component_id]
-    assert component_work["posture"] == "optional"
-    assert component_work["unresolved_dimension_ids"] == [
-        "dimension:01:01:entity_identity"
-    ]
-    assert component_work["candidate_queries"] == [
-        {
-            "dimension_id": "dimension:01:01:entity_identity",
-            "candidate_query_text": "Old Example New Example identity",
-            "query_kind": "all_time",
-        }
-    ]
-
-    kernel, convergence = _converge(rich)
-    assert convergence.recon_summary[0]["status"] == (
-        "optional_unavailable_primary_strategy_retained"
-    )
-    assert len(convergence.recon_summary) == 1
-
-
-def test_semantic_primary_secondary_two_distinct_recon_dimensions_are_preserved() -> None:
-    rich = accept_planner_model_output(
-        _semantic_primary_secondary_recon_proposal(
-            posture="optional",
-            dimensions=[
-                {
-                    "kind": "entity_identity",
-                    "query": "Old Example New Example identity",
-                },
-                {
-                    "kind": "time_version_currentness",
-                    "query": "Example Permit current 2026 threshold version",
-                },
-            ],
-        )
-    )
-    strategies = rich["component_search_requirements"][0]["metadata"][
-        "query_strategy_candidates"
-    ]
-    work = _recon_work_by_component(
-        strategies,
-        policy=DEFAULT_INITIAL_QUERY_ALLOCATION_POLICY,
-    )
-    component_id = rich["answer_components"][0]["component_id"]
-    component_work = work[component_id]
-    assert component_work["unresolved_dimension_ids"] == [
-        "dimension:01:01:entity_identity",
-        "dimension:01:02:time_version_currentness",
-    ]
-    assert component_work["candidate_queries"] == [
-        {
-            "dimension_id": "dimension:01:01:entity_identity",
-            "candidate_query_text": "Old Example New Example identity",
-            "query_kind": "all_time",
-        },
-        {
-            "dimension_id": "dimension:01:02:time_version_currentness",
-            "candidate_query_text": "Example Permit current 2026 threshold version",
-            "query_kind": "recent_current",
-        },
-    ]
-    kernel, convergence = _converge(rich)
-    assert convergence.recon_summary[0]["status"] == (
-        "optional_unavailable_primary_strategy_retained"
-    )
-
-
 def test_required_identity_recon_without_adapter_fails_before_query_production() -> None:
     kernel = _kernel_after_run_contract()
 
@@ -750,7 +541,6 @@ def test_required_identity_recon_without_adapter_fails_before_query_production()
     assert kernel.state.search_work_plan == {}
 
 
-
 def test_required_recon_route_unavailable_fails_closed_after_scout_authorization() -> None:
     revision = ResponseOnlyRevisionAdapter()
     search_calls: list[dict[str, Any]] = []
@@ -773,10 +563,7 @@ def test_required_recon_route_unavailable_fails_closed_after_scout_authorization
             run_kernel=kernel,
         )
 
-    assert (
-        captured.value.failure_code
-        is QueryStrategyConvergenceFailureCode.REQUIRED_SCOUT_ROUTE_UNAVAILABLE
-    )
+    assert captured.value.failure_code is QueryStrategyConvergenceFailureCode.REQUIRED_SCOUT_ROUTE_UNAVAILABLE
     assert revision.calls == []
     assert search_calls == []
     report = kernel.state.scout_disambiguation_report_projection
@@ -788,16 +575,12 @@ def test_optional_recon_route_unavailable_retains_primary_without_revision() -> 
     revision = ResponseOnlyRevisionAdapter()
     kernel, convergence = _converge(
         _planner_payload(recon="optional"),
-        scout_adapter=OrdinaryScoutDisambiguationAdapter(
-            available_providers={"serper": False}
-        ),
+        scout_adapter=OrdinaryScoutDisambiguationAdapter(available_providers={"serper": False}),
         revision_adapter=revision,
     )
 
     assert revision.calls == []
-    assert convergence.recon_summary[0]["status"] == (
-        "optional_route_unavailable_primary_strategy_retained"
-    )
+    assert convergence.recon_summary[0]["status"] == ("optional_route_unavailable_primary_strategy_retained")
     assert kernel.state.scout_disambiguation_report_projection["route_available"] is False
 
 
@@ -823,10 +606,7 @@ def test_required_recon_empty_executed_scout_fails_closed_without_revision() -> 
             run_kernel=kernel,
         )
 
-    assert (
-        captured.value.failure_code
-        is QueryStrategyConvergenceFailureCode.REQUIRED_SCOUT_EXECUTION_EMPTY
-    )
+    assert captured.value.failure_code is QueryStrategyConvergenceFailureCode.REQUIRED_SCOUT_EXECUTION_EMPTY
     assert revision.calls == []
     assert len(search_calls) == 1
     assert search_calls[0]["strict_failure"] is True
@@ -891,9 +671,7 @@ def test_required_recon_projects_exact_plannerrevision_owner_code() -> None:
         def produce(self, _revision_input: Mapping[str, Any]) -> Mapping[str, Any]:
             raise SearchPlannerRevisionRuntimeError(
                 private_detail,
-                failure_code=(
-                    SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_INVALID_JSON
-                ),
+                failure_code=(SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_INVALID_JSON),
             )
 
     with pytest.raises(InitialQueryStrategyFailureError) as captured:
@@ -997,26 +775,6 @@ def test_injected_recon_revises_query_direction_and_remains_non_evidence() -> No
     assert ledger.get("evidence_items", []) == []
     assert convergence.recon_summary[0]["evidence_admitted"] is False
     assert convergence.recon_summary[0]["citation_eligible"] is False
-
-
-def test_contractual_revision_is_admitted_and_applied_before_planning_use() -> None:
-    kernel, convergence = _converge(
-        _planner_payload(recon="optional"),
-        scout_adapter=ResponseOnlyScoutAdapter(),
-        revision_adapter=ResponseOnlyRevisionAdapter(amendment=True),
-    )
-    revision = convergence.revision_projections[0]
-
-    assert revision["revision_effect_class"] == ("contractual_admitted_and_applied")
-    assert revision["contractual_effect_admitted_and_applied"] is True
-    assert revision["answer_contract_mutated"] is True
-    assert kernel.state.contract_amendment_admission_history
-    assert kernel.state.contract_amendment_application_history
-    assert kernel.state.current_answer_contract
-    assert (
-        convergence.search_work_plan["metadata"]["accepted_contract_ref"]["contract_digest"]
-        == kernel.state.current_answer_contract["accepted_contract_digest"]
-    )
 
 
 def test_pending_contractual_revision_cannot_change_query_direction() -> None:

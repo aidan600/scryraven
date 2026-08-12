@@ -43,12 +43,11 @@ from core.search_planner_runtime import (
 from core.search_planner_semantic_compiler import (
     SearchPlannerSemanticProposalError,
     compile_semantic_planner_proposal,
-    is_semantic_planner_proposal,
     validate_semantic_planner_proposal,
 )
 
-SEARCH_PLANNER_MODEL_ADAPTER_SCHEMA_VERSION = "search_planner_model_adapter_ag_search_planner_model_01_v1"
-SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY_VERSION = "search_planner_model_adapter_predicate_registry_v1"
+SEARCH_PLANNER_MODEL_ADAPTER_SCHEMA_VERSION = "search_planner_model_adapter_ag_search_planner_model_01_v2"
+SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY_VERSION = "search_planner_model_adapter_predicate_registry_v2"
 
 _TOP_LEVEL_REQUIRED = SEARCH_PLANNER_RICH_REQUIRED_TOP_LEVEL_FIELDS
 _SEMANTIC_SLOT_KINDS = SEARCH_PLANNER_MODEL_SEMANTIC_SLOT_KINDS
@@ -394,7 +393,6 @@ class SearchPlannerModelAdapterPredicateId(str, Enum):
     CONTRACT_AMENDMENT_CANDIDATES_NOT_ARRAY = auto()
     CONTRACT_AMENDMENT_CANDIDATE_NOT_OBJECT = auto()
     SEMANTIC_SLOTS_MINIMUM_ITEMS_1 = auto()
-    SEMANTIC_SLOT_MATERIAL_AMBIGUITY_CONFIRMATION_REQUIRED = auto()
     ANSWER_COMPONENTS_MINIMUM_ITEMS_1 = auto()
     ANSWER_COMPONENTS_MAXIMUM_ITEMS_5 = auto()
     ANSWER_COMPONENT_PARTIAL_ANSWER_POLICY_ENUM = auto()
@@ -871,7 +869,6 @@ def _build_predicate_registry() -> Mapping[
     register(
         _FailureCode.INVALID_ENUM_OR_BOUNDED_VALUE,
         _PredicateId.SEMANTIC_SLOTS_MINIMUM_ITEMS_1,
-        _PredicateId.SEMANTIC_SLOT_MATERIAL_AMBIGUITY_CONFIRMATION_REQUIRED,
         _PredicateId.ANSWER_COMPONENT_PARTIAL_ANSWER_POLICY_ENUM,
         _PredicateId.RELATIONSHIP_HYPOTHESES_MAXIMUM_ITEMS_5,
         _PredicateId.SOURCE_OBLIGATION_CANDIDATES_MINIMUM_ITEMS_1,
@@ -1229,9 +1226,7 @@ class SearchPlannerModelAdapterError(SearchPlannerRuntimeError):
             raise ValueError("predicate_id is not registered")
         if failure_code is SearchPlannerModelAdapterFailureCode.INVALID_JSON:
             if provider_completion_posture is None:
-                provider_completion_posture = (
-                    SearchPlannerProviderCompletionPosture.NOT_AVAILABLE
-                )
+                provider_completion_posture = SearchPlannerProviderCompletionPosture.NOT_AVAILABLE
             if strict_parse_subtype is None:
                 strict_parse_subtype = SearchPlannerStrictParseSubtype.OTHER_SAFE
             if cleaner_modified is None:
@@ -1732,9 +1727,7 @@ class SearchPlannerModelAdapter:
 
         def _safe_response_envelope_sink(envelope: Mapping[str, Any]) -> None:
             raw_posture = envelope.get("provider_completion_posture")
-            completion_holder["posture"] = _coerce_provider_completion_posture(
-                raw_posture
-            )
+            completion_holder["posture"] = _coerce_provider_completion_posture(raw_posture)
 
         if _callable_accepts_keyword(self.ask_model, "safe_response_envelope_sink"):
             model_kwargs["safe_response_envelope_sink"] = _safe_response_envelope_sink
@@ -1758,7 +1751,11 @@ class SearchPlannerModelAdapter:
             clean_json_response=self.clean_json_response,
             provider_completion_posture=completion_holder["posture"],
         )
-        proposal = accept_planner_model_output(parsed)
+        proposal = accept_planner_model_output(
+            parsed,
+            user_query_text=str(planner_input.get("user_query_text_for_planning") or ""),
+            requested_mode=str(planner_input.get("requested_mode") or "balanced"),
+        )
         proposal["planner_model_metadata"] = _planner_model_metadata(
             prompt_meta=metadata,
             provider=self.provider,
@@ -1779,10 +1776,7 @@ def _callable_accepts_keyword(fn: Callable[..., Any], name: str) -> bool:
         return False
     if name in signature.parameters:
         return True
-    return any(
-        parameter.kind is inspect.Parameter.VAR_KEYWORD
-        for parameter in signature.parameters.values()
-    )
+    return any(parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in signature.parameters.values())
 
 
 def _coerce_provider_completion_posture(
@@ -1861,41 +1855,44 @@ def _parse_model_output(
 
 
 def _reject_nonfinite_json_constant(_token: str) -> None:
-    raise _StrictJsonNonfiniteConstantError(
-        "strict JSON parsing rejected a nonfinite constant"
-    )
+    raise _StrictJsonNonfiniteConstantError("strict JSON parsing rejected a nonfinite constant")
 
 
 def _reject_duplicate_json_members(members: list[tuple[str, Any]]) -> dict[str, Any]:
     parsed: dict[str, Any] = {}
     for key, value in members:
         if key in parsed:
-            raise _StrictJsonDuplicateMemberError(
-                "strict JSON parsing rejected a duplicate member"
-            )
+            raise _StrictJsonDuplicateMemberError("strict JSON parsing rejected a duplicate member")
         parsed[key] = value
     return parsed
 
 
-def accept_planner_model_output(model_output: Mapping[str, Any]) -> dict[str, Any]:
-    """Accept model output via semantic compile or direct rich validation."""
+def accept_planner_model_output(
+    model_output: Mapping[str, Any],
+    *,
+    user_query_text: str,
+    requested_mode: str,
+) -> dict[str, Any]:
+    """Accept only the sparse ordinary language, then validate compiled rich state."""
 
-    if is_semantic_planner_proposal(model_output):
-        try:
-            semantic = validate_semantic_planner_proposal(model_output)
-            compiled = compile_semantic_planner_proposal(semantic)
-        except SearchPlannerSemanticProposalError:
-            raise SearchPlannerModelAdapterError(
-                "search planner semantic proposal failed closed",
-                failure_code=_FailureCode.INVALID_SEMANTIC_PROPOSAL,
-                predicate_id=_PredicateId.SEMANTIC_PROPOSAL_VALIDATION_FAILED,
-            ) from None
-        return validate_and_sanitize_model_output(compiled)
-    return validate_and_sanitize_model_output(model_output)
+    try:
+        semantic = validate_semantic_planner_proposal(model_output)
+        compiled = compile_semantic_planner_proposal(
+            semantic,
+            user_query_text=user_query_text,
+            requested_mode=requested_mode,
+        )
+    except SearchPlannerSemanticProposalError:
+        raise SearchPlannerModelAdapterError(
+            "search planner semantic proposal failed closed",
+            failure_code=_FailureCode.INVALID_SEMANTIC_PROPOSAL,
+            predicate_id=_PredicateId.SEMANTIC_PROPOSAL_VALIDATION_FAILED,
+        ) from None
+    return validate_and_sanitize_model_output(compiled)
 
 
 def validate_and_sanitize_model_output(model_output: Mapping[str, Any]) -> dict[str, Any]:
-    """Return a runtime-compatible planner proposal or fail closed."""
+    """Validate compiler output at the internal rich compatibility boundary."""
 
     _reject_unsafe_payload(model_output)
     missing = [field for field in _TOP_LEVEL_REQUIRED if field not in model_output]
@@ -2034,12 +2031,6 @@ def _semantic_slots(value: Any) -> list[dict[str, Any]]:
             predicate_ids=_SEMANTIC_SLOT_MATERIALITY_PREDICATES,
         )
         user_confirmation_required = bool(mapping.get("user_confirmation_required", False))
-        if materiality == "material" and status in {"ambiguous", "unresolved"} and not user_confirmation_required:
-            raise SearchPlannerModelAdapterError(
-                f"material semantic slot {slot_id} requires user_confirmation_required",
-                failure_code=(_FailureCode.INVALID_ENUM_OR_BOUNDED_VALUE),
-                predicate_id=(_PredicateId.SEMANTIC_SLOT_MATERIAL_AMBIGUITY_CONFIRMATION_REQUIRED),
-            )
         slots.append(
             _without_empty(
                 {

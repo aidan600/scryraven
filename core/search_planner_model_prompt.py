@@ -23,7 +23,7 @@ from core.semantic_contract_foundation import (
     SupportKind,
 )
 
-SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION = "search_planner_model_prompt_ag_search_planner_model_01_v5"
+SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION = "search_planner_sparse_model_prompt_v6"
 
 SEARCH_PLANNER_MODEL_STRICT_JSON_OUTPUT_CONTRACT = (
     "Return exactly one JSON object.",
@@ -37,28 +37,20 @@ SEARCH_PLANNER_MODEL_STRICT_JSON_OUTPUT_CONTRACT = (
     "Use only standard finite JSON values.",
 )
 _STRICT_JSON_OUTPUT_CONTRACT_TEXT = "\n".join(
-    f"- {requirement}"
-    for requirement in SEARCH_PLANNER_MODEL_STRICT_JSON_OUTPUT_CONTRACT
+    f"- {requirement}" for requirement in SEARCH_PLANNER_MODEL_STRICT_JSON_OUTPUT_CONTRACT
 )
 
 SEARCH_PLANNER_MODEL_SYSTEM_PROMPT = (
-    "You are SearchPlanner and own semantic interpretation of the supplied human "
-    "utterance and bounded planning context. You are not Author, Scout, SearchExecutor, "
-    "a citation formatter, or an evidence ledger. Follow the strict JSON output contract:\n"
-    f"{_STRICT_JSON_OUTPUT_CONTRACT_TEXT}"
+    "Author semantic planning only. Return one JSON object matching "
+    "output_schema. Never answer, cite, claim evidence, select providers/models, "
+    "execute tools, or author runtime, query, or recon mechanics."
 )
-
-SEARCH_PLANNER_MODEL_REQUIRED_TOP_LEVEL_FIELDS = (
-    "interpretation",
-    "components",
-)
+SEARCH_PLANNER_MODEL_REQUIRED_TOP_LEVEL_FIELDS = ("disposition",)
 SEARCH_PLANNER_MODEL_OPTIONAL_TOP_LEVEL_FIELDS = (
-    "material_ambiguity",
-    "caveats",
-    "prohibited_upgrades",
-    "assumptions",
-    "normalization_notes",
-    "deferred_outputs",
+    "source",
+    "freshness",
+    "caveat",
+    "components",
 )
 SEARCH_PLANNER_RICH_REQUIRED_TOP_LEVEL_FIELDS = (
     "question_meaning_summary",
@@ -79,29 +71,15 @@ SEARCH_PLANNER_RICH_OPTIONAL_TOP_LEVEL_FIELDS = (
     "relationship_hypotheses",
 )
 
-SEARCH_PLANNER_MODEL_SEMANTIC_SLOT_KINDS = frozenset(
-    item.value for item in SemanticSlotKind
-)
-SEARCH_PLANNER_MODEL_SEMANTIC_SLOT_STATUSES = frozenset(
-    item.value for item in SemanticSlotStatus
-)
-SEARCH_PLANNER_MODEL_MATERIALITY_VALUES = frozenset(
-    item.value for item in Materiality
-)
-SEARCH_PLANNER_MODEL_REQUIREMENT_POSTURES = frozenset(
-    item.value for item in RequirementPosture
-)
-SEARCH_PLANNER_MODEL_COMPONENT_PURPOSES = frozenset(
-    item.value for item in ComponentPurpose
-)
+SEARCH_PLANNER_MODEL_SEMANTIC_SLOT_KINDS = frozenset(item.value for item in SemanticSlotKind)
+SEARCH_PLANNER_MODEL_SEMANTIC_SLOT_STATUSES = frozenset(item.value for item in SemanticSlotStatus)
+SEARCH_PLANNER_MODEL_MATERIALITY_VALUES = frozenset(item.value for item in Materiality)
+SEARCH_PLANNER_MODEL_REQUIREMENT_POSTURES = frozenset(item.value for item in RequirementPosture)
+SEARCH_PLANNER_MODEL_COMPONENT_PURPOSES = frozenset(item.value for item in ComponentPurpose)
 SEARCH_PLANNER_MODEL_SUPPORT_KINDS = frozenset(
-    item.value
-    for item in SupportKind
-    if item in {SupportKind.DIRECT, SupportKind.INFERRED}
+    item.value for item in SupportKind if item in {SupportKind.DIRECT, SupportKind.INFERRED}
 )
-SEARCH_PLANNER_MODEL_PARTIAL_ANSWER_POLICIES = frozenset(
-    item.value for item in PartialAnswerPolicy
-)
+SEARCH_PLANNER_MODEL_PARTIAL_ANSWER_POLICIES = frozenset(item.value for item in PartialAnswerPolicy)
 SEARCH_PLANNER_MODEL_QUERY_CANDIDATE_KINDS = frozenset({"primary", "secondary"})
 SEARCH_PLANNER_MODEL_QUERY_ROLES = frozenset(
     {
@@ -113,15 +91,9 @@ SEARCH_PLANNER_MODEL_QUERY_ROLES = frozenset(
         "recon_rewrite",
     }
 )
-SEARCH_PLANNER_MODEL_RECON_POSTURES = frozenset(
-    {"not_needed", "optional", "required"}
-)
-SEARCH_PLANNER_MODEL_SOURCE_OBLIGATION_KINDS = frozenset(
-    item.value for item in SourceObligationKind
-)
-SEARCH_PLANNER_MODEL_SOURCE_OBLIGATION_STRICTNESSES = frozenset(
-    item.value for item in SourceObligationStrictness
-)
+SEARCH_PLANNER_MODEL_RECON_POSTURES = frozenset({"not_needed", "optional", "required"})
+SEARCH_PLANNER_MODEL_SOURCE_OBLIGATION_KINDS = frozenset(item.value for item in SourceObligationKind)
+SEARCH_PLANNER_MODEL_SOURCE_OBLIGATION_STRICTNESSES = frozenset(item.value for item in SourceObligationStrictness)
 SEARCH_PLANNER_MODEL_ALLOWED_SUPPORT_KIND_COMBINATIONS = (
     ("direct",),
     ("inferred",),
@@ -225,9 +197,7 @@ _object_contract = object_contract
 # Preserved rich internal contract used after deterministic compilation.
 SEARCH_PLANNER_RICH_INTERNAL_OUTPUT_SCHEMA: dict[str, Any] = {
     "contract_format": "static_model_visible_output_contract_v1",
-    "strict_json_output_contract": list(
-        SEARCH_PLANNER_MODEL_STRICT_JSON_OUTPUT_CONTRACT
-    ),
+    "strict_json_output_contract": list(SEARCH_PLANNER_MODEL_STRICT_JSON_OUTPUT_CONTRACT),
     "top_level": _object_contract(
         required=True,
         required_fields=SEARCH_PLANNER_RICH_REQUIRED_TOP_LEVEL_FIELDS,
@@ -360,16 +330,7 @@ SEARCH_PLANNER_RICH_INTERNAL_OUTPUT_SCHEMA: dict[str, Any] = {
                 "adapter_normalization": "safe metadata only",
             },
         },
-        ),
-    "semantic_slot_cross_field_conditions": [
-        {
-            "if": {
-                "materiality": "material",
-                "status": {"one_of": ["ambiguous", "unresolved"]},
-            },
-            "then": {"user_confirmation_required": True},
-        }
-    ],
+    ),
     "answer_component": _object_contract(
         required=True,
         required_fields=(
@@ -508,16 +469,11 @@ SEARCH_PLANNER_RICH_INTERNAL_OUTPUT_SCHEMA: dict[str, Any] = {
         {
             "allowed_support_kinds": {
                 "exact_ordered_combinations": [
-                    list(item)
-                    for item in SEARCH_PLANNER_MODEL_ALLOWED_SUPPORT_KIND_COMBINATIONS
+                    list(item) for item in SEARCH_PLANNER_MODEL_ALLOWED_SUPPORT_KIND_COMBINATIONS
                 ]
             }
         },
-        {
-            "answer_components": {
-                "at_least_one_item_where": {"requirement_posture": "required"}
-            }
-        },
+        {"answer_components": {"at_least_one_item_where": {"requirement_posture": "required"}}},
     ],
     "source_obligation_candidate": _object_contract(
         required=True,
@@ -602,12 +558,8 @@ SEARCH_PLANNER_RICH_INTERNAL_OUTPUT_SCHEMA: dict[str, Any] = {
     ),
     "component_search_requirement_cross_field_conditions": [
         {
-            "for_each_component_where": {
-                "allowed_support_kinds": ["inferred"]
-            },
-            "then": {
-                "owned_component_search_requirements": {"exact_item_count": 0}
-            },
+            "for_each_component_where": {"allowed_support_kinds": ["inferred"]},
+            "then": {"owned_component_search_requirements": {"exact_item_count": 0}},
         },
         {
             "for_each_component_where": {
@@ -690,16 +642,8 @@ SEARCH_PLANNER_RICH_INTERNAL_OUTPUT_SCHEMA: dict[str, Any] = {
         },
     ),
     "query_strategy_candidate_cross_field_conditions": [
-        {
-            "component_id": {
-                "must_equal": "parent component_search_requirement.component_id"
-            }
-        },
-        {
-            "source_obligation_candidate_ids": {
-                "each_item_must_reference": "source_obligation_candidate.candidate_id"
-            }
-        },
+        {"component_id": {"must_equal": "parent component_search_requirement.component_id"}},
+        {"source_obligation_candidate_ids": {"each_item_must_reference": "source_obligation_candidate.candidate_id"}},
     ],
     "recon_candidate_query": _object_contract(
         required=True,
@@ -783,78 +727,25 @@ def __getattr__(name: str) -> Any:
 
 
 def build_search_planner_model_prompt(planner_input: Mapping[str, Any]) -> str:
-    """Build a strict JSON planner prompt from sanitized adapter input."""
+    """Build the compact sparse-only ordinary SearchPlanner request."""
 
-    query_text = str(planner_input.get("user_query_text_for_planning") or "")
-    output_schema = _semantic_model_output_schema()
     prompt_payload = {
         "schema_version": SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION,
         "planner_input": {
-            "run_id": planner_input.get("run_id"),
-            "request_id": planner_input.get("request_id"),
             "requested_mode": planner_input.get("requested_mode"),
-            "user_query_text_for_planning": query_text,
-            "user_query_ref": planner_input.get("user_query_ref"),
+            "user_query_text_for_planning": str(planner_input.get("user_query_text_for_planning") or ""),
             "safe_context": planner_input.get("safe_context"),
-            "route_context_ref": planner_input.get("route_context_ref"),
-            "run_context_ref": planner_input.get("run_context_ref"),
-            "parent_contract_refs": planner_input.get("parent_contract_refs"),
-            "closed_surface_flags": planner_input.get("closed_surface_flags"),
         },
-        "output_schema": output_schema,
+        "output_schema": _semantic_model_output_schema(),
     }
     instructions = [
-        "SEARCHPLANNER MODEL TASK",
-        f"Prompt schema: {SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION}",
-        "",
-        "Role and authority:",
-        "- You are SearchPlanner, not Author.",
-        "- Interpret the user query into a compact semantic planning proposal.",
-        "- A deterministic compiler expands your proposal into the rich internal plan.",
-        "- You may propose; RunKernel governs.",
-        "- Existing reducers own accepted state.",
-        "- Do not answer the user.",
-        "- Do not cite sources.",
-        "- Do not claim evidence was found.",
-        "- Do not mark source obligations satisfied.",
-        "- Do not execute search.",
-        "- Do not request live fetch, read, or retrieval.",
-        "- Do not invoke Scout.",
-        "- Do not invoke SearchExecutor.",
-        "- Do not create or mutate initial_answer_contract or current_answer_contract.",
-        "- Do not create FinalAnswerPacket, Author input, citations, SemanticObservation, ComponentCoverage, or EvidenceLedger custody.",
-        "",
-        "Semantic authorship rules:",
-        "- Author only semantic choices in output_schema. Do not invent stable IDs, revisions, digests, or inverse cross-reference bindings.",
-        "- Do not emit answer_components, semantic_slots, source_obligation_candidates, component_search_requirements, relationship_hypotheses, or contract_amendment_candidates arrays.",
-        "- Nest slots and source/search intent under each component. Use local_id only for proposal-local dependency references.",
-        "- Every enum field must use an exact value listed in output_schema. Omit optional fields when semantically irrelevant.",
-        "- interpretation must be meaningful non-whitespace text after whitespace normalization.",
-        "- Propose from one through five components; five is a ceiling, never a target.",
-        "- Use one component for one central intention even when the utterance is long, narrated, imprecise, or self-correcting.",
-        "- Use multiple components only for genuinely distinct answer needs.",
-        "- Classify every component as user_facing_answer_target or supporting_premise.",
-        "- Direct-only components require source + search.primary_query + search.recon and omit depends_on.",
-        "- Inferred-only components require depends_on local_ids, omit source/search, and must author max_inference_depth as an integer >= 1.",
-        "- Direct-or-inferred components require depends_on, source, search (including recon), and must author max_inference_depth as an integer >= 1.",
-        "- Use only [direct], [inferred], or [direct, inferred] as support_kinds, in that order.",
-        "- Fast and Balanced allow semantic inference depth 1; Deep allows depth 2.",
-        "- Each component must nest at least one semantic slot.",
-        "- Primary query text must be exact searchable text. Secondary query requires a distinct justification.",
-        "- For every direct-search component, author search.recon explicitly. Omitting recon is invalid and is not equivalent to not_needed.",
-        "- search.recon.posture must be not_needed, optional, or required.",
-        "- posture not_needed requires dimensions=[]. optional and required require at least one dimension.",
-        "- Each recon dimension authors only kind and query text. Allowed kinds: entity_identity, jurisdiction, time_version_currentness, rename_alias, official_target_direction, unknown_or_other.",
-        "- Do not author dimension IDs, component IDs, strategy IDs, digests, query_kind, required_for_truthful_targeting, provider selection, or recon_requirement.",
-        "- Recon is directional non-evidence reconnaissance only. Do not treat recon as evidence, citation, sufficiency, or Analyst support.",
-        "- Do not select a provider, provider order, depth, variant, model, or fallback.",
-        "- Use concise rationale fields only; do not include chain-of-thought.",
-        "Strict JSON output contract:",
-        *(
-            f"- {requirement}"
-            for requirement in SEARCH_PLANNER_MODEL_STRICT_JSON_OUTPUT_CONTRACT
-        ),
-        "",
+        "SEARCHPLANNER SEMANTIC TASK",
+        "Choose one disposition: direct_simple or components.",
+        "direct_simple affirms one required direct need; no dependency, inference, material uncertainty, calculation, or nonstandard normalization. Never use it as fallback. Query <=300; only source/freshness/caveat overrides.",
+        "components authors distinct needs plus exceptions. Omit defaults/empty fields. Keys are proposal-local references, never runtime identity.",
+        "Put factual uncertainty in uncertainties; confirmation is only for true user-intent ambiguity.",
+        "Never author queries/recon/Scout/PlannerRevision, IDs/digests/lineage, routing, evidence/citations, accepted state, or answers.",
+        "Return one JSON object only. Unknown fields, old rich output, prose/Markdown, duplicate keys, and nonfinite JSON fail closed.",
         "Sanitized planner input JSON:",
         _json(prompt_payload),
     ]

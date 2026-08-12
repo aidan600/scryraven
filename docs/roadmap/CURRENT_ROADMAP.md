@@ -470,7 +470,7 @@ records this decision changes no product runtime behavior.
 
 ### Installed versus selected target
 
-The selected architecture is a future target, not a claim about `main` today.
+Phase 1 of the selected architecture is installed; Phases 2 and 3 remain future targets.
 Current `main` may still contain and execute `ScoutDisambiguation`,
 `PlannerRevision`, `SearchWorkPlan`, and `QueryProduction`. Installed truth is
 owned by [ScryRaven Current State](../architecture/SCRYRAVEN_CURRENT_STATE.md),
@@ -516,7 +516,7 @@ subtype`. A newly exposed safe failure within this licensed architectural
 corridor remains in the same phase unless it proves a different owner or
 requires a new architecture decision.
 
-### Phase 1 - Sparse uncertainty-aware planning
+### Installed Phase 1 - Sparse uncertainty-aware planning
 
 Completion line:
 
@@ -527,34 +527,29 @@ user request
 -> uncertainty-aware AnswerContract
 ```
 
-Phase 1 immediately consumes the SearchPlanner simplification finding; it is
-not merely a schema addition. The ordinary interface becomes complexity-scaled
-and fail-closed: `direct_simple | sparse components`. A routine request may be
-as small as `{"disposition":"direct_simple"}`; sparse source/freshness/dependency/uncertainty
-exceptions. The model authors meaning;
-code authors deterministic IDs, digests, lineage references, mechanical
-bindings/defaults, and other administrative construction. Existing downstream
-legacy carriers are temporary compatibility consumers only.
+`SEARCHPLANNER-SPARSE-UNCERTAINTY-AWARE-PLANNING-01` installs the fail-closed
+`direct_simple | components` ordinary model language. The model authors only
+meaningful semantic differences; code owns mechanical identity, bindings,
+defaults, mode ceilings, initial query copies, and temporary rich compatibility.
+Factual uncertainty, candidate values, selected values, explicit confirmation
+posture, and component normalization/calculation policies survive canonical
+AnswerContract acceptance.
+Unresolved facts do not automatically request user confirmation.
 
-The static architecture audit found approximately 93-96% invariant,
-static, or administrative ordinary SearchPlanner request material, depending on
-fixture and attribution method. The selected target is approximately an 84-87%
-reduction in ordinary request size. These are architecture measurements, not
-live proof or achieved acceptance facts. Phase 1 must remeasure and report:
+The strictly paired clear-direct measurement used the same query, requested
+mode, bounded safe context, serialization, counting function, and attribution
+categories at baseline and candidate. Total request size fell from `15,705` to
+`2,509` characters (`13,196`, `84.02%`); static/administrative material fell
+from `15,516` to `2,320` characters (`13,196`, `85.05%`). The reusable corpus
+proves contract/parser/compiler/canonical-state representability only. It makes
+no real-model accuracy, false-ambiguity, selection-accuracy, or product-quality
+claim, and no live call was run.
 
-- baseline total request size;
-- baseline static/administrative size;
-- candidate total request size;
-- candidate static/administrative size;
-- absolute reduction; and
-- percentage reduction.
-
-Failure to materially simplify the Planner contract defeats Phase 1's purpose.
-Routine model-authored IDs, digests, lineage references, administrative empty
-arrays, mechanical defaults/bindings, closed-surface flags, provider brands,
-recon queries, revision records, and exact executable-query identity are not
-part of the target model-owned semantic proposal. Unresolved factual slots and
-their resolution policy remain explicit in AnswerContract.
+The compiler projects only neutral `not_needed` legacy recon. Sparse uncertainty
+or confirmation semantics do not create Scout or PlannerRevision reachability.
+Old rich SearchWorkPlan, QueryProduction, QueryPlan, Scout, and PlannerRevision
+surfaces remain temporary compatibility consumers and are the Phase-2/3
+retirement boundary.
 
 ### Phase 2 - Unified iterative acquisition
 

@@ -230,18 +230,10 @@ def test_answer_component_refs_preserve_existing_dependency_relationships() -> N
 
     _accept(kernel, qmr)
 
-    state_refs = kernel.state.initial_answer_contract[
-        "accepted_answer_component_refs"
-    ]
-    projection_refs = kernel.state.initial_answer_contract_projection[
-        "accepted_answer_component_refs"
-    ]
-    assert state_refs[1]["dependency_component_ids"] == [
-        prerequisite.component_id
-    ]
-    assert projection_refs[1]["dependency_component_ids"] == [
-        prerequisite.component_id
-    ]
+    state_refs = kernel.state.initial_answer_contract["accepted_answer_component_refs"]
+    projection_refs = kernel.state.initial_answer_contract_projection["accepted_answer_component_refs"]
+    assert state_refs[1]["dependency_component_ids"] == [prerequisite.component_id]
+    assert projection_refs[1]["dependency_component_ids"] == [prerequisite.component_id]
 
 
 def test_material_unresolved_slots_are_preserved_not_resolved() -> None:
@@ -264,6 +256,31 @@ def test_material_unresolved_slots_are_preserved_not_resolved() -> None:
     assert kernel.state.initial_answer_contract["material_ambiguity_preserved"] is True
     # An explicit, already-selected slot keeps its selected value.
     assert slots["slot:metric"]["selected_value"] == "active accounts"
+
+
+def test_nonmaterial_unresolved_slot_cannot_smuggle_a_selected_value() -> None:
+    kernel = _start_kernel()
+    qmr = _qmr(
+        slots=(_metric_slot(), _time_period_slot(), _ambiguous_geography_slot()),
+    )
+    payload = qmr.to_dict()
+    geography = payload["semantic_slots"][2]
+    geography["materiality"] = "optional"
+    geography["selected_value"] = "silently chosen region"
+    digest = _reseal(payload)
+
+    _accept(
+        kernel,
+        qmr,
+        parent_digest=digest,
+        payload={"question_meaning_record": payload},
+    )
+
+    accepted = kernel.state.initial_answer_contract["accepted_semantic_slot_refs"][2]
+    assert accepted["status"] == "ambiguous"
+    assert accepted["unresolved_material"] is False
+    assert "selected_value" not in accepted
+    assert kernel.state.initial_answer_contract["material_ambiguity_resolved"] is False
 
 
 def test_empty_or_invalid_answer_components_are_rejected() -> None:

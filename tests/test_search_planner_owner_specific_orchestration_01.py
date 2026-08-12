@@ -34,9 +34,7 @@ from tests.helpers.search_planner_owner_specific_fakes import (
     authorization_bundle,
 )
 
-REPOSITORY_SHA = "".join(
-    ("3a76a3a2", "4efef5ee", "4bec2d43", "e301463b", "671f0d80")
-)
+REPOSITORY_SHA = "".join(("3a76a3a2", "4efef5ee", "4bec2d43", "e301463b", "671f0d80"))
 
 
 def _nested_mapping_keys(value) -> set[str]:
@@ -81,16 +79,14 @@ def _execute(
     )
     selected_factory = factory or FakeOwnerSpecificBrokerFactory()
     if captured_run_contract_projections is not None:
+
         def capture_authorized_kernel(scenario_packet):
             kernel = _kernel_with_authorized_run_contract(scenario_packet)
-            captured_run_contract_projections.append(
-                dict(kernel.state.run_contract_projection)
-            )
+            captured_run_contract_projections.append(dict(kernel.state.run_contract_projection))
             return kernel
 
         monkeypatch.setattr(
-            "scripts.evaluation.search_planner_owner_specific_orchestration."
-            "_kernel_with_authorized_run_contract",
+            "scripts.evaluation.search_planner_owner_specific_orchestration._kernel_with_authorized_run_contract",
             capture_authorized_kernel,
         )
     monkeypatch.setenv(
@@ -101,12 +97,8 @@ def _execute(
         authorization=authorization,
         scenario_packet=scenario,
         repository_sha=REPOSITORY_SHA,
-        live_addendum_path=(
-            authorization.evaluation_identity.live_addendum_path
-        ),
-        scenario_packet_path=(
-            authorization.evaluation_identity.scenario_packet_path
-        ),
+        live_addendum_path=(authorization.evaluation_identity.live_addendum_path),
+        scenario_packet_path=(authorization.evaluation_identity.scenario_packet_path),
         output_packet_path=output_packet_path,
         actual_argv=argv,
         repository_root=tmp_path,
@@ -142,14 +134,11 @@ def test_full_fake_schedule_reaches_real_product_and_every_owner(
         actual_argv=expected_argv,
         repository_root=tmp_path,
     )
-    assert len(captured_run_contract_projections) == len(
-        authorization.prompt_experiment.trial_schedule
-    )
+    assert len(captured_run_contract_projections) == len(authorization.prompt_experiment.trial_schedule)
     for kernel_projection in captured_run_contract_projections:
-        assert {
-            key: kernel_projection[key]
-            for key in scenario.run_contract_projection
-        } == dict(scenario.run_contract_projection)
+        assert {key: kernel_projection[key] for key in scenario.run_contract_projection} == dict(
+            scenario.run_contract_projection
+        )
 
     assert len(factory.factory_routes) == 2
     assert [call["role"] for call in factory.calls] == [
@@ -169,30 +158,19 @@ def test_full_fake_schedule_reaches_real_product_and_every_owner(
         )
     )
     observed_semantic_ids = tuple(
-        call["correlation_id"]
-        for call in factory.calls
-        if call["role"] == "search_planner_semantic_judge"
+        call["correlation_id"] for call in factory.calls if call["role"] == "search_planner_semantic_judge"
     )
     assert observed_semantic_ids == expected_semantic_ids
     assert len(observed_semantic_ids) == 4
     assert len(set(observed_semantic_ids)) == 4
-    assert all(
-        SEMANTIC_CALL_ID_PATTERN.fullmatch(call_id)
-        for call_id in observed_semantic_ids
-    )
+    assert all(SEMANTIC_CALL_ID_PATTERN.fullmatch(call_id) for call_id in observed_semantic_ids)
     assert len(packet["trial_results"]) == 2
     for trial, scheduled in zip(
         packet["trial_results"],
         authorization.prompt_experiment.trial_schedule,
     ):
-        assert (
-            trial["product_boundary_result"]["boundary_status"]
-            == "PASS"
-        )
-        assert (
-            trial["mechanical_validation_result"]["overall_posture"]
-            == "PASS"
-        )
+        assert trial["product_boundary_result"]["boundary_status"] == "PASS"
+        assert trial["mechanical_validation_result"]["overall_posture"] == "PASS"
         semantic = trial["semantic_judgment_result"]
         assert semantic["final_status"] == "MET"
         assert semantic["provider_selected"] is False
@@ -205,15 +183,9 @@ def test_full_fake_schedule_reaches_real_product_and_every_owner(
             "total_calls": 2,
         }
         assert execution["primary_pass"]["pass_kind"] == "primary"
-        assert execution["adversarial_pass"]["pass_kind"] == (
-            "adversarial"
-        )
-        assert execution["primary_pass"]["call_id"] == (
-            scheduled.primary_judge_call_id
-        )
-        assert execution["adversarial_pass"]["call_id"] == (
-            scheduled.adversarial_judge_call_id
-        )
+        assert execution["adversarial_pass"]["pass_kind"] == ("adversarial")
+        assert execution["primary_pass"]["call_id"] == (scheduled.primary_judge_call_id)
+        assert execution["adversarial_pass"]["call_id"] == (scheduled.adversarial_judge_call_id)
         assert not {
             "trial_id",
             "trial_order",
@@ -224,52 +196,23 @@ def test_full_fake_schedule_reaches_real_product_and_every_owner(
         }.intersection(_nested_mapping_keys(execution))
         passive = trial["passive_evaluation_report"]
         assert passive["semantic_judgment_result"] == semantic
-        assert (
-            passive["combined_result"]["semantic_status"]
-            == semantic["final_status"]
-        )
+        assert passive["combined_result"]["semantic_status"] == semantic["final_status"]
     control, variant = packet["trial_results"]
+    assert control["prompt_variant_dispatch_observation"]["control_bytes_unchanged"] is True
+    assert variant["prompt_variant_dispatch_observation"]["transformation_posture"] == "INSTRUCTION_PREFIX_REPLACED"
     assert (
-        control["prompt_variant_dispatch_observation"][
-            "control_bytes_unchanged"
-        ]
-        is True
+        control["prompt_variant_dispatch_observation"]["dispatched_semantic_input_digest"]
+        == variant["prompt_variant_dispatch_observation"]["dispatched_semantic_input_digest"]
     )
-    assert (
-        variant["prompt_variant_dispatch_observation"][
-            "transformation_posture"
-        ]
-        == "INSTRUCTION_PREFIX_REPLACED"
-    )
-    assert (
-        control["prompt_variant_dispatch_observation"][
-            "dispatched_semantic_input_digest"
-        ]
-        == variant["prompt_variant_dispatch_observation"][
-            "dispatched_semantic_input_digest"
-        ]
-    )
-    assert (
-        packet["experiment_attribution_result"]["status"]
-        == "ASSOCIATION_ONLY"
-    )
+    assert packet["experiment_attribution_result"]["status"] == "ASSOCIATION_ONLY"
     assert packet["causal_language_allowed"] is False
     assert packet["real_prompt_effect_proved"] is False
     assert packet["prompt_quality_winner"] is None
     assert packet["terminal_orchestration_posture"] == "COMPLETED"
-    assert packet["budget_and_cap_consumption"][
-        "attempted_call_count"
-    ] == 6
-    assert packet["budget_and_cap_consumption"][
-        "unused_authorized_call_ids"
-    ] == []
-    assert (
-        packet["canonical_experiment_policy_packet"]
-        == authorization.canonical_policy_packet.to_packet()
-    )
-    assert packet["authority_policy"] == (
-        f"owner-specific-policy:{packet['policy_packet_sha256']}"
-    )
+    assert packet["budget_and_cap_consumption"]["attempted_call_count"] == 6
+    assert packet["budget_and_cap_consumption"]["unused_authorized_call_ids"] == []
+    assert packet["canonical_experiment_policy_packet"] == authorization.canonical_policy_packet.to_packet()
+    assert packet["authority_policy"] == (f"owner-specific-policy:{packet['policy_packet_sha256']}")
     output = tmp_path / "output" / "local" / "result.json"
     assert json.loads(output.read_text(encoding="utf-8")) == packet
     rendered = output.read_text(encoding="utf-8")
@@ -286,16 +229,10 @@ def test_mechanical_failure_skips_both_judges_and_remains_a_trial(
     rejected_value = "planner-rejected-private-value-sentinel"
     defaults = FakeOwnerSpecificBrokerFactory().planner_outputs
     rejected_payload = json.loads(defaults[0])
-    rejected_payload["answer_components"][0]["partial_answer_policy"] = (
-        rejected_value
-    )
+    rejected_payload["components"][0]["partial_answer_policy"] = rejected_value
     rejected_response = json.dumps(rejected_payload)
-    rejected_error_argument = (
-        f"unsupported partial answer policy: {rejected_value}"
-    )
-    rejected_error_digest = sha256(
-        rejected_error_argument.encode("utf-8")
-    ).hexdigest()
+    rejected_error_argument = "search planner semantic proposal failed closed"
+    rejected_error_digest = sha256(rejected_error_argument.encode("utf-8")).hexdigest()
     factory = FakeOwnerSpecificBrokerFactory(
         planner_outputs=[rejected_response, defaults[0]],
     )
@@ -314,10 +251,7 @@ def test_mechanical_failure_skips_both_judges_and_remains_a_trial(
     ]
     failed = packet["trial_results"][0]
     product_failure = failed["product_boundary_result"]
-    assert (
-        product_failure["schema_version"]
-        == "search_planner_product_boundary_observer_v2"
-    )
+    assert product_failure["schema_version"] == "search_planner_product_boundary_observer_v2"
     assert product_failure["boundary_status"] == "FAIL"
     assert product_failure["parser_posture"] == "PASS"
     assert product_failure["validator_posture"] == "FAIL"
@@ -328,31 +262,22 @@ def test_mechanical_failure_skips_both_judges_and_remains_a_trial(
     assert product_failure["canonical_failure_rule_ids"] == ["M02"]
     assert (
         product_failure["canonical_failure_predicate_registry_version"]
-        == "search_planner_model_adapter_predicate_registry_v1"
+        == "search_planner_model_adapter_predicate_registry_v2"
     )
-    assert (
-        product_failure["canonical_failure_predicate_id"]
-        == "ANSWER_COMPONENT_PARTIAL_ANSWER_POLICY_ENUM"
-    )
+    assert product_failure["canonical_failure_predicate_id"] == "SEMANTIC_PROPOSAL_VALIDATION_FAILED"
     assert product_failure["bounded_failure_reason"] == (
         "SearchPlannerModelAdapterError:"
         "failure_stage=MODEL_OUTPUT_VALIDATION:"
-        "failure_code=INVALID_ENUM_OR_BOUNDED_VALUE:"
+        "failure_code=INVALID_SEMANTIC_PROPOSAL:"
         "mechanical_rule_id=M02:"
         "predicate_registry_version="
-        "search_planner_model_adapter_predicate_registry_v1:"
-        "predicate_id=ANSWER_COMPONENT_PARTIAL_ANSWER_POLICY_ENUM:"
+        "search_planner_model_adapter_predicate_registry_v2:"
+        "predicate_id=SEMANTIC_PROPOSAL_VALIDATION_FAILED:"
         "message_sha256="
         f"{rejected_error_digest}"
     )
-    assert (
-        failed["mechanical_validation_result"]["overall_posture"]
-        == "FAIL"
-    )
-    mechanical_rules = {
-        item["rule_id"]: item
-        for item in failed["mechanical_validation_result"]["rule_results"]
-    }
+    assert failed["mechanical_validation_result"]["overall_posture"] == "FAIL"
+    mechanical_rules = {item["rule_id"]: item for item in failed["mechanical_validation_result"]["rule_results"]}
     assert mechanical_rules["M02"]["posture"] == "FAIL"
     assert mechanical_rules["M03"]["posture"] == "NOT_REACHED"
     assert failed["semantic_judgment_result"] is None
@@ -360,16 +285,11 @@ def test_mechanical_failure_skips_both_judges_and_remains_a_trial(
     assert failed["trial_observation"]["semantic_status"] == "NOT_RUN"
     assert failed["trial_observation"]["complete"] is False
     failed_semantic_call_ids = {
-        authorization.prompt_experiment.trial_schedule[
-            0
-        ].primary_judge_call_id,
-        authorization.prompt_experiment.trial_schedule[
-            0
-        ].adversarial_judge_call_id,
+        authorization.prompt_experiment.trial_schedule[0].primary_judge_call_id,
+        authorization.prompt_experiment.trial_schedule[0].adversarial_judge_call_id,
     }
     assert not any(
-        call["role"] == "search_planner_semantic_judge"
-        and call["correlation_id"] in failed_semantic_call_ids
+        call["role"] == "search_planner_semantic_judge" and call["correlation_id"] in failed_semantic_call_ids
         for call in factory.calls
     )
     serialized_packet = json.dumps(packet, sort_keys=True)
@@ -383,24 +303,11 @@ def test_mechanical_failure_skips_both_judges_and_remains_a_trial(
         assert forbidden not in serialized_packet
     assert not any(_retention_flag_values(packet))
     assert len(packet["trial_results"]) == 2
-    assert (
-        packet["experiment_attribution_result"]["status"]
-        == "INSUFFICIENT_EVIDENCE"
-    )
-    assert packet["terminal_orchestration_posture"] == (
-        "COMPLETED_WITH_MODEL_FAILURES"
-    )
-    assert set(
-        packet["budget_and_cap_consumption"][
-            "unused_authorized_call_ids"
-        ]
-    ) == {
-        authorization.prompt_experiment.trial_schedule[
-            0
-        ].primary_judge_call_id,
-        authorization.prompt_experiment.trial_schedule[
-            0
-        ].adversarial_judge_call_id,
+    assert packet["experiment_attribution_result"]["status"] == "INSUFFICIENT_EVIDENCE"
+    assert packet["terminal_orchestration_posture"] == ("COMPLETED_WITH_MODEL_FAILURES")
+    assert set(packet["budget_and_cap_consumption"]["unused_authorized_call_ids"]) == {
+        authorization.prompt_experiment.trial_schedule[0].primary_judge_call_id,
+        authorization.prompt_experiment.trial_schedule[0].adversarial_judge_call_id,
     }
 
 
@@ -441,22 +348,10 @@ def test_plan_only_constructs_no_transport_or_credentials(
     assert packet["transport_created"] is False
     assert packet["credentials_accessed"] is False
     assert packet["raw_material_retained"] is False
-    assert packet["call_manifest"]["status"] == (
-        "AUTHORIZATION_REQUIRED"
-    )
-    assert packet["cap_manifest"]["status"] == (
-        "AUTHORIZATION_REQUIRED"
-    )
-    assert (
-        packet["future_authorization_requirements"][
-            "provider_selected"
-        ]
-        is False
-    )
-    assert (
-        packet["future_authorization_requirements"]["model_selected"]
-        is False
-    )
+    assert packet["call_manifest"]["status"] == ("AUTHORIZATION_REQUIRED")
+    assert packet["cap_manifest"]["status"] == ("AUTHORIZATION_REQUIRED")
+    assert packet["future_authorization_requirements"]["provider_selected"] is False
+    assert packet["future_authorization_requirements"]["model_selected"] is False
 
 
 def test_valid_opaque_semantic_call_ids_pass_unchanged() -> None:
@@ -550,9 +445,7 @@ def test_authorization_opaque_call_ids_round_trip_unchanged(
         repository_sha=REPOSITORY_SHA,
     )
     serialized = authorization.to_packet()
-    reparsed = OwnerSpecificLiveAuthorization.from_mapping(
-        deepcopy(serialized)
-    )
+    reparsed = OwnerSpecificLiveAuthorization.from_mapping(deepcopy(serialized))
 
     assert reparsed.to_packet() == serialized
     original_ids = tuple(
@@ -572,10 +465,7 @@ def test_authorization_opaque_call_ids_round_trip_unchanged(
         )
     )
     assert reparsed_ids == original_ids
-    assert all(
-        SEMANTIC_CALL_ID_PATTERN.fullmatch(call_id)
-        for call_id in reparsed_ids
-    )
+    assert all(SEMANTIC_CALL_ID_PATTERN.fullmatch(call_id) for call_id in reparsed_ids)
 
 
 @pytest.mark.parametrize(
@@ -590,50 +480,37 @@ def test_authorization_opaque_call_ids_round_trip_unchanged(
             "missing fields",
         ),
         (
-            lambda packet: packet["owner_identities"].update(
-                {"orchestrator_version": "wrong"}
-            ),
+            lambda packet: packet["owner_identities"].update({"orchestrator_version": "wrong"}),
             "owner identity mismatch",
         ),
         (
-            lambda packet: packet["planner_route"].update(
-                {"retry_cap": 1}
-            ),
+            lambda packet: packet["planner_route"].update({"retry_cap": 1}),
             "outside its exact bound",
         ),
         (
             lambda packet: packet["evaluation_identity"].update(
                 {
                     "transport_factory_spec": (
-                        "scripts.evaluation.openai_responses_origination_transport:"
-                        "create_openai_responses_transport"
+                        "scripts.evaluation.openai_responses_origination_transport:create_openai_responses_transport"
                     )
                 }
             ),
             "generic loopback broker",
         ),
         (
-            lambda packet: packet["evaluation_identity"].update(
-                {"canonical_operator_command_digest": "1" * 64}
-            ),
+            lambda packet: packet["evaluation_identity"].update({"canonical_operator_command_digest": "1" * 64}),
             "command digest does not cover",
         ),
         (
-            lambda packet: packet["retention_policy"].update(
-                {"retain_raw_outputs": True}
-            ),
+            lambda packet: packet["retention_policy"].update({"retain_raw_outputs": True}),
             "retention flag false",
         ),
         (
-            lambda packet: packet["planner_route"].update(
-                {"maximum_planner_calls": 99}
-            ),
+            lambda packet: packet["planner_route"].update({"maximum_planner_calls": 99}),
             "exactly match",
         ),
         pytest.param(
-            lambda packet: packet["prompt_experiment"][
-                "trial_schedule"
-            ][0].update(
+            lambda packet: packet["prompt_experiment"]["trial_schedule"][0].update(
                 {"primary_judge_call_id": "control-primary-call"}
             ),
             "64 lowercase hex",
@@ -641,28 +518,16 @@ def test_authorization_opaque_call_ids_round_trip_unchanged(
         ),
         (
             lambda packet: packet["prompt_experiment"].update(
-                {
-                    "trial_schedule": list(
-                        reversed(
-                            packet["prompt_experiment"][
-                                "trial_schedule"
-                            ]
-                        )
-                    )
-                }
+                {"trial_schedule": list(reversed(packet["prompt_experiment"]["trial_schedule"]))}
             ),
             "policy packet differs",
         ),
         (
-            lambda packet: packet["whole_evaluation_caps"].update(
-                {"maximum_total_observed_cost_usd": "99"}
-            ),
+            lambda packet: packet["whole_evaluation_caps"].update({"maximum_total_observed_cost_usd": "99"}),
             "complete maximum budget",
         ),
         (
-            lambda packet: packet.update(
-                {"authority_policy": f"owner-specific-policy:{'f' * 64}"}
-            ),
+            lambda packet: packet.update({"authority_policy": f"owner-specific-policy:{'f' * 64}"}),
             "does not bind",
         ),
     ),
@@ -708,9 +573,7 @@ def test_context_mismatch_fails_before_transport_factory(
     )
     repository_sha = REPOSITORY_SHA
     actual_argv = argv
-    output_packet_path = (
-        authorization.evaluation_identity.output_packet_path
-    )
+    output_packet_path = authorization.evaluation_identity.output_packet_path
     if context_mutation == "repository":
         repository_sha = "1" * 40
     elif context_mutation == "command":
@@ -744,15 +607,9 @@ def test_context_mismatch_fails_before_transport_factory(
             authorization=authorization,
             scenario_packet=scenario,
             repository_sha=repository_sha,
-            live_addendum_path=(
-                authorization.evaluation_identity.live_addendum_path
-            ),
-            scenario_packet_path=(
-                authorization.evaluation_identity.scenario_packet_path
-            ),
-            output_packet_path=(
-                output_packet_path
-            ),
+            live_addendum_path=(authorization.evaluation_identity.live_addendum_path),
+            scenario_packet_path=(authorization.evaluation_identity.scenario_packet_path),
+            output_packet_path=(output_packet_path),
             actual_argv=actual_argv,
             repository_root=tmp_path,
             transport_factory=factory,
@@ -780,15 +637,9 @@ def test_missing_session_and_output_collision_fail_before_factory(
             authorization=authorization,
             scenario_packet=scenario,
             repository_sha=REPOSITORY_SHA,
-            live_addendum_path=(
-                authorization.evaluation_identity.live_addendum_path
-            ),
-            scenario_packet_path=(
-                authorization.evaluation_identity.scenario_packet_path
-            ),
-            output_packet_path=(
-                authorization.evaluation_identity.output_packet_path
-            ),
+            live_addendum_path=(authorization.evaluation_identity.live_addendum_path),
+            scenario_packet_path=(authorization.evaluation_identity.scenario_packet_path),
+            output_packet_path=(authorization.evaluation_identity.output_packet_path),
             actual_argv=argv,
             repository_root=tmp_path,
             transport_factory=factory,
@@ -810,15 +661,9 @@ def test_missing_session_and_output_collision_fail_before_factory(
             authorization=authorization,
             scenario_packet=scenario,
             repository_sha=REPOSITORY_SHA,
-            live_addendum_path=(
-                authorization.evaluation_identity.live_addendum_path
-            ),
-            scenario_packet_path=(
-                authorization.evaluation_identity.scenario_packet_path
-            ),
-            output_packet_path=(
-                authorization.evaluation_identity.output_packet_path
-            ),
+            live_addendum_path=(authorization.evaluation_identity.live_addendum_path),
+            scenario_packet_path=(authorization.evaluation_identity.scenario_packet_path),
+            output_packet_path=(authorization.evaluation_identity.output_packet_path),
             actual_argv=argv,
             repository_root=tmp_path,
             transport_factory=factory,
@@ -859,15 +704,9 @@ def test_unknown_usage_and_per_call_cost_breach_fail_closed(
                 authorization=authorization,
                 scenario_packet=scenario,
                 repository_sha=REPOSITORY_SHA,
-                live_addendum_path=(
-                    authorization.evaluation_identity.live_addendum_path
-                ),
-                scenario_packet_path=(
-                    authorization.evaluation_identity.scenario_packet_path
-                ),
-                output_packet_path=(
-                    authorization.evaluation_identity.output_packet_path
-                ),
+                live_addendum_path=(authorization.evaluation_identity.live_addendum_path),
+                scenario_packet_path=(authorization.evaluation_identity.scenario_packet_path),
+                output_packet_path=(authorization.evaluation_identity.output_packet_path),
                 actual_argv=argv,
                 repository_root=tmp_path,
                 transport_factory=factory,
@@ -890,9 +729,7 @@ def test_policy_packet_is_deterministic_and_every_bound_field_matters(
     )
     assert rebuilt.to_packet() == policy.to_packet()
     assert rebuilt.sha256 == policy.sha256
-    assert authorization.authority_policy == (
-        f"owner-specific-policy:{policy.sha256}"
-    )
+    assert authorization.authority_policy == (f"owner-specific-policy:{policy.sha256}")
 
     base = policy.to_packet()
     mutations = {
@@ -902,9 +739,7 @@ def test_policy_packet_is_deterministic_and_every_bound_field_matters(
         "trial_schedule_sha256": "3" * 64,
         "prompt_variant_contract_version": "another_variant_contract",
         "orchestrator_version": "another_orchestrator",
-        "semantic_judge_execution_observation_version": (
-            "another_observation"
-        ),
+        "semantic_judge_execution_observation_version": ("another_observation"),
         "blinding_policy_identity": "another_blinding_policy",
         "stochastic_attribution_ceiling": "another_ceiling",
         "canonicalization_version": "another_canonicalization",
@@ -922,10 +757,7 @@ def test_non_test_execute_identity_is_fixed_to_generic_broker(
         repository_sha=REPOSITORY_SHA,
     )
 
-    assert (
-        authorization.evaluation_identity.transport_factory_spec
-        == GENERIC_BROKER_TRANSPORT_FACTORY_SPEC
-    )
+    assert authorization.evaluation_identity.transport_factory_spec == GENERIC_BROKER_TRANSPORT_FACTORY_SPEC
 
 
 def test_nonloopback_endpoint_and_unmarked_factory_fail_before_creation(
@@ -955,15 +787,9 @@ def test_nonloopback_endpoint_and_unmarked_factory_fail_before_creation(
             authorization=authorization,
             scenario_packet=scenario,
             repository_sha=REPOSITORY_SHA,
-            live_addendum_path=(
-                authorization.evaluation_identity.live_addendum_path
-            ),
-            scenario_packet_path=(
-                authorization.evaluation_identity.scenario_packet_path
-            ),
-            output_packet_path=(
-                authorization.evaluation_identity.output_packet_path
-            ),
+            live_addendum_path=(authorization.evaluation_identity.live_addendum_path),
+            scenario_packet_path=(authorization.evaluation_identity.scenario_packet_path),
+            output_packet_path=(authorization.evaluation_identity.output_packet_path),
             actual_argv=argv,
             repository_root=tmp_path,
             transport_factory=factory,
@@ -989,15 +815,9 @@ def test_nonloopback_endpoint_and_unmarked_factory_fail_before_creation(
             authorization=authorization,
             scenario_packet=scenario,
             repository_sha=REPOSITORY_SHA,
-            live_addendum_path=(
-                authorization.evaluation_identity.live_addendum_path
-            ),
-            scenario_packet_path=(
-                authorization.evaluation_identity.scenario_packet_path
-            ),
-            output_packet_path=(
-                authorization.evaluation_identity.output_packet_path
-            ),
+            live_addendum_path=(authorization.evaluation_identity.live_addendum_path),
+            scenario_packet_path=(authorization.evaluation_identity.scenario_packet_path),
+            output_packet_path=(authorization.evaluation_identity.output_packet_path),
             actual_argv=argv,
             repository_root=tmp_path,
             transport_factory=unmarked_factory,
