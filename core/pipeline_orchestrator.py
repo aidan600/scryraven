@@ -2193,14 +2193,14 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             iteration
         )
         if not discovery_job_batches:
-            clarification_components = list(
+            clarification_semantic_slots = list(
                 query_authority.plan.search_work_consumption.get(
-                    "clarification_required_components"
+                    "clarification_required_semantic_slots"
                 )
                 or ()
             )
             if (
-                clarification_components
+                clarification_semantic_slots
                 and not query_authority.plan.execution_item_refs(iteration)
             ):
                 break
@@ -2860,14 +2860,14 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     # ------------------------------------------------------------------
     # Post-retrieval: synthesis
     # ------------------------------------------------------------------
-    clarification_only_components = list(
+    clarification_only_semantic_slots = list(
         query_authority.plan.search_work_consumption.get(
-            "clarification_required_components"
+            "clarification_required_semantic_slots"
         )
         or ()
     )
     clarification_only_front_half = bool(
-        clarification_only_components
+        clarification_only_semantic_slots
     ) and not query_authority.plan.execution_item_refs(1)
     initial_execution_item_refs = query_authority.plan.execution_item_refs(1)
     zero_result_orientation_front_half = bool(

@@ -224,6 +224,16 @@ class OfflineOrdinaryPipelineHarness:
             need_obligation = dict(active_need.get("source_obligation") or {})
             need_search_work = dict(active_need.get("search_work") or {})
             need_slot = dict(active_need.get("slot") or {})
+            need_semantic_obligations = [
+                dict(item)
+                for item in need_slot.get("semantic_obligations") or ()
+                if isinstance(item, Mapping)
+            ]
+            admitted_binding_refs = [
+                dict(item.get("interpretation_binding_ref") or {})
+                for item in need_semantic_obligations
+                if dict(item.get("interpretation_binding_ref") or {})
+            ]
             current_discovery_job_class = str(
                 need_slot.get("current_discovery_job_class") or ""
             )
@@ -265,11 +275,68 @@ class OfflineOrdinaryPipelineHarness:
                         "decision_contract_digest"
                     ),
                     "decision_contract_actions": sorted(decision_actions),
+                    "legal_actions": list(
+                        authorized.get("legal_actions") or ()
+                    ),
+                    "binding_eligible_semantic_slot_ids": [
+                        dict(item).get("slot_id")
+                        for item in authorized.get(
+                            "binding_eligible_semantic_slot_refs"
+                        )
+                        or ()
+                        if isinstance(item, Mapping)
+                    ],
+                    "clarification_eligible_semantic_slot_ids": [
+                        dict(item).get("slot_id")
+                        for item in authorized.get(
+                            "clarification_eligible_semantic_slot_refs"
+                        )
+                        or ()
+                        if isinstance(item, Mapping)
+                    ],
+                    "component_semantic_handoff_gate": dict(
+                        authorized.get(
+                            "component_semantic_handoff_gate"
+                        )
+                        or {}
+                    ),
+                    "semantic_obligation_count": len(
+                        need_semantic_obligations
+                    ),
+                    "semantic_obligation_binding_postures": {
+                        str(
+                            dict(
+                                item.get(
+                                    "semantic_obligation_ref"
+                                )
+                                or {}
+                            ).get("semantic_slot_id")
+                            or ""
+                        ): item.get("binding_posture")
+                        for item in need_semantic_obligations
+                    },
+                    "semantic_obligation_effective_statuses": {
+                        str(
+                            dict(
+                                item.get(
+                                    "semantic_obligation_ref"
+                                )
+                                or {}
+                            ).get("semantic_slot_id")
+                            or ""
+                        ): dict(
+                            item.get(
+                                "effective_semantic_slot_view"
+                            )
+                            or {}
+                        ).get("effective_status")
+                        for item in need_semantic_obligations
+                    },
                     "current_discovery_job_class": (
                         current_discovery_job_class or None
                     ),
-                    "interpretation_binding_ref": dict(
-                        need_slot.get("interpretation_binding_ref") or {}
+                    "interpretation_binding_refs": (
+                        admitted_binding_refs
                     ),
                     "cost_phase": kwargs.get("cost_phase"),
                 }
@@ -351,9 +418,16 @@ class OfflineOrdinaryPipelineHarness:
                 binding_contract = dict(
                     authorized.get("interpretation_binding_contract") or {}
                 )
-                semantic_slot_ref = dict(
-                    binding_contract.get("semantic_slot_ref") or {}
-                )
+                eligible_semantic_slot_refs = [
+                    dict(item)
+                    for item in binding_contract.get(
+                        "eligible_semantic_slot_refs"
+                    )
+                    or ()
+                    if isinstance(item, Mapping)
+                ]
+                assert eligible_semantic_slot_refs
+                semantic_slot_ref = eligible_semantic_slot_refs[0]
                 declared_values = list(
                     semantic_slot_ref.get("candidate_values") or ()
                 )
@@ -386,7 +460,7 @@ class OfflineOrdinaryPipelineHarness:
                 self.read_assessment_decision
                 == "BIND_THEN_FOLLOWUP_THEN_READ"
                 and current_discovery_job_class == "standard_discovery"
-                and bool(need_slot.get("interpretation_binding_ref"))
+                and bool(admitted_binding_refs)
                 and not custody_refs
                 and slot_id not in self.searchos_followup_nominated_slots
                 and "PROPOSE_FOLLOWUP_QUERY"
@@ -528,7 +602,14 @@ class OfflineOrdinaryPipelineHarness:
                 and bool(need_text.strip())
                 and bool(useful_materials)
             )
-            if custody_refs and useful_read:
+            if (
+                custody_refs
+                and useful_read
+                and (
+                    "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION"
+                    in set(authorized.get("legal_actions") or ())
+                )
+            ):
                 return contract_decision(
                     "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION",
                     read_custody_refs=[

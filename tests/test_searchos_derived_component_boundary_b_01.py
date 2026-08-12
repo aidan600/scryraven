@@ -545,9 +545,13 @@ def test_searchos_uses_one_shared_lease_and_append_only_linear_generations() -> 
     assert first_slot["current_window_ref"] == {}
     assert first_slot["candidate_wave_count"] == 0
     assert first_slot["current_discovery_job_class"] == "standard_discovery"
-    assert first_slot["binding_posture"] == "not_required"
-    assert first_slot["legacy_uncertainty_lineage_defaulted"] is True
-    assert first_slot["semantic_slot_ref"] == {
+    assert first_slot["legacy_semantic_obligations_defaulted"] is True
+    [semantic_obligation_id] = first_slot["semantic_obligation_ids"]
+    semantic_obligation = first_state[
+        "semantic_obligations_by_id"
+    ][semantic_obligation_id]
+    assert semantic_obligation["binding_posture"] == "not_required"
+    assert semantic_obligation["semantic_slot_ref"] == {
         "slot_id": f"{first_slot['slot_id']}:legacy-semantic",
         "slot_kind": "unknown_or_other",
         "status": "explicit",
@@ -560,8 +564,8 @@ def test_searchos_uses_one_shared_lease_and_append_only_linear_generations() -> 
     assert first_slot["slot_ref"]["component_ref"] == first_slot[
         "component_ref"
     ]
-    assert first_slot["slot_ref"]["semantic_slot_ref"] == first_slot[
-        "semantic_slot_ref"
+    assert first_slot["slot_ref"]["semantic_obligation_ids"] == first_slot[
+        "semantic_obligation_ids"
     ]
     assert first_slot["slot_ref"]["discovery_job_class"] == (
         "standard_discovery"

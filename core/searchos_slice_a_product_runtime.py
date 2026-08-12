@@ -90,10 +90,12 @@ authorized_request.legal_actions:
   this is the only action allowed to author a query, and QueryPlan independently
   validates the exact text, job class, and component/semantic lineage.
 - PROPOSE_INTERPRETATION_BINDING supplies exactly interpretation_binding with
-  the exact semantic_slot_ref, one declared resolved_value, exact current
-  candidate/READ basis refs, and disclose_assumption. It does not admit the
-  binding, evidence, support, satisfaction, or a contract mutation.
-- REQUIRE_CLARIFICATION supplies only the shared fields (plus exact required
+  one exact semantic_slot_ref from the authorized eligible list, one declared
+  resolved_value, exact current candidate/READ basis refs, and
+  disclose_assumption. It does not admit the binding, evidence, support,
+  satisfaction, or a contract mutation.
+- REQUIRE_CLARIFICATION supplies one exact semantic_slot_ref from the
+  authorized clarification-eligible list (plus exact required
   READ-insufficient assessments when custody exists). It does not author prose.
 - HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION copies a nonempty selection
   of exact current read_custody_refs.
@@ -136,10 +138,12 @@ authorized_request.legal_actions:
   this is the only action allowed to author a query, and QueryPlan independently
   validates the exact text, job class, and component/semantic lineage.
 - PROPOSE_INTERPRETATION_BINDING supplies exactly interpretation_binding with
-  the exact semantic_slot_ref, one declared resolved_value, exact current
-  candidate/READ basis refs, and disclose_assumption. It does not admit the
-  binding, evidence, support, satisfaction, or a contract mutation.
-- REQUIRE_CLARIFICATION supplies only the shared fields (plus exact required
+  one exact semantic_slot_ref from the authorized eligible list, one declared
+  resolved_value, exact current candidate/READ basis refs, and
+  disclose_assumption. It does not admit the binding, evidence, support,
+  satisfaction, or a contract mutation.
+- REQUIRE_CLARIFICATION supplies one exact semantic_slot_ref from the
+  authorized clarification-eligible list (plus exact required
   READ-insufficient assessments when custody exists). It does not author prose.
 - HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION copies a nonempty selection
   of exact current read_custody_refs.
@@ -189,6 +193,7 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
                 "followup_query",
                 "discovery_job_class",
                 "interpretation_binding",
+                "semantic_slot_ref",
             ],
             "candidate_use_option_ref_rule": (
                 "copy exactly one candidate_use_option_ref from "
@@ -210,6 +215,7 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
                 "candidate_use_option_ref",
                 "read_custody_refs",
                 "interpretation_binding",
+                "semantic_slot_ref",
             ],
             "followup_query_rule": (
                 "SearchJudgment authors one exact bounded follow-up query from "
@@ -238,6 +244,7 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
                 "read_custody_assessments",
                 "discovery_job_class",
                 "interpretation_binding",
+                "semantic_slot_ref",
             ],
             "read_custody_refs_rule": (
                 "copy a nonempty selection of exact refs from "
@@ -257,6 +264,7 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
                 "followup_query",
                 "discovery_job_class",
                 "interpretation_binding",
+                "semantic_slot_ref",
             ],
             "unresolved_rule": (
                 "bounded explanation of an open need; this action is not success "
@@ -275,6 +283,7 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
                 "followup_query",
                 "discovery_job_class",
                 "read_custody_assessments",
+                "semantic_slot_ref",
             ],
             "interpretation_binding_exact_fields": [
                 "semantic_slot_ref",
@@ -285,7 +294,7 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
             ],
             "semantic_slot_ref_rule": (
                 "copy authorized_request.interpretation_binding_contract."
-                "semantic_slot_ref exactly"
+                "eligible_semantic_slot_refs member exactly"
             ),
             "resolved_value_rule": (
                 "select exactly one already-declared candidate value"
@@ -298,7 +307,10 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
             "read_custody_assessments_mode": "forbidden",
         },
         SearchOSJudgmentAction.REQUIRE_CLARIFICATION.value: {
-            "required_fields": list(shared_required_fields),
+            "required_fields": [
+                *shared_required_fields,
+                "semantic_slot_ref",
+            ],
             "forbidden_fields": [
                 "candidate_use_option_ref",
                 "read_custody_refs",
@@ -307,8 +319,9 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
                 "interpretation_binding",
             ],
             "clarification_rule": (
-                "preserve the exact accepted component/semantic-slot boundary; "
-                "do not select or invent an interpretation"
+                "copy one exact member of authorized_request."
+                "clarification_eligible_semantic_slot_refs; do not select "
+                "or invent an interpretation"
             ),
             "read_custody_assessments_mode": conditionally_assessed,
         },
@@ -324,6 +337,7 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
                 "followup_query",
                 "discovery_job_class",
                 "interpretation_binding",
+                "semantic_slot_ref",
             ],
             "navigation_candidate_ref_rule": (
                 "copy exactly one navigation_candidate_ref from "
@@ -352,6 +366,7 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
             "followup_query",
             "discovery_job_class",
             "interpretation_binding",
+            "semantic_slot_ref",
             "read_custody_assessments",
         ],
         "unsupported_fields_forbidden": True,
@@ -363,7 +378,8 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
             ),
             "active_need": (
                 "accepted component question, source-obligation standard, and "
-                "authorized search work that this decision must advance"
+                "all semantic obligations plus authorized search work that "
+                "this decision must advance"
             ),
             "candidate_directional_contexts": (
                 "DISCOVER-only non-support-bearing hints for READ or follow-up"
@@ -648,7 +664,7 @@ def initialize_searchos_clarification_only(
         allow_no_dispatch_planning_snapshot=True,
     )
     if not active_slots or any(
-        item.get("clarification_required") is not True
+        item.get("clarification_only") is not True
         for item in active_slots
     ):
         raise SearchOSRuntimeError(
@@ -676,13 +692,9 @@ def initialize_searchos_clarification_only(
         )
     )
     state = run_kernel.state.searchos_state
-    clarification_postures = {
-        slot_id: deepcopy(
-            state["slots_by_id"][slot_id].get("clarification_posture")
-            or {}
-        )
-        for slot_id in state["active_slot_ids"]
-    }
+    semantic_obligations = dict(
+        state.get("semantic_obligations_by_id") or {}
+    )
     projection = {
         "schema_version": "searchos_slice_a_product_runtime_v1",
         "owner": "RunKernel.SearchOSIterativeJudgment",
@@ -698,11 +710,22 @@ def initialize_searchos_clarification_only(
         "slot_discovery_job_classes": {
             slot_id: None for slot_id in state["active_slot_ids"]
         },
-        "slot_binding_postures": {
-            slot_id: state["slots_by_id"][slot_id].get("binding_posture")
-            for slot_id in state["active_slot_ids"]
+        "semantic_obligation_binding_postures": {
+            semantic_obligation_id: dict(obligation).get(
+                "binding_posture"
+            )
+            for semantic_obligation_id, obligation in (
+                semantic_obligations.items()
+            )
         },
-        "slot_clarification_postures": clarification_postures,
+        "semantic_obligation_clarification_postures": {
+            semantic_obligation_id: deepcopy(
+                dict(obligation).get("clarification_posture") or {}
+            )
+            for semantic_obligation_id, obligation in (
+                semantic_obligations.items()
+            )
+        },
         "clarification_required": True,
         "clarification_only_no_dispatch": True,
         "interpretation_binding_refs": [],
@@ -1612,20 +1635,21 @@ def _execute_searchos_slice_a_iterative_judgment(
             )
             for slot_id in final_state["active_slot_ids"]
         },
-        "slot_binding_postures": {
-            slot_id: final_state["slots_by_id"][slot_id].get(
+        "semantic_obligation_binding_postures": {
+            semantic_obligation_id: dict(obligation).get(
                 "binding_posture"
             )
-            for slot_id in final_state["active_slot_ids"]
+            for semantic_obligation_id, obligation in dict(
+                final_state.get("semantic_obligations_by_id") or {}
+            ).items()
         },
-        "slot_clarification_postures": {
-            slot_id: deepcopy(
-                final_state["slots_by_id"][slot_id].get(
-                    "clarification_posture"
-                )
-                or {}
+        "semantic_obligation_clarification_postures": {
+            semantic_obligation_id: deepcopy(
+                dict(obligation).get("clarification_posture") or {}
             )
-            for slot_id in final_state["active_slot_ids"]
+            for semantic_obligation_id, obligation in dict(
+                final_state.get("semantic_obligations_by_id") or {}
+            ).items()
         },
         "interpretation_binding_refs": [
             {
@@ -1819,15 +1843,39 @@ def _active_slots(
             query_refs_by_component.setdefault(component_id, []).append(
                 dict(query_ref)
             )
-    clarification_by_component = {
-        str(dict(item.get("component_ref") or {}).get("component_id") or ""):
-        dict(item)
-        for item in query_authority.plan.search_work_consumption.get(
-            "clarification_required_components"
-        )
-        or ()
-        if isinstance(item, Mapping)
+    planning_consumption = dict(
+        query_authority.plan.search_work_consumption or {}
+    )
+    semantic_refs_by_component = {
+        str(component_id): [
+            dict(item)
+            for item in raw_refs
+            if isinstance(item, Mapping)
+        ]
+        for component_id, raw_refs in dict(
+            planning_consumption.get("semantic_slot_refs_by_component")
+            or {}
+        ).items()
+        if isinstance(raw_refs, Sequence)
+        and not isinstance(raw_refs, (str, bytes))
     }
+    clarification_by_component: dict[str, list[dict[str, Any]]] = {}
+    for item in planning_consumption.get(
+        "clarification_required_semantic_slots"
+    ) or ():
+        if not isinstance(item, Mapping):
+            continue
+        clarification = dict(item)
+        component_id = str(
+            dict(clarification.get("component_ref") or {}).get(
+                "component_id"
+            )
+            or ""
+        )
+        if component_id:
+            clarification_by_component.setdefault(component_id, []).append(
+                clarification
+            )
     slots: list[dict[str, Any]] = []
     for work_component in work_components:
         if not isinstance(work_component, Mapping):
@@ -1835,47 +1883,128 @@ def _active_slots(
         component_id = str(work_component.get("component_id") or "")
         component_ref = dict(components.get(component_id) or {})
         query_refs = query_refs_by_component.get(component_id, [])
-        clarification = clarification_by_component.get(component_id, {})
-        if bool(query_refs) == bool(clarification):
+        component_semantic_refs = semantic_refs_by_component.get(
+            component_id,
+            [],
+        )
+        clarifications = clarification_by_component.get(component_id, [])
+        if not component_semantic_refs or (
+            not query_refs and not clarifications
+        ):
             raise SearchOSRuntimeError(
-                "component must have exactly one discovery or clarification posture"
+                "component lacks complete plural semantic acquisition posture"
+            )
+        semantic_slot_ids = [
+            str(item.get("slot_id") or "")
+            for item in component_semantic_refs
+        ]
+        if (
+            any(not item for item in semantic_slot_ids)
+            or len(set(semantic_slot_ids)) != len(semantic_slot_ids)
+        ):
+            raise SearchOSRuntimeError(
+                "component semantic obligations are missing or duplicated"
             )
         if query_refs:
             job_classes = {
                 str(item.get("discovery_job_class") or "")
                 for item in query_refs
             }
-            semantic_refs = {
-                _digest(dict(item.get("semantic_slot_ref") or {}))
+            semantic_ref_sets = {
+                _digest(
+                    [
+                        dict(ref)
+                        for ref in item.get("semantic_slot_refs") or ()
+                        if isinstance(ref, Mapping)
+                    ]
+                )
                 for item in query_refs
             }
             if (
                 len(job_classes) != 1
                 or "" in job_classes
-                or len(semantic_refs) != 1
+                or len(semantic_ref_sets) != 1
             ):
                 raise SearchOSRuntimeError(
                     "component QueryPlan discovery posture is ambiguous"
                 )
-            query_plan_item_ref = dict(query_refs[0])
-            semantic_slot_ref = dict(
-                query_plan_item_ref.get("semantic_slot_ref") or {}
-            )
+            discovery_semantic_refs = [
+                dict(item)
+                for item in query_refs[0].get("semantic_slot_refs") or ()
+                if isinstance(item, Mapping)
+            ]
             discovery_job_class = next(iter(job_classes))
-            clarification_required = False
             posture_component_ref = dict(
-                query_plan_item_ref.get("component_ref") or {}
+                query_refs[0].get("component_ref") or {}
             )
         else:
-            query_plan_item_ref = {}
-            semantic_slot_ref = dict(
-                clarification.get("semantic_slot_ref") or {}
-            )
+            discovery_semantic_refs = []
             discovery_job_class = None
-            clarification_required = True
             posture_component_ref = dict(
-                clarification.get("component_ref") or {}
+                clarifications[0].get("component_ref") or {}
             )
+        discovery_semantic_ids = {
+            str(item.get("slot_id") or "")
+            for item in discovery_semantic_refs
+        }
+        clarification_semantic_ids = {
+            str(
+                dict(item.get("semantic_slot_ref") or {}).get(
+                    "slot_id"
+                )
+                or ""
+            )
+            for item in clarifications
+        }
+        if (
+            "" in discovery_semantic_ids
+            or "" in clarification_semantic_ids
+            or not discovery_semantic_ids.issubset(
+                set(semantic_slot_ids)
+            )
+            or not clarification_semantic_ids.issubset(
+                set(semantic_slot_ids)
+            )
+            or discovery_semantic_ids & clarification_semantic_ids
+        ):
+            raise SearchOSRuntimeError(
+                "component semantic acquisition posture crossed accepted slots"
+            )
+        clarification_by_semantic_id = {
+            str(
+                dict(item.get("semantic_slot_ref") or {}).get(
+                    "slot_id"
+                )
+                or ""
+            ): item
+            for item in clarifications
+        }
+        semantic_obligations = [
+            {
+                "semantic_slot_ref": semantic_slot_ref,
+                "discovery_job_class": (
+                    discovery_job_class
+                    if semantic_slot_ref["slot_id"]
+                    in discovery_semantic_ids
+                    else None
+                ),
+                "acquisition_driving": (
+                    semantic_slot_ref["slot_id"]
+                    in discovery_semantic_ids
+                ),
+                "clarification_required": (
+                    semantic_slot_ref["slot_id"]
+                    in clarification_semantic_ids
+                ),
+                "clarification_reason": dict(
+                    clarification_by_semantic_id.get(
+                        semantic_slot_ref["slot_id"],
+                        {},
+                    )
+                ).get("reason"),
+            }
+            for semantic_slot_ref in component_semantic_refs
+        ]
         identity_fields = (
             "component_id",
             "component_revision",
@@ -1942,10 +2071,10 @@ def _active_slots(
                     "support_kind": str(
                         obligation.get("kind") or ""
                     ).strip(),
-                    "semantic_slot_ref": semantic_slot_ref,
-                    "query_plan_item_ref": query_plan_item_ref,
+                    "semantic_obligations": semantic_obligations,
+                    "query_plan_item_refs": query_refs,
                     "discovery_job_class": discovery_job_class,
-                    "clarification_required": clarification_required,
+                    "clarification_only": not bool(query_refs),
                 }
             )
     if not slots:
@@ -2277,51 +2406,115 @@ def _build_active_need_projection(
         raise SearchOSRuntimeError(
             "accepted component digest does not match active slot"
         )
-    semantic_slot_ref = dict(slot.get("semantic_slot_ref") or {})
-    if slot.get("legacy_uncertainty_lineage_defaulted") is True:
-        semantic_slot_projection = {
-            "semantic_slot_ref": semantic_slot_ref,
-            "effective_semantic_slot_view": {},
-            "current_discovery_job_class": slot.get(
-                "current_discovery_job_class"
-            ),
-            "current_query_plan_item_ref": dict(
-                slot.get("current_query_plan_item_ref") or {}
-            ),
-            "binding_posture": slot.get("binding_posture"),
-            "interpretation_binding_ref": dict(
-                slot.get("interpretation_binding_ref") or {}
-            ),
-            "clarification_posture": dict(
-                slot.get("clarification_posture") or {}
-            ),
-        }
-    else:
-        effective_slot_view = build_searchos_effective_semantic_slot_view(
-            state=run_kernel.state.searchos_state,
-            semantic_slot_id=str(semantic_slot_ref.get("slot_id") or ""),
-            component_id=component_id,
-            accepted_contract=contract,
-        )
-        semantic_slot_projection = {
-            "semantic_slot_ref": semantic_slot_ref,
-            "effective_semantic_slot_view": effective_slot_view,
-            "current_discovery_job_class": slot.get(
-                "current_discovery_job_class"
-            ),
-            "current_query_plan_item_ref": dict(
-                slot.get("current_query_plan_item_ref") or {}
-            ),
-            "binding_posture": slot.get("binding_posture"),
-            "interpretation_binding_ref": dict(
-                slot.get("interpretation_binding_ref") or {}
-            ),
-            "clarification_posture": dict(
-                slot.get("clarification_posture") or {}
-            ),
-        }
-
     searchos_state = dict(run_kernel.state.searchos_state)
+    obligations_by_id = dict(
+        searchos_state.get("semantic_obligations_by_id") or {}
+    )
+    current_discovery_ids = {
+        str(item)
+        for item in slot.get(
+            "current_discovery_semantic_obligation_ids"
+        )
+        or ()
+    }
+    semantic_obligation_projections: list[dict[str, Any]] = []
+    for raw_semantic_obligation_id in (
+        slot.get("semantic_obligation_ids") or ()
+    ):
+        semantic_obligation_id = str(
+            raw_semantic_obligation_id or ""
+        )
+        semantic_obligation = dict(
+            obligations_by_id.get(semantic_obligation_id) or {}
+        )
+        semantic_slot_ref = dict(
+            semantic_obligation.get("semantic_slot_ref") or {}
+        )
+        if (
+            not semantic_obligation_id
+            or not semantic_obligation
+            or not semantic_slot_ref
+        ):
+            raise SearchOSRuntimeError(
+                "active slot has orphaned semantic-obligation lineage"
+            )
+        semantic_obligation_ref = {
+            "semantic_obligation_id": semantic_obligation_id,
+            "semantic_obligation_digest": (
+                semantic_obligation.get(
+                    "semantic_obligation_digest"
+                )
+            ),
+            "component_id": component_id,
+            "semantic_slot_id": semantic_slot_ref.get("slot_id"),
+            "schema_version": semantic_obligation.get(
+                "schema_version"
+            ),
+        }
+        effective_slot_view = (
+            {}
+            if slot.get(
+                "legacy_semantic_obligations_defaulted"
+            )
+            is True
+            else build_searchos_effective_semantic_slot_view(
+                state=searchos_state,
+                semantic_slot_id=str(
+                    semantic_slot_ref.get("slot_id") or ""
+                ),
+                component_id=component_id,
+                accepted_contract=contract,
+            )
+        )
+        semantic_obligation_projections.append(
+            {
+                "semantic_obligation_ref": (
+                    semantic_obligation_ref
+                ),
+                "semantic_slot_ref": semantic_slot_ref,
+                "effective_semantic_slot_view": (
+                    effective_slot_view
+                ),
+                "acquisition_driving": bool(
+                    semantic_obligation.get("acquisition_driving")
+                ),
+                "current_discovery_target": (
+                    semantic_obligation_id in current_discovery_ids
+                ),
+                "binding_posture": semantic_obligation.get(
+                    "binding_posture"
+                ),
+                "interpretation_binding_ref": dict(
+                    semantic_obligation.get(
+                        "interpretation_binding_ref"
+                    )
+                    or {}
+                ),
+                "clarification_posture": dict(
+                    semantic_obligation.get(
+                        "clarification_posture"
+                    )
+                    or {}
+                ),
+            }
+        )
+    semantic_slot_projection = {
+        "semantic_obligations": semantic_obligation_projections,
+        "current_discovery_semantic_obligation_refs": [
+            deepcopy(item["semantic_obligation_ref"])
+            for item in semantic_obligation_projections
+            if item["current_discovery_target"]
+        ],
+        "current_discovery_job_class": slot.get(
+            "current_discovery_job_class"
+        ),
+        "current_query_plan_item_refs": [
+            dict(item)
+            for item in slot.get("current_query_plan_item_refs")
+            or ()
+            if isinstance(item, Mapping)
+        ],
+    }
     active_recovery_ref = dict(
         searchos_state.get("active_recovery_cycle_ref") or {}
     )

@@ -549,10 +549,10 @@ def test_navigation_request_authority_preserves_ordinary_contract() -> None:
     ordinary = build_searchos_judgment_decision_contract_v1()
     navigation = build_searchos_judgment_decision_contract_v1(navigation_enabled=True)
     assert hashlib.sha256(SEARCHOS_JUDGMENT_SYSTEM_PROMPT.encode()).hexdigest() == (
-        "2a7a7c78f7007d46cc5b9d5f954c02dfc3c551e387bd7719d46ae89edaa128d7"  # pragma: allowlist secret
+        "5bc06caa8c6054af427ff0d377384b2cca18651ddf70233d1d694eafd00eb86b"  # pragma: allowlist secret
     )
     assert ordinary["decision_contract_digest"] == (
-        "c73f1808014a1f0a47d7bacabc22f941a278aea5303da764fd809ed082f9a8f8"  # pragma: allowlist secret
+        "f65523e177b956e6257ac75972347fdfc6425cde2d2554a05e0a6795c33496fd"  # pragma: allowlist secret
     )
     assert ordinary["decision_schema_version"] == "searchos_judgment_decision_v1"
     assert "REQUEST_NAVIGATE_BREADCRUMB" not in ordinary["actions"]

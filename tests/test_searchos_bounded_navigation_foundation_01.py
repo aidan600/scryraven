@@ -667,7 +667,7 @@ def test_canonical_boundary_closed_policy_and_state_include_boundary_a_recovery(
         "candidate_waves_per_slot": 3,
         "read_nominations_per_slot": 3,
         "followup_query_nominations_per_slot": 2,
-        "interpretation_bindings_per_slot": 1,
+        "interpretation_bindings_per_semantic_obligation": 1,
         "orientation_refinements_per_slot": 1,
         "navigation_runtime_open": False,
         "post_analyst_reentry_runtime_open": False,
@@ -703,9 +703,9 @@ def test_canonical_boundary_closed_policy_and_state_include_boundary_a_recovery(
         "prompt_can_override": False,
         "adapter_can_override": False,
         "environment_can_override": False,
-        "policy_snapshot_id": "searchos-policy:b80a268e34a36fb502f61eea",
-        "policy_snapshot_digest": "b80a268e34a36fb502f61eeadbf0b609929d29ad4e0be907f9be594420827154",  # pragma: allowlist secret
-        "replay_identity": "searchos-policy:b80a268e34a36fb502f61eeadbf0b609929d29ad4e0be907f9be594420827154",  # pragma: allowlist secret
+        "policy_snapshot_id": "searchos-policy:9e644053264baac7c6a0c8d7",
+        "policy_snapshot_digest": "9e644053264baac7c6a0c8d7603f9d8f1934ac2e2e6e1a2ea7f3126f0e24d4a2",  # pragma: allowlist secret
+        "replay_identity": "searchos-policy:9e644053264baac7c6a0c8d7603f9d8f1934ac2e2e6e1a2ea7f3126f0e24d4a2",  # pragma: allowlist secret
     }
     policy = build_searchos_policy_snapshot(
         run_id="run-baseline-identity",
@@ -734,11 +734,11 @@ def test_canonical_boundary_closed_policy_and_state_include_boundary_a_recovery(
     )
     assert (
         state["state_digest"]
-        == "db0c3af7b8d9ef22c1952634abd0b72dc59d94acfcf40b808e4df454fbb5626b"  # pragma: allowlist secret
+        == "e3394f10c8a9694e78a461b94648bf4b7a7503a7055f63fb9250d9d1b3591a98"  # pragma: allowlist secret
     )
-    assert state["state_id"] == "searchos-state:db0c3af7b8d9ef22c1952634"
+    assert state["state_id"] == "searchos-state:e3394f10c8a9694e78a461b9"
     assert state["replay_identity"] == (
-        "searchos-state:db0c3af7b8d9ef22c1952634abd0b72dc59d94acfcf40b808e4df454fbb5626b"  # pragma: allowlist secret
+        "searchos-state:e3394f10c8a9694e78a461b94648bf4b7a7503a7055f63fb9250d9d1b3591a98"  # pragma: allowlist secret
     )
     assert set(state) == {
         "schema_version",
@@ -756,6 +756,8 @@ def test_canonical_boundary_closed_policy_and_state_include_boundary_a_recovery(
         "judgment_eligible_required_slot_ids",
         "optional_slot_ids",
         "slots_by_id",
+        "semantic_obligations_by_id",
+        "semantic_obligation_ids_by_component",
         "budget",
         "semantic_handoff_refs",
         "interpretation_binding_history",

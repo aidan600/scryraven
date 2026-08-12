@@ -195,7 +195,7 @@ class QueryPlanItem:
     order: int | None = None
     discovery_job_class: DiscoveryJobClass | str | None = None
     component_ref: Mapping[str, Any] = field(default_factory=dict)
-    semantic_slot_ref: Mapping[str, Any] = field(default_factory=dict)
+    semantic_slot_refs: tuple[Mapping[str, Any], ...] = ()
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -218,9 +218,26 @@ class QueryPlanItem:
                 ) from exc
             if not _clean_text(self.component_ref.get("component_id"), limit=160):
                 raise ValueError("discovery job requires exact component lineage")
-            if not _clean_text(self.semantic_slot_ref.get("slot_id"), limit=160):
-                raise ValueError("discovery job requires exact semantic-slot lineage")
+            slot_ids = [
+                _clean_text(item.get("slot_id"), limit=160)
+                for item in self.semantic_slot_refs
+                if isinstance(item, Mapping)
+            ]
+            if (
+                not slot_ids
+                or any(slot_id is None for slot_id in slot_ids)
+                or len(slot_ids) != len(self.semantic_slot_refs)
+                or len(set(slot_ids)) != len(slot_ids)
+            ):
+                raise ValueError(
+                    "discovery job requires unique plural semantic-slot lineage"
+                )
             object.__setattr__(self, "discovery_job_class", job_class)
+        object.__setattr__(
+            self,
+            "semantic_slot_refs",
+            tuple(dict(item) for item in self.semantic_slot_refs),
+        )
 
     def to_dict(self) -> dict[str, Any]:
         payload = {
@@ -241,7 +258,7 @@ class QueryPlanItem:
                 else self.discovery_job_class
             ),
             "component_ref": _safe_json(self.component_ref),
-            "semantic_slot_ref": _safe_json(self.semantic_slot_ref),
+            "semantic_slot_refs": _safe_json(self.semantic_slot_refs),
             "metadata": _safe_json(self.metadata),
         }
         return {key: value for key, value in payload.items() if value not in (None, {}, [])}
@@ -272,7 +289,7 @@ class QueryPlanItem:
         if self.discovery_job_class is not None:
             ref["discovery_job_class"] = self.discovery_job_class.value
             ref["component_ref"] = _safe_json(self.component_ref)
-            ref["semantic_slot_ref"] = _safe_json(self.semantic_slot_ref)
+            ref["semantic_slot_refs"] = _safe_json(self.semantic_slot_refs)
         return ref
 
 
@@ -285,8 +302,10 @@ class InitialQueryAdmissionResult:
     dispatch_required_component_ids: tuple[str, ...]
     primary_item_ids_by_component: Mapping[str, tuple[str, ...]]
     discovery_job_classes_by_component: Mapping[str, str]
-    semantic_slot_refs_by_component: Mapping[str, Mapping[str, Any]]
-    clarification_required_components: tuple[Mapping[str, Any], ...] = ()
+    semantic_slot_refs_by_component: Mapping[
+        str, tuple[Mapping[str, Any], ...]
+    ]
+    clarification_required_semantic_slots: tuple[Mapping[str, Any], ...] = ()
     duplicate_candidates_rejected: tuple[Mapping[str, Any], ...] = ()
     over_ceiling_candidates_rejected: tuple[Mapping[str, Any], ...] = ()
     unjustified_secondary_candidates_rejected: tuple[Mapping[str, Any], ...] = ()
@@ -307,11 +326,12 @@ class InitialQueryAdmissionResult:
                 self.discovery_job_classes_by_component
             ),
             "semantic_slot_refs_by_component": {
-                component_id: dict(slot_ref)
-                for component_id, slot_ref in self.semantic_slot_refs_by_component.items()
+                component_id: [dict(slot_ref) for slot_ref in slot_refs]
+                for component_id, slot_refs in self.semantic_slot_refs_by_component.items()
             },
-            "clarification_required_components": [
-                dict(item) for item in self.clarification_required_components
+            "clarification_required_semantic_slots": [
+                dict(item)
+                for item in self.clarification_required_semantic_slots
             ],
             "duplicate_candidates_rejected": [dict(item) for item in self.duplicate_candidates_rejected],
             "over_ceiling_candidates_rejected": [dict(item) for item in self.over_ceiling_candidates_rejected],
@@ -406,14 +426,19 @@ def derive_initial_component_discovery_postures(
                 "SearchWork component is absent from the accepted AnswerContract"
             )
         component_ref = _canonical_component_ref(component)
+        declared_slot_ids = list(component_ref["semantic_slot_ids"])
         component_slots = [
             slots[slot_id]
-            for slot_id in component_ref["semantic_slot_ids"]
+            for slot_id in declared_slot_ids
             if slot_id in slots
         ]
-        if not component_slots:
+        if (
+            not component_slots
+            or len(component_slots) != len(declared_slot_ids)
+            or len(set(declared_slot_ids)) != len(declared_slot_ids)
+        ):
             raise ValueError(
-                f"accepted component {component_id} lacks semantic-slot lineage"
+                f"accepted component {component_id} has incomplete or duplicate semantic-slot lineage"
             )
 
         def is_materially_unresolved(slot: Mapping[str, Any]) -> bool:
@@ -423,46 +448,51 @@ def derive_initial_component_discovery_postures(
                 and str(slot.get("materiality") or "material") == "material"
             )
 
-        confirmation_slot = next(
-            (
-                slot
-                for slot in component_slots
-                if is_materially_unresolved(slot)
-                and slot.get("user_confirmation_required") is True
-            ),
-            None,
-        )
-        factual_slot = next(
-            (
-                slot
-                for slot in component_slots
-                if is_materially_unresolved(slot)
-                and str(slot.get("slot_kind") or "")
-                in _FACTUAL_ORIENTATION_SLOT_KINDS
-                and slot.get("user_confirmation_required") is not True
-            ),
-            None,
-        )
-        selected_slot = confirmation_slot or factual_slot or component_slots[0]
-        semantic_slot_ref = _canonical_semantic_slot_ref(selected_slot)
-        if confirmation_slot is not None:
-            postures[str(component_id)] = {
-                "posture": "clarification_required",
-                "component_ref": component_ref,
-                "semantic_slot_ref": semantic_slot_ref,
-                "discovery_job_class": None,
-            }
-            continue
-        job_class = (
-            DiscoveryJobClass.ORIENTATION
-            if factual_slot is not None
-            else DiscoveryJobClass.STANDARD_DISCOVERY
-        )
+        semantic_slot_refs = [
+            _canonical_semantic_slot_ref(slot) for slot in component_slots
+        ]
+        clarification_semantic_slot_refs = [
+            _canonical_semantic_slot_ref(slot)
+            for slot in component_slots
+            if is_materially_unresolved(slot)
+            and slot.get("user_confirmation_required") is True
+        ]
+        orientation_semantic_slot_refs = [
+            _canonical_semantic_slot_ref(slot)
+            for slot in component_slots
+            if is_materially_unresolved(slot)
+            and str(slot.get("slot_kind") or "")
+            in _FACTUAL_ORIENTATION_SLOT_KINDS
+            and slot.get("user_confirmation_required") is not True
+        ]
+        if orientation_semantic_slot_refs:
+            discovery_semantic_slot_refs = orientation_semantic_slot_refs
+            job_class: DiscoveryJobClass | None = (
+                DiscoveryJobClass.ORIENTATION
+            )
+        elif clarification_semantic_slot_refs:
+            discovery_semantic_slot_refs = []
+            job_class = None
+        else:
+            discovery_semantic_slot_refs = semantic_slot_refs
+            job_class = DiscoveryJobClass.STANDARD_DISCOVERY
         postures[str(component_id)] = {
-            "posture": "discovery_ready",
+            "posture": (
+                "discovery_ready"
+                if job_class is not None
+                else "clarification_required"
+            ),
             "component_ref": component_ref,
-            "semantic_slot_ref": semantic_slot_ref,
-            "discovery_job_class": job_class.value,
+            "semantic_slot_refs": semantic_slot_refs,
+            "discovery_semantic_slot_refs": (
+                discovery_semantic_slot_refs
+            ),
+            "clarification_semantic_slot_refs": (
+                clarification_semantic_slot_refs
+            ),
+            "discovery_job_class": (
+                job_class.value if job_class is not None else None
+            ),
         }
     return postures
 
@@ -491,7 +521,7 @@ class QueryPlan:
         order: int | None = None,
         discovery_job_class: DiscoveryJobClass | str | None = None,
         component_ref: Mapping[str, Any] | None = None,
-        semantic_slot_ref: Mapping[str, Any] | None = None,
+        semantic_slot_refs: Sequence[Mapping[str, Any]] = (),
         metadata: Mapping[str, Any] | None = None,
     ) -> "QueryPlan":
         item = QueryPlanItem(
@@ -508,7 +538,9 @@ class QueryPlan:
             order=order,
             discovery_job_class=discovery_job_class,
             component_ref=dict(component_ref or {}),
-            semantic_slot_ref=dict(semantic_slot_ref or {}),
+            semantic_slot_refs=tuple(
+                dict(item) for item in semantic_slot_refs
+            ),
             metadata=dict(metadata or {}),
         )
         return replace(self, items=self.items + (item,))
@@ -563,24 +595,41 @@ class QueryPlan:
         unjustified_secondary: list[dict[str, Any]] = []
         canonical_candidates: list[dict[str, Any]] = []
         query_metadata: dict[str, dict[str, Any]] = {}
-        clarification_required_components: list[dict[str, Any]] = []
+        clarification_required_semantic_slots: list[dict[str, Any]] = []
 
         for component_id in bindings:
             posture = component_postures[component_id]
             component_ref = dict(posture["component_ref"])
-            semantic_slot_ref = dict(posture["semantic_slot_ref"])
+            semantic_slot_refs = tuple(
+                dict(item) for item in posture["semantic_slot_refs"]
+            )
+            discovery_semantic_slot_refs = tuple(
+                dict(item)
+                for item in posture["discovery_semantic_slot_refs"]
+            )
+            clarification_semantic_slot_refs = tuple(
+                dict(item)
+                for item in posture["clarification_semantic_slot_refs"]
+            )
             discovery_job_class = posture.get("discovery_job_class")
-            if posture["posture"] == "clarification_required":
-                clarification = {
+            component_clarifications = [
+                {
                     "component_ref": component_ref,
                     "semantic_slot_ref": semantic_slot_ref,
                     "clarification_required": True,
                     "declared_candidates": list(
                         semantic_slot_ref.get("candidate_values") or ()
                     ),
-                    "reason": "accepted_semantic_slot_requires_user_confirmation",
+                    "reason": (
+                        "accepted_semantic_slot_requires_user_confirmation"
+                    ),
                 }
-                clarification_required_components.append(clarification)
+                for semantic_slot_ref in clarification_semantic_slot_refs
+            ]
+            clarification_required_semantic_slots.extend(
+                component_clarifications
+            )
+            if posture["posture"] == "clarification_required":
                 for strategy in grouped.get(component_id, []):
                     raw_query = _clean_text(
                         strategy.get("candidate_query_text"), limit=300
@@ -602,7 +651,7 @@ class QueryPlan:
                         original_query=raw_query,
                         phase=phase,
                         component_ref=component_ref,
-                        semantic_slot_ref=semantic_slot_ref,
+                        semantic_slot_refs=semantic_slot_refs,
                         metadata=_compact_initial_strategy_metadata(strategy),
                     )
                     plan = plan.append(
@@ -613,10 +662,12 @@ class QueryPlan:
                         admission_reason="semantic_slot_requires_user_clarification",
                         phase=phase,
                         component_ref=component_ref,
-                        semantic_slot_ref=semantic_slot_ref,
+                        semantic_slot_refs=semantic_slot_refs,
                         metadata={
                             **_compact_initial_strategy_metadata(strategy),
-                            **clarification,
+                            "clarification_required_semantic_slots": (
+                                component_clarifications
+                            ),
                             "provider_dispatch_authorized": False,
                         },
                     )
@@ -662,7 +713,7 @@ class QueryPlan:
                     phase=phase,
                     discovery_job_class=discovery_job_class,
                     component_ref=component_ref,
-                    semantic_slot_ref=semantic_slot_ref,
+                    semantic_slot_refs=discovery_semantic_slot_refs,
                     metadata=metadata,
                 )
                 if not authorized:
@@ -674,7 +725,7 @@ class QueryPlan:
                         phase=phase,
                         discovery_job_class=discovery_job_class,
                         component_ref=component_ref,
-                        semantic_slot_ref=semantic_slot_ref,
+                        semantic_slot_refs=discovery_semantic_slot_refs,
                         metadata=metadata,
                     )
                     continue
@@ -714,7 +765,7 @@ class QueryPlan:
                         phase=phase,
                         discovery_job_class=discovery_job_class,
                         component_ref=component_ref,
-                        semantic_slot_ref=semantic_slot_ref,
+                        semantic_slot_refs=discovery_semantic_slot_refs,
                         metadata={**metadata, **rejection},
                     )
                     continue
@@ -739,7 +790,7 @@ class QueryPlan:
                         phase=phase,
                         discovery_job_class=discovery_job_class,
                         component_ref=component_ref,
-                        semantic_slot_ref=semantic_slot_ref,
+                        semantic_slot_refs=discovery_semantic_slot_refs,
                         metadata={**metadata, **rejection},
                     )
                     continue
@@ -761,7 +812,7 @@ class QueryPlan:
                         phase=phase,
                         discovery_job_class=discovery_job_class,
                         component_ref=component_ref,
-                        semantic_slot_ref=semantic_slot_ref,
+                        semantic_slot_refs=discovery_semantic_slot_refs,
                         metadata={**metadata, **rejection},
                     )
                     continue
@@ -802,7 +853,7 @@ class QueryPlan:
                     order=admitted_for_component + 1,
                     discovery_job_class=discovery_job_class,
                     component_ref=component_ref,
-                    semantic_slot_ref=semantic_slot_ref,
+                    semantic_slot_refs=discovery_semantic_slot_refs,
                     metadata={
                         **metadata,
                         "candidate_kind": candidate_kind,
@@ -892,10 +943,14 @@ class QueryPlan:
                 if posture.get("discovery_job_class")
             },
             "semantic_slot_refs_by_component": {
-                component_id: dict(posture["semantic_slot_ref"])
+                component_id: [
+                    dict(item) for item in posture["semantic_slot_refs"]
+                ]
                 for component_id, posture in component_postures.items()
             },
-            "clarification_required_components": clarification_required_components,
+            "clarification_required_semantic_slots": (
+                clarification_required_semantic_slots
+            ),
             "primary_item_ids_by_component": {key: list(value) for key, value in primary_item_ids.items()},
             "admitted_query_order": list(admitted_candidates),
             "immediate_dispatch_query_order": list(immediate_queries),
@@ -919,11 +974,13 @@ class QueryPlan:
                 if posture.get("discovery_job_class")
             },
             semantic_slot_refs_by_component={
-                component_id: dict(posture["semantic_slot_ref"])
+                component_id: tuple(
+                    dict(item) for item in posture["semantic_slot_refs"]
+                )
                 for component_id, posture in component_postures.items()
             },
-            clarification_required_components=tuple(
-                clarification_required_components
+            clarification_required_semantic_slots=tuple(
+                clarification_required_semantic_slots
             ),
             duplicate_candidates_rejected=tuple(duplicates),
             over_ceiling_candidates_rejected=tuple(over_ceiling),
@@ -981,10 +1038,10 @@ class QueryPlan:
                 component_ref=(
                     parent_item.component_ref if parent_item is not None else None
                 ),
-                semantic_slot_ref=(
-                    parent_item.semantic_slot_ref
+                semantic_slot_refs=(
+                    parent_item.semantic_slot_refs
                     if parent_item is not None
-                    else None
+                    else ()
                 ),
                 admission_reason="ordered_for_consumption",
                 metadata=execution_metadata,
@@ -1099,12 +1156,16 @@ class QueryPlan:
                 "SearchOS follow-up decision lacks exact judgment/slot lineage"
             )
         component_ref = slot_ref.get("component_ref")
-        semantic_slot_ref = slot_ref.get("semantic_slot_ref")
+        semantic_slot_refs = decision.get("semantic_slot_refs")
         if not isinstance(component_ref, Mapping) or not isinstance(
-            semantic_slot_ref, Mapping
+            semantic_slot_refs, Sequence
+        ) or isinstance(
+            semantic_slot_refs, (str, bytes)
+        ) or not all(
+            isinstance(item, Mapping) for item in semantic_slot_refs
         ):
             raise SearchOSRuntimeError(
-                "SearchOS follow-up decision lacks component/semantic-slot lineage"
+                "SearchOS follow-up decision lacks exact plural semantic-slot lineage"
             )
         parent_plan_ref = self.to_ref()
         plan = self.append(
@@ -1120,7 +1181,7 @@ class QueryPlan:
             order=1,
             discovery_job_class=discovery_job_class,
             component_ref=component_ref,
-            semantic_slot_ref=semantic_slot_ref,
+            semantic_slot_refs=semantic_slot_refs,
             metadata={
                 "searchos_judgment_decision_id": decision_id,
                 "searchos_judgment_decision_digest": decision_digest,

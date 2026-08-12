@@ -81,8 +81,24 @@ def _followup_slot_ref(seed: str) -> dict[str, object]:
     return {
         **_ref("slot", seed),
         "component_ref": _ref("component", seed),
-        "semantic_slot_ref": _ref("slot", f"semantic-{seed}"),
     }
+
+
+def _followup_semantic_slot_refs(
+    seed: str,
+) -> list[dict[str, object]]:
+    return [
+        {
+            "slot_id": f"semantic:{seed}",
+            "slot_kind": "entity",
+            "status": "explicit",
+            "materiality": "material",
+            "candidate_values": [],
+            "selected_value": seed,
+            "user_confirmation_required": False,
+            "unresolved_material": False,
+        }
+    ]
 
 
 def _state(*, profile: str = "Fast", slots: int = 1) -> dict[str, object]:
@@ -260,7 +276,7 @@ def _orientation_judgment_request(
         request_id="request-1",
         profile_name="Balanced",
     )
-    query_plan_item_ref = _ref("query_plan_item", "orientation")
+    component_ref = _ref("component", "slot-1")
     semantic_slot_ref = {
         "slot_id": "semantic:subject",
         "slot_kind": "entity",
@@ -273,6 +289,11 @@ def _orientation_judgment_request(
         "user_confirmation_required": confirmation_required,
         "unresolved_material": True,
     }
+    query_plan_item_ref = {
+        **_ref("query_plan_item", "orientation"),
+        "component_ref": component_ref,
+        "semantic_slot_refs": [semantic_slot_ref],
+    }
     state = build_searchos_initial_state(
         run_id="run-1",
         request_id="request-1",
@@ -280,9 +301,21 @@ def _orientation_judgment_request(
         policy_snapshot=policy,
         active_slots=[
             {
-                **_slot("slot-1"),
-                "semantic_slot_ref": semantic_slot_ref,
-                "query_plan_item_ref": query_plan_item_ref,
+                "slot_id": "slot-1",
+                "component_ref": component_ref,
+                "source_obligation_ref": _ref(
+                    "source_obligation", "slot-1"
+                ),
+                "requirement_posture": "required",
+                "semantic_obligations": [
+                    {
+                        "semantic_slot_ref": semantic_slot_ref,
+                        "discovery_job_class": "orientation",
+                        "acquisition_driving": True,
+                        "clarification_required": False,
+                    }
+                ],
+                "query_plan_item_refs": [query_plan_item_ref],
                 "discovery_job_class": "orientation",
             }
         ],
@@ -335,7 +368,9 @@ def _new_judgment_action_output(
     }
     if action == "PROPOSE_INTERPRETATION_BINDING":
         contract = dict(request["interpretation_binding_contract"])
-        semantic_slot_ref = dict(contract["semantic_slot_ref"])
+        semantic_slot_ref = dict(
+            list(contract["eligible_semantic_slot_refs"])[0]
+        )
         output["interpretation_binding"] = {
             "semantic_slot_ref": semantic_slot_ref,
             "resolved_value": semantic_slot_ref["candidate_values"][0],
@@ -345,6 +380,12 @@ def _new_judgment_action_output(
             "basis_read_custody_refs": [],
             "disclose_assumption": True,
         }
+    elif action == "REQUIRE_CLARIFICATION":
+        output["semantic_slot_ref"] = dict(
+            list(request["clarification_eligible_semantic_slot_refs"])[
+                0
+            ]
+        )
     return output
 
 
@@ -853,7 +894,10 @@ def test_append_only_lineage_rejects_plan_rewrite_and_omitted_delta() -> None:
     ("mutation", "message"),
     [
         ("active_slot", "active-slot lineage is stale or altered"),
-        ("semantic_slot", "crossed component or semantic-slot lineage"),
+        (
+            "semantic_slot",
+            "crossed component or plural semantic-slot lineage",
+        ),
     ],
 )
 def test_iteration_candidate_admission_rejects_altered_slot_lineage(
@@ -889,10 +933,21 @@ def test_iteration_candidate_admission_rejects_altered_slot_lineage(
                     "source_obligation", "slot-1"
                 ),
                 "requirement_posture": "required",
-                "semantic_slot_ref": semantic_slot_ref,
-                "query_plan_item_ref": _ref(
-                    "query_plan_item", "initial"
-                ),
+                "semantic_obligations": [
+                    {
+                        "semantic_slot_ref": semantic_slot_ref,
+                        "discovery_job_class": "standard_discovery",
+                        "acquisition_driving": True,
+                        "clarification_required": False,
+                    }
+                ],
+                "query_plan_item_refs": [
+                    {
+                        **_ref("query_plan_item", "initial"),
+                        "component_ref": component_ref,
+                        "semantic_slot_refs": [semantic_slot_ref],
+                    }
+                ],
                 "discovery_job_class": "standard_discovery",
             }
         ],
@@ -956,7 +1011,7 @@ def test_iteration_candidate_admission_rejects_altered_slot_lineage(
         **_ref("query_plan_item", "followup"),
         "discovery_job_class": "standard_discovery",
         "component_ref": component_ref,
-        "semantic_slot_ref": admitted_semantic_ref,
+        "semantic_slot_refs": [admitted_semantic_ref],
     }
     candidate_set = build_searchos_iteration_candidate_set_v1(
         run_id="run-1",
@@ -1136,30 +1191,56 @@ def test_interpretation_binding_action_rejects_wrong_or_stale_basis_refs(
         )
 
 
-def test_confirmation_required_slot_rejects_interpretation_binding_action() -> None:
-    request = _orientation_judgment_request(
-        confirmation_required=True,
+def test_confirmation_required_slot_is_clarification_only_not_binding_eligible() -> None:
+    policy = build_searchos_policy_snapshot(
+        run_id="run-1",
+        request_id="request-1",
+        profile_name="Balanced",
     )
-    assert "PROPOSE_INTERPRETATION_BINDING" not in request["legal_actions"]
-
-    with pytest.raises(
-        SearchOSRuntimeError,
-        match="not currently authorized",
-    ):
-        validate_searchos_judgment_model_output(
-            request=request,
-            model_output={
-                "schema_version": "searchos_judgment_decision_v1",
-                "judgment_request_id": request["judgment_request_id"],
-                "judgment_request_digest": request[
-                    "judgment_request_digest"
+    semantic_slot_ref = {
+        "slot_id": "semantic:user-choice",
+        "slot_kind": "entity",
+        "status": "ambiguous",
+        "materiality": "material",
+        "candidate_values": ["Mercury planet", "Mercury element"],
+        "selected_value": None,
+        "user_confirmation_required": True,
+        "unresolved_material": True,
+    }
+    state = build_searchos_initial_state(
+        run_id="run-1",
+        request_id="request-1",
+        answer_contract_ref=_ref("answer_contract", "contract"),
+        policy_snapshot=policy,
+        active_slots=[
+            {
+                **_slot("slot-1"),
+                "semantic_obligations": [
+                    {
+                        "semantic_slot_ref": semantic_slot_ref,
+                        "discovery_job_class": None,
+                        "acquisition_driving": False,
+                        "clarification_required": True,
+                    }
                 ],
-                "slot_id": "slot-1",
-                "action": "PROPOSE_INTERPRETATION_BINDING",
-                "interpretation_binding": {},
-                "reason": "must remain user-confirmation blocked",
-            },
-        )
+                "query_plan_item_refs": [],
+                "discovery_job_class": None,
+                "clarification_only": True,
+            }
+        ],
+        initial_candidate_state_ref=None,
+    )
+
+    semantic_obligation = next(
+        iter(state["semantic_obligations_by_id"].values())
+    )
+    assert semantic_obligation["binding_posture"] == "not_required"
+    assert semantic_obligation["clarification_posture"][
+        "clarification_required"
+    ] is True
+    assert state["slots_by_id"]["slot-1"]["posture"] == (
+        "clarification_required"
+    )
 
 
 def test_semantic_handoff_is_not_legal_before_required_binding() -> None:
@@ -1805,6 +1886,7 @@ def test_query_plan_admits_exact_model_followup_without_evaluator_or_expander() 
         "followup_query": "exact model-authored query",
         "discovery_job_class": "standard_discovery",
         "slot_ref": _followup_slot_ref("one"),
+        "semantic_slot_refs": _followup_semantic_slot_refs("one"),
     }
     current, admission = plan.admit_searchos_followup_query(
         judgment_decision=decision,
@@ -1855,6 +1937,9 @@ def test_searchos_followup_rejects_materially_equivalent_query_before_discover(
         "judgment_decision_id": "searchos-decision:equivalent",
         "judgment_decision_digest": "a" * 64,
         "slot_ref": _followup_slot_ref("equivalent"),
+        "semantic_slot_refs": _followup_semantic_slot_refs(
+            "equivalent"
+        ),
     }
 
     with pytest.raises(SearchOSRuntimeError, match="materially equivalent"):
@@ -1883,6 +1968,9 @@ def test_searchos_followup_admits_genuinely_distinct_query_unchanged() -> None:
             "judgment_decision_id": "searchos-decision:distinct",
             "judgment_decision_digest": "c" * 64,
             "slot_ref": _followup_slot_ref("distinct"),
+            "semantic_slot_refs": _followup_semantic_slot_refs(
+                "distinct"
+            ),
         },
         iteration=2,
     )

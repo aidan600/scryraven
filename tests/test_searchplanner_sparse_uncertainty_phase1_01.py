@@ -534,6 +534,145 @@ def test_unclassified_factual_term_uses_orientation_and_bounded_binding(
     assert binding["base_answer_contract_mutated"] is False
 
 
+def test_one_component_preserves_and_binds_two_factual_uncertainties(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    proposal = {
+        "disposition": "components",
+        "components": [
+            {
+                "need": (
+                    "Report the current policy for the intended Acme "
+                    "product version"
+                ),
+                "uncertainties": [
+                    {
+                        "kind": "entity",
+                        "status": "unresolved",
+                        "candidates": [
+                            "Acme Legacy",
+                            "Acme Current",
+                        ],
+                    },
+                    {
+                        "kind": "variant",
+                        "status": "unresolved",
+                        "candidates": ["v2", "v3"],
+                    },
+                ],
+            }
+        ],
+    }
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        query="What is the current policy for the intended Acme version?",
+        core_topic="Acme current product policy and version",
+        primary_entity="Acme",
+        evidence_rows=[
+            _evidence_row("Acme Current v3", suffix="multi-slot-orientation")
+        ],
+        followup_evidence_rows=[
+            _evidence_row("Acme Current v3", suffix="multi-slot-standard")
+        ],
+        read_assessment_decision="BIND_THEN_FOLLOWUP_THEN_READ",
+        deps_overrides=_product_deps(proposal),
+    )
+
+    accepted_contract = (
+        harness.run_kernel.state.initial_answer_contract
+    )
+    accepted_slots = list(
+        accepted_contract["accepted_semantic_slot_refs"]
+    )
+    assert len(accepted_slots) == 2
+    assert len(
+        {
+            item["slot_id"]
+            for item in accepted_slots
+            if item["materiality"] == "material"
+            and item["unresolved_material"] is True
+        }
+    ) == 2
+    initial_items = [
+        item
+        for item in _ordered_query_plan_items(outcome)
+        if item["iteration"] == 1
+    ]
+    assert len(initial_items) == 1
+    assert initial_items[0]["discovery_job_class"] == "orientation"
+    assert {
+        item["slot_id"]
+        for item in initial_items[0]["semantic_slot_refs"]
+    } == {item["slot_id"] for item in accepted_slots}
+    state = harness.run_kernel.state.searchos_state
+    obligations = list(state["semantic_obligations_by_id"].values())
+    assert len(obligations) == 2
+    assert {
+        item["semantic_slot_ref"]["slot_id"]
+        for item in obligations
+    } == {item["slot_id"] for item in accepted_slots}
+    bindings = list(state["interpretation_binding_history"])
+    assert len(bindings) == 2
+    assert len(
+        {
+            item["semantic_slot_ref"]["slot_id"]
+            for item in bindings
+        }
+    ) == 2
+    first_bound_request = next(
+        item
+        for item in harness.read_assessment_calls
+        if len(item["interpretation_binding_refs"]) == 1
+    )
+    assert (
+        "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION"
+        not in first_bound_request["legal_actions"]
+    )
+    assert first_bound_request["component_semantic_handoff_gate"][
+        "all_relevant_material_semantic_obligations_satisfied"
+    ] is False
+    assert len(
+        first_bound_request["component_semantic_handoff_gate"][
+            "blocking_semantic_obligation_refs"
+        ]
+    ) == 1
+    assert sorted(
+        first_bound_request[
+            "semantic_obligation_binding_postures"
+        ].values()
+    ) == ["bound", "unbound_required"]
+    assert sorted(
+        first_bound_request[
+            "semantic_obligation_effective_statuses"
+        ].values()
+    ) == ["resolved_for_search_planning", "unresolved"]
+    all_bound_request = next(
+        item
+        for item in harness.read_assessment_calls
+        if len(item["interpretation_binding_refs"]) == 2
+    )
+    assert all_bound_request["component_semantic_handoff_gate"][
+        "all_relevant_material_semantic_obligations_satisfied"
+    ] is True
+    assert all_bound_request["semantic_obligation_count"] == 2
+    assert len(state["semantic_handoff_refs"]) == 1
+    assert len(harness.search_calls) == 2
+    assert all(
+        item.get("selected_value") is None
+        and item["status"] == "unresolved"
+        for item in accepted_contract[
+            "accepted_semantic_slot_refs"
+        ]
+    )
+    assert all(
+        item["base_answer_contract_mutated"] is False
+        and item["evidence_admitted"] is False
+        for item in bindings
+    )
+
+
 def test_case_c_deep_escalation_is_typed_blocked_without_dispatch(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -568,6 +707,294 @@ def test_case_c_deep_escalation_is_typed_blocked_without_dispatch(
     ] is True
 
 
+def test_resolved_semantic_peers_are_preserved_but_only_unresolved_drives_search(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    proposal = {
+        "disposition": "components",
+        "components": [
+            {
+                "need": "Report Acme Current v3 policy",
+                "uncertainties": [
+                    {
+                        "kind": "entity",
+                        "status": "explicit",
+                        "candidates": [
+                            "Acme Legacy",
+                            "Acme Current",
+                        ],
+                        "selected": "Acme Current",
+                    },
+                    {
+                        "kind": "variant",
+                        "status": "implied",
+                        "candidates": ["v2", "v3"],
+                        "selected": "v3",
+                    },
+                    {
+                        "kind": "time_period",
+                        "status": "unresolved",
+                        "candidates": ["2025 policy", "2026 policy"],
+                    },
+                ],
+            }
+        ],
+    }
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        query="Report Acme Current v3 policy for the intended year.",
+        core_topic="Acme Current v3 policy year",
+        primary_entity="Acme",
+        evidence_rows=[
+            _evidence_row("Acme Current v3 2026", suffix="resolved-peers")
+        ],
+        followup_evidence_rows=[
+            _evidence_row(
+                "Acme Current v3 2026",
+                suffix="resolved-peers-standard",
+            )
+        ],
+        read_assessment_decision="BIND_THEN_FOLLOWUP_THEN_READ",
+        deps_overrides=_product_deps(proposal),
+    )
+
+    accepted_slots = list(
+        harness.run_kernel.state.initial_answer_contract[
+            "accepted_semantic_slot_refs"
+        ]
+    )
+    assert len(accepted_slots) == 3
+    unresolved_slot = next(
+        item
+        for item in accepted_slots
+        if item["unresolved_material"] is True
+    )
+    stable_slot_ids = {
+        item["slot_id"]
+        for item in accepted_slots
+        if item["unresolved_material"] is False
+    }
+    assert len(stable_slot_ids) == 2
+    ordered = _ordered_query_plan_items(outcome)
+    assert all(
+        {
+            item["slot_id"]
+            for item in query_item["semantic_slot_refs"]
+        }
+        == {unresolved_slot["slot_id"]}
+        for query_item in ordered
+    )
+    state = harness.run_kernel.state.searchos_state
+    obligations = list(state["semantic_obligations_by_id"].values())
+    assert len(obligations) == 3
+    by_slot_id = {
+        item["semantic_slot_ref"]["slot_id"]: item
+        for item in obligations
+    }
+    assert {
+        by_slot_id[slot_id]["binding_posture"]
+        for slot_id in stable_slot_ids
+    } == {"not_required"}
+    assert all(
+        by_slot_id[slot_id]["acquisition_driving"] is False
+        for slot_id in stable_slot_ids
+    )
+    assert by_slot_id[unresolved_slot["slot_id"]][
+        "acquisition_driving"
+    ] is True
+    assert by_slot_id[unresolved_slot["slot_id"]][
+        "binding_posture"
+    ] == "bound"
+    [binding] = state["interpretation_binding_history"]
+    assert binding["semantic_slot_ref"]["slot_id"] == (
+        unresolved_slot["slot_id"]
+    )
+    after_binding = next(
+        item
+        for item in harness.read_assessment_calls
+        if item["interpretation_binding_refs"]
+    )
+    assert after_binding["component_semantic_handoff_gate"][
+        "all_relevant_material_semantic_obligations_satisfied"
+    ] is True
+    assert len(state["semantic_handoff_refs"]) == 1
+
+
+def test_one_component_factual_and_clarification_postures_are_independent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    proposal = {
+        "disposition": "components",
+        "components": [
+            {
+                "need": "Report the intended Acme policy",
+                "uncertainties": [
+                    {
+                        "kind": "entity",
+                        "status": "unresolved",
+                        "candidates": [
+                            "Acme Legacy",
+                            "Acme Current",
+                        ],
+                    },
+                    {
+                        "kind": "variant",
+                        "status": "ambiguous",
+                        "candidates": [
+                            "consumer policy",
+                            "enterprise policy",
+                        ],
+                        "user_confirmation_required": True,
+                    },
+                ],
+            }
+        ],
+    }
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        query="Report the intended Acme policy.",
+        core_topic="intended Acme policy",
+        primary_entity="Acme",
+        evidence_rows=[
+            _evidence_row("Acme Current", suffix="mixed-slot-orientation")
+        ],
+        followup_evidence_rows=[
+            _evidence_row("Acme Current", suffix="mixed-slot-standard")
+        ],
+        read_assessment_decision="BIND_THEN_FOLLOWUP_THEN_READ",
+        deps_overrides=_product_deps(proposal),
+    )
+
+    accepted_slots = list(
+        harness.run_kernel.state.initial_answer_contract[
+            "accepted_semantic_slot_refs"
+        ]
+    )
+    factual_slot = next(
+        item
+        for item in accepted_slots
+        if item["user_confirmation_required"] is False
+    )
+    clarification_slot = next(
+        item
+        for item in accepted_slots
+        if item["user_confirmation_required"] is True
+    )
+    ordered = _ordered_query_plan_items(outcome)
+    assert ordered
+    assert all(
+        {
+            item["slot_id"]
+            for item in query_item["semantic_slot_refs"]
+        }
+        == {factual_slot["slot_id"]}
+        for query_item in ordered
+    )
+    assert clarification_slot["slot_id"] not in {
+        item["slot_id"]
+        for query_item in ordered
+        for item in query_item["semantic_slot_refs"]
+    }
+    state = harness.run_kernel.state.searchos_state
+    obligations_by_slot_id = {
+        item["semantic_slot_ref"]["slot_id"]: item
+        for item in state["semantic_obligations_by_id"].values()
+    }
+    factual_obligation = obligations_by_slot_id[
+        factual_slot["slot_id"]
+    ]
+    clarification_obligation = obligations_by_slot_id[
+        clarification_slot["slot_id"]
+    ]
+    assert factual_obligation["binding_posture"] == "bound"
+    assert factual_obligation["clarification_posture"][
+        "clarification_required"
+    ] is False
+    assert clarification_obligation["binding_posture"] == "not_required"
+    assert clarification_obligation["clarification_posture"][
+        "clarification_required"
+    ] is True
+    [binding] = state["interpretation_binding_history"]
+    assert binding["semantic_slot_ref"]["slot_id"] == (
+        factual_slot["slot_id"]
+    )
+    after_binding = next(
+        item
+        for item in harness.read_assessment_calls
+        if item["interpretation_binding_refs"]
+    )
+    assert after_binding["component_semantic_handoff_gate"][
+        "all_relevant_material_semantic_obligations_satisfied"
+    ] is False
+    assert (
+        "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION"
+        not in after_binding["legal_actions"]
+    )
+    assert state["semantic_handoff_refs"] == []
+    assert harness.search_calls
+    assert all(
+        item["base_answer_contract_mutated"] is False
+        for item in state["interpretation_binding_history"]
+    )
+
+
+def test_candidate_less_factual_uncertainty_never_advertises_binding(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    proposal = {
+        "disposition": "components",
+        "components": [
+            {
+                "need": "Identify the current Acme designation",
+                "uncertainties": [
+                    {
+                        "kind": "entity",
+                        "status": "unresolved",
+                    }
+                ],
+            }
+        ],
+    }
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        query="What is the current Acme designation?",
+        core_topic="current Acme designation",
+        primary_entity="Acme",
+        evidence_rows=[
+            _evidence_row("Acme", suffix="candidate-less-orientation")
+        ],
+        read_assessment_decision="NO_READ",
+        deps_overrides=_product_deps(proposal),
+    )
+
+    [accepted_slot] = harness.run_kernel.state.initial_answer_contract[
+        "accepted_semantic_slot_refs"
+    ]
+    assert accepted_slot["status"] == "unresolved"
+    assert accepted_slot["candidate_values"] == []
+    [initial_item] = [
+        item
+        for item in _ordered_query_plan_items(outcome)
+        if item["iteration"] == 1
+    ]
+    assert initial_item["discovery_job_class"] == "orientation"
+    [request] = harness.read_assessment_calls
+    assert request["binding_eligible_semantic_slot_ids"] == []
+    assert (
+        "PROPOSE_INTERPRETATION_BINDING"
+        not in request["legal_actions"]
+    )
+    assert harness.run_kernel.state.searchos_state[
+        "interpretation_binding_history"
+    ] == []
+
+
 def test_case_d_user_confirmation_requires_typed_clarification_no_dispatch(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -589,7 +1016,9 @@ def test_case_d_user_confirmation_requires_typed_clarification_no_dispatch(
     assert searchos["clarification_required"] is True
     assert searchos["clarification_only_no_dispatch"] is True
     assert searchos["provider_calls_attempted"] == 0
-    [clarification] = searchos["slot_clarification_postures"].values()
+    [clarification] = searchos[
+        "semantic_obligation_clarification_postures"
+    ].values()
     assert clarification["clarification_required"] is True
     assert clarification["declared_candidates"] == [
         "planet",
@@ -677,7 +1106,18 @@ def test_mixed_stable_factual_and_true_ambiguity_progress_independently(
     ]
     assert len(clarification_slots) == 1
     assert clarification_slots[0]["current_discovery_job_class"] is None
-    assert clarification_slots[0]["clarification_posture"][
+    clarification_obligations = [
+        state["semantic_obligations_by_id"][semantic_obligation_id]
+        for semantic_obligation_id in clarification_slots[0][
+            "semantic_obligation_ids"
+        ]
+        if state["semantic_obligations_by_id"][
+            semantic_obligation_id
+        ]["clarification_posture"]["clarification_required"]
+        is True
+    ]
+    assert len(clarification_obligations) == 1
+    assert clarification_obligations[0]["clarification_posture"][
         "declared_candidates"
     ] == ["planet", "element", "automobile brand"]
     searchos = outcome.execution_trace["searchos_slice_a"]
@@ -686,7 +1126,9 @@ def test_mixed_stable_factual_and_true_ambiguity_progress_independently(
     assert len(searchos["interpretation_binding_refs"]) == 1
     assert sum(
         posture.get("clarification_required") is True
-        for posture in searchos["slot_clarification_postures"].values()
+        for posture in searchos[
+            "semantic_obligation_clarification_postures"
+        ].values()
     ) == 1
     assert searchos["provider_calls_attempted"] == 2
 
@@ -786,7 +1228,7 @@ def test_binding_replay_conflict_and_exact_field_guards(
     )
     with pytest.raises(
         SearchOSRuntimeError,
-        match="active-slot lineage is stale",
+        match="semantic obligation ref is stale or altered",
     ):
         validate_searchos_interpretation_binding(
             wrong_semantic,
