@@ -488,6 +488,52 @@ def test_case_b_factual_uncertainty_binds_then_runs_standard_discovery(
     assert effective["base_answer_contract_mutated"] is False
 
 
+def test_unclassified_factual_term_uses_orientation_and_bounded_binding(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    proposal = {
+        "disposition": "components",
+        "components": [
+            {
+                "need": "Identify the externally verifiable Acme term",
+                "uncertainties": [
+                    {
+                        "kind": "unknown_or_other",
+                        "status": "unresolved",
+                        "candidates": ["Acme Alpha", "Acme Beta"],
+                    }
+                ],
+            }
+        ],
+    }
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        query="Which externally verifiable Acme term applies?",
+        core_topic="applicable Acme term",
+        primary_entity="Acme",
+        evidence_rows=[_evidence_row("Acme Alpha", suffix="term-orientation")],
+        followup_evidence_rows=[
+            _evidence_row("Acme Alpha", suffix="term-standard")
+        ],
+        read_assessment_decision="BIND_THEN_FOLLOWUP_THEN_READ",
+        deps_overrides=_product_deps(proposal),
+    )
+
+    assert [
+        item["discovery_job_class"]
+        for item in _ordered_query_plan_items(outcome)
+    ] == ["orientation", "standard_discovery"]
+    [binding] = harness.run_kernel.state.searchos_state[
+        "interpretation_binding_history"
+    ]
+    assert binding["binding_category"] == (
+        "externally_verifiable_terminology"
+    )
+    assert binding["base_answer_contract_mutated"] is False
+
+
 def test_case_c_deep_escalation_is_typed_blocked_without_dispatch(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

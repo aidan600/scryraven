@@ -160,8 +160,8 @@ SearchJudgment exact follow-up proposal
 
 Provider selection and adapter mechanics remain owned by the existing routing
 and dispatch surfaces. The job class is an explicit routing input; it does not
-grant provider authority. Deep work is either admitted by current policy or
-returns the current typed authorization block.
+grant provider authority. Deep work reaches the current authorization and
+requester blocks; this cutover adds no premium license or Deep executor.
 QueryPlan compares the exact proposed text with every admitted executable query
 using the neutral pure query-cleaning and token-Jaccard rule shared with the
 established 0.7 redundancy threshold. Equivalent text is rejected before

@@ -102,7 +102,7 @@ and consumers, not credential presence or live availability.
 
 | Capability | Cataloged | Adapter installed | Typed-runtime reachable | Ordinary-product enabled | Ordinary-product reachable | Ordinary-product consumed |
 | --- | --- | --- | --- | --- | --- | --- |
-| `DISCOVER` | yes | yes | yes | yes | yes | yes, through QueryPlan `orientation`, `standard_discovery`, and `deep_discovery` jobs and the current ProviderPlan, scheduler, dispatch, continuation, supplemental, and recovery consumers |
+| `DISCOVER` | yes | yes | yes | yes | yes | yes, through QueryPlan `orientation` and `standard_discovery`; `deep_discovery` reaches the current general-Deep block through the same ProviderPlan/scheduler path |
 | `READ` | yes | yes | yes | yes | yes, only after an exact SearchJudgment material-need decision | yes, through existing FetchRead/EvidenceLedger custody; selected candidate and URL provenance alone remain a nontrigger |
 | `FOCUSED_EXTRACT` | yes | yes | yes | no | controller recognizes then returns `focused_extract_requester_not_installed` | no |
 | `MAP_SITE` | yes | yes | yes | no | controller recognizes then returns `map_candidate_reentry_not_installed` | no |
@@ -113,9 +113,9 @@ and consumers, not credential presence or live availability.
 
 Adapter installation or validation-constructed dispatch is not ordinary product
 consumption. No product requester was manufactured for focused extraction, site
-mapping, or site crawling. A QueryPlan `deep_discovery` job is the ordinary
-general-Deep requester, but it grants no premium authorization and does not
-bypass the existing block.
+mapping, or site crawling. A QueryPlan `deep_discovery` job creates an ordinary
+general-Deep request, but it is not a premium license or a new qualifying Deep
+executor and does not bypass either existing block.
 
 ## Installed SearchOS Job Mapping And Remaining Target
 
@@ -127,7 +127,7 @@ vocabulary:
 | --- | --- | --- |
 | `orientation` | `DISCOVER(lightweight_disambiguation)` | bounded non-evidence direction only |
 | `standard_discovery` | ordinary DISCOVER policy | ordinary provider selection and dispatch |
-| `deep_discovery` | general Deep requested | existing explicit authorization gate; no implicit fallback or transport |
+| `deep_discovery` | general Deep requested | existing authorization/requester blocks; no implicit fallback or transport |
 
 The job class is preserved through ProviderPlan, homogeneous scheduler batches,
 dispatch, observations, and slot-local judgment. It is not re-inferred from
@@ -310,10 +310,12 @@ general Deep. A validation-only authorization must prove:
 - mandatory `searchResults` output.
 
 The mechanical adapter accepts one authorized query per job. QueryPlan
-`deep_discovery` is now the qualifying ordinary requester and projects
-`general_deep_requested`. It does not grant premium authorization: without the
-exact authorization record, ordinary routing blocks with
-`general_deep_authorization_required` before transport. Scrutineer Deep remains
+`deep_discovery` projects `general_deep_requested` but creates neither premium
+authorization nor a new licensed ordinary Deep executor. Without the exact
+authorization record, routing blocks with
+`general_deep_authorization_required`; a validation-constructed authorization
+still remains subject to the existing
+`general_deep_no_ordinary_product_requester` boundary. Scrutineer Deep remains
 separate and unchanged. The post-discovery controller retains the durable
 PRODUCT blocker `premium_sequential_acquisition_not_licensed` for a proposed
 general premium-sequential need.

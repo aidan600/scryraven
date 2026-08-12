@@ -115,6 +115,13 @@ The runtime distinguishes clear semantic intent, acquisition uncertainty,
 factually resolvable identity/currentness/version/terminology uncertainty, true
 user-intent ambiguity, and mixed multi-component uncertainty.
 
+The bounded binding map is `entity -> identity_alias`,
+`variant|time_period -> currentness_version`,
+`source_basis -> document_lineage`, and materially unresolved
+`unknown_or_other -> externally_verifiable_terminology`. An explicit default
+`unknown_or_other` subject remains stable and takes standard discovery; the
+last mapping does not turn unspecified stable meaning into uncertainty.
+
 - A clear request, such as the default `rel_tol` and `abs_tol` values for
   `math.isclose()` in the official Python documentation, takes ordinary
   discovery without a special ambiguity pipeline.
@@ -138,8 +145,9 @@ provider brand; `core.routing` remains the sole provider mapper. Initial jobs
 are derived only from the accepted AnswerContract. Orientation reuses the
 existing lightweight-disambiguation route, standard discovery reuses ordinary
 route derivation, and deep discovery sets the existing
-`general_deep_requested` policy input and therefore either obtains current
-authorization or returns the existing typed block. No new provider preference
+`general_deep_requested` policy input. It reaches the existing authorization
+and requester blocks; this phase installs no premium license or new Deep
+executor. No new provider preference
 or economics policy is encoded in QueryPlan. Later comparative calibration may
 change code-owned mapping without changing the job vocabulary. `READ` remains
 a separate known-URL capability and may assist orientation without

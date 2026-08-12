@@ -17321,9 +17321,6 @@ class RunKernel:
             except ValueError as exc:
                 raise RunKernelTransitionError(str(exc)) from exc
             self.state.projections[action.stage] = deepcopy(observed)
-            self.state.projections[SEARCHOS_JUDGMENT_STAGE] = deepcopy(
-                self.state.searchos_state
-            )
         elif action.action_type is ActionType.SEARCHOS_SEMANTIC_HANDOFF_ADMIT:
             from core.searchos_iterative_judgment_runtime import (
                 record_searchos_semantic_handoff,

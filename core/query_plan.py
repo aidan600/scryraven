@@ -83,7 +83,13 @@ class DiscoveryJobClass(str, Enum):
 
 
 _FACTUAL_ORIENTATION_SLOT_KINDS = frozenset(
-    {"entity", "variant", "time_period", "source_basis"}
+    {
+        "entity",
+        "variant",
+        "time_period",
+        "source_basis",
+        "unknown_or_other",
+    }
 )
 _MATERIAL_UNRESOLVED_SLOT_STATUSES = frozenset({"ambiguous", "unresolved"})
 

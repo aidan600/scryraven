@@ -45,6 +45,7 @@ SEARCHOS_INTERPRETATION_BINDING_CATEGORY_BY_SLOT_KIND = MappingProxyType(
         "variant": "currentness_version",
         "time_period": "currentness_version",
         "source_basis": "document_lineage",
+        "unknown_or_other": "externally_verifiable_terminology",
     }
 )
 SEARCHOS_SLICE_A_READINESS_SCHEMA_VERSION = "searchos_slice_a_readiness_v1"
@@ -1047,6 +1048,12 @@ def record_searchos_iteration_candidate_set(
     if slot_id not in slots:
         raise SearchOSRuntimeError("iteration candidate set references inactive slot")
     slot = deepcopy(slots[slot_id])
+    if _mapping(admitted.get("active_slot_ref")) != _mapping(
+        slot.get("slot_ref")
+    ):
+        raise SearchOSRuntimeError(
+            "iteration candidate set active-slot lineage is stale or altered"
+        )
     if _mapping(admitted.get("parent_candidate_state_ref")) != _mapping(
         slot.get("current_candidate_state_ref")
     ):
@@ -1081,8 +1088,8 @@ def record_searchos_iteration_candidate_set(
         if (
             _first_ref_id(admitted_component_ref)
             != _first_ref_id(_mapping(slot.get("component_ref")))
-            or admitted_semantic_ref.get("slot_id")
-            != _mapping(slot.get("semantic_slot_ref")).get("slot_id")
+            or admitted_semantic_ref
+            != _mapping(slot.get("semantic_slot_ref"))
         ):
             raise SearchOSRuntimeError(
                 "follow-up QueryPlan item crossed component or semantic-slot lineage"

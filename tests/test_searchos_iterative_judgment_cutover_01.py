@@ -46,6 +46,7 @@ from core.searchos_iterative_judgment_runtime import (
     mark_searchos_slot_stale_or_invalid,
     mark_searchos_slot_unresolved,
     record_searchos_candidate_window,
+    record_searchos_iteration_candidate_set,
     record_searchos_judgment_failure,
     record_searchos_read_custody_material,
     record_searchos_readiness_projection,
@@ -846,6 +847,151 @@ def test_append_only_lineage_rejects_plan_rewrite_and_omitted_delta() -> None:
     )
     assert zero_useful["zero_useful_result"] is True
     assert zero_useful["selected_candidate_refs"] == []
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("active_slot", "active-slot lineage is stale or altered"),
+        ("semantic_slot", "crossed component or semantic-slot lineage"),
+    ],
+)
+def test_iteration_candidate_admission_rejects_altered_slot_lineage(
+    mutation: str,
+    message: str,
+) -> None:
+    policy = build_searchos_policy_snapshot(
+        run_id="run-1",
+        request_id="request-1",
+        profile_name="Balanced",
+    )
+    component_ref = _ref("component", "slot-1")
+    semantic_slot_ref = {
+        "slot_id": "semantic:stable",
+        "slot_kind": "entity",
+        "status": "explicit",
+        "materiality": "material",
+        "candidate_values": ["Alpha"],
+        "selected_value": "Alpha",
+        "user_confirmation_required": False,
+        "unresolved_material": False,
+    }
+    state = build_searchos_initial_state(
+        run_id="run-1",
+        request_id="request-1",
+        answer_contract_ref=_ref("answer_contract", "contract"),
+        policy_snapshot=policy,
+        active_slots=[
+            {
+                "slot_id": "slot-1",
+                "component_ref": component_ref,
+                "source_obligation_ref": _ref(
+                    "source_obligation", "slot-1"
+                ),
+                "requirement_posture": "required",
+                "semantic_slot_ref": semantic_slot_ref,
+                "query_plan_item_ref": _ref(
+                    "query_plan_item", "initial"
+                ),
+                "discovery_job_class": "standard_discovery",
+            }
+        ],
+        initial_candidate_state_ref=_ref(
+            "candidate_state", "revision-1"
+        ),
+    )
+    slot_ref = deepcopy(state["slots_by_id"]["slot-1"]["slot_ref"])
+    options = build_candidate_use_options_v1(
+        [_candidate(slot_ref=slot_ref, ordinal=1)]
+    )
+    window = build_candidate_use_window_v1(
+        slot_ref=slot_ref,
+        ordered_options=options,
+        window_ordinal=1,
+        policy_snapshot=state["policy_snapshot"],
+    )
+    state = record_searchos_candidate_window(state, window=window)
+    state, round_ref = begin_searchos_judgment_round(
+        state,
+        slot_ids=["slot-1"],
+    )
+    state, charge = charge_searchos_judgment_call(
+        state,
+        reservation_ref=round_ref,
+        slot_id="slot-1",
+    )
+    request = build_searchos_judgment_request_v1(
+        state=state,
+        slot_id="slot-1",
+        charge_ref=charge,
+        candidate_window=window,
+        read_custody_refs=[],
+    )
+    decision = validate_searchos_judgment_model_output(
+        request=request,
+        model_output={
+            "schema_version": "searchos_judgment_decision_v1",
+            "judgment_request_id": request["judgment_request_id"],
+            "judgment_request_digest": request[
+                "judgment_request_digest"
+            ],
+            "slot_id": "slot-1",
+            "action": "PROPOSE_FOLLOWUP_QUERY",
+            "followup_query": "Alpha stable exact follow-up",
+            "discovery_job_class": "standard_discovery",
+            "reason": "continue the exact stable component",
+        },
+    )
+    state = reduce_searchos_judgment_decision(
+        state,
+        decision=decision,
+    )
+    admitted_slot_ref = deepcopy(slot_ref)
+    admitted_semantic_ref = deepcopy(semantic_slot_ref)
+    if mutation == "active_slot":
+        admitted_slot_ref["slot_digest"] = _digest("altered-slot")
+    else:
+        admitted_semantic_ref["selected_value"] = "Altered"
+    query_plan_item_ref = {
+        **_ref("query_plan_item", "followup"),
+        "discovery_job_class": "standard_discovery",
+        "component_ref": component_ref,
+        "semantic_slot_ref": admitted_semantic_ref,
+    }
+    candidate_set = build_searchos_iteration_candidate_set_v1(
+        run_id="run-1",
+        request_id="request-1",
+        iteration=2,
+        parent_candidate_state_ref=state["slots_by_id"]["slot-1"][
+            "current_candidate_state_ref"
+        ],
+        slot_ref=admitted_slot_ref,
+        query_plan_item_ref=query_plan_item_ref,
+        provider_plan_ref=_ref("provider_plan", "followup"),
+        route_refs=[_ref("route", "followup")],
+        retrieval_action_refs=[
+            _ref("retrieval_action", "followup")
+        ],
+        ordered_provider_result_occurrence_refs=[
+            _ref("source_result", "followup")
+        ],
+        identity_set_delta_ref=_ref(
+            "identity_set_delta", "followup"
+        ),
+        selected_candidate_refs=[_ref("candidate", "followup")],
+        bounded_candidate_material_refs=[
+            _ref("material", "followup")
+        ],
+        selection_facts={"selected": 1},
+        overflow_facts={"overflow": 0},
+        zero_useful_result=False,
+    )
+
+    with pytest.raises(SearchOSRuntimeError, match=message):
+        record_searchos_iteration_candidate_set(
+            state,
+            candidate_set=candidate_set,
+        )
 
 
 @pytest.mark.parametrize(
