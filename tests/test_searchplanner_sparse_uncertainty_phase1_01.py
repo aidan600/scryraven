@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 from copy import deepcopy
-from typing import Any
+from pathlib import Path
+from typing import Any, Mapping
 
 import pytest
 
+import core.searchos_iterative_judgment_runtime as searchos_runtime
 from core.run_kernel import Observation, ObservationType, RunKernel, RunStageStatus
 from core.search_planner_model_adapter import (
     SearchPlannerModelAdapter,
@@ -32,10 +34,19 @@ from core.search_planner_semantic_compiler import (
     count_model_authored_mechanical_identity_keys,
     validate_semantic_planner_proposal,
 )
+from core.searchos_iterative_judgment_runtime import (
+    SearchOSRuntimeError,
+    build_searchos_effective_semantic_slot_view,
+    record_searchos_interpretation_binding,
+    validate_searchos_interpretation_binding,
+)
 from tests.fixtures.search_planner_sparse_semantic_corpus import (
     INVALID_SPARSE_PLANNER_CASES,
     VALID_SPARSE_PLANNER_CASES,
     valid_case,
+)
+from tests.helpers.offline_ordinary_pipeline import (
+    run_post_retirement_ordinary_pipeline,
 )
 
 RUN_ID = "run:sparse-phase-1"
@@ -51,6 +62,79 @@ class _FakeAskModel:
     def __call__(self, *args: Any, **kwargs: Any) -> str:
         self.calls.append((args, kwargs))
         return json.dumps(self.response)
+
+
+class _SparseProposalAdapter:
+    """Inject one accepted sparse proposal through the ordinary product seam."""
+
+    def __init__(self, proposal: Mapping[str, Any]) -> None:
+        self.proposal = deepcopy(dict(proposal))
+
+    def produce(self, planner_input: Mapping[str, Any]) -> Mapping[str, Any]:
+        return accept_planner_model_output(
+            deepcopy(self.proposal),
+            user_query_text=str(
+                planner_input["user_query_text_for_planning"]
+            ),
+            requested_mode=str(planner_input["requested_mode"]),
+        )
+
+
+def _product_deps(proposal: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "search_planner_adapter": _SparseProposalAdapter(proposal),
+        "provider_availability": {
+            "tavily": True,
+            "serper": True,
+        },
+    }
+
+
+def _ordered_query_plan_items(outcome: Any) -> list[dict[str, Any]]:
+    return [
+        dict(item)
+        for item in outcome.execution_trace["query_plan"]["items"]
+        if item["status"] == "ordered"
+    ]
+
+
+def _evidence_row(name: str, *, suffix: str) -> dict[str, Any]:
+    return {
+        "title": f"{name} bounded offline source",
+        "url": f"https://alpha.example/{suffix}",
+        "text": f"Bounded directional material about {name}.",
+        "source_tier": "official",
+        "source_class": "primary_source_documents",
+        "currentness_signal": "current",
+        "readable_status": "readable",
+        "disposition": "accepted",
+    }
+
+
+def _reenvelope_binding(
+    binding: Mapping[str, Any],
+    **updates: Any,
+) -> dict[str, Any]:
+    core = {
+        key: deepcopy(value)
+        for key, value in binding.items()
+        if key
+        not in {
+            "interpretation_binding_id",
+            "interpretation_binding_digest",
+            "replay_identity",
+        }
+    }
+    core.update(deepcopy(updates))
+    digest = searchos_runtime._digest(core)
+    return {
+        **core,
+        "interpretation_binding_id": (
+            f"searchos-interpretation-binding:{digest[:24]}"
+        ),
+        "interpretation_binding_digest": digest,
+        "replay_identity": f"searchos-interpretation-binding:{digest}",
+    }
 
 
 def _accept(case: dict[str, Any]) -> dict[str, Any]:
@@ -303,7 +387,7 @@ def test_factual_uncertainty_survives_initial_answer_contract_acceptance() -> No
         "Scott Galloway",
         "George Galloway",
     ]
-    assert accepted_slot["selected_value"] is None
+    assert accepted_slot.get("selected_value") is None
     assert accepted_slot["user_confirmation_required"] is False
     assert kernel.state.initial_answer_contract_projection["material_ambiguity_preserved"] is True
     trace = json.dumps(kernel.trace_projection().to_dict(), sort_keys=True)
@@ -320,3 +404,400 @@ def test_true_user_intent_ambiguity_preserves_confirmation_requirement() -> None
     assert slot["candidate_values"] == ["planet", "element", "automobile brand"]
     assert slot["user_confirmation_required"] is True
     assert _all_recon_requirements(compiled)[0]["posture"] == "not_needed"
+
+
+def test_case_a_stable_component_dispatches_standard_discovery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = valid_case("official_source_direct_simple")
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        query=case["query"],
+        core_topic="Python math.isclose defaults",
+        primary_entity="Python",
+        evidence_rows=[_evidence_row("Python", suffix="case-a")],
+        deps_overrides=_product_deps(case["proposal"]),
+    )
+
+    ordered = _ordered_query_plan_items(outcome)
+    assert {item["discovery_job_class"] for item in ordered} == {
+        "standard_discovery"
+    }
+    assert len(harness.search_calls) == 1
+    assert harness.search_calls[0]["search_providers"] == ["tavily"]
+    [route] = outcome.execution_trace["provider_plan"]["records"]
+    assert route["selection_inputs"]["discovery_job_class"] == (
+        "standard_discovery"
+    )
+    assert route["route_decision"]["derivation_reason"] == (
+        "query_plan_standard_discovery_job"
+    )
+
+
+def test_case_b_factual_uncertainty_binds_then_runs_standard_discovery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = valid_case("factual_identity_uncertainty")
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        query=case["query"],
+        core_topic="recent Galloway controversy",
+        primary_entity="Galloway",
+        evidence_rows=[
+            _evidence_row("Scott Galloway", suffix="case-b-orientation")
+        ],
+        followup_evidence_rows=[
+            _evidence_row("Scott Galloway", suffix="case-b-standard")
+        ],
+        read_assessment_decision="BIND_THEN_FOLLOWUP_THEN_READ",
+        deps_overrides=_product_deps(case["proposal"]),
+    )
+
+    assert [
+        item["discovery_job_class"]
+        for item in _ordered_query_plan_items(outcome)
+    ] == ["orientation", "standard_discovery"]
+    assert [call["search_providers"] for call in harness.search_calls] == [
+        ["serper"],
+        ["tavily"],
+    ]
+    accepted_slot = harness.run_kernel.state.initial_answer_contract[
+        "accepted_semantic_slot_refs"
+    ][0]
+    assert accepted_slot["status"] == "unresolved"
+    assert accepted_slot.get("selected_value") is None
+    [binding] = harness.run_kernel.state.searchos_state[
+        "interpretation_binding_history"
+    ]
+    assert binding["resolved_value"] == "Scott Galloway"
+    assert binding["base_answer_contract_mutated"] is False
+    assert binding["evidence_admitted"] is False
+    assert binding["support_admitted"] is False
+    assert binding["source_obligation_satisfied"] is False
+    effective = build_searchos_effective_semantic_slot_view(
+        state=harness.run_kernel.state.searchos_state,
+        semantic_slot_id=accepted_slot["slot_id"],
+        accepted_contract=harness.run_kernel.state.initial_answer_contract,
+    )
+    assert effective["effective_value"] == "Scott Galloway"
+    assert effective["resolution_source"] == "interpretation_binding"
+    assert effective["base_answer_contract_mutated"] is False
+
+
+def test_case_c_deep_escalation_is_typed_blocked_without_dispatch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = valid_case("minimal_direct_simple")
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        query=case["query"],
+        core_topic="capital of France",
+        primary_entity="France",
+        evidence_rows=[_evidence_row("France", suffix="case-c-standard")],
+        read_assessment_decision="STANDARD_TO_DEEP_BLOCK",
+        deps_overrides=_product_deps(case["proposal"]),
+    )
+
+    assert [
+        item["discovery_job_class"]
+        for item in _ordered_query_plan_items(outcome)
+    ] == ["standard_discovery", "deep_discovery"]
+    assert len(harness.search_calls) == 1
+    records = outcome.execution_trace["provider_plan"]["records"]
+    assert records[-1]["selection_inputs"]["discovery_job_class"] == (
+        "deep_discovery"
+    )
+    assert records[-1]["route_decision"]["fidelity"] == "blocked"
+    assert records[-1]["route_decision"]["block_reason"] == (
+        "general_deep_authorization_required"
+    )
+    assert records[-1]["route_decision"][
+        "general_deep_requested"
+    ] is True
+
+
+def test_case_d_user_confirmation_requires_typed_clarification_no_dispatch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = valid_case("true_user_intent_ambiguity")
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        query=case["query"],
+        core_topic="Mercury",
+        primary_entity="Mercury",
+        deps_overrides=_product_deps(case["proposal"]),
+    )
+
+    assert harness.search_calls == []
+    assert outcome.execution_trace["provider_plan"]["records"] == []
+    assert _ordered_query_plan_items(outcome) == []
+    searchos = outcome.execution_trace["searchos_slice_a"]
+    assert searchos["clarification_required"] is True
+    assert searchos["clarification_only_no_dispatch"] is True
+    assert searchos["provider_calls_attempted"] == 0
+    [clarification] = searchos["slot_clarification_postures"].values()
+    assert clarification["clarification_required"] is True
+    assert clarification["declared_candidates"] == [
+        "planet",
+        "element",
+        "automobile brand",
+    ]
+
+
+def test_mixed_stable_factual_and_true_ambiguity_progress_independently(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    proposal = {
+        "disposition": "components",
+        "components": [
+            {
+                "key": "stable",
+                "need": "Report Alpha's current operating rule",
+            },
+            {
+                "key": "identity",
+                "need": "Identify the relevant Galloway controversy",
+                "uncertainties": [
+                    {
+                        "kind": "entity",
+                        "status": "unresolved",
+                        "candidates": ["Scott Galloway", "George Galloway"],
+                    }
+                ],
+            },
+            {
+                "key": "ambiguous",
+                "need": "Explain the intended Mercury subject",
+                "uncertainties": [
+                    {
+                        "kind": "entity",
+                        "status": "ambiguous",
+                        "candidates": [
+                            "planet",
+                            "element",
+                            "automobile brand",
+                        ],
+                        "user_confirmation_required": True,
+                    }
+                ],
+            },
+        ],
+    }
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        query=(
+            "Report Alpha's rule, identify the relevant Galloway "
+            "controversy, and explain Mercury."
+        ),
+        core_topic="Alpha rule, Galloway controversy, and Mercury",
+        primary_entity="Alpha",
+        evidence_rows=[_evidence_row("Alpha", suffix="mixed-standard")],
+        followup_evidence_rows=[
+            _evidence_row("Scott Galloway", suffix="mixed-orientation")
+        ],
+        read_assessment_decision="BIND_THEN_FOLLOWUP_THEN_READ",
+        deps_overrides=_product_deps(proposal),
+    )
+
+    initial = [
+        item
+        for item in _ordered_query_plan_items(outcome)
+        if item["iteration"] == 1
+    ]
+    assert [item["discovery_job_class"] for item in initial] == [
+        "standard_discovery",
+        "orientation",
+    ]
+    assert [call["search_providers"] for call in harness.search_calls[:2]] == [
+        ["tavily"],
+        ["serper"],
+    ]
+    state = harness.run_kernel.state.searchos_state
+    assert len(state["active_slot_ids"]) == 3
+    clarification_slots = [
+        slot
+        for slot in state["slots_by_id"].values()
+        if slot["posture"] == "clarification_required"
+    ]
+    assert len(clarification_slots) == 1
+    assert clarification_slots[0]["current_discovery_job_class"] is None
+    assert clarification_slots[0]["clarification_posture"][
+        "declared_candidates"
+    ] == ["planet", "element", "automobile brand"]
+    searchos = outcome.execution_trace["searchos_slice_a"]
+    assert searchos["slot_local_candidate_ancestry_proven"] is True
+    assert searchos["peer_slot_cursors_preserved"] is True
+    assert len(searchos["interpretation_binding_refs"]) == 1
+    assert sum(
+        posture.get("clarification_required") is True
+        for posture in searchos["slot_clarification_postures"].values()
+    ) == 1
+    assert searchos["provider_calls_attempted"] == 2
+
+
+def test_zero_result_orientation_refines_once_then_stops_unresolved(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = valid_case("factual_identity_uncertainty")
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        query=case["query"],
+        core_topic="recent Galloway controversy",
+        primary_entity="Galloway",
+        evidence_rows=[],
+        followup_evidence_rows=[],
+        read_assessment_decision="ZERO_ORIENTATION_REFINE",
+        deps_overrides=_product_deps(case["proposal"]),
+    )
+
+    ordered = _ordered_query_plan_items(outcome)
+    assert [item["discovery_job_class"] for item in ordered] == [
+        "orientation",
+        "orientation",
+    ]
+    assert [item["iteration"] for item in ordered] == [1, 2]
+    assert len(harness.search_calls) == 2
+    assert all(
+        call["search_providers"] == ["serper"]
+        for call in harness.search_calls
+    )
+    [slot] = harness.run_kernel.state.searchos_state["slots_by_id"].values()
+    assert slot["orientation_refinement_count"] == 1
+    assert slot["posture"] in {
+        "unresolved_handoff",
+        "budget_exhausted",
+    }
+    assert harness.searchos_product_result is not None
+    assert len(harness.searchos_product_result.iteration_candidate_sets) == 1
+    assert harness.searchos_product_result.revision_1[
+        "zero_result_discover_wave_ref"
+    ]
+
+
+def test_binding_replay_conflict_and_exact_field_guards(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = valid_case("factual_identity_uncertainty")
+    _outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        query=case["query"],
+        core_topic="recent Galloway controversy",
+        primary_entity="Galloway",
+        evidence_rows=[
+            _evidence_row("Scott Galloway", suffix="binding-replay")
+        ],
+        deps_overrides=_product_deps(case["proposal"]),
+    )
+    state = harness.run_kernel.state.searchos_state
+    [binding] = state["interpretation_binding_history"]
+    accepted = harness.run_kernel.state.initial_answer_contract
+
+    assert record_searchos_interpretation_binding(
+        state,
+        accepted_contract=accepted,
+        binding=binding,
+    ) == state
+    conflict = _reenvelope_binding(
+        binding,
+        resolved_value="George Galloway",
+    )
+    with pytest.raises(
+        SearchOSRuntimeError,
+        match="conflicting interpretation binding",
+    ):
+        record_searchos_interpretation_binding(
+            state,
+            accepted_contract=accepted,
+            binding=conflict,
+        )
+    unexpected = _reenvelope_binding(binding, evidence={"forbidden": True})
+    with pytest.raises(
+        SearchOSRuntimeError,
+        match="fields are not exact",
+    ):
+        validate_searchos_interpretation_binding(unexpected)
+
+    wrong_semantic = _reenvelope_binding(
+        binding,
+        semantic_slot_ref={
+            **dict(binding["semantic_slot_ref"]),
+            "slot_id": "semantic-slot:foreign",
+        },
+    )
+    with pytest.raises(
+        SearchOSRuntimeError,
+        match="active-slot lineage is stale",
+    ):
+        validate_searchos_interpretation_binding(
+            wrong_semantic,
+            state=state,
+            accepted_contract=accepted,
+        )
+
+    foreign_component = _reenvelope_binding(
+        binding,
+        component_ref={
+            **dict(binding["component_ref"]),
+            "component_id": "component:foreign",
+        },
+    )
+    with pytest.raises(
+        SearchOSRuntimeError,
+        match="active-slot lineage is stale",
+    ):
+        validate_searchos_interpretation_binding(
+            foreign_component,
+            state=state,
+            accepted_contract=accepted,
+        )
+
+    changed_source_scope = _reenvelope_binding(
+        binding,
+        component_ref={
+            **dict(binding["component_ref"]),
+            "source_obligation_candidate_ids": [
+                "source-obligation:foreign"
+            ],
+        },
+    )
+    with pytest.raises(
+        SearchOSRuntimeError,
+        match="active-slot lineage is stale",
+    ):
+        validate_searchos_interpretation_binding(
+            changed_source_scope,
+            state=state,
+            accepted_contract=accepted,
+        )
+
+    for authority_field in (
+        "base_answer_contract_mutated",
+        "evidence_admitted",
+        "support_admitted",
+        "source_obligation_satisfied",
+        "coverage_created",
+        "citation_eligible",
+    ):
+        authority_claim = _reenvelope_binding(
+            binding,
+            **{authority_field: True},
+        )
+        with pytest.raises(
+            SearchOSRuntimeError,
+            match=f"authority field {authority_field} is invalid",
+        ):
+            validate_searchos_interpretation_binding(authority_claim)

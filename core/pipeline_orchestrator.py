@@ -185,9 +185,6 @@ from core.ordinary_multicomponent_synthesis_runtime import (
     record_analyst_query_resolution_downstream_refs,
     resolve_next_searched_premise_recovery_posture,
 )
-from core.ordinary_scout_disambiguation_adapter import (
-    build_ordinary_scout_disambiguation_adapter,
-)
 from core.persistence_side_effects import (
     execute_persistence_side_effects,
 )
@@ -309,7 +306,6 @@ from core.search_judgment_read_assessment_runtime import (
     build_full_search_judgment_containment_projection,
 )
 from core.search_planner_model_adapter import SearchPlannerModelAdapter
-from core.search_planner_revision_model_adapter import SearchPlannerRevisionModelAdapter
 from core.search_planner_runtime import contract_ref_from_contract
 from core.search_result_candidate_packet import (
     SEARCH_RESULT_CANDIDATE_PACKET_TRACE_KEY,
@@ -322,8 +318,11 @@ from core.searchos_existing_gap_recovery_runtime import (
 from core.searchos_slice_a_product_runtime import (
     SEARCHOS_SLICE_A_TRACE_KEY,
     build_searchos_semantic_outcomes_by_slot,
+    build_searchos_zero_result_initial_discover_wave_v1,
     execute_searchos_recovery_cycle,
     execute_searchos_slice_a_iterative_judgment,
+    execute_searchos_zero_result_orientation,
+    initialize_searchos_clarification_only,
 )
 from core.source_class_recovery import (
     build_source_class_observability_telemetry,
@@ -889,6 +888,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     providers_by_iteration: list[list[str]] = []
     provider_diagnostics: list[dict[str, Any]] = []
     retrieval_pass_records: list[dict[str, Any]] = []
+    initial_discovery_retrieval_action_refs: list[dict[str, Any]] = []
     scout_fired = False
     scout_key_used = None
     scout_queries: list[str] = []
@@ -1087,38 +1087,6 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             enabled=True,
             licensed=True,
         )
-    scout_adapter = deps.scout_disambiguation_adapter
-    if scout_adapter is None:
-        scout_adapter = build_ordinary_scout_disambiguation_adapter(
-            available_providers=(
-                provider_availability_snapshot.to_capability_available_keys()
-            ),
-            cap_policy=cap_policy,
-            cost_accumulator=accumulator,
-        )
-    revision_adapter = deps.search_planner_revision_adapter
-    if revision_adapter is None:
-        revision_model_transport = _ask(phase="search_planner_revision")
-
-        def ask_search_planner_revision_model(*args: Any, **kwargs: Any) -> Any:
-            """Bind per-run transport and accounting facts without retaining them."""
-
-            kwargs["base_url"] = local_url
-            kwargs["api_key"] = or_api_key
-            kwargs["cost_accumulator"] = accumulator
-            kwargs["cost_phase"] = "search_planner_revision"
-            return revision_model_transport(*args, **kwargs)
-
-        revision_adapter = SearchPlannerRevisionModelAdapter(
-            revision_model_callable=ask_search_planner_revision_model,
-            clean_json_response=deps.clean_json_response,
-            provider=fast_provider,
-            model=fast_model,
-            effort=fast_reasoning_effort,
-            use_reasoning=use_reasoning,
-            enabled=True,
-            licensed=True,
-        )
     convergence = execute_initial_query_strategy_convergence(
         run_kernel=run_kernel,
         router_query_preparation_contract=router_query_preparation_contract,
@@ -1134,8 +1102,6 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         supplied_context=config.search_planner_supplied_context,
         news_preferred_domains=NEWS_PREFERRED_DOMAINS,
         planner_adapter=planner_adapter,
-        scout_adapter=scout_adapter,
-        revision_adapter=revision_adapter,
         provider_diagnostics=provider_diagnostics,
         waste_flags=waste_flags,
     )
@@ -1210,6 +1176,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         max_queries=query_plan_inputs.max_queries,
         route_runtime_posture=query_plan_inputs.effective_route_posture,
         search_work_projection=convergence.search_work_plan,
+        accepted_contract=(
+            run_kernel.state.current_answer_contract
+            or run_kernel.state.initial_answer_contract
+        ),
         initial_query_allocation_policy=(
             query_plan_inputs.initial_query_allocation_policy
         ),
@@ -2218,53 +2188,133 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             recovery_active=weak_corpus_recovery_used and iteration > 1,
         )
         queries_by_iteration = query_authority.queries_by_iteration()
-        main_retrieval_kernel_action = run_kernel.authorize_main_retrieval_pass(
-            inputs={
-                "iteration": iteration,
-                "query_plan_id": query_authority.plan.plan_id,
-                "query_count": len(current_queries),
-                "recovery_active": weak_corpus_recovery_used and iteration > 1,
-                "provider_plan_record_count": len(provider_plan.records),
-            }
+        iteration_queries = list(current_queries)
+        discovery_job_batches = query_authority.plan.execution_job_batches(
+            iteration
         )
-        retrieval_scheduled_action = schedule_main_retrieval_from_kernel_action(
-            main_retrieval_kernel_action,
-            locals(),
-            current_queries=current_queries,
-            recovery_active=weak_corpus_recovery_used and iteration > 1,
-            choose_search_depth=choose_retrieval_search_depth,
-        )
-        if retrieval_scheduled_action.route_blocked:
-            raise ProviderRouteBlockedError(provider_plan.records[-1].route_decision)
-        current_queries, current_search_depth, loop_providers, force_component_providers = main_retrieval_action_values(retrieval_scheduled_action)
-        current_search_depth_for_recovery = current_search_depth
+        if not discovery_job_batches:
+            clarification_components = list(
+                query_authority.plan.search_work_consumption.get(
+                    "clarification_required_components"
+                )
+                or ()
+            )
+            if (
+                clarification_components
+                and not query_authority.plan.execution_item_refs(iteration)
+            ):
+                break
+            raise RuntimeError(
+                "ordinary retrieval requires at least one QueryPlan job batch"
+            )
         status.step(f"--- **Iteration {iteration}/{max_iterations}** ---")
-        status.step(f"Executing Searches: {current_queries} ({current_search_depth} depth)")
-        past_searches.extend(current_queries)
-
-        status.step(f"Providers this pass: {', '.join(loop_providers)}")
-        providers_by_iteration.append(list(loop_providers))
         similarity_prior_queries = (
             queries_by_iteration.get(iteration - 1, []) if iteration > 1 else None
         )
         query_similarity_basis = (
             "previous_main_retrieval_iteration" if similarity_prior_queries else None
         )
-        main_retrieval_outcome = execute_main_retrieval_pass_from_scope(
-            locals(),
-            retrieval_pass_records=retrieval_pass_records,
-        )
-        if cap_policy is not None and cap_policy.bounded:
-            cap_policy.note_product_stage("retrieval_dispatch_complete")
-        run_kernel.reduce(main_retrieval_outcome.observation)
-        if cap_policy is not None and cap_policy.bounded:
-            cap_policy.note_product_stage("retrieval_kernel_observed")
-        new_passages = main_retrieval_outcome.passages
-        discover_candidate_urls_admitted += main_retrieval_outcome.seen_url_delta
-        total_chunks_embedded += main_retrieval_outcome.chunk_delta
-        retrieval_loop_contract_state = (
-            main_retrieval_outcome.retrieval_loop_contract_state
-        )
+        new_passages: list[dict[str, Any]] = []
+        loop_providers = []
+        force_component_providers = []
+        current_search_depth = current_search_depth_for_recovery
+        for discovery_job_batch in discovery_job_batches:
+            discovery_job_class = str(
+                discovery_job_batch["discovery_job_class"]
+            )
+            current_queries = list(discovery_job_batch["queries"])
+            main_retrieval_kernel_action = run_kernel.authorize_main_retrieval_pass(
+                inputs={
+                    "iteration": iteration,
+                    "query_plan_id": query_authority.plan.plan_id,
+                    "query_count": len(current_queries),
+                    "discovery_job_class": discovery_job_class,
+                    "query_plan_item_refs": list(
+                        discovery_job_batch["query_plan_item_refs"]
+                    ),
+                    "recovery_active": (
+                        weak_corpus_recovery_used and iteration > 1
+                    ),
+                    "provider_plan_record_count": len(
+                        provider_plan.records
+                    ),
+                }
+            )
+            retrieval_scheduled_action = schedule_main_retrieval_from_kernel_action(
+                main_retrieval_kernel_action,
+                locals(),
+                current_queries=current_queries,
+                recovery_active=(
+                    weak_corpus_recovery_used and iteration > 1
+                ),
+                choose_search_depth=choose_retrieval_search_depth,
+                discovery_job_class=discovery_job_class,
+            )
+            if iteration == 1:
+                initial_discovery_retrieval_action_refs.append(
+                    dict(retrieval_scheduled_action.retrieval_action_ref)
+                )
+            if retrieval_scheduled_action.route_blocked:
+                run_kernel.reduce(
+                    Observation.from_action(
+                        main_retrieval_kernel_action,
+                        observation_type=(
+                            ObservationType.RETRIEVAL_PASS_RESULT
+                        ),
+                        status=RunStageStatus.FAILED,
+                        payload={
+                            "failure_reason": "provider_route_blocked",
+                            "discovery_job_class": discovery_job_class,
+                            "provider_dispatch_attempted": False,
+                        },
+                    )
+                )
+                raise ProviderRouteBlockedError(
+                    provider_plan.records[-1].route_decision
+                )
+            (
+                batch_queries,
+                batch_search_depth,
+                batch_providers,
+                batch_force_component_providers,
+            ) = main_retrieval_action_values(retrieval_scheduled_action)
+            current_queries = batch_queries
+            current_search_depth = batch_search_depth
+            current_search_depth_for_recovery = batch_search_depth
+            for provider in batch_providers:
+                if provider not in loop_providers:
+                    loop_providers.append(provider)
+            for provider in batch_force_component_providers:
+                if provider not in force_component_providers:
+                    force_component_providers.append(provider)
+            status.step(
+                "Executing "
+                f"{discovery_job_class} Searches: {current_queries} "
+                f"({current_search_depth} depth)"
+            )
+            status.step(
+                f"Providers this pass: {', '.join(batch_providers)}"
+            )
+            providers_by_iteration.append(list(batch_providers))
+            main_retrieval_outcome = execute_main_retrieval_pass_from_scope(
+                locals(),
+                retrieval_pass_records=retrieval_pass_records,
+            )
+            if cap_policy is not None and cap_policy.bounded:
+                cap_policy.note_product_stage("retrieval_dispatch_complete")
+            run_kernel.reduce(main_retrieval_outcome.observation)
+            if cap_policy is not None and cap_policy.bounded:
+                cap_policy.note_product_stage("retrieval_kernel_observed")
+            new_passages.extend(main_retrieval_outcome.passages)
+            discover_candidate_urls_admitted += (
+                main_retrieval_outcome.seen_url_delta
+            )
+            total_chunks_embedded += main_retrieval_outcome.chunk_delta
+            retrieval_loop_contract_state = (
+                main_retrieval_outcome.retrieval_loop_contract_state
+            )
+        current_queries = iteration_queries
+        past_searches.extend(iteration_queries)
         to_merge = list(new_passages)
 
         if iteration == 1 and not searchos_slice_a_active:
@@ -2810,7 +2860,34 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     # ------------------------------------------------------------------
     # Post-retrieval: synthesis
     # ------------------------------------------------------------------
-    if not all_passages:
+    clarification_only_components = list(
+        query_authority.plan.search_work_consumption.get(
+            "clarification_required_components"
+        )
+        or ()
+    )
+    clarification_only_front_half = bool(
+        clarification_only_components
+    ) and not query_authority.plan.execution_item_refs(1)
+    initial_execution_item_refs = query_authority.plan.execution_item_refs(1)
+    zero_result_orientation_front_half = bool(
+        not all_passages
+        and initial_execution_item_refs
+        and all(
+            item.get("discovery_job_class") == "orientation"
+            for item in initial_execution_item_refs
+        )
+    )
+    if not all_passages and clarification_only_front_half:
+        searchos_slice_a_result = initialize_searchos_clarification_only(
+            run_kernel=run_kernel,
+            query_authority=query_authority,
+            profile_name=strategy,
+        )
+        searchos_slice_a_projection = dict(
+            searchos_slice_a_result.projection
+        )
+    elif not all_passages and not zero_result_orientation_front_half:
         if cap_policy is not None and cap_policy.bounded:
             cap_policy.note_product_stage("retrieval_no_readable_passages")
         raise PipelineError("No readable passages were extracted.")
@@ -2819,65 +2896,88 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     # It is created before source-class/conflict recovery and before synthesis,
     # after the initial AnswerContract was accepted but before post-DISCOVER
     # evidence can support a current-contract amendment or satisfy obligations.
-    initial_discovery_top_evidence = deps.filter_top_evidence(
-        all_passages,
-        top_chunks,
-        max_domain_chunks,
-    )
-    ordinary_discovery_authority_snapshot = (
-        build_ordinary_discovery_authority_snapshot(
-            query_plan=query_authority.plan,
-            provider_plan=provider_plan,
+    ordinary_discovery_selection = None
+    ordinary_discovery_authority_snapshot = None
+    if not clarification_only_front_half:
+        max_domain_chunks = (
+            4
+            if complexity == "high"
+            else (3 if complexity == "medium" else 2)
         )
-    )
-    ordinary_discovery_selection = prepare_ordinary_discovery_selection(
-        final_top_evidence=initial_discovery_top_evidence,
-        discovery_result_store=discovery_result_store,
-        selected_candidate_cap=top_chunks,
-        authority_snapshot=ordinary_discovery_authority_snapshot,
-    )
+        initial_discovery_top_evidence = deps.filter_top_evidence(
+            all_passages,
+            top_chunks,
+            max_domain_chunks,
+        )
+        ordinary_discovery_authority_snapshot = (
+            build_ordinary_discovery_authority_snapshot(
+                query_plan=query_authority.plan,
+                provider_plan=provider_plan,
+            )
+        )
+        ordinary_discovery_selection = prepare_ordinary_discovery_selection(
+            final_top_evidence=initial_discovery_top_evidence,
+            discovery_result_store=discovery_result_store,
+            selected_candidate_cap=top_chunks,
+            authority_snapshot=ordinary_discovery_authority_snapshot,
+        )
     searchos_slice_a_projection["revision_1_selection_facts"] = {
-        "candidate_count": ordinary_discovery_selection.candidate_count,
+        "candidate_count": (
+            ordinary_discovery_selection.candidate_count
+            if ordinary_discovery_selection is not None
+            else 0
+        ),
         "source_result_identity_count": len(discovery_result_store.identities()),
     }
-    if ordinary_discovery_selection.candidate_count:
-        active_answer_contract_ref = contract_ref_from_contract(
-            run_kernel.state.current_answer_contract
-            or run_kernel.state.initial_answer_contract,
-            source=(
-                "current_answer_contract"
-                if run_kernel.state.current_answer_contract
-                else "initial_answer_contract"
-            ),
+    if (
+        ordinary_discovery_selection is not None
+        and (
+            ordinary_discovery_selection.candidate_count
+            or zero_result_orientation_front_half
         )
-        ordinary_candidate_action_inputs = (
-            build_ordinary_discovery_candidate_action_inputs(
-                run_id=run_id,
-                request_id=session_id,
-                source_result_identity_set_ref=(
-                    discovery_result_store.identity_set_ref()
+    ):
+        if ordinary_discovery_selection.candidate_count:
+            active_answer_contract_ref = contract_ref_from_contract(
+                run_kernel.state.current_answer_contract
+                or run_kernel.state.initial_answer_contract,
+                source=(
+                    "current_answer_contract"
+                    if run_kernel.state.current_answer_contract
+                    else "initial_answer_contract"
                 ),
-                selection=ordinary_discovery_selection,
-                answer_contract_ref=active_answer_contract_ref,
             )
-        )
-        ordinary_candidate_action = (
-            run_kernel.authorize_ordinary_discovery_candidate_handoff(
-                inputs=ordinary_candidate_action_inputs
+            ordinary_candidate_action_inputs = (
+                build_ordinary_discovery_candidate_action_inputs(
+                    run_id=run_id,
+                    request_id=session_id,
+                    source_result_identity_set_ref=(
+                        discovery_result_store.identity_set_ref()
+                    ),
+                    selection=ordinary_discovery_selection,
+                    answer_contract_ref=active_answer_contract_ref,
+                )
             )
-        )
-        ordinary_candidate_execution = (
-            execute_ordinary_discovery_candidate_handoff_action(
-                action=ordinary_candidate_action,
-                selection=ordinary_discovery_selection,
-                discovery_result_store=discovery_result_store,
-                authority_snapshot=ordinary_discovery_authority_snapshot,
-                answer_contract_ref=active_answer_contract_ref,
+            ordinary_candidate_action = (
+                run_kernel.authorize_ordinary_discovery_candidate_handoff(
+                    inputs=ordinary_candidate_action_inputs
+                )
             )
-        )
-        run_kernel.reduce(ordinary_candidate_execution.observation)
-        ordinary_discovery_candidate_packet = dict(ordinary_candidate_execution.packet)
-        ordinary_discovery_candidate_handoff_projection = dict(ordinary_candidate_execution.projection)
+            ordinary_candidate_execution = (
+                execute_ordinary_discovery_candidate_handoff_action(
+                    action=ordinary_candidate_action,
+                    selection=ordinary_discovery_selection,
+                    discovery_result_store=discovery_result_store,
+                    authority_snapshot=ordinary_discovery_authority_snapshot,
+                    answer_contract_ref=active_answer_contract_ref,
+                )
+            )
+            run_kernel.reduce(ordinary_candidate_execution.observation)
+            ordinary_discovery_candidate_packet = dict(
+                ordinary_candidate_execution.packet
+            )
+            ordinary_discovery_candidate_handoff_projection = dict(
+                ordinary_candidate_execution.projection
+            )
         _searchos_followup_base_scope = dict(locals())
 
         def _execute_searchos_followup_discover(
@@ -2921,6 +3021,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 current_queries=[followup_query],
                 recovery_active=False,
                 choose_search_depth=choose_retrieval_search_depth,
+                discovery_job_class=query_admission[
+                    "discovery_job_class"
+                ],
             )
             if followup_schedule.route_blocked:
                 run_kernel.reduce(
@@ -3064,30 +3167,79 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 },
             }
 
-        searchos_slice_a_result = execute_searchos_slice_a_iterative_judgment(
-            run_kernel=run_kernel,
-            candidate_packet=ordinary_discovery_candidate_packet,
-            query_authority=query_authority,
-            discovery_result_store=discovery_result_store,
-            profile_name=strategy,
-            ask_model=_cap_model_phase(
-                _ask(phase="searchos_iterative_judgment"),
-                "search_judgment",
-            ),
-            provider=fast_provider,
-            model=fast_model,
-            base_url=local_url,
-            api_key=or_api_key,
-            effort=fast_reasoning_effort,
-            use_reasoning=use_reasoning,
-            available_providers=(provider_availability_snapshot.to_capability_available_keys()),
-            acquisition_transports=deps.searchos_read_acquisition_transports,
-            execute_followup_discover=_execute_searchos_followup_discover,
-            before_transport=(
-                _before_read_transport if cap_policy is not None else None
-            ),
-            measure_context_stage=_measure_context_stage,
-        )
+        if searchos_slice_a_result is None:
+            searchos_runtime_inputs = {
+                "run_kernel": run_kernel,
+                "query_authority": query_authority,
+                "discovery_result_store": discovery_result_store,
+                "profile_name": strategy,
+                "ask_model": _cap_model_phase(
+                    _ask(phase="searchos_iterative_judgment"),
+                    "search_judgment",
+                ),
+                "provider": fast_provider,
+                "model": fast_model,
+                "base_url": local_url,
+                "api_key": or_api_key,
+                "effort": fast_reasoning_effort,
+                "use_reasoning": use_reasoning,
+                "available_providers": (
+                    provider_availability_snapshot.to_capability_available_keys()
+                ),
+                "acquisition_transports": (
+                    deps.searchos_read_acquisition_transports
+                ),
+                "execute_followup_discover": (
+                    _execute_searchos_followup_discover
+                ),
+                "before_transport": (
+                    _before_read_transport
+                    if cap_policy is not None
+                    else None
+                ),
+                "measure_context_stage": _measure_context_stage,
+            }
+            if zero_result_orientation_front_half:
+                zero_result_initial_wave = (
+                    build_searchos_zero_result_initial_discover_wave_v1(
+                        run_id=run_id,
+                        request_id=session_id,
+                        query_plan_ref=query_authority.plan.to_ref(),
+                        query_plan_item_refs=initial_execution_item_refs,
+                        provider_plan_ref=provider_plan.to_ref(),
+                        provider_plan_record_refs=[
+                            record.to_ref()
+                            for record in provider_plan.records
+                        ],
+                        provider_route_refs=[
+                            record.route_ref()
+                            for record in provider_plan.records
+                        ],
+                        retrieval_action_refs=(
+                            initial_discovery_retrieval_action_refs
+                        ),
+                        source_result_identity_set_ref=(
+                            discovery_result_store.identity_set_ref()
+                        ),
+                    )
+                )
+                searchos_slice_a_result = (
+                    execute_searchos_zero_result_orientation(
+                        zero_result_initial_wave=(
+                            zero_result_initial_wave
+                        ),
+                        **searchos_runtime_inputs,
+                    )
+                )
+            else:
+                searchos_slice_a_result = (
+                    execute_searchos_slice_a_iterative_judgment(
+                        candidate_packet=(
+                            ordinary_discovery_candidate_packet
+                        ),
+                        **searchos_runtime_inputs,
+                    )
+                )
         searchos_slice_a_projection = dict(searchos_slice_a_result.projection)
         urls_fetched += searchos_slice_a_result.provider_calls_completed
         # DISCOVER passages remain directional candidate context.  Only the

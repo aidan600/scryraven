@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 from copy import deepcopy
 from pathlib import Path
@@ -7,20 +8,14 @@ from typing import Any, Mapping
 
 import pytest
 
-from core.cap_enforcement import ExternalCallFamily, RunCapExceeded
 from core.initial_query_allocation_policy import (
     DEFAULT_INITIAL_QUERY_ALLOCATION_POLICY,
     INITIAL_QUERY_ALLOCATION_POLICY_VERSION,
 )
-from core.initial_query_strategy_failure import InitialQueryStrategyFailureError
-from core.ordinary_scout_disambiguation_adapter import OrdinaryScoutDisambiguationAdapter
 from core.query_plan import QUERY_PLAN_TRACE_KEY
 from core.query_plan_runtime_adapter import build_query_plan_runtime_adapter
 from core.query_production_runtime import (
     QUERY_PRODUCTION_STAGE,
-    QueryStrategyConvergenceError,
-    QueryStrategyConvergenceFailureCode,
-    _strategies_with_authorized_revisions,
     execute_initial_query_strategy_convergence,
     execute_query_plan_admission_action,
     query_plan_admission_inputs_from_query_production_projection,
@@ -34,16 +29,11 @@ from core.run_kernel import (
     RunKernel,
     RunStageStatus,
 )
-from core.search_planner_revision_runtime import (
-    SearchPlannerRevisionRuntimeError,
-    SearchPlannerRevisionRuntimeSafeFailureCode,
-)
 from core.search_planner_runtime import SEARCH_PLANNER_SCHEMA_VERSION
 
 ROOT = Path(__file__).resolve().parents[1]
 QUERY_RUNTIME = ROOT / "core" / "query_production_runtime.py"
 PIPELINE = ROOT / "core" / "pipeline_orchestrator.py"
-SCOUT_RUNTIME = ROOT / "core" / "scout_disambiguation_runtime.py"
 
 
 class ResponseOnlyPlannerAdapter:
@@ -54,100 +44,6 @@ class ResponseOnlyPlannerAdapter:
     def produce(self, planner_input: Mapping[str, Any]) -> Mapping[str, Any]:
         self.calls.append(deepcopy(dict(planner_input)))
         return deepcopy(self.response)
-
-
-class ResponseOnlyScoutAdapter:
-    def __init__(self) -> None:
-        self.calls: list[dict[str, Any]] = []
-
-    def produce(self, scout_input: Mapping[str, Any]) -> Mapping[str, Any]:
-        self.calls.append(deepcopy(dict(scout_input)))
-        queries: list[dict[str, Any]] = []
-        organic: list[dict[str, Any]] = []
-        for index, raw_query in enumerate(scout_input.get("candidate_queries") or (), start=1):
-            query = dict(raw_query)
-            query["execution_status"] = "executed_by_fake_adapter"
-            queries.append(query)
-            organic.append(
-                {
-                    "query_id": query["query_id"],
-                    "related_dimension_ids": query["related_dimension_ids"],
-                    "title": f"Offline direction hint {index}",
-                    "link": f"https://example.invalid/hint-{index}",
-                    "snippet": "Sanitized response-only identity direction.",
-                    "position": index,
-                }
-            )
-        return {
-            "scout_queries": queries,
-            "organic_results": organic,
-            "confidence_posture": "directional",
-            "disambiguation_posture": "offline_response_only",
-        }
-
-
-class ResponseOnlyRevisionAdapter:
-    def __init__(
-        self,
-        *,
-        component_id: str = "component:1",
-        source_ids: tuple[str, ...] = ("obligation:1:general",),
-        query_text: str = "Renamed Example official current component 1",
-        amendment: bool = False,
-    ) -> None:
-        self.component_id = component_id
-        self.source_ids = source_ids
-        self.query_text = query_text
-        self.amendment = amendment
-        self.calls: list[dict[str, Any]] = []
-
-    def produce(self, revision_input: Mapping[str, Any]) -> Mapping[str, Any]:
-        self.calls.append(deepcopy(dict(revision_input)))
-        amendments: list[dict[str, Any]] = []
-        if self.amendment:
-            amendments.append(
-                {
-                    "candidate_id": "candidate:recon-caveat",
-                    "operation_kind": "add_caveat",
-                    "component_id": self.component_id,
-                    "caveat": ("Identity direction came from non-evidence Scout hints."),
-                }
-            )
-        return {
-            "revised_question_meaning_summary": ("Use the bounded offline identity direction for query targeting."),
-            "component_search_requirement_updates": [
-                {
-                    "component_id": self.component_id,
-                    "requirement_id": "requirement:1:revised",
-                    "requirement_summary": "Target the resolved official name.",
-                    "source_obligation_candidate_ids": list(self.source_ids),
-                    "metadata": {
-                        "query_strategy_candidates": [
-                            {
-                                "strategy_id": "strategy:1:revised-primary",
-                                "component_id": self.component_id,
-                                "candidate_kind": "primary",
-                                "candidate_query_text": self.query_text,
-                                "requested_role": "official_bias",
-                                "source_obligation_candidate_ids": list(self.source_ids),
-                                "official_canonical_intent": "official_source",
-                                "distinct_need_justification": ("Scout resolved the bounded identity target."),
-                            }
-                        ]
-                    },
-                }
-            ],
-            "consumed_ambiguity_dimension_ids": list(revision_input["consumed_ambiguity_dimension_ids"]),
-            "consumed_scout_hint_ids": list(revision_input["consumed_scout_hint_ids"]),
-            "amendment_candidates": amendments,
-            "mandatory_caveats": ["Scout hints remain non-evidence."],
-            "prohibited_upgrades": ["Do not cite Scout hints."],
-            "normalization_obligations": [],
-            "assumptions": [],
-            "unresolved_ambiguities": [],
-            "confidence_posture": "directional",
-            "revision_posture": "proposal_only",
-        }
 
 
 def _planner_payload(
@@ -324,8 +220,6 @@ def _router_state() -> Any:
 def _converge(
     payload: Mapping[str, Any],
     *,
-    scout_adapter: Any | None = None,
-    revision_adapter: Any | None = None,
     run_kernel: RunKernel | None = None,
     policy=DEFAULT_INITIAL_QUERY_ALLOCATION_POLICY,
 ):
@@ -344,8 +238,6 @@ def _converge(
         route_projection={"route_id": "route:searchos"},
         run_contract_projection=kernel.state.run_contract_projection,
         planner_adapter=ResponseOnlyPlannerAdapter(payload),
-        scout_adapter=scout_adapter,
-        revision_adapter=revision_adapter,
         provider_diagnostics=[],
         initial_query_allocation_policy=policy,
     )
@@ -378,6 +270,10 @@ def _admit(kernel: RunKernel, convergence):
         max_queries=inputs.max_queries,
         route_runtime_posture=inputs.effective_route_posture,
         search_work_projection=convergence.search_work_plan,
+        accepted_contract=(
+            kernel.state.current_answer_contract
+            or kernel.state.initial_answer_contract
+        ),
         initial_query_allocation_policy=inputs.initial_query_allocation_policy,
     )
     kernel.reduce(result.observation)
@@ -461,14 +357,11 @@ def test_policy_is_versioned_tunable_and_not_a_schema_contract() -> None:
     assert tuned.policy_version == policy.policy_version
     assert tuned.initial_candidate_ceiling_per_required_component == 3
     assert SEARCH_PLANNER_SCHEMA_VERSION not in tuned.to_dict().values()
-    scout_source = SCOUT_RUNTIME.read_text(encoding="utf-8")
-    assert "DEFAULT_INITIAL_QUERY_ALLOCATION_POLICY" in scout_source
-    assert "SCOUT_MAX_QUERIES_PER_COMPONENT = 5" not in scout_source
     with pytest.raises(ValueError, match="positive integer"):
         policy.with_tuning(initial_candidate_ceiling_per_required_component=2.5)
 
 
-def test_recon_ceiling_is_per_affected_component_and_fails_explicitly() -> None:
+def test_model_authored_recon_metadata_is_not_an_ordinary_controller() -> None:
     payload = _planner_payload(recon="optional")
     recon = payload["component_search_requirements"][0]["metadata"]["query_strategy_candidates"][0]["recon_requirement"]
     recon["unresolved_dimension_ids"] = [f"dim:need-{index}" for index in range(6)]
@@ -481,11 +374,15 @@ def test_recon_ceiling_is_per_affected_component_and_fails_explicitly() -> None:
         for dimension_id in recon["unresolved_dimension_ids"]
     ]
 
-    with pytest.raises(
-        QueryStrategyConvergenceError,
-        match="per-affected-component recon ceiling",
-    ):
-        _converge(payload)
+    kernel, convergence = _converge(payload)
+
+    assert convergence.query_production_result.candidate_queries == [
+        "Example required component 1 primary source"
+    ]
+    assert convergence.recon_summary == ()
+    assert convergence.revision_projections == ()
+    assert kernel.state.scout_disambiguation_report_history == []
+    assert kernel.state.search_planner_revision_history == []
 
 
 def test_planner_provider_identity_is_ignored_before_queryplan() -> None:
@@ -502,304 +399,54 @@ def test_planner_provider_identity_is_ignored_before_queryplan() -> None:
     )
 
 
-def test_optional_recon_unavailable_retains_conservative_primary() -> None:
-    kernel, convergence = _converge(_planner_payload(recon="optional"))
-    _, admission = _admit(kernel, convergence)
+def test_ordinary_convergence_has_no_legacy_adapter_injection_surface() -> None:
+    parameters = inspect.signature(
+        execute_initial_query_strategy_convergence
+    ).parameters
 
-    assert convergence.recon_summary[0]["status"] == ("optional_unavailable_primary_strategy_retained")
-    assert kernel.state.scout_disambiguation_report_state == {}
-    assert len(admission.current_queries) == 1
+    assert "scout_adapter" not in parameters
+    assert "revision_adapter" not in parameters
 
 
-def test_required_identity_recon_without_adapter_fails_before_query_production() -> None:
+def test_required_recon_metadata_cannot_reach_retired_authorities(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     kernel = _kernel_after_run_contract()
 
-    with pytest.raises(QueryStrategyConvergenceError, match="requires Scout identity"):
-        execute_initial_query_strategy_convergence(
-            run_kernel=kernel,
-            router_query_preparation_contract=_router_state(),
-            query="Compare every required Example component.",
-            strategy="Balanced",
-            current_date="2026-07-19",
-            focus_academic=False,
-            force_intent_news=False,
-            include_domains=[],
-            exclude_domains=[],
-            news_preferred_domains=[],
-            route_projection={},
-            run_contract_projection=kernel.state.run_contract_projection,
-            planner_adapter=ResponseOnlyPlannerAdapter(
-                _planner_payload(
-                    recon="required",
-                    required_recon=True,
-                )
-            ),
-            provider_diagnostics=[],
-        )
+    def reject_old_authority(*_args: Any, **_kwargs: Any) -> None:
+        raise AssertionError("retired initial-planning authority was reached")
 
-    assert QUERY_PRODUCTION_STAGE not in kernel.state.projections
-    assert kernel.state.search_work_plan == {}
-
-
-def test_required_recon_route_unavailable_fails_closed_after_scout_authorization() -> None:
-    revision = ResponseOnlyRevisionAdapter()
-    search_calls: list[dict[str, Any]] = []
-
-    def blocked_search(**kwargs: Any) -> list[dict[str, Any]]:
-        search_calls.append(dict(kwargs))
-        raise AssertionError("an unavailable Scout route must not dispatch")
-
-    blocked_scout = OrdinaryScoutDisambiguationAdapter(
-        available_providers={"serper": False},
-        scout_search=blocked_search,
-    )
-    kernel = _kernel_after_run_contract()
-
-    with pytest.raises(QueryStrategyConvergenceError) as captured:
-        _converge(
-            _planner_payload(recon="required", required_recon=True),
-            scout_adapter=blocked_scout,
-            revision_adapter=revision,
-            run_kernel=kernel,
-        )
-
-    assert captured.value.failure_code is QueryStrategyConvergenceFailureCode.REQUIRED_SCOUT_ROUTE_UNAVAILABLE
-    assert revision.calls == []
-    assert search_calls == []
-    report = kernel.state.scout_disambiguation_report_projection
-    assert report["route_available"] is False
-    assert report["executed_query_count"] == 0
-
-
-def test_optional_recon_route_unavailable_retains_primary_without_revision() -> None:
-    revision = ResponseOnlyRevisionAdapter()
-    kernel, convergence = _converge(
-        _planner_payload(recon="optional"),
-        scout_adapter=OrdinaryScoutDisambiguationAdapter(available_providers={"serper": False}),
-        revision_adapter=revision,
-    )
-
-    assert revision.calls == []
-    assert convergence.recon_summary[0]["status"] == ("optional_route_unavailable_primary_strategy_retained")
-    assert kernel.state.scout_disambiguation_report_projection["route_available"] is False
-
-
-def test_required_recon_empty_executed_scout_fails_closed_without_revision() -> None:
-    revision = ResponseOnlyRevisionAdapter()
-    search_calls: list[dict[str, Any]] = []
-
-    def empty_search(**kwargs: Any) -> list[dict[str, Any]]:
-        search_calls.append(dict(kwargs))
-        return []
-
-    empty_scout = OrdinaryScoutDisambiguationAdapter(
-        available_providers={"serper": True},
-        scout_search=empty_search,
-    )
-    kernel = _kernel_after_run_contract()
-
-    with pytest.raises(QueryStrategyConvergenceError) as captured:
-        _converge(
-            _planner_payload(recon="required", required_recon=True),
-            scout_adapter=empty_scout,
-            revision_adapter=revision,
-            run_kernel=kernel,
-        )
-
-    assert captured.value.failure_code is QueryStrategyConvergenceFailureCode.REQUIRED_SCOUT_EXECUTION_EMPTY
-    assert revision.calls == []
-    assert len(search_calls) == 1
-    assert search_calls[0]["strict_failure"] is True
-    report = kernel.state.scout_disambiguation_report_projection
-    assert report["route_available"] is True
-    assert report["scout_execution_posture"] == "executed"
-    assert report["executed_query_count"] == 1
-    assert report["live_provider_calls_executed"] is True
-    for key in (
-        "evidence_admitted",
-        "citation_eligible",
-        "source_obligation_satisfied",
-        "fetch_read_retrieval_behavior_changed",
+    for method_name in (
+        "authorize_scout_disambiguation",
+        "authorize_search_planner_revision",
+        "authorize_contract_amendment_admission",
+        "authorize_contract_amendment_application",
     ):
-        assert report[key] is False
-    assert kernel.state.evidence_ledger.to_projection().to_dict().get("evidence_items", []) == []
+        monkeypatch.setattr(RunKernel, method_name, reject_old_authority)
 
+    _, convergence = _converge(
+        _planner_payload(recon="required", required_recon=True),
+        run_kernel=kernel,
+    )
 
-def test_required_recon_provider_failure_uses_safe_scout_runtime_corridor() -> None:
-    revision = ResponseOnlyRevisionAdapter()
-    search_calls: list[dict[str, Any]] = []
-    kernel = _kernel_after_run_contract()
-
-    def failing_search(**kwargs: Any) -> list[dict[str, Any]]:
-        search_calls.append(dict(kwargs))
-        raise RuntimeError("private-provider-detail")
-
-    with pytest.raises(InitialQueryStrategyFailureError) as captured:
-        _converge(
-            _planner_payload(recon="required", required_recon=True),
-            scout_adapter=OrdinaryScoutDisambiguationAdapter(
-                available_providers={"serper": True},
-                scout_search=failing_search,
-            ),
-            revision_adapter=revision,
-            run_kernel=kernel,
-        )
-
-    terminal = captured.value.to_terminal_projection()
-    assert terminal["failure_origin"] == "scout_disambiguation_runtime"
-    assert terminal["failure_code"] == "scout_disambiguation_runtime_error"
-    assert "private-provider-detail" not in str(captured.value)
-    assert "private-provider-detail" not in json.dumps(terminal, sort_keys=True)
-    assert "required_scout_execution_empty" not in terminal.values()
-    assert "required_scout_route_unavailable" not in terminal.values()
-    assert len(search_calls) == 1
-    assert search_calls[0]["strict_failure"] is True
-    assert revision.calls == []
-    assert kernel.state.scout_disambiguation_report_state == {}
-    assert kernel.state.scout_disambiguation_report_projection == {}
+    assert convergence.recon_summary == ()
+    assert convergence.revision_projections == ()
+    issued_action_types = {
+        action.action_type.value
+        for action in kernel.state.issued_actions.values()
+    }
+    assert issued_action_types.isdisjoint(
+        {
+            "scout_disambiguate",
+            "search_planner_revise",
+            "contract_amendment_admit",
+            "contract_amendment_apply",
+        }
+    )
     assert kernel.state.scout_disambiguation_report_history == []
-    assert QUERY_PRODUCTION_STAGE not in kernel.state.projections
-    assert kernel.state.search_work_plan == {}
-    assert kernel.state.current_answer_contract == {}
-    assert kernel.state.evidence_ledger.to_projection().to_dict().get("evidence_items", []) == []
-
-
-def test_required_recon_projects_exact_plannerrevision_owner_code() -> None:
-    private_detail = "offline-revision-private-detail"
-
-    class FailingRevisionAdapter:
-        def produce(self, _revision_input: Mapping[str, Any]) -> Mapping[str, Any]:
-            raise SearchPlannerRevisionRuntimeError(
-                private_detail,
-                failure_code=(SearchPlannerRevisionRuntimeSafeFailureCode.MODEL_OUTPUT_INVALID_JSON),
-            )
-
-    with pytest.raises(InitialQueryStrategyFailureError) as captured:
-        _converge(
-            _planner_payload(recon="required", required_recon=True),
-            scout_adapter=ResponseOnlyScoutAdapter(),
-            revision_adapter=FailingRevisionAdapter(),
-        )
-
-    terminal = captured.value.to_terminal_projection()
-    assert terminal == {
-        "schema_version": "initial_query_strategy_failure_v1",
-        "boundary": "initial_query_strategy",
-        "failure_origin": "search_planner_revision_runtime",
-        "failure_code": "model_output_invalid_json",
-    }
-    assert private_detail not in json.dumps(terminal, sort_keys=True)
-
-
-def test_required_recon_cap_terminal_propagates_unchanged_without_revision() -> None:
-    revision = ResponseOnlyRevisionAdapter()
-    search_calls: list[dict[str, Any]] = []
-    terminal = RunCapExceeded(
-        "search_attempt_cap",
-        family=ExternalCallFamily.SEARCH,
-    )
-    kernel = _kernel_after_run_contract()
-
-    def exhausted_search(**kwargs: Any) -> list[dict[str, Any]]:
-        search_calls.append(dict(kwargs))
-        raise terminal
-
-    with pytest.raises(RunCapExceeded) as captured:
-        _converge(
-            _planner_payload(recon="required", required_recon=True),
-            scout_adapter=OrdinaryScoutDisambiguationAdapter(
-                available_providers={"serper": True},
-                scout_search=exhausted_search,
-            ),
-            revision_adapter=revision,
-            run_kernel=kernel,
-        )
-
-    assert captured.value is terminal
-    assert len(search_calls) == 1
-    assert revision.calls == []
-    assert kernel.state.scout_disambiguation_report_projection == {}
-
-
-def test_required_recon_posture_alone_fails_closed_without_adapter() -> None:
-    kernel = _kernel_after_run_contract()
-
-    with pytest.raises(QueryStrategyConvergenceError, match="requires Scout identity"):
-        execute_initial_query_strategy_convergence(
-            run_kernel=kernel,
-            router_query_preparation_contract=_router_state(),
-            query="Compare every required Example component.",
-            strategy="Balanced",
-            current_date="2026-07-19",
-            focus_academic=False,
-            force_intent_news=False,
-            include_domains=[],
-            exclude_domains=[],
-            news_preferred_domains=[],
-            route_projection={},
-            run_contract_projection=kernel.state.run_contract_projection,
-            planner_adapter=ResponseOnlyPlannerAdapter(_planner_payload(recon="required", required_recon=False)),
-            provider_diagnostics=[],
-        )
-
-    assert QUERY_PRODUCTION_STAGE not in kernel.state.projections
-
-
-def test_injected_recon_revises_query_direction_and_remains_non_evidence() -> None:
-    scout = ResponseOnlyScoutAdapter()
-    revision = ResponseOnlyRevisionAdapter()
-    kernel, convergence = _converge(
-        _planner_payload(recon="optional"),
-        scout_adapter=scout,
-        revision_adapter=revision,
-    )
-    _, admission = _admit(kernel, convergence)
-
-    assert scout.calls and revision.calls
-    directional = revision.calls[0]["scout_directional_context"]
-    assert directional["non_evidence"] is True
-    assert directional["scout_hints_are_evidence"] is False
-    assert directional["evidence_admitted"] is False
-    assert directional["citation_eligible"] is False
-    assert directional["directional_hints"]
-    assert "snippet" not in directional["directional_hints"][0]
-    assert "link" not in directional["directional_hints"][0]
-    assert convergence.query_production_result.candidate_queries == ["Renamed Example official current component 1"]
-    assert admission.current_queries == ["Renamed Example official current component 1"]
-    assert convergence.recon_summary[0]["status"] == "query_direction_revised"
-    revision_projection = convergence.revision_projections[0]
-    assert revision_projection["revision_effect_class"] == ("query_direction_only_non_contractual")
-    assert revision_projection["answer_contract_mutated"] is False
-    assert kernel.state.current_answer_contract == {}
-    ledger = kernel.state.evidence_ledger.to_projection().to_dict()
-    assert ledger.get("evidence_items", []) == []
-    assert convergence.recon_summary[0]["evidence_admitted"] is False
-    assert convergence.recon_summary[0]["citation_eligible"] is False
-
-
-def test_pending_contractual_revision_cannot_change_query_direction() -> None:
-    kernel, convergence = _converge(_planner_payload())
-    pending = {
-        "component_id": "component:1",
-        "revision_id": "revision:pending",
-        "revision_digest": "d" * 64,
-        "revision_effect_class": "contractual_pending_admission",
-        "query_direction_authorized_for_planning": False,
-        "contractual_effect_admitted_and_applied": False,
-        "component_search_requirement_updates": [
-            {
-                "component_id": "component:1",
-                "requirement_id": "requirement:pending",
-            }
-        ],
-    }
-
-    with pytest.raises(QueryStrategyConvergenceError, match="before its contractual"):
-        _strategies_with_authorized_revisions(
-            base_strategies=(convergence.query_production_result.candidate_strategies),
-            revision_projections=[pending],
-            accepted_contract=kernel.state.initial_answer_contract,
-        )
+    assert kernel.state.search_planner_revision_history == []
+    assert kernel.state.contract_amendment_admission_history == []
+    assert kernel.state.contract_amendment_application_history == []
 
 
 def test_malformed_planner_has_no_dispatch_and_no_legacy_fallback() -> None:

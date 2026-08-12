@@ -188,6 +188,9 @@ class OfflineOrdinaryPipelineHarness:
     full_search_judgment_inputs: list[dict[str, Any]] = field(
         default_factory=list, init=False, repr=False
     )
+    searchos_followup_nominated_slots: set[str] = field(
+        default_factory=set, init=False, repr=False
+    )
 
     def _record_model_call(self, system_prompt: str, kwargs: Mapping[str, Any]) -> None:
         self.model_calls.append(
@@ -220,6 +223,10 @@ class OfflineOrdinaryPipelineHarness:
             need_component = dict(active_need.get("component") or {})
             need_obligation = dict(active_need.get("source_obligation") or {})
             need_search_work = dict(active_need.get("search_work") or {})
+            need_slot = dict(active_need.get("slot") or {})
+            current_discovery_job_class = str(
+                need_slot.get("current_discovery_job_class") or ""
+            )
             self.read_assessment_calls.append(
                 {
                     "slot_id": dict(authorized.get("slot_ref") or {}).get("slot_id"),
@@ -258,6 +265,12 @@ class OfflineOrdinaryPipelineHarness:
                         "decision_contract_digest"
                     ),
                     "decision_contract_actions": sorted(decision_actions),
+                    "current_discovery_job_class": (
+                        current_discovery_job_class or None
+                    ),
+                    "interpretation_binding_ref": dict(
+                        need_slot.get("interpretation_binding_ref") or {}
+                    ),
                     "cost_phase": kwargs.get("cost_phase"),
                 }
             )
@@ -332,6 +345,91 @@ class OfflineOrdinaryPipelineHarness:
                     reason="offline_no_read",
                 )
             if (
+                "PROPOSE_INTERPRETATION_BINDING"
+                in set(authorized.get("legal_actions") or ())
+            ):
+                binding_contract = dict(
+                    authorized.get("interpretation_binding_contract") or {}
+                )
+                semantic_slot_ref = dict(
+                    binding_contract.get("semantic_slot_ref") or {}
+                )
+                declared_values = list(
+                    semantic_slot_ref.get("candidate_values") or ()
+                )
+                candidate_basis_refs = [
+                    dict(item)
+                    for item in binding_contract.get("candidate_basis_refs")
+                    or ()
+                ]
+                read_basis_refs = [
+                    dict(item)
+                    for item in binding_contract.get("read_basis_refs") or ()
+                ]
+                assert declared_values
+                assert candidate_basis_refs or read_basis_refs
+                return contract_decision(
+                    "PROPOSE_INTERPRETATION_BINDING",
+                    interpretation_binding={
+                        "semantic_slot_ref": semantic_slot_ref,
+                        "resolved_value": declared_values[0],
+                        "basis_candidate_refs": candidate_basis_refs[:1],
+                        "basis_read_custody_refs": (
+                            [] if candidate_basis_refs else read_basis_refs[:1]
+                        ),
+                        "disclose_assumption": True,
+                    },
+                    reason="offline_declared_interpretation_selected",
+                )
+            slot_id = str(dict(authorized.get("slot_ref") or {}).get("slot_id") or "")
+            if (
+                self.read_assessment_decision
+                == "BIND_THEN_FOLLOWUP_THEN_READ"
+                and current_discovery_job_class == "standard_discovery"
+                and bool(need_slot.get("interpretation_binding_ref"))
+                and not custody_refs
+                and slot_id not in self.searchos_followup_nominated_slots
+                and "PROPOSE_FOLLOWUP_QUERY"
+                in set(authorized.get("legal_actions") or ())
+            ):
+                self.searchos_followup_nominated_slots.add(slot_id)
+                return contract_decision(
+                    "PROPOSE_FOLLOWUP_QUERY",
+                    followup_query="Alpha bound standard discovery query",
+                    discovery_job_class="standard_discovery",
+                    reason="offline_bound_standard_discovery_needed",
+                )
+            if (
+                self.read_assessment_decision == "STANDARD_TO_DEEP_BLOCK"
+                and current_discovery_job_class == "standard_discovery"
+                and not custody_refs
+                and slot_id not in self.searchos_followup_nominated_slots
+                and "deep_discovery"
+                in set(authorized.get("allowed_followup_job_classes") or ())
+            ):
+                self.searchos_followup_nominated_slots.add(slot_id)
+                return contract_decision(
+                    "PROPOSE_FOLLOWUP_QUERY",
+                    followup_query="Alpha deep discovery escalation query",
+                    discovery_job_class="deep_discovery",
+                    reason="offline_standard_material_insufficient_for_deep",
+                )
+            if (
+                self.read_assessment_decision == "ZERO_ORIENTATION_REFINE"
+                and current_discovery_job_class == "orientation"
+                and not options
+                and slot_id not in self.searchos_followup_nominated_slots
+                and "orientation"
+                in set(authorized.get("allowed_followup_job_classes") or ())
+            ):
+                self.searchos_followup_nominated_slots.add(slot_id)
+                return contract_decision(
+                    "PROPOSE_FOLLOWUP_QUERY",
+                    followup_query="Alpha refined orientation query",
+                    discovery_job_class="orientation",
+                    reason="offline_zero_orientation_refinement",
+                )
+            if (
                 self.read_assessment_decision == "FOLLOWUP_THEN_READ"
                 and len(self.read_assessment_calls) == 1
                 and not custody_refs
@@ -339,6 +437,12 @@ class OfflineOrdinaryPipelineHarness:
                 return contract_decision(
                     "PROPOSE_FOLLOWUP_QUERY",
                     followup_query="Alpha exact model-authored follow-up query",
+                    discovery_job_class=(
+                        list(
+                            authorized.get("allowed_followup_job_classes")
+                            or ()
+                        )[0]
+                    ),
                     reason="offline_followup_needed",
                 )
             recovery_judgment_calls = sum(
@@ -358,6 +462,12 @@ class OfflineOrdinaryPipelineHarness:
                     "PROPOSE_FOLLOWUP_QUERY",
                     followup_query=(
                         "Alpha exact current official operating protocol details"
+                    ),
+                    discovery_job_class=(
+                        list(
+                            authorized.get("allowed_followup_job_classes")
+                            or ()
+                        )[0]
                     ),
                     reason="offline_recovery_followup_needed",
                 )
@@ -1012,6 +1122,31 @@ def run_post_retirement_ordinary_pipeline(
         orchestrator,
         "execute_searchos_slice_a_iterative_judgment",
         capture_read_runtime,
+    )
+    original_zero_result_runtime = (
+        orchestrator.execute_searchos_zero_result_orientation
+    )
+
+    def capture_zero_result_runtime(**kwargs: Any) -> Any:
+        harness.run_kernel = kwargs["run_kernel"]
+        harness.read_candidate_packet = dict(
+            kwargs["zero_result_initial_wave"]
+        )
+        harness.read_query_plan = kwargs["query_authority"].plan
+        harness.read_discovery_result_store = kwargs[
+            "discovery_result_store"
+        ]
+        result = original_zero_result_runtime(**kwargs)
+        harness.searchos_product_result = result
+        harness.searchos_semantic_material_before_pipeline_consumption = (
+            deepcopy(result.searchos_semantic_material)
+        )
+        return result
+
+    monkeypatch.setattr(
+        orchestrator,
+        "execute_searchos_zero_result_orientation",
+        capture_zero_result_runtime,
     )
     original_full_judgment_input = (
         orchestrator.build_search_judgment_input_from_runtime

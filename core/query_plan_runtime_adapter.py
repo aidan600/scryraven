@@ -48,6 +48,7 @@ class QueryPlanRuntimeAdapter:
         strategies: Sequence[Mapping[str, Any]],
         *,
         search_work_projection: Mapping[str, Any],
+        accepted_contract: Mapping[str, Any],
         policy: InitialQueryAllocationPolicy,
         origin: str = "search_planner",
     ) -> InitialQueryAdmissionResult:
@@ -56,6 +57,7 @@ class QueryPlanRuntimeAdapter:
         self.plan, result = self.plan.admit_initial_component_strategies(
             strategies,
             search_work_projection=search_work_projection,
+            accepted_contract=accepted_contract,
             policy=policy,
             clean=self.clean,
             origin=origin,

@@ -1,9 +1,10 @@
 """Converged SearchOS initial strategy and QueryPlan admission boundaries.
 
 The ordinary chain is SearchPlanner -> initial AnswerContract acceptance ->
-optional Scout/revision -> contract-bound SearchWorkPlan -> QueryPlan.  This
-module has no live planner/recon/provider fallback and does not own provider
-selection, READ, evidence, citation, or post-result follow-up dispatch.
+contract-bound SearchWorkPlan -> QueryPlan. Uncertainty is preserved as a
+provider-neutral QueryPlan job and resolved by the existing SearchOS worklist;
+ordinary Scout/revision/amendment planning is retired. This module does not own
+provider selection, READ, evidence, citation, or post-result follow-up dispatch.
 """
 
 from __future__ import annotations
@@ -1367,17 +1368,17 @@ def execute_initial_query_strategy_convergence(
     run_contract_projection: Mapping[str, Any],
     supplied_context: Mapping[str, Any] | None = None,
     planner_adapter: SearchPlannerAdapter,
-    scout_adapter: ScoutDisambiguationAdapter | None = None,
-    revision_adapter: SearchPlannerRevisionAdapter | None = None,
     provider_diagnostics: MutableSequence[dict[str, Any]],
     waste_flags: Sequence[str] | None = None,
     initial_query_allocation_policy: InitialQueryAllocationPolicy = (DEFAULT_INITIAL_QUERY_ALLOCATION_POLICY),
 ) -> InitialQueryStrategyConvergenceResult:
     """Run the one ordinary initial semantic-planning producer chain.
 
-    Every reduction happens before query production is authorized.  Therefore
-    a malformed planner proposal, stale contract ref, missing required recon
-    adapter, or invalid SearchWorkPlan yields no retrieval-dispatchable query.
+    Every reduction happens before query production is authorized. Therefore a
+    malformed planner proposal, stale contract ref, or invalid SearchWorkPlan
+    yields no retrieval-dispatchable query. Initial uncertainty remains in the
+    accepted contract and enters QueryPlan/SearchOS without a parallel recon
+    controller or routine initial contract amendment.
     """
 
     if not isinstance(initial_query_allocation_policy, InitialQueryAllocationPolicy):
@@ -1496,19 +1497,9 @@ def execute_initial_query_strategy_convergence(
         accepted_contract=accepted_contract,
         policy=initial_query_allocation_policy,
     )
-    recon_summary, revision_projections = _execute_recon_and_revisions(
-        run_kernel=run_kernel,
-        candidate_strategies=base_candidate_strategies,
-        policy=initial_query_allocation_policy,
-        scout_adapter=scout_adapter,
-        revision_adapter=revision_adapter,
-    )
-    accepted_contract = run_kernel.state.current_answer_contract or run_kernel.state.initial_answer_contract
-    candidate_strategies = _strategies_with_authorized_revisions(
-        base_strategies=base_candidate_strategies,
-        revision_projections=revision_projections,
-        accepted_contract=accepted_contract,
-    )
+    recon_summary: tuple[dict[str, Any], ...] = ()
+    revision_projections: tuple[dict[str, Any], ...] = ()
+    candidate_strategies = base_candidate_strategies
 
     search_work_action = invoke_run_kernel_initial_planning(
         "search_work_plan_construction",
@@ -1884,6 +1875,7 @@ def execute_query_plan_admission_action(
     max_queries: int,
     route_runtime_posture: Mapping[str, Any],
     search_work_projection: Mapping[str, Any] | None = None,
+    accepted_contract: Mapping[str, Any] | None = None,
     initial_query_allocation_policy: InitialQueryAllocationPolicy = (DEFAULT_INITIAL_QUERY_ALLOCATION_POLICY),
     search_judgment_projection: Mapping[str, Any] | None = None,
 ) -> QueryPlanAdmissionResult:
@@ -1908,6 +1900,7 @@ def execute_query_plan_admission_action(
     allocation = query_authority.admit_initial_component_strategies(
         strategies,
         search_work_projection=search_work_projection,
+        accepted_contract=accepted_contract or {},
         policy=initial_query_allocation_policy,
         origin=candidate_source,
     )

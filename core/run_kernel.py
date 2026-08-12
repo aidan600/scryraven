@@ -603,6 +603,9 @@ SEARCHOS_ITERATION_CANDIDATE_ADMISSION_STAGE = (
     "searchos_iteration_candidate_admission"
 )
 SEARCHOS_READ_CUSTODY_ADMISSION_STAGE = "searchos_read_custody_admission"
+SEARCHOS_INTERPRETATION_BINDING_ADMISSION_STAGE = (
+    "searchos_interpretation_binding_admission"
+)
 SEARCHOS_SEMANTIC_HANDOFF_STAGE = "searchos_semantic_evaluation_handoff"
 SEARCHOS_SLICE_A_READINESS_STAGE = "searchos_slice_a_readiness"
 SEARCHOS_REQUIRED_NEEDS_BLOCK_STAGE = "searchos_required_needs_block"
@@ -791,6 +794,9 @@ class ActionType(str, Enum):
         "searchos_iteration_candidates_admit"
     )
     SEARCHOS_READ_CUSTODY_ADMIT = "searchos_read_custody_admit"
+    SEARCHOS_INTERPRETATION_BINDING_ADMIT = (
+        "searchos_interpretation_binding_admit"
+    )
     SEARCHOS_SEMANTIC_HANDOFF_ADMIT = "searchos_semantic_handoff_admit"
     SEARCHOS_SLICE_A_READINESS_DERIVE = "searchos_slice_a_readiness_derive"
     SEARCHOS_REQUIRED_NEEDS_BLOCK = "searchos_required_needs_block"
@@ -946,6 +952,9 @@ class ObservationType(str, Enum):
         "searchos_iteration_candidates_admitted"
     )
     SEARCHOS_READ_CUSTODY_ADMITTED = "searchos_read_custody_admitted"
+    SEARCHOS_INTERPRETATION_BINDING_ADMITTED = (
+        "searchos_interpretation_binding_admitted"
+    )
     SEARCHOS_SEMANTIC_HANDOFF_ADMITTED = "searchos_semantic_handoff_admitted"
     SEARCHOS_SLICE_A_READINESS_DERIVED = "searchos_slice_a_readiness_derived"
     SEARCHOS_REQUIRED_NEEDS_BLOCKED = "searchos_required_needs_blocked"
@@ -1175,6 +1184,15 @@ def _graph_safe_mapping(value: Mapping[str, Any] | None) -> dict[str, Any]:
     return dict(safe) if isinstance(safe, Mapping) else {}
 
 
+def _searchos_safe_mapping(
+    value: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Preserve bounded nested QueryPlan/slot/custody lineage for SearchOS."""
+
+    safe = _json_safe(dict(value or {}), max_depth=32)
+    return dict(safe) if isinstance(safe, Mapping) else {}
+
+
 def _acquisition_safe_mapping(
     value: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
@@ -1386,6 +1404,8 @@ class AuthorizedAction:
             (
                 _acquisition_safe_mapping(self.inputs)
                 if self.action_type.value.startswith("acquisition_")
+                else _searchos_safe_mapping(self.inputs)
+                if self.action_type.value.casefold().startswith("searchos_")
                 else _graph_safe_mapping(self.inputs)
                 if self.action_type
                 is ActionType.MULTICOMPONENT_GRAPH_REDUCE
@@ -1429,6 +1449,8 @@ class AuthorizedAction:
             "inputs": (
                 _acquisition_safe_mapping(self.inputs)
                 if self.action_type.value.startswith("acquisition_")
+                else _searchos_safe_mapping(self.inputs)
+                if self.action_type.value.casefold().startswith("searchos_")
                 else _safe_mapping(self.inputs)
             ),
             "expected_observation_type": self.expected_observation_type.value,
@@ -1471,6 +1493,8 @@ class Observation:
         }
         if self.observation_type.value.startswith("acquisition_"):
             payload = _acquisition_safe_mapping(self.payload)
+        elif self.observation_type.value.casefold().startswith("searchos_"):
+            payload = _searchos_safe_mapping(self.payload)
         elif self.observation_type in {
             ObservationType.MULTICOMPONENT_GRAPH_REDUCED,
             *semantic_role_observation_types,
@@ -1541,6 +1565,10 @@ class Observation:
             "payload": (
                 _acquisition_safe_mapping(self.payload)
                 if self.observation_type.value.startswith("acquisition_")
+                else _searchos_safe_mapping(self.payload)
+                if self.observation_type.value.casefold().startswith(
+                    "searchos_"
+                )
                 else _safe_mapping(self.payload)
             ),
             "sequence": self.sequence,
@@ -3067,7 +3095,11 @@ class RunKernel:
             expected_observation_type=ObservationType.ROUTE_RESULT,
         )
 
-    def acquisition_authority_snapshot(self) -> dict[str, Any]:
+    def acquisition_authority_snapshot(
+        self,
+        *,
+        allow_no_dispatch_planning_snapshot: bool = False,
+    ) -> dict[str, Any]:
         """Return the exact current pre-acquisition lineage snapshot."""
 
         searchos_state = _safe_mapping(self.state.searchos_state)
@@ -3203,6 +3235,9 @@ class RunKernel:
                     self.state.search_executor_handoff_state
                 ),
                 search_work_plan=self.state.search_work_plan,
+                allow_no_dispatch_planning_snapshot=(
+                    allow_no_dispatch_planning_snapshot
+                ),
             )
         except AcquisitionControlError as exc:
             raise RunKernelTransitionError(str(exc)) from exc
@@ -8664,7 +8699,7 @@ class RunKernel:
         answer_contract_ref: Mapping[str, Any],
         policy_snapshot: Mapping[str, Any],
         active_slots: Sequence[Mapping[str, Any]],
-        initial_candidate_state_ref: Mapping[str, Any],
+        initial_candidate_state_ref: Mapping[str, Any] | None,
         reason: str = "initialize_canonical_searchos_slice_a_state",
     ) -> AuthorizedAction:
         from core.searchos_iterative_judgment_runtime import (
@@ -9167,6 +9202,42 @@ class RunKernel:
             expected_observation_type=ObservationType.SEARCHOS_READ_CUSTODY_ADMITTED,
         )
 
+    def authorize_searchos_interpretation_binding(
+        self,
+        *,
+        judgment_decision: Mapping[str, Any],
+        reason: str = "admit_bounded_searchos_interpretation_binding",
+    ) -> AuthorizedAction:
+        from core.searchos_iterative_judgment_runtime import (
+            build_searchos_interpretation_binding_v1,
+        )
+
+        accepted_contract = (
+            self.state.current_answer_contract
+            or self.state.initial_answer_contract
+        )
+        if not self.state.searchos_state or not accepted_contract:
+            raise RunKernelTransitionError(
+                "interpretation-binding admission requires SearchOS and accepted-contract state"
+            )
+        try:
+            binding = build_searchos_interpretation_binding_v1(
+                state=self.state.searchos_state,
+                accepted_contract=accepted_contract,
+                judgment_decision=judgment_decision,
+            )
+        except ValueError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        return self.authorize(
+            stage=SEARCHOS_INTERPRETATION_BINDING_ADMISSION_STAGE,
+            action_type=ActionType.SEARCHOS_INTERPRETATION_BINDING_ADMIT,
+            reason=reason,
+            inputs={"interpretation_binding": binding},
+            expected_observation_type=(
+                ObservationType.SEARCHOS_INTERPRETATION_BINDING_ADMITTED
+            ),
+        )
+
     def authorize_searchos_semantic_handoff(
         self,
         *,
@@ -9185,6 +9256,11 @@ class RunKernel:
                 slot_id=slot_id,
                 judgment_decision_ref=judgment_decision_ref,
                 read_custody_material_refs=read_custody_material_refs,
+                accepted_contract=(
+                    self.state.current_answer_contract
+                    or self.state.initial_answer_contract
+                    or None
+                ),
             )
         except ValueError as exc:
             raise RunKernelTransitionError(str(exc)) from exc
@@ -9235,7 +9311,7 @@ class RunKernel:
             build_searchos_required_needs_block,
         )
 
-        readiness = _safe_mapping(
+        readiness = _searchos_safe_mapping(
             self.state.projections.get(SEARCHOS_SLICE_A_READINESS_STAGE)
         )
         try:
@@ -16946,8 +17022,12 @@ class RunKernel:
                 validate_searchos_state,
             )
 
-            expected = _safe_mapping(action.inputs.get("searchos_state"))
-            observed = _safe_mapping(observation.payload.get("searchos_state"))
+            expected = _searchos_safe_mapping(
+                action.inputs.get("searchos_state")
+            )
+            observed = _searchos_safe_mapping(
+                observation.payload.get("searchos_state")
+            )
             if observed != expected:
                 raise RunKernelTransitionError(
                     "SearchOS initialization observation differs from authorization"
@@ -16966,8 +17046,12 @@ class RunKernel:
                 validate_searchos_judgment_model_output,
             )
 
-            request = _safe_mapping(action.inputs.get("judgment_request"))
-            charge_ref = _safe_mapping(action.inputs.get("charge_ref"))
+            request = _searchos_safe_mapping(
+                action.inputs.get("judgment_request")
+            )
+            charge_ref = _searchos_safe_mapping(
+                action.inputs.get("charge_ref")
+            )
             try:
                 if observation.status is RunStageStatus.FAILED:
                     failure_reason = _clean_text(
@@ -16996,7 +17080,7 @@ class RunKernel:
                 else:
                     decision = validate_searchos_judgment_model_output(
                         request=request,
-                        model_output=_safe_mapping(
+                        model_output=_searchos_safe_mapping(
                             observation.payload.get("model_output")
                         ),
                     )
@@ -17145,8 +17229,12 @@ class RunKernel:
                 record_searchos_iteration_candidate_set,
             )
 
-            expected = _safe_mapping(action.inputs.get("candidate_set"))
-            observed = _safe_mapping(observation.payload.get("candidate_set"))
+            expected = _searchos_safe_mapping(
+                action.inputs.get("candidate_set")
+            )
+            observed = _searchos_safe_mapping(
+                observation.payload.get("candidate_set")
+            )
             if observed != expected:
                 raise RunKernelTransitionError(
                     "SearchOS iteration candidate observation differs from authorization"
@@ -17166,8 +17254,10 @@ class RunKernel:
                 record_searchos_read_custody_material,
             )
 
-            expected = _safe_mapping(action.inputs.get("custody_material_ref"))
-            observed = _safe_mapping(
+            expected = _searchos_safe_mapping(
+                action.inputs.get("custody_material_ref")
+            )
+            observed = _searchos_safe_mapping(
                 observation.payload.get("custody_material_ref")
             )
             if observed != expected:
@@ -17194,13 +17284,57 @@ class RunKernel:
             except ValueError as exc:
                 raise RunKernelTransitionError(str(exc)) from exc
             self.state.projections[action.stage] = deepcopy(observed)
+        elif (
+            action.action_type
+            is ActionType.SEARCHOS_INTERPRETATION_BINDING_ADMIT
+        ):
+            from core.searchos_iterative_judgment_runtime import (
+                record_searchos_interpretation_binding,
+            )
+
+            expected = _searchos_safe_mapping(
+                action.inputs.get("interpretation_binding")
+            )
+            observed = _searchos_safe_mapping(
+                observation.payload.get("interpretation_binding")
+            )
+            if observed != expected:
+                raise RunKernelTransitionError(
+                    "SearchOS interpretation-binding observation differs from authorization"
+                )
+            accepted_contract = (
+                self.state.current_answer_contract
+                or self.state.initial_answer_contract
+            )
+            if not accepted_contract:
+                raise RunKernelTransitionError(
+                    "SearchOS interpretation binding lost accepted-contract authority"
+                )
+            try:
+                self.state.searchos_state = (
+                    record_searchos_interpretation_binding(
+                        self.state.searchos_state,
+                        accepted_contract=accepted_contract,
+                        binding=observed,
+                    )
+                )
+            except ValueError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.projections[action.stage] = deepcopy(observed)
+            self.state.projections[SEARCHOS_JUDGMENT_STAGE] = deepcopy(
+                self.state.searchos_state
+            )
         elif action.action_type is ActionType.SEARCHOS_SEMANTIC_HANDOFF_ADMIT:
             from core.searchos_iterative_judgment_runtime import (
                 record_searchos_semantic_handoff,
             )
 
-            expected = _safe_mapping(action.inputs.get("semantic_handoff"))
-            observed = _safe_mapping(observation.payload.get("semantic_handoff"))
+            expected = _searchos_safe_mapping(
+                action.inputs.get("semantic_handoff")
+            )
+            observed = _searchos_safe_mapping(
+                observation.payload.get("semantic_handoff")
+            )
             if observed != expected:
                 raise RunKernelTransitionError(
                     "SearchOS semantic handoff observation differs from authorization"
@@ -17218,8 +17352,12 @@ class RunKernel:
                 record_searchos_readiness_projection,
             )
 
-            expected = _safe_mapping(action.inputs.get("readiness"))
-            observed = _safe_mapping(observation.payload.get("readiness"))
+            expected = _searchos_safe_mapping(
+                action.inputs.get("readiness")
+            )
+            observed = _searchos_safe_mapping(
+                observation.payload.get("readiness")
+            )
             if observed != expected:
                 raise RunKernelTransitionError(
                     "SearchOS readiness observation differs from authorization"
@@ -17237,8 +17375,10 @@ class RunKernel:
                 record_searchos_required_needs_block,
             )
 
-            expected = _safe_mapping(action.inputs.get("block"))
-            observed = _safe_mapping(observation.payload.get("block"))
+            expected = _searchos_safe_mapping(action.inputs.get("block"))
+            observed = _searchos_safe_mapping(
+                observation.payload.get("block")
+            )
             if observed != expected:
                 raise RunKernelTransitionError(
                     "SearchOS required-needs block observation differs from authorization"
@@ -23727,6 +23867,7 @@ __all__ = [
     "EVIDENCE_LEDGER_STAGE",
     "SEARCH_JUDGMENT_STAGE",
     "SEARCHOS_INITIALIZATION_STAGE",
+    "SEARCHOS_INTERPRETATION_BINDING_ADMISSION_STAGE",
     "SEARCHOS_ITERATION_CANDIDATE_ADMISSION_STAGE",
     "SEARCHOS_JUDGMENT_STAGE",
     "SEARCHOS_NAVIGATION_SELECTION_STAGE",

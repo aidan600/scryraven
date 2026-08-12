@@ -15,9 +15,11 @@ from typing import Any, Callable, Mapping, Sequence
 from core.routing import (
     PROVIDER_NAMES,
     DiscoverQualifier,
+    GeneralDeepAuthorization,
     ProviderAvailability,
     ProviderRouteDecision,
     derive_provider_capability_request,
+    derive_query_plan_discovery_capability_request,
     route_provider_capability,
 )
 from core.routing import (
@@ -179,16 +181,30 @@ class ProviderPlan:
         override_is_user: bool,
         premium_search_escalation: bool,
         discover_qualifier: DiscoverQualifier | str | None = None,
+        discovery_job_class: object | None = None,
+        general_deep_authorization: GeneralDeepAuthorization | None = None,
         scrutineer_deep_authorized: bool = False,
         select_provider_list: Callable[..., list[str]] = routing_select_providers,
     ) -> ProviderRouteDecision:
-        request = derive_provider_capability_request(
-            query_type=query_type,
-            intent=intent,
-            is_academic=is_academic,
-            include_domains=include_domains,
-            exclude_domains=exclude_domains,
-            discover_qualifier=discover_qualifier,
+        request = (
+            derive_query_plan_discovery_capability_request(
+                discovery_job_class=discovery_job_class,
+                query_type=query_type,
+                intent=intent,
+                is_academic=is_academic,
+                include_domains=include_domains,
+                exclude_domains=exclude_domains,
+                general_deep_authorization=general_deep_authorization,
+            )
+            if discovery_job_class is not None
+            else derive_provider_capability_request(
+                query_type=query_type,
+                intent=intent,
+                is_academic=is_academic,
+                include_domains=include_domains,
+                exclude_domains=exclude_domains,
+                discover_qualifier=discover_qualifier,
+            )
         )
         preferences = list(override) if override is not None else None
         override_posture = "user_ordered_preferences" if override_is_user else "internal_ordered_preferences"
@@ -273,6 +289,8 @@ class ProviderPlan:
         choose_search_depth: Callable[[str, str | None, int], str],
         include_domains: Sequence[str] = (),
         exclude_domains: Sequence[str] = (),
+        discovery_job_class: object | None = None,
+        general_deep_authorization: GeneralDeepAuthorization | None = None,
         merge_provider_overrides: Callable[..., list[str] | None] = routing_merge_search_provider_overrides,
         select_provider_list: Callable[..., list[str]] = routing_select_providers,
     ) -> ProviderPlanRecord:
@@ -296,6 +314,8 @@ class ProviderPlan:
             override=merged_override,
             override_is_user=bool(primary_override),
             premium_search_escalation=False,
+            discovery_job_class=discovery_job_class,
+            general_deep_authorization=general_deep_authorization,
             select_provider_list=select_provider_list,
         )
         return self._append_record(
@@ -316,6 +336,11 @@ class ProviderPlan:
                 "scout_override": list(scout_override) if scout_override else None,
                 "include_domains": list(include_domains),
                 "exclude_domains": list(exclude_domains),
+                "discovery_job_class": (
+                    str(getattr(discovery_job_class, "value", discovery_job_class))
+                    if discovery_job_class is not None
+                    else None
+                ),
             },
         )
 
@@ -334,6 +359,8 @@ class ProviderPlan:
         premium_search_escalation: bool = False,
         include_domains: Sequence[str] = (),
         exclude_domains: Sequence[str] = (),
+        discovery_job_class: object | None = None,
+        general_deep_authorization: GeneralDeepAuthorization | None = None,
         select_provider_list: Callable[..., list[str]] = routing_select_providers,
     ) -> ProviderPlanRecord:
         decision = self._route(
@@ -348,6 +375,8 @@ class ProviderPlan:
             override=override,
             override_is_user=override_is_user,
             premium_search_escalation=premium_search_escalation,
+            discovery_job_class=discovery_job_class,
+            general_deep_authorization=general_deep_authorization,
             select_provider_list=select_provider_list,
         )
         return self._append_record(
@@ -367,6 +396,11 @@ class ProviderPlan:
                 "premium_search_escalation": premium_search_escalation,
                 "include_domains": list(include_domains),
                 "exclude_domains": list(exclude_domains),
+                "discovery_job_class": (
+                    str(getattr(discovery_job_class, "value", discovery_job_class))
+                    if discovery_job_class is not None
+                    else None
+                ),
             },
         )
 

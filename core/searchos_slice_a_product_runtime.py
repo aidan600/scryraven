@@ -42,6 +42,7 @@ from core.searchos_iterative_judgment_runtime import (
     SearchOSSlotPosture,
     build_candidate_use_options_v1,
     build_candidate_use_window_v1,
+    build_searchos_effective_semantic_slot_view,
     build_searchos_iteration_candidate_set_v1,
     build_searchos_policy_snapshot,
     build_searchos_read_custody_material_ref,
@@ -59,6 +60,9 @@ SEARCHOS_JUDGMENT_MODEL_INPUT_SCHEMA_VERSION = (
 )
 SEARCHOS_JUDGMENT_DECISION_CONTRACT_SCHEMA_VERSION = (
     "searchos_judgment_decision_contract_v1"
+)
+SEARCHOS_ZERO_RESULT_INITIAL_DISCOVER_WAVE_SCHEMA_VERSION = (
+    "searchos_zero_result_initial_discover_wave_v1"
 )
 SEARCHOS_JUDGMENT_SYSTEM_PROMPT = """You are the neutral SearchOS SearchJudgment.
 The input is one searchos_judgment_model_input_v1 JSON object.
@@ -81,20 +85,29 @@ exactly one action from
 authorized_request.legal_actions:
 - REQUEST_READ_PAGE copies one exact candidate_use_option_ref from the request.
 - PROPOSE_FOLLOWUP_QUERY authors new bounded followup_query text from
-  active_need and inspected material; this is the only action allowed to author
-  a query, and QueryPlan independently validates the exact text.
+  active_need and inspected material and selects exactly one provider-neutral
+  discovery_job_class from authorized_request.allowed_followup_job_classes;
+  this is the only action allowed to author a query, and QueryPlan independently
+  validates the exact text, job class, and component/semantic lineage.
+- PROPOSE_INTERPRETATION_BINDING supplies exactly interpretation_binding with
+  the exact semantic_slot_ref, one declared resolved_value, exact current
+  candidate/READ basis refs, and disclose_assumption. It does not admit the
+  binding, evidence, support, satisfaction, or a contract mutation.
+- REQUIRE_CLARIFICATION supplies only the shared fields (plus exact required
+  READ-insufficient assessments when custody exists). It does not author prose.
 - HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION copies a nonempty selection
   of exact current read_custody_refs.
 - HANDOFF_UNRESOLVED supplies only the shared fields and its reason.
 
-After READ custody exists, REQUEST_READ_PAGE, PROPOSE_FOLLOWUP_QUERY, and
-HANDOFF_UNRESOLVED must include exactly one read_insufficient assessment for
-every current READ custody ref, copied exactly, with the contract's exact
-assessment fields and disposition. Semantic handoff must not include those
-assessments. Forbidden fields must be absent, and no unsupported fields are
-allowed. Never invent or alter a URL, authority ref, candidate ref, custody
-ref, component ref, source-obligation ref, provider choice, request identity,
-disposition, deterministic fallback, or unsupported field.
+After READ custody exists, REQUEST_READ_PAGE, PROPOSE_FOLLOWUP_QUERY,
+REQUIRE_CLARIFICATION, and HANDOFF_UNRESOLVED must include exactly one
+read_insufficient assessment for every current READ custody ref, copied
+exactly, with the contract's exact assessment fields and disposition. Semantic
+handoff and interpretation-binding proposal must not include those assessments.
+Forbidden fields must be absent, and no unsupported fields are allowed. Never
+invent or alter a URL, authority ref, candidate ref, custody ref, component
+ref, source-obligation ref, provider choice, request identity, disposition,
+deterministic fallback, or unsupported field.
 """
 _NAVIGATION_JUDGMENT_SYSTEM_PROMPT = """You are the neutral SearchOS SearchJudgment.
 The input is one searchos_judgment_model_input_v1 JSON object containing an
@@ -118,8 +131,16 @@ exactly from authorized_request. Choose exactly one action from
 authorized_request.legal_actions:
 - REQUEST_READ_PAGE copies one exact candidate_use_option_ref from the request.
 - PROPOSE_FOLLOWUP_QUERY authors new bounded followup_query text from
-  active_need and inspected material; this is the only action allowed to author
-  a query, and QueryPlan independently validates the exact text.
+  active_need and inspected material and selects exactly one provider-neutral
+  discovery_job_class from authorized_request.allowed_followup_job_classes;
+  this is the only action allowed to author a query, and QueryPlan independently
+  validates the exact text, job class, and component/semantic lineage.
+- PROPOSE_INTERPRETATION_BINDING supplies exactly interpretation_binding with
+  the exact semantic_slot_ref, one declared resolved_value, exact current
+  candidate/READ basis refs, and disclose_assumption. It does not admit the
+  binding, evidence, support, satisfaction, or a contract mutation.
+- REQUIRE_CLARIFICATION supplies only the shared fields (plus exact required
+  READ-insufficient assessments when custody exists). It does not author prose.
 - HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION copies a nonempty selection
   of exact current read_custody_refs.
 - HANDOFF_UNRESOLVED supplies the shared fields and its reason, plus only the
@@ -129,11 +150,12 @@ authorized_request.legal_actions:
   other navigation field.
 
 After READ custody exists, REQUEST_READ_PAGE, PROPOSE_FOLLOWUP_QUERY,
-HANDOFF_UNRESOLVED, and REQUEST_NAVIGATE_BREADCRUMB must include exactly one
-read_insufficient assessment for every current READ custody ref, copied
-exactly, with the contract's exact assessment fields and disposition. Semantic
-handoff must not include those assessments. Forbidden fields must be absent,
-and no unsupported fields are allowed. Never invent or alter a URL,
+REQUIRE_CLARIFICATION, HANDOFF_UNRESOLVED, and REQUEST_NAVIGATE_BREADCRUMB must
+include exactly one read_insufficient assessment for every current READ custody
+ref, copied exactly, with the contract's exact assessment fields and
+disposition. Semantic handoff and interpretation-binding proposal must not
+include those assessments. Forbidden fields must be absent, and no unsupported
+fields are allowed. Never invent or alter a URL,
 destination binding, authority ref, candidate ref, navigation ref, custody ref,
 component ref, source-obligation ref, provider choice, route, request identity,
 disposition, deterministic fallback, or unsupported field. Exact navigation
@@ -162,7 +184,12 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
                 *shared_required_fields,
                 "candidate_use_option_ref",
             ],
-            "forbidden_fields": ["read_custody_refs", "followup_query"],
+            "forbidden_fields": [
+                "read_custody_refs",
+                "followup_query",
+                "discovery_job_class",
+                "interpretation_binding",
+            ],
             "candidate_use_option_ref_rule": (
                 "copy exactly one candidate_use_option_ref from "
                 "authorized_request.candidate_use_options"
@@ -174,15 +201,24 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
             "read_custody_assessments_mode": conditionally_assessed,
         },
         SearchOSJudgmentAction.PROPOSE_FOLLOWUP_QUERY.value: {
-            "required_fields": [*shared_required_fields, "followup_query"],
+            "required_fields": [
+                *shared_required_fields,
+                "followup_query",
+                "discovery_job_class",
+            ],
             "forbidden_fields": [
                 "candidate_use_option_ref",
                 "read_custody_refs",
+                "interpretation_binding",
             ],
             "followup_query_rule": (
                 "SearchJudgment authors one exact bounded follow-up query from "
                 "the accepted active need and the inspected material; QueryPlan "
                 "independently validates and authorizes the exact text"
+            ),
+            "discovery_job_class_rule": (
+                "copy exactly one provider-neutral class from "
+                "authorized_request.allowed_followup_job_classes"
             ),
             "authorship_forbidden": [
                 "urls",
@@ -200,6 +236,8 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
                 "candidate_use_option_ref",
                 "followup_query",
                 "read_custody_assessments",
+                "discovery_job_class",
+                "interpretation_binding",
             ],
             "read_custody_refs_rule": (
                 "copy a nonempty selection of exact refs from "
@@ -217,10 +255,60 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
                 "candidate_use_option_ref",
                 "read_custody_refs",
                 "followup_query",
+                "discovery_job_class",
+                "interpretation_binding",
             ],
             "unresolved_rule": (
                 "bounded explanation of an open need; this action is not success "
                 "and is not final whole-run stopping"
+            ),
+            "read_custody_assessments_mode": conditionally_assessed,
+        },
+        SearchOSJudgmentAction.PROPOSE_INTERPRETATION_BINDING.value: {
+            "required_fields": [
+                *shared_required_fields,
+                "interpretation_binding",
+            ],
+            "forbidden_fields": [
+                "candidate_use_option_ref",
+                "read_custody_refs",
+                "followup_query",
+                "discovery_job_class",
+                "read_custody_assessments",
+            ],
+            "interpretation_binding_exact_fields": [
+                "semantic_slot_ref",
+                "resolved_value",
+                "basis_candidate_refs",
+                "basis_read_custody_refs",
+                "disclose_assumption",
+            ],
+            "semantic_slot_ref_rule": (
+                "copy authorized_request.interpretation_binding_contract."
+                "semantic_slot_ref exactly"
+            ),
+            "resolved_value_rule": (
+                "select exactly one already-declared candidate value"
+            ),
+            "basis_ref_rule": (
+                "copy exact current candidate or READ custody refs; at least "
+                "one basis ref is required"
+            ),
+            "authority_created": [],
+            "read_custody_assessments_mode": "forbidden",
+        },
+        SearchOSJudgmentAction.REQUIRE_CLARIFICATION.value: {
+            "required_fields": list(shared_required_fields),
+            "forbidden_fields": [
+                "candidate_use_option_ref",
+                "read_custody_refs",
+                "followup_query",
+                "discovery_job_class",
+                "interpretation_binding",
+            ],
+            "clarification_rule": (
+                "preserve the exact accepted component/semantic-slot boundary; "
+                "do not select or invent an interpretation"
             ),
             "read_custody_assessments_mode": conditionally_assessed,
         },
@@ -230,7 +318,13 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
             contract["forbidden_fields"].append("navigation_candidate_ref")
         actions[SearchOSJudgmentAction.REQUEST_NAVIGATE_BREADCRUMB.value] = {
             "required_fields": [*shared_required_fields, "navigation_candidate_ref"],
-            "forbidden_fields": ["candidate_use_option_ref", "read_custody_refs", "followup_query"],
+            "forbidden_fields": [
+                "candidate_use_option_ref",
+                "read_custody_refs",
+                "followup_query",
+                "discovery_job_class",
+                "interpretation_binding",
+            ],
             "navigation_candidate_ref_rule": (
                 "copy exactly one navigation_candidate_ref from "
                 "authorized_request.navigation_options"
@@ -256,6 +350,8 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
             *(["navigation_candidate_ref"] if navigation_enabled else []),
             "read_custody_refs",
             "followup_query",
+            "discovery_job_class",
+            "interpretation_binding",
             "read_custody_assessments",
         ],
         "unsupported_fields_forbidden": True,
@@ -281,7 +377,8 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
         "post_read_assessment_contract": {
             "required_when": (
                 "authorized_request.read_custody_refs is nonempty and action "
-                "is not HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION"
+                "is neither HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION "
+                "nor PROPOSE_INTERPRETATION_BINDING"
             ),
             "absent_when_no_current_custody": True,
             "one_per_current_custody_ref": True,
@@ -340,6 +437,299 @@ class SearchOSSliceAProductResult:
 FollowupDiscover = Callable[[str, int, Mapping[str, Any]], Mapping[str, Any]]
 
 
+def build_searchos_zero_result_initial_discover_wave_v1(
+    *,
+    run_id: str,
+    request_id: str,
+    query_plan_ref: Mapping[str, Any],
+    query_plan_item_refs: Sequence[Mapping[str, Any]],
+    provider_plan_ref: Mapping[str, Any],
+    provider_plan_record_refs: Sequence[Mapping[str, Any]],
+    provider_route_refs: Sequence[Mapping[str, Any]],
+    retrieval_action_refs: Sequence[Mapping[str, Any]],
+    source_result_identity_set_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Record an exact first orientation wave that returned no identities."""
+
+    item_refs = [deepcopy(dict(item)) for item in query_plan_item_refs]
+    if not item_refs or any(
+        item.get("discovery_job_class") != "orientation"
+        for item in item_refs
+    ):
+        raise SearchOSRuntimeError(
+            "zero-result initial wave requires only orientation QueryPlan items"
+        )
+    record_refs = [deepcopy(dict(item)) for item in provider_plan_record_refs]
+    route_refs = [deepcopy(dict(item)) for item in provider_route_refs]
+    if not record_refs or len(record_refs) != len(route_refs):
+        raise SearchOSRuntimeError(
+            "zero-result initial wave requires exact provider record/route lineage"
+        )
+    action_refs = [deepcopy(dict(item)) for item in retrieval_action_refs]
+    if not action_refs:
+        raise SearchOSRuntimeError(
+            "zero-result initial wave requires completed retrieval action lineage"
+        )
+    core = {
+        "schema_version": (
+            SEARCHOS_ZERO_RESULT_INITIAL_DISCOVER_WAVE_SCHEMA_VERSION
+        ),
+        "owner": "RunKernel.SearchOSIterativeJudgment",
+        "run_id": str(run_id),
+        "request_id": str(request_id),
+        "query_plan_ref": deepcopy(dict(query_plan_ref)),
+        "query_plan_item_refs": item_refs,
+        "provider_plan_ref": deepcopy(dict(provider_plan_ref)),
+        "provider_plan_record_refs": record_refs,
+        "provider_route_refs": route_refs,
+        "retrieval_action_refs": action_refs,
+        "source_result_identity_set_ref": deepcopy(
+            dict(source_result_identity_set_ref)
+        ),
+        "selected_candidate_refs": [],
+        "zero_useful_result": True,
+        "orientation_refinement_authority_created": True,
+        "orientation_refinement_limit": 1,
+        "read_authority_created": False,
+        "evidence_admitted": False,
+        "support_admitted": False,
+        "source_obligation_satisfied": False,
+        "canonical_state": True,
+    }
+    digest = _digest(core)
+    return validate_searchos_zero_result_initial_discover_wave_v1({
+        **core,
+        "zero_result_discover_wave_id": (
+            f"searchos-zero-result-wave:{digest[:24]}"
+        ),
+        "zero_result_discover_wave_digest": digest,
+        "replay_identity": f"searchos-zero-result-wave:{digest}",
+    }, run_id=run_id, request_id=request_id)
+
+
+def validate_searchos_zero_result_initial_discover_wave_v1(
+    wave: Mapping[str, Any],
+    *,
+    run_id: str | None = None,
+    request_id: str | None = None,
+) -> dict[str, Any]:
+    safe = deepcopy(dict(wave)) if isinstance(wave, Mapping) else {}
+    identity_fields = {
+        "zero_result_discover_wave_id",
+        "zero_result_discover_wave_digest",
+        "replay_identity",
+    }
+    exact_fields = {
+        "schema_version",
+        "owner",
+        "run_id",
+        "request_id",
+        "query_plan_ref",
+        "query_plan_item_refs",
+        "provider_plan_ref",
+        "provider_plan_record_refs",
+        "provider_route_refs",
+        "retrieval_action_refs",
+        "source_result_identity_set_ref",
+        "selected_candidate_refs",
+        "zero_useful_result",
+        "orientation_refinement_authority_created",
+        "orientation_refinement_limit",
+        "read_authority_created",
+        "evidence_admitted",
+        "support_admitted",
+        "source_obligation_satisfied",
+        "canonical_state",
+        *identity_fields,
+    }
+    if set(safe) != exact_fields:
+        raise SearchOSRuntimeError(
+            "zero-result initial discover wave fields are not exact"
+        )
+    if safe.get("schema_version") != (
+        SEARCHOS_ZERO_RESULT_INITIAL_DISCOVER_WAVE_SCHEMA_VERSION
+    ) or safe.get("owner") != "RunKernel.SearchOSIterativeJudgment":
+        raise SearchOSRuntimeError(
+            "zero-result initial discover wave schema or owner is invalid"
+        )
+    if run_id is not None and safe.get("run_id") != str(run_id):
+        raise SearchOSRuntimeError("zero-result initial wave run scope mismatch")
+    if request_id is not None and safe.get("request_id") != str(request_id):
+        raise SearchOSRuntimeError(
+            "zero-result initial wave request scope mismatch"
+        )
+    item_refs = list(safe.get("query_plan_item_refs") or ())
+    record_refs = list(safe.get("provider_plan_record_refs") or ())
+    route_refs = list(safe.get("provider_route_refs") or ())
+    action_refs = list(safe.get("retrieval_action_refs") or ())
+    if not isinstance(safe.get("query_plan_ref"), Mapping) or not item_refs:
+        raise SearchOSRuntimeError(
+            "zero-result initial wave lacks QueryPlan lineage"
+        )
+    if any(
+        not isinstance(item, Mapping)
+        or item.get("discovery_job_class") != "orientation"
+        for item in item_refs
+    ):
+        raise SearchOSRuntimeError(
+            "zero-result initial wave requires only orientation QueryPlan items"
+        )
+    if (
+        not isinstance(safe.get("provider_plan_ref"), Mapping)
+        or not record_refs
+        or len(record_refs) != len(route_refs)
+        or not action_refs
+        or any(
+            not isinstance(item, Mapping)
+            for item in [*record_refs, *route_refs, *action_refs]
+        )
+    ):
+        raise SearchOSRuntimeError(
+            "zero-result initial wave lacks exact route/action lineage"
+        )
+    identity_set_ref = safe.get("source_result_identity_set_ref")
+    if (
+        not isinstance(identity_set_ref, Mapping)
+        or identity_set_ref.get("source_result_identity_count") != 0
+        or safe.get("selected_candidate_refs") != []
+    ):
+        raise SearchOSRuntimeError(
+            "zero-result initial wave cannot retain selected identities"
+        )
+    for authority_field, expected in {
+        "zero_useful_result": True,
+        "orientation_refinement_authority_created": True,
+        "orientation_refinement_limit": 1,
+        "read_authority_created": False,
+        "evidence_admitted": False,
+        "support_admitted": False,
+        "source_obligation_satisfied": False,
+        "canonical_state": True,
+    }.items():
+        if safe.get(authority_field) != expected:
+            raise SearchOSRuntimeError(
+                "zero-result initial wave field "
+                f"{authority_field} is invalid"
+            )
+    core = {
+        key: deepcopy(value)
+        for key, value in safe.items()
+        if key not in identity_fields
+    }
+    digest = _digest(core)
+    if (
+        safe.get("zero_result_discover_wave_digest") != digest
+        or safe.get("zero_result_discover_wave_id")
+        != f"searchos-zero-result-wave:{digest[:24]}"
+        or safe.get("replay_identity")
+        != f"searchos-zero-result-wave:{digest}"
+    ):
+        raise SearchOSRuntimeError(
+            "zero-result initial discover wave identity is invalid"
+        )
+    return safe
+
+
+def initialize_searchos_clarification_only(
+    *,
+    run_kernel: RunKernel,
+    query_authority: QueryPlanRuntimeAdapter,
+    profile_name: str,
+) -> SearchOSSliceAProductResult:
+    """Install a no-dispatch SearchOS result for explicit user-choice slots."""
+
+    if run_kernel.state.searchos_state:
+        raise SearchOSRuntimeError(
+            "clarification-only SearchOS state is already initialized"
+        )
+    active_slots = _active_slots(
+        run_kernel,
+        query_authority,
+        allow_no_dispatch_planning_snapshot=True,
+    )
+    if not active_slots or any(
+        item.get("clarification_required") is not True
+        for item in active_slots
+    ):
+        raise SearchOSRuntimeError(
+            "clarification-only initialization requires only explicit confirmation slots"
+        )
+    policy = build_searchos_policy_snapshot(
+        run_id=run_kernel.state.run_id,
+        request_id=run_kernel.state.request_id,
+        profile_name=_profile_name(profile_name),
+        navigation_runtime_open=True,
+        existing_gap_recovery_runtime_open=True,
+    )
+    initialize = run_kernel.authorize_searchos_initialization(
+        answer_contract_ref=_active_answer_contract_ref(run_kernel),
+        policy_snapshot=policy,
+        active_slots=active_slots,
+        initial_candidate_state_ref=None,
+    )
+    run_kernel.reduce(
+        Observation.from_action(
+            initialize,
+            observation_type=ObservationType.SEARCHOS_INITIALIZED,
+            status=RunStageStatus.COMPLETED,
+            payload={"searchos_state": initialize.inputs["searchos_state"]},
+        )
+    )
+    state = run_kernel.state.searchos_state
+    clarification_postures = {
+        slot_id: deepcopy(
+            state["slots_by_id"][slot_id].get("clarification_posture")
+            or {}
+        )
+        for slot_id in state["active_slot_ids"]
+    }
+    projection = {
+        "schema_version": "searchos_slice_a_product_runtime_v1",
+        "owner": "RunKernel.SearchOSIterativeJudgment",
+        "revision_1_ref": {},
+        "iteration_candidate_set_refs": [],
+        "append_only_lineage_proof_ref": {},
+        "semantic_handoff_refs": [],
+        "semantic_material_refs": [],
+        "slot_postures": {
+            slot_id: state["slots_by_id"][slot_id]["posture"]
+            for slot_id in state["active_slot_ids"]
+        },
+        "slot_discovery_job_classes": {
+            slot_id: None for slot_id in state["active_slot_ids"]
+        },
+        "slot_binding_postures": {
+            slot_id: state["slots_by_id"][slot_id].get("binding_posture")
+            for slot_id in state["active_slot_ids"]
+        },
+        "slot_clarification_postures": clarification_postures,
+        "clarification_required": True,
+        "clarification_only_no_dispatch": True,
+        "interpretation_binding_refs": [],
+        "directional_candidate_context_support_eligible": False,
+        "read_custody_is_only_support_proposal_eligible_material": True,
+        "provider_calls_attempted": 0,
+        "provider_calls_completed": 0,
+        "searchos_recovery_executed": False,
+    }
+    return SearchOSSliceAProductResult(
+        revision_1={},
+        iteration_candidate_sets=(),
+        semantic_handoffs=(),
+        searchos_semantic_material=(),
+        projection=projection,
+        provider_calls_attempted=0,
+        provider_calls_completed=0,
+        initial_query_plan_items=tuple(
+            item.to_dict() for item in query_authority.plan.items
+        ),
+        initial_identity_refs=(),
+        identity_deltas_by_digest={},
+        candidate_packets=(),
+        reusable_read_custody_by_url={},
+    )
+
+
 def execute_searchos_slice_a_iterative_judgment(
     *,
     run_kernel: RunKernel,
@@ -365,6 +755,58 @@ def execute_searchos_slice_a_iterative_judgment(
     )
     try:
         return _execute_searchos_slice_a_iterative_judgment(**locals())
+    finally:
+        locator_store.discard_all()
+
+
+def execute_searchos_zero_result_orientation(
+    *,
+    run_kernel: RunKernel,
+    zero_result_initial_wave: Mapping[str, Any],
+    query_authority: QueryPlanRuntimeAdapter,
+    discovery_result_store: Any,
+    profile_name: str,
+    ask_model: Callable[..., Any] | None,
+    provider: str | None,
+    model: str | None,
+    base_url: str | None,
+    api_key: str | None,
+    use_reasoning: bool,
+    available_providers: Mapping[str, object],
+    acquisition_transports: AcquisitionTransports | None,
+    execute_followup_discover: FollowupDiscover | None,
+    before_transport: Callable[[], Any] | None = None,
+    measure_context_stage: Callable[..., Any] | None = None,
+    effort: str = "medium",
+) -> SearchOSSliceAProductResult:
+    """Run the same SearchOS worklist after a zero-result orientation wave."""
+
+    locator_store = navigation_runtime.EphemeralNavigationLocatorStore(
+        run_id=run_kernel.state.run_id,
+        request_id=run_kernel.state.request_id,
+    )
+    try:
+        return _execute_searchos_slice_a_iterative_judgment(
+            locator_store=locator_store,
+            run_kernel=run_kernel,
+            candidate_packet={},
+            zero_result_initial_wave=zero_result_initial_wave,
+            query_authority=query_authority,
+            discovery_result_store=discovery_result_store,
+            profile_name=profile_name,
+            ask_model=ask_model,
+            provider=provider,
+            model=model,
+            base_url=base_url,
+            api_key=api_key,
+            use_reasoning=use_reasoning,
+            available_providers=available_providers,
+            acquisition_transports=acquisition_transports,
+            execute_followup_discover=execute_followup_discover,
+            before_transport=before_transport,
+            measure_context_stage=measure_context_stage,
+            effort=effort,
+        )
     finally:
         locator_store.discard_all()
 
@@ -445,14 +887,30 @@ def _execute_searchos_slice_a_iterative_judgment(
     measure_context_stage: Callable[..., Any] | None = None,
     prior_result: SearchOSSliceAProductResult | None = None,
     recovery_cycle_ref: Mapping[str, Any] | None = None,
+    zero_result_initial_wave: Mapping[str, Any] | None = None,
     effort: str = "medium",
 ) -> SearchOSSliceAProductResult:
     """Run the canonical post-first-wave Slice A loop under RunKernel."""
 
     initial_packet = dict(candidate_packet)
-    initial_packet_ref = search_result_candidate_packet_ref_from_packet(initial_packet)
-    if not initial_packet_ref:
-        raise SearchOSRuntimeError("SearchOS Slice A requires revision-1 candidates")
+    zero_result_wave = (
+        validate_searchos_zero_result_initial_discover_wave_v1(
+            zero_result_initial_wave or {},
+            run_id=run_kernel.state.run_id,
+            request_id=run_kernel.state.request_id,
+        )
+        if zero_result_initial_wave
+        else {}
+    )
+    if bool(initial_packet) == bool(zero_result_wave):
+        raise SearchOSRuntimeError(
+            "SearchOS Slice A requires exactly one candidate packet or zero-result wave"
+        )
+    initial_packet_ref = (
+        search_result_candidate_packet_ref_from_packet(initial_packet)
+        if initial_packet
+        else {}
+    )
     initial_query_items = (
         [deepcopy(dict(item)) for item in prior_result.initial_query_plan_items]
         if prior_result is not None
@@ -471,7 +929,7 @@ def _execute_searchos_slice_a_iterative_judgment(
         if prior_result is not None
         else []
     )
-    if prior_result is None:
+    if prior_result is None and initial_packet:
         initial_binding_state = derive_selected_candidate_material_need_bindings(
             run_kernel=run_kernel,
             candidate_packet=initial_packet,
@@ -496,6 +954,7 @@ def _execute_searchos_slice_a_iterative_judgment(
             run_id=run_kernel.state.run_id,
             request_id=run_kernel.state.request_id,
             candidate_packet_ref=initial_packet_ref,
+            zero_result_discover_wave_ref=zero_result_wave,
             initial_query_plan_ref=query_authority.plan.to_ref(),
             initial_query_plan_items=initial_query_items,
             initial_identity_set_ref=discovery_result_store.identity_set_ref(),
@@ -507,6 +966,7 @@ def _execute_searchos_slice_a_iterative_judgment(
                     initial_packet.get("candidate_records") or ()
                 ),
                 "first_admitted_discover_wave_count": 1,
+                "zero_useful_result": not bool(initial_packet),
             },
             overflow_facts={
                 "selection_overflow_count": int(
@@ -522,7 +982,11 @@ def _execute_searchos_slice_a_iterative_judgment(
     )
     revision_ref = searchos_revision_1_candidate_state_ref(revision_1)
     if prior_result is None:
-        active_slots = _active_slots(run_kernel)
+        active_slots = _active_slots(
+            run_kernel,
+            query_authority,
+            allow_no_dispatch_planning_snapshot=bool(zero_result_wave),
+        )
         policy = build_searchos_policy_snapshot(
             run_id=run_kernel.state.run_id,
             request_id=run_kernel.state.request_id,
@@ -531,7 +995,11 @@ def _execute_searchos_slice_a_iterative_judgment(
             existing_gap_recovery_runtime_open=True,
         )
         initialize = run_kernel.authorize_searchos_initialization(
-            answer_contract_ref=revision_1_answer_contract_ref(initial_packet),
+            answer_contract_ref=(
+                revision_1_answer_contract_ref(initial_packet)
+                if initial_packet
+                else _active_answer_contract_ref(run_kernel)
+            ),
             policy_snapshot=policy,
             active_slots=active_slots,
             initial_candidate_state_ref=revision_ref,
@@ -567,8 +1035,11 @@ def _execute_searchos_slice_a_iterative_judgment(
             ]
         ): packet
         for packet in [initial_packet, *prior_packets]
+        if packet
     }
-    candidate_packets = [initial_packet, *prior_packets]
+    candidate_packets = [
+        packet for packet in [initial_packet, *prior_packets] if packet
+    ]
     if prior_packets and prior_packets[0] == initial_packet:
         candidate_packets = prior_packets
     current_binding_state_ref = (
@@ -954,7 +1425,11 @@ def _execute_searchos_slice_a_iterative_judgment(
                     )
                     continue
                 before_identities = list(discovery_result_store.identities())
-                parent_ref = deepcopy(run_kernel.state.searchos_state["current_candidate_state_ref"])
+                parent_ref = deepcopy(
+                    run_kernel.state.searchos_state["slots_by_id"][slot_id][
+                        "current_candidate_state_ref"
+                    ]
+                )
                 wave = dict(
                     execute_followup_discover(
                         decision["followup_query"],
@@ -1018,7 +1493,11 @@ def _execute_searchos_slice_a_iterative_judgment(
                     )
                 )
                 iteration_sets.append(candidate_set)
-                iteration_ref = deepcopy(run_kernel.state.searchos_state["current_candidate_state_ref"])
+                iteration_ref = deepcopy(
+                    run_kernel.state.searchos_state["slots_by_id"][slot_id][
+                        "current_candidate_state_ref"
+                    ]
+                )
                 bindings.extend(wave_bindings)
                 for binding in wave_bindings:
                     binding_candidate_states[binding.binding_id] = iteration_ref
@@ -1032,6 +1511,37 @@ def _execute_searchos_slice_a_iterative_judgment(
                             + str(wave["followup_failure_reason"])
                         )[:240],
                     )
+            elif (
+                decision_action
+                is SearchOSJudgmentAction.PROPOSE_INTERPRETATION_BINDING
+            ):
+                binding_action = (
+                    run_kernel.authorize_searchos_interpretation_binding(
+                        judgment_decision=decision
+                    )
+                )
+                run_kernel.reduce(
+                    Observation.from_action(
+                        binding_action,
+                        observation_type=(
+                            ObservationType.SEARCHOS_INTERPRETATION_BINDING_ADMITTED
+                        ),
+                        status=RunStageStatus.COMPLETED,
+                        payload={
+                            "interpretation_binding": binding_action.inputs[
+                                "interpretation_binding"
+                            ]
+                        },
+                    )
+                )
+            elif (
+                decision_action
+                is SearchOSJudgmentAction.REQUIRE_CLARIFICATION
+            ):
+                # The reducer already installed the terminal, slot-local typed
+                # clarification posture. No provider, query, or prose action is
+                # licensed here.
+                continue
             elif decision_action is (SearchOSJudgmentAction.HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION):
                 handoff_action = run_kernel.authorize_searchos_semantic_handoff(
                     slot_id=slot_id,
@@ -1096,6 +1606,49 @@ def _execute_searchos_slice_a_iterative_judgment(
         "slot_postures": {
             slot_id: final_state["slots_by_id"][slot_id]["posture"] for slot_id in final_state["active_slot_ids"]
         },
+        "slot_discovery_job_classes": {
+            slot_id: final_state["slots_by_id"][slot_id].get(
+                "current_discovery_job_class"
+            )
+            for slot_id in final_state["active_slot_ids"]
+        },
+        "slot_binding_postures": {
+            slot_id: final_state["slots_by_id"][slot_id].get(
+                "binding_posture"
+            )
+            for slot_id in final_state["active_slot_ids"]
+        },
+        "slot_clarification_postures": {
+            slot_id: deepcopy(
+                final_state["slots_by_id"][slot_id].get(
+                    "clarification_posture"
+                )
+                or {}
+            )
+            for slot_id in final_state["active_slot_ids"]
+        },
+        "interpretation_binding_refs": [
+            {
+                "interpretation_binding_id": item.get(
+                    "interpretation_binding_id"
+                ),
+                "interpretation_binding_digest": item.get(
+                    "interpretation_binding_digest"
+                ),
+                "semantic_slot_id": dict(
+                    item.get("semantic_slot_ref") or {}
+                ).get("slot_id"),
+            }
+            for item in final_state.get("interpretation_binding_history")
+            or ()
+            if isinstance(item, Mapping)
+        ],
+        "slot_local_candidate_ancestry_proven": bool(
+            append_only_proof.get("slot_local_candidate_ancestry_proven")
+        ),
+        "peer_slot_cursors_preserved": bool(
+            append_only_proof.get("peer_slot_cursors_preserved")
+        ),
         "directional_candidate_context_support_eligible": False,
         "read_custody_is_only_support_proposal_eligible_material": True,
         "all_passages_iteration_append_count": 0,
@@ -1213,45 +1766,186 @@ def revision_1_answer_contract_ref(
     }
 
 
-def _active_slots(run_kernel: RunKernel) -> list[dict[str, Any]]:
-    snapshot = run_kernel.acquisition_authority_snapshot()
+def _active_answer_contract_ref(run_kernel: RunKernel) -> dict[str, Any]:
+    contract = dict(
+        run_kernel.state.current_answer_contract
+        or run_kernel.state.initial_answer_contract
+        or {}
+    )
+    digest = str(contract.get("accepted_contract_digest") or "")
+    version = str(contract.get("accepted_contract_version") or "")
+    if len(digest) != 64 or not version:
+        raise SearchOSRuntimeError(
+            "SearchOS initialization lacks accepted AnswerContract identity"
+        )
+    return {
+        "answer_contract_id": f"accepted-answer-contract:{digest[:24]}",
+        "answer_contract_digest": digest,
+        "contract_version": version,
+        "source": (
+            "current_answer_contract"
+            if run_kernel.state.current_answer_contract
+            else "initial_answer_contract"
+        ),
+    }
+
+
+def _active_slots(
+    run_kernel: RunKernel,
+    query_authority: QueryPlanRuntimeAdapter,
+    *,
+    allow_no_dispatch_planning_snapshot: bool = False,
+) -> list[dict[str, Any]]:
+    """Join the existing worklist to QueryPlan's exact job/semantic lineage."""
+
+    snapshot = run_kernel.acquisition_authority_snapshot(
+        allow_no_dispatch_planning_snapshot=(
+            allow_no_dispatch_planning_snapshot
+        )
+    )
     components = dict(snapshot.get("components_by_id") or {})
     obligations = dict(snapshot.get("source_obligations_by_id") or {})
-    work_components = list(run_kernel.state.search_work_plan.get("components") or ())
+    work_components = list(
+        run_kernel.state.search_work_plan.get("components") or ()
+    )
+    initial_query_refs = query_authority.plan.execution_item_refs(1)
+    query_refs_by_component: dict[str, list[dict[str, Any]]] = {}
+    for query_ref in initial_query_refs:
+        component_id = str(
+            dict(query_ref.get("component_ref") or {}).get("component_id")
+            or ""
+        )
+        if component_id:
+            query_refs_by_component.setdefault(component_id, []).append(
+                dict(query_ref)
+            )
+    clarification_by_component = {
+        str(dict(item.get("component_ref") or {}).get("component_id") or ""):
+        dict(item)
+        for item in query_authority.plan.search_work_consumption.get(
+            "clarification_required_components"
+        )
+        or ()
+        if isinstance(item, Mapping)
+    }
     slots: list[dict[str, Any]] = []
     for work_component in work_components:
         if not isinstance(work_component, Mapping):
             continue
         component_id = str(work_component.get("component_id") or "")
         component_ref = dict(components.get(component_id) or {})
+        query_refs = query_refs_by_component.get(component_id, [])
+        clarification = clarification_by_component.get(component_id, {})
+        if bool(query_refs) == bool(clarification):
+            raise SearchOSRuntimeError(
+                "component must have exactly one discovery or clarification posture"
+            )
+        if query_refs:
+            job_classes = {
+                str(item.get("discovery_job_class") or "")
+                for item in query_refs
+            }
+            semantic_refs = {
+                _digest(dict(item.get("semantic_slot_ref") or {}))
+                for item in query_refs
+            }
+            if (
+                len(job_classes) != 1
+                or "" in job_classes
+                or len(semantic_refs) != 1
+            ):
+                raise SearchOSRuntimeError(
+                    "component QueryPlan discovery posture is ambiguous"
+                )
+            query_plan_item_ref = dict(query_refs[0])
+            semantic_slot_ref = dict(
+                query_plan_item_ref.get("semantic_slot_ref") or {}
+            )
+            discovery_job_class = next(iter(job_classes))
+            clarification_required = False
+            posture_component_ref = dict(
+                query_plan_item_ref.get("component_ref") or {}
+            )
+        else:
+            query_plan_item_ref = {}
+            semantic_slot_ref = dict(
+                clarification.get("semantic_slot_ref") or {}
+            )
+            discovery_job_class = None
+            clarification_required = True
+            posture_component_ref = dict(
+                clarification.get("component_ref") or {}
+            )
+        identity_fields = (
+            "component_id",
+            "component_revision",
+            "component_digest",
+        )
+        if {
+            key: posture_component_ref.get(key) for key in identity_fields
+        } != {key: component_ref.get(key) for key in identity_fields}:
+            raise SearchOSRuntimeError(
+                "QueryPlan component identity differs from acquisition authority"
+            )
         requirement = work_component.get("requirement_posture")
         if requirement not in {"required", "optional"}:
             accepted_component = next(
                 (
                     dict(item)
-                    for item in (run_kernel.state.initial_answer_contract.get("accepted_answer_component_refs") or ())
-                    if isinstance(item, Mapping) and item.get("component_id") == component_id
+                    for item in (
+                        run_kernel.state.initial_answer_contract.get(
+                            "accepted_answer_component_refs"
+                        )
+                        or ()
+                    )
+                    if isinstance(item, Mapping)
+                    and item.get("component_id") == component_id
                 ),
                 {},
             )
             requirement = accepted_component.get("requirement_posture")
         if requirement not in {"required", "optional"}:
-            raise SearchOSRuntimeError("accepted component required-versus-optional posture is ambiguous")
+            raise SearchOSRuntimeError(
+                "accepted component required-versus-optional posture is ambiguous"
+            )
         for raw_obligation in work_component.get("source_obligations") or ():
-            obligation = dict(raw_obligation) if isinstance(raw_obligation, Mapping) else {}
-            obligation_id = str(obligation.get("obligation_id") or obligation.get("source_obligation_id") or "")
+            obligation = (
+                dict(raw_obligation)
+                if isinstance(raw_obligation, Mapping)
+                else {}
+            )
+            obligation_id = str(
+                obligation.get("obligation_id")
+                or obligation.get("source_obligation_id")
+                or ""
+            )
             obligation_ref = dict(obligations.get(obligation_id) or {})
             strictness = str(obligation.get("strictness") or "")
             if strictness not in {"required", "preferred", "contextual"}:
-                raise SearchOSRuntimeError("source-obligation strictness is ambiguous")
-            slot_requirement = "required" if requirement == "required" and strictness == "required" else "optional"
+                raise SearchOSRuntimeError(
+                    "source-obligation strictness is ambiguous"
+                )
+            slot_requirement = (
+                "required"
+                if requirement == "required" and strictness == "required"
+                else "optional"
+            )
             slots.append(
                 {
-                    "slot_id": (f"search-judgment-read-slot:{component_id}:{obligation_id}"),
+                    "slot_id": (
+                        "search-judgment-read-slot:"
+                        f"{component_id}:{obligation_id}"
+                    ),
                     "component_ref": component_ref,
                     "source_obligation_ref": obligation_ref,
                     "requirement_posture": slot_requirement,
-                    "support_kind": str(obligation.get("kind") or "").strip(),
+                    "support_kind": str(
+                        obligation.get("kind") or ""
+                    ).strip(),
+                    "semantic_slot_ref": semantic_slot_ref,
+                    "query_plan_item_ref": query_plan_item_ref,
+                    "discovery_job_class": discovery_job_class,
+                    "clarification_required": clarification_required,
                 }
             )
     if not slots:
@@ -1583,6 +2277,49 @@ def _build_active_need_projection(
         raise SearchOSRuntimeError(
             "accepted component digest does not match active slot"
         )
+    semantic_slot_ref = dict(slot.get("semantic_slot_ref") or {})
+    if slot.get("legacy_uncertainty_lineage_defaulted") is True:
+        semantic_slot_projection = {
+            "semantic_slot_ref": semantic_slot_ref,
+            "effective_semantic_slot_view": {},
+            "current_discovery_job_class": slot.get(
+                "current_discovery_job_class"
+            ),
+            "current_query_plan_item_ref": dict(
+                slot.get("current_query_plan_item_ref") or {}
+            ),
+            "binding_posture": slot.get("binding_posture"),
+            "interpretation_binding_ref": dict(
+                slot.get("interpretation_binding_ref") or {}
+            ),
+            "clarification_posture": dict(
+                slot.get("clarification_posture") or {}
+            ),
+        }
+    else:
+        effective_slot_view = build_searchos_effective_semantic_slot_view(
+            state=run_kernel.state.searchos_state,
+            semantic_slot_id=str(semantic_slot_ref.get("slot_id") or ""),
+            component_id=component_id,
+            accepted_contract=contract,
+        )
+        semantic_slot_projection = {
+            "semantic_slot_ref": semantic_slot_ref,
+            "effective_semantic_slot_view": effective_slot_view,
+            "current_discovery_job_class": slot.get(
+                "current_discovery_job_class"
+            ),
+            "current_query_plan_item_ref": dict(
+                slot.get("current_query_plan_item_ref") or {}
+            ),
+            "binding_posture": slot.get("binding_posture"),
+            "interpretation_binding_ref": dict(
+                slot.get("interpretation_binding_ref") or {}
+            ),
+            "clarification_posture": dict(
+                slot.get("clarification_posture") or {}
+            ),
+        }
 
     searchos_state = dict(run_kernel.state.searchos_state)
     active_recovery_ref = dict(
@@ -1719,12 +2456,19 @@ def _build_active_need_projection(
                     "requirement_posture"
                 ),
                 "recovery_cycle_ref": active_recovery_ref,
+                **semantic_slot_projection,
             },
             "bounded_transient_projection": True,
             "retention_allowed": False,
         }
 
-    authority = run_kernel.acquisition_authority_snapshot()
+    zero_result_planning = bool(
+        not run_kernel.state.search_executor_handoff_state
+        and slot.get("current_candidate_zero_useful_result") is True
+    )
+    authority = run_kernel.acquisition_authority_snapshot(
+        allow_no_dispatch_planning_snapshot=zero_result_planning
+    )
     if dict(dict(authority.get("components_by_id") or {}).get(component_id) or {}) != component_ref:
         raise SearchOSRuntimeError("active component ref is stale")
     if dict(dict(authority.get("source_obligations_by_id") or {}).get(obligation_id) or {}) != obligation_ref:
@@ -1854,6 +2598,7 @@ def _build_active_need_projection(
         "slot": {
             "slot_ref": slot_ref,
             "requirement_posture": slot.get("requirement_posture"),
+            **semantic_slot_projection,
         },
     }
 
@@ -3045,10 +3790,15 @@ __all__ = [
     "SEARCHOS_JUDGMENT_DECISION_CONTRACT_SCHEMA_VERSION",
     "SEARCHOS_JUDGMENT_SYSTEM_PROMPT",
     "SEARCHOS_SLICE_A_TRACE_KEY",
+    "SEARCHOS_ZERO_RESULT_INITIAL_DISCOVER_WAVE_SCHEMA_VERSION",
     "SearchOSSliceAProductResult",
     "build_bounded_searchos_n1_causal_projection",
     "build_searchos_judgment_decision_contract_v1",
+    "build_searchos_zero_result_initial_discover_wave_v1",
     "build_searchos_required_needs_blocked_fap_projection",
     "build_searchos_semantic_outcomes_by_slot",
     "execute_searchos_slice_a_iterative_judgment",
+    "execute_searchos_zero_result_orientation",
+    "initialize_searchos_clarification_only",
+    "validate_searchos_zero_result_initial_discover_wave_v1",
 ]
