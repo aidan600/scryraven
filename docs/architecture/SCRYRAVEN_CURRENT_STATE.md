@@ -5,7 +5,7 @@ Authority: canonical:current-installed-state
 Default-read: yes
 Applies-to: current ordinary product implementation and explicit nonproofs
 Does-not-authorize: live calls, arbitrary-query claims, roadmap execution, or closed-surface changes
-Runtime-audit-through: 96413c9a1f901dc191ecc94e6330014841ee4dda
+Runtime-audit-through: 5db9ae8e14ba3858ddd1c84abea8440357a53675
 Update-trigger: merged change to installed product behavior, supported boundaries, evidence classification, or explicit nonproofs
 
 ## Purpose And Source-Of-Truth Rule
@@ -600,23 +600,39 @@ model may author a bounded query only for `PROPOSE_FOLLOWUP_QUERY`; QueryPlan
 still independently admits or rejects that exact text and its legal job
 transition. The contract is not canonical or persisted.
 
-Each active slot carries its exact QueryPlan item, component, semantic slot, and
-current job. Slot-local legal transitions are `orientation -> orientation`
-once, `standard_discovery -> standard_discovery | deep_discovery`, and
-`deep_discovery -> deep_discovery`. Peer component cursors never reset when one
-slot refines, binds, clarifies, reads, or stops. A true user-confirmation slot
-starts and remains clarification-required without a provider call; stable and
-factually orientable peers continue in the same worklist.
+Each physical source-obligation slot carries its exact QueryPlan item,
+component, plural semantic-obligation references, and current job. One physical
+discovery query may serve multiple semantic obligations without multiplying
+provider work. All accepted semantic slots remain represented; all material
+unresolved factual slots independently drive orientation, while stable peers
+remain preserved without becoming extra discovery targets. Slot-local legal
+transitions are `orientation -> orientation` once, `standard_discovery ->
+standard_discovery | deep_discovery`, and `deep_discovery -> deep_discovery`.
+Peer component cursors never reset when one physical slot refines, reads, or
+stops, and sibling semantic obligations never disappear when another binds or
+clarifies. A true user-confirmation slot starts and remains
+clarification-required without suppressing dispatch for factually orientable
+peers in the same component or worklist.
 
-For an eligible unresolved factual slot, SearchJudgment may propose one exact
-candidate-backed binding. RunKernel builds, validates, and append-only admits
+The canonical `semantic_obligations_by_id` map, keyed by component and accepted
+semantic-slot identity, is the runtime semantic-cardinality authority. Physical
+SearchOS slots contain plural obligation IDs only; no singular compatibility
+field remains an authority. SearchWorkPlan and QueryProduction remain temporary
+Phase-3 carriers and do not override that map.
+
+For an eligible unresolved factual semantic obligation, SearchJudgment may
+propose one exact candidate-backed binding. The authorized request exposes all
+eligible semantic-slot refs, while the proposal must select exactly one.
+RunKernel builds, validates, and append-only admits
 `searchos_interpretation_binding_v1`, with exact replay idempotence and
-conflicting second binding rejection. The accepted AnswerContract remains
-byte-stable. `searchos_effective_semantic_slot_view_v1` combines the accepted
-slot and admitted binding only for downstream acquisition planning. A binding
-cannot create or change a component, semantic-slot ownership, source
-obligation, evidence, support, coverage, satisfaction, citation eligibility,
-Sufficiency, or answer authority.
+conflicting second binding rejection per semantic obligation. Clarification
+likewise names one exact eligible semantic slot and leaves its siblings
+unchanged. The accepted AnswerContract remains byte-stable.
+`searchos_effective_semantic_slot_view_v1` combines each accepted slot and its
+own admitted binding only for downstream acquisition planning. A binding cannot
+create or change a component, semantic-slot ownership, source obligation,
+evidence, support, coverage, satisfaction, citation eligibility, Sufficiency,
+or answer authority.
 
 Follow-up query text and job class are admitted unchanged through QueryPlan and
 ordinary DISCOVER routing. Each result wave enters one append-only
@@ -659,7 +675,11 @@ Analyst, component D-prime, and RunKernel admission receiver for N=1 through the
 accepted component envelope. Iterative and READ material is never appended to
 `all_passages` or consumed by a second semantic lane. Candidate context and
 custody alone remain non-support; Analyst proposes, D-prime validates, and
-RunKernel admits.
+RunKernel admits. A component-wide semantic handoff gate requires every relevant
+material semantic obligation to be satisfied: stable or already resolved slots
+remain satisfied, an unresolved factual slot requires its own admitted binding,
+and pending or confirmation-required clarification blocks handoff. The handoff
+artifact preserves all semantic-obligation refs and per-slot effective views.
 
 `searchos_slice_a_readiness_v1` joins every slot to its judgment, candidate,
 custody, handoff, Analyst, D-prime, and RunKernel admission lineage. Every

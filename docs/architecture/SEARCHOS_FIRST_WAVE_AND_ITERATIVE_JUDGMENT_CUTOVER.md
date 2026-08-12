@@ -5,7 +5,7 @@ Authority: canonical:searchos-slice-a-installed-runtime
 Default-read: no
 Applies-to: accepted-contract-derived QueryPlan discovery jobs, ordinary initial and iterative SearchOS judgment, factual binding, clarification, governed READ, follow-up DISCOVER, semantic handoff, and Slice A readiness
 Does-not-authorize: live calls, direct known-URL READ, DISCOVER-content custody, recursive navigation, comprehensive recovery, final stopping, provider-policy calibration, or FAP/Author redesign
-Verified-against-runtime: 96413c9a1f901dc191ecc94e6330014841ee4dda
+Verified-against-runtime: 5db9ae8e14ba3858ddd1c84abea8440357a53675
 Update-trigger: merged change to the ordinary SearchOS Slice A state machine, candidate continuity, material-entry boundary, semantic receiver, or readiness terminal
 
 ## Responsibility And Product Boundary
@@ -19,7 +19,7 @@ RunKernel. The ordinary product path is:
 ```text
 accepted AnswerContract
 -> SearchWorkPlan
--> QueryPlan job + component/semantic-slot lineage
+-> QueryPlan job + component/plural-semantic-slot lineage
 -> first DISCOVER wave, or typed no-dispatch clarification
 -> immutable SearchOS revision 1
 -> RunKernel-owned SearchJudgment
@@ -51,9 +51,20 @@ Initial posture is derived only from the accepted AnswerContract. Stable slots
 start `standard_discovery`; unresolved material factual slots of the supported
 identity/currentness/document-lineage kinds start `orientation`; and slots with
 `user_confirmation_required=true` create typed clarification with no QueryPlan
-dispatch item. `deep_discovery` is an iterative escalation, not an initial
-Planner choice. Each item binds the exact accepted component and semantic slot.
-No job token names a provider.
+dispatch item of their own. `deep_discovery` is an iterative escalation, not an
+initial Planner choice. Each item binds the exact accepted component and one or
+more semantic-slot refs. One physical query may serve multiple semantic
+obligations; this sharing does not collapse their identities or multiply
+provider work. No job token names a provider.
+
+SearchOS canonical state preserves every accepted semantic slot as a distinct
+obligation keyed by component and slot identity. Physical component/source
+slots carry plural obligation IDs and current-discovery subsets. All material
+unresolved factual obligations independently drive orientation; stable peers
+remain represented but do not add duplicate discovery work, and a
+confirmation-required peer does not suppress a factual peer's dispatch. The
+canonical plural map is the only semantic-cardinality authority; no singular
+physical-slot compatibility field remains authoritative.
 
 `core.routing` remains the sole provider owner. Orientation maps through the
 existing lightweight-disambiguation qualifier, standard work through ordinary
@@ -103,8 +114,10 @@ and supplies an action and bounded reason. A non-semantic-handoff action after
 READ must assess every exact current custody ref as `read_insufficient` with
 the three-field assessment shape. Semantic handoff carries a nonempty exact
 custody selection and no assessments. Factual binding carries only the exact
-five-field proposal and current basis refs. Clarification carries no query,
-provider, evidence, support, or contract-mutation payload. Follow-up query text
+five-field proposal, one exact member of the plural eligible semantic-slot-ref
+set, and current basis refs. Clarification likewise names one exact eligible
+semantic slot and carries no query, provider, evidence, support, or
+contract-mutation payload. Follow-up query text
 and job class are authored only by `PROPOSE_FOLLOWUP_QUERY` and remain
 independently validated by QueryPlan. The decision contract, like the bounded
 material and prompt, is a transient model-call aid; only non-content digests
@@ -117,8 +130,9 @@ may cross the durable boundary.
 
 `PROPOSE_INTERPRETATION_BINDING` is legal only for an unresolved material
 factual slot already declared in the accepted AnswerContract, with no user
-confirmation requirement. The proposal must select one declared candidate and
-name exact current candidate-use or READ-custody basis refs. RunKernel alone
+confirmation requirement. The proposal must select exactly one eligible
+semantic-slot ref, one candidate declared by that slot, and exact current
+candidate-use or READ-custody basis refs. RunKernel alone
 builds and append-only admits `searchos_interpretation_binding_v1`. Exact replay
 is a no-op; identity collision, conflicting second binding, stale basis, changed
 component or semantic-slot scope, new component/source-obligation scope, and
@@ -127,8 +141,10 @@ evidence/support/coverage/satisfaction/citation claims fail closed.
 The accepted AnswerContract remains immutable. The
 `searchos_effective_semantic_slot_view_v1` joins accepted meaning and an
 admitted binding only for acquisition planning; it does not mutate canonical
-requested meaning or create downstream truth authority. Semantic handoff is
-illegal while required binding remains unresolved.
+requested meaning or create downstream truth authority. Binding one semantic
+obligation leaves every sibling obligation unchanged. Semantic handoff is
+illegal while any relevant material obligation still requires a binding or
+clarification.
 
 `REQUIRE_CLARIFICATION` records one component/semantic-slot-local terminal
 posture. An initially confirmation-required slot reaches the same typed posture
@@ -298,6 +314,14 @@ semantic entry. It binds current READ custody to exact accepted component and
 source-obligation slots. The accepted AnswerContract and SearchWork graph—not
 SearchJudgment—own component identity, dependencies, and required/optional
 posture.
+
+Before admission, RunKernel recomputes a component-wide semantic gate from the
+canonical obligation map. Stable/resolved obligations pass; an unresolved
+factual obligation passes only with its own admitted binding; pending or
+confirmation-required obligations block. The handoff must preserve the exact
+complete obligation-ref set, every per-slot effective view, and that gate. A
+model decision or stale artifact cannot omit an unresolved sibling to make a
+component appear ready.
 
 The bounded component receiver accepts N=1 through the admitted component
 envelope:

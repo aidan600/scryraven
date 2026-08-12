@@ -480,7 +480,8 @@ the bounded representative product proof owned by that phase.
 ### Installed versus selected target
 
 Phases 1 and 2 are installed at runtime/test checkpoint
-`96413c9a1f901dc191ecc94e6330014841ee4dda`; Phase 3 remains the selected next
+`5db9ae8e14ba3858ddd1c84abea8440357a53675`; this includes the focused
+multi-slot semantic-cardinality repair. Phase 3 remains the selected next
 target. Ordinary initial and iterative acquisition no longer executes
 `ScoutDisambiguation`, `PlannerRevision`, or the routine initial
 ContractAmendment return lane. `SearchWorkPlan` and `QueryProduction` remain
@@ -580,10 +581,12 @@ AnswerContract
 ```
 
 Phase 2 derives exact provider-neutral jobs only from the accepted
-AnswerContract: stable components become `standard_discovery`, unresolved
-factual components without confirmation become `orientation`, and explicit
-confirmation-required ambiguity yields typed clarification with zero dispatch.
-The job class and component/semantic lineage survive QueryPlan, ProviderPlan,
+AnswerContract: stable semantic slots support `standard_discovery`, all material
+unresolved factual slots without confirmation drive `orientation`, and explicit
+confirmation-required ambiguity yields typed slot-local clarification without
+its own dispatch. One physical QueryPlan job may serve multiple same-component
+semantic obligations while preserving all of their identities. The job class
+and plural component/semantic lineage survive QueryPlan, ProviderPlan,
 homogeneous scheduler batches, dispatch, observation, and slot-local judgment.
 
 One SearchOS worklist and one SearchJudgment owner now govern initial and
@@ -596,7 +599,11 @@ append-only, replay-safe, component-scoped, and non-evidentiary; its effective
 view feeds the existing semantic handoff without mutating the accepted base
 contract. A zero-result orientation wave receives exactly one bounded
 refinement opportunity. Component/slot cursors prevent unrelated progress from
-masking an unresolved slot.
+masking an unresolved slot. Binding and clarification select one exact semantic
+slot, and a component-wide gate blocks semantic handoff while any relevant
+material slot remains unresolved or confirmation-required. The canonical plural
+obligation map is authoritative; no singular compatibility field competes with
+it. SearchWorkPlan and QueryProduction remain deferred Phase-3 carriers.
 
 The ordinary `ScoutDisambiguation`, `PlannerRevision`, routine initial
 `PlannerRevision` ContractAmendment lane, and their recon convergence execution

@@ -94,7 +94,8 @@ separate ambiguity pipelines.
 - **AnswerContract** owns canonical requested obligations, constraints, stable
   slots, and explicit unresolved factual slots.
 - **QueryPlan** is the sole exact executable-query identity and carries the
-  provider-neutral discovery job class plus component/slot lineage.
+  provider-neutral discovery job class plus component and plural semantic-slot
+  lineage. One physical query may serve multiple semantic obligations.
 - **`core.routing`** selects provider and operation.
 - **SearchJudgment** is the unified acquisition judgment after `DISCOVER` or
   `READ`.
@@ -113,7 +114,10 @@ author an answer.
 
 The runtime distinguishes clear semantic intent, acquisition uncertainty,
 factually resolvable identity/currentness/version/terminology uncertainty, true
-user-intent ambiguity, and mixed multi-component uncertainty.
+user-intent ambiguity, and mixed uncertainty both within one component and
+across multiple components. Every accepted semantic slot remains a distinct
+obligation keyed by component and semantic-slot identity; semantic cardinality
+is not inferred from the number of physical discovery jobs.
 
 The bounded binding map is `entity -> identity_alias`,
 `variant|time_period -> currentness_version`,
@@ -136,6 +140,12 @@ last mapping does not turn unspecified stable meaning into uncertainty.
 - In mixed requests, stable components may discover/read while factually
   unresolved components orient/bind/discover and materially ambiguous
   components request clarification, all within one component worklist.
+- Within one component, all material unresolved factual slots independently
+  remain active even when one physical orientation query serves them together.
+  Binding or clarification targets exactly one slot. A component may hand off
+  only after every relevant material slot is stable/resolved or has its own
+  admitted factual binding; any pending or confirmation-required slot blocks
+  that handoff without erasing or suppressing its peers.
 
 ### Installed provider-neutral job direction
 
@@ -152,6 +162,12 @@ or economics policy is encoded in QueryPlan. Later comparative calibration may
 change code-owned mapping without changing the job vocabulary. `READ` remains
 a separate known-URL capability and may assist orientation without
 automatically becoming semantic support.
+
+The canonical SearchOS state owns plural semantic obligations independently of
+physical component/source slots. QueryPlan items and SearchOS physical slots
+carry plural references; no singular compatibility field is an alternate
+semantic authority. SearchWorkPlan and QueryProduction remain Phase-3 carriers
+and do not change that installed ownership.
 
 Phase-3 carrier consolidation and product proof are owned by the [Current
 Roadmap](../roadmap/CURRENT_ROADMAP.md). Nothing in this section authorizes a

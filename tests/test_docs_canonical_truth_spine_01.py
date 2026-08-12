@@ -88,11 +88,12 @@ ACQUISITION_CONTROL_RUNTIME_SHA = "48a309124764d813cf27081bf5871d5a9612db79"  # 
 INITIAL_DISCOVERY_RETIREMENT_RUNTIME_SHA = ACQUISITION_CONTROL_RUNTIME_SHA
 DISCOVER_HANDOFF_RUNTIME_SHA = "6fbca602afac5a00bb6bafa2a6888b6ec31d5065"  # pragma: allowlist secret
 UNIFIED_SEARCHOS_RUNTIME_SHA = "96413c9a1f901dc191ecc94e6330014841ee4dda"  # pragma: allowlist secret
+MULTISLOT_SEARCHOS_RUNTIME_SHA = "5db9ae8e14ba3858ddd1c84abea8440357a53675"  # pragma: allowlist secret
 QUERY_CONVERGENCE_RUNTIME_SHA = "2d346a73251f28a1187fb2958028db51117bf0c0"  # pragma: allowlist secret
 READ_SOURCE_CUSTODY_RUNTIME_SHA = "39573c29bc2394e798e507fc795d70197da20f10"  # pragma: allowlist secret
-SEARCHOS_SLICE_A_RUNTIME_SHA = "4431ff46ed1e8367b124f596ccc04e90040217b6"  # pragma: allowlist secret
+SEARCHOS_SLICE_A_RUNTIME_SHA = MULTISLOT_SEARCHOS_RUNTIME_SHA
 SEARCHOS_RECOVERY_RUNTIME_SHA = "540141acaaaf041bda303edd62211dd6a11958bc"  # pragma: allowlist secret
-CURRENT_STATE_RUNTIME_SHA = UNIFIED_SEARCHOS_RUNTIME_SHA
+CURRENT_STATE_RUNTIME_SHA = MULTISLOT_SEARCHOS_RUNTIME_SHA
 HISTORICAL_SEARCH_EXECUTOR_RECORD = (
     "Historical merge-stable SearchExecutor record: PR #330 / "
     "AG-SEARCH-EXECUTOR-HANDOFF-01; handoff consumes current_answer_contract "
@@ -759,7 +760,9 @@ def test_discovery_retirement_and_candidate_handoff_truth_is_consistent() -> Non
 
 def test_searchos_slice_a_is_installed_and_navigation_remains_active() -> None:
     current = _collapsed(CURRENT_STATE)
+    operating_model = _collapsed(SEARCHOS)
     roadmap = _collapsed(ROADMAP)
+    slice_a = _collapsed(SEARCHOS_SLICE_A)
     brief = _collapsed(QUERY_CONVERGENCE_BRIEF)
 
     assert QUERY_CONVERGENCE_BRIEF.is_file()
@@ -828,6 +831,15 @@ def test_searchos_slice_a_is_installed_and_navigation_remains_active() -> None:
     assert "Phase 2 - Unified iterative acquisition" in roadmap
     assert "Phase 3 - Carrier consolidation + product proof" in roadmap
     assert "SEARCHOS-OPERATING-MODEL.md" not in _read(QUERY_CONVERGENCE_BRIEF)
+
+    assert f"Verified-against-runtime: {SEARCHOS_SLICE_A_RUNTIME_SHA}" in slice_a
+    assert "One physical query may serve multiple semantic obligations" in slice_a
+    assert "canonical plural map is the only semantic-cardinality authority" in slice_a
+    assert "component-wide semantic gate" in slice_a
+    assert "no singular compatibility field remains an authority" in current
+    assert "One physical query may serve multiple semantic obligations" in operating_model
+    assert "focused multi-slot semantic-cardinality repair" in roadmap
+    assert "SearchWorkPlan and QueryProduction remain deferred Phase-3 carriers" in roadmap
 
 
 def test_provider_offerings_census_is_current_complete_and_records_installed_routing() -> None:
