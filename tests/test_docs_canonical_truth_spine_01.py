@@ -87,11 +87,12 @@ PROVIDER_ROUTING_RUNTIME_SHA = "193c5caabe1f97da534f0e601d410acb98d3cdea"  # pra
 ACQUISITION_CONTROL_RUNTIME_SHA = "48a309124764d813cf27081bf5871d5a9612db79"  # pragma: allowlist secret
 INITIAL_DISCOVERY_RETIREMENT_RUNTIME_SHA = ACQUISITION_CONTROL_RUNTIME_SHA
 DISCOVER_HANDOFF_RUNTIME_SHA = "6fbca602afac5a00bb6bafa2a6888b6ec31d5065"  # pragma: allowlist secret
+UNIFIED_SEARCHOS_RUNTIME_SHA = "96413c9a1f901dc191ecc94e6330014841ee4dda"  # pragma: allowlist secret
 QUERY_CONVERGENCE_RUNTIME_SHA = "2d346a73251f28a1187fb2958028db51117bf0c0"  # pragma: allowlist secret
 READ_SOURCE_CUSTODY_RUNTIME_SHA = "39573c29bc2394e798e507fc795d70197da20f10"  # pragma: allowlist secret
 SEARCHOS_SLICE_A_RUNTIME_SHA = "4431ff46ed1e8367b124f596ccc04e90040217b6"  # pragma: allowlist secret
 SEARCHOS_RECOVERY_RUNTIME_SHA = "540141acaaaf041bda303edd62211dd6a11958bc"  # pragma: allowlist secret
-CURRENT_STATE_RUNTIME_SHA = "0625522da177cadd46dc22fd5c1c6cb632004852"  # pragma: allowlist secret
+CURRENT_STATE_RUNTIME_SHA = UNIFIED_SEARCHOS_RUNTIME_SHA
 HISTORICAL_SEARCH_EXECUTOR_RECORD = (
     "Historical merge-stable SearchExecutor record: PR #330 / "
     "AG-SEARCH-EXECUTOR-HANDOFF-01; handoff consumes current_answer_contract "
@@ -220,7 +221,7 @@ def test_searchos_target_owner_is_unique_routed_and_nonactivating() -> None:
 
     assert [path for path in markdown if authority in _read(path)] == [SEARCHOS]
     for phrase in (
-        "Status: current target architecture",
+        "Status: current architecture; unified front-half Phases 1-2 installed",
         "Default-read: no",
         "SearchOS architecture and SearchOS-facing provider, acquisition, navigation, and recovery work",
         "Does-not-authorize: implementation, live calls, provider claims, or activation of planned capabilities",
@@ -238,9 +239,9 @@ def test_searchos_target_owner_is_unique_routed_and_nonactivating() -> None:
         "`DISCOVER job_class=orientation`",
         "`DISCOVER job_class=standard_discovery`",
         "`DISCOVER job_class=deep_discovery`",
-        "`RECON` and `SEARCH` may remain installed implementation terms during migration",
-        "They are not separate durable target pipelines or competing target query authorities",
-        "orientation is represented by `DISCOVER job_class=orientation` inside the unified acquisition loop",
+        "`RECON` and `SEARCH` may remain compatibility implementation terms",
+        "they are not separate durable pipelines or competing query authorities",
+        "Cheap orientation is represented only by `DISCOVER job_class=orientation` inside the unified acquisition loop",
         "Linkup Fetch and Tavily Extract are peer implementations",
         "Adaptive retrieval is approved but uninstalled",
         "The provider owns DNS",
@@ -277,7 +278,7 @@ def test_searchos_recovery_direction_is_durable_routed_and_predecessor_is_histor
     assert SEARCHOS_SLICE_A.name in guidance
     assert SEARCHOS_RECOVERY_DIRECTION.name in guidance
     assert SEARCHOS_ITERATIVE_DIRECTION_ACTIVE.name not in guidance
-    assert "Installed first-wave and iterative SearchJudgment" in guidance
+    assert "Installed QueryPlan job classes, first-wave and iterative SearchJudgment" in guidance
     assert "Installed Boundary A existing-gap recovery" in guidance
 
     assert SEARCHOS_SLICE_A.name in operating_model
@@ -327,7 +328,7 @@ def test_active_technical_debt_register_is_unique_routed_and_nonactivating() -> 
     for phrase in (
         "Status: current",
         "Default-read: no",
-        "Next-ID: TD-0003",
+        "Next-ID: TD-0004",
         "canonical active-only inventory",
         "sole owner of priority and phase order",
         "IDs are monotonic and never reused",
@@ -465,7 +466,7 @@ def test_structured_route_qualification_is_current_and_narrow() -> None:
 
     assert "No route-qualification repair was performed." not in current
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
-    assert "Active Decision Gate: Unified SearchOS Front-Half Rebaseline" in roadmap
+    assert "Active Decision Gate: SearchOS Carrier Consolidation + Product Proof" in roadmap
 
 
 def test_current_state_has_all_installed_capability_markers() -> None:
@@ -531,7 +532,7 @@ def test_mode_policy_recovery_custody_is_installed_and_narrow() -> None:
     assert "Completed Repair: Mode-Policy Recovery Authority Containment" in roadmap
     assert "Completed Repair: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01" in roadmap
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
-    assert "Active Decision Gate: Unified SearchOS Front-Half Rebaseline" in roadmap
+    assert "Active Decision Gate: SearchOS Carrier Consolidation + Product Proof" in roadmap
     assert "No live recovery" in roadmap
 
 
@@ -545,7 +546,7 @@ def test_provider_capability_routing_owner_is_current_installed_and_narrow() -> 
     for phrase in (
         "Status: current",
         "Default-read: yes",
-        f"Verified-against-runtime: {DISCOVER_HANDOFF_RUNTIME_SHA}",
+        f"Verified-against-runtime: {UNIFIED_SEARCHOS_RUNTIME_SHA}",
         "`core.routing` is the sole provider-capability policy owner",
         "exactly one selected provider or blocks with zero transport",
         "Fallback candidates remain descriptive",
@@ -590,7 +591,7 @@ def test_acquisition_runtime_convergence_truth_is_consistent_across_spine() -> N
     assert f"Verified-against-runtime: {READ_SOURCE_CUSTODY_RUNTIME_SHA}" in _read(
         ACQUISITION_CONTROL
     )
-    assert f"Verified-against-runtime: {DISCOVER_HANDOFF_RUNTIME_SHA}" in _read(
+    assert f"Verified-against-runtime: {UNIFIED_SEARCHOS_RUNTIME_SHA}" in _read(
         PROVIDER_ROUTING
     )
     current_owner = _read(CURRENT_STATE)
@@ -648,7 +649,7 @@ def test_acquisition_runtime_convergence_truth_is_consistent_across_spine() -> N
 
     assert roadmap.count("## Active Next:") == 0
     assert roadmap.count("## Blocked Next:") == 0
-    assert "## Active Decision Gate: Unified SearchOS Front-Half Rebaseline" in roadmap
+    assert "## Active Decision Gate: SearchOS Carrier Consolidation + Product Proof" in roadmap
     for stale in (
         "## Active Next: KNOWN-URL-READ-FOUNDATION-01",
         "### TAVILY-EXTRACT-AND-MAP-ADAPTERS-01",
@@ -738,7 +739,9 @@ def test_discovery_retirement_and_candidate_handoff_truth_is_consistent() -> Non
     navigation_index = roadmap_folded.index(
         "## completed build: searchos-one-hop-navigation-product-activation-01"
     )
-    active_index = roadmap_folded.index("## active decision gate: unified searchos front-half rebaseline")
+    active_index = roadmap_folded.index(
+        "## active decision gate: searchos carrier consolidation + product proof"
+    )
     assert (
         handoff_index
         < query_index
@@ -766,9 +769,11 @@ def test_searchos_slice_a_is_installed_and_navigation_remains_active() -> None:
         "SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01",
         "SearchPlanner proposals remain passive",
         "Ordinary initial semantic planning uses the selected fast-model SearchPlanner",
-        "the model owns question interpretation, warranted one-to-five component decomposition",
+        "The model authors only the discriminated `direct_simple | components` semantic proposal",
         "DeterministicSearchPlannerAdapter` is an explicit validation-only fixture",
-        "The typed `search_planner_adapter`, `scout_disambiguation_adapter`, and `search_planner_revision_adapter` `RunDeps` seams are installed",
+        "The typed `search_planner_adapter` `RunDeps` seam is the ordinary initial-model injection point",
+        "Retained Scout and PlannerRevision dependency fields and modules are legacy/evaluation compatibility only",
+        "ordinary `run_pipeline()` no longer reads them or accepts them in initial convergence",
         "Invalid JSON, schema, component/query structure, selected-model configuration, or model-call failure stops before proposal acceptance",
         "Future large-document support must enter this model boundary through bounded safe supplied-context references or summaries",
         "A transient, non-retained call wrapper supplies the current run's configured local base URL, OpenRouter key, `CostAccumulator`, and `search_planner` cost phase",
@@ -781,9 +786,10 @@ def test_searchos_slice_a_is_installed_and_navigation_remains_active() -> None:
         "two admitted initial candidates",
         "one immediate dispatch per accepted required component",
         "legacy global low/medium/high `2 / 2 / 3` values are not preserved",
-        "Scout reports remain non-evidence",
-        "required truthful-targeting ambiguity fails closed",
-        "contractual revision reaches planning only after existing amendment admission and application",
+        "The sparse ordinary language cannot author recon posture, dimensions, queries, Scout invocation, or PlannerRevision invocation",
+        "The ordinary convergence API has no Scout or PlannerRevision adapter inputs",
+        "initial planning has no routine PlannerRevision ContractAmendment caller or fallback",
+        "Search-assisted factual resolution now belongs solely to QueryPlan job lineage",
         "No live provider, model, search, recon, fetch/read, or retrieval call was made",
     ):
         assert phrase in current
@@ -812,12 +818,12 @@ def test_searchos_slice_a_is_installed_and_navigation_remains_active() -> None:
     ):
         assert phrase in brief
 
-    assert "Implemented Build: SEARCHOS-REQUIRED-SCOUT-ORDINARY-COMPOSITION-01" in roadmap
+    assert "Superseded Build: SEARCHOS-REQUIRED-SCOUT-ORDINARY-COMPOSITION-01" in roadmap
     assert "Completed Build: SEARCHOS-QUERY-STRATEGY-AND-RECON-CONVERGENCE-01" in roadmap
     assert "Completed Build: SEARCHOS-READ-SOURCE-AND-CUSTODY-01" in roadmap
     assert "Completed Build: SEARCHOS-FIRST-WAVE-AND-ITERATIVE-JUDGMENT-CUTOVER-01" in roadmap
     assert "Completed Build: SEARCHOS-ONE-HOP-NAVIGATION-PRODUCT-ACTIVATION-01" in roadmap
-    assert "## Active Decision Gate: Unified SearchOS Front-Half Rebaseline" in roadmap
+    assert "## Active Decision Gate: SearchOS Carrier Consolidation + Product Proof" in roadmap
     assert "Phase 1 - Sparse uncertainty-aware planning" in roadmap
     assert "Phase 2 - Unified iterative acquisition" in roadmap
     assert "Phase 3 - Carrier consolidation + product proof" in roadmap
@@ -906,7 +912,7 @@ def test_provider_offerings_census_is_current_complete_and_records_installed_rou
     roadmap = _read(ROADMAP)
     assert roadmap.count("## Active Next:") == 0
     assert roadmap.count("## Blocked Next:") == 0
-    assert "## Active Decision Gate: Unified SearchOS Front-Half Rebaseline" in roadmap
+    assert "## Active Decision Gate: SearchOS Carrier Consolidation + Product Proof" in roadmap
     assert "## Completed Repair: PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01" in roadmap
     assert "Linkup `standard/searchResults` first" in roadmap
 
@@ -935,7 +941,9 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
     acquisition_control = roadmap.index("## Completed Build: RUNKERNEL-ACQUISITION-CONTROL-FOUNDATION-01")
     discovery_retirement = roadmap.index("## Completed Build: INITIAL-DISCOVERY-SELECTIVE-FETCH-RETIREMENT-01")
     candidate_handoff = roadmap.index("## Completed Build: DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01")
-    convergence = roadmap.index("## Active Decision Gate: Unified SearchOS Front-Half Rebaseline")
+    convergence = roadmap.index(
+        "## Active Decision Gate: SearchOS Carrier Consolidation + Product Proof"
+    )
     assert (
         s0
         < s1
@@ -990,7 +998,7 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
             assert marker not in roadmap
 
 
-def test_unified_searchos_rebaseline_gate_and_searchplanner_record_are_exclusive() -> None:
+def test_searchos_phase3_gate_and_searchplanner_record_are_exclusive() -> None:
     roadmap_raw = _read(ROADMAP)
     roadmap = _collapsed(ROADMAP)
     tracker = _collapsed(SEARCHPLANNER_TRACKER)
@@ -1001,7 +1009,9 @@ def test_unified_searchos_rebaseline_gate_and_searchplanner_record_are_exclusive
         roadmap_raw,
         re.MULTILINE,
     )
-    assert active_gates == ["## Active Decision Gate: Unified SearchOS Front-Half Rebaseline"]
+    assert active_gates == [
+        "## Active Decision Gate: SearchOS Carrier Consolidation + Product Proof"
+    ]
     assert "Runtime-audit-through:" not in roadmap
     assert "Verified-against-runtime:" not in roadmap
 
@@ -1015,11 +1025,15 @@ def test_unified_searchos_rebaseline_gate_and_searchplanner_record_are_exclusive
 
     for phrase in (
         "Option C modified into a unified iterative loop",
-        "Current `main` may still contain and execute",
+        "Phases 1 and 2 are installed at runtime/test checkpoint",
+        "Phase 3 remains the selected next target",
+        "Ordinary initial and iterative acquisition no longer executes",
+        "`SearchWorkPlan` and `QueryProduction` remain temporary ordinary compatibility carriers pending Phase 3",
         "one RunKernel component worklist",
-        "direct_simple | sparse components",
-        "Phase 2 - Unified iterative acquisition",
-        "93-96% invariant",
+        "QueryPlan exact query + provider-neutral job class + component/slot lineage",
+        "InterpretationBinding, clarification, semantic handoff, or honest blocker",
+        "direct_simple | components",
+        "Installed Phase 2 - Unified iterative acquisition",
         "supported-product evidence",
         "existing front- or back-half localization",
         "smallest owning repair",
@@ -1094,10 +1108,10 @@ def test_semantic_scout_and_provider_synthesis_retirement_is_current_and_narrow(
     assert roadmap.count("## Active Next:") == 0
     assert roadmap.count("## Blocked Next:") == 0
     assert "## Completed Repair: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01" in roadmap
-    assert "## Active Decision Gate: Unified SearchOS Front-Half Rebaseline" in roadmap
+    assert "## Active Decision Gate: SearchOS Carrier Consolidation + Product Proof" in roadmap
     assert "## Active Next: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01" not in roadmap
     assert roadmap.index("## Completed Repair: PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01") < roadmap.index(
-        "## Active Decision Gate: Unified SearchOS Front-Half Rebaseline"
+        "## Active Decision Gate: SearchOS Carrier Consolidation + Product Proof"
     )
     for noninstalled in (
         "provider-failure retry",
@@ -1132,7 +1146,7 @@ def test_legacy_economist_ordinary_execution_retirement_is_current_and_narrow() 
     assert "Completed Repair: Mode-Policy Recovery Authority Containment" in roadmap
     assert "Completed Repair: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01" in roadmap
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
-    assert "Active Decision Gate: Unified SearchOS Front-Half Rebaseline" in roadmap
+    assert "Active Decision Gate: SearchOS Carrier Consolidation + Product Proof" in roadmap
     assert "answer-producing paths" in roadmap
     assert "remaining orchestrator authority islands" in roadmap
 
