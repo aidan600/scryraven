@@ -7,7 +7,7 @@ Applies-to: confirmed current defects and maintenance liabilities deferred outsi
 Does-not-authorize: implementation, priority, roadmap sequencing, live calls, provider changes, or scope expansion
 Update-trigger: confirmed new debt, materially changed evidence or disposition, or an in-scope resolving change
 ID-policy: monotonic TD identifiers; never reuse a retired identifier
-Next-ID: TD-0003
+Next-ID: TD-0004
 
 ## Purpose
 
@@ -166,6 +166,57 @@ Repair-trigger:
 - Before the next phase that changes the current-source single-relation product
   runner, Analyst Workbench product consumption, provider availability, or the
   associated required validation bucket.
+
+Tracking:
+- Issue: none
+- Repair phase: unscheduled
+
+## TD-0003 - Semantic skip-reason structural-guard classification drift
+
+Status: OPEN
+Category: validation-integrity
+Discovered-in: SEARCHPLANNER-SPARSE-UNCERTAINTY-AWARE-PLANNING-01
+Affected-surfaces:
+- `tests/test_semantic_lane_structural_guards.py`
+- `core/query_production_runtime.py`
+- `tests/buckets/semantic_lane.txt`
+
+Evidence:
+- The semantic-lane structural guard treats the literal
+  `search_work_plan_missing` as exclusive to the semantic producer core, except
+  for two enumerated nonproducer files.
+- `core/query_production_runtime.py` independently uses that literal as the
+  value of `QueryStrategyConvergenceFailureCode.SEARCH_WORK_PLAN_MISSING`.
+- At starting SHA `f3c5cd37a144009f2dc80325aa7d90c75d8e211b` and candidate
+  checkpoint `ad995968f6c98f68afb7f31cc2dcb82ca5e0ed45`, the exact structural
+  node produced the same result: 1 failed, with the unchanged QueryProduction
+  failure-code declaration as the only reported conflict.
+- The complete candidate semantic lane was otherwise 158 passed and 4 skipped.
+
+Consequence:
+- The durable `semantic_lane` cannot currently produce a green result on its
+  own starting baseline.
+- Unrelated semantic phases encounter baseline-red validation noise.
+- The guard does not distinguish a producer `skipped_reason` from an
+  independently owned QueryStrategy safe failure code with the same value.
+
+Why-deferred:
+- QueryStrategy diagnostic identity and semantic structural-guard ownership are
+  outside the sparse SearchPlanner/AnswerContract Phase-1 outcome.
+- Renaming the runtime code or weakening the guard without an owner decision
+  could change diagnostic compatibility or conceal a real authority leak.
+
+Repair-boundary:
+- Decide whether QueryProduction lawfully shares the literal, should use a
+  distinct safe failure code, or should be an explicit structural-guard
+  exception.
+- Preserve runtime behavior and producer skip-reason ownership; do not change
+  QueryProduction semantics merely to make the string scan pass.
+
+Repair-trigger:
+- Before the next phase that changes QueryProduction diagnostic identity,
+  semantic producer skip reasons, the semantic structural guard, or again
+  requires a green `semantic_lane` merge gate.
 
 Tracking:
 - Issue: none
