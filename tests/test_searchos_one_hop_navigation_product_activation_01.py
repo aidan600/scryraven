@@ -28,7 +28,6 @@ from core.multicomponent_role_runtime import (
     safe_packet_digest,
 )
 from core.run_kernel import RunKernel, RunKernelTransitionError
-from core.search_planner_model_adapter import SearchPlannerModelAdapter
 from core.searchos_navigation_runtime import (
     EphemeralNavigationLocatorStore,
     NavigationOption,
@@ -144,6 +143,13 @@ def _official_requirement_planner_payload() -> dict[str, Any]:
         "assumptions": [],
         "unsupported_or_deferred_outputs": [],
     }
+
+
+class _OfficialRequirementPlannerAdapter:
+    """Inject the already-accepted rich compatibility state offline."""
+
+    def produce(self, _planner_input: Mapping[str, Any]) -> Mapping[str, Any]:
+        return deepcopy(_official_requirement_planner_payload())
 
 
 def _install_tracking_store(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -450,13 +456,7 @@ def _run(
     query: str = "What is Alpha's current official launch-color requirement?",
     parent_markdown: str = PARENT_MARKDOWN,
 ) -> tuple[Any, Any]:
-    offline_planner = SearchPlannerModelAdapter(
-        ask_model=lambda *_args, **_kwargs: json.dumps(_official_requirement_planner_payload()),
-        provider="offline-response-only",
-        model="offline-search-planner",
-        enabled=True,
-        licensed=True,
-    )
+    offline_planner = _OfficialRequirementPlannerAdapter()
     overrides = {"search_planner_adapter": offline_planner}
     overrides.update(dict(deps_overrides or {}))
     return run_post_retirement_ordinary_pipeline(
@@ -549,10 +549,10 @@ def test_navigation_request_authority_preserves_ordinary_contract() -> None:
     ordinary = build_searchos_judgment_decision_contract_v1()
     navigation = build_searchos_judgment_decision_contract_v1(navigation_enabled=True)
     assert hashlib.sha256(SEARCHOS_JUDGMENT_SYSTEM_PROMPT.encode()).hexdigest() == (
-        "a03ef82d195ddb696a31f8c262060499c0ca38a8ea38449f04e443d426a1d9d6"  # pragma: allowlist secret
+        "2a7a7c78f7007d46cc5b9d5f954c02dfc3c551e387bd7719d46ae89edaa128d7"  # pragma: allowlist secret
     )
     assert ordinary["decision_contract_digest"] == (
-        "92e38d5899702c24bd83f3e144bc2218e43d90a26d9270af306649fb45873e00"  # pragma: allowlist secret
+        "c73f1808014a1f0a47d7bacabc22f941a278aea5303da764fd809ed082f9a8f8"  # pragma: allowlist secret
     )
     assert ordinary["decision_schema_version"] == "searchos_judgment_decision_v1"
     assert "REQUEST_NAVIGATE_BREADCRUMB" not in ordinary["actions"]
@@ -797,6 +797,8 @@ def test_one_hop_navigation_reaches_component_and_final_answer(tmp_path: Path, m
         expected_actions = {
             "REQUEST_READ_PAGE",
             "PROPOSE_FOLLOWUP_QUERY",
+            "PROPOSE_INTERPRETATION_BINDING",
+            "REQUIRE_CLARIFICATION",
             "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION",
             "HANDOFF_UNRESOLVED",
             "REQUEST_NAVIGATE_BREADCRUMB",
@@ -816,8 +818,9 @@ def test_one_hop_navigation_reaches_component_and_final_answer(tmp_path: Path, m
         assert all(f"- {action}" in prompt for action in expected_actions)
         assert (
             "After READ custody exists, REQUEST_READ_PAGE, "
-            "PROPOSE_FOLLOWUP_QUERY, HANDOFF_UNRESOLVED, and "
-            "REQUEST_NAVIGATE_BREADCRUMB must include exactly one "
+            "PROPOSE_FOLLOWUP_QUERY, REQUIRE_CLARIFICATION, "
+            "HANDOFF_UNRESOLVED, and REQUEST_NAVIGATE_BREADCRUMB must "
+            "include exactly one "
             "read_insufficient assessment for every current READ custody ref, "
             "copied exactly, with the contract's exact assessment fields and "
             "disposition."
@@ -974,7 +977,7 @@ def test_ordinary_official_current_source_strength_remains_compatible(
     ("analyst_status", "dprime_status"),
     [("unsupported", "supported"), ("supported", "unsupported")],
 )
-def test_component_role_rejection_exhausts_recovery_without_semantic_authority(
+def test_component_role_rejection_uses_searchos_recovery_not_old_lane(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     analyst_status: str,
@@ -1025,14 +1028,19 @@ def test_component_role_rejection_exhausts_recovery_without_semantic_authority(
         for item in component_admission["component_admission_refs"]
     )
     assert not kernel.state.sufficiency_judgment_projection.get("final_answer_allowed", False)
-    terminal = kernel.state.projections["searchos_existing_gap_recovery_terminal"]
-    assert terminal["terminal_status"] == "exhausted_insufficient"
-    assert terminal["coverage_gained"] is False
-    assert terminal["gap_remains"] is True
-    assert terminal["whole_run_lease_status"] == ("settled_exhausted_insufficient")
-    assert (
-        outcome.execution_trace["searchos_slice_a"]["existing_gap_recovery"]["scrutineer_recovery_input_used"] is False
+    assert "searchos_existing_gap_recovery_terminal" not in (
+        kernel.state.projections
     )
+    assert "searchos_required_needs_block" not in kernel.state.projections
+    assert (
+        outcome.execution_trace["searchos_slice_a"][
+            "searchos_recovery_executed"
+        ]
+        is True
+    )
+    assert outcome.execution_trace["searchos_slice_a"][
+        "recovery_cycle_admission_ref"
+    ]
     assert len(runtime_capture["final_material_ledger_projections"]) == 1
     assert kernel.state.final_answer_packet["final_answer_allowed"] is False
     assert kernel.state.final_answer_packet["readiness_status"] == "blocked"

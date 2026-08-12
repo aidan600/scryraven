@@ -21,12 +21,13 @@ from core.run_authority_search_judgment_adapter import (
 )
 from core.run_kernel import RunKernel
 from core.search_judgment_read_assessment_runtime import (
-    SEARCH_JUDGMENT_READ_SLOT_BUDGET_EXCEEDED,
-    SearchJudgmentReadAssessmentError,
     build_full_search_judgment_containment_projection,
     execute_search_judgment_read_source_and_custody,
 )
-from core.search_planner_runtime import DeterministicSearchPlannerAdapter
+from core.search_planner_runtime import (
+    DeterministicSearchPlannerAdapter,
+    SearchPlannerRuntimeError,
+)
 from tests.helpers.offline_ordinary_pipeline import (
     run_post_retirement_ordinary_pipeline,
 )
@@ -323,7 +324,7 @@ def test_assessment_failure_is_typed_closed_without_fallback_or_acquisition(
     assert _acquisition_actions(harness) == []
 
 
-def test_duplicate_url_contributors_create_distinct_bindings_one_candidate(
+def test_duplicate_url_contributors_preserve_occurrences_in_one_component_slot(
     tmp_path: Any,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -350,7 +351,7 @@ def test_duplicate_url_contributors_create_distinct_bindings_one_candidate(
     assert len(revision_1["bounded_candidate_material_refs"]) == 2
     assert revision_1["selection_facts"]["selected_candidate_count"] == 1
     slots = _searchos_slots(harness)
-    assert len(slots) == 2
+    assert len(slots) == 1
     assert all(len(slot["candidate_use_option_refs"]) == 1 for slot in slots)
     assert len(harness.read_assessment_calls) == len(slots)
 
@@ -481,52 +482,52 @@ def test_shared_obligation_descriptor_conflict_is_typed_before_assessment(
     assert len(_read_actions(harness)) == read_action_count
 
 
-def test_exactly_eight_active_slots_are_all_assessed_once(
+def test_five_product_slots_are_all_assessed_once(
     tmp_path: Any,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _install_response_only_discovery(monkeypatch)
     obligation_ids = [
-        f"fixture-obligation-{index:02d}" for index in range(1, 9)
+        f"fixture-obligation-{index:02d}" for index in range(1, 6)
     ]
     outcome, harness = run_post_retirement_ordinary_pipeline(
         tmp_path,
         monkeypatch,
         mode="Fast",
-        query="What are Alpha's eight current official rule dimensions?",
+        query="What are Alpha's five current official rule dimensions?",
         core_topic="Alpha current official rule dimensions",
         primary_entity="Alpha",
         read_assessment_decision="NO_READ",
         deps_overrides={
             "process_search_queries": pipeline.process_search_queries,
             "search_planner_adapter": _SlotFixtureSearchPlannerAdapter(
-                [obligation_ids]
+                [[obligation_id] for obligation_id in obligation_ids]
             ),
         },
         environment_overrides={"TAVILY_API_KEY": "offline-placeholder"},  # pragma: allowlist secret
     )
 
     state = _kernel_trace(harness)["searchos_state"]
-    assert len(state["active_slot_ids"]) == 8
-    assert len(harness.read_assessment_calls) == 8
+    assert len(state["active_slot_ids"]) == 5
+    assert len(harness.read_assessment_calls) == 5
     assert len(
         {call["slot_id"] for call in harness.read_assessment_calls}
-    ) == 8
+    ) == 5
     projection = outcome.execution_trace["searchos_slice_a"]
-    assert state["budget"]["charged_logical_judgment_calls"] == 8
+    assert state["budget"]["charged_logical_judgment_calls"] == 5
     assert set(projection["slot_postures"].values()) == {
         "unresolved_handoff"
     }
     assert projection["provider_calls_attempted"] == 0
 
 
-def test_ninth_active_slot_aborts_ordinary_run_before_any_assessment(
+def test_sixth_product_component_is_rejected_before_any_assessment(
     tmp_path: Any,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _install_response_only_discovery(monkeypatch)
     obligation_ids = [
-        f"fixture-obligation-{index:02d}" for index in range(1, 10)
+        f"fixture-obligation-{index:02d}" for index in range(1, 7)
     ]
     provider_calls: list[dict[str, Any]] = []
     search_dispatches: list[list[str]] = []
@@ -541,19 +542,22 @@ def test_ninth_active_slot_aborts_ordinary_run_before_any_assessment(
         search_dispatches.append(list(queries))
         return original_process_search_queries(queries, *args, **kwargs)
 
-    with pytest.raises(SearchJudgmentReadAssessmentError) as exc_info:
+    with pytest.raises(
+        SearchPlannerRuntimeError,
+        match="five-component acceptance ceiling",
+    ):
         run_post_retirement_ordinary_pipeline(
             tmp_path,
             monkeypatch,
             mode="Fast",
-            query="What are Alpha's nine current official rule dimensions?",
+            query="What are Alpha's six current official rule dimensions?",
             core_topic="Alpha current official rule dimensions",
             primary_entity="Alpha",
             read_assessment_decision="NO_READ",
             deps_overrides={
                 "process_search_queries": record_process_search_queries,
                 "search_planner_adapter": _SlotFixtureSearchPlannerAdapter(
-                    [obligation_ids]
+                    [[obligation_id] for obligation_id in obligation_ids]
                 ),
                 "searchos_read_acquisition_transports": AcquisitionTransports(
                     tavily_extract=lambda payload: provider_calls.append(payload)
@@ -564,22 +568,13 @@ def test_ninth_active_slot_aborts_ordinary_run_before_any_assessment(
             harness_sink=harnesses,
         )
 
-    assert exc_info.value.code == SEARCH_JUDGMENT_READ_SLOT_BUDGET_EXCEEDED
     assert len(harnesses) == 1
     harness = harnesses[0]
-    kernel = harness.run_kernel
-    assert kernel is not None
+    assert harness.run_kernel is None
     assert harness.read_assessment_calls == []
-    assert _read_actions(harness) == []
-    assert _acquisition_actions(harness) == []
     assert provider_calls == []
-    assert kernel.state.search_judgment_read_state == {}
-    custody = _kernel_trace(harness)["evidence_ledger"].get(
-        "fetch_read_candidate_custody", {}
-    )
-    assert custody.get("fetch_read_candidate_custody_records", []) == []
     assert harness.full_search_judgment_inputs == []
-    assert len(search_dispatches) == 1
+    assert search_dispatches == []
     assert harness.analyst_calls == 0
     assert harness.analyst_prompts == []
     assert harness.economist_calls == []

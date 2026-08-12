@@ -905,7 +905,11 @@ class OfflineOrdinaryPipelineHarness:
         return RunDeps(
             ask_model=self.ask_model,
             embed_texts=self.embed_texts,
-            compute_similarities=lambda texts, *_args, **_kwargs: [1.0 for _ in texts],
+            compute_similarities=(
+                lambda _query_embedding, embeddings, *_args, **_kwargs: [
+                    1.0 for _ in embeddings
+                ]
+            ),
             process_search_queries=self.process_search_queries,
             filter_top_evidence=lambda passages, *_args, **_kwargs: list(passages),
             is_plausible_domain=lambda _url: True,

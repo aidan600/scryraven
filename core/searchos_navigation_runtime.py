@@ -734,6 +734,10 @@ def _navigation_execution_context(
     slot_lineage = _json_mapping(slot_ref)
     slot_id = _token(slot_lineage.get("slot_id"), "slot_id")
     slot = _mapping(_mapping(canonical.get("slots_by_id")).get(slot_id))
+    current_slot_ref = _mapping(slot.get("slot_ref"))
+    compact_current_slot_ref = (
+        _compact_ref(current_slot_ref, "slot_ref") if current_slot_ref else {}
+    )
     option_lineage = _json_mapping(navigation_option_ref)
     option_id = _token(
         option_lineage.get("navigation_option_id"),
@@ -751,7 +755,7 @@ def _navigation_execution_context(
     parent = _compact_ref(parent_read_custody_ref, "parent_read_custody_ref")
     if (
         not slot
-        or _mapping(slot.get("slot_ref")) != slot_lineage
+        or slot_lineage not in (current_slot_ref, compact_current_slot_ref)
         or slot.get("posture")
         != SearchOSSlotPosture.AWAITING_NAVIGATION_EXECUTION.value
         or option.ref() != option_lineage
@@ -791,7 +795,7 @@ def _navigation_execution_context(
         "slot": slot,
         "option": option,
         "lineage": {
-            "slot_ref": slot_lineage,
+            "slot_ref": compact_current_slot_ref,
             "navigation_option_ref": option_lineage,
             "navigation_selection_ref": selection,
             "destination_binding_ref": binding,
@@ -984,6 +988,7 @@ def build_navigation_read_custody_material_ref(
         "owner": NAVIGATION_OWNER,
         "origin": "searchos_navigation",
         **lineage,
+        "slot_ref": deepcopy(context["slot"]["slot_ref"]),
         "fetch_read_content_packet_ref": _compact_ref(
             fetch_read_content_packet_ref, "fetch_read_content_packet_ref"
         ),
@@ -1049,6 +1054,9 @@ def record_navigation_read_custody_material(
             "parent_read_custody_ref",
         )
     }
+    lineage["slot_ref"] = _compact_ref(
+        custody.get("slot_ref"), "slot_ref"
+    )
     context = _navigation_execution_context(state, **lineage)
     return _finish_navigation_execution(
         context,
@@ -1488,7 +1496,7 @@ def build_navigation_selection_action_inputs(
             "state_id": canonical["state_id"],
             "state_digest": canonical["state_digest"],
         },
-        "slot_ref": deepcopy(slot["slot_ref"]),
+        "slot_ref": _compact_ref(slot["slot_ref"], "slot_ref"),
         "judgment_decision_ref": decision_ref,
         "navigation_candidate_ref": candidate_ref,
         "navigation_option_ref": option.ref(),
@@ -1570,7 +1578,9 @@ def execute_navigation_selection(
         )
     slot_id = _token(_mapping(inputs.get("slot_ref")).get("slot_id"), "slot_id")
     slot = _mapping(_mapping(snapshot.get("slots_by_id")).get(slot_id))
-    if not slot or _mapping(slot.get("slot_ref")) != _mapping(inputs.get("slot_ref")):
+    if not slot or _compact_ref(slot.get("slot_ref"), "slot_ref") != _mapping(
+        inputs.get("slot_ref")
+    ):
         return observed(
             NAVIGATION_SELECTION_AUTHORITY_REJECTED,
             "navigation_slot_not_current",
