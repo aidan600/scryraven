@@ -403,9 +403,17 @@ def test_ordinary_convergence_has_no_legacy_adapter_injection_surface() -> None:
     parameters = inspect.signature(
         execute_initial_query_strategy_convergence
     ).parameters
+    runtime_source = QUERY_RUNTIME.read_text(encoding="utf-8")
+    pipeline_source = PIPELINE.read_text(encoding="utf-8")
 
     assert "scout_adapter" not in parameters
     assert "revision_adapter" not in parameters
+    assert "from core.scout_disambiguation_runtime import" not in runtime_source
+    assert "from core.search_planner_revision_runtime import" not in runtime_source
+    assert "def _execute_recon_and_revisions" not in runtime_source
+    assert "def _admit_and_apply_revision_amendment" not in runtime_source
+    assert "build_ordinary_scout_disambiguation_adapter" not in pipeline_source
+    assert "SearchPlannerRevisionModelAdapter" not in pipeline_source
 
 
 def test_required_recon_metadata_cannot_reach_retired_authorities(

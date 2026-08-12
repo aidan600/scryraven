@@ -127,7 +127,7 @@ def test_materially_different_convergence_categories_project_different_codes() -
     first = QueryStrategyConvergenceError(
         "private: " + _PRIVATE_FRAGMENTS[0],
         failure_code=(
-            QueryStrategyConvergenceFailureCode.REQUIRED_SCOUT_ADAPTER_UNAVAILABLE
+            QueryStrategyConvergenceFailureCode.ANSWER_CONTRACT_BINDING_MISSING
         ),
     )
     second = QueryStrategyConvergenceError(
@@ -139,7 +139,7 @@ def test_materially_different_convergence_categories_project_different_codes() -
     first_proj = project_initial_query_strategy_failure_for_terminal(first)
     second_proj = project_initial_query_strategy_failure_for_terminal(second)
     assert first_proj is not None and second_proj is not None
-    assert first_proj["failure_code"] == "required_scout_adapter_unavailable"
+    assert first_proj["failure_code"] == "answer_contract_binding_missing"
     assert second_proj["failure_code"] == "question_meaning_record_missing"
     assert first_proj["failure_code"] != second_proj["failure_code"]
 
@@ -151,7 +151,7 @@ def test_classifier_consumes_owner_authored_code_not_generic_rebuild() -> None:
     )
     convergence = QueryStrategyConvergenceError(
         "private convergence",
-        failure_code=QueryStrategyConvergenceFailureCode.RECON_CEILING_EXCEEDED,
+        failure_code=QueryStrategyConvergenceFailureCode.ALLOCATION_POLICY_REQUIRED,
     )
     runtime_failure = classify_initial_query_strategy_failure(runtime)
     convergence_failure = classify_initial_query_strategy_failure(convergence)
@@ -183,7 +183,7 @@ def test_carrier_rejects_arbitrary_and_cross_origin_codes() -> None:
         InitialQueryStrategyFailure(
             failure_origin=InitialQueryStrategyFailureOrigin.PLANNER_RUNTIME,
             failure_code=(
-                QueryStrategyConvergenceFailureCode.RECON_CEILING_EXCEEDED.value
+                QueryStrategyConvergenceFailureCode.SEARCH_WORK_PLAN_CONTRACT_STALE.value
             ),
         )
     with pytest.raises(ValueError, match="not licensed"):
@@ -523,7 +523,7 @@ def test_public_bounded_cli_projects_decision_grade_failure_identity(
         ),
         QueryStrategyConvergenceError(
             private_message,
-            failure_code=QueryStrategyConvergenceFailureCode.RECON_CEILING_EXCEEDED,
+            failure_code=QueryStrategyConvergenceFailureCode.INITIAL_STRATEGIES_EMPTY,
         ),
         InitialQueryStrategyFailureError(
             run_kernel_initial_planning_failure(operation="query_plan_admission")
