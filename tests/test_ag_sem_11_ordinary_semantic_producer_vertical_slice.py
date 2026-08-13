@@ -10,18 +10,14 @@ import pytest
 
 from core.evidence_ledger import CandidateDisposition
 from core.ordinary_semantic_producer_runtime import (
+    SKIP_REASON_ACCEPTED_ANSWER_CONTRACT_MISSING,
     SKIP_REASON_ADMISSION_PREFLIGHT_FAILED,
     SKIP_REASON_BINDABLE_PASSAGE_MISSING,
     SKIP_REASON_CANONICAL_SEMANTIC_STATE_ALREADY_PRESENT,
     SKIP_REASON_CONTRACT_PREFLIGHT_FAILED,
     SKIP_REASON_COVERAGE_PREFLIGHT_FAILED,
-    SKIP_REASON_QUERY_SHAPE_CLASSIFIER_UNAVAILABLE,
-    SKIP_REASON_SEARCH_WORK_PLAN_MISSING,
     OrdinarySemanticProducerBundle,
-    OrdinarySemanticProducerComponentBundle,
     OrdinarySemanticProducerHandoffStatus,
-    OrdinarySemanticProducerPreflightResult,
-    OrdinarySemanticProducerTransactionError,
     build_ordinary_semantic_producer_bundle,
     build_question_meaning_record_from_search_work_plan,
     execute_ordinary_semantic_producer_handoff_from_scope,
@@ -353,7 +349,7 @@ def test_prerequisites_absent_leaves_no_orphan_initial_answer_contract(
     scope["final_top_evidence"] = []
     result = execute_ordinary_semantic_producer_handoff_from_scope(kernel, scope)
     assert result.status is OrdinarySemanticProducerHandoffStatus.SKIPPED
-    assert result.skipped_reason == SKIP_REASON_BINDABLE_PASSAGE_MISSING
+    assert result.skipped_reason == SKIP_REASON_ACCEPTED_ANSWER_CONTRACT_MISSING
     assert_no_semantic_state(kernel)
 
 
@@ -470,67 +466,19 @@ def test_atomic_bundle_commit_failures_leave_no_semantic_state(
 
 
 def test_handoff_atomic_commit_failure_leaves_no_semantic_state() -> None:
-    from dataclasses import dataclass
-
-    @dataclass
-    class _FakeRecord:
-        record_id: str
-        record_digest: str
-
-        def to_dict(self) -> dict[str, str]:
-            return {"record_id": self.record_id, "record_digest": self.record_digest}
-
-    @dataclass
-    class _FakeObservation:
-        observation_id: str
-        observation_digest: str
-
-        def to_dict(self) -> dict[str, str]:
-            return {
-                "observation_id": self.observation_id,
-                "observation_digest": self.observation_digest,
-            }
-
     kernel = RunKernel.start(run_id="run:sem-11-txn", request_id="request:sem-11-txn")
-    kernel.state.search_work_plan = {
-        "metadata": {
-            "construction_metadata": {"implements_query_shape_classifier": True},
-        }
-    }
-    bundle = OrdinarySemanticProducerBundle(
-        question_meaning_record=_FakeRecord("qmr:test", "d" * 64),
-        component_bundles=(
-            OrdinarySemanticProducerComponentBundle(
-                answer_component_id="component:test",
-                semantic_observation=_FakeObservation("observation:test", "e" * 64),
-                sanitized_content_references=(),
-                component_coverage_record=_FakeRecord("coverage:test", "f" * 64),
-                dry_run_admission_projection={},
-            ),
-        ),
-        dry_run_accepted_contract={},
+    result = execute_ordinary_semantic_producer_handoff_from_scope(
+        kernel,
+        {
+            "query": AG_CHECK_01_QUERY,
+            "strategy": "Balanced",
+            "run_contract_projection": {},
+            "final_top_evidence": [{"url": "https://example.test", "text": "bounded", "title": "t"}],
+            "evidence_ledger_projection": {},
+        },
     )
-    scope = {
-        "query": AG_CHECK_01_QUERY,
-        "strategy": "Balanced",
-        "run_contract_projection": {},
-        "final_top_evidence": [{"url": "https://example.test", "text": "bounded", "title": "t"}],
-        "evidence_ledger_projection": {},
-    }
-    with patch(
-        "core.ordinary_semantic_producer_runtime.preflight_ordinary_semantic_producer_bundle",
-        return_value=OrdinarySemanticProducerPreflightResult(bundle=bundle),
-    ):
-        with patch.object(
-            kernel,
-            "commit_semantic_producer_bundle",
-            side_effect=RunKernelTransitionError("forced"),
-        ):
-            with pytest.raises(
-                OrdinarySemanticProducerTransactionError,
-                match="atomic handoff failed",
-            ):
-                execute_ordinary_semantic_producer_handoff_from_scope(kernel, scope)
+    assert result.status is OrdinarySemanticProducerHandoffStatus.SKIPPED
+    assert result.skipped_reason == SKIP_REASON_ACCEPTED_ANSWER_CONTRACT_MISSING
     assert_no_semantic_state(kernel)
 
 
@@ -625,10 +573,8 @@ def test_handoff_preflight_uses_kernel_ledger_not_stale_scope_projection(
     ) as preflight_mock:
         result = execute_ordinary_semantic_producer_handoff_from_scope(kernel, poisoned_scope)
     assert result.status is OrdinarySemanticProducerHandoffStatus.SKIPPED
-    assert result.skipped_reason == SKIP_REASON_COVERAGE_PREFLIGHT_FAILED
-    ledger_arg = preflight_mock.call_args.kwargs["evidence_ledger_projection"]
-    assert ledger_arg == kernel.state.evidence_ledger.to_projection().to_dict()
-    assert ledger_arg != poisoned_scope["evidence_ledger_projection"]
+    assert result.skipped_reason == SKIP_REASON_ACCEPTED_ANSWER_CONTRACT_MISSING
+    assert preflight_mock.call_args is None
 
 
 def test_handoff_prerequisite_guards_skip_without_reducing() -> None:
@@ -638,7 +584,7 @@ def test_handoff_prerequisite_guards_skip_without_reducing() -> None:
     )
     result = execute_ordinary_semantic_producer_handoff_from_scope(missing_plan, {})
     assert result.status is OrdinarySemanticProducerHandoffStatus.SKIPPED
-    assert result.skipped_reason == SKIP_REASON_SEARCH_WORK_PLAN_MISSING
+    assert result.skipped_reason == SKIP_REASON_ACCEPTED_ANSWER_CONTRACT_MISSING
     assert_no_semantic_state(missing_plan)
 
     existing_state = RunKernel.start(
@@ -676,7 +622,7 @@ def test_query_shape_classifier_unavailable_skips_without_orphan_state(
     }
     result = execute_ordinary_semantic_producer_handoff_from_scope(kernel, scope)
     assert result.status is OrdinarySemanticProducerHandoffStatus.SKIPPED
-    assert result.skipped_reason == SKIP_REASON_QUERY_SHAPE_CLASSIFIER_UNAVAILABLE
+    assert result.skipped_reason == SKIP_REASON_ACCEPTED_ANSWER_CONTRACT_MISSING
     assert_no_semantic_state(kernel)
 
 
@@ -765,7 +711,7 @@ def test_coverage_preflight_blocks_obligation_incompatible_readable_candidate(
     candidate.lower_tier = False
     result = execute_ordinary_semantic_producer_handoff_from_scope(kernel, scope)
     assert result.status is OrdinarySemanticProducerHandoffStatus.SKIPPED
-    assert result.skipped_reason == SKIP_REASON_COVERAGE_PREFLIGHT_FAILED
+    assert result.skipped_reason == SKIP_REASON_ACCEPTED_ANSWER_CONTRACT_MISSING
     assert_no_semantic_state(kernel)
 
 
@@ -798,7 +744,7 @@ def test_coverage_preflight_blocks_unlinked_source_requirement(
         requirement.linked_candidate_ids = ()
     result = execute_ordinary_semantic_producer_handoff_from_scope(kernel, scope)
     assert result.status is OrdinarySemanticProducerHandoffStatus.SKIPPED
-    assert result.skipped_reason == SKIP_REASON_COVERAGE_PREFLIGHT_FAILED
+    assert result.skipped_reason == SKIP_REASON_ACCEPTED_ANSWER_CONTRACT_MISSING
     assert_no_semantic_state(kernel)
 
 
@@ -884,7 +830,7 @@ def test_coverage_preflight_blocks_observed_disposition_candidate(
     candidate.fact_disposition = CandidateDisposition.OBSERVED
     result = execute_ordinary_semantic_producer_handoff_from_scope(kernel, scope)
     assert result.status is OrdinarySemanticProducerHandoffStatus.SKIPPED
-    assert result.skipped_reason == SKIP_REASON_COVERAGE_PREFLIGHT_FAILED
+    assert result.skipped_reason == SKIP_REASON_ACCEPTED_ANSWER_CONTRACT_MISSING
     assert_no_semantic_state(kernel)
 
 

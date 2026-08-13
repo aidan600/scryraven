@@ -4,6 +4,7 @@ import ast
 from pathlib import Path
 
 from core.ordinary_semantic_producer_runtime import (
+    SKIP_REASON_ACCEPTED_ANSWER_CONTRACT_MISSING,
     SKIP_REASON_ADMISSION_PREFLIGHT_FAILED,
     SKIP_REASON_BINDABLE_PASSAGE_MISSING,
     SKIP_REASON_CANONICAL_SEMANTIC_STATE_ALREADY_PRESENT,
@@ -13,7 +14,6 @@ from core.ordinary_semantic_producer_runtime import (
     SKIP_REASON_MULTIPART_ASSESSMENT,
     SKIP_REASON_PREFLIGHT_FAILED,
     SKIP_REASON_QUERY_SHAPE_CLASSIFIER_UNAVAILABLE,
-    SKIP_REASON_SEARCH_WORK_PLAN_MISSING,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -97,7 +97,8 @@ def test_run_kernel_owns_atomic_semantic_bundle_commit_boundary() -> None:
 def test_ordinary_semantic_producer_keeps_closed_runtime_boundaries() -> None:
     source = _source(PRODUCER_MODULE)
     assert "execute_ordinary_semantic_producer_handoff_from_scope" in source
-    assert "commit_semantic_producer_bundle(" in source
+    assert "SKIP_REASON_ACCEPTED_ANSWER_CONTRACT_MISSING" in source
+    assert "commit_semantic_producer_bundle(" not in source
 
     forbidden_imports = {
         "core.pipeline_orchestrator",
@@ -157,15 +158,9 @@ def test_semantic_skip_reasons_remain_return_only_in_producer_core() -> None:
         SKIP_REASON_COMPONENT_CAP_EXCEEDED,
         SKIP_REASON_PREFLIGHT_FAILED,
         SKIP_REASON_CANONICAL_SEMANTIC_STATE_ALREADY_PRESENT,
-        SKIP_REASON_SEARCH_WORK_PLAN_MISSING,
+        SKIP_REASON_ACCEPTED_ANSWER_CONTRACT_MISSING,
     )
-    allowed_nonproducer_error_codes = {
-        (CORE / "acquisition_control.py", SKIP_REASON_SEARCH_WORK_PLAN_MISSING),
-        (
-            CORE / "search_judgment_read_assessment_runtime.py",
-            SKIP_REASON_SEARCH_WORK_PLAN_MISSING,
-        ),
-    }
+    allowed_nonproducer_error_codes: set[tuple[Path, str]] = set()
     for path in CORE.rglob("*.py"):
         if path == PRODUCER_MODULE:
             continue

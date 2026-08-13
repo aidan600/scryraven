@@ -9,12 +9,13 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-from core.search_work_plan import SourceObligationKind, SourceObligationStrictness
 from core.semantic_contract_foundation import (
     ComponentPurpose,
     Materiality,
     RequirementPosture,
     SemanticSlotStatus,
+    SourceObligationKind,
+    SourceObligationStrictness,
     inference_depth_ceiling_for_mode,
 )
 
@@ -49,9 +50,6 @@ _MAX_FRESHNESS_CHARS = 220
 _MAX_CAVEAT_CHARS = 260
 _MAX_POLICY_CHARS = 300
 _MAX_UNCERTAINTY_VALUE_CHARS = 220
-
-# Retained as an empty compatibility export. Recon is not part of the sparse language.
-SEARCH_PLANNER_SEMANTIC_RECON_DIMENSION_KINDS: frozenset[str] = frozenset()
 
 _FORBIDDEN_MECHANICAL_IDENTITY_KEYS = frozenset(
     {
@@ -418,14 +416,6 @@ def compile_semantic_planner_proposal(
         answer_components.append(rich_component)
 
         if owns_direct:
-            # Phase-1-to-Phase-2 compatibility only. Semantic uncertainty is
-            # preserved in slots; it never manufactures Scout/PlannerRevision work.
-            neutral_recon = {
-                "posture": "not_needed",
-                "unresolved_dimension_ids": [],
-                "candidate_queries": [],
-                "required_for_truthful_targeting": False,
-            }
             strategy = {
                 "strategy_id": f"strategy:{index:02d}:primary",
                 "component_id": component_id,
@@ -433,8 +423,9 @@ def compile_semantic_planner_proposal(
                 "candidate_query_text": component["need"],
                 "requested_role": "initial",
                 "source_obligation_candidate_ids": obligation_ids,
-                "distinct_need_justification": ("Initial candidate copied from the accepted semantic need."),
-                "recon_requirement": neutral_recon,
+                "distinct_need_justification": (
+                    "Initial candidate copied from the accepted semantic need."
+                ),
             }
             requirement: dict[str, Any] = {
                 "component_id": component_id,
@@ -917,7 +908,6 @@ __all__ = [
     "SEARCH_PLANNER_SEMANTIC_PROPOSAL_REQUIRED_TOP_LEVEL_FIELDS",
     "SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA",
     "SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA_VERSION",
-    "SEARCH_PLANNER_SEMANTIC_RECON_DIMENSION_KINDS",
     "SearchPlannerSemanticProposalError",
     "compile_semantic_planner_proposal",
     "count_model_authored_mechanical_identity_keys",

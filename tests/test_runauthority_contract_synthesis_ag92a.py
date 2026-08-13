@@ -26,15 +26,15 @@ from core.official_current_source_custody import (
 )
 from core.query_plan import QUERY_PLAN_TRACE_KEY
 from core.query_plan_runtime_adapter import build_query_plan_runtime_adapter
+from core.search_planner_runtime import DeterministicSearchPlannerAdapter
 
 _search_providers_stub = types.ModuleType("core.search_providers")
 _search_providers_stub.brave_reconnaissance = lambda *_args, **_kwargs: []
 sys.modules.setdefault("core.search_providers", _search_providers_stub)
 
 from core.query_production_runtime import (
+    execute_initial_query_strategy_convergence,
     execute_query_plan_admission_action,
-    execute_query_production_action,
-    query_plan_admission_inputs_from_query_production_projection,
 )
 from core.router_query_preparation_contract import build_router_query_preparation_state
 from core.run_authority_contract import (
@@ -58,11 +58,12 @@ from core.run_authority_contract_templates import (
 from core.run_kernel import (
     EVIDENCE_LEDGER_STAGE,
     QUERY_PLAN_ADMISSION_STAGE,
-    QUERY_PRODUCTION_STAGE,
     RUN_CONTRACT_STAGE,
     ActionType,
+    Observation,
     ObservationType,
     RunKernel,
+    RunStageStatus,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -70,22 +71,6 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def _clean_query(value: str) -> str:
     return " ".join(str(value or "").split())[:300]
-
-
-class _Status:
-    def __init__(self) -> None:
-        self.steps: list[str] = []
-
-    def step(self, message: str) -> None:
-        self.steps.append(message)
-
-
-class _Logger:
-    def __init__(self) -> None:
-        self.warnings: list[tuple[str, Exception]] = []
-
-    def warning(self, message: str, error: Exception) -> None:
-        self.warnings.append((message, error))
 
 
 def _router_state(query: str, *, intent: str = "general", query_type: str = "rule") -> Any:
@@ -103,46 +88,6 @@ def _router_state(query: str, *, intent: str = "general", query_type: str = "rul
             }
         ),
     )
-
-
-def _query_runtime_kwargs(query: str, *, run_contract_projection: dict[str, Any]) -> dict[str, Any]:
-    calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
-
-    def ask_model(*args: Any, **kwargs: Any) -> str:
-        calls.append((args, kwargs))
-        return '{"queries":["current official rule","effective date"]}'
-
-    return {
-        "router_query_preparation_contract": _router_state(query),
-        "query": query,
-        "strategy": "Balanced",
-        "current_date": "June 9, 2026",
-        "focus_academic": False,
-        "force_intent_news": False,
-        "include_domains": [],
-        "news_preferred_domains": ["reuters.com"],
-        "ask_model": ask_model,
-        "clean_json_response": lambda text: text,
-        "default_system": {
-            "researcher": "researcher-system",
-            "recon_query_rewriter": "recon-system",
-        },
-        "fast_provider": "fast-provider",
-        "fast_model": "fast-model",
-        "local_url": "http://local",
-        "api_key": None,
-        "use_reasoning": True,
-        "measure_context_stage": lambda *_args, **_kwargs: None,
-        "clean_query": _clean_query,
-        "cost_accumulator": object(),
-        "status": _Status(),
-        "provider_diagnostics": [],
-        "run_log": _Logger(),
-        "waste_flags": [],
-        "brave_api_key_available": False,
-        "brave_reconnaissance_func": lambda *_args, **_kwargs: [],
-        "run_contract_projection": run_contract_projection,
-    }
 
 
 def _contract_projection(
@@ -609,26 +554,43 @@ def test_contract_missing_source_caveats_are_conditional_not_unconditional() -> 
     )
 
 
-def test_query_production_and_query_plan_receive_contract_hints() -> None:
+def test_query_plan_receives_contract_hints() -> None:
     query = "What is the current official filing fee?"
     projection = _contract_projection(query)
     kernel = RunKernel.start(run_id="ag92a-query", request_id="request")
-    production_action = kernel.authorize_query_production(inputs={})
-    production = execute_query_production_action(
-        production_action,
-        **_query_runtime_kwargs(query, run_contract_projection=projection),
+    contract_action = kernel.authorize_run_contract_synthesis()
+    kernel.reduce(
+        Observation.from_action(
+            contract_action,
+            observation_type=ObservationType.RUN_CONTRACT_SYNTHESIZED,
+            status=RunStageStatus.COMPLETED,
+            payload={
+                "contract_projection": projection,
+                "validation": {"ok": True, "status": "ok"},
+            },
+        )
     )
-    kernel.reduce(production.observation)
+    convergence = execute_initial_query_strategy_convergence(
+        run_kernel=kernel,
+        router_query_preparation_contract=_router_state(query),
+        query=query,
+        strategy="Balanced",
+        current_date="June 9, 2026",
+        focus_academic=False,
+        force_intent_news=False,
+        include_domains=[],
+        news_preferred_domains=["reuters.com"],
+        route_projection={"route_id": "route:ag92a"},
+        run_contract_projection=projection,
+        planner_adapter=DeterministicSearchPlannerAdapter(),
+        provider_diagnostics=[],
+    )
 
-    reduced = kernel.state.projections[QUERY_PRODUCTION_STAGE]
-    posture = reduced["effective_route_posture"]
-    assert posture["contract_consumed_by_query_production"] is True
+    posture = convergence.effective_route_posture
+    assert posture["contract_consumed_by_query_plan"] is True
     assert posture["run_contract_ref"]["contract_id"] == projection["contract_id"]
-    assert production.contract_source_requirement_hints
+    assert convergence.contract_source_requirement_hints
 
-    query_plan_inputs = query_plan_admission_inputs_from_query_production_projection(
-        reduced
-    )
     query_authority = build_query_plan_runtime_adapter(
         run_id="ag92a-query",
         primary_entity="Acme",
@@ -643,12 +605,18 @@ def test_query_production_and_query_plan_receive_contract_hints() -> None:
         admission_action,
         query_authority=query_authority,
         router_query_preparation_contract=_router_state(query),
-        candidate_queries=query_plan_inputs.candidate_queries,
-        candidate_source=query_plan_inputs.candidate_source,
-        query_type=query_plan_inputs.query_type,
+        candidate_queries=convergence.candidate_queries,
+        candidate_strategies=convergence.candidate_strategies,
+        candidate_source=convergence.candidate_source,
+        query_type=convergence.query_type,
         current_date="June 9, 2026",
         max_queries=3,
-        route_runtime_posture=query_plan_inputs.effective_route_posture,
+        route_runtime_posture=convergence.effective_route_posture,
+        accepted_contract=(
+            kernel.state.current_answer_contract
+            or kernel.state.initial_answer_contract
+        ),
+        initial_query_allocation_policy=convergence.initial_query_allocation_policy,
     )
     kernel.reduce(admission.observation)
 

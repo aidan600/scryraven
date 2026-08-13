@@ -1,9 +1,8 @@
 """Offline ComponentSearchPlan to component-aware search-work contract.
 
 This module is executor-side only. It accepts already-safe structured component
-search plans, projects them into passive SearchWorkPlan/query-work surfaces,
-and summarizes component scorekeeping without calling models, providers,
-search, fetch/read, retrieval, Author, or citation machinery.
+search plans and summarizes component scorekeeping without calling models,
+providers, search, fetch/read, retrieval, Author, or citation machinery.
 
 ``ComponentPlan`` remains the backward-compatible input name from
 AG-COMPONENT-EXECUTOR-CONTRACT-01. ``ComponentSearchPlan`` is the clearer
@@ -17,33 +16,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Mapping, Sequence
-
-from core.search_work_plan import (
-    BudgetValue,
-    BudgetValuePosture,
-    ComponentBudget,
-    EffectiveContractDescriptor,
-    EffectiveContractKind,
-    FollowUpAuthority,
-    FollowUpPermission,
-    ModeDepthAllowance,
-    ProviderJob,
-    ProviderJobKind,
-    QueryShapeDescriptor,
-    QueryShapeKind,
-    RequestedModeDescriptor,
-    SearchMode,
-    SearchWorkBudget,
-    SearchWorkComponent,
-    SearchWorkPlan,
-    SourceObligation,
-    SourceObligationKind,
-    SourceObligationStrictness,
-    StopCondition,
-    StopConditionKind,
-    StopOutcome,
-)
-from core.search_work_plan_query_plan_shadow import build_query_plan_work_shadow_projection
 
 COMPONENT_PLAN_SCHEMA_VERSION = "component_plan_executor_contract_v1"
 COMPONENT_EXECUTOR_CONTRACT_SCHEMA_VERSION = "component_executor_contract_ag_component_01_v1"
@@ -411,112 +383,13 @@ ComponentSearchPlan = ComponentPlan
 ComponentSearchPlanComponent = ComponentPlanComponent
 
 
-def build_search_work_plan_from_component_plan(component_plan: ComponentPlan) -> SearchWorkPlan:
-    """Project a safe ComponentSearchPlan into passive SearchWorkPlan structures."""
-
-    components = tuple(_search_work_component(component) for component in component_plan.components)
-    provider_jobs = tuple(_provider_job(component) for component in component_plan.components)
-    query_kinds = [QueryShapeKind.SIMPLE_LOOKUP]
-    if len(component_plan.components) > 1:
-        query_kinds.append(QueryShapeKind.MULTIPART)
-    if any(_source_obligation_kind(component) is SourceObligationKind.CANONICAL_DOCUMENTATION for component in component_plan.components):
-        query_kinds.append(QueryShapeKind.CANONICAL_DOCUMENTATION)
-    if component_plan.ambiguity_status is not AmbiguityStatus.CLEAR:
-        query_kinds.append(QueryShapeKind.AMBIGUOUS_ENTITY)
-
-    return SearchWorkPlan(
-        requested_mode=RequestedModeDescriptor(mode=SearchMode.FAST, source="component_plan_executor_contract"),
-        effective_contract=EffectiveContractDescriptor(
-            contract_kind=EffectiveContractKind.DIRECT_CONSTRAINED,
-            governing_authority="RunKernel.RunAuthority",
-            depth_allowance=ModeDepthAllowance.SHALLOW,
-            follow_up_posture=FollowUpPermission.NOT_ALLOWED,
-            budget_posture="component_plan_passive_offline",
-        ),
-        query_shape=QueryShapeDescriptor(
-            kinds=tuple(query_kinds),
-            component_count_hint=len(component_plan.components),
-            ambiguity_notes=(
-                (f"component_plan:{component_plan.ambiguity_status.value}",)
-                if component_plan.ambiguity_status is not AmbiguityStatus.CLEAR
-                else ()
-            ),
-            metadata={
-                "component_plan_id": component_plan.plan_id,
-                "planner_source": component_plan.planner_source.value,
-                "component_plan_schema_version": component_plan.schema_version,
-            },
-        ),
-        components=components,
-        provider_jobs=provider_jobs,
-        budget=SearchWorkBudget(
-            base_mode_budget_posture="fast_mode_bound_component_plan_passive",
-            per_component_minimum_viable_budget=BudgetValue(
-                value=1,
-                posture=BudgetValuePosture.COMPONENT_MINIMUM,
-                unit="planned_component_search_intent",
-            ),
-            per_component_cap=BudgetValue(
-                value=1,
-                posture=BudgetValuePosture.COMPONENT_CAP,
-                unit="planned_component_search_intent",
-            ),
-            global_cap=BudgetValue(
-                value=5,
-                posture=BudgetValuePosture.GLOBAL_CAP,
-                unit="initial_component_subject",
-            ),
-            metadata={
-                "component_plan_id": component_plan.plan_id,
-                "planned_component_count": len(component_plan.components),
-                "executes_search": False,
-            },
-        ),
-        follow_up_authority=FollowUpAuthority(
-            permission=FollowUpPermission.NOT_ALLOWED,
-            authorizers=("RunAuthority", "SearchJudgment", "SufficiencyJudgment"),
-            block_conditions=("component plan projection is passive and cannot authorize follow-up",),
-        ),
-        stop_conditions=tuple(
-            StopCondition(
-                condition=StopConditionKind.SOURCE_OBLIGATION_UNSATISFIED,
-                outcome=StopOutcome.FAIL_CLOSED,
-                component_id=component.component_id,
-                description="Do not claim full component success without source/evidence/citation binding.",
-            )
-            for component in component_plan.components
-        ),
-        planning_posture="component_plan_executor_contract_passive",
-        passive=True,
-        metadata={
-            "component_plan": component_plan.to_dict(),
-            "component_plan_id": component_plan.plan_id,
-            "component_plan_schema_version": component_plan.schema_version,
-            "planner_source": component_plan.planner_source.value,
-            "planned_search_terms": [
-                _planned_term(component.component_id, intent)
-                for component in component_plan.components
-                for intent in component.search_intents
-            ],
-            "runtime_consumed": False,
-            "executes_search": False,
-            "author_called": False,
-        },
-    ).require_valid()
-
-
 def build_component_executor_contract_projection(component_plan: ComponentPlan) -> dict[str, Any]:
-    """Return subordinate component-search planning and work projections."""
+    """Return subordinate component-search planning projections."""
 
-    search_work_plan = build_search_work_plan_from_component_plan(component_plan)
-    search_work_payload = search_work_plan.to_dict()
-    query_work = build_query_plan_work_shadow_projection(search_work_payload)
     scorekeeping = summarize_component_scorekeeping(component_plan)
     return {
         "schema_version": COMPONENT_EXECUTOR_CONTRACT_SCHEMA_VERSION,
         "component_plan": component_plan.to_dict(),
-        "search_work_plan": search_work_payload,
-        "query_plan_work_shadow_projection": query_work,
         "planned_query_terms_by_component": {
             component.component_id: [
                 _planned_term(component.component_id, intent)
@@ -601,120 +474,6 @@ def summarize_component_scorekeeping(
         "author_called": False,
         "components": entries,
     }
-
-
-def _search_work_component(component: ComponentPlanComponent) -> SearchWorkComponent:
-    obligation = _source_obligation(component)
-    return SearchWorkComponent(
-        component_id=component.component_id,
-        user_facing_subquestion=f"{component.label}: {component.answer_target}",
-        entities=(component.label, *component.aliases),
-        anchors=(component.label,),
-        source_obligations=(obligation,),
-        required_provider_jobs=(_provider_job_kind(component),),
-        per_component_budget=ComponentBudget(
-            minimum_viable=BudgetValue(
-                value=1,
-                posture=BudgetValuePosture.COMPONENT_MINIMUM,
-                unit="planned_component_search_intent",
-            ),
-            cap=BudgetValue(
-                value=1,
-                posture=BudgetValuePosture.COMPONENT_CAP,
-                unit="planned_component_search_intent",
-            ),
-        ),
-        mode_depth_allowance=ModeDepthAllowance.SHALLOW,
-        stop_conditions=(
-            StopCondition(
-                condition=StopConditionKind.SOURCE_OBLIGATION_UNSATISFIED,
-                outcome=StopOutcome.FAIL_CLOSED,
-                component_id=component.component_id,
-            ),
-        ),
-        metadata={
-            "component_label": component.label,
-            "answer_target": component.answer_target,
-            "entity_type": component.entity_type,
-            "expected_answerable": component.expected_answerable,
-            "allowed_domains": list(component.allowed_domains or ()),
-            "disambiguation_status": component.disambiguation_status.value,
-            "source_requirement": component.source_requirement.to_dict(),
-            "search_intents": [intent.to_dict() for intent in component.search_intents],
-            "planned_search_terms": component.planned_search_terms(),
-            "success_criteria": component.success_criteria.to_dict(),
-            "executes_search": False,
-        },
-    )
-
-
-def _source_obligation(component: ComponentPlanComponent) -> SourceObligation:
-    source_class = component.source_requirement.source_class.value
-    return SourceObligation(
-        obligation_id=f"{component.component_id}:source-requirement",
-        kind=_source_obligation_kind(component),
-        strictness=SourceObligationStrictness.REQUIRED,
-        search_constraint=source_class,
-        currentness_requirement=_currentness_requirement(component),
-        satisfaction_rule=(
-            "evidence, citation, source obligation, and answer value must bind before full component success"
-        ),
-        lower_tier_use="bridge_hint_only",
-        metadata={
-            "source_class": source_class,
-            "citation_required": component.source_requirement.citation_required,
-            "fetch_read_required": component.source_requirement.fetch_read_required,
-            "allowed_domains": list(component.allowed_domains or ()),
-        },
-    )
-
-
-def _provider_job(component: ComponentPlanComponent) -> ProviderJob:
-    return ProviderJob(
-        provider_job_id=f"{component.component_id}:planned-search",
-        job_kind=_provider_job_kind(component),
-        component_ids=(component.component_id,),
-        source_obligation_ids=(f"{component.component_id}:source-requirement",),
-        job_posture="planned_passive_not_executed",
-        provider_metadata={
-            "provider_name_neutral": True,
-            "executes_search": False,
-            "allowed_domains": list(component.allowed_domains or ()),
-            "freshness_policy": [intent.freshness_policy.to_dict() for intent in component.search_intents],
-            "planned_search_terms": component.planned_search_terms(),
-        },
-        metadata={
-            "component_label": component.label,
-            "answer_target": component.answer_target,
-            "search_intent_purposes": [intent.purpose.value for intent in component.search_intents],
-        },
-    )
-
-
-def _source_obligation_kind(component: ComponentPlanComponent) -> SourceObligationKind:
-    source_class = component.source_requirement.source_class
-    if source_class in {SourceClass.OFFICIAL_DOCS, SourceClass.DOCUMENTATION}:
-        return SourceObligationKind.CANONICAL_DOCUMENTATION
-    if source_class is SourceClass.PRIMARY_SOURCE:
-        return SourceObligationKind.OFFICIAL_CURRENT
-    return SourceObligationKind.NO_SPECIAL_OBLIGATION
-
-
-def _provider_job_kind(component: ComponentPlanComponent) -> ProviderJobKind:
-    if component.source_requirement.fetch_read_required:
-        return ProviderJobKind.FETCH_READ_EXTRACT
-    if component.source_requirement.source_class in {SourceClass.OFFICIAL_DOCS, SourceClass.DOCUMENTATION}:
-        return ProviderJobKind.CANONICAL_EXTRACTION
-    return ProviderJobKind.DIRECT_CANDIDATE_SEARCH
-
-
-def _currentness_requirement(component: ComponentPlanComponent) -> str | None:
-    kinds = {intent.freshness_policy.kind for intent in component.search_intents}
-    if FreshnessKind.STABLE_DOCS in kinds:
-        return "stable documentation; no recent-only recency filter"
-    if FreshnessKind.RECENT in kinds or FreshnessKind.CURRENT in kinds:
-        return "currentness required"
-    return None
 
 
 def _scorekeeping_entry(
@@ -875,6 +634,5 @@ __all__ = [
     "SourceRequirement",
     "SuccessCriteria",
     "build_component_executor_contract_projection",
-    "build_search_work_plan_from_component_plan",
     "summarize_component_scorekeeping",
 ]

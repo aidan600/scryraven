@@ -20,12 +20,8 @@ from core.component_executor_contract import (
     SourceRequirement,
     SuccessCriteria,
     build_component_executor_contract_projection,
-    build_search_work_plan_from_component_plan,
     summarize_component_scorekeeping,
 )
-from core.search_work_query_plan_consumption import allocate_existing_queries_by_search_work
-from core.validation_observability import build_subject_budget_summary
-from core.validation_profiles import AG_LIVE_MULTI_COMPONENT, get_validation_profile
 
 ROOT = Path(__file__).resolve().parents[1]
 MODULE = ROOT / "core" / "component_executor_contract.py"
@@ -198,102 +194,39 @@ def test_component_search_plan_alias_serializes_without_drift() -> None:
 def test_component_plan_maps_to_search_work_and_query_work_with_all_component_ids() -> None:
     plan = _default_port_plan()
     contract = build_component_executor_contract_projection(plan)
-    search_work = contract["search_work_plan"]
-    query_work = contract["query_plan_work_shadow_projection"]
+    component_ids = [
+        item["component_id"] for item in contract["component_plan"]["components"]
+    ]
 
-    assert [item["component_id"] for item in search_work["components"]] == [
+    assert component_ids == [
         "PostgreSQL",
         "MySQL",
         "Redis",
         "MongoDB",
     ]
-    assert [item["component_id"] for item in query_work["components"]] == [
-        "PostgreSQL",
-        "MySQL",
-        "Redis",
-        "MongoDB",
-    ]
-    assert query_work["work_counts"]["component_count"] == 4
-    assert sorted(query_work["provider_jobs_by_component"]) == [
-        "MongoDB",
-        "MySQL",
-        "PostgreSQL",
-        "Redis",
-    ]
-    assert all(
-        item["metadata"]["answer_target"] == "default port"
-        for item in search_work["components"]
-    )
-    assert all(
-        item["metadata"]["source_requirement"]["source_class"] == "official_docs"
-        for item in search_work["components"]
-    )
-    assert all(
-        item["metadata"]["search_intents"][0]["freshness_policy"]["kind"] == "stable_docs"
-        for item in search_work["components"]
-    )
+    assert "search_work_plan" not in contract
+    assert "query_plan_work_shadow_projection" not in contract
     assert sorted(contract["planned_query_terms_by_component"]) == [
         "MongoDB",
         "MySQL",
         "PostgreSQL",
         "Redis",
     ]
-
-
-def test_query_work_allocation_maps_planned_terms_back_to_component_ids() -> None:
-    plan = _default_port_plan()
-    contract = build_component_executor_contract_projection(plan)
-    candidate_queries = [
-        terms[0]["query_text"]
-        for terms in contract["planned_query_terms_by_component"].values()
-    ]
-
-    allocation = allocate_existing_queries_by_search_work(
-        candidate_queries=candidate_queries,
-        query_plan_context={},
-        search_work_projection=contract["query_plan_work_shadow_projection"],
-        max_len=4,
-        origin="component_plan_executor_contract_fixture",
-        role="initial",
-        phase="ag_component_executor_contract_01",
-    ).to_dict()
-
-    assert allocation["search_work_consumed_by_query_plan"] is True
-    assert allocation["component_ids_considered"] == [
-        "PostgreSQL",
-        "MySQL",
-        "Redis",
-        "MongoDB",
-    ]
-    assert allocation.get("unfilled_component_ids", []) == []
-    assert {
-        metadata["search_work_component_id"]
-        for metadata in allocation["query_metadata"].values()
-    } == {"PostgreSQL", "MySQL", "Redis", "MongoDB"}
-    assert allocation["behavior_boundary_flags"]["new_executable_query_text_generated"] is False
-    assert allocation["behavior_boundary_flags"]["provider_selected"] is False
-
-
-def test_subject_budget_observability_detects_all_planned_components() -> None:
-    contract = build_component_executor_contract_projection(_default_port_plan())
-    summary = build_subject_budget_summary(
-        validation_profile=get_validation_profile(AG_LIVE_MULTI_COMPONENT),
-        trace={
-            "query_plan_work_shadow_projection": contract["query_plan_work_shadow_projection"],
-        },
+    assert all(
+        item["answer_target"] == "default port"
+        for item in contract["component_plan"]["components"]
     )
 
-    assert summary["detected_subject_count"] == 4
-    assert summary["selected_subject_count"] == 4
-    assert summary["omitted_subject_count"] == 0
-    assert summary["max_initial_selected_subjects"] == 5
-    assert summary["subject_cap_exceeded"] is False
-    assert [item["subject_id"] for item in summary["selected_subjects"]] == [
-        "PostgreSQL",
-        "MySQL",
-        "Redis",
-        "MongoDB",
-    ]
+
+def test_planned_query_terms_remain_component_local() -> None:
+    plan = _default_port_plan()
+    contract = build_component_executor_contract_projection(plan)
+    terms = contract["planned_query_terms_by_component"]
+
+    assert set(terms) == {"PostgreSQL", "MySQL", "Redis", "MongoDB"}
+    assert all(terms[component_id] for component_id in terms)
+    assert contract["behavior_boundary_flags"]["search_executed"] is False
+    assert contract["behavior_boundary_flags"]["provider_selected"] is False
 
 
 def test_stable_docs_freshness_does_not_apply_recent_only_filter() -> None:
@@ -371,32 +304,10 @@ def test_scorekeeping_distinguishes_partial_semantic_coverage_from_full_success(
 def test_single_component_plan_uses_same_mapping_and_observability_path() -> None:
     plan = _single_component_plan()
     contract = build_component_executor_contract_projection(plan)
-    summary = build_subject_budget_summary(
-        validation_profile=get_validation_profile(AG_LIVE_MULTI_COMPONENT),
-        trace={
-            "query_plan_work_shadow_projection": contract["query_plan_work_shadow_projection"],
-        },
-    )
 
     assert contract["component_plan"]["components"][0]["component_id"] == "PostgreSQL"
-    assert contract["search_work_plan"]["query_shape"]["component_count_hint"] == 1
-    assert contract["query_plan_work_shadow_projection"]["work_counts"]["component_count"] == 1
-    assert summary["detected_subject_count"] == 1
-    assert summary["selected_subject_count"] == 1
-    assert summary["omitted_subject_count"] == 0
-    allocation = allocate_existing_queries_by_search_work(
-        candidate_queries=("PostgreSQL official documentation default port",),
-        query_plan_context={},
-        search_work_projection=contract["query_plan_work_shadow_projection"],
-        max_len=1,
-        origin="component_plan_executor_contract_fixture",
-        role="initial",
-        phase="ag_component_executor_contract_01",
-    ).to_dict()
-    assert allocation["component_ids_considered"] == ["PostgreSQL"]
-    assert allocation["query_metadata"]["PostgreSQL official documentation default port"][
-        "search_work_component_id"
-    ] == "PostgreSQL"
+    assert "search_work_plan" not in contract
+    assert len(contract["planned_query_terms_by_component"]["PostgreSQL"]) >= 1
 
 
 def test_weird_entity_phrase_is_preserved_as_one_component_without_disambiguation_search() -> None:
@@ -406,9 +317,7 @@ def test_weird_entity_phrase_is_preserved_as_one_component_without_disambiguatio
 
     assert plan.ambiguity_status is AmbiguityStatus.NEEDS_DISAMBIGUATION
     assert contract["component_plan"]["components"][0]["component_id"] == phrase
-    assert contract["search_work_plan"]["components"][0]["component_id"] == phrase
-    assert contract["query_plan_work_shadow_projection"]["components"][0]["component_id"] == phrase
-    assert contract["query_plan_work_shadow_projection"]["work_counts"]["component_count"] == 1
+    assert phrase in contract["planned_query_terms_by_component"]
     assert contract["behavior_boundary_flags"]["search_executed"] is False
     assert contract["behavior_boundary_flags"]["provider_selected"] is False
 
@@ -455,7 +364,7 @@ def test_component_executor_contract_module_has_offline_boundary() -> None:
     assert called_names.isdisjoint(forbidden_calls)
 
 
-def test_search_work_plan_projection_does_not_retain_sensitive_component_plan_metadata() -> None:
+def test_component_plan_projection_does_not_retain_sensitive_metadata() -> None:
     plan = ComponentPlan(
         plan_id="component-plan:redaction",
         planner_source=PlannerSource.OFFLINE_FIXTURE,
@@ -471,7 +380,7 @@ def test_search_work_plan_projection_does_not_retain_sensitive_component_plan_me
         },
     )
 
-    payload: dict[str, Any] = build_search_work_plan_from_component_plan(plan).to_dict()
+    payload: dict[str, Any] = build_component_executor_contract_projection(plan)
     encoded = json.dumps(payload, sort_keys=True)
 
     assert "visible-safe-note" in encoded

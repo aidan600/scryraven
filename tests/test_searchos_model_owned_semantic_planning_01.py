@@ -28,10 +28,8 @@ from core.prompts import DEFAULT_SYSTEM
 from core.protocols import NullStatusWriter
 from core.query_plan_runtime_adapter import build_query_plan_runtime_adapter
 from core.query_production_runtime import (
-    QUERY_PRODUCTION_STAGE,
     execute_initial_query_strategy_convergence,
     execute_query_plan_admission_action,
-    query_plan_admission_inputs_from_query_production_projection,
 )
 from core.router_query_preparation_contract import build_router_query_preparation_state
 from core.run_config import RunDeps
@@ -41,9 +39,6 @@ from core.search_planner_model_adapter import (
     SearchPlannerModelAdapterError,
 )
 from core.search_planner_model_prompt import SEARCH_PLANNER_MODEL_SYSTEM_PROMPT
-from core.search_planner_revision_model_prompt import (
-    SEARCH_PLANNER_REVISION_MODEL_SYSTEM_PROMPT,
-)
 from core.search_planner_runtime import DeterministicSearchPlannerAdapter
 from tests.helpers.offline_ordinary_pipeline import (
     PostRetirementOrdinaryPipelineHarness,
@@ -93,21 +88,6 @@ class ModelOwnedPipelineHarness(PostRetirementOrdinaryPipelineHarness):
             "temperature": temperature,
             **kwargs,
         }
-        if system_prompt == SEARCH_PLANNER_REVISION_MODEL_SYSTEM_PROMPT:
-            self._record_model_call(system_prompt, call_kwargs)
-            self.revision_prompts.append(prompt)
-            self.revision_kwargs.append(dict(call_kwargs))
-            prompt_payload = json.loads(prompt.rsplit("Sanitized revision input JSON:\n", maxsplit=1)[-1])
-            revision_input = dict(prompt_payload["revision_input"])
-            if cost_accumulator is not None:
-                cost_accumulator.record_model_call(
-                    phase=cost_phase,
-                    model=model,
-                    input_tokens=11,
-                    output_tokens=7,
-                )
-            return json.dumps(_revision_model_response(revision_input))
-
         if system_prompt == SEARCH_PLANNER_MODEL_SYSTEM_PROMPT:
             self._record_model_call(system_prompt, call_kwargs)
             self.planner_prompts.append(prompt)
@@ -146,95 +126,6 @@ class ResponseOnlyPlannerAdapter:
         return deepcopy(self.response)
 
 
-class ResponseOnlyScoutAdapter:
-    def __init__(self) -> None:
-        self.calls: list[dict[str, Any]] = []
-
-    def produce(self, scout_input: Mapping[str, Any]) -> Mapping[str, Any]:
-        self.calls.append(deepcopy(dict(scout_input)))
-        queries: list[dict[str, Any]] = []
-        organic_results: list[dict[str, Any]] = []
-        for index, raw_query in enumerate(
-            scout_input.get("candidate_queries") or (),
-            start=1,
-        ):
-            query = dict(raw_query)
-            query["execution_status"] = "executed_by_fake_adapter"
-            queries.append(query)
-            organic_results.append(
-                {
-                    "query_id": query["query_id"],
-                    "related_dimension_ids": query["related_dimension_ids"],
-                    "title": f"Offline direction hint {index}",
-                    "link": f"https://example.invalid/hint-{index}",
-                    "snippet": "Sanitized response-only identity direction.",
-                    "position": index,
-                }
-            )
-        return {
-            "scout_queries": queries,
-            "organic_results": organic_results,
-            "confidence_posture": "directional",
-            "disambiguation_posture": "offline_response_only",
-        }
-
-
-class ResponseOnlyRevisionAdapter:
-    def __init__(
-        self,
-        *,
-        query_text: str,
-        component_id: str = "component:model:1",
-        obligation_id: str = "obligation:model:1",
-        requirement_id: str = "requirement:model:1:revised",
-        strategy_id: str = "strategy:model:1:revised",
-    ) -> None:
-        self.query_text = query_text
-        self.component_id = component_id
-        self.obligation_id = obligation_id
-        self.requirement_id = requirement_id
-        self.strategy_id = strategy_id
-        self.calls: list[dict[str, Any]] = []
-
-    def produce(self, revision_input: Mapping[str, Any]) -> Mapping[str, Any]:
-        self.calls.append(deepcopy(dict(revision_input)))
-        return {
-            "revised_question_meaning_summary": ("Use the bounded response-only identity direction for targeting."),
-            "component_search_requirement_updates": [
-                {
-                    "component_id": self.component_id,
-                    "requirement_id": self.requirement_id,
-                    "requirement_summary": "Target the resolved official name.",
-                    "source_obligation_candidate_ids": [self.obligation_id],
-                    "metadata": {
-                        "query_strategy_candidates": [
-                            {
-                                "strategy_id": self.strategy_id,
-                                "component_id": self.component_id,
-                                "candidate_kind": "primary",
-                                "candidate_query_text": self.query_text,
-                                "requested_role": "official_bias",
-                                "source_obligation_candidate_ids": [self.obligation_id],
-                                "official_canonical_intent": "official_source",
-                                "distinct_need_justification": ("Scout resolved the bounded identity target."),
-                            }
-                        ]
-                    },
-                }
-            ],
-            "consumed_ambiguity_dimension_ids": list(revision_input["consumed_ambiguity_dimension_ids"]),
-            "consumed_scout_hint_ids": list(revision_input["consumed_scout_hint_ids"]),
-            "amendment_candidates": [],
-            "mandatory_caveats": ["Scout hints remain non-evidence."],
-            "prohibited_upgrades": ["Do not cite Scout hints."],
-            "normalization_obligations": [],
-            "assumptions": [],
-            "unresolved_ambiguities": [],
-            "confidence_posture": "directional",
-            "revision_posture": "proposal_only",
-        }
-
-
 class FakePlannerModel:
     def __init__(self, response: Mapping[str, Any]) -> None:
         self.response = deepcopy(dict(response))
@@ -249,54 +140,6 @@ class FakePlannerModel:
             }
         )
         return json.dumps(self.response)
-
-
-def _revision_model_response(
-    revision_input: Mapping[str, Any],
-) -> dict[str, Any]:
-    component_id = str(revision_input["component_id"])
-    consumed_dimensions = list(revision_input["consumed_ambiguity_dimension_ids"])
-    consumed_hints = list(revision_input["consumed_scout_hint_ids"])
-    return {
-        "revised_question_meaning_summary": (
-            "Use the bounded Scout direction only to focus the initial source query; it remains non-evidence."
-        ),
-        "semantic_slot_updates": [],
-        "answer_component_updates": [],
-        "component_search_requirement_updates": [
-            {
-                "component_id": component_id,
-                "requirement_id": "requirement:model:1:revised-default",
-                "requirement_summary": ("Target the bounded identity direction with source support."),
-                "source_obligation_candidate_ids": ["obligation:model:1"],
-                "metadata": {
-                    "query_strategy_candidates": [
-                        {
-                            "strategy_id": "strategy:model:1:revised-default",
-                            "component_id": component_id,
-                            "candidate_kind": "primary",
-                            "candidate_query_text": ("Offline revised Example identity direction"),
-                            "requested_role": "official_bias",
-                            "source_obligation_candidate_ids": ["obligation:model:1"],
-                            "official_canonical_intent": "official_source",
-                            "distinct_need_justification": ("Bounded Scout direction focused the identity target."),
-                        }
-                    ]
-                },
-            }
-        ],
-        "mandatory_caveats": ["Scout direction remains non-evidence."],
-        "prohibited_upgrades": ["Do not cite Scout direction."],
-        "normalization_obligations": [],
-        "assumptions": [],
-        "unresolved_ambiguities": [],
-        "consumed_ambiguity_dimension_ids": consumed_dimensions,
-        "consumed_scout_hint_ids": consumed_hints,
-        "amendment_candidates": [],
-        "closed_surface_flags": {},
-        "confidence_posture": "directional",
-        "revision_posture": "proposal_only",
-    }
 
 
 def _planner_payload(
@@ -323,110 +166,6 @@ def _planner_payload(
             ]
         components.append(component)
     return {"disposition": "components", "components": components}
-
-
-def _rich_planner_payload(
-    *,
-    component_count: int = 1,
-    query_texts: Sequence[str] | None = None,
-    recon_posture: str = "not_needed",
-) -> dict[str, Any]:
-    queries = list(query_texts or ())
-    components: list[dict[str, Any]] = []
-    obligations: list[dict[str, Any]] = []
-    requirements: list[dict[str, Any]] = []
-    for index in range(1, component_count + 1):
-        component_id = f"component:model:{index}"
-        obligation_id = f"obligation:model:{index}"
-        query_text = queries[index - 1] if index <= len(queries) else f"Model owned exact query for component {index}"
-        components.append(
-            {
-                "component_id": component_id,
-                "component_revision": "1",
-                "component_purpose": "user_facing_answer_target",
-                "user_facing_label": f"Model component {index}",
-                "user_facing_question": f"What is model-owned need {index}?",
-                "requirement_posture": "required",
-                "acceptance_criteria": ["Direct source support."],
-                "semantic_slot_ids": ["slot:model-subject"],
-                "source_obligation_candidate_ids": [obligation_id],
-                "allowed_support_kinds": ["direct"],
-                "max_inference_depth": 0,
-                "dependency_component_ids": ([f"component:model:{index - 1}"] if index > 1 else []),
-                "materiality": "material",
-            }
-        )
-        obligations.append(
-            {
-                "candidate_id": obligation_id,
-                "obligation_kind": "no_special_obligation",
-                "component_candidate_ids": [component_id],
-                "strictness": "required",
-            }
-        )
-        strategy: dict[str, Any] = {
-            "strategy_id": f"strategy:model:{index}:primary",
-            "component_id": component_id,
-            "candidate_kind": "primary",
-            "candidate_query_text": query_text,
-            "requested_role": "initial",
-            "source_obligation_candidate_ids": [obligation_id],
-            "distinct_need_justification": ("Primary query for this model-proposed accepted component."),
-            "recon_requirement": {
-                "posture": "not_needed",
-                "unresolved_dimension_ids": [],
-                "candidate_queries": [],
-                "required_for_truthful_targeting": False,
-            },
-        }
-        if index == 1 and recon_posture != "not_needed":
-            strategy["recon_requirement"] = {
-                "posture": recon_posture,
-                "unresolved_dimension_ids": ["dimension:model:entity-identity"],
-                "candidate_queries": [
-                    {
-                        "dimension_id": "dimension:model:entity-identity",
-                        "candidate_query_text": "Old Example New Example identity",
-                        "query_kind": "disambiguation_probe",
-                    }
-                ],
-                "required_for_truthful_targeting": recon_posture == "required",
-            }
-        requirements.append(
-            {
-                "component_id": component_id,
-                "requirement_id": f"requirement:model:{index}:initial",
-                "requirement_summary": f"Find support for model need {index}.",
-                "source_obligation_candidate_ids": [obligation_id],
-                "metadata": {
-                    "query_strategy_candidates": [strategy],
-                    "provider_name_neutral": True,
-                },
-            }
-        )
-    return {
-        "question_meaning_summary": ("Use exactly the warranted component structure in this model proposal."),
-        "requested_output": "A source-bound answer for every warranted component.",
-        "semantic_slots": [
-            {
-                "slot_id": "slot:model-subject",
-                "slot_kind": "entity",
-                "status": "explicit",
-                "candidate_values": ["Example"],
-                "selected_value": "Example",
-                "materiality": "material",
-            }
-        ],
-        "answer_components": components,
-        "source_obligation_candidates": obligations,
-        "component_search_requirements": requirements,
-        "material_ambiguity_posture": ("directional_recon_optional" if recon_posture == "optional" else "none"),
-        "mandatory_caveats": [],
-        "prohibited_upgrades": ["Do not treat planning material as evidence."],
-        "normalization_obligations": [],
-        "assumptions": [],
-        "unsupported_or_deferred_outputs": ["Later Analyst discoveries remain governed by amendment admission."],
-    }
 
 
 def _install_chain_capture(monkeypatch: Any) -> dict[str, Any]:
@@ -509,6 +248,7 @@ def _pipeline_fixture(
         search_planner_adapter=(None if use_default_model else planner_adapter),
         scout_disambiguation_adapter=scout_adapter,
         search_planner_revision_adapter=revision_adapter,
+        provider_availability={"tavily": True, "serper": True},
         logger=logging.getLogger("tests.searchos.model_owned_semantic_planning"),
     )
     return config, deps, harness, capture
@@ -567,21 +307,18 @@ def _contains_object_identity(value: Any, target: Any) -> bool:
     return False
 
 
-def test_rundeps_declares_typed_planner_scout_and_revision_seams() -> None:
+def test_rundeps_declares_typed_planner_seam_without_scout_or_revision_consumption() -> None:
     declared = {item.name: item for item in fields(RunDeps)}
 
-    for name in (
-        "search_planner_adapter",
-        "scout_disambiguation_adapter",
-        "search_planner_revision_adapter",
-    ):
-        assert name in declared
-        assert declared[name].default is None
+    assert "search_planner_adapter" in declared
+    assert declared["search_planner_adapter"].default is None
 
     source = Path(orchestrator.__file__).read_text(encoding="utf-8")
     assert "planner_adapter = deps.search_planner_adapter" in source
-    assert "scout_adapter = deps.scout_disambiguation_adapter" in source
-    assert "revision_adapter = deps.search_planner_revision_adapter" in source
+    assert "scout_adapter = deps.scout_disambiguation_adapter" not in source
+    assert "revision_adapter = deps.search_planner_revision_adapter" not in source
+    assert "build_ordinary_scout_disambiguation_adapter" not in source
+    assert "SearchPlannerRevisionModelAdapter" not in source
     assert 'getattr(deps, "search_planner_adapter"' not in source
     assert "DeterministicSearchPlannerAdapter()" not in source
 
@@ -665,18 +402,6 @@ def test_sparse_factual_uncertainty_does_not_reach_scout_or_revision(
     tmp_path: Path,
     monkeypatch: Any,
 ) -> None:
-    scout = ResponseOnlyScoutAdapter()
-    factory_calls: list[dict[str, Any]] = []
-
-    def build_scout(**kwargs: Any) -> ResponseOnlyScoutAdapter:
-        factory_calls.append(dict(kwargs))
-        return scout
-
-    monkeypatch.setattr(
-        orchestrator,
-        "build_ordinary_scout_disambiguation_adapter",
-        build_scout,
-    )
     config, deps, harness, capture = _pipeline_fixture(
         tmp_path,
         monkeypatch,
@@ -691,34 +416,21 @@ def test_sparse_factual_uncertainty_does_not_reach_scout_or_revision(
         CostAccumulator(),
     )
 
+    source = Path(orchestrator.__file__).read_text(encoding="utf-8")
     assert outcome.report
-    assert factory_calls
-    assert scout.calls == []
+    assert "build_ordinary_scout_disambiguation_adapter" not in source
     assert harness.revision_kwargs == []
     assert harness.revision_prompts == []
     slot = capture["initial_contract_at_convergence"]["accepted_semantic_slot_refs"][0]
     assert slot["status"] == "unresolved"
     assert slot["candidate_values"] == ["Old Example", "New Example"]
     assert slot["user_confirmation_required"] is False
-    assert capture["convergence"].recon_summary == ()
 
 
 def test_ordinary_no_recon_makes_zero_scout_and_revision_calls(
     tmp_path: Path,
     monkeypatch: Any,
 ) -> None:
-    factory_calls: list[dict[str, Any]] = []
-    sentinel_scout = ResponseOnlyScoutAdapter()
-
-    def build_scout(**kwargs: Any) -> ResponseOnlyScoutAdapter:
-        factory_calls.append(dict(kwargs))
-        return sentinel_scout
-
-    monkeypatch.setattr(
-        orchestrator,
-        "build_ordinary_scout_disambiguation_adapter",
-        build_scout,
-    )
     config, deps, harness, _capture = _pipeline_fixture(
         tmp_path,
         monkeypatch,
@@ -733,9 +445,10 @@ def test_ordinary_no_recon_makes_zero_scout_and_revision_calls(
         CostAccumulator(),
     )
 
+    source = Path(orchestrator.__file__).read_text(encoding="utf-8")
     assert outcome.report
-    assert factory_calls
-    assert sentinel_scout.calls == []
+    assert "build_ordinary_scout_disambiguation_adapter" not in source
+    assert "SearchPlannerRevisionModelAdapter" not in source
     assert harness.revision_prompts == []
     assert harness.revision_kwargs == []
 
@@ -774,7 +487,6 @@ def test_default_planner_transport_facts_are_not_retained(
         "planner_projection": capture["planner_projection_at_convergence"],
         "initial_contract": kernel.state.initial_answer_contract,
         "current_contract": kernel.state.current_answer_contract,
-        "search_work_plan": kernel.state.search_work_plan,
         "query_plan": capture["query_plan_admission"].observation.payload,
         "run_kernel_trace": kernel.trace_projection().to_dict(),
         "execution_trace": outcome.execution_trace,
@@ -984,82 +696,6 @@ def test_invalid_or_unavailable_default_model_fails_before_queryplan_and_search(
     assert harness.model_system_prompts.count(DEFAULT_SYSTEM["researcher"]) == 0
 
 
-def test_explicit_response_only_planner_scout_and_revision_cross_real_pipeline(
-    tmp_path: Path,
-    monkeypatch: Any,
-) -> None:
-    planner = ResponseOnlyPlannerAdapter(
-        _rich_planner_payload(
-            query_texts=["Unresolved Example official identity"],
-            recon_posture="optional",
-        )
-    )
-    scout = ResponseOnlyScoutAdapter()
-    revised_query = "Resolved Example official current rule"
-    revision = ResponseOnlyRevisionAdapter(query_text=revised_query)
-    config, deps, harness, capture = _pipeline_fixture(
-        tmp_path,
-        monkeypatch,
-        query="I may have the old name; what current rule applies?",
-        planner_response=_planner_payload(),
-        planner_adapter=planner,
-        scout_adapter=scout,
-        revision_adapter=revision,
-        use_default_model=False,
-    )
-    endpoint = "http://injected-adapter-endpoint-sentinel.invalid/v1"
-    credential = "injected-adapter-credential-sentinel"
-    config = replace(
-        config,
-        fast_provider="OpenRouter",
-        local_url=endpoint,
-        or_api_key=credential,
-    )
-    accumulator = CostAccumulator()
-
-    orchestrator.run_pipeline(
-        config,
-        deps,
-        NullStatusWriter(),
-        accumulator,
-    )
-
-    assert len(planner.calls) == 1
-    assert len(scout.calls) == 1
-    assert len(revision.calls) == 1
-    assert harness.planner_prompts == []
-    assert harness.planner_kwargs == []
-    assert SEARCH_PLANNER_MODEL_SYSTEM_PROMPT not in harness.model_system_prompts
-    injected_input_text = json.dumps(planner.calls[0], sort_keys=True)
-    assert endpoint not in injected_input_text
-    assert credential not in injected_input_text
-    assert not _contains_object_identity(planner.calls[0], accumulator)
-    assert accumulator.snapshot()["calls_by_phase"].get("search_planner", 0) == 0
-    assert capture["query_plan_admission"].current_queries == [revised_query]
-    assert harness.search_calls[0]["queries"] == [revised_query]
-    scout_projection = capture["scout_projection_at_convergence"]
-    for key in (
-        "evidence_admitted",
-        "citation_eligible",
-        "source_obligation_satisfied",
-        "fetch_read_retrieval_behavior_changed",
-        "search_executor_runtime_activated",
-    ):
-        assert scout_projection[key] is False
-    for hint in scout_projection["scout_result_hints"]:
-        assert hint["evidence_admitted"] is False
-        assert hint["citation_eligible"] is False
-        assert hint["source_obligation_satisfied"] is False
-    scout_json = json.dumps(scout_projection, sort_keys=True)
-    assert scout_projection["final_answer_packet_created"] is False
-    assert scout_projection["author_input_created"] is False
-    assert '"final_answer_packet":{' not in scout_json
-    assert '"author_input":{' not in scout_json
-    assert capture["evidence_at_convergence"].get("evidence_items", []) == []
-    revision_projection = capture["revision_projection_at_convergence"]
-    assert revision_projection["revision_effect_class"] == ("query_direction_only_non_contractual")
-
-
 def test_model_multipart_proposal_preserves_five_components_and_queryplan_floor() -> None:
     kernel = _kernel_after_run_contract()
     payload = _planner_payload(component_count=5)
@@ -1093,9 +729,6 @@ def test_model_multipart_proposal_preserves_five_components_and_queryplan_floor(
         planner_adapter=planner,
         provider_diagnostics=[],
     )
-    inputs = query_plan_admission_inputs_from_query_production_projection(
-        kernel.state.projections[QUERY_PRODUCTION_STAGE]
-    )
     query_authority = build_query_plan_runtime_adapter(
         run_id=kernel.state.run_id,
         primary_entity="Example",
@@ -1105,20 +738,25 @@ def test_model_multipart_proposal_preserves_five_components_and_queryplan_floor(
         intent="general",
         clean=lambda value: " ".join(value.split()),
     )
-    action = kernel.authorize_query_plan_admission(inputs={"candidate_count": len(inputs.candidate_queries)})
+    action = kernel.authorize_query_plan_admission(
+        inputs={"candidate_count": len(convergence.candidate_queries)}
+    )
     admission = execute_query_plan_admission_action(
         action,
         query_authority=query_authority,
         router_query_preparation_contract=_router_state(),
-        candidate_queries=inputs.candidate_queries,
-        candidate_strategies=inputs.candidate_strategies,
-        candidate_source=inputs.candidate_source,
-        query_type=inputs.query_type,
+        candidate_queries=convergence.candidate_queries,
+        candidate_strategies=convergence.candidate_strategies,
+        candidate_source=convergence.candidate_source,
+        query_type=convergence.query_type,
         current_date="2026-07-20",
-        max_queries=inputs.max_queries,
-        route_runtime_posture=inputs.effective_route_posture,
-        search_work_projection=convergence.search_work_plan,
-        initial_query_allocation_policy=inputs.initial_query_allocation_policy,
+        max_queries=convergence.max_queries,
+        route_runtime_posture=convergence.effective_route_posture,
+        accepted_contract=(
+            kernel.state.current_answer_contract
+            or kernel.state.initial_answer_contract
+        ),
+        initial_query_allocation_policy=convergence.initial_query_allocation_policy,
     )
 
     assert len(fake_model.calls) == 1

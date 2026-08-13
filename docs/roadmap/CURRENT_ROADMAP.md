@@ -470,43 +470,45 @@ and recursive-navigation limit calibration are not installed, are not part of
 the one-hop MVP, and have no ordinary product caller. Any later phase must reuse
 the installed acquisition and custody owners.
 
-## Active Decision Gate: SearchOS Carrier Consolidation + Product Proof
+## Active Decision Gate: Representative Bounded Real-Model/Product Validation
 
 The maintainer-selected **Option C modified into a unified iterative loop** is
-installed through SearchOS Phases 1 and 2. The active next checkpoint is Phase
-3: fold the retained compatibility carriers after deterministic parity and run
-the bounded representative product proof owned by that phase.
+installed through SearchOS Phases 1, 2, and 3. Ordinary planning completion is
+`AnswerContract -> QueryPlan`. The active next checkpoint is representative
+bounded real-model/product validation. This roadmap grants no live license.
 
 ### Installed versus selected target
 
-Phases 1 and 2 are installed at runtime/test checkpoint
-`5db9ae8e14ba3858ddd1c84abea8440357a53675`; this includes the focused
-multi-slot semantic-cardinality repair. Phase 3 remains the selected next
-target. Ordinary initial and iterative acquisition no longer executes
-`ScoutDisambiguation`, `PlannerRevision`, or the routine initial
-ContractAmendment return lane. `SearchWorkPlan` and `QueryProduction` remain
-temporary ordinary compatibility carriers pending Phase 3. Installed truth is
+Phases 1, 2, and 3 are installed. Ordinary planning completion is
+`AnswerContract -> QueryPlan`. Ordinary initial and iterative acquisition no
+longer executes `ScoutDisambiguation`, `PlannerRevision`, or the routine initial
+ContractAmendment return lane. `SearchWorkPlan` and `QueryProduction` are
+retired as ordinary semantic/query compatibility carriers. Rich Planner
+compatibility is reduced to current real consumers. Installed truth is
 owned by [ScryRaven Current State](../architecture/SCRYRAVEN_CURRENT_STATE.md),
 while architecture ownership remains with the
 [SearchOS Operating Model](../architecture/SEARCHOS_OPERATING_MODEL.md).
 
-The installed ordinary front-half shape is one unified component worklist:
+The installed ordinary front-half shape is:
 
 ```text
 user request
--> compact SearchPlanner semantic proposal
+-> sparse SearchPlanner
 -> deterministic semantic compiler
--> uncertainty-aware AnswerContract
--> one RunKernel component worklist
--> QueryPlan exact query + provider-neutral job class + component/slot lineage
+-> accepted AnswerContract
+-> QueryPlan
 -> core.routing
 -> DISCOVER / READ
--> SearchJudgment iteration
--> InterpretationBinding, clarification, semantic handoff, or honest blocker
+-> unified SearchOS SearchJudgment
+-> semantic handoff
 ```
 
 Search-assisted ambiguity belongs in that loop. It does not create an ordinary
 ScoutDisambiguation / PlannerRevision / routine ContractAmendment return lane.
+The installed SearchOS loop still uses one RunKernel component worklist.
+QueryPlan exact query + provider-neutral job class + component/slot lineage
+remain the query identity. SearchJudgment may emit InterpretationBinding,
+clarification, semantic handoff, or honest blocker.
 `orientation`, `standard_discovery`, and `deep_discovery` are installed
 provider-neutral job concepts; they express acquisition need, not a provider
 brand. `core.routing` remains the provider mapper, and `READ` remains a
@@ -558,13 +560,11 @@ proves contract/parser/compiler/canonical-state representability only. It makes
 no real-model accuracy, false-ambiguity, selection-accuracy, or product-quality
 claim, and no live call was run.
 
-The compiler projects only neutral `not_needed` legacy recon. Sparse uncertainty
-or confirmation semantics do not create Scout or PlannerRevision reachability.
-At the Phase-1 checkpoint, rich SearchWorkPlan, QueryProduction, and old
-query/recon surfaces remained compatibility consumers. Phase 2 subsequently
-retired ordinary Scout, PlannerRevision, routine initial ContractAmendment, and
-recon execution; SearchWorkPlan and QueryProduction are the remaining Phase-3
-carrier boundary.
+The compiler no longer emits ordinary `recon_requirement` placeholders. Sparse
+uncertainty or confirmation semantics do not create Scout or PlannerRevision
+reachability. Phase 2 retired ordinary Scout, PlannerRevision, routine initial
+ContractAmendment, and recon execution. Phase 3 retired SearchWorkPlan and
+QueryProduction as ordinary compatibility carriers.
 
 ### Installed Phase 2 - Unified iterative acquisition
 
@@ -603,7 +603,8 @@ masking an unresolved slot. Binding and clarification select one exact semantic
 slot, and a component-wide gate blocks semantic handoff while any relevant
 material slot remains unresolved or confirmation-required. The canonical plural
 obligation map is authoritative; no singular compatibility field competes with
-it. SearchWorkPlan and QueryProduction remain deferred Phase-3 carriers.
+it. SearchWorkPlan and QueryProduction are retired ordinary compatibility
+carriers. The focused multi-slot semantic-cardinality repair remains installed.
 
 The ordinary `ScoutDisambiguation`, `PlannerRevision`, routine initial
 `PlannerRevision` ContractAmendment lane, and their recon convergence execution
@@ -611,7 +612,7 @@ are retired with an explicit zero-reachability regression guard. Durable Phase-2
 proof is owned by the sparse A/B/C and mixed-component corpus, exact action and
 binding contract tests, and the topology-focused convergence replacement tests.
 
-### Next Phase 3 - Carrier consolidation + product proof
+### Installed Phase 3 - Carrier consolidation + product proof
 
 Completion line:
 
@@ -620,11 +621,18 @@ AnswerContract
 -> QueryPlan
 ```
 
-Phase 3 removes redundant ordinary semantic/query carrier round trips after
-deterministic parity. Its primary folding targets are the rich `SearchWorkPlan`
-duplicate carrier, `QueryProduction` duplicated query projection, rich Planner
-compatibility, and legacy recon states/actions. This phase owns bounded
-representative corpus/product proof after deterministic parity.
+Phase 3 removed redundant ordinary semantic/query carrier round trips after
+deterministic parity. SearchWorkPlan and QueryProduction are no longer ordinary
+semantic/query authorities or required runtime intermediates. Rich Planner
+compatibility is reduced to current real consumers. Scout / PlannerRevision
+ordinary path remains retired, and remaining compatibility modules with no
+supported consumer were deleted.
+
+Next:
+
+```text
+representative bounded real-model/product validation
+```
 
 No live provider, model, search, fetch/read, retrieval, or product call is
 authorized by this roadmap. Any later live proof still requires its own explicit

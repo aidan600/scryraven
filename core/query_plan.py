@@ -26,9 +26,7 @@ from core.retrieval_quality import (
     wants_official_source_bias,
 )
 from core.search_work_query_plan_consumption import (
-    allocate_existing_queries_by_search_work,
     authorize_existing_query_by_version_bound_component_gap,
-    initial_strategy_search_work_bindings,
 )
 
 QUERY_PLAN_TRACE_KEY = "query_plan"
@@ -399,6 +397,58 @@ def _canonical_semantic_slot_ref(slot: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def initial_component_bindings_from_accepted_contract(
+    accepted_contract: Mapping[str, Any],
+) -> dict[str, dict[str, Any]]:
+    """Return compact component bindings owned by the accepted AnswerContract."""
+
+    if not isinstance(accepted_contract, Mapping):
+        raise ValueError("initial QueryPlan admission requires an accepted contract")
+    components = [
+        dict(item)
+        for item in accepted_contract.get("accepted_answer_component_refs") or ()
+        if isinstance(item, Mapping) and str(item.get("component_id") or "").strip()
+    ]
+    if not components:
+        raise ValueError("initial QueryPlan admission requires accepted components")
+    contract_ref = {
+        "contract_version": str(
+            accepted_contract.get("accepted_contract_version") or ""
+        ).strip(),
+        "contract_digest": str(
+            accepted_contract.get("accepted_contract_digest") or ""
+        ).strip(),
+    }
+    if not contract_ref["contract_version"] or not contract_ref["contract_digest"]:
+        raise ValueError(
+            "initial QueryPlan admission requires accepted contract identity"
+        )
+    bindings: dict[str, dict[str, Any]] = {}
+    for rank, component in enumerate(components, start=1):
+        component_id = str(component.get("component_id") or "").strip()
+        accepted_component_ref = {
+            "component_id": component_id,
+            "component_revision": component.get("component_revision"),
+            "component_digest": component.get("component_digest"),
+            "requirement_posture": component.get("requirement_posture"),
+            "semantic_slot_ids": list(component.get("semantic_slot_ids") or []),
+        }
+        bindings[component_id] = {
+            "component_rank": rank,
+            "accepted_component_ref": accepted_component_ref,
+            "source_obligation_candidate_ids": list(
+                component.get("source_obligation_candidate_ids")
+                or component.get("source_obligation_candidate_refs")
+                or []
+            ),
+            "required_component": (
+                str(component.get("requirement_posture") or "") == "required"
+            ),
+            "accepted_contract_ref": dict(contract_ref),
+        }
+    return bindings
+
+
 def derive_initial_component_discovery_postures(
     accepted_contract: Mapping[str, Any],
     *,
@@ -423,7 +473,7 @@ def derive_initial_component_discovery_postures(
         component = components.get(str(component_id))
         if component is None:
             raise ValueError(
-                "SearchWork component is absent from the accepted AnswerContract"
+                "accepted component is absent from the accepted AnswerContract"
             )
         component_ref = _canonical_component_ref(component)
         declared_slot_ids = list(component_ref["semantic_slot_ids"])
@@ -465,23 +515,28 @@ def derive_initial_component_discovery_postures(
             in _FACTUAL_ORIENTATION_SLOT_KINDS
             and slot.get("user_confirmation_required") is not True
         ]
-        if orientation_semantic_slot_refs:
+        inferred_only = {
+            str(item)
+            for item in component.get("allowed_support_kinds") or ()
+        } == {"inferred"}
+        if inferred_only:
+            discovery_semantic_slot_refs = []
+            job_class: DiscoveryJobClass | None = None
+            posture_name = "inference_pending"
+        elif orientation_semantic_slot_refs:
             discovery_semantic_slot_refs = orientation_semantic_slot_refs
-            job_class: DiscoveryJobClass | None = (
-                DiscoveryJobClass.ORIENTATION
-            )
+            job_class = DiscoveryJobClass.ORIENTATION
+            posture_name = "discovery_ready"
         elif clarification_semantic_slot_refs:
             discovery_semantic_slot_refs = []
             job_class = None
+            posture_name = "clarification_required"
         else:
             discovery_semantic_slot_refs = semantic_slot_refs
             job_class = DiscoveryJobClass.STANDARD_DISCOVERY
+            posture_name = "discovery_ready"
         postures[str(component_id)] = {
-            "posture": (
-                "discovery_ready"
-                if job_class is not None
-                else "clarification_required"
-            ),
+            "posture": posture_name,
             "component_ref": component_ref,
             "semantic_slot_refs": semantic_slot_refs,
             "discovery_semantic_slot_refs": (
@@ -549,7 +604,6 @@ class QueryPlan:
         self,
         strategies: Sequence[Mapping[str, Any]],
         *,
-        search_work_projection: Mapping[str, Any],
         accepted_contract: Mapping[str, Any],
         policy: InitialQueryAllocationPolicy,
         clean: Callable[[str], str],
@@ -558,7 +612,9 @@ class QueryPlan:
     ) -> tuple["QueryPlan", InitialQueryAdmissionResult]:
         """Admit component-bound initial candidates without a small global cap."""
 
-        bindings = initial_strategy_search_work_bindings(search_work_projection)
+        bindings = initial_component_bindings_from_accepted_contract(
+            accepted_contract
+        )
         required_component_ids = tuple(
             component_id for component_id, binding in bindings.items() if binding.get("required_component") is True
         )
@@ -577,7 +633,7 @@ class QueryPlan:
         for strategy in strategies:
             component_id = _clean_text(strategy.get("component_id"), limit=160)
             if not component_id or component_id not in bindings:
-                raise ValueError("initial query strategy references an unknown SearchWork component")
+                raise ValueError("initial query strategy references an unknown accepted component")
             grouped[component_id].append(strategy)
 
         plan = self
@@ -671,6 +727,8 @@ class QueryPlan:
                             "provider_dispatch_authorized": False,
                         },
                     )
+                continue
+            if posture["posture"] == "inference_pending":
                 continue
             component_strategies = sorted(
                 grouped.get(component_id, []),
@@ -880,7 +938,10 @@ class QueryPlan:
                 )
                 admitted_for_component += 1
                 admitted_candidates.append(authorized)
-                query_metadata[authorized] = dict(item.metadata)
+                query_metadata[authorized] = {
+                    **dict(item.metadata),
+                    "accepted_component_id": component_id,
+                }
                 if candidate_kind == "primary":
                     primary_item_ids.setdefault(component_id, []).append(item.item_id)
                 if immediate:
@@ -931,7 +992,6 @@ class QueryPlan:
 
         consumption = {
             "schema_version": "searchos_initial_query_allocation_consumption_v1",
-            "search_work_consumed_by_query_plan": True,
             "allocation_policy": policy.to_dict(),
             "required_component_ids": list(required_component_ids),
             "dispatch_required_component_ids": list(
@@ -1212,70 +1272,6 @@ class QueryPlan:
         }
         return plan, projection
 
-    def consume_search_work_for_existing_queries(
-        self,
-        queries: Sequence[str],
-        *,
-        query_plan_context: Mapping[str, Any] | None = None,
-        search_work_projection: Mapping[str, Any] | None = None,
-        search_judgment_projection: Mapping[str, Any] | None = None,
-        max_len: int | None,
-        origin: str,
-        role: QueryPlanRole | str,
-        phase: str = "search_work_component_allocation",
-    ) -> tuple["QueryPlan", list[str]]:
-        if search_work_projection is None:
-            return self, list(queries)
-        result = allocate_existing_queries_by_search_work(
-            candidate_queries=queries,
-            query_plan_context=query_plan_context,
-            search_work_projection=search_work_projection,
-            search_judgment_projection=search_judgment_projection,
-            max_len=max_len,
-            origin=origin,
-            role=role.value if isinstance(role, QueryPlanRole) else str(role),
-            phase=phase,
-        )
-        plan = replace(self, search_work_consumption=result.to_dict())
-        if not result.search_work_consumed_by_query_plan:
-            return plan, list(queries)
-        admitted = list(result.admitted_query_order)
-        metadata_by_query = {
-            str(query): dict(metadata)
-            for query, metadata in result.query_metadata.items()
-            if isinstance(metadata, Mapping)
-        }
-        for order, query in enumerate(admitted, start=1):
-            plan = plan.append(
-                origin=origin,
-                role=role,
-                status=QueryPlanStatus.FINALIZED,
-                authorized_query=query,
-                admission_reason="search_work_component_allocation",
-                mutation_reason="search_work_component_aware_order",
-                phase=phase,
-                order=order,
-                metadata=metadata_by_query.get(query, {}),
-            )
-        for offset, query in enumerate(result.rejected_over_budget_queries, start=len(admitted) + 1):
-            metadata = {
-                "max_len": max_len,
-                "would_have_status": QueryPlanStatus.FINALIZED.value,
-                **metadata_by_query.get(query, {}),
-            }
-            plan = plan.append(
-                origin=origin,
-                role=role,
-                status=QueryPlanStatus.REJECTED_OVER_BUDGET,
-                authorized_query=query,
-                admission_reason="rejected_over_budget",
-                mutation_reason="search_work_component_aware_cap",
-                phase=phase,
-                order=offset,
-                metadata=metadata,
-            )
-        return plan, admitted
-
     def consume_search_judgment_component_gap_authority(
         self,
         queries: Sequence[str],
@@ -1468,8 +1464,6 @@ class QueryPlan:
 def _compact_initial_strategy_metadata(
     strategy: Mapping[str, Any],
 ) -> dict[str, Any]:
-    recon = strategy.get("recon_requirement")
-    recon = dict(recon) if isinstance(recon, Mapping) else {}
     return {
         "strategy_id": _clean_text(strategy.get("strategy_id"), limit=160),
         "candidate_kind": _clean_text(strategy.get("candidate_kind"), limit=40),
@@ -1478,25 +1472,11 @@ def _compact_initial_strategy_metadata(
         "search_requirement_ref": _safe_json(strategy.get("search_requirement_ref")),
         "accepted_component_ref": _safe_json(strategy.get("accepted_component_ref")),
         "parent_search_planner_proposal_ref": _safe_json(strategy.get("parent_search_planner_proposal_ref")),
-        "parent_search_planner_revision_ref": _safe_json(strategy.get("parent_search_planner_revision_ref")),
         "distinct_need_justification": _clean_text(strategy.get("distinct_need_justification"), limit=300),
         "currentness_posture": _clean_text(strategy.get("currentness_posture"), limit=180),
         "official_canonical_intent": _clean_text(strategy.get("official_canonical_intent"), limit=120),
         "domain_constraints": _safe_json(strategy.get("domain_constraints")),
         "document_family": _clean_text(strategy.get("document_family"), limit=160),
-        "recon_requirement_ref": {
-            "posture": _clean_text(
-                recon.get("posture") or strategy.get("recon_posture"),
-                limit=40,
-            ),
-            "unresolved_dimension_ids": list(
-                recon.get("unresolved_dimension_ids") or strategy.get("recon_unresolved_dimension_ids") or []
-            ),
-            "required_for_truthful_targeting": bool(
-                recon.get("required_for_truthful_targeting") or strategy.get("recon_required_for_truthful_targeting")
-            ),
-            "recon_query_text_retained": False,
-        },
         "planner_provider_identity_ignored": bool(strategy.get("planner_provider_identity_ignored")),
         "provider_name_neutral": True,
     }
@@ -1588,8 +1568,6 @@ def _secondary_candidate_has_distinct_need(
     justification = _clean_text(strategy.get("distinct_need_justification"), limit=300)
     if not justification:
         return False
-    recon = strategy.get("recon_requirement")
-    recon = recon if isinstance(recon, Mapping) else {}
     domain_constraints = strategy.get("domain_constraints")
     domain_constraints = domain_constraints if isinstance(domain_constraints, Mapping) else {}
     return bool(
@@ -1598,8 +1576,6 @@ def _secondary_candidate_has_distinct_need(
         or strategy.get("official_canonical_intent")
         or strategy.get("document_family")
         or domain_constraints.get("include")
-        or recon.get("unresolved_dimension_ids")
-        or strategy.get("recon_unresolved_dimension_ids")
     )
 
 

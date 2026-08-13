@@ -12,7 +12,6 @@ import core.pipeline as pipeline
 import core.pipeline_orchestrator as orchestrator
 from core.acquisition_adapters import AcquisitionTransports
 from core.acquisition_control import (
-    AcquisitionControlError,
     build_acquisition_authority_snapshot,
 )
 from core.cap_enforcement import RunCapPolicy
@@ -407,7 +406,7 @@ def test_shared_obligation_has_one_canonical_ref_and_two_component_slots(
     assert state["budget"]["charged_logical_judgment_calls"] == 2
 
 
-def test_shared_obligation_descriptor_conflict_is_typed_before_assessment(
+def test_shared_obligation_descriptor_uses_accepted_contract_not_search_work_plan(
     tmp_path: Any,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -430,56 +429,50 @@ def test_shared_obligation_descriptor_conflict_is_typed_before_assessment(
         environment_overrides={"TAVILY_API_KEY": "offline-placeholder"},  # pragma: allowlist secret
     )
     kernel = harness.run_kernel
-    conflicting_plan = deepcopy(kernel.state.search_work_plan)
-    conflicting_plan["components"][1]["source_obligations"][0][
-        "satisfaction_rule"
-    ] = "Conflicting component-local satisfaction rule."
-
-    with pytest.raises(AcquisitionControlError) as exc_info:
-        build_acquisition_authority_snapshot(
-            run_id=kernel.state.run_id,
-            request_id=kernel.state.request_id,
-            current_answer_contract=kernel.state.current_answer_contract,
-            initial_answer_contract=kernel.state.initial_answer_contract,
-            search_executor_handoff_state=(
-                kernel.state.search_executor_handoff_state
-            ),
-            search_work_plan=conflicting_plan,
-        )
-
-    assert exc_info.value.code == (
-        "shared_source_obligation_descriptor_conflict"
-    )
-    kernel.state.search_work_plan = conflicting_plan
-    kernel.state.search_judgment_read_state = {}
-    read_action_count = len(_read_actions(harness))
-    conflicting_model_calls: list[str] = []
-
-    result = execute_search_judgment_read_source_and_custody(
-        run_kernel=kernel,
-        candidate_packet=harness.read_candidate_packet,
-        query_plan=harness.read_query_plan,
-        discovery_result_store=harness.read_discovery_result_store,
-        ask_model=lambda *_args, **_kwargs: conflicting_model_calls.append(
-            "called"
+    baseline = build_acquisition_authority_snapshot(
+        run_id=kernel.state.run_id,
+        request_id=kernel.state.request_id,
+        current_answer_contract=kernel.state.current_answer_contract,
+        initial_answer_contract=kernel.state.initial_answer_contract,
+        search_executor_handoff_state=(
+            kernel.state.search_executor_handoff_state
         ),
-        provider="offline-fake-provider",
-        model="offline-fake-smart-model",
-        base_url="http://offline.invalid/v1",
-        api_key="",
-        use_reasoning=False,
-        available_providers={},
-        acquisition_transports=None,
-        before_transport=None,
-        measure_context_stage=None,
     )
-
-    assert result.projection["status"] == "binding_derivation_failed_closed"
-    assert result.projection["failure_code"] == (
-        "shared_source_obligation_descriptor_conflict"
+    obligation_ref = baseline["source_obligations_by_id"][shared_obligation_id]
+    assert obligation_ref["component_ids"] == [
+        "fixture-component-01",
+        "fixture-component-02",
+    ]
+    kernel.state.search_work_plan = {
+        "components": [
+            {
+                "component_id": "fixture-component-02",
+                "source_obligations": [
+                    {
+                        "obligation_id": shared_obligation_id,
+                        "kind": "conflicting_kind",
+                        "strictness": "optional",
+                        "satisfaction_rule": (
+                            "Conflicting component-local satisfaction rule."
+                        ),
+                    }
+                ],
+            }
+        ]
+    }
+    ignored_work_plan = build_acquisition_authority_snapshot(
+        run_id=kernel.state.run_id,
+        request_id=kernel.state.request_id,
+        current_answer_contract=kernel.state.current_answer_contract,
+        initial_answer_contract=kernel.state.initial_answer_contract,
+        search_executor_handoff_state=(
+            kernel.state.search_executor_handoff_state
+        ),
     )
-    assert conflicting_model_calls == []
-    assert len(_read_actions(harness)) == read_action_count
+    assert ignored_work_plan == baseline
+    assert kernel.state.search_work_plan["components"][0]["source_obligations"][0][
+        "kind"
+    ] == "conflicting_kind"
 
 
 def test_five_product_slots_are_all_assessed_once(

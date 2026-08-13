@@ -26,8 +26,6 @@ from core.initial_query_strategy_failure import (
     invoke_run_kernel_initial_planning,
     project_initial_query_strategy_failure_for_terminal,
     run_kernel_initial_planning_failure,
-    scout_disambiguation_runtime_failure,
-    search_planner_revision_runtime_failure,
 )
 from core.query_production_runtime import (
     QueryStrategyConvergenceError,
@@ -39,9 +37,6 @@ from core.run_kernel import RunKernelTransitionError
 from core.search_planner_model_adapter import (
     SearchPlannerModelAdapterError,
     SearchPlannerModelAdapterFailureCode,
-)
-from core.search_planner_revision_runtime import (
-    SearchPlannerRevisionRuntimeSafeFailureCode,
 )
 from core.search_planner_runtime import (
     SearchPlannerRuntimeError,
@@ -183,7 +178,7 @@ def test_carrier_rejects_arbitrary_and_cross_origin_codes() -> None:
         InitialQueryStrategyFailure(
             failure_origin=InitialQueryStrategyFailureOrigin.PLANNER_RUNTIME,
             failure_code=(
-                QueryStrategyConvergenceFailureCode.SEARCH_WORK_PLAN_CONTRACT_STALE.value
+                QueryStrategyConvergenceFailureCode.INITIAL_STRATEGIES_EMPTY.value
             ),
         )
     with pytest.raises(ValueError, match="not licensed"):
@@ -197,23 +192,7 @@ def test_carrier_rejects_arbitrary_and_cross_origin_codes() -> None:
         InitialQueryStrategyFailure(
             failure_origin=InitialQueryStrategyFailureOrigin.RUN_KERNEL,
             failure_code=(
-                InitialQueryStrategyFailureCode.SCOUT_DISAMBIGUATION_RUNTIME_ERROR.value
-            ),
-        )
-    with pytest.raises(ValueError, match="not licensed"):
-        InitialQueryStrategyFailure(
-            failure_origin=InitialQueryStrategyFailureOrigin.SCOUT_DISAMBIGUATION_RUNTIME,
-            failure_code=(
-                InitialQueryStrategyFailureCode.SEARCH_PLANNER_PRODUCTION_TRANSITION.value
-            ),
-        )
-    with pytest.raises(ValueError, match="not licensed"):
-        InitialQueryStrategyFailure(
-            failure_origin=(
-                InitialQueryStrategyFailureOrigin.SEARCH_PLANNER_REVISION_RUNTIME
-            ),
-            failure_code=(
-                InitialQueryStrategyFailureCode.SCOUT_DISAMBIGUATION_RUNTIME_ERROR.value
+                QueryStrategyConvergenceFailureCode.INITIAL_STRATEGIES_EMPTY.value
             ),
         )
 
@@ -248,16 +227,12 @@ def test_carrier_licenses_every_owner_enum_value_for_its_origin_only() -> None:
             )
 
 
-def test_carrier_licenses_run_kernel_scout_and_revision_exact_codes() -> None:
+def test_carrier_licenses_run_kernel_exact_codes() -> None:
     run_kernel_codes = {
         InitialQueryStrategyFailureCode.SEARCH_PLANNER_PRODUCTION_TRANSITION,
         InitialQueryStrategyFailureCode.INITIAL_ANSWER_CONTRACT_ACCEPTANCE_TRANSITION,
-        InitialQueryStrategyFailureCode.SCOUT_DISAMBIGUATION_TRANSITION,
-        InitialQueryStrategyFailureCode.SEARCH_PLANNER_REVISION_TRANSITION,
         InitialQueryStrategyFailureCode.CONTRACT_AMENDMENT_ADMISSION_TRANSITION,
         InitialQueryStrategyFailureCode.CONTRACT_AMENDMENT_APPLICATION_TRANSITION,
-        InitialQueryStrategyFailureCode.SEARCH_WORK_PLAN_CONSTRUCTION_TRANSITION,
-        InitialQueryStrategyFailureCode.QUERY_PRODUCTION_TRANSITION,
         InitialQueryStrategyFailureCode.QUERY_PLAN_ADMISSION_TRANSITION,
     }
     for member in run_kernel_codes:
@@ -271,34 +246,6 @@ def test_carrier_licenses_run_kernel_scout_and_revision_exact_codes() -> None:
                 failure_origin=InitialQueryStrategyFailureOrigin.PLANNER_RUNTIME,
                 failure_code=member.value,
             )
-
-    scout = InitialQueryStrategyFailure(
-        failure_origin=InitialQueryStrategyFailureOrigin.SCOUT_DISAMBIGUATION_RUNTIME,
-        failure_code=(
-            InitialQueryStrategyFailureCode.SCOUT_DISAMBIGUATION_RUNTIME_ERROR.value
-        ),
-    )
-    assert scout.failure_code == "scout_disambiguation_runtime_error"
-    with pytest.raises(ValueError, match="not licensed"):
-        InitialQueryStrategyFailure(
-            failure_origin=InitialQueryStrategyFailureOrigin.RUN_KERNEL,
-            failure_code=scout.failure_code,
-        )
-
-    revision = InitialQueryStrategyFailure(
-        failure_origin=(
-            InitialQueryStrategyFailureOrigin.SEARCH_PLANNER_REVISION_RUNTIME
-        ),
-        failure_code=(
-            SearchPlannerRevisionRuntimeSafeFailureCode.SEARCH_PLANNER_REVISION_RUNTIME_ERROR.value
-        ),
-    )
-    assert revision.failure_code == "search_planner_revision_runtime_error"
-    with pytest.raises(ValueError, match="not licensed"):
-        InitialQueryStrategyFailure(
-            failure_origin=InitialQueryStrategyFailureOrigin.SCOUT_DISAMBIGUATION_RUNTIME,
-            failure_code=revision.failure_code,
-        )
 
 
 def test_unknown_runtime_subclass_remains_generic_without_leaks() -> None:
@@ -328,7 +275,7 @@ def test_unknown_runtime_subclass_remains_generic_without_leaks() -> None:
         assert fragment not in encoded
 
 
-def test_run_kernel_and_scout_revision_projection_unchanged() -> None:
+def test_run_kernel_projection_unchanged() -> None:
     translated = InitialQueryStrategyFailureError(
         run_kernel_initial_planning_failure(operation="search_planner_production")
     )
@@ -337,18 +284,6 @@ def test_run_kernel_and_scout_revision_projection_unchanged() -> None:
         "boundary": "initial_query_strategy",
         "failure_origin": "run_kernel",
         "failure_code": "search_planner_production_transition",
-    }
-    assert scout_disambiguation_runtime_failure().to_terminal_projection() == {
-        "schema_version": "initial_query_strategy_failure_v1",
-        "boundary": "initial_query_strategy",
-        "failure_origin": "scout_disambiguation_runtime",
-        "failure_code": "scout_disambiguation_runtime_error",
-    }
-    assert search_planner_revision_runtime_failure().to_terminal_projection() == {
-        "schema_version": "initial_query_strategy_failure_v1",
-        "boundary": "initial_query_strategy",
-        "failure_origin": "search_planner_revision_runtime",
-        "failure_code": "search_planner_revision_runtime_error",
     }
     assert (
         InitialQueryStrategyFailureCode.SEARCH_PLANNER_PRODUCTION_TRANSITION.value
@@ -363,9 +298,9 @@ def test_invoke_run_kernel_translates_only_allowlisted_operations() -> None:
         )
 
     with pytest.raises(InitialQueryStrategyFailureError) as caught:
-        invoke_run_kernel_initial_planning("query_production", boom)
+        invoke_run_kernel_initial_planning("query_plan_admission", boom)
     assert caught.value.failure == run_kernel_initial_planning_failure(
-        operation="query_production"
+        operation="query_plan_admission"
     )
     encoded = json.dumps(caught.value.to_terminal_projection(), sort_keys=True)
     for fragment in _PRIVATE_FRAGMENTS:
@@ -387,11 +322,9 @@ def test_bounded_terminal_projects_owner_codes_without_private_material() -> Non
         ),
         InitialQueryStrategyFailureError(
             run_kernel_initial_planning_failure(
-                operation="search_work_plan_construction"
+                operation="query_plan_admission"
             )
         ),
-        InitialQueryStrategyFailureError(scout_disambiguation_runtime_failure()),
-        InitialQueryStrategyFailureError(search_planner_revision_runtime_failure()),
     )
     for exc in cases:
         payload = compatibility_cli._bounded_terminal_payload(

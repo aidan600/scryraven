@@ -50,7 +50,7 @@ only the discriminated `direct_simple | components` semantic proposal: genuine
 component needs and sparse source, freshness, dependency, support, uncertainty,
 caveat, normalization, or calculation exceptions. Deterministic code owns rich
 compatibility construction, IDs, bindings, mode ceilings, initial query copies,
-and neutral no-recon projection. Five components is a ceiling, not a target.
+and compiler-owned mechanical identity. Five components is a ceiling, not a target.
 
 One deterministic query-shape assessment now qualifies explicit bullet,
 contiguous numbered, and bounded repeated-imperative requests containing two
@@ -113,7 +113,7 @@ configuration.
 | `PROVIDER-CAPABILITY-ROUTING` | `core.routing` owns one deterministic capability catalog and code-owned route policy. Ordinary DISCOVER consumes completed ProviderPlan decisions. `retrieval.DiscoverySourceResultIdentity` and `retrieval.DiscoveryResultMaterialStore` preserve bounded provider-result occurrence truth before chunking/ranking; existing ranking and selection populate the canonical ordinary `RunKernel.SearchResultCandidatePacket` with zero separate candidate-URL transport. Candidate selection remains a nontrigger. The post-selection RunKernel controller and typed Linkup/Tavily adapters remain installed for a future independent material-need producer. Focused Extract, Map, Crawl, and general Linkup Deep remain PRODUCT-blocked with exact controller blockers. |
 | `GENERIC-PROVIDER-EXECUTION-BROKER-V2` | One tracked loopback-only broker consumes the versioned explicit-route `scryraven_provider_execution_request_v2` / response family. It supports Serper and Tavily `search.query` plus OpenAI `model.generate`; only the broker child parses the private environment file, while session tokens stay out of argv and the generic client persists safe completion, exact cache/reasoning/usage accounting, elapsed time, and output digest/length rather than output text. Caller/evaluator owns route selection, exact reasoning-effort authorization, prompts/query, retries/timeouts/caps, pricing, cost ceilings, interpretation, and durable sanitization. Incomplete generation is published as `REVIEW_REQUIRED / INCOMPLETE_GENERATION` before parser or semantic scoring and stops later calls. The job/profile bouncer is fail-closed, and new AnalystOS addenda select the provider-neutral brokered model-origination transport rather than the direct OpenAI fallback. |
 | `SEARCHPLANNER-BOUNDARY-INTEGRITY` | `SEARCHPLANNER-SPARSE-UNCERTAINTY-AWARE-PLANNING-01` installs one fail-closed ordinary language shared by prompt and validator: `direct_simple | components`. Strict JSON parsing still rejects duplicate/nonfinite material, while the deterministic compiler alone constructs and revalidates the rich compatibility state. Mechanical IDs, runtime/contract references, provider authority, exact query/recon programs, evidence, and accepted state are forbidden model output. |
-| `SEARCHOS-QUERY-CONVERGENCE` | The ordinary selected-fast-model SearchPlanner reaches RunKernel initial AnswerContract acceptance through the sparse validator and deterministic compiler. `direct_simple` becomes one required direct component; sparse components retain genuine semantic differences and compiler-owned ordinal identity. QueryPlan derives exactly one provider-neutral `orientation`, `standard_discovery`, or no-dispatch clarification posture from the accepted component/semantic-slot state, and every admitted item carries component/slot lineage. `deep_discovery` is available only as a typed in-loop escalation. SearchWorkPlan and QueryProduction remain temporary Phase-3 carriers. The ordinary ScoutDisambiguation, PlannerRevision, and routine initial PlannerRevision ContractAmendment lane is retired with no fallback. |
+| `SEARCHOS-QUERY-CONVERGENCE` | The ordinary selected-fast-model SearchPlanner reaches RunKernel initial AnswerContract acceptance through the sparse validator and deterministic compiler. `direct_simple` becomes one required direct component; sparse components retain genuine semantic differences and compiler-owned ordinal identity. QueryPlan consumes the accepted AnswerContract directly and derives exactly one provider-neutral `orientation`, `standard_discovery`, or no-dispatch clarification posture from the accepted component/semantic-slot state, and every admitted item carries component/slot lineage. `deep_discovery` is available only as a typed in-loop escalation. SearchWorkPlan and QueryProduction are retired as ordinary semantic/query carriers. The ordinary ScoutDisambiguation, PlannerRevision, and routine initial PlannerRevision ContractAmendment lane is retired with no fallback. |
 | `SEARCHOS-SLICE-A-CUTOVER` | `SEARCHOS-FIRST-WAVE-AND-ITERATIVE-JUDGMENT-CUTOVER-01` now owns one unified RunKernel SearchJudgment across initial and iterative `orientation`, `standard_discovery`, and `deep_discovery` work. Immutable revision 1, exact zero-result orientation lineage, and append-only iteration sets feed slot-local windows and cursors. SearchJudgment may propose exact follow-up work, READ, a bounded factual InterpretationBinding, clarification, semantic handoff, navigation where separately eligible, or honest unresolved state. RunKernel admits `searchos_interpretation_binding_v1` append-only and exposes a planning-only effective semantic-slot view without mutating the accepted AnswerContract or creating evidence, support, coverage, satisfaction, or citation authority. Exact candidate READ retains existing custody meaning. Required slots that do not reach current semantic admission produce the typed Slice A required-needs block and the existing safe blocked non-Author product terminal. |
 | `SEARCHOS-ONE-HOP-NAVIGATION` | PR #517 installs bounded one-hop breadcrumb navigation and the qualification/source-truth path. Fresh candidate-origin READ custody may expose safe same-site URL-free navigation refs; one selected destination reuses the existing navigation, acquisition, FetchRead, EvidenceLedger, SearchOS custody, semantic, Sufficiency, FinalAnswerPacket, and Author owners. |
 | `SEARCHOS-EXISTING-GAP-RECOVERY` | `SEARCHOS-EXISTING-GAP-RECOVERY-AND-STOP-FOUNDATION-01` installs canonical SearchOS as the sole ordinary SearchOS authority for one required existing-component/source-obligation recovery cycle per whole run in Fast, Balanced, and Deep. A typed post-analysis gap basis and materially novel evidence purpose grant one exact lease; the prior slot stays byte-identical and a new append-only SearchOS slot reuses QueryPlan, SEARCH, READ/custody, navigation, the unchanged same-component Analyst and D-prime, and ComponentCoverage. Exact replay admits no new work. The lease closes as recovered or exhausted-insufficient, and ordinary Sufficiency remains the only final stopping authority. Scrutineer input, derived-component recovery, ContractAmendment, graph mutation, Specialist execution, and general inference remain excluded. |
@@ -342,7 +342,7 @@ refs plus overflow facts and a digest covering the full selected order. It
 contains no provider text, passage chunks, embeddings, or raw payload.
 
 Revision 1 is the immutable initial ordinary post-DISCOVER selection after
-initial AnswerContract, SearchWorkPlan, and QueryPlan admission but before
+initial AnswerContract and QueryPlan admission but before
 source-class/conflict recovery and synthesis. The packet therefore carries the
 exact active AnswerContract ref. Candidate records remain provenance-only and
 do not copy singular component or source-obligation authority. Authorized
@@ -486,16 +486,17 @@ replaces its ordinary model language. SearchPlanner proposals remain passive:
 the selected fast model now returns only `direct_simple` or complexity-scaled
 sparse component semantics. One deterministic compiler derives labels, criteria,
 materiality, mode-specific inference ceilings,
-ordinal IDs, source/search compatibility records, and neutral legacy recon before
+ordinal IDs and source/search compatibility records before
 the existing rich validator. RunKernel initial AnswerContract acceptance remains
 the sole initial acceptance owner and now preserves slot candidates, selected values,
 explicit confirmation posture, and component normalization/calculation policies. Unresolved factual state does
 not itself become a user-confirmation request.
 
 The typed `search_planner_adapter` `RunDeps` seam is the ordinary initial-model
-injection point. Retained Scout and PlannerRevision dependency fields and
-modules are legacy/evaluation compatibility only; ordinary `run_pipeline()` no
-longer reads them or accepts them in initial convergence. With no explicit
+injection point. Retained Scout and PlannerRevision RunDeps fields are unused
+ordinary compatibility only; the former Scout and PlannerRevision runtime
+modules are deleted. Ordinary `run_pipeline()` no longer reads them or accepts
+them in initial convergence. With no explicit
 planner adapter, `run_pipeline()` intentionally composes
 `SearchPlannerModelAdapter` from `deps.ask_model`,
 `deps.clean_json_response`, and the selected fast provider, fast model, and
@@ -503,7 +504,7 @@ reasoning posture. A transient, non-retained call wrapper supplies the current
 run's configured local base URL, OpenRouter key, `CostAccumulator`, and
 `search_planner` cost phase directly to the existing model helper. These
 connection and accounting facts do not enter adapter fields, prompts, planner
-or contract projections, SearchWorkPlan, QueryPlan, traces, or errors.
+or contract projections, QueryPlan, traces, or errors.
 
 Ordinary composition makes exactly one logical bounded initial planner
 invocation. The existing underlying model-helper retry and endpoint-fallback
@@ -512,7 +513,7 @@ provider request.
 `DeterministicSearchPlannerAdapter` is an explicit validation-only fixture and
 is not an ordinary default or failure fallback. Invalid JSON, schema,
 component/query structure, selected-model configuration, or model-call failure
-stops before proposal acceptance, SearchWorkPlan activation, QueryPlan
+stops before proposal acceptance, QueryPlan
 admission, or search dispatch. The legacy
 Brave/recon-rewriter/researcher candidate-generation and silent `core_topic`
 fallback path remains unreachable from the ordinary initial pass.
@@ -522,10 +523,12 @@ safe supplied-context references or summaries. It must not redefine a
 deterministic parser as semantic intake, and this phase does not implement PDF,
 webpage, note, or arbitrary-document ingestion.
 
-The active SearchWorkPlan is constructed only after acceptance. It owns compact
+The ordinary front half no longer constructs SearchWorkPlan or QueryProduction
+as required runtime intermediates. QueryPlan consumes the accepted AnswerContract
+directly and owns compact
 component, source-obligation, provider-neutral job, requirement, contract,
-planner, and policy refs;
-it does not retain complete executable query text. QueryPlan remains the sole
+planner, and policy refs together with exact executable query text. QueryPlan
+remains the sole
 exact executable-query authority and owns text, role, order, iteration,
 finalization, provider-neutral discovery job class, component/semantic-slot
 lineage, and dispatch lineage. Initial posture is derived only from the accepted
@@ -533,15 +536,15 @@ AnswerContract: a stable slot becomes `standard_discovery`; an unresolved
 material factual slot that does not require user confirmation becomes
 `orientation`; and a confirmation-required slot creates a typed, slot-local
 clarification posture with no provider dispatch. `deep_discovery` is available
-only as an in-loop SearchJudgment follow-up. QueryPlan items retain compact
-SearchWorkPlan requirement bindings, and the ordinary first DISCOVER pass
+only as an in-loop SearchJudgment follow-up. The ordinary first DISCOVER pass
 consumes only the QueryPlan-authorized immediate jobs before `core.routing`
 provider selection.
 
 `searchos_initial_query_allocation_policy_v1` is the single code-owned tuning
 owner. Its provisional defaults are one primary target, two admitted initial
 candidates, and one immediate dispatch per accepted required component. Its
-retained recon-ceiling field is inert ordinary compatibility pending Phase 3.
+retained recon-ceiling field is inert ordinary compatibility and is not an
+ordinary recon execution authority.
 These are
 soft tuning defaults, not AnswerContract or SearchPlanner schema semantics, and
 are not uncontrolled user or environment overrides. A second candidate needs a
@@ -554,15 +557,15 @@ downstream retrieval-loop posture is unchanged and cannot truncate required
 component primaries.
 
 The sparse ordinary language cannot author recon posture, dimensions, queries,
-Scout invocation, or PlannerRevision invocation. Its temporary rich
-compatibility projection remains neutral `not_needed`, including for factual
-uncertainty and explicit user-confirmation semantics. The ordinary convergence
-API has no Scout or PlannerRevision adapter inputs, the orchestrator has no
-callsite for either authority, and initial planning has no routine
-PlannerRevision ContractAmendment caller or fallback. Retained modules, RunKernel
-state families, and isolated tests do not restore ordinary reachability.
-Search-assisted factual resolution now belongs solely to QueryPlan job lineage
-and the existing RunKernel SearchOS worklist/judgment owner.
+Scout invocation, or PlannerRevision invocation. Rich Planner compatibility is
+reduced to current real AnswerContract, QueryPlan, and SearchOS consumers; the
+compiler no longer emits ordinary `recon_requirement` placeholders. The ordinary
+convergence API has no Scout or PlannerRevision adapter inputs, the orchestrator
+has no callsite for either authority, and initial planning has no routine
+PlannerRevision ContractAmendment caller or fallback. The former Scout and
+PlannerRevision runtime modules are deleted. Search-assisted factual resolution
+now belongs solely to QueryPlan job lineage and the existing RunKernel SearchOS
+worklist/judgment owner.
 
 No live provider, model, search, recon, fetch/read, or retrieval call was made
 for this offline composition build. Existing routing and READ mechanics are
@@ -617,8 +620,8 @@ peers in the same component or worklist.
 The canonical `semantic_obligations_by_id` map, keyed by component and accepted
 semantic-slot identity, is the runtime semantic-cardinality authority. Physical
 SearchOS slots contain plural obligation IDs only; no singular compatibility
-field remains an authority. SearchWorkPlan and QueryProduction remain temporary
-Phase-3 carriers and do not override that map.
+field remains an authority. SearchWorkPlan and QueryProduction are retired
+ordinary compatibility carriers and do not override that map.
 
 For an eligible unresolved factual semantic obligation, SearchJudgment may
 propose one exact candidate-backed binding. The authorized request exposes all
@@ -848,7 +851,7 @@ retention posture, and complete budget before transport construction. The
 generic loopback broker is the sole non-test live transport; no default Planner
 route, semantic-judge route, or final prompt variant is selected. An authorized
 trial would reuse the ordinary product-built Planner prompt, cleaner, parser,
-validator, runtime projection, initial acceptance, and SearchWorkPlan. The
+validator, runtime projection, and initial acceptance. The
 variant dispatcher may replace only the authorized instruction prefix;
 mechanical nonpass withholds semantic calls, while mechanical PASS permits two
 arm-blind semantic passes. Stochastic evidence remains capped at
@@ -941,8 +944,6 @@ Fetch, Tavily site acquisition, replacement semantic role, or live validation.
 
 ## Not Installed
 
-- Phase-3 folding of SearchWorkPlan, QueryProduction, rich downstream
-  compatibility projection, or legacy dead carrier fields.
 - Calibrated provider preference/economics policy for the three QueryPlan job
   classes; the installed mapping reuses the current code-owned routing policy.
 - Arbitrary-query multi-component support.

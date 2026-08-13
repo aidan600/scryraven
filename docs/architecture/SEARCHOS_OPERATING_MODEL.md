@@ -45,16 +45,16 @@ Narrower owners remain subordinate:
 
 Sufficiency does not independently mutate or terminate run state.
 
-## Unified Front-Half Rebaseline (Phases 1-2 Installed)
+## Unified Front-Half Rebaseline (Phases 1-3 Installed)
 
 On 2026-08-11 the maintainer selected **Option C modified into a unified
-iterative loop** as the SearchOS front-half architecture. Phases 1 and 2 are now
-installed in ordinary product execution. Exception-by-exception Scout /
+iterative loop** as the SearchOS front-half architecture. Phases 1, 2, and 3
+are now installed in ordinary product execution. Exception-by-exception Scout /
 PlannerRevision repair is retired from the ordinary front half, including its
-routine initial ContractAmendment return lane. Physical legacy/evaluation
-modules may remain, but they have zero ordinary reachability. SearchWorkPlan,
-QueryProduction, rich downstream compatibility projection, and dead carrier
-fields remain temporary until Phase 3. [ScryRaven Current
+routine initial ContractAmendment return lane. SearchWorkPlan and QueryProduction
+are retired as ordinary semantic/query compatibility carriers. Rich Planner
+compatibility is reduced to current real AnswerContract, QueryPlan, and SearchOS
+consumers. [ScryRaven Current
 State](SCRYRAVEN_CURRENT_STATE.md) remains the exclusive owner of detailed
 installed truth.
 
@@ -65,7 +65,6 @@ User request
 -> compact model-owned SearchPlanner semantic proposal
 -> deterministic semantic compiler
 -> uncertainty-aware AnswerContract
--> one RunKernel component worklist
 -> QueryPlan
    - exact executable query
    - provider-neutral discovery job class
@@ -166,12 +165,12 @@ automatically becoming semantic support.
 The canonical SearchOS state owns plural semantic obligations independently of
 physical component/source slots. QueryPlan items and SearchOS physical slots
 carry plural references; no singular compatibility field is an alternate
-semantic authority. SearchWorkPlan and QueryProduction remain Phase-3 carriers
-and do not change that installed ownership.
+semantic authority. SearchWorkPlan and QueryProduction are retired ordinary
+compatibility carriers and do not change that installed ownership.
 
-Phase-3 carrier consolidation and product proof are owned by the [Current
-Roadmap](../roadmap/CURRENT_ROADMAP.md). Nothing in this section authorizes a
-live call.
+Phase-3 carrier consolidation is installed. Next product work is owned by the
+[Current Roadmap](../roadmap/CURRENT_ROADMAP.md). Nothing in this section
+authorizes a live call.
 
 ## Minimum Shared Provider Contract
 

@@ -6,8 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from core.query_shape_contract_resolution import ComponentCandidate, QueryShapeAssessment
-from core.search_work_plan import QueryShapeKind, SearchMode
+from core.query_shape_contract_resolution import ComponentCandidate, QueryShapeAssessment, QueryShapeKind, SearchMode
 from core.semantic_contract_foundation import (
     AnswerComponentContract,
     Materiality,

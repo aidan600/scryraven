@@ -47,7 +47,6 @@ class QueryPlanRuntimeAdapter:
         self,
         strategies: Sequence[Mapping[str, Any]],
         *,
-        search_work_projection: Mapping[str, Any],
         accepted_contract: Mapping[str, Any],
         policy: InitialQueryAllocationPolicy,
         origin: str = "search_planner",
@@ -56,7 +55,6 @@ class QueryPlanRuntimeAdapter:
 
         self.plan, result = self.plan.admit_initial_component_strategies(
             strategies,
-            search_work_projection=search_work_projection,
             accepted_contract=accepted_contract,
             policy=policy,
             clean=self.clean,
@@ -90,36 +88,6 @@ class QueryPlanRuntimeAdapter:
             phase=phase,
         )
         return authorized
-
-    def consume_search_work_for_existing_queries(
-        self,
-        queries: Sequence[str],
-        *,
-        search_work_projection: Mapping[str, Any] | None,
-        search_judgment_projection: Mapping[str, Any] | None = None,
-        max_len: int | None,
-        origin: str,
-        role: QueryPlanRole | str,
-        phase: str = "search_work_component_allocation",
-    ) -> list[str]:
-        context = {
-            "primary_entity": self.primary_entity,
-            "entities_list": list(self.entities_list or []),
-            "core_topic": self.core_topic,
-            "user_query": self.user_query,
-            "intent": self.intent,
-        }
-        self.plan, allocated = self.plan.consume_search_work_for_existing_queries(
-            queries,
-            query_plan_context=context,
-            search_work_projection=search_work_projection,
-            search_judgment_projection=search_judgment_projection,
-            max_len=max_len,
-            origin=origin,
-            role=role,
-            phase=phase,
-        )
-        return allocated
 
     def consume_search_judgment_component_gap_authority(
         self,

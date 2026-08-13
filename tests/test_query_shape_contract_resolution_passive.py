@@ -8,29 +8,27 @@ import pytest
 
 from core.query_shape_contract_resolution import (
     AuditJobCandidate,
+    AuditScope,
     ComponentCandidate,
     ContractResolutionRecord,
+    EffectiveContractKind,
     FollowUpDepthPosture,
+    ModeMismatchPosture,
     OutputPosture,
     ProviderJobCandidate,
+    ProviderJobKind,
     QuantWorkCandidate,
     QueryShapeAssessment,
-    SearchWorkPlanConstructionDesignRecord,
-    SocialSignalCandidate,
-    SourceObligationCandidate,
-    StopEscalateRefusePosture,
-)
-from core.search_work_plan import (
-    AuditScope,
-    EffectiveContractKind,
-    ModeMismatchPosture,
-    ProviderJobKind,
     QueryShapeKind,
     RemediationPermission,
     SearchMode,
+    SearchWorkPlanConstructionDesignRecord,
+    SocialSignalCandidate,
+    SourceObligationCandidate,
     SourceObligationKind,
     SourceObligationStrictness,
     StopConditionKind,
+    StopEscalateRefusePosture,
 )
 
 ROOT = Path(__file__).resolve().parents[1]

@@ -414,7 +414,6 @@ def test_one_component_read_credits_only_exact_owned_obligation(
         and item["source_obligation_kind"]
         in {"official_current", "source_bound_numeric"}
         and item["source_obligation_strictness"] == "required"
-        and item["search_work_plan_ref"]
         and item["search_requirement_ref"]
         and item["answer_contract_ref"]
         for item in post_read_calls

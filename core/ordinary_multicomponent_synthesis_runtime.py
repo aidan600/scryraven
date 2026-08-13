@@ -75,15 +75,10 @@ from core.multicomponent_role_runtime import (
 from core.ordinary_semantic_producer_runtime import (
     OrdinarySemanticProducerHandoffResult,
     build_component_coverage_proposal,
-    build_question_meaning_record_from_search_work_plan,
     build_sanitized_content_reference_from_passage,
     execute_ordinary_semantic_producer_handoff_from_scope,
     select_bindable_final_passages_for_components,
     source_requirement_ids_for_component_candidate,
-)
-from core.search_work_query_shape_runtime import (
-    DeterministicSearchWorkRuntimeInput,
-    build_deterministic_search_work_runtime_records,
 )
 from core.semantic_observation_foundation import (
     ObservationKind,
@@ -213,19 +208,6 @@ def _clean_text(value: Any, *, limit: int = 1000) -> str | None:
     return text[:limit] if text else None
 
 
-def _real_query_shape_plan(search_work_plan: Mapping[str, Any]) -> bool:
-    metadata = _safe_mapping(search_work_plan.get("metadata"))
-    construction = _safe_mapping(metadata.get("construction_metadata"))
-    if construction.get("runtime_shadow_scaffolding") is True:
-        return False
-    if _clean_text(construction.get("fallback_reason")):
-        return False
-    return (
-        construction.get("implements_query_shape_classifier") is True
-        or metadata.get("implements_query_shape_classifier") is True
-    )
-
-
 def _accepted_contract_ref(accepted: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "owner": accepted.get("owner"),
@@ -238,23 +220,6 @@ def _accepted_contract_ref(accepted: Mapping[str, Any]) -> dict[str, Any]:
         "parent_question_meaning_record_digest": accepted.get("parent_question_meaning_record_digest"),
         "accepted_answer_component_count": accepted.get("accepted_answer_component_count"),
     }
-
-
-def _accept_question_meaning_record(run_kernel: Any, qmr: Any) -> None:
-    from core.run_kernel import Observation, ObservationType, RunStageStatus
-
-    action = run_kernel.authorize_initial_answer_contract_acceptance(
-        parent_question_meaning_record_id=qmr.record_id,
-        parent_proposal_digest=qmr.record_digest,
-    )
-    run_kernel.reduce(
-        Observation.from_action(
-            action,
-            observation_type=ObservationType.INITIAL_ANSWER_CONTRACT_ACCEPTED,
-            status=RunStageStatus.COMPLETED,
-            payload={"question_meaning_record": qmr.to_dict()},
-        )
-    )
 
 
 def _role_runtime_kwargs(runtime_scope: Mapping[str, Any]) -> dict[str, Any]:
@@ -3587,52 +3552,7 @@ def execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
             return OrdinaryMulticomponentResult(status=OrdinaryMulticomponentStatus.COMPLETED)
         return direct_or_deferred()
 
-    search_work_plan = _safe_mapping(run_kernel.state.search_work_plan)
-    if not search_work_plan or not _real_query_shape_plan(search_work_plan):
-        return direct_or_deferred()
-    run_contract = _safe_mapping(runtime_scope.get("run_contract_projection"))
-    route = _safe_mapping(run_kernel.state.projections.get("route_request"))
-    query = str(runtime_scope.get("query") or "")
-    mode = str(runtime_scope.get("strategy") or runtime_scope.get("mode") or "")
-    records = build_deterministic_search_work_runtime_records(
-        DeterministicSearchWorkRuntimeInput(
-            contract_id=str(run_contract.get("contract_id") or run_kernel.state.run_id),
-            run_contract_projection=run_contract,
-            route_facts=route,
-            requested_mode=mode,
-            selected_depth=run_contract.get("selected_depth"),
-            safe_query_preview=query,
-        )
-    )
-    assessment = records.query_shape_assessment
-    assessment_metadata = _safe_mapping(assessment.metadata)
-    requested_synthesis_directive = _clean_text(
-        assessment_metadata.get("requested_synthesis_directive"),
-        limit=360,
-    )
-    component_count = len(assessment.component_candidates)
-    qualifying = (
-        assessment_metadata.get("explicit_factual_component_list") is True
-        and requested_synthesis_directive is not None
-        and 2 <= component_count <= 5
-    )
-    if not qualifying:
-        return direct_or_deferred()
-    qmr = build_question_meaning_record_from_search_work_plan(
-        assessment=assessment,
-        route_facts=route,
-        run_contract_projection=run_contract,
-        run_id=run_kernel.state.run_id,
-        request_id=run_kernel.state.request_id,
-        query=query,
-        requested_mode=mode,
-    )
-    if qmr is None:
-        raise OrdinaryMulticomponentRuntimeError(
-            "typed multi-component qualification could not build its answer contract"
-        )
-    _accept_question_meaning_record(run_kernel, qmr)
-    return OrdinaryMulticomponentResult(status=OrdinaryMulticomponentStatus.SELECTED_PENDING)
+    return direct_or_deferred()
 
 
 def ordinary_multicomponent_path_completed(run_kernel: Any) -> bool:

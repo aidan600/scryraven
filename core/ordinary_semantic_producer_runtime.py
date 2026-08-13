@@ -88,7 +88,9 @@ SKIP_REASON_PREFLIGHT_FAILED = "preflight_failed"
 SKIP_REASON_CANONICAL_SEMANTIC_STATE_ALREADY_PRESENT = (
     "canonical_semantic_state_already_present"
 )
-SKIP_REASON_SEARCH_WORK_PLAN_MISSING = "search_work_plan_missing"
+SKIP_REASON_ACCEPTED_ANSWER_CONTRACT_MISSING = (
+    "accepted_answer_contract_missing"
+)
 
 _ACCEPTED_DISPOSITIONS = frozenset({"accepted", "observed", "partially_accepted"})
 _READABLE_STATUSES = frozenset({"readable", "available", "ok"})
@@ -1524,76 +1526,15 @@ def execute_ordinary_semantic_producer_handoff_from_scope(
     run_kernel: Any,
     runtime_scope: Mapping[str, Any],
 ) -> OrdinarySemanticProducerHandoffResult:
+    del runtime_scope
     if _semantic_state_already_present(run_kernel):
         return OrdinarySemanticProducerHandoffResult(
             status=OrdinarySemanticProducerHandoffStatus.SKIPPED,
             skipped_reason=SKIP_REASON_CANONICAL_SEMANTIC_STATE_ALREADY_PRESENT,
         )
-
-    run_id = run_kernel.state.run_id
-    request_id = run_kernel.state.request_id
-    search_work_plan = _safe_mapping(run_kernel.state.search_work_plan)
-    if not search_work_plan:
-        return OrdinarySemanticProducerHandoffResult(
-            status=OrdinarySemanticProducerHandoffStatus.SKIPPED,
-            skipped_reason=SKIP_REASON_SEARCH_WORK_PLAN_MISSING,
-        )
-
-    final_top_evidence = [
-        dict(item)
-        for item in runtime_scope.get("final_top_evidence") or ()
-        if isinstance(item, Mapping)
-    ]
-    evidence_ledger_projection = run_kernel.state.evidence_ledger.to_projection().to_dict()
-
-    preflight = preflight_ordinary_semantic_producer_bundle(
-        search_work_plan=search_work_plan,
-        route_projection=run_kernel.state.projections.get("route_request"),
-        run_contract_projection=_safe_mapping(runtime_scope.get("run_contract_projection")),
-        final_top_evidence=final_top_evidence,
-        evidence_ledger_projection=evidence_ledger_projection,
-        run_id=run_id,
-        request_id=request_id,
-        query=str(runtime_scope.get("query") or ""),
-        requested_mode=str(runtime_scope.get("strategy") or runtime_scope.get("mode") or ""),
-    )
-    if preflight.bundle is None:
-        return OrdinarySemanticProducerHandoffResult(
-            status=OrdinarySemanticProducerHandoffStatus.SKIPPED,
-            skipped_reason=preflight.skipped_reason or SKIP_REASON_PREFLIGHT_FAILED,
-        )
-    bundle = preflight.bundle
-
-    qmr = bundle.question_meaning_record
-    try:
-        run_kernel.commit_semantic_producer_bundle(
-            question_meaning_record=qmr.to_dict(),
-            component_bundles=[
-                {
-                    "answer_component_id": component_bundle.answer_component_id,
-                    "semantic_observation": (
-                        component_bundle.semantic_observation.to_dict()
-                    ),
-                    "sanitized_content_references": [
-                        ref.to_dict()
-                        for ref in component_bundle.sanitized_content_references
-                    ],
-                    "component_coverage_record": (
-                        component_bundle.component_coverage_record.to_dict()
-                    ),
-                }
-                for component_bundle in bundle.component_bundles
-            ],
-        )
-    except OrdinarySemanticProducerTransactionError:
-        raise
-    except Exception as exc:
-        raise OrdinarySemanticProducerTransactionError(
-            "ordinary semantic producer atomic handoff failed before commit"
-        ) from exc
-
     return OrdinarySemanticProducerHandoffResult(
-        status=OrdinarySemanticProducerHandoffStatus.COMMITTED,
+        status=OrdinarySemanticProducerHandoffStatus.SKIPPED,
+        skipped_reason=SKIP_REASON_ACCEPTED_ANSWER_CONTRACT_MISSING,
     )
 
 
@@ -1610,7 +1551,7 @@ __all__ = [
     "SKIP_REASON_MULTIPART_ASSESSMENT",
     "SKIP_REASON_PREFLIGHT_FAILED",
     "SKIP_REASON_QUERY_SHAPE_CLASSIFIER_UNAVAILABLE",
-    "SKIP_REASON_SEARCH_WORK_PLAN_MISSING",
+    "SKIP_REASON_ACCEPTED_ANSWER_CONTRACT_MISSING",
     "BindableFinalPassage",
     "OrdinarySemanticProducerBundle",
     "OrdinarySemanticProducerComponentBundle",

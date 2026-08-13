@@ -466,22 +466,6 @@ from core.routing import (
     acquisition_routing_policy_ref,
     route_provider_capability,
 )
-from core.scout_disambiguation_runtime import (
-    SCOUT_DISAMBIGUATION_REASON,
-    SCOUT_DISAMBIGUATION_SCHEMA_VERSION,
-    SCOUT_MAX_DIMENSIONS_PER_COMPONENT,
-    SCOUT_MAX_QUERIES_PER_COMPONENT,
-    ScoutDisambiguationRuntimeError,
-    build_scout_disambiguation_report_projection,
-    build_scout_disambiguation_report_state,
-    planner_ref_from_search_planner_state,
-)
-from core.scout_disambiguation_runtime import (
-    SCOUT_DISAMBIGUATION_STAGE as SCOUT_DISAMBIGUATION_STAGE_NAME,
-)
-from core.scout_disambiguation_runtime import (
-    contract_ref_from_contract as _scout_contract_ref_from_contract,
-)
 from core.scrutineer_review_runtime import (
     SCRUTINEER_REVIEW_REASON,
     ScrutineerReviewRuntimeError,
@@ -498,27 +482,15 @@ from core.search_executor_handoff_runtime import (
     SearchExecutorHandoffRuntimeError,
     build_search_executor_handoff_projection,
     build_search_executor_handoff_state,
+    planner_ref_from_search_planner_state,
+    revision_ref_from_revision_state,
+    scout_ref_from_scout_report_state,
 )
 from core.search_executor_handoff_runtime import (
     SEARCH_EXECUTOR_HANDOFF_STAGE as SEARCH_EXECUTOR_HANDOFF_STAGE_NAME,
 )
 from core.search_executor_handoff_runtime import (
     contract_ref_from_contract as _handoff_contract_ref_from_contract,
-)
-from core.search_planner_revision_runtime import (
-    SEARCH_PLANNER_REVISION_REASON,
-    SEARCH_PLANNER_REVISION_SCHEMA_VERSION,
-    SearchPlannerRevisionRuntimeError,
-    build_search_planner_revision_projection,
-    build_search_planner_revision_state,
-    revision_ref_from_revision_state,
-    scout_ref_from_scout_report_state,
-)
-from core.search_planner_revision_runtime import (
-    SEARCH_PLANNER_REVISION_STAGE as SEARCH_PLANNER_REVISION_STAGE_NAME,
-)
-from core.search_planner_revision_runtime import (
-    contract_ref_from_contract as _revision_contract_ref_from_contract,
 )
 from core.search_planner_runtime import (
     SEARCH_PLANNER_PRODUCTION_REASON,
@@ -580,12 +552,9 @@ ACQUISITION_ROUTE_STAGE = "acquisition_route"
 ACQUISITION_EXECUTION_STAGE = "acquisition_execution"
 ACQUISITION_TERMINAL_REDUCTION_STAGE = "acquisition_terminal_reduction"
 ACQUISITION_CUSTODY_CONSUMPTION_STAGE = "acquisition_custody_consumption"
-QUERY_PRODUCTION_STAGE = "query_production"
 QUERY_PLAN_ADMISSION_STAGE = "query_plan_admission"
 RUN_CONTRACT_STAGE = "run_contract"
 SEARCH_PLANNER_PRODUCTION_STAGE = SEARCH_PLANNER_PRODUCTION_STAGE_NAME
-SCOUT_DISAMBIGUATION_STAGE = SCOUT_DISAMBIGUATION_STAGE_NAME
-SEARCH_PLANNER_REVISION_STAGE = SEARCH_PLANNER_REVISION_STAGE_NAME
 SEARCH_EXECUTOR_HANDOFF_STAGE = SEARCH_EXECUTOR_HANDOFF_STAGE_NAME
 LIVE_SEARCH_VALIDATION_STAGE = LIVE_SEARCH_VALIDATION_STAGE_NAME
 ORDINARY_DISCOVERY_CANDIDATE_HANDOFF_STAGE = (
@@ -653,7 +622,6 @@ DPRIME_CITATION_SOURCE_DISPLAY_STAGE = "dprime_citation_source_display"
 DPRIME_CITATION_SOURCE_DISPLAY_REASON = (
     "dprime_citation_source_display_from_single_lane_author_answer"
 )
-SEARCH_WORK_PLAN_CONSTRUCTION_STAGE = "search_work_plan_construction"
 ANSWER_CONTRACT_AUTHORITY_MAP_STAGE = "answer_contract_authority_map"
 OFFLINE_SEARCH_EXECUTOR_BRIDGE_STAGE = "offline_search_executor_bridge"
 COMPONENT_SCOPED_SOURCE_CUSTODY_STAGE = "component_scoped_source_custody"
@@ -769,8 +737,6 @@ class ActionType(str, Enum):
     ACQUISITION_CUSTODY_CONSUME = "acquisition_custody_consume"
     RUN_CONTRACT_SYNTHESIZE = "run_contract_synthesize"
     SEARCH_PLANNER_PRODUCE = "search_planner_produce"
-    SCOUT_DISAMBIGUATE = "scout_disambiguate"
-    SEARCH_PLANNER_REVISE = "search_planner_revise"
     SEARCH_EXECUTOR_HANDOFF = "search_executor_handoff"
     LIVE_SEARCH_VALIDATE = "live_search_validate"
     ORDINARY_DISCOVERY_CANDIDATE_HANDOFF = (
@@ -852,8 +818,6 @@ class ActionType(str, Enum):
     SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZE = (
         "single_relation_source_obligation_recovery_authorize"
     )
-    SEARCH_WORK_PLAN_CONSTRUCT = "search_work_plan_construct"
-    QUERY_PRODUCTION = "query_production"
     QUERY_PLAN_ADMISSION = "query_plan_admission"
     MAIN_RETRIEVAL_PASS = "main_retrieval_pass"
     RETRIEVAL_STOP_CHECKPOINT = "retrieval_stop_checkpoint"
@@ -927,8 +891,6 @@ class ObservationType(str, Enum):
     ACQUISITION_CUSTODY_AUTHORIZED = "acquisition_custody_authorized"
     RUN_CONTRACT_SYNTHESIZED = "run_contract_synthesized"
     SEARCH_PLANNER_PRODUCED = "search_planner_produced"
-    SCOUT_DISAMBIGUATION_REPORTED = "scout_disambiguation_reported"
-    SEARCH_PLANNER_REVISED = "search_planner_revised"
     SEARCH_EXECUTOR_HANDOFF_CREATED = "search_executor_handoff_created"
     LIVE_SEARCH_VALIDATED = "live_search_validated"
     ORDINARY_DISCOVERY_CANDIDATE_HANDOFF_CREATED = (
@@ -1012,8 +974,6 @@ class ObservationType(str, Enum):
     SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZED = (
         "single_relation_source_obligation_recovery_authorized"
     )
-    SEARCH_WORK_PLAN_CONSTRUCTED = "search_work_plan_constructed"
-    QUERY_CANDIDATES_PRODUCED = "query_candidates_produced"
     QUERY_PLAN_ADMITTED = "query_plan_admitted"
     RETRIEVAL_PASS_RESULT = "retrieval_pass_result"
     RETRIEVAL_STOP_DECISION = "retrieval_stop_decision"
@@ -1187,7 +1147,7 @@ def _graph_safe_mapping(value: Mapping[str, Any] | None) -> dict[str, Any]:
 def _searchos_safe_mapping(
     value: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
-    """Preserve bounded nested QueryPlan/slot/custody lineage for SearchOS."""
+    """Preserve bounded nested plan/slot/custody lineage for SearchOS."""
 
     safe = _json_safe(dict(value or {}), max_depth=32)
     return dict(safe) if isinstance(safe, Mapping) else {}
@@ -1505,20 +1465,6 @@ class Observation:
             payload = _graph_safe_mapping(self.payload)
         else:
             payload = _safe_mapping(self.payload)
-        if (
-            self.observation_type is ObservationType.SEARCH_PLANNER_REVISED
-            and isinstance(self.payload, Mapping)
-        ):
-            payload = _safe_mapping(
-                {
-                    key: value
-                    for key, value in self.payload.items()
-                    if key != "planner_revision"
-                }
-            )
-            raw_planner_revision = self.payload.get("planner_revision")
-            if isinstance(raw_planner_revision, Mapping):
-                payload["planner_revision"] = dict(raw_planner_revision)
         if (
             self.observation_type is ObservationType.SUFFICIENCY_JUDGMENT_DECIDED
             and isinstance(self.payload, Mapping)
@@ -3234,7 +3180,6 @@ class RunKernel:
                 search_executor_handoff_state=(
                     self.state.search_executor_handoff_state
                 ),
-                search_work_plan=self.state.search_work_plan,
                 allow_no_dispatch_planning_snapshot=(
                     allow_no_dispatch_planning_snapshot
                 ),
@@ -3944,278 +3889,6 @@ class RunKernel:
             reason=reason,
             inputs=merged_inputs,
             expected_observation_type=ObservationType.SEARCH_PLANNER_PRODUCED,
-        )
-
-    def authorize_scout_disambiguation(
-        self,
-        *,
-        component_id: str,
-        ambiguity_dimension_ids: Sequence[str],
-        request_id: str | None = None,
-        max_queries_per_component: int = SCOUT_MAX_QUERIES_PER_COMPONENT,
-        max_dimensions_per_component: int = SCOUT_MAX_DIMENSIONS_PER_COMPONENT,
-        reason: str = SCOUT_DISAMBIGUATION_REASON,
-        inputs: Mapping[str, Any] | None = None,
-    ) -> AuthorizedAction:
-        clean_component_id = _clean_text(component_id, limit=160)
-        if not clean_component_id:
-            raise RunKernelTransitionError(
-                "Scout disambiguation requires component_id binding"
-            )
-        if (
-            int(max_queries_per_component or 0) > SCOUT_MAX_QUERIES_PER_COMPONENT
-            or int(max_queries_per_component or 0) < 0
-        ):
-            raise RunKernelTransitionError(
-                "Scout disambiguation exceeds max queries per component"
-            )
-        if (
-            int(max_dimensions_per_component or 0)
-            > SCOUT_MAX_DIMENSIONS_PER_COMPONENT
-            or int(max_dimensions_per_component or 0) < 0
-        ):
-            raise RunKernelTransitionError(
-                "Scout disambiguation exceeds max dimensions per component"
-            )
-        clean_dimension_ids: list[str] = []
-        if isinstance(ambiguity_dimension_ids, Sequence) and not isinstance(
-            ambiguity_dimension_ids,
-            str | bytes,
-        ):
-            for item in ambiguity_dimension_ids:
-                dimension_id = _clean_text(item, limit=160)
-                if dimension_id:
-                    clean_dimension_ids.append(dimension_id)
-        if not clean_dimension_ids:
-            raise RunKernelTransitionError(
-                "Scout disambiguation requires ambiguity dimension bindings"
-            )
-        if len(clean_dimension_ids) > SCOUT_MAX_DIMENSIONS_PER_COMPONENT:
-            raise RunKernelTransitionError(
-                "Scout disambiguation exceeds max dimensions per component"
-            )
-        if len(clean_dimension_ids) > int(max_dimensions_per_component):
-            raise RunKernelTransitionError(
-                "Scout disambiguation dimensions exceed the authorized "
-                "per-component dimension budget"
-            )
-        if len(set(clean_dimension_ids)) != len(clean_dimension_ids):
-            raise RunKernelTransitionError(
-                "Scout disambiguation requires unique ambiguity dimension ids"
-            )
-        parent_planner_ref = planner_ref_from_search_planner_state(
-            self.state.search_planner_proposal_state
-        )
-        if not parent_planner_ref:
-            raise RunKernelTransitionError(
-                "Scout disambiguation requires a current SearchPlanner proposal"
-            )
-        qmr = _safe_mapping(
-            self.state.search_planner_proposal_state.get("question_meaning_record")
-        )
-        components = qmr.get("answer_components")
-        if not isinstance(components, Sequence) or isinstance(components, str | bytes):
-            raise RunKernelTransitionError(
-                "Scout disambiguation requires parent QMR answer components"
-            )
-        if not any(
-            isinstance(item, Mapping)
-            and _clean_text(item.get("component_id"), limit=160) == clean_component_id
-            for item in components
-        ):
-            raise RunKernelTransitionError(
-                "Scout disambiguation component_id is not present in parent QMR"
-            )
-        initial_ref = _scout_contract_ref_from_contract(
-            self.state.initial_answer_contract,
-            source="initial_answer_contract",
-        )
-        current_ref = _scout_contract_ref_from_contract(
-            self.state.current_answer_contract,
-            source="current_answer_contract",
-        )
-        merged_inputs = {
-            **dict(inputs or {}),
-            "run_id": self.state.run_id,
-            "request_id": request_id or self.state.request_id,
-            "parent_search_planner_proposal_id": parent_planner_ref.get(
-                "proposal_id"
-            ),
-            "parent_search_planner_proposal_digest": parent_planner_ref.get(
-                "proposal_digest"
-            ),
-            "parent_question_meaning_record_id": parent_planner_ref.get(
-                "question_meaning_record_id"
-            ),
-            "parent_question_meaning_record_digest": parent_planner_ref.get(
-                "question_meaning_record_digest"
-            ),
-            "component_id": clean_component_id,
-            "ambiguity_dimension_ids": clean_dimension_ids,
-            "max_queries_per_component": int(max_queries_per_component),
-            "max_dimensions_per_component": int(max_dimensions_per_component),
-            "parent_initial_contract_version": initial_ref.get("contract_version"),
-            "parent_initial_contract_digest": initial_ref.get("contract_digest"),
-            "parent_current_contract_version": current_ref.get("contract_version"),
-            "parent_current_contract_digest": current_ref.get("contract_digest"),
-            "scout_schema_version": SCOUT_DISAMBIGUATION_SCHEMA_VERSION,
-            "reason": reason,
-        }
-        return self.authorize(
-            stage=SCOUT_DISAMBIGUATION_STAGE,
-            action_type=ActionType.SCOUT_DISAMBIGUATE,
-            reason=reason,
-            inputs=merged_inputs,
-            expected_observation_type=(
-                ObservationType.SCOUT_DISAMBIGUATION_REPORTED
-            ),
-        )
-
-    def authorize_search_planner_revision(
-        self,
-        *,
-        component_id: str,
-        consumed_ambiguity_dimension_ids: Sequence[str],
-        consumed_scout_hint_ids: Sequence[str] = (),
-        request_id: str | None = None,
-        reason: str = SEARCH_PLANNER_REVISION_REASON,
-        inputs: Mapping[str, Any] | None = None,
-    ) -> AuthorizedAction:
-        clean_component_id = _clean_text(component_id, limit=160)
-        if not clean_component_id:
-            raise RunKernelTransitionError(
-                "search planner revision requires component_id binding"
-            )
-        if not self.state.initial_answer_contract_projection:
-            raise RunKernelTransitionError(
-                "search planner revision requires an accepted initial answer contract"
-            )
-        parent_planner_ref = planner_ref_from_search_planner_state(
-            self.state.search_planner_proposal_state
-        )
-        if not parent_planner_ref:
-            raise RunKernelTransitionError(
-                "search planner revision requires a current SearchPlanner proposal"
-            )
-        parent_scout_ref = scout_ref_from_scout_report_state(
-            self.state.scout_disambiguation_report_state
-        )
-        if not parent_scout_ref:
-            raise RunKernelTransitionError(
-                "search planner revision requires a current Scout DisambiguationReport"
-            )
-        if (
-            _safe_mapping(parent_scout_ref.get("parent_search_planner_proposal_ref"))
-            != parent_planner_ref
-        ):
-            raise RunKernelTransitionError(
-                "search planner revision requires Scout report bound to current planner/QMR"
-            )
-        if parent_scout_ref.get("component_id") != clean_component_id:
-            raise RunKernelTransitionError(
-                "search planner revision component_id does not match Scout report"
-            )
-        qmr = _safe_mapping(
-            self.state.search_planner_proposal_state.get("question_meaning_record")
-        )
-        components = qmr.get("answer_components")
-        if not isinstance(components, Sequence) or isinstance(components, str | bytes):
-            raise RunKernelTransitionError(
-                "search planner revision requires parent QMR answer components"
-            )
-        if not any(
-            isinstance(item, Mapping)
-            and _clean_text(item.get("component_id"), limit=160)
-            == clean_component_id
-            for item in components
-        ):
-            raise RunKernelTransitionError(
-                "search planner revision component_id is not present in parent QMR"
-            )
-
-        clean_dimension_ids = _preserve_text_list(consumed_ambiguity_dimension_ids)
-        if not clean_dimension_ids:
-            raise RunKernelTransitionError(
-                "search planner revision requires consumed ambiguity dimensions"
-            )
-        scout_dimensions = {
-            _clean_text(item.get("dimension_id"), limit=160)
-            for item in self.state.scout_disambiguation_report_state.get(
-                "ambiguity_dimensions",
-                [],
-            )
-            if isinstance(item, Mapping)
-        }
-        missing_dimensions = [
-            item for item in clean_dimension_ids if item not in scout_dimensions
-        ]
-        if missing_dimensions:
-            raise RunKernelTransitionError(
-                "search planner revision consumes unknown Scout dimensions: "
-                + ", ".join(missing_dimensions)
-            )
-
-        clean_hint_ids = _preserve_text_list(consumed_scout_hint_ids)
-        scout_hint_ids = _scout_hint_ids_from_report(
-            self.state.scout_disambiguation_report_state
-        )
-        missing_hints = [item for item in clean_hint_ids if item not in scout_hint_ids]
-        if missing_hints:
-            raise RunKernelTransitionError(
-                "search planner revision consumes unknown Scout hints: "
-                + ", ".join(missing_hints)
-            )
-
-        initial_ref = _revision_contract_ref_from_contract(
-            self.state.initial_answer_contract,
-            source="initial_answer_contract",
-        )
-        current_ref = _revision_contract_ref_from_contract(
-            self.state.current_answer_contract,
-            source="current_answer_contract",
-        )
-        merged_inputs = {
-            **dict(inputs or {}),
-            "run_id": self.state.run_id,
-            "request_id": request_id or self.state.request_id,
-            "parent_search_planner_proposal_id": parent_planner_ref.get(
-                "proposal_id"
-            ),
-            "parent_search_planner_proposal_digest": parent_planner_ref.get(
-                "proposal_digest"
-            ),
-            "parent_question_meaning_record_id": parent_planner_ref.get(
-                "question_meaning_record_id"
-            ),
-            "parent_question_meaning_record_digest": parent_planner_ref.get(
-                "question_meaning_record_digest"
-            ),
-            "parent_scout_disambiguation_report_id": parent_scout_ref.get(
-                "report_id"
-            ),
-            "parent_scout_disambiguation_report_digest": parent_scout_ref.get(
-                "report_digest"
-            ),
-            "component_id": clean_component_id,
-            "consumed_ambiguity_dimension_ids": clean_dimension_ids,
-            "consumed_scout_hint_ids": clean_hint_ids,
-            "parent_initial_contract_version": initial_ref.get(
-                "contract_version"
-            ),
-            "parent_initial_contract_digest": initial_ref.get("contract_digest"),
-            "parent_current_contract_version": current_ref.get(
-                "contract_version"
-            ),
-            "parent_current_contract_digest": current_ref.get("contract_digest"),
-            "revision_schema_version": SEARCH_PLANNER_REVISION_SCHEMA_VERSION,
-            "reason": reason,
-        }
-        return self.authorize(
-            stage=SEARCH_PLANNER_REVISION_STAGE,
-            action_type=ActionType.SEARCH_PLANNER_REVISE,
-            reason=reason,
-            inputs=merged_inputs,
-            expected_observation_type=ObservationType.SEARCH_PLANNER_REVISED,
         )
 
     def authorize_search_executor_handoff(
@@ -8289,33 +7962,6 @@ class RunKernel:
             expected_observation_type=ObservationType.CONTRACT_AMENDMENT_APPLIED,
         )
 
-    def authorize_search_work_plan_construction(
-        self,
-        *,
-        reason: str = "search_work_plan_shadow_construction_after_run_contract",
-        inputs: Mapping[str, Any] | None = None,
-    ) -> AuthorizedAction:
-        if not self.state.run_contract_projection:
-            raise RunKernelTransitionError(
-                "SearchWorkPlan construction requires a reduced RunAuthority contract"
-            )
-        merged_inputs = {
-            "run_contract_ref": {
-                "contract_id": self.state.run_contract_projection.get("contract_id"),
-                "schema_version": self.state.run_contract_projection.get(
-                    "schema_version"
-                ),
-            },
-            **dict(inputs or {}),
-        }
-        return self.authorize(
-            stage=SEARCH_WORK_PLAN_CONSTRUCTION_STAGE,
-            action_type=ActionType.SEARCH_WORK_PLAN_CONSTRUCT,
-            reason=reason,
-            inputs=merged_inputs,
-            expected_observation_type=ObservationType.SEARCH_WORK_PLAN_CONSTRUCTED,
-        )
-
     def build_answer_contract_authority_map_projection(
         self,
         *,
@@ -8465,20 +8111,6 @@ class RunKernel:
             reason=reason,
             inputs=inputs,
             expected_observation_type=ObservationType.QUERY_PLAN_ADMITTED,
-        )
-
-    def authorize_query_production(
-        self,
-        *,
-        reason: str = "query_production_before_candidate_generation",
-        inputs: Mapping[str, Any] | None = None,
-    ) -> AuthorizedAction:
-        return self.authorize(
-            stage=QUERY_PRODUCTION_STAGE,
-            action_type=ActionType.QUERY_PRODUCTION,
-            reason=reason,
-            inputs=inputs,
-            expected_observation_type=ObservationType.QUERY_CANDIDATES_PRODUCED,
         )
 
     def authorize_main_retrieval_pass(
@@ -16950,73 +16582,6 @@ class RunKernel:
                 deepcopy(proposal_projection)
             )
             self.state.projections[action.stage] = deepcopy(proposal_projection)
-        elif action.action_type is ActionType.SCOUT_DISAMBIGUATE:
-            try:
-                scout_state = build_scout_disambiguation_report_state(
-                    action_id=action.action_id,
-                    action_inputs=action.inputs,
-                    observation_payload=_safe_mapping(observation.payload),
-                    run_id=self.state.run_id,
-                    request_id=self.state.request_id,
-                    current_search_planner_proposal_state=(
-                        self.state.search_planner_proposal_state
-                    ),
-                    current_parent_initial_contract=(
-                        self.state.initial_answer_contract
-                    ),
-                    current_parent_current_contract=(
-                        self.state.current_answer_contract
-                    ),
-                    existing_report_history=(
-                        self.state.scout_disambiguation_report_history
-                    ),
-                )
-                scout_projection = build_scout_disambiguation_report_projection(
-                    report_state=scout_state
-                )
-            except ScoutDisambiguationRuntimeError as exc:
-                raise RunKernelTransitionError(str(exc)) from exc
-            self.state.scout_disambiguation_report_state = scout_state
-            self.state.scout_disambiguation_report_projection = scout_projection
-            self.state.scout_disambiguation_report_history.append(
-                deepcopy(scout_projection)
-            )
-            self.state.projections[action.stage] = deepcopy(scout_projection)
-        elif action.action_type is ActionType.SEARCH_PLANNER_REVISE:
-            try:
-                revision_state = build_search_planner_revision_state(
-                    action_id=action.action_id,
-                    action_inputs=action.inputs,
-                    observation_payload=observation.payload,
-                    run_id=self.state.run_id,
-                    request_id=self.state.request_id,
-                    current_search_planner_proposal_state=(
-                        self.state.search_planner_proposal_state
-                    ),
-                    current_scout_disambiguation_report_state=(
-                        self.state.scout_disambiguation_report_state
-                    ),
-                    current_parent_initial_contract=(
-                        self.state.initial_answer_contract
-                    ),
-                    current_parent_current_contract=(
-                        self.state.current_answer_contract
-                    ),
-                    existing_revision_history=(
-                        self.state.search_planner_revision_history
-                    ),
-                )
-                revision_projection = build_search_planner_revision_projection(
-                    revision_state=revision_state
-                )
-            except SearchPlannerRevisionRuntimeError as exc:
-                raise RunKernelTransitionError(str(exc)) from exc
-            self.state.search_planner_revision_state = revision_state
-            self.state.search_planner_revision_projection = revision_projection
-            self.state.search_planner_revision_history.append(
-                deepcopy(revision_projection)
-            )
-            self.state.projections[action.stage] = deepcopy(revision_projection)
         elif action.action_type is ActionType.SEARCHOS_INITIALIZE:
             from core.searchos_iterative_judgment_runtime import (
                 validate_searchos_state,
@@ -18272,67 +17837,6 @@ class RunKernel:
             self.state.projections[action.stage] = deepcopy(application_projection)
             if scheduler is not None:
                 self.state.projections["multicomponent_graph_scheduler"] = scheduler
-        elif action.action_type is ActionType.SEARCH_WORK_PLAN_CONSTRUCT:
-            construction_result = _safe_mapping(
-                observation.payload.get("construction_result")
-            )
-            plan_projection = _safe_mapping(
-                observation.payload.get("search_work_plan_projection")
-            )
-            if not plan_projection:
-                plan_projection = _safe_mapping(
-                    construction_result.get("search_work_plan")
-                )
-            if not plan_projection:
-                raise RunKernelTransitionError(
-                    "SearchWorkPlan construction observation requires "
-                    "search_work_plan_projection"
-                )
-            validation = _safe_mapping(observation.payload.get("validation"))
-            if not validation:
-                validation = _safe_mapping(construction_result.get("validation"))
-            follow_up_authority = _safe_mapping(
-                plan_projection.get("follow_up_authority")
-            )
-            self.state.search_work_plan = plan_projection
-            self.state.search_work_plan_validation = validation
-            self.state.search_work_plan_projection = {
-                "owner": "RunKernel.SearchWorkPlan",
-                "canonical_state": True,
-                "trace_only": False,
-                "storage_only": False,
-                "construction_id": plan_projection.get("metadata", {}).get(
-                    "construction_id"
-                )
-                or construction_result.get("construction_id"),
-                "schema_version": plan_projection.get("schema_version"),
-                "planning_posture": plan_projection.get("planning_posture"),
-                "requested_mode": plan_projection.get("requested_mode", {}),
-                "effective_contract": plan_projection.get("effective_contract", {}),
-                "query_shape": plan_projection.get("query_shape", {}),
-                "component_count": len(plan_projection.get("components", []) or []),
-                "provider_job_count": len(
-                    plan_projection.get("provider_jobs", []) or []
-                ),
-                "quant_work_unit_count": len(
-                    plan_projection.get("quant_work_units", []) or []
-                ),
-                "audit_job_count": len(plan_projection.get("audit_jobs", []) or []),
-                "stop_condition_count": len(
-                    plan_projection.get("stop_conditions", []) or []
-                ),
-                "follow_up_permission": follow_up_authority.get("permission"),
-                "validation_status": _validation_status(validation),
-                "search_work_plan_runtime_consumed": False,
-                "runtime_consumed_by_query_plan": False,
-                "provider_search_behavior_changed": False,
-                "query_plan_behavior_changed": False,
-                "prompt_behavior_changed": False,
-                "final_answer_behavior_changed": False,
-            }
-            self.state.projections[action.stage] = deepcopy(
-                self.state.search_work_plan_projection
-            )
         elif action.action_type is ActionType.EVIDENCE_LEDGER_REDUCE:
             self.state.evidence_ledger.reduce_observation(observation.payload)
             self.state.projections[action.stage] = (
@@ -23872,23 +23376,19 @@ __all__ = [
     "SEARCHOS_REQUIRED_NEEDS_BLOCK_STAGE",
     "SEARCHOS_SEMANTIC_HANDOFF_STAGE",
     "SEARCHOS_SLICE_A_READINESS_STAGE",
-    "SEARCH_WORK_PLAN_CONSTRUCTION_STAGE",
     "DPRIME_CITATION_SOURCE_DISPLAY_STAGE",
     "DPRIME_CITATION_SOURCE_HANDOFF_AUTHORITY_STAGE",
     "DPRIME_SOURCE_OBLIGATION_AUTHORITY_STAGE",
     "SUFFICIENCY_JUDGMENT_STAGE",
     "RUN_CONTRACT_STAGE",
-    "QUERY_PRODUCTION_STAGE",
     "QUERY_PLAN_ADMISSION_STAGE",
     "RETRIEVAL_STOP_CHECKPOINT_STAGE",
     "ROUTE_REQUEST_STAGE",
     "RUN_KERNEL_TRACE_KEY",
     "SEARCH_PLANNER_PRODUCTION_STAGE",
-    "SEARCH_PLANNER_REVISION_STAGE",
     "SEARCH_EXECUTOR_HANDOFF_STAGE",
     "ORDINARY_DISCOVERY_CANDIDATE_HANDOFF_STAGE",
     "LIVE_SEARCH_VALIDATION_STAGE",
-    "SCOUT_DISAMBIGUATION_STAGE",
     "SEMANTIC_PRODUCER_BUNDLE_COMMIT_REASON",
     "SEMANTIC_PRODUCER_BUNDLE_COMMIT_STAGE",
     "ActionType",

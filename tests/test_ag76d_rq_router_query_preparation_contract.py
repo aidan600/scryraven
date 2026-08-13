@@ -7,7 +7,6 @@ from typing import Any
 
 import pytest
 
-import core.pipeline_orchestrator as orchestrator
 from core.entity_extraction import fallback_entities_from_query, normalize_entities_list
 from core.retrieval_quality import (
     finalize_retrieval_queries,
@@ -22,7 +21,9 @@ from core.router_query_preparation_contract import (
     with_router_query_runtime_posture,
 )
 from core.routing import merge_search_provider_overrides
-from tests.test_retrieval_stop_shadow import _run_case
+from tests.helpers.offline_ordinary_pipeline import (
+    run_post_retirement_ordinary_pipeline,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = ROOT / "core" / "router_query_preparation_contract.py"
@@ -249,19 +250,19 @@ def test_query_text_order_and_official_recency_parity() -> None:
     assert state.official_source_bias_posture["official_bias_phrase"] == "official pricing"
 
 
-def test_trace_compatibility_and_controller_visibility_additive(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    for key in (
-        "BRAVE_API_KEY",
-        "TAVILY_API_KEY",
-        "LINKUP_API_KEY",
-        "EXA_API_KEY",
-        "OPENAI_API_KEY",
-    ):
-        monkeypatch.delenv(key, raising=False)
-    monkeypatch.setattr(orchestrator, "DB_ENABLED", False)
-
-    outcome, _harness, log_entry = _run_case(tmp_path)
+def test_trace_compatibility_and_controller_visibility_additive(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    outcome, harness = run_post_retirement_ordinary_pipeline(tmp_path, monkeypatch)
     trace = outcome.execution_trace
+    log_entry = None
+    for line in (harness.tmp_path / "execution.jsonl").read_text(encoding="utf-8").splitlines():
+        row = json.loads(line)
+        if row.get("event") == "execution":
+            log_entry = row
+            break
+    assert log_entry is not None
     log_trace = log_entry["execution_trace"]
 
     for legacy_field in (
@@ -332,11 +333,10 @@ def test_orchestrator_authority_guard_consumes_contract_after_router_handoff() -
     query_runtime = Path("core/query_production_runtime.py").read_text(encoding="utf-8")
 
     assert "json.loads(router_text)" not in post_router
-    assert "run_kernel.authorize_query_production(" in post_router
-    assert "execute_query_production_action(" in post_router
-    assert "run_kernel.reduce(query_production_result.observation)" in post_router
-    assert "query_plan_admission_inputs_from_query_production_projection(" in post_router
-    assert "candidate_queries=query_plan_inputs.candidate_queries" in post_router
+    assert "execute_initial_query_strategy_convergence(" in post_router
+    assert "execute_query_production_action(" not in post_router
+    assert "query_plan_admission_inputs_from_query_production_projection(" not in post_router
+    assert "candidate_queries=convergence.candidate_queries" in post_router
     assert "execute_route_request_action(" in text
     assert "run_kernel.authorize_route_request(" in text
     assert "build_router_query_preparation_state(" in routing_runtime

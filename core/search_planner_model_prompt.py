@@ -12,7 +12,6 @@ from types import MappingProxyType
 from typing import Any, Mapping
 
 from core.search_planner_runtime import SEARCH_PLANNER_MAX_ANSWER_COMPONENTS
-from core.search_work_plan import SourceObligationKind, SourceObligationStrictness
 from core.semantic_contract_foundation import (
     ComponentPurpose,
     Materiality,
@@ -20,6 +19,8 @@ from core.semantic_contract_foundation import (
     RequirementPosture,
     SemanticSlotKind,
     SemanticSlotStatus,
+    SourceObligationKind,
+    SourceObligationStrictness,
     SupportKind,
 )
 
@@ -584,7 +585,6 @@ SEARCH_PLANNER_RICH_INTERNAL_OUTPUT_SCHEMA: dict[str, Any] = {
             "requested_role",
             "source_obligation_candidate_ids",
             "distinct_need_justification",
-            "recon_requirement",
         ),
         fields={
             "strategy_id": _text_contract("default_text", required=True),
@@ -614,7 +614,7 @@ SEARCH_PLANNER_RICH_INTERNAL_OUTPUT_SCHEMA: dict[str, Any] = {
             ),
             "recon_requirement": {
                 "json_type": "object",
-                "required": True,
+                "required": False,
                 "required_fields": [
                     "posture",
                     "unresolved_dimension_ids",

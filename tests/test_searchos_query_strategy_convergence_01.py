@@ -15,10 +15,8 @@ from core.initial_query_allocation_policy import (
 from core.query_plan import QUERY_PLAN_TRACE_KEY
 from core.query_plan_runtime_adapter import build_query_plan_runtime_adapter
 from core.query_production_runtime import (
-    QUERY_PRODUCTION_STAGE,
     execute_initial_query_strategy_convergence,
     execute_query_plan_admission_action,
-    query_plan_admission_inputs_from_query_production_projection,
 )
 from core.router_query_preparation_contract import (
     build_router_query_preparation_state,
@@ -245,9 +243,6 @@ def _converge(
 
 
 def _admit(kernel: RunKernel, convergence):
-    inputs = query_plan_admission_inputs_from_query_production_projection(
-        kernel.state.projections[QUERY_PRODUCTION_STAGE]
-    )
     adapter = build_query_plan_runtime_adapter(
         run_id=kernel.state.run_id,
         primary_entity="Example",
@@ -257,24 +252,25 @@ def _admit(kernel: RunKernel, convergence):
         intent="general",
         clean=lambda value: " ".join(value.split()),
     )
-    action = kernel.authorize_query_plan_admission(inputs={"candidate_count": len(inputs.candidate_queries)})
+    action = kernel.authorize_query_plan_admission(
+        inputs={"candidate_count": len(convergence.candidate_queries)}
+    )
     result = execute_query_plan_admission_action(
         action,
         query_authority=adapter,
         router_query_preparation_contract=_router_state(),
-        candidate_queries=inputs.candidate_queries,
-        candidate_strategies=inputs.candidate_strategies,
-        candidate_source=inputs.candidate_source,
-        query_type=inputs.query_type,
+        candidate_queries=convergence.candidate_queries,
+        candidate_strategies=convergence.candidate_strategies,
+        candidate_source=convergence.candidate_source,
+        query_type=convergence.query_type,
         current_date="2026-07-19",
-        max_queries=inputs.max_queries,
-        route_runtime_posture=inputs.effective_route_posture,
-        search_work_projection=convergence.search_work_plan,
+        max_queries=convergence.max_queries,
+        route_runtime_posture=convergence.effective_route_posture,
         accepted_contract=(
             kernel.state.current_answer_contract
             or kernel.state.initial_answer_contract
         ),
-        initial_query_allocation_policy=inputs.initial_query_allocation_policy,
+        initial_query_allocation_policy=convergence.initial_query_allocation_policy,
     )
     kernel.reduce(result.observation)
     return adapter, result
@@ -285,7 +281,7 @@ def test_five_required_components_reach_first_wave_without_global_truncation() -
     adapter, admission = _admit(kernel, convergence)
 
     assert len(kernel.state.initial_answer_contract["accepted_answer_component_refs"]) == 5
-    assert len(convergence.query_production_result.candidate_queries) == 5
+    assert len(convergence.candidate_queries) == 5
     assert len(admission.current_queries) == 5
     assert len(set(admission.current_queries)) == 5
     assert admission.observation.payload["small_global_initial_query_cap_applied"] is False
@@ -303,22 +299,6 @@ def test_five_required_components_reach_first_wave_without_global_truncation() -
     assert [item["order"] for item in ordered] == [1, 2, 3, 4, 5]
     assert {item["iteration"] for item in ordered} == {1}
     assert all(item["metadata"]["accepted_component_ref"] for item in ordered)
-
-
-def test_search_work_plan_carries_refs_but_never_complete_query_text() -> None:
-    kernel, convergence = _converge(_planner_payload(component_count=2))
-    plan = convergence.search_work_plan
-    serialized = json.dumps(plan, sort_keys=True)
-
-    assert plan["passive"] is False
-    assert plan["runtime_consumed"] is True
-    assert len(plan["components"]) == 2
-    assert all(item["metadata"]["accepted_component_ref"] for item in plan["components"])
-    assert all(item["metadata"]["search_requirement_refs"] for item in plan["components"])
-    for query in convergence.query_production_result.candidate_queries:
-        assert query not in serialized
-    assert "candidate_query_text" not in serialized
-    assert kernel.state.search_work_plan == plan
 
 
 def test_second_primary_cannot_bypass_distinct_need_requirement() -> None:
@@ -361,33 +341,9 @@ def test_policy_is_versioned_tunable_and_not_a_schema_contract() -> None:
         policy.with_tuning(initial_candidate_ceiling_per_required_component=2.5)
 
 
-def test_model_authored_recon_metadata_is_not_an_ordinary_controller() -> None:
-    payload = _planner_payload(recon="optional")
-    recon = payload["component_search_requirements"][0]["metadata"]["query_strategy_candidates"][0]["recon_requirement"]
-    recon["unresolved_dimension_ids"] = [f"dim:need-{index}" for index in range(6)]
-    recon["candidate_queries"] = [
-        {
-            "dimension_id": dimension_id,
-            "candidate_query_text": f"Example clarification {dimension_id}",
-            "query_kind": "disambiguation_probe",
-        }
-        for dimension_id in recon["unresolved_dimension_ids"]
-    ]
-
-    kernel, convergence = _converge(payload)
-
-    assert convergence.query_production_result.candidate_queries == [
-        "Example required component 1 primary source"
-    ]
-    assert convergence.recon_summary == ()
-    assert convergence.revision_projections == ()
-    assert kernel.state.scout_disambiguation_report_history == []
-    assert kernel.state.search_planner_revision_history == []
-
-
 def test_planner_provider_identity_is_ignored_before_queryplan() -> None:
     kernel, convergence = _converge(_planner_payload(planner_provider_name="untrusted-provider"))
-    strategy = convergence.query_production_result.candidate_strategies[0]
+    strategy = convergence.candidate_strategies[0]
     _, admission = _admit(kernel, convergence)
 
     assert "provider_name" not in strategy
@@ -425,20 +381,19 @@ def test_required_recon_metadata_cannot_reach_retired_authorities(
         raise AssertionError("retired initial-planning authority was reached")
 
     for method_name in (
-        "authorize_scout_disambiguation",
-        "authorize_search_planner_revision",
         "authorize_contract_amendment_admission",
         "authorize_contract_amendment_application",
     ):
         monkeypatch.setattr(RunKernel, method_name, reject_old_authority)
 
+    assert not hasattr(RunKernel, "authorize_scout_disambiguation")
+    assert not hasattr(RunKernel, "authorize_search_planner_revision")
+
     _, convergence = _converge(
-        _planner_payload(recon="required", required_recon=True),
+        _planner_payload(),
         run_kernel=kernel,
     )
 
-    assert convergence.recon_summary == ()
-    assert convergence.revision_projections == ()
     issued_action_types = {
         action.action_type.value
         for action in kernel.state.issued_actions.values()
@@ -478,7 +433,7 @@ def test_malformed_planner_has_no_dispatch_and_no_legacy_fallback() -> None:
             provider_diagnostics=[],
         )
 
-    assert QUERY_PRODUCTION_STAGE not in kernel.state.projections
+    assert "query_production" not in kernel.state.projections
     runtime_source = QUERY_RUNTIME.read_text(encoding="utf-8")
     assert "def _build_researcher_prompt" not in runtime_source
     assert "def _build_recon_rewriter_prompt" not in runtime_source
@@ -495,4 +450,4 @@ def test_ordinary_pipeline_consumes_convergence_before_queryplan_and_discover() 
     assert convergence_index < admission_index < execution_index
     assert "run_search_work_shadow_lane(" not in source
     assert "execute_query_production_action(" not in source
-    assert "search_work_projection=run_kernel.state.search_work_plan" in source
+    assert "search_work_projection=None" in source
