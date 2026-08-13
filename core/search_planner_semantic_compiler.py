@@ -190,8 +190,7 @@ _SENSITIVE_KEYS = frozenset(
     }
 )
 
-# The validator uses these exact vocabularies and field sets. The prompt
-# serializes this compact object instead of a second handwritten contract.
+# Exhaustive validator-owned catalog. Not serialized into ordinary model prompts.
 SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA: dict[str, Any] = {
     "format": SEARCH_PLANNER_SEMANTIC_PROPOSAL_CONTRACT_FORMAT,
     "json_type": "object",
@@ -443,6 +442,47 @@ SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA: dict[str, Any] = {
     },
     "reject": "unknown/rich/mechanical/provider/authority/runtime fields",
 }
+
+
+def build_search_planner_model_visible_schema() -> dict[str, Any]:
+    """Compact model-facing projection of the accepted sparse language."""
+
+    exhaustive = SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA
+    component = exhaustive["component"]
+    uncertainty = exhaustive["uncertainty"]
+    return {
+        "format": exhaustive["format"],
+        "disposition": list(exhaustive["disposition"]["enum"]),
+        "direct_simple": list(exhaustive["branches"]["direct_simple"]["allowed_fields"]),
+        "components": list(exhaustive["branches"]["components"]["allowed_fields"]),
+        "component": {
+            "required": list(component["required"]),
+            "optional": list(component["optional"]),
+        },
+        "source": {
+            "kind": list(exhaustive["source"]["kind"]["enum"]),
+            "strictness": list(exhaustive["source"]["strictness"]["enum"]),
+        },
+        "uncertainty": {
+            "required": list(uncertainty["required"]),
+            "optional": list(uncertainty["optional"]),
+            "kind": list(uncertainty["kind"]["enum"]),
+            "status": list(uncertainty["status"]["enum"]),
+            "materiality": list(uncertainty["materiality"]["enum"]),
+        },
+        "purpose": list(exhaustive["purpose"]),
+        "posture": list(exhaustive["posture"]),
+        "support": list(exhaustive["support"]),
+        "limits": {
+            "components": exhaustive["limits"]["components"],
+            "uncertainties": exhaustive["limits"]["uncertainties"],
+            "need_chars": exhaustive["limits"]["need_chars"],
+        },
+        "reject": exhaustive["reject"],
+    }
+
+
+SEARCH_PLANNER_MODEL_VISIBLE_SCHEMA = build_search_planner_model_visible_schema()
 
 
 class SearchPlannerSemanticProposalSubtype(str, Enum):
@@ -1185,6 +1225,7 @@ def _normalize_whitespace(value: str) -> str:
 
 
 __all__ = [
+    "SEARCH_PLANNER_MODEL_VISIBLE_SCHEMA",
     "SEARCH_PLANNER_SEMANTIC_PROPOSAL_COMPONENTS_BRANCH_FORBIDDEN_TOP_LEVEL_FIELDS",
     "SEARCH_PLANNER_SEMANTIC_PROPOSAL_COMPONENTS_BRANCH_REQUIRED_FIELDS",
     "SEARCH_PLANNER_SEMANTIC_PROPOSAL_CONTRACT_FORMAT",
@@ -1195,6 +1236,7 @@ __all__ = [
     "SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA_VERSION",
     "SearchPlannerSemanticProposalError",
     "SearchPlannerSemanticProposalSubtype",
+    "build_search_planner_model_visible_schema",
     "classify_semantic_proposal_subtype",
     "compile_semantic_planner_proposal",
     "count_model_authored_mechanical_identity_keys",

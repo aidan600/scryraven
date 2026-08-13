@@ -24,7 +24,7 @@ from core.semantic_contract_foundation import (
     SupportKind,
 )
 
-SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION = "search_planner_sparse_model_prompt_v7"
+SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION = "search_planner_sparse_model_prompt_v8"
 
 SEARCH_PLANNER_MODEL_STRICT_JSON_OUTPUT_CONTRACT = (
     "Return exactly one JSON object.",
@@ -719,10 +719,10 @@ SEARCH_PLANNER_RICH_INTERNAL_OUTPUT_SCHEMA: dict[str, Any] = {
 
 def _semantic_model_output_schema() -> dict[str, Any]:
     from core.search_planner_semantic_compiler import (
-        SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA,
+        SEARCH_PLANNER_MODEL_VISIBLE_SCHEMA,
     )
 
-    return SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA
+    return SEARCH_PLANNER_MODEL_VISIBLE_SCHEMA
 
 
 def __getattr__(name: str) -> Any:
@@ -745,11 +745,11 @@ def build_search_planner_model_prompt(planner_input: Mapping[str, Any]) -> str:
     }
     instructions = [
         "SEARCHPLANNER SEMANTIC TASK",
-        "Choose one disposition: direct_simple or components. The two branches have different allowed-field sets.",
-        "direct_simple allowed fields: disposition plus optional source, freshness, caveat. Forbidden: components and all component-local fields. Affirms one required direct need; no dependency, inference, material uncertainty, calculation, or nonstandard normalization. Never use it as fallback. Query <=300.",
-        "components allowed fields: disposition plus required nonempty components. Forbidden top-level: source, freshness, caveat. Authors distinct needs plus exceptions. Keys are proposal-local references, never runtime identity.",
-        "Omit empty optional strings and arrays; do not emit empty values. Omit defaults.",
-        "Put factual uncertainty in uncertainties; confirmation is only for true user-intent ambiguity.",
+        "Choose one disposition: direct_simple or components.",
+        "direct_simple: one required direct need; never fallback.",
+        "components: local keys, not runtime identity; omit empty optionals/defaults.",
+        "Direct: no depends_on. inferred|direct_or_inferred: needs depends_on. inferred: no source/freshness.",
+        "uncertainty: kind+status. unresolved|ambiguous: no selected. selected in candidates. confirm=true only if material unresolved|ambiguous.",
         "Never author queries/recon/Scout/PlannerRevision, IDs/digests/lineage, routing, evidence/citations, accepted state, or answers.",
         "Return one JSON object only. Unknown fields, old rich output, prose/Markdown, duplicate keys, and nonfinite JSON fail closed.",
         "Sanitized planner input JSON:",

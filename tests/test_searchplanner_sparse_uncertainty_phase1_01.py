@@ -20,7 +20,6 @@ from core.search_planner_model_adapter import (
 )
 from core.search_planner_model_prompt import (
     SEARCH_PLANNER_MODEL_SYSTEM_PROMPT,
-    SEARCH_PLANNER_RICH_INTERNAL_OUTPUT_SCHEMA,
     build_search_planner_model_prompt,
 )
 from core.search_planner_runtime import (
@@ -29,6 +28,7 @@ from core.search_planner_runtime import (
     execute_search_planner_action,
 )
 from core.search_planner_semantic_compiler import (
+    SEARCH_PLANNER_MODEL_VISIBLE_SCHEMA,
     SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA,
     SearchPlannerSemanticProposalError,
     SearchPlannerSemanticProposalSubtype,
@@ -54,6 +54,54 @@ from tests.helpers.offline_ordinary_pipeline import (
 RUN_ID = "run:sparse-phase-1"
 REQUEST_ID = "request:sparse-phase-1"
 PROMPT_MARKER = "Sanitized planner input JSON:\n"
+_CLEAR_DIRECT_HISTORICAL_BASELINE_CHARS = 15705
+_PHASE1_PROMPT_SCENARIOS = (
+    (
+        "clear_direct",
+        "official Python math.isclose default values",
+        15705,
+        2509,
+    ),
+    (
+        "clear_multi",
+        "Using the fictional Northstar certificate and registry records, report both current facts.",
+        15827,
+        2576,
+    ),
+    (
+        "factual_uncertainty",
+        "recent Galloway controversy",
+        15677,
+        2493,
+    ),
+    (
+        "true_ambiguity",
+        "Tell me about Mercury",
+        15613,
+        2487,
+    ),
+)
+
+
+def _prompt_planner_input(query: str) -> dict[str, Any]:
+    return {
+        "run_id": "must-not-be-model-visible",
+        "request_id": "must-not-be-model-visible",
+        "requested_mode": "Balanced",
+        "user_query_text_for_planning": query,
+        "safe_context": {
+            "current_date": "2026-08-11",
+            "include_domains": [],
+            "exclude_domains": [],
+        },
+        "route_context_ref": {"must": "not appear"},
+        "parent_contract_refs": {"must": "not appear"},
+    }
+
+
+def _prompt_request_chars(query: str) -> int:
+    prompt = build_search_planner_model_prompt(_prompt_planner_input(query))
+    return len(SEARCH_PLANNER_MODEL_SYSTEM_PROMPT) + len(prompt)
 
 
 class _FakeAskModel:
@@ -214,57 +262,91 @@ def _run_to_initial_answer_contract(
     return kernel, fake
 
 
-def test_prompt_uses_one_shared_sparse_contract_and_clears_budget_gate() -> None:
-    planner_input = {
-        "run_id": "must-not-be-model-visible",
-        "request_id": "must-not-be-model-visible",
-        "requested_mode": "Balanced",
-        "user_query_text_for_planning": "official Python math.isclose default values",
-        "safe_context": {
-            "current_date": "2026-08-11",
-            "include_domains": [],
-            "exclude_domains": [],
-        },
-        "route_context_ref": {"must": "not appear"},
-        "parent_contract_refs": {"must": "not appear"},
-    }
-
+def test_prompt_uses_compact_sparse_contract_and_phase1_budget_gate() -> None:
+    planner_input = _prompt_planner_input(
+        "official Python math.isclose default values"
+    )
     prompt = build_search_planner_model_prompt(planner_input)
     packet = json.loads(prompt.split(PROMPT_MARKER, 1)[1])
+    schema = packet["output_schema"]
 
-    assert packet["output_schema"] == SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA
-    assert packet["output_schema"]["branches"]["direct_simple"]["optional_fields"] == [
+    assert schema == SEARCH_PLANNER_MODEL_VISIBLE_SCHEMA
+    assert schema != SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA
+    assert "empty_vs_omitted" not in json.dumps(schema, sort_keys=True)
+    assert schema["direct_simple"] == [
+        "disposition",
         "source",
         "freshness",
         "caveat",
     ]
-    assert packet["output_schema"]["branches"]["components"]["forbidden_fields"] == [
-        "source",
-        "freshness",
-        "caveat",
-    ]
+    assert schema["components"] == ["disposition", "components"]
+    assert schema["component"]["required"] == ["need"]
     assert set(packet["planner_input"]) == {
         "requested_mode",
         "user_query_text_for_planning",
         "safe_context",
     }
-    assert "The two branches have different allowed-field sets" in prompt
+    assert "never fallback" in prompt
+    assert "no depends_on" in prompt
+    assert "needs depends_on" in prompt
+    assert "no source/freshness" in prompt
+    assert "no selected" in prompt
+    assert "selected in candidates" in prompt
+    assert "confirm=true only if material unresolved|ambiguous" in prompt
+    assert "omit empty optionals" in prompt
     assert "answer_components" not in prompt
     assert "component_search_requirements" not in prompt
     assert "run_id" not in prompt
     assert "request_id" not in prompt
     assert "recon_requirement" not in prompt
     assert "primary_query" not in prompt
-    prompt_chars = len(SEARCH_PLANNER_MODEL_SYSTEM_PROMPT) + len(prompt)
-    rich_chars = len(
-        json.dumps(
-            SEARCH_PLANNER_RICH_INTERNAL_OUTPUT_SCHEMA,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
+    prompt_chars = _prompt_request_chars(
+        "official Python math.isclose default values"
     )
-    assert prompt_chars < rich_chars
-    assert 1 - (prompt_chars / rich_chars) >= 0.50
+    assert prompt_chars < _CLEAR_DIRECT_HISTORICAL_BASELINE_CHARS
+    assert 1 - (prompt_chars / _CLEAR_DIRECT_HISTORICAL_BASELINE_CHARS) >= 0.84
+
+
+def test_compact_model_visible_schema_is_derived_from_validator_constants() -> None:
+    exhaustive = SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA
+    visible = SEARCH_PLANNER_MODEL_VISIBLE_SCHEMA
+
+    assert visible["format"] == exhaustive["format"]
+    assert visible["disposition"] == exhaustive["disposition"]["enum"]
+    assert visible["direct_simple"] == exhaustive["branches"]["direct_simple"]["allowed_fields"]
+    assert visible["components"] == exhaustive["branches"]["components"]["allowed_fields"]
+    assert visible["component"]["required"] == exhaustive["component"]["required"]
+    assert visible["component"]["optional"] == exhaustive["component"]["optional"]
+    assert visible["source"]["kind"] == exhaustive["source"]["kind"]["enum"]
+    assert visible["uncertainty"]["kind"] == exhaustive["uncertainty"]["kind"]["enum"]
+    assert visible["limits"]["components"] == exhaustive["limits"]["components"]
+    assert visible["limits"]["need_chars"] == exhaustive["limits"]["need_chars"]
+    assert exhaustive["branches"]["direct_simple"]["forbidden_fields"] == ["components"]
+    assert exhaustive["branches"]["components"]["forbidden_fields"] == [
+        "source",
+        "freshness",
+        "caveat",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("case_id", "query", "baseline_chars", "_phase1_chars"),
+    _PHASE1_PROMPT_SCENARIOS,
+    ids=[item[0] for item in _PHASE1_PROMPT_SCENARIOS],
+)
+def test_phase1_prompt_scenarios_keep_historical_reduction_envelope(
+    case_id: str,
+    query: str,
+    baseline_chars: int,
+    _phase1_chars: int,
+) -> None:
+    prompt_chars = _prompt_request_chars(query)
+    reduction = 1 - (prompt_chars / baseline_chars)
+    assert prompt_chars < baseline_chars
+    if case_id == "clear_direct":
+        assert reduction >= 0.84
+    else:
+        assert reduction >= 0.83
 
 
 @pytest.mark.parametrize(
