@@ -25,8 +25,6 @@ from core.search_executor_handoff_runtime import (
     contract_ref_from_contract,
     execute_search_executor_handoff_action,
     planner_ref_from_search_planner_state,
-    revision_ref_from_revision_state,
-    scout_ref_from_scout_report_state,
 )
 from core.search_planner_runtime import (
     SEARCH_PLANNER_SCHEMA_VERSION,
@@ -262,27 +260,6 @@ def _source_refs_from_contract(contract: Mapping[str, Any]) -> list[dict[str, An
     return refs
 
 
-def _direction_refs(kernel: RunKernel) -> list[dict[str, Any]]:
-    report = kernel.state.scout_disambiguation_report_state
-    consumed = set(kernel.state.search_planner_revision_state.get("consumed_scout_hint_ids", []))
-    refs: list[dict[str, Any]] = []
-    for hint in report.get("scout_result_hints", []) or []:
-        if hint.get("hint_id") not in consumed:
-            continue
-        refs.append(
-            {
-                "direction_ref_id": f"direction:{hint['hint_id']}",
-                "source_report_id": report["report_id"],
-                "hint_id": hint["hint_id"],
-                "hint_kind": hint.get("hint_kind"),
-                "title": hint.get("title"),
-                "domain": hint.get("domain"),
-                "link": hint.get("link"),
-            }
-        )
-    return refs
-
-
 def _caveats(kernel: RunKernel) -> list[str]:
     contract = _active_contract(kernel)
     caveats = list(contract.get("mandatory_caveats", []) or [])
@@ -290,9 +267,6 @@ def _caveats(kernel: RunKernel) -> list[str]:
         for caveat in component.get("mandatory_caveats", []) or []:
             if caveat not in caveats:
                 caveats.append(caveat)
-    for caveat in kernel.state.search_planner_revision_state.get("mandatory_caveats", []) or []:
-        if caveat not in caveats:
-            caveats.append(caveat)
     return caveats
 
 
@@ -303,16 +277,11 @@ def _prohibited_upgrades(kernel: RunKernel) -> list[str]:
         for upgrade in component.get("prohibited_upgrades", []) or []:
             if upgrade not in upgrades:
                 upgrades.append(upgrade)
-    for upgrade in kernel.state.search_planner_revision_state.get("prohibited_upgrades", []) or []:
-        if upgrade not in upgrades:
-            upgrades.append(upgrade)
     return upgrades
 
 
 def _handoff_input(
     kernel: RunKernel,
-    *,
-    include_direction: bool = True,
 ) -> SearchExecutorHandoffInput:
     contract = _active_contract(kernel)
     current_ref = contract_ref_from_contract(
@@ -323,7 +292,6 @@ def _handoff_input(
         kernel.state.initial_answer_contract,
         source="initial_answer_contract",
     )
-    direction_refs = _direction_refs(kernel) if include_direction else []
     return SearchExecutorHandoffInput(
         run_id=kernel.state.run_id,
         request_id=kernel.state.request_id,
@@ -333,26 +301,12 @@ def _handoff_input(
         parent_search_planner_proposal_ref=planner_ref_from_search_planner_state(
             kernel.state.search_planner_proposal_state
         ),
-        parent_search_planner_revision_ref=revision_ref_from_revision_state(kernel.state.search_planner_revision_state),
-        parent_scout_disambiguation_report_ref=(
-            scout_ref_from_scout_report_state(kernel.state.scout_disambiguation_report_state) if direction_refs else {}
-        ),
         answer_component_refs=contract.get("accepted_answer_component_refs", []),
         source_obligation_candidate_refs=_source_refs_from_contract(contract),
         component_search_requirements=kernel.state.search_planner_proposal_state.get(
             "component_search_requirements",
             [],
         ),
-        revision_search_requirement_updates=kernel.state.search_planner_revision_state.get(
-            "component_search_requirement_updates",
-            [],
-        ),
-        source_obligation_focus_updates=kernel.state.search_planner_revision_state.get(
-            "source_obligation_focus_updates",
-            [],
-        ),
-        scout_direction_hint_refs=direction_refs,
-        non_evidence_direction_refs=direction_refs,
         required_caveats=_caveats(kernel),
         prohibited_upgrades=_prohibited_upgrades(kernel),
         query_budget={"max_search_tasks": 5, "max_results_per_task": 8},
@@ -443,15 +397,15 @@ def test_search_executor_handoff_prefers_current_contract_when_present() -> None
         state["parent_initial_contract_ref"]["contract_digest"]
         == (kernel.state.initial_answer_contract["accepted_contract_digest"])
     )
-    assert state["parent_search_planner_revision_ref"] == {}
-    assert state["parent_scout_disambiguation_report_ref"] == {}
+    assert "parent_search_planner_revision_ref" not in state
+    assert "parent_scout_disambiguation_report_ref" not in state
     assert state["required_caveats"] == ["Keep ambiguity visible until resolved."]
 
 
 def test_search_executor_handoff_explicit_initial_fallback_when_no_current_contract() -> None:
     kernel = _initial_only_kernel()
 
-    _reduce_handoff(kernel, handoff_input=_handoff_input(kernel, include_direction=False))
+    _reduce_handoff(kernel)
 
     state = kernel.state.search_executor_handoff_state
     assert state["contract_parent_kind"] == "initial_answer_contract_fallback"
@@ -583,8 +537,8 @@ def test_search_executor_handoff_does_not_activate_provider_retrieval_evidence_c
 
     _reduce_handoff(kernel)
 
-    assert kernel.state.search_work_plan == {}
-    assert kernel.state.search_work_plan_projection == {}
+    assert not hasattr(kernel.state, "search_work_plan")
+    assert not hasattr(kernel.state, "search_work_plan_projection")
     assert kernel.state.offline_search_executor_bridge_projection == {}
     assert kernel.state.offline_search_executor_bridge_history == []
     assert kernel.state.evidence_ledger.to_projection().to_dict() == evidence_before

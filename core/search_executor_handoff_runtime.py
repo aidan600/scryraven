@@ -328,12 +328,6 @@ class SearchExecutorHandoffInput:
     parent_search_planner_proposal_ref: Mapping[str, Any] = field(
         default_factory=dict
     )
-    parent_search_planner_revision_ref: Mapping[str, Any] = field(
-        default_factory=dict
-    )
-    parent_scout_disambiguation_report_ref: Mapping[str, Any] = field(
-        default_factory=dict
-    )
     answer_component_refs: Sequence[Mapping[str, Any]] = field(
         default_factory=tuple
     )
@@ -341,15 +335,6 @@ class SearchExecutorHandoffInput:
         default_factory=tuple
     )
     component_search_requirements: Sequence[Mapping[str, Any]] = field(
-        default_factory=tuple
-    )
-    revision_search_requirement_updates: Sequence[Mapping[str, Any]] = field(
-        default_factory=tuple
-    )
-    source_obligation_focus_updates: Sequence[Mapping[str, Any]] = field(
-        default_factory=tuple
-    )
-    scout_direction_hint_refs: Sequence[Mapping[str, Any] | str] = field(
         default_factory=tuple
     )
     non_evidence_direction_refs: Sequence[Mapping[str, Any] | str] = field(
@@ -396,12 +381,6 @@ class SearchExecutorHandoffInput:
         parent_planner_ref = _planner_ref_or_raise(
             self.parent_search_planner_proposal_ref
         )
-        parent_revision_ref = _revision_ref_or_empty(
-            self.parent_search_planner_revision_ref
-        )
-        parent_scout_ref = _scout_ref_or_empty(
-            self.parent_scout_disambiguation_report_ref
-        )
         answer_component_refs = _normalize_component_refs(
             self.answer_component_refs
         )
@@ -413,14 +392,6 @@ class SearchExecutorHandoffInput:
             self.source_obligation_candidate_refs
         )
         requirements = _normalize_requirements(self.component_search_requirements)
-        revision_updates = _normalize_requirements(
-            self.revision_search_requirement_updates
-        )
-        focus_updates = _safe_list(self.source_obligation_focus_updates)
-        scout_direction_refs = _normalize_direction_refs(
-            self.scout_direction_hint_refs,
-            default_prefix="scout-direction",
-        )
         non_evidence_refs = _normalize_direction_refs(
             self.non_evidence_direction_refs,
             default_prefix="non-evidence-direction",
@@ -441,14 +412,9 @@ class SearchExecutorHandoffInput:
                 parent_kind == CONTRACT_PARENT_INITIAL_FALLBACK
             ),
             "parent_search_planner_proposal_ref": parent_planner_ref,
-            "parent_search_planner_revision_ref": parent_revision_ref,
-            "parent_scout_disambiguation_report_ref": parent_scout_ref,
             "answer_component_refs": answer_component_refs,
             "source_obligation_candidate_refs": source_refs,
             "component_search_requirements": requirements,
-            "revision_search_requirement_updates": revision_updates,
-            "source_obligation_focus_updates": focus_updates,
-            "scout_direction_hint_refs": scout_direction_refs,
             "non_evidence_direction_refs": non_evidence_refs,
             "required_caveats": _text_list(self.required_caveats, limit=360),
             "prohibited_upgrades": _text_list(
@@ -538,12 +504,6 @@ def build_search_executor_handoff_observation_payload(
         "parent_search_planner_proposal_ref": _safe_mapping(
             input_payload.get("parent_search_planner_proposal_ref")
         ),
-        "parent_search_planner_revision_ref": _safe_mapping(
-            input_payload.get("parent_search_planner_revision_ref")
-        ),
-        "parent_scout_disambiguation_report_ref": _safe_mapping(
-            input_payload.get("parent_scout_disambiguation_report_ref")
-        ),
         "answer_component_refs": _safe_list(
             input_payload.get("answer_component_refs")
         ),
@@ -552,15 +512,6 @@ def build_search_executor_handoff_observation_payload(
         ),
         "component_search_requirements": _safe_list(
             input_payload.get("component_search_requirements")
-        ),
-        "revision_search_requirement_updates": _safe_list(
-            input_payload.get("revision_search_requirement_updates")
-        ),
-        "source_obligation_focus_updates": _safe_list(
-            input_payload.get("source_obligation_focus_updates")
-        ),
-        "scout_direction_hint_refs": _safe_list(
-            input_payload.get("scout_direction_hint_refs")
         ),
         "non_evidence_direction_refs": _safe_list(
             input_payload.get("non_evidence_direction_refs")
@@ -612,8 +563,6 @@ def build_search_executor_handoff_state(
     run_id: str,
     request_id: str,
     current_search_planner_proposal_state: Mapping[str, Any] | None = None,
-    current_search_planner_revision_state: Mapping[str, Any] | None = None,
-    current_scout_disambiguation_report_state: Mapping[str, Any] | None = None,
     current_parent_initial_contract: Mapping[str, Any] | None = None,
     current_parent_current_contract: Mapping[str, Any] | None = None,
     existing_handoff_history: Sequence[Mapping[str, Any]] = (),
@@ -682,6 +631,11 @@ def build_search_executor_handoff_state(
         )
 
     _validate_action_inputs(inputs)
+    _reject_retired_scout_revision_ancestry(
+        action_inputs=inputs,
+        handoff_input=handoff_input,
+        handoff=handoff,
+    )
     if inputs.get("run_id") != clean_run_id or inputs.get("request_id") != clean_request_id:
         raise SearchExecutorHandoffRuntimeError(
             "SearchExecutor handoff action run/request binding does not match"
@@ -711,36 +665,17 @@ def build_search_executor_handoff_state(
         current_parent_initial_contract=current_parent_initial_contract,
         current_parent_current_contract=current_parent_current_contract,
     )
-    planner_ref = _validate_planner_bindings(
+    _validate_planner_bindings(
         action_inputs=inputs,
         handoff_input=handoff_input,
         handoff=handoff,
         current_search_planner_proposal_state=current_search_planner_proposal_state,
-    )
-    revision_ref = _validate_revision_bindings(
-        action_inputs=inputs,
-        handoff_input=handoff_input,
-        handoff=handoff,
-        current_search_planner_revision_state=current_search_planner_revision_state,
-        parent_planner_ref=planner_ref,
-    )
-    _validate_scout_bindings(
-        action_inputs=inputs,
-        handoff_input=handoff_input,
-        handoff=handoff,
-        current_scout_disambiguation_report_state=(
-            current_scout_disambiguation_report_state
-        ),
-        parent_planner_ref=planner_ref,
-        parent_revision_ref=revision_ref,
     )
     _validate_component_and_work_bindings(
         action_inputs=inputs,
         handoff=handoff,
         active_contract=active_contract,
         planner_state=current_search_planner_proposal_state,
-        revision_state=current_search_planner_revision_state,
-        scout_state=current_scout_disambiguation_report_state,
     )
     _validate_handoff_records(handoff)
     _validate_closed_handoff_flags(handoff)
@@ -779,27 +714,12 @@ def build_search_executor_handoff_state(
         "parent_search_planner_proposal_ref": _safe_mapping(
             handoff.get("parent_search_planner_proposal_ref")
         ),
-        "parent_search_planner_revision_ref": _safe_mapping(
-            handoff.get("parent_search_planner_revision_ref")
-        ),
-        "parent_scout_disambiguation_report_ref": _safe_mapping(
-            handoff.get("parent_scout_disambiguation_report_ref")
-        ),
         "answer_component_refs": _safe_list(handoff.get("answer_component_refs")),
         "source_obligation_candidate_refs": _safe_list(
             handoff.get("source_obligation_candidate_refs")
         ),
         "component_search_requirements": _safe_list(
             handoff.get("component_search_requirements")
-        ),
-        "revision_search_requirement_updates": _safe_list(
-            handoff.get("revision_search_requirement_updates")
-        ),
-        "source_obligation_focus_updates": _safe_list(
-            handoff.get("source_obligation_focus_updates")
-        ),
-        "scout_direction_hint_refs": _safe_list(
-            handoff.get("scout_direction_hint_refs")
         ),
         "non_evidence_direction_refs": _safe_list(
             handoff.get("non_evidence_direction_refs")
@@ -863,27 +783,12 @@ def build_search_executor_handoff_projection(
         "parent_search_planner_proposal_ref": _safe_mapping(
             state.get("parent_search_planner_proposal_ref")
         ),
-        "parent_search_planner_revision_ref": _safe_mapping(
-            state.get("parent_search_planner_revision_ref")
-        ),
-        "parent_scout_disambiguation_report_ref": _safe_mapping(
-            state.get("parent_scout_disambiguation_report_ref")
-        ),
         "answer_component_refs": _safe_list(state.get("answer_component_refs")),
         "source_obligation_candidate_refs": _safe_list(
             state.get("source_obligation_candidate_refs")
         ),
         "component_search_requirements": _safe_list(
             state.get("component_search_requirements")
-        ),
-        "revision_search_requirement_updates": _safe_list(
-            state.get("revision_search_requirement_updates")
-        ),
-        "source_obligation_focus_updates": _safe_list(
-            state.get("source_obligation_focus_updates")
-        ),
-        "scout_direction_hint_refs": _safe_list(
-            state.get("scout_direction_hint_refs")
         ),
         "non_evidence_direction_refs": _safe_list(
             state.get("non_evidence_direction_refs")
@@ -935,12 +840,6 @@ def handoff_ref_from_handoff_state(
         ),
         "parent_search_planner_proposal_ref": _safe_mapping(
             state.get("parent_search_planner_proposal_ref")
-        ),
-        "parent_search_planner_revision_ref": _safe_mapping(
-            state.get("parent_search_planner_revision_ref")
-        ),
-        "parent_scout_disambiguation_report_ref": _safe_mapping(
-            state.get("parent_scout_disambiguation_report_ref")
         ),
     }
 
@@ -1152,7 +1051,6 @@ def validate_ordinary_search_executor_handoff(
         )
     for key in (
         "parent_search_planner_proposal_ref",
-        "parent_search_planner_revision_ref",
         "parent_question_meaning_record_ref",
         "question_meaning_record",
         "query_intent_records",
@@ -1374,59 +1272,12 @@ def planner_ref_from_search_planner_state(
     }
 
 
-def revision_ref_from_revision_state(
-    revision_state: Mapping[str, Any] | None,
-) -> dict[str, Any]:
-    state = _safe_mapping(revision_state)
-    if not state:
-        return {}
-    revision_id = _clean_token(state.get("revision_id"))
-    revision_digest = _clean_token(state.get("revision_digest"), limit=128)
-    if not revision_id or not revision_digest:
-        return {}
-    return {
-        "revision_id": revision_id,
-        "revision_digest": revision_digest,
-        "schema_version": _clean_token(state.get("schema_version")),
-        "component_id": _clean_token(state.get("component_id")),
-        "parent_search_planner_proposal_ref": _planner_ref_or_empty(
-            state.get("parent_search_planner_proposal_ref")
-        ),
-        "parent_scout_disambiguation_report_ref": _scout_ref_or_empty(
-            state.get("parent_scout_disambiguation_report_ref")
-        ),
-    }
-
-
-def scout_ref_from_scout_report_state(
-    scout_report_state: Mapping[str, Any] | None,
-) -> dict[str, Any]:
-    state = _safe_mapping(scout_report_state)
-    if not state:
-        return {}
-    report_id = _clean_token(state.get("report_id"))
-    report_digest = _clean_token(state.get("report_digest"), limit=128)
-    component_id = _clean_token(state.get("component_id"))
-    parent_planner_ref = _planner_ref_or_empty(
-        state.get("parent_search_planner_proposal_ref")
-    )
-    if not report_id or not report_digest or not component_id or not parent_planner_ref:
-        return {}
-    return {
-        "report_id": report_id,
-        "report_digest": report_digest,
-        "component_id": component_id,
-        "parent_search_planner_proposal_ref": parent_planner_ref,
-    }
-
-
 def _build_intent_and_task_records(
     handoff_input: Mapping[str, Any],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     components = _safe_list(handoff_input.get("answer_component_refs"))
     requirements = _merge_requirements(
         handoff_input.get("component_search_requirements"),
-        handoff_input.get("revision_search_requirement_updates"),
     )
     query_budget = _safe_mapping(handoff_input.get("query_budget"))
     max_tasks = _bounded_int(
@@ -1483,8 +1334,6 @@ def _build_intent_and_task_records(
         source_ids = _source_ids_for_requirement(requirement, component)
         intent_id = f"search-intent:{component_id}:{index}"
         derived_from = [contract_source, "search_planner_proposal"]
-        if _safe_list(handoff_input.get("revision_search_requirement_updates")):
-            derived_from.append("search_planner_revision")
         if direction_ids:
             derived_from.append("scout_direction")
         summary = _clean_text(
@@ -1591,6 +1440,42 @@ def _validate_action_like(
         if inputs.get(key) != value:
             raise SearchExecutorHandoffRuntimeError(
                 f"SearchExecutor handoff action binding does not match input: {key}"
+            )
+
+
+def _reject_retired_scout_revision_ancestry(
+    *,
+    action_inputs: Mapping[str, Any],
+    handoff_input: Mapping[str, Any],
+    handoff: Mapping[str, Any],
+) -> None:
+    retired_payload_keys = (
+        "parent_search_planner_revision_ref",
+        "parent_scout_disambiguation_report_ref",
+        "revision_search_requirement_updates",
+        "source_obligation_focus_updates",
+        "scout_direction_hint_refs",
+    )
+    for key in retired_payload_keys:
+        if handoff.get(key) not in (None, {}, []):
+            raise SearchExecutorHandoffRuntimeError(
+                f"SearchExecutor handoff cannot carry retired {key}"
+            )
+        if handoff_input.get(key) not in (None, {}, []):
+            raise SearchExecutorHandoffRuntimeError(
+                f"SearchExecutor handoff cannot carry retired {key}"
+            )
+    retired_action_keys = (
+        "parent_search_planner_revision_id",
+        "parent_search_planner_revision_digest",
+        "parent_scout_disambiguation_report_id",
+        "parent_scout_disambiguation_report_digest",
+        "scout_direction_hint_ids",
+    )
+    for key in retired_action_keys:
+        if action_inputs.get(key) not in (None, "", [], ()):
+            raise SearchExecutorHandoffRuntimeError(
+                f"SearchExecutor handoff cannot carry retired {key}"
             )
 
 
@@ -1792,153 +1677,12 @@ def _validate_planner_bindings(
     return parent_planner_ref
 
 
-def _validate_revision_bindings(
-    *,
-    action_inputs: Mapping[str, Any],
-    handoff_input: Mapping[str, Any],
-    handoff: Mapping[str, Any],
-    current_search_planner_revision_state: Mapping[str, Any] | None,
-    parent_planner_ref: Mapping[str, Any],
-) -> dict[str, Any]:
-    current_revision_ref = revision_ref_from_revision_state(
-        current_search_planner_revision_state
-    )
-    handoff_revision_ref = _revision_ref_or_empty(
-        handoff.get("parent_search_planner_revision_ref")
-    )
-    input_revision_ref = _revision_ref_or_empty(
-        handoff_input.get("parent_search_planner_revision_ref")
-    )
-    direction_consumed = _direction_consumed(handoff)
-    if current_revision_ref:
-        if not handoff_revision_ref or not input_revision_ref:
-            raise SearchExecutorHandoffRuntimeError(
-                "SearchExecutor handoff must bind current SearchPlannerRevision"
-            )
-        if handoff_revision_ref != input_revision_ref:
-            raise SearchExecutorHandoffRuntimeError(
-                "SearchExecutor handoff parent revision ref does not match input"
-            )
-        if handoff_revision_ref != current_revision_ref:
-            raise SearchExecutorHandoffRuntimeError(
-                "stale planner revision digest: handoff does not match current revision"
-            )
-        if (
-            _safe_mapping(current_revision_ref.get("parent_search_planner_proposal_ref"))
-            != parent_planner_ref
-        ):
-            raise SearchExecutorHandoffRuntimeError(
-                "SearchPlannerRevision is not bound to the current planner/QMR"
-            )
-        expected = {
-            "parent_search_planner_revision_id": current_revision_ref.get(
-                "revision_id"
-            ),
-            "parent_search_planner_revision_digest": current_revision_ref.get(
-                "revision_digest"
-            ),
-        }
-        for key, value in expected.items():
-            if action_inputs.get(key) != value:
-                raise SearchExecutorHandoffRuntimeError(
-                    "stale planner revision digest: action binding is not current"
-                )
-        return current_revision_ref
-    if direction_consumed:
-        raise SearchExecutorHandoffRuntimeError(
-            "Scout direction requires current SearchPlannerRevision"
-        )
-    if (
-        handoff_revision_ref
-        or input_revision_ref
-        or _clean_token(action_inputs.get("parent_search_planner_revision_id"))
-        or _clean_token(
-            action_inputs.get("parent_search_planner_revision_digest"),
-            limit=128,
-        )
-    ):
-        raise SearchExecutorHandoffRuntimeError(
-            "stale planner revision digest: no current revision exists"
-        )
-    return {}
-
-
-def _validate_scout_bindings(
-    *,
-    action_inputs: Mapping[str, Any],
-    handoff_input: Mapping[str, Any],
-    handoff: Mapping[str, Any],
-    current_scout_disambiguation_report_state: Mapping[str, Any] | None,
-    parent_planner_ref: Mapping[str, Any],
-    parent_revision_ref: Mapping[str, Any],
-) -> dict[str, Any]:
-    current_scout_ref = scout_ref_from_scout_report_state(
-        current_scout_disambiguation_report_state
-    )
-    handoff_scout_ref = _scout_ref_or_empty(
-        handoff.get("parent_scout_disambiguation_report_ref")
-    )
-    input_scout_ref = _scout_ref_or_empty(
-        handoff_input.get("parent_scout_disambiguation_report_ref")
-    )
-    direction_consumed = _direction_consumed(handoff)
-    if direction_consumed:
-        if not current_scout_ref:
-            raise SearchExecutorHandoffRuntimeError(
-                "SearchExecutor handoff consumes Scout direction without Scout report"
-            )
-        if not handoff_scout_ref or not input_scout_ref:
-            raise SearchExecutorHandoffRuntimeError(
-                "SearchExecutor handoff must bind Scout report when consuming direction"
-            )
-        if handoff_scout_ref != input_scout_ref:
-            raise SearchExecutorHandoffRuntimeError(
-                "SearchExecutor handoff parent Scout ref does not match input"
-            )
-        if handoff_scout_ref != current_scout_ref:
-            raise SearchExecutorHandoffRuntimeError(
-                "stale Scout report digest: handoff does not match current Scout report"
-            )
-        if _safe_mapping(current_scout_ref.get("parent_search_planner_proposal_ref")) != parent_planner_ref:
-            raise SearchExecutorHandoffRuntimeError(
-                "Scout report is not bound to the current parent planner/QMR"
-            )
-        if parent_revision_ref and _safe_mapping(
-            parent_revision_ref.get("parent_scout_disambiguation_report_ref")
-        ) != current_scout_ref:
-            raise SearchExecutorHandoffRuntimeError(
-                "SearchPlannerRevision is not bound to the current Scout report"
-            )
-        expected = {
-            "parent_scout_disambiguation_report_id": current_scout_ref.get(
-                "report_id"
-            ),
-            "parent_scout_disambiguation_report_digest": current_scout_ref.get(
-                "report_digest"
-            ),
-        }
-        for key, value in expected.items():
-            if action_inputs.get(key) != value:
-                raise SearchExecutorHandoffRuntimeError(
-                    "stale Scout report digest: action binding is not current"
-                )
-        return current_scout_ref
-    if handoff_scout_ref or input_scout_ref:
-        if not current_scout_ref or handoff_scout_ref != current_scout_ref:
-            raise SearchExecutorHandoffRuntimeError(
-                "stale Scout report digest: no matching current Scout report exists"
-            )
-    return current_scout_ref
-
-
 def _validate_component_and_work_bindings(
     *,
     action_inputs: Mapping[str, Any],
     handoff: Mapping[str, Any],
     active_contract: Mapping[str, Any],
     planner_state: Mapping[str, Any] | None,
-    revision_state: Mapping[str, Any] | None,
-    scout_state: Mapping[str, Any] | None,
 ) -> None:
     answer_component_refs = _safe_list(handoff.get("answer_component_refs"))
     component_ids = _ordered_unique(
@@ -1967,7 +1711,6 @@ def _validate_component_and_work_bindings(
     known_source_ids = _known_source_obligation_ids(
         active_contract=active_contract,
         planner_state=planner_state,
-        revision_state=revision_state,
     )
     included_source_ids = _source_ids_from_handoff(handoff)
     if included_source_ids and not set(included_source_ids).issubset(known_source_ids):
@@ -1983,7 +1726,6 @@ def _validate_component_and_work_bindings(
 
     known_requirement_ids = _known_search_requirement_ids(
         planner_state=planner_state,
-        revision_state=revision_state,
     )
     included_requirement_ids = _search_requirement_ids_from_handoff(handoff)
     if included_requirement_ids and not set(included_requirement_ids).issubset(
@@ -1997,19 +1739,6 @@ def _validate_component_and_work_bindings(
     if _ordered_unique(action_inputs.get("search_requirement_ids")) != included_requirement_ids:
         raise SearchExecutorHandoffRuntimeError(
             "SearchExecutor handoff search-requirement bindings do not match authorization"
-        )
-
-    known_hint_ids = _scout_hint_ids_from_report(_safe_mapping(scout_state))
-    included_hint_ids = _hint_ids_from_handoff(handoff)
-    if included_hint_ids and not set(included_hint_ids).issubset(known_hint_ids):
-        missing = sorted(set(included_hint_ids) - known_hint_ids)
-        raise SearchExecutorHandoffRuntimeError(
-            "SearchExecutor handoff consumes unknown Scout hints: "
-            + ", ".join(missing)
-        )
-    if _ordered_unique(action_inputs.get("scout_direction_hint_ids")) != included_hint_ids:
-        raise SearchExecutorHandoffRuntimeError(
-            "SearchExecutor handoff Scout hint bindings do not match authorization"
         )
 
 
@@ -2098,7 +1827,7 @@ def _validate_handoff_records(handoff: Mapping[str, Any]) -> None:
 
 
 def _validate_direction_refs(handoff: Mapping[str, Any]) -> None:
-    for field_name in ("scout_direction_hint_refs", "non_evidence_direction_refs"):
+    for field_name in ("non_evidence_direction_refs",):
         for ref in _safe_list(handoff.get(field_name)):
             if not isinstance(ref, Mapping):
                 raise SearchExecutorHandoffRuntimeError(
@@ -2154,13 +1883,6 @@ def _validate_closed_handoff_flags(handoff: Mapping[str, Any]) -> None:
         raise SearchExecutorHandoffRuntimeError(
             "SearchExecutor handoff must remain offline_handoff_only"
         )
-
-
-def _direction_consumed(handoff: Mapping[str, Any]) -> bool:
-    return bool(
-        _safe_list(handoff.get("scout_direction_hint_refs"))
-        or _safe_list(handoff.get("non_evidence_direction_refs"))
-    )
 
 
 def _normalize_component_refs(value: Any) -> list[dict[str, Any]]:
@@ -2452,7 +2174,6 @@ def _known_source_obligation_ids(
     *,
     active_contract: Mapping[str, Any],
     planner_state: Mapping[str, Any] | None,
-    revision_state: Mapping[str, Any] | None,
 ) -> set[str]:
     ids: set[str] = set()
     for item in _safe_list(active_contract.get("accepted_answer_component_refs")):
@@ -2472,41 +2193,24 @@ def _known_source_obligation_ids(
             ids.add(candidate_id)
     for item in _safe_list(planner.get("component_search_requirements")):
         ids.update(_text_list(_safe_mapping(item).get("source_obligation_candidate_ids")))
-    revision = _safe_mapping(revision_state)
-    for key in (
-        "component_search_requirement_updates",
-        "source_obligation_focus_updates",
-        "revised_source_obligation_candidates",
-    ):
-        for item in _safe_list(revision.get(key)):
-            mapping = _safe_mapping(item)
-            ids.update(_text_list(mapping.get("source_obligation_candidate_ids")))
-            candidate_id = _clean_token(
-                mapping.get("candidate_id") or mapping.get("source_obligation_id")
-            )
-            if candidate_id:
-                ids.add(candidate_id)
     return ids
 
 
 def _known_search_requirement_ids(
     *,
     planner_state: Mapping[str, Any] | None,
-    revision_state: Mapping[str, Any] | None,
 ) -> set[str]:
     ids: set[str] = set()
-    for source in (
-        _safe_mapping(planner_state).get("component_search_requirements"),
-        _safe_mapping(revision_state).get("component_search_requirement_updates"),
+    for item in _safe_list(
+        _safe_mapping(planner_state).get("component_search_requirements")
     ):
-        for item in _safe_list(source):
-            mapping = _safe_mapping(item)
-            requirement_id = _clean_token(
-                mapping.get("requirement_id")
-                or mapping.get("search_requirement_id")
-            )
-            if requirement_id:
-                ids.add(requirement_id)
+        mapping = _safe_mapping(item)
+        requirement_id = _clean_token(
+            mapping.get("requirement_id")
+            or mapping.get("search_requirement_id")
+        )
+        if requirement_id:
+            ids.add(requirement_id)
     return ids
 
 
@@ -2534,30 +2238,10 @@ def _search_requirement_ids_from_handoff(handoff: Mapping[str, Any]) -> list[str
 
 def _hint_ids_from_handoff(handoff: Mapping[str, Any]) -> list[str]:
     ids: list[str] = []
-    for key in ("scout_direction_hint_refs", "non_evidence_direction_refs"):
-        for item in _safe_list(handoff.get(key)):
-            mapping = _safe_mapping(item)
-            ids.append(mapping.get("hint_id"))
-    return _ordered_unique(ids)
-
-
-def _scout_hint_ids_from_report(report: Mapping[str, Any]) -> set[str]:
-    hint_ids: set[str] = set()
-    for key in (
-        "scout_result_hints",
-        "likely_official_target_hints",
-        "currentness_hints",
-    ):
-        for item in _safe_list(report.get(key)):
-            mapping = _safe_mapping(item)
-            hint_id = _clean_token(mapping.get("hint_id"), limit=180)
-            if hint_id:
-                hint_ids.add(hint_id)
-    for item in _safe_list(report.get("candidate_interpretations")):
+    for item in _safe_list(handoff.get("non_evidence_direction_refs")):
         mapping = _safe_mapping(item)
-        for hint_id in _text_list(mapping.get("supporting_hint_ids")):
-            hint_ids.add(hint_id)
-    return hint_ids
+        ids.append(mapping.get("hint_id"))
+    return _ordered_unique(ids)
 
 
 def _dedupe_key(handoff: Mapping[str, Any]) -> str:
@@ -2573,12 +2257,6 @@ def _dedupe_key(handoff: Mapping[str, Any]) -> str:
             "parent_search_planner_proposal_ref": _safe_mapping(
                 handoff.get("parent_search_planner_proposal_ref")
             ),
-            "parent_search_planner_revision_ref": _safe_mapping(
-                handoff.get("parent_search_planner_revision_ref")
-            ),
-            "parent_scout_disambiguation_report_ref": _safe_mapping(
-                handoff.get("parent_scout_disambiguation_report_ref")
-            ),
             "component_ids": [
                 item.get("component_id")
                 for item in _safe_list(handoff.get("answer_component_refs"))
@@ -2586,7 +2264,7 @@ def _dedupe_key(handoff: Mapping[str, Any]) -> str:
             ],
             "source_obligation_candidate_ids": _source_ids_from_handoff(handoff),
             "search_requirement_ids": _search_requirement_ids_from_handoff(handoff),
-            "scout_direction_hint_ids": _hint_ids_from_handoff(handoff),
+            "non_evidence_direction_hint_ids": _hint_ids_from_handoff(handoff),
             "action_type": _EXPECTED_ACTION_TYPE,
         }
     )
@@ -2620,44 +2298,6 @@ def _planner_ref_or_empty(value: Any) -> dict[str, Any]:
         "proposal_digest": proposal_digest,
         "question_meaning_record_id": qmr_id,
         "question_meaning_record_digest": qmr_digest,
-    }
-
-
-def _revision_ref_or_empty(value: Any) -> dict[str, Any]:
-    ref = _safe_mapping(value)
-    revision_id = _clean_token(ref.get("revision_id"))
-    revision_digest = _clean_token(ref.get("revision_digest"), limit=128)
-    if not revision_id or not revision_digest:
-        return {}
-    return {
-        "revision_id": revision_id,
-        "revision_digest": revision_digest,
-        "schema_version": _clean_token(ref.get("schema_version")),
-        "component_id": _clean_token(ref.get("component_id")),
-        "parent_search_planner_proposal_ref": _planner_ref_or_empty(
-            ref.get("parent_search_planner_proposal_ref")
-        ),
-        "parent_scout_disambiguation_report_ref": _scout_ref_or_empty(
-            ref.get("parent_scout_disambiguation_report_ref")
-        ),
-    }
-
-
-def _scout_ref_or_empty(value: Any) -> dict[str, Any]:
-    ref = _safe_mapping(value)
-    report_id = _clean_token(ref.get("report_id"))
-    report_digest = _clean_token(ref.get("report_digest"), limit=128)
-    component_id = _clean_token(ref.get("component_id"))
-    parent_planner_ref = _planner_ref_or_empty(
-        ref.get("parent_search_planner_proposal_ref")
-    )
-    if not report_id or not report_digest or not component_id or not parent_planner_ref:
-        return {}
-    return {
-        "report_id": report_id,
-        "report_digest": report_digest,
-        "component_id": component_id,
-        "parent_search_planner_proposal_ref": parent_planner_ref,
     }
 
 
@@ -3443,8 +3083,6 @@ __all__ = [
     "handoff_ref_from_handoff_state",
     "planner_ref_from_search_planner_state",
     "ordinary_handoff_ref_from_handoff_state",
-    "revision_ref_from_revision_state",
-    "scout_ref_from_scout_report_state",
     "validate_ordinary_search_executor_handoff",
     "validate_ordinary_search_executor_handoff_binding",
 ]

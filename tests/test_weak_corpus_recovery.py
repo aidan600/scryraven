@@ -131,8 +131,6 @@ class _Harness:
             is_plausible_domain=lambda _url: True,
             anchor_query_to_topic=lambda q, _topic: q,
             fetch_linkup_precision_block=lambda *_args, **_kwargs: "",
-            run_scout=lambda *_args, **_kwargs: {},
-            should_skip_quant_scout=lambda *_args, **_kwargs: False,
             clean_json_response=lambda s: s,
             DEFAULT_SYSTEM=DEFAULT_SYSTEM,
             NEWS_PREFERRED_DOMAINS=[],

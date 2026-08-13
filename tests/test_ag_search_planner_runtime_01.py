@@ -425,8 +425,8 @@ def test_component_search_requirements_are_subordinate_and_non_executing() -> No
     assert requirement["search_executed"] is False
     assert projection["component_search_requirements_executed"] is False
     assert projection["source_obligation_satisfied"] is False
-    assert kernel.state.search_work_plan == {}
-    assert kernel.state.search_work_plan_projection == {}
+    assert not hasattr(kernel.state, "search_work_plan")
+    assert not hasattr(kernel.state, "search_work_plan_projection")
 
 
 def test_amendment_candidates_are_deferred_not_admitted_or_applied() -> None:

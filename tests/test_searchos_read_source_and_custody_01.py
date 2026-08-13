@@ -443,36 +443,7 @@ def test_shared_obligation_descriptor_uses_accepted_contract_not_search_work_pla
         "fixture-component-01",
         "fixture-component-02",
     ]
-    kernel.state.search_work_plan = {
-        "components": [
-            {
-                "component_id": "fixture-component-02",
-                "source_obligations": [
-                    {
-                        "obligation_id": shared_obligation_id,
-                        "kind": "conflicting_kind",
-                        "strictness": "optional",
-                        "satisfaction_rule": (
-                            "Conflicting component-local satisfaction rule."
-                        ),
-                    }
-                ],
-            }
-        ]
-    }
-    ignored_work_plan = build_acquisition_authority_snapshot(
-        run_id=kernel.state.run_id,
-        request_id=kernel.state.request_id,
-        current_answer_contract=kernel.state.current_answer_contract,
-        initial_answer_contract=kernel.state.initial_answer_contract,
-        search_executor_handoff_state=(
-            kernel.state.search_executor_handoff_state
-        ),
-    )
-    assert ignored_work_plan == baseline
-    assert kernel.state.search_work_plan["components"][0]["source_obligations"][0][
-        "kind"
-    ] == "conflicting_kind"
+    assert not hasattr(kernel.state, "search_work_plan")
 
 
 def test_five_product_slots_are_all_assessed_once(

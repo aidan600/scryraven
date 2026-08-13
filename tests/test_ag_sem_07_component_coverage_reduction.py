@@ -1206,7 +1206,7 @@ def test_no_amendment_sufficiency_packet_author_search_followup_state() -> None:
     record = _coverage_record(accepted, observation, content_ref, kernel)
     _reduce(kernel, accepted, record)
 
-    assert kernel.state.search_work_plan == {}
+    assert not hasattr(kernel.state, "search_work_plan")
     assert kernel.state.search_judgment == {}
     assert kernel.state.sufficiency_judgment == {}
     assert kernel.state.final_answer_packet == {}

@@ -168,7 +168,10 @@ carry plural references; no singular compatibility field is an alternate
 semantic authority. SearchWorkPlan and QueryProduction are retired ordinary
 compatibility carriers and do not change that installed ownership.
 
-Phase-3 carrier consolidation is installed. Next product work is owned by the
+Phase-3 carrier consolidation is installed. Post-rebase inert Scout,
+PlannerRevision, SearchWorkPlan, and official-current SearchWork compatibility
+detritus is removed where zero current consumer existed. Next product work is
+owned by the
 [Current Roadmap](../roadmap/CURRENT_ROADMAP.md). Nothing in this section
 authorizes a live call.
 

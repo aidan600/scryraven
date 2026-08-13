@@ -256,7 +256,7 @@ dispatcher. **Basis: CURRENT_RUNTIME.**
 | Legacy rule or surface | Current fact and exact reachability | Dependencies / tests / telemetry | Target disposition | Replacement or retirement scope | Basis |
 | --- | --- | --- | --- | --- | --- |
 | Legacy semantic Scout ordinary continuation | No ordinary prompt/model call, query candidate, gate selection, or retrieval dispatch remains | Ordinary orchestrator and focused retirement tests; passive trace/session projections only | RETIRE — completed | Ordinary execution removed; durable generic planning/recovery authority preserved | CURRENT_RUNTIME, CURRENT_TEST, OWNER_DECISION |
-| Scout-directed query generation | No ordinary producer; prompt text/registry and model/parser path are absent | Inert `core.scout.run_scout` compatibility returns no result without prompt or model access | RETIRE — completed | No replacement semantic role installed; generic query production preserved | CURRENT_RUNTIME, CURRENT_TEST, OWNER_DECISION |
+| Scout-directed query generation | No ordinary producer; `core.scout` is physically absent | Retirement topology and ordinary composition guards | RETIRE — completed | No replacement semantic role installed; generic query production preserved | CURRENT_RUNTIME, CURRENT_TEST, OWNER_DECISION |
 | Scout continuation candidacy | No Scout QueryPlan finalizer or ordinary candidacy branch remains | Generic QueryPlan and evaluator/expander continuation tests | RETIRE — completed | Generic QueryPlan admission and retrieval-stop authority preserved | CURRENT_RUNTIME, CURRENT_TEST, OWNER_DECISION |
 | `scout_directed_continuation` scheduling | No current scheduler constructs this stage or provider role `scout_continuation` | Scheduler structural and focused retirement tests | RETIRE — completed | Named stage/role removed; passive compatibility projections cannot dispatch | CURRENT_RUNTIME, CURRENT_TEST, OWNER_DECISION |
 | Hard-coded Scout provider overrides | No Scout-specific `exa,linkup` override is constructed | Scheduler and focused retirement tests | RETIRE — completed | Future provider jobs remain deferred to capability routing | CURRENT_RUNTIME, CURRENT_TEST, OWNER_DECISION |
@@ -285,8 +285,8 @@ retired the complete ordinary-execution cluster, not just the active body of
 1. `SCOUT_REPORT_TYPES`, Scout prompt registry entries and prompt text in
    `core.prompts`;
 2. `core.scout` prompt assembly, model invocation, JSON parsing, and eligibility
-   behavior; only a fixed inert import-compatibility result remains, and ordinary
-   CLI/backend composition injects no Scout dependency;
+   behavior; later post-rebase detritus closure physically deleted the inert
+   `core.scout` stub because it had zero supported current consumer;
 3. the iteration-one orchestrator candidacy branch, quantitative skip heuristic,
    four-query cap, QueryPlan finalization role, retrieval-stop and continuation
    spine gates;
@@ -304,9 +304,9 @@ retired the complete ordinary-execution cluster, not just the active body of
 
 Generic QueryPlan admission, RunKernel continuation authority, retrieval-stop
 policy, disambiguation, component planning, ordinary recovery and provider
-diagnostics remain installed. Passive compatibility fields and the inert
-`core.scout` exports have named repository consumers and cannot execute or
-authorize ordinary Scout work. **Basis: CURRENT_RUNTIME, CURRENT_TEST,
+diagnostics remain installed. The inert `core.scout` stub was later physically
+deleted. Passive continuation-spine trace names such as `scout_fired` remain
+only where they name a different current surface. **Basis: CURRENT_RUNTIME, CURRENT_TEST,
 OWNER_DECISION.**
 
 ## 8. Linkup standard/deep decision

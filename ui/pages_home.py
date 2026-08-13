@@ -55,8 +55,6 @@ def render_home_page(context: UIContext) -> None:
     anchor_query_to_topic = context.anchor_query_to_topic
     fetch_linkup_precision_block = context.fetch_linkup_precision_block
     run_economist_step = context.run_economist_step
-    run_scout = context.run_scout
-    should_skip_quant_scout = context.should_skip_quant_scout
 
     execution_log_path = OUTPUT_DIR / "execution_log.jsonl"
     feedback_log_path = OUTPUT_DIR / "feedback_log.jsonl"
@@ -419,8 +417,6 @@ def render_home_page(context: UIContext) -> None:
                 anchor_query_to_topic=anchor_query_to_topic,
                 fetch_linkup_precision_block=fetch_linkup_precision_block,
                 run_economist_step=run_economist_step,
-                run_scout=run_scout,
-                should_skip_quant_scout=should_skip_quant_scout,
                 clean_json_response=clean_json_response,
                 DEFAULT_SYSTEM=DEFAULT_SYSTEM,
                 NEWS_PREFERRED_DOMAINS=NEWS_PREFERRED_DOMAINS,

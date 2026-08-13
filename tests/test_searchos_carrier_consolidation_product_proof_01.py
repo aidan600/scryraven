@@ -110,8 +110,8 @@ def _assert_ordinary_carriers_retired(harness: Any, outcome: Any) -> None:
     assert "query_candidates_produced" not in trace
     assert "search_work_plan_constructed" not in trace
     assert "scout_disambiguate" not in issued
-    assert kernel.state.scout_disambiguation_report_history == []
-    assert kernel.state.search_planner_revision_history == []
+    assert not hasattr(kernel.state, "scout_disambiguation_report_history")
+    assert not hasattr(kernel.state, "search_planner_revision_history")
 
 
 def test_a_clear_direct_python_isclose_defaults(

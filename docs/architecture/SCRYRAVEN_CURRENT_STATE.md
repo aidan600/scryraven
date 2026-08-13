@@ -493,10 +493,10 @@ explicit confirmation posture, and component normalization/calculation policies.
 not itself become a user-confirmation request.
 
 The typed `search_planner_adapter` `RunDeps` seam is the ordinary initial-model
-injection point. Retained Scout and PlannerRevision RunDeps fields are unused
-ordinary compatibility only; the former Scout and PlannerRevision runtime
-modules are deleted. Ordinary `run_pipeline()` no longer reads them or accepts
-them in initial convergence. With no explicit
+injection point. Retired Scout and PlannerRevision RunDeps fields, the inert
+`core.scout` stub, and empty RunKernel Scout/Revision/SearchWorkPlan carriers
+are physically absent. Ordinary `run_pipeline()` does not read or accept those
+surfaces. With no explicit
 planner adapter, `run_pipeline()` intentionally composes
 `SearchPlannerModelAdapter` from `deps.ask_model`,
 `deps.clean_json_response`, and the selected fast provider, fast model, and
@@ -920,15 +920,14 @@ deleted and has no ordinary fallback. Analyst-originated Boundary B now reuses
 the installed ContractAmendment, graph-reentry, and selective-recomputation
 owners under canonical post-analysis SearchOS recovery.
 
-`core.scout` now exposes only fixed inert import compatibility for the retained
-`core.pipeline` re-export and bounded validation composition: `run_scout`
-returns no result and performs no prompt lookup, model call, parsing, or query
-production. Ordinary CLI composition does not inject the optional legacy Scout
-or Linkup precision dependencies. Retained Scout execution/session fields are
-passive compatibility projections for persistence, review, and aggregate
-consumers: ordinary values are fixed false, empty, retired, or zero, and the
-retired gate projection is not supplied to current continuation, retrieval-
-authority, or dispatch decisions.
+`QUANT_REPORT_TYPES` remains an Analyst evidence-slice constant owned by
+`core.pipeline`. The former inert `core.scout` stub, official-current
+SearchWork shadow handoff, empty RunKernel Scout/Revision/SearchWorkPlan
+state, SearchExecutor Scout/Revision ancestry, and QueryPlan recon-rewrite
+vocabulary are physically deleted where they had zero supported current
+consumer. Historical tests and comments were not consumers. QuestionMeaningRecord
+and READ `search_work_plan_ref` names remain only where they participate in
+current schema identity.
 
 Ordinary Linkup provider synthesis is also retired. No ordinary eligibility,
 call, response-processing, or Analyst-context path uses Linkup

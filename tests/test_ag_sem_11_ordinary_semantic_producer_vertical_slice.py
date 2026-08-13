@@ -70,9 +70,6 @@ def _fresh_kernel_for_handoff(source_kernel: RunKernel) -> RunKernel:
         run_id=f"{source_kernel.state.run_id}:handoff-retest",
         request_id=f"{source_kernel.state.request_id}:handoff-retest",
     )
-    kernel.state.search_work_plan = _compatibility_search_work_plan(
-        source_kernel.state.search_work_plan
-    )
     kernel.state.evidence_ledger = deepcopy(source_kernel.state.evidence_ledger)
     return kernel
 
@@ -89,9 +86,7 @@ def _preflight_kwargs_from_capture(
         else kernel.state.evidence_ledger.to_projection().to_dict()
     )
     return {
-        "search_work_plan": _compatibility_search_work_plan(
-            kernel.state.search_work_plan
-        ),
+        "search_work_plan": _compatibility_search_work_plan({}),
         "route_projection": kernel.state.projections.get("route_request"),
         "run_contract_projection": scope["run_contract_projection"],
         "final_top_evidence": scope["final_top_evidence"],
@@ -340,11 +335,7 @@ def test_prerequisites_absent_leaves_no_orphan_initial_answer_contract(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured = _run_offline_pipeline(tmp_path, monkeypatch)
-    source_kernel = captured["run_kernel"]
     kernel = RunKernel.start(run_id="run:sem-11-absent", request_id="request:sem-11-absent")
-    kernel.state.search_work_plan = _compatibility_search_work_plan(
-        source_kernel.state.search_work_plan
-    )
     scope = dict(captured["sufficiency_runtime_scope"])
     scope["final_top_evidence"] = []
     result = execute_ordinary_semantic_producer_handoff_from_scope(kernel, scope)
@@ -615,11 +606,6 @@ def test_query_shape_classifier_unavailable_skips_without_orphan_state(
 ) -> None:
     source_kernel, scope = _capture_ag_check_01_handoff_inputs(tmp_path, monkeypatch)
     kernel = _fresh_kernel_for_handoff(source_kernel)
-    kernel.state.search_work_plan = {
-        "metadata": {
-            "construction_metadata": {"runtime_shadow_scaffolding": True},
-        }
-    }
     result = execute_ordinary_semantic_producer_handoff_from_scope(kernel, scope)
     assert result.status is OrdinarySemanticProducerHandoffStatus.SKIPPED
     assert result.skipped_reason == SKIP_REASON_ACCEPTED_ANSWER_CONTRACT_MISSING

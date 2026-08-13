@@ -483,8 +483,6 @@ from core.search_executor_handoff_runtime import (
     build_search_executor_handoff_projection,
     build_search_executor_handoff_state,
     planner_ref_from_search_planner_state,
-    revision_ref_from_revision_state,
-    scout_ref_from_scout_report_state,
 )
 from core.search_executor_handoff_runtime import (
     SEARCH_EXECUTOR_HANDOFF_STAGE as SEARCH_EXECUTOR_HANDOFF_STAGE_NAME,
@@ -1321,12 +1319,6 @@ def _validation_status(validation: Mapping[str, Any]) -> str | None:
         return "ok"
     if ok is False:
         return "errors"
-    plan_validation = validation.get("search_work_plan")
-    if isinstance(plan_validation, Mapping):
-        if plan_validation.get("ok") is True:
-            return "ok"
-        if plan_validation.get("ok") is False:
-            return "errors"
     return None
 
 
@@ -1542,20 +1534,6 @@ class RunState:
     search_planner_proposal_history: list[dict[str, Any]] = field(
         default_factory=list
     )
-    scout_disambiguation_report_state: dict[str, Any] = field(default_factory=dict)
-    scout_disambiguation_report_projection: dict[str, Any] = field(
-        default_factory=dict
-    )
-    scout_disambiguation_report_history: list[dict[str, Any]] = field(
-        default_factory=list
-    )
-    search_planner_revision_state: dict[str, Any] = field(default_factory=dict)
-    search_planner_revision_projection: dict[str, Any] = field(
-        default_factory=dict
-    )
-    search_planner_revision_history: list[dict[str, Any]] = field(
-        default_factory=list
-    )
     search_executor_handoff_state: dict[str, Any] = field(default_factory=dict)
     search_executor_handoff_projection: dict[str, Any] = field(
         default_factory=dict
@@ -1649,9 +1627,6 @@ class RunState:
     contract_amendment_application_history: list[dict[str, Any]] = field(
         default_factory=list
     )
-    search_work_plan: dict[str, Any] = field(default_factory=dict)
-    search_work_plan_projection: dict[str, Any] = field(default_factory=dict)
-    search_work_plan_validation: dict[str, Any] = field(default_factory=dict)
     offline_search_executor_bridge_projection: dict[str, Any] = field(
         default_factory=dict
     )
@@ -1923,24 +1898,6 @@ class RunState:
             search_planner_proposal_history=deepcopy(
                 self.search_planner_proposal_history
             ),
-            scout_disambiguation_report_state=deepcopy(
-                self.scout_disambiguation_report_state
-            ),
-            scout_disambiguation_report_projection=deepcopy(
-                self.scout_disambiguation_report_projection
-            ),
-            scout_disambiguation_report_history=deepcopy(
-                self.scout_disambiguation_report_history
-            ),
-            search_planner_revision_state=deepcopy(
-                self.search_planner_revision_state
-            ),
-            search_planner_revision_projection=deepcopy(
-                self.search_planner_revision_projection
-            ),
-            search_planner_revision_history=deepcopy(
-                self.search_planner_revision_history
-            ),
             search_executor_handoff_state=deepcopy(
                 self.search_executor_handoff_state
             ),
@@ -2050,9 +2007,6 @@ class RunState:
             contract_amendment_application_history=deepcopy(
                 self.contract_amendment_application_history
             ),
-            search_work_plan=deepcopy(self.search_work_plan),
-            search_work_plan_projection=deepcopy(self.search_work_plan_projection),
-            search_work_plan_validation=deepcopy(self.search_work_plan_validation),
             evidence_ledger=self.evidence_ledger.to_projection().to_dict(),
             search_judgment=deepcopy(self.search_judgment),
             search_judgment_projection=deepcopy(self.search_judgment_projection),
@@ -2323,12 +2277,6 @@ class KernelTraceProjection:
     search_planner_proposal_state: Mapping[str, Any]
     search_planner_proposal_projection: Mapping[str, Any]
     search_planner_proposal_history: Sequence[Mapping[str, Any]]
-    scout_disambiguation_report_state: Mapping[str, Any]
-    scout_disambiguation_report_projection: Mapping[str, Any]
-    scout_disambiguation_report_history: Sequence[Mapping[str, Any]]
-    search_planner_revision_state: Mapping[str, Any]
-    search_planner_revision_projection: Mapping[str, Any]
-    search_planner_revision_history: Sequence[Mapping[str, Any]]
     search_executor_handoff_state: Mapping[str, Any]
     search_executor_handoff_projection: Mapping[str, Any]
     search_executor_handoff_history: Sequence[Mapping[str, Any]]
@@ -2372,9 +2320,6 @@ class KernelTraceProjection:
     contract_amendment_application_state: Mapping[str, Any]
     contract_amendment_application_projection: Mapping[str, Any]
     contract_amendment_application_history: Sequence[Mapping[str, Any]]
-    search_work_plan: Mapping[str, Any]
-    search_work_plan_projection: Mapping[str, Any]
-    search_work_plan_validation: Mapping[str, Any]
     evidence_ledger: Mapping[str, Any]
     search_judgment: Mapping[str, Any]
     search_judgment_projection: Mapping[str, Any]
@@ -2495,26 +2440,6 @@ class KernelTraceProjection:
             "search_planner_proposal_history": [
                 _safe_mapping(item)
                 for item in self.search_planner_proposal_history
-            ],
-            "scout_disambiguation_report_state": _safe_mapping(
-                self.scout_disambiguation_report_state
-            ),
-            "scout_disambiguation_report_projection": _safe_mapping(
-                self.scout_disambiguation_report_projection
-            ),
-            "scout_disambiguation_report_history": [
-                _safe_mapping(item)
-                for item in self.scout_disambiguation_report_history
-            ],
-            "search_planner_revision_state": _safe_mapping(
-                self.search_planner_revision_state
-            ),
-            "search_planner_revision_projection": _safe_mapping(
-                self.search_planner_revision_projection
-            ),
-            "search_planner_revision_history": [
-                _safe_mapping(item)
-                for item in self.search_planner_revision_history
             ],
             "search_executor_handoff_state": _safe_mapping(
                 self.search_executor_handoff_state
@@ -2644,13 +2569,6 @@ class KernelTraceProjection:
                 _safe_mapping(item)
                 for item in self.contract_amendment_application_history
             ],
-            "search_work_plan": _safe_mapping(self.search_work_plan),
-            "search_work_plan_projection": _safe_mapping(
-                self.search_work_plan_projection
-            ),
-            "search_work_plan_validation": _safe_mapping(
-                self.search_work_plan_validation
-            ),
             "evidence_ledger": _safe_mapping(self.evidence_ledger),
             "search_judgment": _safe_mapping(self.search_judgment),
             "search_judgment_projection": _safe_mapping(
@@ -3899,7 +3817,6 @@ class RunKernel:
         component_ids: Sequence[str] = (),
         source_obligation_candidate_ids: Sequence[str] = (),
         search_requirement_ids: Sequence[str] = (),
-        scout_direction_hint_ids: Sequence[str] = (),
         reason: str = SEARCH_EXECUTOR_HANDOFF_REASON,
         inputs: Mapping[str, Any] | None = None,
     ) -> AuthorizedAction:
@@ -3949,61 +3866,13 @@ class RunKernel:
             _handoff_source_obligation_ids(
                 parent_contract=parent_contract,
                 planner_state=self.state.search_planner_proposal_state,
-                revision_state=self.state.search_planner_revision_state,
             )
         )
         clean_requirement_ids = _preserve_text_list(search_requirement_ids) or (
             _handoff_search_requirement_ids(
                 planner_state=self.state.search_planner_proposal_state,
-                revision_state=self.state.search_planner_revision_state,
             )
         )
-        parent_revision_ref = revision_ref_from_revision_state(
-            self.state.search_planner_revision_state
-        )
-        parent_scout_ref = scout_ref_from_scout_report_state(
-            self.state.scout_disambiguation_report_state
-        )
-        if parent_revision_ref and (
-            _safe_mapping(parent_revision_ref.get("parent_search_planner_proposal_ref"))
-            != parent_planner_ref
-        ):
-            raise RunKernelTransitionError(
-                "SearchExecutor handoff requires revision bound to current planner/QMR"
-            )
-        clean_hint_ids = _preserve_text_list(scout_direction_hint_ids)
-        if not clean_hint_ids and parent_revision_ref:
-            clean_hint_ids = _preserve_text_list(
-                self.state.search_planner_revision_state.get(
-                    "consumed_scout_hint_ids"
-                )
-            )
-        if clean_hint_ids:
-            if not parent_revision_ref:
-                raise RunKernelTransitionError(
-                    "SearchExecutor handoff cannot consume Scout hints without revision"
-                )
-            if not parent_scout_ref:
-                raise RunKernelTransitionError(
-                    "SearchExecutor handoff cannot consume Scout hints without Scout report"
-                )
-            known_hint_ids = _scout_hint_ids_from_report(
-                self.state.scout_disambiguation_report_state
-            )
-            missing_hint_ids = [
-                item for item in clean_hint_ids if item not in known_hint_ids
-            ]
-            if missing_hint_ids:
-                raise RunKernelTransitionError(
-                    "SearchExecutor handoff consumes unknown Scout hints: "
-                    + ", ".join(missing_hint_ids)
-                )
-            if _safe_mapping(
-                parent_revision_ref.get("parent_scout_disambiguation_report_ref")
-            ) != parent_scout_ref:
-                raise RunKernelTransitionError(
-                    "SearchExecutor handoff requires revision bound to current Scout report"
-                )
         merged_inputs = {
             **dict(inputs or {}),
             "run_id": self.state.run_id,
@@ -4029,22 +3898,9 @@ class RunKernel:
             "parent_question_meaning_record_digest": parent_planner_ref.get(
                 "question_meaning_record_digest"
             ),
-            "parent_search_planner_revision_id": parent_revision_ref.get(
-                "revision_id"
-            ),
-            "parent_search_planner_revision_digest": parent_revision_ref.get(
-                "revision_digest"
-            ),
-            "parent_scout_disambiguation_report_id": (
-                parent_scout_ref.get("report_id") if clean_hint_ids else None
-            ),
-            "parent_scout_disambiguation_report_digest": (
-                parent_scout_ref.get("report_digest") if clean_hint_ids else None
-            ),
             "component_ids": clean_component_ids,
             "source_obligation_candidate_ids": clean_source_ids,
             "search_requirement_ids": clean_requirement_ids,
-            "scout_direction_hint_ids": clean_hint_ids,
             "handoff_schema_version": SEARCH_EXECUTOR_HANDOFF_SCHEMA_VERSION,
             "reason": reason,
         }
@@ -7983,9 +7839,7 @@ class RunKernel:
                 component_executor_contract_projection
             ),
             component_plan_projection=component_plan_projection,
-            search_work_plan_projection=(
-                search_work_plan_projection or self.state.search_work_plan
-            ),
+            search_work_plan_projection=search_work_plan_projection or {},
             query_plan_work_shadow_projection=query_plan_work_shadow_projection,
             evidence_ledger_projection=(
                 self.state.evidence_ledger.to_projection().to_dict()
@@ -8039,11 +7893,7 @@ class RunKernel:
             ),
             component_search_plan_projection=component_search_plan_projection,
             component_plan_projection=component_plan_projection,
-            search_work_plan_projection=(
-                search_work_plan_projection
-                or self.state.search_work_plan_projection
-                or self.state.search_work_plan
-            ),
+            search_work_plan_projection=search_work_plan_projection or {},
             query_plan_work_shadow_projection=query_plan_work_shadow_projection,
             offline_candidate_observations=offline_candidate_observations,
             offline_candidate_fixtures=offline_candidate_fixtures,
@@ -16967,7 +16817,7 @@ class RunKernel:
                     request_id=self.state.request_id,
                     initial_answer_contract=self.state.initial_answer_contract,
                     current_answer_contract=self.state.current_answer_contract,
-                    search_work_plan=self.state.search_work_plan,
+                    search_work_plan={},
                     search_executor_handoff_projection=(
                         self.state.projections.get(
                             ORDINARY_DISCOVERY_CANDIDATE_HANDOFF_STAGE, {}
@@ -17097,12 +16947,6 @@ class RunKernel:
                     request_id=self.state.request_id,
                     current_search_planner_proposal_state=(
                         self.state.search_planner_proposal_state
-                    ),
-                    current_search_planner_revision_state=(
-                        self.state.search_planner_revision_state
-                    ),
-                    current_scout_disambiguation_report_state=(
-                        self.state.scout_disambiguation_report_state
                     ),
                     current_parent_initial_contract=(
                         self.state.initial_answer_contract
@@ -22825,27 +22669,6 @@ def _reject_live_validation_closed_surface_inputs(
             )
 
 
-def _scout_hint_ids_from_report(report: Mapping[str, Any]) -> set[str]:
-    hint_ids: set[str] = set()
-    for key in (
-        "scout_result_hints",
-        "likely_official_target_hints",
-        "currentness_hints",
-    ):
-        for item in report.get(key, []) or []:
-            if not isinstance(item, Mapping):
-                continue
-            hint_id = _clean_text(item.get("hint_id"), limit=180)
-            if hint_id:
-                hint_ids.add(hint_id)
-    for item in report.get("candidate_interpretations", []) or []:
-        if not isinstance(item, Mapping):
-            continue
-        for hint_id in _preserve_text_list(item.get("supporting_hint_ids")):
-            hint_ids.add(hint_id)
-    return hint_ids
-
-
 def _handoff_component_ids(contract: Mapping[str, Any]) -> list[str]:
     component_ids: list[str] = []
     for item in contract.get("accepted_answer_component_refs", []) or []:
@@ -22860,7 +22683,6 @@ def _handoff_source_obligation_ids(
     *,
     parent_contract: Mapping[str, Any],
     planner_state: Mapping[str, Any],
-    revision_state: Mapping[str, Any],
 ) -> list[str]:
     source_ids: list[str] = []
     for item in parent_contract.get("accepted_answer_component_refs", []) or []:
@@ -22891,47 +22713,23 @@ def _handoff_source_obligation_ids(
         ):
             if candidate_id not in source_ids:
                 source_ids.append(candidate_id)
-    revision = _safe_mapping(revision_state)
-    for key in (
-        "component_search_requirement_updates",
-        "source_obligation_focus_updates",
-        "revised_source_obligation_candidates",
-    ):
-        for item in revision.get(key, []) or []:
-            mapping = _safe_mapping(item)
-            candidate_id = _clean_text(
-                mapping.get("candidate_id") or mapping.get("source_obligation_id"),
-                limit=180,
-            )
-            if candidate_id and candidate_id not in source_ids:
-                source_ids.append(candidate_id)
-            for listed_id in _preserve_text_list(
-                mapping.get("source_obligation_candidate_ids")
-            ):
-                if listed_id not in source_ids:
-                    source_ids.append(listed_id)
     return source_ids
 
 
 def _handoff_search_requirement_ids(
     *,
     planner_state: Mapping[str, Any],
-    revision_state: Mapping[str, Any],
 ) -> list[str]:
     requirement_ids: list[str] = []
-    for source in (
-        _safe_mapping(planner_state).get("component_search_requirements"),
-        _safe_mapping(revision_state).get("component_search_requirement_updates"),
-    ):
-        for item in source or []:
-            mapping = _safe_mapping(item)
-            requirement_id = _clean_text(
-                mapping.get("requirement_id")
-                or mapping.get("search_requirement_id"),
-                limit=180,
-            )
-            if requirement_id and requirement_id not in requirement_ids:
-                requirement_ids.append(requirement_id)
+    for item in _safe_mapping(planner_state).get("component_search_requirements") or []:
+        mapping = _safe_mapping(item)
+        requirement_id = _clean_text(
+            mapping.get("requirement_id")
+            or mapping.get("search_requirement_id"),
+            limit=180,
+        )
+        if requirement_id and requirement_id not in requirement_ids:
+            requirement_ids.append(requirement_id)
     return requirement_ids
 
 

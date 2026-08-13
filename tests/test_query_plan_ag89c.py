@@ -28,7 +28,8 @@ def test_ag89c_query_plan_status_and_role_vocabulary() -> None:
     assert QueryPlanStatus.REJECTED_EMPTY.value == "rejected_empty"
     assert QueryPlanStatus.PROVIDER_POLICY_UNCHANGED.value == "provider_policy_unchanged"
     assert QueryPlanStatus.DEPTH_POLICY_UNCHANGED.value == "depth_policy_unchanged"
-    assert QueryPlanRole.RECON_REWRITE.value == "recon_rewrite"
+    assert not hasattr(QueryPlanStatus, "OBSERVED_RECON_REWRITE")
+    assert not hasattr(QueryPlanRole, "RECON_REWRITE")
     assert QueryPlanRole.DISAMBIGUATION.value == "disambiguation"
     assert QueryPlanRole.REMEDIATION.value == "remediation"
 
@@ -375,34 +376,6 @@ def test_ag91b_initial_researcher_queries_finalize_to_legacy_consumed_list() -> 
     ] == consumed
 
 
-def test_ag91b_recon_seeded_queries_finalize_to_legacy_consumed_list() -> None:
-    inputs = ["Acme Widget release notes", "AW deployment timeline"]
-    adapter = _adapter()
-
-    consumed = adapter.finalize(
-        inputs,
-        origin="recon_rewriter",
-        role=QueryPlanRole.RECON_REWRITE,
-        phase="recon_seeded_queries",
-    )
-    legacy = finalize_retrieval_queries(
-        inputs,
-        primary_entity="Acme Widget",
-        entities_list=["Acme Widget", "AW"],
-        core_topic="Acme Widget deployment",
-        user_query="Acme Widget deployment official current status",
-        intent="general",
-        clean=_clean,
-        include_official_bias=True,
-    )
-
-    assert consumed == legacy
-    assert [item["origin"] for item in adapter.to_trace_fragment()[QUERY_PLAN_TRACE_KEY]["items"][:2]] == [
-        "recon_rewriter",
-        "recon_rewriter",
-    ]
-
-
 def test_ag91b_recency_merge_then_admission_preserves_consumed_order() -> None:
     adapter = _adapter()
     finalized = adapter.finalize(
@@ -609,28 +582,6 @@ def test_ag91b_static_guard_queryplan_boundary_avoids_closed_surfaces() -> None:
     assert "apply_initial_recency_merge(" not in query_runtime_source
     assert "should_merge_recency_queries(" not in orchestrator_source
     assert '_clean_query(f"{_anchor} {y} news")' not in orchestrator_source
-
-
-def test_ag91d_recon_admission_method_preserves_candidate_order_and_origin() -> None:
-    adapter = _adapter()
-    candidates = ["Acme Widget release notes", "AW deployment timeline"]
-
-    consumed = adapter.admit_recon_candidates(candidates)
-    legacy = finalize_retrieval_queries(
-        candidates,
-        primary_entity="Acme Widget",
-        entities_list=["Acme Widget", "AW"],
-        core_topic="Acme Widget deployment",
-        user_query="Acme Widget deployment official current status",
-        intent="general",
-        clean=_clean,
-        include_official_bias=True,
-    )
-
-    assert consumed == legacy
-    trace = adapter.to_trace_fragment()[QUERY_PLAN_TRACE_KEY]
-    assert {item["origin"] for item in trace["items"][: len(candidates)]} == {"recon_rewriter"}
-    assert {item["phase"] for item in trace["items"][: len(candidates)]} == {"recon_seeded_queries"}
 
 
 def test_ag91d_researcher_admission_method_preserves_candidate_order_and_origin() -> None:

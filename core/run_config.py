@@ -129,11 +129,9 @@ class RunDeps:
     policy_state_path: Any           # Path
     policy_journal_path: Any         # Path
 
-    # Optional isolated compatibility fields. Current ordinary composition and
-    # runtime neither require, read, nor invoke these retired callables.
+    # Optional isolated compatibility field. Current ordinary composition and
+    # runtime neither require, read, nor invoke this retired callable.
     fetch_linkup_precision_block: Callable[..., Any] | None = None
-    run_scout: Callable[..., Any] | None = None
-    should_skip_quant_scout: Callable[..., Any] | None = None
 
     # Optional isolated legacy compatibility field. Current ordinary runtime
     # neither reads nor invokes this callable.
@@ -142,12 +140,10 @@ class RunDeps:
     # Optional offline-only adapter for authorized component-gap recovery.
     component_gap_recovery_adapter: Callable[..., Any] | None = None
 
-    # Typed semantic-planning composition seams. Ordinary execution composes
-    # the selected fast-model planner, bounded provider-neutral Scout, and FAST
-    # PlannerRevision when no adapter is supplied; injected seams override them.
+    # Typed semantic-planning composition seam. Ordinary execution composes
+    # the selected fast-model planner when no adapter is supplied; an injected
+    # seam overrides it.
     search_planner_adapter: Any | None = None
-    scout_disambiguation_adapter: Any | None = None
-    search_planner_revision_adapter: Any | None = None
 
     # Typed Linkup/Tavily exact-URL transports retained for a future licensed
     # post-selection proposal path selected by core.routing.
