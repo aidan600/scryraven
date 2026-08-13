@@ -29,6 +29,7 @@ from tests.test_ag_search_planner_model_01 import (
     _planner_input,
     _planner_output,
     _produce,
+    _sparse_planner_output,
 )
 
 
@@ -77,7 +78,7 @@ def _chat_response(content: str, *, finish_reason: str = "stop") -> Any:
 
 
 def test_case_a_complete_valid_json_success_unchanged() -> None:
-    payload = _planner_output()
+    payload = _sparse_planner_output()
     fake = _sink_aware_fake(json.dumps(payload), finish_reason="stop")
     adapter = SearchPlannerModelAdapter(
         ask_model=fake,
@@ -95,7 +96,9 @@ def test_case_a_complete_valid_json_success_unchanged() -> None:
     assert metadata["strict_parse_subtype"] == "not_applicable"
     assert metadata["cleaner_modified"] is False
     assert metadata["raw_model_response_retained"] is False
-    assert result["question_meaning_summary"] == payload["question_meaning_summary"]
+    assert result["answer_components"][0]["user_facing_question"] == (
+        payload["components"][0]["need"]
+    )
     observation = _produce(_kernel(), adapter)
     proposal_meta = observation["planner_proposal"]["planner_model_metadata"]
     assert proposal_meta["strict_parse_subtype"] == "not_applicable"
@@ -228,7 +231,7 @@ def test_case_e_empty_content() -> None:
 
 
 def test_case_f_cleaner_unchanged() -> None:
-    payload = json.dumps(_planner_output())
+    payload = json.dumps(_sparse_planner_output())
     fake = FakeAskModel(payload)
     result = _adapter(fake, clean_json_response=lambda text: text).produce(
         _adapter_payload()
@@ -237,7 +240,7 @@ def test_case_f_cleaner_unchanged() -> None:
 
 
 def test_case_g_cleaner_modified_valid_result() -> None:
-    payload = json.dumps(_planner_output())
+    payload = json.dumps(_sparse_planner_output())
     wrapped = f"prefix-noise {payload} trailing"
     fake = FakeAskModel(wrapped)
     result = _adapter(fake, clean_json_response=clean_json_response).produce(

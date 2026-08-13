@@ -24,7 +24,7 @@ from core.semantic_contract_foundation import (
     SupportKind,
 )
 
-SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION = "search_planner_sparse_model_prompt_v6"
+SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION = "search_planner_sparse_model_prompt_v7"
 
 SEARCH_PLANNER_MODEL_STRICT_JSON_OUTPUT_CONTRACT = (
     "Return exactly one JSON object.",
@@ -51,7 +51,12 @@ SEARCH_PLANNER_MODEL_OPTIONAL_TOP_LEVEL_FIELDS = (
     "source",
     "freshness",
     "caveat",
-    "components",
+)
+SEARCH_PLANNER_MODEL_COMPONENTS_BRANCH_REQUIRED_FIELDS = ("disposition", "components")
+SEARCH_PLANNER_MODEL_COMPONENTS_BRANCH_FORBIDDEN_TOP_LEVEL_FIELDS = (
+    "source",
+    "freshness",
+    "caveat",
 )
 SEARCH_PLANNER_RICH_REQUIRED_TOP_LEVEL_FIELDS = (
     "question_meaning_summary",
@@ -740,9 +745,10 @@ def build_search_planner_model_prompt(planner_input: Mapping[str, Any]) -> str:
     }
     instructions = [
         "SEARCHPLANNER SEMANTIC TASK",
-        "Choose one disposition: direct_simple or components.",
-        "direct_simple affirms one required direct need; no dependency, inference, material uncertainty, calculation, or nonstandard normalization. Never use it as fallback. Query <=300; only source/freshness/caveat overrides.",
-        "components authors distinct needs plus exceptions. Omit defaults/empty fields. Keys are proposal-local references, never runtime identity.",
+        "Choose one disposition: direct_simple or components. The two branches have different allowed-field sets.",
+        "direct_simple allowed fields: disposition plus optional source, freshness, caveat. Forbidden: components and all component-local fields. Affirms one required direct need; no dependency, inference, material uncertainty, calculation, or nonstandard normalization. Never use it as fallback. Query <=300.",
+        "components allowed fields: disposition plus required nonempty components. Forbidden top-level: source, freshness, caveat. Authors distinct needs plus exceptions. Keys are proposal-local references, never runtime identity.",
+        "Omit empty optional strings and arrays; do not emit empty values. Omit defaults.",
         "Put factual uncertainty in uncertainties; confirmation is only for true user-intent ambiguity.",
         "Never author queries/recon/Scout/PlannerRevision, IDs/digests/lineage, routing, evidence/citations, accepted state, or answers.",
         "Return one JSON object only. Unknown fields, old rich output, prose/Markdown, duplicate keys, and nonfinite JSON fail closed.",
@@ -768,6 +774,8 @@ __all__ = [
     "SEARCH_PLANNER_MODEL_ALLOWED_SUPPORT_KIND_COMBINATIONS",
     "SEARCH_PLANNER_MODEL_COMPONENT_PURPOSES",
     "SEARCH_PLANNER_MODEL_MATERIALITY_VALUES",
+    "SEARCH_PLANNER_MODEL_COMPONENTS_BRANCH_FORBIDDEN_TOP_LEVEL_FIELDS",
+    "SEARCH_PLANNER_MODEL_COMPONENTS_BRANCH_REQUIRED_FIELDS",
     "SEARCH_PLANNER_MODEL_OPTIONAL_TOP_LEVEL_FIELDS",
     "SEARCH_PLANNER_MODEL_PARTIAL_ANSWER_POLICIES",
     "SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION",

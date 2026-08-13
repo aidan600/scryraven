@@ -902,6 +902,11 @@ def _bounded_terminal_payload(
                 if exc.strict_parse_subtype is not None
                 else None
             ),
+            "semantic_proposal_subtype": (
+                exc.semantic_proposal_subtype.value
+                if exc.semantic_proposal_subtype is not None
+                else None
+            ),
             "cleaner_modified": exc.cleaner_modified,
         }
     else:

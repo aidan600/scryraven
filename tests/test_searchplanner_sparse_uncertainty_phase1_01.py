@@ -20,6 +20,7 @@ from core.search_planner_model_adapter import (
 )
 from core.search_planner_model_prompt import (
     SEARCH_PLANNER_MODEL_SYSTEM_PROMPT,
+    SEARCH_PLANNER_RICH_INTERNAL_OUTPUT_SCHEMA,
     build_search_planner_model_prompt,
 )
 from core.search_planner_runtime import (
@@ -30,6 +31,7 @@ from core.search_planner_runtime import (
 from core.search_planner_semantic_compiler import (
     SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA,
     SearchPlannerSemanticProposalError,
+    SearchPlannerSemanticProposalSubtype,
     compile_semantic_planner_proposal,
     count_model_authored_mechanical_identity_keys,
     validate_semantic_planner_proposal,
@@ -231,19 +233,38 @@ def test_prompt_uses_one_shared_sparse_contract_and_clears_budget_gate() -> None
     packet = json.loads(prompt.split(PROMPT_MARKER, 1)[1])
 
     assert packet["output_schema"] == SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA
+    assert packet["output_schema"]["branches"]["direct_simple"]["optional_fields"] == [
+        "source",
+        "freshness",
+        "caveat",
+    ]
+    assert packet["output_schema"]["branches"]["components"]["forbidden_fields"] == [
+        "source",
+        "freshness",
+        "caveat",
+    ]
     assert set(packet["planner_input"]) == {
         "requested_mode",
         "user_query_text_for_planning",
         "safe_context",
     }
+    assert "The two branches have different allowed-field sets" in prompt
     assert "answer_components" not in prompt
     assert "component_search_requirements" not in prompt
     assert "run_id" not in prompt
     assert "request_id" not in prompt
     assert "recon_requirement" not in prompt
     assert "primary_query" not in prompt
-    assert len(SEARCH_PLANNER_MODEL_SYSTEM_PROMPT) + len(prompt) == 2509
-    assert 1 - (2509 / 15705) >= 0.84
+    prompt_chars = len(SEARCH_PLANNER_MODEL_SYSTEM_PROMPT) + len(prompt)
+    rich_chars = len(
+        json.dumps(
+            SEARCH_PLANNER_RICH_INTERNAL_OUTPUT_SCHEMA,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
+    assert prompt_chars < rich_chars
+    assert 1 - (prompt_chars / rich_chars) >= 0.50
 
 
 @pytest.mark.parametrize(
@@ -310,8 +331,9 @@ def test_valid_sparse_corpus_compiles_deterministically(case: dict[str, Any]) ->
 def test_invalid_sparse_corpus_fails_closed_without_rich_fallback(
     case: dict[str, Any],
 ) -> None:
-    with pytest.raises(SearchPlannerSemanticProposalError):
+    with pytest.raises(SearchPlannerSemanticProposalError) as semantic:
         validate_semantic_planner_proposal(deepcopy(case["proposal"]))
+    assert semantic.value.subtype is SearchPlannerSemanticProposalSubtype(case["expected_subtype"])
     with pytest.raises(SearchPlannerModelAdapterError) as caught:
         accept_planner_model_output(
             deepcopy(case["proposal"]),
@@ -319,6 +341,9 @@ def test_invalid_sparse_corpus_fails_closed_without_rich_fallback(
             requested_mode="Balanced",
         )
     assert caught.value.failure_code is (SearchPlannerModelAdapterFailureCode.INVALID_SEMANTIC_PROPOSAL)
+    assert caught.value.semantic_proposal_subtype is semantic.value.subtype
+    assert caught.value.predicate_id is not None
+    assert str(caught.value) == "search planner semantic proposal failed closed"
 
 
 def test_direct_simple_and_mode_defaults_are_deterministic() -> None:

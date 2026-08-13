@@ -148,31 +148,44 @@ VALID_SPARSE_PLANNER_CASES: tuple[dict[str, Any], ...] = (
 
 
 INVALID_SPARSE_PLANNER_CASES: tuple[dict[str, Any], ...] = (
-    {"case_id": "missing_disposition", "proposal": {}},
-    {"case_id": "unknown_disposition", "proposal": {"disposition": "other"}},
+    {"case_id": "missing_disposition", "proposal": {}, "expected_subtype": "type_enum_or_bound"},
+    {
+        "case_id": "unknown_disposition",
+        "proposal": {"disposition": "other"},
+        "expected_subtype": "type_enum_or_bound",
+    },
     {
         "case_id": "direct_simple_plus_components",
         "proposal": {"disposition": "direct_simple", "components": [{"need": "x"}]},
+        "expected_subtype": "branch_field_set",
     },
     {
         "case_id": "direct_simple_plus_dependency",
         "proposal": {"disposition": "direct_simple", "depends_on": ["x"]},
+        "expected_subtype": "branch_field_set",
     },
     {
         "case_id": "direct_simple_plus_inference",
         "proposal": {"disposition": "direct_simple", "support": "inferred"},
+        "expected_subtype": "branch_field_set",
     },
     {
         "case_id": "direct_simple_plus_uncertainty",
-        "proposal": {"disposition": "direct_simple", "uncertainties": [{"kind": "entity", "status": "unresolved"}]},
+        "proposal": {
+            "disposition": "direct_simple",
+            "uncertainties": [{"kind": "entity", "status": "unresolved"}],
+        },
+        "expected_subtype": "branch_field_set",
     },
     {
         "case_id": "direct_simple_plus_calculation",
         "proposal": {"disposition": "direct_simple", "calculation": "add values"},
+        "expected_subtype": "branch_field_set",
     },
     {
         "case_id": "old_rich_administrative_output",
         "proposal": {"question_meaning_summary": "old", "answer_components": []},
+        "expected_subtype": "forbidden_surface",
     },
     {
         "case_id": "model_runtime_identity",
@@ -180,6 +193,7 @@ INVALID_SPARSE_PLANNER_CASES: tuple[dict[str, Any], ...] = (
             "disposition": "components",
             "components": [{"need": "x", "component_id": "component:01"}],
         },
+        "expected_subtype": "forbidden_surface",
     },
     {
         "case_id": "provider_selection",
@@ -187,6 +201,7 @@ INVALID_SPARSE_PLANNER_CASES: tuple[dict[str, Any], ...] = (
             "disposition": "components",
             "components": [{"need": "x", "provider": "ExampleProvider"}],
         },
+        "expected_subtype": "forbidden_surface",
     },
     {
         "case_id": "unsafe_private_material",
@@ -194,6 +209,7 @@ INVALID_SPARSE_PLANNER_CASES: tuple[dict[str, Any], ...] = (
             "disposition": "components",
             "components": [{"need": "x", "raw_prompt": "private"}],
         },
+        "expected_subtype": "forbidden_surface",
     },
     {
         "case_id": "inferred_without_dependency",
@@ -201,6 +217,34 @@ INVALID_SPARSE_PLANNER_CASES: tuple[dict[str, Any], ...] = (
             "disposition": "components",
             "components": [{"need": "infer x", "support": "inferred"}],
         },
+        "expected_subtype": "cross_field_condition",
+    },
+    {
+        "case_id": "components_plus_top_level_source",
+        "proposal": {
+            "disposition": "components",
+            "source": {"kind": "official_current"},
+            "components": [{"need": "x"}],
+        },
+        "expected_subtype": "branch_field_set",
+    },
+    {
+        "case_id": "empty_optional_freshness",
+        "proposal": {"disposition": "direct_simple", "freshness": ""},
+        "expected_subtype": "omission_contract",
+    },
+    {
+        "case_id": "empty_components_array",
+        "proposal": {"disposition": "components", "components": []},
+        "expected_subtype": "branch_field_set",
+    },
+    {
+        "case_id": "empty_uncertainties_array",
+        "proposal": {
+            "disposition": "components",
+            "components": [{"need": "x", "uncertainties": []}],
+        },
+        "expected_subtype": "omission_contract",
     },
 )
 

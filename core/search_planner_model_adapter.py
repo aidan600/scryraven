@@ -42,6 +42,7 @@ from core.search_planner_runtime import (
 )
 from core.search_planner_semantic_compiler import (
     SearchPlannerSemanticProposalError,
+    SearchPlannerSemanticProposalSubtype,
     compile_semantic_planner_proposal,
     validate_semantic_planner_proposal,
 )
@@ -1121,6 +1122,7 @@ class SearchPlannerModelAdapterFailureMetadata:
     predicate_id: SearchPlannerModelAdapterPredicateId | None = None
     provider_completion_posture: SearchPlannerProviderCompletionPosture | None = None
     strict_parse_subtype: SearchPlannerStrictParseSubtype | None = None
+    semantic_proposal_subtype: SearchPlannerSemanticProposalSubtype | None = None
     cleaner_modified: bool | None = None
 
     def __post_init__(self) -> None:
@@ -1149,6 +1151,11 @@ class SearchPlannerModelAdapterFailureMetadata:
             SearchPlannerStrictParseSubtype,
         ):
             raise TypeError("strict_parse_subtype must be a closed enum")
+        if self.semantic_proposal_subtype is not None and not isinstance(
+            self.semantic_proposal_subtype,
+            SearchPlannerSemanticProposalSubtype,
+        ):
+            raise TypeError("semantic_proposal_subtype must be a closed enum")
         if self.cleaner_modified is not None and not isinstance(self.cleaner_modified, bool):
             raise TypeError("cleaner_modified must be a boolean when present")
         if expected_rule is None:
@@ -1157,6 +1164,7 @@ class SearchPlannerModelAdapterFailureMetadata:
             if (
                 self.provider_completion_posture is not None
                 or self.strict_parse_subtype is not None
+                or self.semantic_proposal_subtype is not None
                 or self.cleaner_modified is not None
             ):
                 raise ValueError("infrastructure failures must not carry parse diagnostics")
@@ -1193,9 +1201,21 @@ class SearchPlannerModelAdapterFailureMetadata:
                 object.__setattr__(self, "cleaner_modified", False)
             if self.strict_parse_subtype is SearchPlannerStrictParseSubtype.NOT_APPLICABLE:
                 raise ValueError("INVALID_JSON failures cannot use not_applicable subtype")
+            if self.semantic_proposal_subtype is not None:
+                raise ValueError(
+                    "semantic_proposal_subtype is reserved for INVALID_SEMANTIC_PROPOSAL failures"
+                )
+        elif self.failure_code is SearchPlannerModelAdapterFailureCode.INVALID_SEMANTIC_PROPOSAL:
+            if (
+                self.provider_completion_posture is not None
+                or self.strict_parse_subtype is not None
+                or self.cleaner_modified is not None
+            ):
+                raise ValueError("parse diagnostics are reserved for INVALID_JSON failures")
         elif (
             self.provider_completion_posture is not None
             or self.strict_parse_subtype is not None
+            or self.semantic_proposal_subtype is not None
             or self.cleaner_modified is not None
         ):
             raise ValueError("parse diagnostics are reserved for INVALID_JSON failures")
@@ -1214,6 +1234,7 @@ class SearchPlannerModelAdapterError(SearchPlannerRuntimeError):
         predicate_id: SearchPlannerModelAdapterPredicateId | None,
         provider_completion_posture: SearchPlannerProviderCompletionPosture | None = None,
         strict_parse_subtype: SearchPlannerStrictParseSubtype | None = None,
+        semantic_proposal_subtype: SearchPlannerSemanticProposalSubtype | None = None,
         cleaner_modified: bool | None = None,
     ) -> None:
         super().__init__(message)
@@ -1239,6 +1260,7 @@ class SearchPlannerModelAdapterError(SearchPlannerRuntimeError):
             predicate_id=predicate_id,
             provider_completion_posture=provider_completion_posture,
             strict_parse_subtype=strict_parse_subtype,
+            semantic_proposal_subtype=semantic_proposal_subtype,
             cleaner_modified=cleaner_modified,
         )
 
@@ -1278,6 +1300,10 @@ class SearchPlannerModelAdapterError(SearchPlannerRuntimeError):
     @property
     def strict_parse_subtype(self) -> SearchPlannerStrictParseSubtype | None:
         return self._failure_metadata.strict_parse_subtype
+
+    @property
+    def semantic_proposal_subtype(self) -> SearchPlannerSemanticProposalSubtype | None:
+        return self._failure_metadata.semantic_proposal_subtype
 
     @property
     def cleaner_modified(self) -> bool | None:
@@ -1882,11 +1908,12 @@ def accept_planner_model_output(
             user_query_text=user_query_text,
             requested_mode=requested_mode,
         )
-    except SearchPlannerSemanticProposalError:
+    except SearchPlannerSemanticProposalError as exc:
         raise SearchPlannerModelAdapterError(
             "search planner semantic proposal failed closed",
             failure_code=_FailureCode.INVALID_SEMANTIC_PROPOSAL,
             predicate_id=_PredicateId.SEMANTIC_PROPOSAL_VALIDATION_FAILED,
+            semantic_proposal_subtype=exc.subtype,
         ) from None
     return validate_and_sanitize_model_output(compiled)
 
@@ -3306,6 +3333,7 @@ __all__ = [
     "SearchPlannerModelAdapterPredicateRegistration",
     "SearchPlannerProviderCompletionPosture",
     "SearchPlannerStrictParseSubtype",
+    "SearchPlannerSemanticProposalSubtype",
     "validate_and_sanitize_model_output",
     "accept_planner_model_output",
 ]
