@@ -7,7 +7,7 @@ Applies-to: confirmed current defects and maintenance liabilities deferred outsi
 Does-not-authorize: implementation, priority, roadmap sequencing, live calls, provider changes, or scope expansion
 Update-trigger: confirmed new debt, materially changed evidence or disposition, or an in-scope resolving change
 ID-policy: monotonic TD identifiers; never reuse a retired identifier
-Next-ID: TD-0004
+Next-ID: TD-0005
 
 ## Purpose
 
@@ -217,6 +217,48 @@ Repair-trigger:
 - Before the next phase that changes QueryProduction diagnostic identity,
   semantic producer skip reasons, the semantic structural guard, or again
   requires a green `semantic_lane` merge gate.
+
+Tracking:
+- Issue: none
+- Repair phase: unscheduled
+
+## TD-0004 - retrieval_kernel_observed pipeline_failure opacity
+
+Status: OPEN
+Category: observability
+Discovered-in: SEARCHOS-REPRESENTATIVE-BOUNDED-LIVE-PRODUCT-VALIDATION-01
+Affected-surfaces:
+- ordinary bounded CLI terminal
+- retrieval-kernel observed failure projection
+
+Evidence:
+- Representative live query Q6 ("ChatGPT Pro count") stopped with an opaque
+  `pipeline_failure` at `retrieval_kernel_observed`.
+- The public terminal did not expose a closed, privacy-safe cause family for
+  that stop.
+- The campaign recorded zero search and zero READ for that query.
+
+Consequence:
+- Operators cannot distinguish a retrieval-kernel stop from Planner or
+  SearchJudgment envelope failures using the bounded public terminal.
+- Later live campaigns cannot localize Q6 without reading private traces.
+
+Why-deferred:
+- SEARCHPLANNER-M02-AND-SEARCHOS-MECHANICAL-ENVELOPE-CONVERGENCE-01 explicitly
+  keeps Q6 retrieval-kernel observability and the isolated Q5 APITimeoutError
+  out of scope.
+
+Repair-boundary:
+- Add a closed, privacy-safe public cause family for
+  `retrieval_kernel_observed` stops without retaining raw provider payloads,
+  prompts, or traces.
+- Do not change retrieval ranking, provider routing, or AnswerContract
+  authority merely to make the terminal more verbose.
+
+Repair-trigger:
+- Before the next live product campaign that reuses the six representative
+  queries, or before any phase that changes retrieval-kernel observed failure
+  projection.
 
 Tracking:
 - Issue: none

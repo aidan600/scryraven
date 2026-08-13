@@ -255,9 +255,6 @@ def _pending_navigation() -> tuple[
         request=request,
         model_output={
             "schema_version": SEARCHOS_NAVIGATION_JUDGMENT_DECISION_SCHEMA_VERSION,
-            "judgment_request_id": request["judgment_request_id"],
-            "judgment_request_digest": request["judgment_request_digest"],
-            "slot_id": "slot-1",
             "action": SearchOSJudgmentAction.REQUEST_NAVIGATE_BREADCRUMB.value,
             "navigation_candidate_ref": navigation_window[0]["navigation_candidate_ref"],
             "reason": "The current source identifies a bounded next page.",
@@ -834,9 +831,6 @@ def test_navigation_judgment_is_exact_ref_only_and_pending_is_zero_charge() -> N
         request=request,
         model_output={
             "schema_version": SEARCHOS_NAVIGATION_JUDGMENT_DECISION_SCHEMA_VERSION,
-            "judgment_request_id": request["judgment_request_id"],
-            "judgment_request_digest": request["judgment_request_digest"],
-            "slot_id": "slot-1",
             "action": SearchOSJudgmentAction.REQUEST_NAVIGATE_BREADCRUMB.value,
             "navigation_candidate_ref": navigation_window[0]["navigation_candidate_ref"],
             "reason": "The current source identifies a bounded next page.",
@@ -906,9 +900,6 @@ def test_ipv6_label_is_private_across_navigation_foundation_surfaces() -> None:
         request=request,
         model_output={
             "schema_version": SEARCHOS_NAVIGATION_JUDGMENT_DECISION_SCHEMA_VERSION,
-            "judgment_request_id": request["judgment_request_id"],
-            "judgment_request_digest": request["judgment_request_digest"],
-            "slot_id": "slot-1",
             "action": SearchOSJudgmentAction.REQUEST_NAVIGATE_BREADCRUMB.value,
             "navigation_candidate_ref": navigation_window[0]["navigation_candidate_ref"],
             "reason": "The current source identifies a bounded next page.",

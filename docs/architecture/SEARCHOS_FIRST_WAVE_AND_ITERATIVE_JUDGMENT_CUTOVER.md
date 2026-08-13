@@ -105,12 +105,14 @@ transient text and prompt are not written to RunKernel state, actions,
 projections, execution traces, or persisted output.
 
 Every transient input also carries a versioned
-`searchos_judgment_decision_contract_v1`. It identifies the roles of the
+`searchos_judgment_decision_contract_v2`. It identifies the roles of the
 authorized request, active need, directional DISCOVER contexts, and current
 READ materials; enumerates the validator's allowed output fields; and gives the
 exact required, forbidden, copied-ref, and conditional assessment fields for
-all applicable actions. Every output copies request ID, request digest, and slot ID
-and supplies an action and bounded reason. A non-semantic-handoff action after
+all applicable actions. Every output supplies an action and bounded reason.
+The runtime binds request ID, request digest, and active slot ID from the
+authorized current request; model authorship of those mechanical identities
+fails closed. A non-semantic-handoff action after
 READ must assess every exact current custody ref as `read_insufficient` with
 the three-field assessment shape. Semantic handoff carries a nonempty exact
 custody selection and no assessments. Factual binding carries only the exact

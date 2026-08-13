@@ -2502,11 +2502,15 @@ def validate_searchos_judgment_model_output(
         raise SearchOSRuntimeError("judgment request schema version mismatch")
     navigation_enabled = request_schema == SEARCHOS_NAVIGATION_JUDGMENT_REQUEST_SCHEMA_VERSION
     output = _mapping(model_output)
-    allowed_keys = {
-        "schema_version",
+    mechanical_identity_keys = {
         "judgment_request_id",
         "judgment_request_digest",
         "slot_id",
+    }
+    if mechanical_identity_keys & set(output):
+        raise SearchOSRuntimeError("judgment output must not author request identity")
+    allowed_keys = {
+        "schema_version",
         "action",
         "candidate_use_option_ref",
         "navigation_candidate_ref",
@@ -2529,13 +2533,7 @@ def validate_searchos_judgment_model_output(
     )
     if output.get("schema_version") != expected_decision_schema:
         raise SearchOSRuntimeError("judgment output schema version mismatch")
-    if output.get("judgment_request_id") != request_safe.get("judgment_request_id") or output.get(
-        "judgment_request_digest"
-    ) != request_safe.get("judgment_request_digest"):
-        raise SearchOSRuntimeError("judgment nomination is stale")
-    slot_id = _token(output.get("slot_id"), "slot_id")
-    if slot_id != _mapping(request_safe.get("slot_ref")).get("slot_id"):
-        raise SearchOSRuntimeError("judgment nomination slot is stale")
+    _token(_mapping(request_safe.get("slot_ref")).get("slot_id"), "slot_id")
     try:
         action = SearchOSJudgmentAction(str(output.get("action") or ""))
     except ValueError as exc:
@@ -2811,9 +2809,6 @@ def validate_searchos_judgment_model_output(
         raise SearchOSRuntimeError("pre-READ action cannot assess custody")
     exact_fields = {
         "schema_version",
-        "judgment_request_id",
-        "judgment_request_digest",
-        "slot_id",
         "action",
         "reason",
     }

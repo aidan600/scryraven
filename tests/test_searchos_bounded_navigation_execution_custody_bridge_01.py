@@ -252,9 +252,6 @@ def _selected_navigation() -> tuple[
         request=request,
         model_output={
             "schema_version": SEARCHOS_NAVIGATION_JUDGMENT_DECISION_SCHEMA_VERSION,
-            "judgment_request_id": request["judgment_request_id"],
-            "judgment_request_digest": request["judgment_request_digest"],
-            "slot_id": "slot-1",
             "action": SearchOSJudgmentAction.REQUEST_NAVIGATE_BREADCRUMB.value,
             "navigation_candidate_ref": navigation_window[0][
                 "navigation_candidate_ref"
