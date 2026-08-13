@@ -32,10 +32,6 @@ from core.official_source_obligation_bridge import (
 from core.run_controller import RunController
 
 _TERMINAL_STOP_APPROVED_KEY = "terminal_stop" + "_approved"
-_SEARCH_WORK_SHADOW_LANE_TRACE_KEY = "search_work_shadow_lane_projection"
-_SEARCH_WORK_OFFICIAL_CURRENT_RECOVERY_ACTIVATION_ALLOWED_KEY = (
-    "_search_work_official_current_recovery_activation_allowed"
-)
 
 
 @dataclass(frozen=True)
@@ -153,9 +149,6 @@ def build_authoritative_source_action_facts_from_orchestrator_state(
     iterations_run = _int_value(orchestrator_state.get("iterations_run"))
     max_iterations = _int_value(orchestrator_state.get("max_iterations"))
     waste_flags = set(_sequence(orchestrator_state.get("waste_flags")))
-    run_kernel = orchestrator_state.get("run_kernel")
-    run_kernel_state = getattr(run_kernel, "state", None)
-    run_kernel_projections = _mapping(getattr(run_kernel_state, "projections", None))
 
     return AuthoritativeSourceActionFacts(
         query=_string_or_none(orchestrator_state.get("query")),
@@ -173,12 +166,6 @@ def build_authoritative_source_action_facts_from_orchestrator_state(
         source_class_evidence_signals=source_class_recovery_evidence_signals(
             source_tier_recovery_lifecycle=source_tier,
             source_domain_recovery_lifecycle=source_domain,
-        ),
-        search_work_official_current_recovery_projection=(
-            _search_work_official_current_recovery_projection(
-                orchestrator_state=orchestrator_state,
-                run_kernel_projections=run_kernel_projections,
-            )
         ),
         run_search_judgment_projection=_mapping(
             orchestrator_state.get("search_judgment_projection")
@@ -398,20 +385,6 @@ def _answer_contract_recovery_query_candidates(
 def _prior_recovery_attempt_count(controller: RunController) -> int:
     state = getattr(controller, "state", None)
     return _int_value(getattr(state, "active_source_class_recovery_attempt_count", 0))
-
-
-def _search_work_official_current_recovery_projection(
-    *,
-    orchestrator_state: Mapping[str, Any],
-    run_kernel_projections: Mapping[str, Any],
-) -> dict[str, Any]:
-    if not bool(
-        orchestrator_state.get(
-            _SEARCH_WORK_OFFICIAL_CURRENT_RECOVERY_ACTIVATION_ALLOWED_KEY
-        )
-    ):
-        return {}
-    return _mapping(run_kernel_projections.get(_SEARCH_WORK_SHADOW_LANE_TRACE_KEY))
 
 
 def _mapping(value: Any) -> dict[str, Any]:

@@ -122,11 +122,6 @@ def _fresh_kernel_for_handoff(source_kernel: RunKernel) -> RunKernel:
         run_id=f"{source_kernel.state.run_id}:handoff-retest",
         request_id=f"{source_kernel.state.request_id}:handoff-retest",
     )
-    plan = deepcopy(source_kernel.state.search_work_plan)
-    metadata = dict(plan.get("metadata") or {})
-    metadata["implements_query_shape_classifier"] = True
-    plan["metadata"] = metadata
-    kernel.state.search_work_plan = plan
     kernel.state.evidence_ledger = deepcopy(source_kernel.state.evidence_ledger)
     kernel.state.projections = deepcopy(source_kernel.state.projections)
     return kernel

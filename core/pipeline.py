@@ -45,15 +45,6 @@ from core.retrieval import (
 )
 from core.retrieval_quality import jaccard_similarity, passage_mentions_entity_full_phrase
 from core.run_logging import log_provider_error, log_retrieval_timeout
-from core.scout import (
-    QUANT_REPORT_TYPES as QUANT_REPORT_TYPES,
-)
-from core.scout import (
-    run_scout as run_scout,
-)
-from core.scout import (
-    should_skip_quant_scout as should_skip_quant_scout,
-)
 from core.search_providers import (
     retrieval_timeout_seconds,
     search_exa_results,
@@ -69,6 +60,14 @@ from core.thin_quant import (
 )
 
 logger = logging.getLogger(__name__)
+
+QUANT_REPORT_TYPES = {
+    "quantitative_comparison",
+    "cost_analysis",
+    "financial_model",
+    "unit_economics",
+    "benchmark",
+}
 
 
 class _NoopStatusContainer:

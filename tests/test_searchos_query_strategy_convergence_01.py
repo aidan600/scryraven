@@ -406,8 +406,8 @@ def test_required_recon_metadata_cannot_reach_retired_authorities(
             "contract_amendment_apply",
         }
     )
-    assert kernel.state.scout_disambiguation_report_history == []
-    assert kernel.state.search_planner_revision_history == []
+    assert not hasattr(kernel.state, "scout_disambiguation_report_history")
+    assert not hasattr(kernel.state, "search_planner_revision_history")
     assert kernel.state.contract_amendment_admission_history == []
     assert kernel.state.contract_amendment_application_history == []
 

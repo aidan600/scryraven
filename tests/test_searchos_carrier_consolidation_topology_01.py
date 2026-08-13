@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import ast
 import inspect
+from dataclasses import fields
 from pathlib import Path
 
-from core.query_plan import QueryPlan
+from core.query_plan import QueryPlan, QueryPlanRole, QueryPlanStatus
+from core.query_plan_runtime_adapter import QueryPlanRuntimeAdapter
 from core.query_production_runtime import (
     execute_initial_query_strategy_convergence,
     execute_query_plan_admission_action,
 )
-from core.run_kernel import ActionType, ObservationType, RunKernel
+from core.run_config import RunDeps
+from core.run_kernel import ActionType, KernelTraceProjection, ObservationType, RunKernel, RunState
 
 ROOT = Path(__file__).resolve().parents[1]
 CORE = ROOT / "core"
@@ -35,6 +38,10 @@ _DELETED_PRODUCTION_MODULES = (
     "core.search_planner_revision_model_adapter",
     "core.search_planner_revision_model_prompt",
     "core.search_planner_revision_model_output_contract",
+    "core.scout",
+    "core.search_work_official_current_handoff",
+    "core.search_work_official_current_recovery_bridge",
+    "core.search_work_official_current_recovery_activation",
 )
 
 _DELETED_PRODUCTION_FILES = (
@@ -49,6 +56,10 @@ _DELETED_PRODUCTION_FILES = (
     CORE / "search_planner_revision_model_adapter.py",
     CORE / "search_planner_revision_model_prompt.py",
     CORE / "search_planner_revision_model_output_contract.py",
+    CORE / "scout.py",
+    CORE / "search_work_official_current_handoff.py",
+    CORE / "search_work_official_current_recovery_bridge.py",
+    CORE / "search_work_official_current_recovery_activation.py",
 )
 
 _ORDINARY_COMPOSITION_FILES = (
@@ -88,6 +99,11 @@ _FORBIDDEN_CALL_NAMES = {
     "allocate_existing_queries_by_search_work",
     "initial_strategy_search_work_bindings",
     "build_ordinary_scout_disambiguation_adapter",
+    "build_search_work_official_current_handoff",
+    "activate_search_work_official_current_recovery_recommendation",
+    "run_scout",
+    "should_skip_quant_scout",
+    "admit_recon_candidates",
 }
 
 
@@ -199,3 +215,52 @@ def test_ordinary_producer_does_not_require_search_work_plan() -> None:
         multicomponent_source
     )
     assert "run_kernel.state.search_work_plan" not in multicomponent_source
+
+
+def test_rundeps_has_no_retired_scout_or_plannerrevision_injection_fields() -> None:
+    names = {item.name for item in fields(RunDeps)}
+    assert "run_scout" not in names
+    assert "should_skip_quant_scout" not in names
+    assert "scout_disambiguation_adapter" not in names
+    assert "search_planner_revision_adapter" not in names
+    assert "search_planner_adapter" in names
+
+
+def test_runkernel_has_no_retired_scout_revision_or_searchworkplan_canonical_state() -> None:
+    state_names = {item.name for item in fields(RunState)}
+    trace_names = {item.name for item in fields(KernelTraceProjection)}
+    retired = {
+        "scout_disambiguation_report_state",
+        "scout_disambiguation_report_projection",
+        "scout_disambiguation_report_history",
+        "search_planner_revision_state",
+        "search_planner_revision_projection",
+        "search_planner_revision_history",
+        "search_work_plan",
+        "search_work_plan_projection",
+        "search_work_plan_validation",
+    }
+    assert state_names.isdisjoint(retired)
+    assert trace_names.isdisjoint(retired)
+
+
+def test_search_executor_accepts_no_impossible_scout_revision_ancestry() -> None:
+    parameters = _function_arg_names(RunKernel.authorize_search_executor_handoff)
+    assert "scout_direction_hint_ids" not in parameters
+    assert "parent_search_planner_revision_id" not in parameters
+    kernel_source = _source(RUN_KERNEL)
+    assert "revision_ref_from_revision_state" not in kernel_source
+    assert "scout_ref_from_scout_report_state" not in kernel_source
+    handoff_source = _source(CORE / "search_executor_handoff_runtime.py")
+    assert "def revision_ref_from_revision_state" not in handoff_source
+    assert "def scout_ref_from_scout_report_state" not in handoff_source
+
+
+def test_query_plan_has_no_dead_recon_rewrite_vocabulary() -> None:
+    assert not hasattr(QueryPlanStatus, "OBSERVED_RECON_REWRITE")
+    assert not hasattr(QueryPlanRole, "RECON_REWRITE")
+    assert not hasattr(QueryPlanRuntimeAdapter, "admit_recon_candidates")
+    role_values = {member.value for member in QueryPlanRole}
+    status_values = {member.value for member in QueryPlanStatus}
+    assert "recon_rewrite" not in role_values
+    assert "observed_recon_rewrite" not in status_values

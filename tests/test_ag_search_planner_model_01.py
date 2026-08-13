@@ -3432,8 +3432,8 @@ def test_model_adapter_component_search_requirements_remain_non_executing() -> N
     assert projection["source_obligation_satisfied"] is False
     assert projection["search_executor_runtime_activated"] is False
     assert projection["sufficiency_decided"] is False
-    assert kernel.state.search_work_plan == {}
-    assert kernel.state.search_work_plan_projection == {}
+    assert not hasattr(kernel.state, "search_work_plan")
+    assert not hasattr(kernel.state, "search_work_plan_projection")
 
 
 def test_model_authored_query_strategy_and_recon_fail_closed() -> None:

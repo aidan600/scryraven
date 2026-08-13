@@ -38,5 +38,3 @@ class UIContext:
     anchor_query_to_topic: Any
     fetch_linkup_precision_block: Any
     run_economist_step: Any
-    run_scout: Any
-    should_skip_quant_scout: Any

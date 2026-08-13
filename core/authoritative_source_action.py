@@ -59,10 +59,6 @@ from core.run_authority_search_judgment_consumers import (
     apply_search_judgment_to_source_class_recovery_recommendation,
 )
 from core.run_controller import RunController
-from core.search_work_official_current_recovery_activation import (
-    SEARCH_WORK_OFFICIAL_CURRENT_RECOVERY_ACTIVATION_TRACE_KEY,
-    activate_search_work_official_current_recovery_recommendation,
-)
 from core.source_class_authority_status_normalization import (
     status_only_strong_authority_missing_classes,
 )
@@ -164,7 +160,6 @@ class AuthoritativeSourceActionFacts:
     recommendation: Mapping[str, Any] | None = None
     source_class_observability: Mapping[str, Any] | None = None
     source_class_evidence_signals: Mapping[str, Any] | None = None
-    search_work_official_current_recovery_projection: Mapping[str, Any] | None = None
     run_search_judgment_projection: Mapping[str, Any] | None = None
     obligation_facts: Mapping[str, Any] | None = None
     answer_contract_family: str | None = None
@@ -244,7 +239,6 @@ class AuthoritativeSourceActionResult:
     official_source_obligation_bridge_trace: dict[str, Any] | None = None
     official_canonical_recovery_query_acquisition_trace: dict[str, Any] | None = None
     official_canonical_recovery_execution_admission_trace: dict[str, Any] | None = None
-    search_work_official_current_recovery_activation_trace: dict[str, Any] | None = None
     legal_current_primary_projection: dict[str, Any] | None = None
     authority_lifecycle_trace: dict[str, Any] | None = None
     trace: dict[str, Any] = field(default_factory=dict)
@@ -313,17 +307,6 @@ def build_authoritative_source_obligation_state_and_action(
                 "source_class_recovery_reason": pre_bridge_reason,
             }
         bridge_trace = bridge_result.trace
-    search_work_activation_trace: dict[str, Any] | None = None
-    recommendation = _apply_search_work_official_current_activation(
-        recommendation=recommendation,
-        facts=facts,
-        logger=logger,
-    )
-    activation_trace = recommendation.get(
-        SEARCH_WORK_OFFICIAL_CURRENT_RECOVERY_ACTIVATION_TRACE_KEY
-    )
-    if isinstance(activation_trace, Mapping):
-        search_work_activation_trace = dict(activation_trace)
     recommendation = _suppress_promoted_recovery_for_owned_non_source_class_path(
         recommendation=recommendation,
         facts=facts,
@@ -468,7 +451,6 @@ def build_authoritative_source_obligation_state_and_action(
         bridge_trace=bridge_trace,
         acquisition_trace=acquisition_trace,
         admission_trace=admission_trace,
-        search_work_activation_trace=search_work_activation_trace,
         legal_projection=legal_projection,
         authority_arbitration=authority_arbitration,
     )
@@ -482,9 +464,6 @@ def build_authoritative_source_obligation_state_and_action(
         official_source_obligation_bridge_trace=bridge_trace,
         official_canonical_recovery_query_acquisition_trace=acquisition_trace,
         official_canonical_recovery_execution_admission_trace=admission_trace,
-        search_work_official_current_recovery_activation_trace=(
-            search_work_activation_trace
-        ),
         legal_current_primary_projection=legal_projection,
         authority_lifecycle_trace=authority_arbitration.to_trace_fields(),
         trace=trace,
@@ -621,69 +600,6 @@ def _try_bridge(
     except Exception as exc:
         _warn(logger, "Non-fatal official-source obligation bridge omitted: %s", exc)
         return None
-
-
-def _apply_search_work_official_current_activation(
-    *,
-    recommendation: Mapping[str, Any],
-    facts: AuthoritativeSourceActionFacts,
-    logger: Any | None,
-) -> dict[str, Any]:
-    reason = str(recommendation.get("source_class_recovery_reason") or "")
-    if (
-        _source_class_gap_signal_present(recommendation)
-        and not reason.startswith("official_source_obligation_bridge:")
-    ):
-        return dict(recommendation)
-    try:
-        return activate_search_work_official_current_recovery_recommendation(
-            recommendation=recommendation,
-            search_work_lane_projection=(
-                facts.search_work_official_current_recovery_projection
-            ),
-            existing_blockers=_search_work_official_current_activation_blockers(
-                facts
-            ),
-            recovery_lifecycle_allowed=not facts.author_phase,
-        )
-    except Exception as exc:
-        _warn(
-            logger,
-            "Non-fatal SearchWork official/current recovery activation omitted: %s",
-            exc,
-        )
-        return dict(recommendation)
-
-
-def _search_work_official_current_activation_blockers(
-    facts: AuthoritativeSourceActionFacts,
-) -> tuple[str, ...]:
-    blockers = list(_official_source_obligation_bridge_blockers(facts))
-    source_signals = _safe_mapping(facts.source_class_evidence_signals)
-    if facts.weak_corpus_recovery_used:
-        blockers.append("weak_corpus_recovery_owns_path")
-        blockers.append("search_work_activation_blocked_by_weak_corpus_owner")
-    elif facts.weak_corpus_recovery_considered and (
-        facts.weak_corpus_recovery_skip_reason
-        not in {None, "", "not_weak_corpus"}
-    ):
-        blockers.append("blocked_by_weak_corpus_recovery")
-        blockers.append("search_work_activation_blocked_by_weak_corpus_owner")
-    elif (
-        facts.weak_corpus_recovery_considered
-        and facts.weak_corpus_recovery_skip_reason == "not_weak_corpus"
-    ):
-        blockers.append("search_work_activation_blocked_by_existing_corpus_lifecycle")
-    elif facts.corpus_weak:
-        blockers.append("blocked_by_corpus_weak")
-        blockers.append("search_work_activation_blocked_by_weak_corpus_owner")
-    if facts.retrieve_to_anchor_recommended:
-        blockers.append("blocked_by_retrieve_to_anchor_recommendation")
-    if facts.ordinary_continuation_path_active:
-        blockers.append("blocked_by_ordinary_continuation_path")
-    if source_signals.get("official_evidence_found") is True:
-        blockers.append("existing_official_evidence_found")
-    return _string_tuple(blockers)
 
 
 def _official_source_obligation_bridge_blockers(
@@ -942,7 +858,6 @@ def _acquisition_blockers(
         authority_arbitration=authority_arbitration,
     )
     out: list[str] = []
-    out.extend(_search_work_activation_existing_blockers(recommendation))
     if (
         facts.weak_corpus_recovery_used
         and not weak_corpus_query_acquisition_allowed
@@ -976,21 +891,6 @@ def _acquisition_blockers(
             weak_corpus_query_acquisition_allowed
         ),
     )
-
-
-def _search_work_activation_existing_blockers(
-    recommendation: Mapping[str, Any],
-) -> list[str]:
-    activation = recommendation.get(
-        SEARCH_WORK_OFFICIAL_CURRENT_RECOVERY_ACTIVATION_TRACE_KEY
-    )
-    if not isinstance(activation, Mapping):
-        return []
-    if activation.get("activation_eligible") is True:
-        return []
-    if activation.get("activation_skip_reason") != "existing_runtime_blocker":
-        return []
-    return list(_string_tuple(activation.get("blockers")))
 
 
 def _admission_blockers(
@@ -1497,7 +1397,6 @@ def _action_trace(
     bridge_trace: Mapping[str, Any] | None,
     acquisition_trace: Mapping[str, Any] | None,
     admission_trace: Mapping[str, Any] | None,
-    search_work_activation_trace: Mapping[str, Any] | None,
     legal_projection: Mapping[str, Any] | None,
     authority_arbitration: AuthorityRuntimeArbitration,
 ) -> dict[str, Any]:
@@ -1544,14 +1443,8 @@ def _action_trace(
                 "official_source_obligation_bridge": bridge_trace is not None,
                 "official_canonical_query_acquisition": acquisition_trace is not None,
                 "official_canonical_execution_admission": admission_trace is not None,
-                "search_work_official_current_recovery_activation": (
-                    search_work_activation_trace is not None
-                ),
                 "legal_current_primary": legal_projection is not None,
             },
-            "search_work_official_current_recovery_activation": (
-                dict(search_work_activation_trace or {})
-            ),
             "authority_lifecycle_arbitration": (
                 authority_arbitration.to_trace_fields()
             ),

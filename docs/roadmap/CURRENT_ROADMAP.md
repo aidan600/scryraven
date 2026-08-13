@@ -474,8 +474,10 @@ the installed acquisition and custody owners.
 
 The maintainer-selected **Option C modified into a unified iterative loop** is
 installed through SearchOS Phases 1, 2, and 3. Ordinary planning completion is
-`AnswerContract -> QueryPlan`. The active next checkpoint is representative
-bounded real-model/product validation. This roadmap grants no live license.
+`AnswerContract -> QueryPlan`. Post-rebase inert compatibility detritus is
+removed where zero current consumer existed. The active next checkpoint is
+representative bounded real-model/product validation. This roadmap grants no
+live license.
 
 ### Installed versus selected target
 

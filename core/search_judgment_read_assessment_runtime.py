@@ -1457,7 +1457,7 @@ def execute_search_judgment_read_source_and_custody(
         assessment_observation = execute_search_judgment_read_assessment_action(
             assessment_action,
             binding_state=binding_state,
-            search_work_plan=run_kernel.state.search_work_plan,
+            search_work_plan={},
             discovery_result_store=discovery_result_store,
             ask_model=ask_model,
             provider=provider,

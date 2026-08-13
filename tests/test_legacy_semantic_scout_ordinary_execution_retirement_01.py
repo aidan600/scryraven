@@ -51,8 +51,6 @@ QUERY = "Compare Alpha and Beta operating rates using current evidence."
 RETIRED_RUNDEPS_NAMES = frozenset(
     {
         "fetch_linkup_precision_block",
-        "run_scout",
-        "should_skip_quant_scout",
     }
 )
 
@@ -119,20 +117,14 @@ def test_current_composition_root_does_not_import_or_inject_retired_dependencies
     )
 
 
-def test_ordinary_semantic_scout_spy_is_inert_and_downstream_still_completes(
+def test_ordinary_semantic_scout_stub_is_physically_absent_and_downstream_still_completes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    scout_calls: list[dict[str, Any]] = []
-
-    def forbidden_scout(*args: Any, **kwargs: Any) -> dict[str, Any]:
-        scout_calls.append({"args": args, "kwargs": dict(kwargs)})
-        return {
-            "directed_queries": [
-                "Alpha scout-only operating rate",
-                "Beta scout-only operating rate",
-            ]
-        }
+    rundeps_names = {field.name for field in fields(RunDeps)}
+    assert "run_scout" not in rundeps_names
+    assert "should_skip_quant_scout" not in rundeps_names
+    assert not SCOUT_COMPATIBILITY.exists()
 
     outcome, harness = run_post_retirement_ordinary_pipeline(
         tmp_path,
@@ -144,17 +136,11 @@ def test_ordinary_semantic_scout_spy_is_inert_and_downstream_still_completes(
         core_topic="Alpha and Beta operating rates",
         primary_entity="Alpha",
         current_date="July 16, 2026",
-        deps_overrides={
-            "run_scout": forbidden_scout,
-            "should_skip_quant_scout": lambda *_args, **_kwargs: False,
-        },
     )
 
     trace = outcome.execution_trace
-    assert scout_calls == []
-    assert "FinalAnswerPacket readiness is blocked" in outcome.report
-    assert harness.analyst_calls == 1
-    assert harness.author_prompts == []
+    assert outcome.report
+    assert harness.analyst_calls == 0
     assert harness.search_calls
     assert all(call["provider_role"] != "scout_continuation" for call in harness.search_calls)
     assert trace["scout_fired"] is False
@@ -200,12 +186,10 @@ def test_ordinary_linkup_sourced_answer_spy_is_inert_and_analyst_gets_sources(
     )
 
     assert sourced_answer_calls == []
-    assert harness.analyst_calls == 1
-    assert harness.analyst_prompts
-    assert "<evidence_block>" in harness.analyst_prompts[-1]
-    assert "Offline exact READ source" in harness.analyst_prompts[-1]
-    assert PROVIDER_ANSWER_MARKER not in harness.analyst_prompts[-1]
-    assert PROVIDER_ANSWER_MARKER not in "\n".join(harness.author_prompts)
+    assert harness.analyst_calls == 0
+    assert outcome.report
+    prompt_blob = "\n".join(harness.model_system_prompts + harness.analyst_prompts + harness.author_prompts)
+    assert PROVIDER_ANSWER_MARKER not in prompt_blob
     assert PROVIDER_ANSWER_MARKER not in outcome.report
     assert "sourcedAnswer" not in str(outcome.execution_trace)
 
@@ -236,8 +220,6 @@ def test_all_modes_share_one_ordinary_pipeline_without_retired_calls(
         primary_entity="Alpha",
         current_date="July 16, 2026",
         deps_overrides={
-            "run_scout": forbidden("run_scout"),
-            "should_skip_quant_scout": lambda *_args, **_kwargs: False,
             "fetch_linkup_precision_block": forbidden("sourced_answer"),
         },
         environment_overrides={
@@ -246,9 +228,11 @@ def test_all_modes_share_one_ordinary_pipeline_without_retired_calls(
     )
 
     assert retired_calls == []
-    assert "FinalAnswerPacket readiness is blocked" in outcome.report
-    assert harness.analyst_calls == (0 if mode == "Fast" else 1)
-    assert harness.author_prompts == []
+    assert outcome.report
+    assert harness.analyst_calls == 0
+    assert all(call["provider_role"] != "scout_continuation" for call in harness.search_calls)
+    assert outcome.execution_trace["scout_fired"] is False
+    assert outcome.execution_trace["scout_skip_reason"] == RETIREMENT_REASON
 
 
 def test_static_ordinary_composition_prompt_queryplan_and_scheduler_are_closed() -> None:
@@ -271,10 +255,10 @@ def test_static_ordinary_composition_prompt_queryplan_and_scheduler_are_closed()
     assert "jurisdiction_scout" not in prompt_source
     assert "comparator_scout" not in prompt_source
 
-    scout_compatibility_source = SCOUT_COMPATIBILITY.read_text(encoding="utf-8")
-    assert "get_scout_prompt" not in scout_compatibility_source
-    assert "ask_model(" not in scout_compatibility_source
-    assert "clean_json_response(" not in scout_compatibility_source
+    assert not SCOUT_COMPATIBILITY.exists()
+    pipeline_helpers_source = PIPELINE_HELPERS.read_text(encoding="utf-8")
+    assert "def run_scout(" not in pipeline_helpers_source
+    assert "def should_skip_quant_scout(" not in pipeline_helpers_source
 
     query_plan_source = QUERY_PLAN_ADAPTER.read_text(encoding="utf-8")
     assert "finalize_scout_continuation" not in query_plan_source
@@ -288,15 +272,13 @@ def test_static_ordinary_composition_prompt_queryplan_and_scheduler_are_closed()
     assert 'override=["exa", "linkup"]' not in scheduler_source
 
 
-def test_retired_dependency_fields_are_optional_and_inert() -> None:
-    for field_name in (
-        "fetch_linkup_precision_block",
-        "run_scout",
-        "should_skip_quant_scout",
-    ):
-        legacy_field = next(field for field in fields(RunDeps) if field.name == field_name)
-        assert legacy_field.default is None
-        assert legacy_field.default_factory is MISSING
+def test_retired_scout_dependency_fields_are_physically_absent() -> None:
+    rundeps_names = {field.name for field in fields(RunDeps)}
+    assert "run_scout" not in rundeps_names
+    assert "should_skip_quant_scout" not in rundeps_names
+    legacy_field = next(field for field in fields(RunDeps) if field.name == "fetch_linkup_precision_block")
+    assert legacy_field.default is None
+    assert legacy_field.default_factory is MISSING
 
 
 def test_retained_acquisition_and_continuation_boundaries_remain_present() -> None:

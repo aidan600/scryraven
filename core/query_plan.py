@@ -37,7 +37,6 @@ _AUTHORITY_SOURCE_TOKEN_CHARACTERS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEF
 
 class QueryPlanStatus(str, Enum):
     OBSERVED_MODEL_QUERY = "observed_model_query"
-    OBSERVED_RECON_REWRITE = "observed_recon_rewrite"
     OBSERVED_ENTITY_CORRECTION = "observed_entity_correction"
     ADMITTED = "admitted"
     DEDUPLICATED = "deduplicated"
@@ -69,7 +68,6 @@ class QueryPlanRole(str, Enum):
     SUPPLEMENTAL = "supplemental"
     REMEDIATION = "remediation"
     DISAMBIGUATION = "disambiguation"
-    RECON_REWRITE = "recon_rewrite"
 
 
 class DiscoveryJobClass(str, Enum):
@@ -1549,7 +1547,6 @@ def _strategies_prove_distinct_need(
         QueryPlanRole.CANONICAL_BIAS.value,
         QueryPlanRole.RECENCY.value,
         QueryPlanRole.DISAMBIGUATION.value,
-        QueryPlanRole.RECON_REWRITE.value,
     }:
         return True
     for key in (

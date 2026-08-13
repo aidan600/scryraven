@@ -25,9 +25,6 @@ from core.official_source_obligation_candidate_visibility import (
     UNKNOWN,
     OfficialSourceObligationCandidateVisibilityFacts,
 )
-from core.search_work_official_current_recovery_bridge import (
-    build_search_work_official_current_recovery_bridge,
-)
 
 OFFICIAL_SOURCE_OBLIGATION_BRIDGE_TRACE_KEY = (
     "official_source_obligation_bridge_trace"
@@ -246,30 +243,6 @@ def build_official_source_obligation_bridge_trace(
         recommendation=runtime_trace,
         runtime_trace=runtime_trace,
     ).trace
-
-
-def build_search_work_official_current_obligation_bridge_trace(
-    *,
-    search_work_official_current_handoff: Mapping[str, Any] | None = None,
-    search_work_lane_projection: Mapping[str, Any] | None = None,
-    existing_recovery_recommendation: Mapping[str, Any] | None = None,
-    existing_blockers: Iterable[Any] = (),
-    observed_material_diagnostics: Iterable[Mapping[str, Any]] = (),
-) -> dict[str, Any]:
-    """Return AG-96D2 SearchWork handoff in bridge-compatible vocabulary.
-
-    This is a bounded compatibility wrapper only. Existing callers of
-    ``apply_official_source_obligation_bridge`` are unchanged unless they pass
-    SearchWork handoff data to this helper explicitly.
-    """
-
-    return build_search_work_official_current_recovery_bridge(
-        search_work_lane_projection,
-        search_work_official_current_handoff=search_work_official_current_handoff,
-        existing_recovery_recommendation=existing_recovery_recommendation,
-        existing_blockers=tuple(existing_blockers or ()),
-        observed_material_diagnostics=tuple(observed_material_diagnostics or ()),
-    )
 
 
 def _coerce_facts(
@@ -546,5 +519,4 @@ __all__ = [
     "OfficialSourceObligationBridgeResult",
     "apply_official_source_obligation_bridge",
     "build_official_source_obligation_bridge_trace",
-    "build_search_work_official_current_obligation_bridge_trace",
 ]

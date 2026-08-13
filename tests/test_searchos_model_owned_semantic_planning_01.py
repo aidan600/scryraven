@@ -180,8 +180,6 @@ def _install_chain_capture(monkeypatch: Any) -> dict[str, Any]:
         captured["convergence"] = result
         captured["initial_contract_at_convergence"] = deepcopy(kernel.state.initial_answer_contract)
         captured["planner_projection_at_convergence"] = deepcopy(kernel.state.search_planner_proposal_projection)
-        captured["scout_projection_at_convergence"] = deepcopy(kernel.state.scout_disambiguation_report_projection)
-        captured["revision_projection_at_convergence"] = deepcopy(kernel.state.search_planner_revision_projection)
         captured["evidence_at_convergence"] = deepcopy(kernel.state.evidence_ledger.to_projection().to_dict())
         return result
 
@@ -212,8 +210,6 @@ def _pipeline_fixture(
     planner_response: Any,
     supplied_context: Mapping[str, Any] | None = None,
     planner_adapter: Any | None = None,
-    scout_adapter: Any | None = None,
-    revision_adapter: Any | None = None,
     use_default_model: bool = True,
 ) -> tuple[Any, RunDeps, ModelOwnedPipelineHarness, dict[str, Any]]:
     scrub_offline_runtime(monkeypatch)
@@ -246,8 +242,6 @@ def _pipeline_fixture(
     deps = replace(
         harness.deps(),
         search_planner_adapter=(None if use_default_model else planner_adapter),
-        scout_disambiguation_adapter=scout_adapter,
-        search_planner_revision_adapter=revision_adapter,
         provider_availability={"tavily": True, "serper": True},
         logger=logging.getLogger("tests.searchos.model_owned_semantic_planning"),
     )
@@ -312,11 +306,13 @@ def test_rundeps_declares_typed_planner_seam_without_scout_or_revision_consumpti
 
     assert "search_planner_adapter" in declared
     assert declared["search_planner_adapter"].default is None
+    assert "scout_disambiguation_adapter" not in declared
+    assert "search_planner_revision_adapter" not in declared
 
     source = Path(orchestrator.__file__).read_text(encoding="utf-8")
     assert "planner_adapter = deps.search_planner_adapter" in source
-    assert "scout_adapter = deps.scout_disambiguation_adapter" not in source
-    assert "revision_adapter = deps.search_planner_revision_adapter" not in source
+    assert "deps.scout_disambiguation_adapter" not in source
+    assert "deps.search_planner_revision_adapter" not in source
     assert "build_ordinary_scout_disambiguation_adapter" not in source
     assert "SearchPlannerRevisionModelAdapter" not in source
     assert 'getattr(deps, "search_planner_adapter"' not in source

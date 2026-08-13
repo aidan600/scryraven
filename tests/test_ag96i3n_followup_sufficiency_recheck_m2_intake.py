@@ -307,8 +307,6 @@ def _closed_surface_snapshot(kernel: RunKernel) -> dict[str, Any]:
     return {
         "run_contract": deepcopy(kernel.state.run_contract),
         "run_contract_projection": deepcopy(kernel.state.run_contract_projection),
-        "search_work_plan": deepcopy(kernel.state.search_work_plan),
-        "search_work_plan_projection": deepcopy(kernel.state.search_work_plan_projection),
         "search_judgment": deepcopy(kernel.state.search_judgment),
         "search_judgment_projection": deepcopy(kernel.state.search_judgment_projection),
         "final_answer_packet": deepcopy(kernel.state.final_answer_packet),

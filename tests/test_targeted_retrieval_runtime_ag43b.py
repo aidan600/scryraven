@@ -50,7 +50,6 @@ class _PassiveTargetedHarness(_ShadowHarness):
         self.router_report_type = router_report_type
         self.scout_queries = tuple(scout_queries)
         self.expander_queries = tuple(expander_queries)
-        self.scout_calls = 0
 
     def ask_model(self, prompt: str, system_prompt: str, **kwargs: Any) -> str:
         stage = self._stage_for(system_prompt, kwargs)
@@ -77,13 +76,8 @@ class _PassiveTargetedHarness(_ShadowHarness):
             )
         return super().ask_model(prompt, system_prompt, **kwargs)
 
-    def run_scout(self, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
-        self.scout_calls += 1
-        return {"directed_queries": list(self.scout_queries)}
-
     def deps(self) -> Any:
         deps = super().deps()
-        deps.run_scout = self.run_scout
         deps.QUANT_REPORT_TYPES = {"benchmark", "legal_analysis"}
         return deps
 
