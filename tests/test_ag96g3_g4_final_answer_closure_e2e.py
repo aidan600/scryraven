@@ -491,18 +491,16 @@ def _spine(
     required_component_ids: Sequence[str] = (),
     covered_component_ids: Sequence[str] = (),
 ) -> dict[str, Any]:
-    projection = search_work_projection if search_work_projection is not None else _search_work_projection()
     adapter = _adapter()
-    admitted = adapter.consume_search_work_for_existing_queries(
-        candidate_queries,
-        search_work_projection=projection,
-        max_len=len(candidate_queries),
+    admitted = adapter.finalize(
+        list(candidate_queries),
+        include_official_bias=False,
         origin="ag96g3_g4_tripwire",
         role=QueryPlanRole.INITIAL,
     )
     query_plan_trace = adapter.to_trace_fragment()[QUERY_PLAN_TRACE_KEY]
     handoff = build_provider_job_execution_handoff(
-        search_work_projection=projection,
+        search_work_projection=None,
         query_plan_trace=query_plan_trace,
         current_queries=admitted,
     )
@@ -558,7 +556,7 @@ def _spine(
         query_plan_trace=query_plan_trace,
         current_authorized_queries=admitted,
         retrieval_records=retrieval_records,
-        search_work_projection=projection,
+        search_work_projection=search_work_projection,
     )
     ledger = reduced["evidence_ledger_projection"]
     for component_id, candidate in candidates_by_component.items():

@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Final, TypeVar
+from typing import Any, Final, TypeVar
 
 INITIAL_QUERY_STRATEGY_FAILURE_SCHEMA_VERSION: Final = "initial_query_strategy_failure_v1"
 INITIAL_QUERY_STRATEGY_FAILURE_BOUNDARY: Final = "initial_query_strategy"
@@ -18,19 +18,12 @@ INITIAL_QUERY_STRATEGY_FAILURE_TERMINAL_KEY: Final = "initial_query_strategy_fai
 
 _T = TypeVar("_T")
 
-if TYPE_CHECKING:
-    from core.search_planner_revision_runtime import (
-        SearchPlannerRevisionRuntimeSafeFailureCode,
-    )
-
 
 class InitialQueryStrategyFailureOrigin(str, Enum):
     """Closed failure origins for the ordinary initial-planning corridor."""
 
     PLANNER_RUNTIME = "planner_runtime"
     QUERY_STRATEGY_CONVERGENCE = "query_strategy_convergence"
-    SCOUT_DISAMBIGUATION_RUNTIME = "scout_disambiguation_runtime"
-    SEARCH_PLANNER_REVISION_RUNTIME = "search_planner_revision_runtime"
     RUN_KERNEL = "run_kernel"
 
 
@@ -42,21 +35,14 @@ class InitialQueryStrategyFailureCode(str, Enum):
     duplicated here.
     """
 
-    SCOUT_DISAMBIGUATION_RUNTIME_ERROR = "scout_disambiguation_runtime_error"
     SEARCH_PLANNER_PRODUCTION_TRANSITION = "search_planner_production_transition"
     INITIAL_ANSWER_CONTRACT_ACCEPTANCE_TRANSITION = (
         "initial_answer_contract_acceptance_transition"
     )
-    SCOUT_DISAMBIGUATION_TRANSITION = "scout_disambiguation_transition"
-    SEARCH_PLANNER_REVISION_TRANSITION = "search_planner_revision_transition"
     CONTRACT_AMENDMENT_ADMISSION_TRANSITION = "contract_amendment_admission_transition"
     CONTRACT_AMENDMENT_APPLICATION_TRANSITION = (
         "contract_amendment_application_transition"
     )
-    SEARCH_WORK_PLAN_CONSTRUCTION_TRANSITION = (
-        "search_work_plan_construction_transition"
-    )
-    QUERY_PRODUCTION_TRANSITION = "query_production_transition"
     QUERY_PLAN_ADMISSION_TRANSITION = "query_plan_admission_transition"
 
 
@@ -67,22 +53,12 @@ _RUN_KERNEL_CODE_BY_OPERATION: Final[dict[str, InitialQueryStrategyFailureCode]]
     "initial_answer_contract_acceptance": (
         InitialQueryStrategyFailureCode.INITIAL_ANSWER_CONTRACT_ACCEPTANCE_TRANSITION
     ),
-    "scout_disambiguation": (
-        InitialQueryStrategyFailureCode.SCOUT_DISAMBIGUATION_TRANSITION
-    ),
-    "search_planner_revision": (
-        InitialQueryStrategyFailureCode.SEARCH_PLANNER_REVISION_TRANSITION
-    ),
     "contract_amendment_admission": (
         InitialQueryStrategyFailureCode.CONTRACT_AMENDMENT_ADMISSION_TRANSITION
     ),
     "contract_amendment_application": (
         InitialQueryStrategyFailureCode.CONTRACT_AMENDMENT_APPLICATION_TRANSITION
     ),
-    "search_work_plan_construction": (
-        InitialQueryStrategyFailureCode.SEARCH_WORK_PLAN_CONSTRUCTION_TRANSITION
-    ),
-    "query_production": InitialQueryStrategyFailureCode.QUERY_PRODUCTION_TRANSITION,
     "query_plan_admission": (
         InitialQueryStrategyFailureCode.QUERY_PLAN_ADMISSION_TRANSITION
     ),
@@ -90,9 +66,6 @@ _RUN_KERNEL_CODE_BY_OPERATION: Final[dict[str, InitialQueryStrategyFailureCode]]
 
 _RUN_KERNEL_TRANSITION_CODES: Final[frozenset[str]] = frozenset(
     code.value for code in _RUN_KERNEL_CODE_BY_OPERATION.values()
-)
-_SCOUT_DISAMBIGUATION_RUNTIME_CODES: Final[frozenset[str]] = frozenset(
-    {InitialQueryStrategyFailureCode.SCOUT_DISAMBIGUATION_RUNTIME_ERROR.value}
 )
 
 def _licensed_failure_codes_for_origin(
@@ -116,16 +89,6 @@ def _licensed_failure_codes_for_origin(
         )
     if origin is InitialQueryStrategyFailureOrigin.RUN_KERNEL:
         return _RUN_KERNEL_TRANSITION_CODES
-    if origin is InitialQueryStrategyFailureOrigin.SCOUT_DISAMBIGUATION_RUNTIME:
-        return _SCOUT_DISAMBIGUATION_RUNTIME_CODES
-    if origin is InitialQueryStrategyFailureOrigin.SEARCH_PLANNER_REVISION_RUNTIME:
-        from core.search_planner_revision_runtime import (
-            SearchPlannerRevisionRuntimeSafeFailureCode,
-        )
-
-        return frozenset(
-            member.value for member in SearchPlannerRevisionRuntimeSafeFailureCode
-        )
     raise ValueError("failure_origin is not a closed corridor origin")
 
 
@@ -181,45 +144,6 @@ class InitialQueryStrategyFailureError(RuntimeError):
         return self._failure.to_terminal_projection()
 
 
-def scout_disambiguation_runtime_failure() -> InitialQueryStrategyFailure:
-    return InitialQueryStrategyFailure(
-        failure_origin=InitialQueryStrategyFailureOrigin.SCOUT_DISAMBIGUATION_RUNTIME,
-        failure_code=(
-            InitialQueryStrategyFailureCode.SCOUT_DISAMBIGUATION_RUNTIME_ERROR.value
-        ),
-    )
-
-
-def search_planner_revision_runtime_failure(
-    *,
-    failure_code: SearchPlannerRevisionRuntimeSafeFailureCode | None = None,
-) -> InitialQueryStrategyFailure:
-    """Translate one owner-authored PlannerRevision code for this corridor.
-
-    The default preserves the historic coarse token solely for an untyped
-    compatibility caller; ordinary PlannerRevision failures supply their exact
-    owner-authored ``failure_code``.
-    """
-
-    from core.search_planner_revision_runtime import (
-        SearchPlannerRevisionRuntimeSafeFailureCode,
-    )
-
-    code = (
-        SearchPlannerRevisionRuntimeSafeFailureCode.SEARCH_PLANNER_REVISION_RUNTIME_ERROR
-        if failure_code is None
-        else failure_code
-    )
-    if not isinstance(code, SearchPlannerRevisionRuntimeSafeFailureCode):
-        raise TypeError(
-            "failure_code must be a SearchPlannerRevisionRuntimeSafeFailureCode"
-        )
-    return InitialQueryStrategyFailure(
-        failure_origin=InitialQueryStrategyFailureOrigin.SEARCH_PLANNER_REVISION_RUNTIME,
-        failure_code=code.value,
-    )
-
-
 def run_kernel_initial_planning_failure(
     *, operation: str
 ) -> InitialQueryStrategyFailure:
@@ -267,10 +191,6 @@ def classify_initial_query_strategy_failure(
         QueryStrategyConvergenceFailureCode,
     )
     from core.search_planner_model_adapter import SearchPlannerModelAdapterError
-    from core.search_planner_revision_runtime import (
-        SearchPlannerRevisionRuntimeError,
-        SearchPlannerRevisionRuntimeSafeFailureCode,
-    )
     from core.search_planner_runtime import (
         SearchPlannerRuntimeError,
         SearchPlannerRuntimeSafeFailureCode,
@@ -304,19 +224,6 @@ def classify_initial_query_strategy_failure(
             return InitialQueryStrategyFailure(
                 failure_origin=InitialQueryStrategyFailureOrigin(
                     SearchPlannerRuntimeError.SAFE_FAILURE_ORIGIN
-                ),
-                failure_code=code.value,
-            )
-        except (TypeError, ValueError):
-            return None
-    if isinstance(exc, SearchPlannerRevisionRuntimeError):
-        code = exc.failure_code
-        if not isinstance(code, SearchPlannerRevisionRuntimeSafeFailureCode):
-            return None
-        try:
-            return InitialQueryStrategyFailure(
-                failure_origin=InitialQueryStrategyFailureOrigin(
-                    SearchPlannerRevisionRuntimeError.SAFE_FAILURE_ORIGIN
                 ),
                 failure_code=code.value,
             )
@@ -356,6 +263,4 @@ __all__ = [
     "invoke_run_kernel_initial_planning",
     "project_initial_query_strategy_failure_for_terminal",
     "run_kernel_initial_planning_failure",
-    "scout_disambiguation_runtime_failure",
-    "search_planner_revision_runtime_failure",
 ]

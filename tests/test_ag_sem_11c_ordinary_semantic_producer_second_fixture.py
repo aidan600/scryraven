@@ -9,7 +9,7 @@ import pytest
 
 from core.final_answer_packet import SourceObligationStatus
 from core.ordinary_semantic_producer_runtime import (
-    SKIP_REASON_BINDABLE_PASSAGE_MISSING,
+    SKIP_REASON_ACCEPTED_ANSWER_CONTRACT_MISSING,
     OrdinarySemanticProducerHandoffStatus,
     execute_ordinary_semantic_producer_handoff_from_scope,
 )
@@ -625,5 +625,5 @@ def test_second_fixture_missing_evidence_skips_without_orphan_semantic_state(
     result = execute_ordinary_semantic_producer_handoff_from_scope(kernel, scope)
 
     assert result.status is OrdinarySemanticProducerHandoffStatus.SKIPPED
-    assert result.skipped_reason == SKIP_REASON_BINDABLE_PASSAGE_MISSING
+    assert result.skipped_reason == SKIP_REASON_ACCEPTED_ANSWER_CONTRACT_MISSING
     assert_no_semantic_state(kernel)

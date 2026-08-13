@@ -33,7 +33,6 @@ from core.semantic_contract_foundation import (
     QuestionMeaningRecord,
     RequirementPosture,
     ResolverKind,
-    SearchWorkPlanRef,
     SemanticSlot,
     SemanticSlotKind,
     SemanticSlotStatus,
@@ -1169,7 +1168,6 @@ def _question_meaning_record_from_adapter_result(
         adapter_result.get("source_obligation_candidates"),
         components=components,
     )
-    component_search_requirements = _component_search_requirements(adapter_result)
     planner_model_metadata = _safe_mapping(
         adapter_result.get("planner_model_metadata")
     )
@@ -1177,20 +1175,6 @@ def _question_meaning_record_from_adapter_result(
         planner_input=planner_input,
         components=components,
     )
-    search_work_plan_ref = None
-    if component_search_requirements:
-        search_work_plan_ref = SearchWorkPlanRef(
-            plan_id=f"search-planner-planning-only:{request_digest[:16]}",
-            schema_version=SEARCH_PLANNER_SCHEMA_VERSION,
-            relationship=(
-                "SearchPlanner component search requirements are subordinate planning refs; "
-                "RunKernel has not constructed or executed a SearchWorkPlan."
-            ),
-            planning_only=True,
-            semantic_owner=False,
-            trace_only=True,
-            metadata={"component_search_requirement_count": len(component_search_requirements)},
-        )
 
     adapter_explicit_component_list = adapter_result.get(
         "explicit_factual_component_list"
@@ -1277,7 +1261,7 @@ def _question_meaning_record_from_adapter_result(
         semantic_slots=tuple(slots),
         answer_components=tuple(components),
         source_obligation_candidate_refs=tuple(source_refs),
-        search_work_plan_ref=search_work_plan_ref,
+        search_work_plan_ref=None,
         materiality_policy=MaterialityPolicy(auto_accepts_amendments=False),
         metadata=metadata,
         passive=True,
@@ -1793,9 +1777,11 @@ def _normalize_query_strategy_candidate(
             failure_code=SearchPlannerRuntimeSafeFailureCode.STRATEGY_CANDIDATE_INVALID,
         )
     recon = _normalize_recon_requirement(candidate.get("recon_requirement"))
-    recon_candidates = [
-        _safe_mapping(item) for item in _safe_list(recon.get("candidate_queries")) if _safe_mapping(item)
-    ]
+    if recon.get("posture") not in {None, "not_needed"}:
+        raise SearchPlannerRuntimeError(
+            "ordinary initial query strategies cannot carry recon requirements",
+            failure_code=SearchPlannerRuntimeSafeFailureCode.RECON_REQUIREMENT_INVALID,
+        )
     return _without_empty(
         {
             "strategy_id": strategy_id,
@@ -1825,18 +1811,6 @@ def _normalize_query_strategy_candidate(
             ),
             "immediate_dispatch_requested": bool(candidate.get("immediate_dispatch_requested")),
             "immediate_dispatch_distinct_need": bool(candidate.get("immediate_dispatch_distinct_need")),
-            # Candidate text is flattened one level so the existing bounded
-            # RunKernel Observation sanitizer preserves it without changing
-            # the SearchPlanner or QueryPlan schemas.
-            "recon_posture": recon.get("posture"),
-            "recon_unresolved_dimension_ids": recon.get("unresolved_dimension_ids"),
-            "recon_required_for_truthful_targeting": bool(recon.get("required_for_truthful_targeting")),
-            "recon_candidate_queries_by_dimension": {
-                str(item["dimension_id"]): item["candidate_query_text"] for item in recon_candidates
-            },
-            "recon_query_kinds_by_dimension": {
-                str(item["dimension_id"]): item["query_kind"] for item in recon_candidates
-            },
             "provider_name_neutral": True,
             "planner_provider_identity_ignored": (_contains_provider_selection_key(candidate)),
         }
@@ -1995,12 +1969,6 @@ def _deterministic_primary_query_strategy(
         "distinct_need_justification": ("Primary intentional query path for the accepted required component."),
         "immediate_dispatch_requested": True,
         "immediate_dispatch_distinct_need": True,
-        "recon_requirement": {
-            "posture": "not_needed",
-            "unresolved_dimension_ids": [],
-            "candidate_queries": [],
-            "required_for_truthful_targeting": False,
-        },
         "provider_name_neutral": True,
     }
 

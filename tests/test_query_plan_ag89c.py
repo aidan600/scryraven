@@ -662,12 +662,12 @@ def test_searchos_pipeline_consumes_converged_candidates_before_queryplan() -> N
     query_runtime_source = Path("core/query_production_runtime.py").read_text()
     assert "execute_initial_query_strategy_convergence(" in source
     assert "execute_query_production_action(" not in source
-    assert "query_plan_admission_inputs_from_query_production_projection(" in source
-    assert "candidate_queries=query_plan_inputs.candidate_queries" in source
-    assert "candidate_strategies=query_plan_inputs.candidate_strategies" in source
+    assert "query_plan_admission_inputs_from_query_production_projection(" not in source
+    assert "candidate_queries=convergence.candidate_queries" in source
+    assert "candidate_strategies=convergence.candidate_strategies" in source
     assert "execute_query_plan_admission_action(" in source
     assert "query_authority.admit_initial_component_strategies(" in query_runtime_source
-    assert 'candidate_source not in {"search_planner", "search_planner_revision"}' in query_runtime_source
+    assert 'candidate_source != "search_planner"' in query_runtime_source
     assert "queries = query_authority.finalize(queries, include_official_bias=True)" not in source
     assert "pre_retrieval_query_candidates" not in source
     assert "query_admission_candidates" not in source

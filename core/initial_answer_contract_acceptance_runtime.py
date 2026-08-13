@@ -232,6 +232,9 @@ def _contract_content_digest_payload(state_core: Mapping[str, Any]) -> dict[str,
         "parent_proposal_schema_version": state_core.get("parent_proposal_schema_version"),
         "accepted_answer_component_refs": state_core.get("accepted_answer_component_refs"),
         "accepted_semantic_slot_refs": state_core.get("accepted_semantic_slot_refs"),
+        "accepted_source_obligation_refs": state_core.get(
+            "accepted_source_obligation_refs"
+        ),
         "materiality_policy": state_core.get("materiality_policy"),
         "question_meaning_metadata": state_core.get("question_meaning_metadata", {}),
         "lineage": lineage,
@@ -443,6 +446,30 @@ def build_initial_answer_contract_acceptance_state(
             accepted_slots.append(_accepted_slot_ref(slot))
     material_ambiguity_count = sum(1 for slot in accepted_slots if slot.get("unresolved_material"))
 
+    accepted_source_obligations: list[dict[str, Any]] = []
+    seen_obligation_ids: set[str] = set()
+    for raw_obligation in record.get("source_obligation_candidate_refs") or ():
+        if not isinstance(raw_obligation, Mapping):
+            continue
+        obligation_id = _clean_token(
+            raw_obligation.get("candidate_id") or raw_obligation.get("source_obligation_id")
+        )
+        if not obligation_id or obligation_id in seen_obligation_ids:
+            continue
+        seen_obligation_ids.add(obligation_id)
+        accepted_source_obligations.append(
+            {
+                "source_obligation_id": obligation_id,
+                "kind": _clean_token(raw_obligation.get("obligation_kind") or raw_obligation.get("kind"))
+                or "no_special_obligation",
+                "strictness": _clean_token(raw_obligation.get("strictness")) or "required",
+                "component_ids": _text_tuple(
+                    raw_obligation.get("component_candidate_ids")
+                    or raw_obligation.get("component_ids")
+                ),
+            }
+        )
+
     contract_lineage = record.get("contract_lineage")
     contract_version = "0.1-passive"
     if isinstance(contract_lineage, Mapping):
@@ -480,6 +507,8 @@ def build_initial_answer_contract_acceptance_state(
         "accepted_answer_component_count": len(accepted_components),
         "accepted_semantic_slot_refs": accepted_slots,
         "accepted_semantic_slot_count": len(accepted_slots),
+        "accepted_source_obligation_refs": accepted_source_obligations,
+        "accepted_source_obligation_count": len(accepted_source_obligations),
         "material_ambiguity_count": material_ambiguity_count,
         "material_ambiguity_preserved": True,
         "materiality_policy": materiality_policy,
@@ -565,6 +594,14 @@ def build_initial_answer_contract_acceptance_projection(
         "accepted_answer_component_count": len(component_refs),
         "accepted_semantic_slot_refs": slot_refs,
         "accepted_semantic_slot_count": len(slot_refs),
+        "accepted_source_obligation_refs": [
+            dict(item)
+            for item in acceptance_state.get("accepted_source_obligation_refs", [])
+            if isinstance(item, Mapping)
+        ],
+        "accepted_source_obligation_count": int(
+            acceptance_state.get("accepted_source_obligation_count") or 0
+        ),
         "material_ambiguity_count": acceptance_state.get("material_ambiguity_count", 0),
         "material_ambiguity_preserved": acceptance_state.get("material_ambiguity_preserved", True),
         "question_meaning_metadata": acceptance_state.get("question_meaning_metadata", {}),

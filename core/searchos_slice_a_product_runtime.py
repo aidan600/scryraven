@@ -1829,9 +1829,20 @@ def _active_slots(
     )
     components = dict(snapshot.get("components_by_id") or {})
     obligations = dict(snapshot.get("source_obligations_by_id") or {})
-    work_components = list(
-        run_kernel.state.search_work_plan.get("components") or ()
+    accepted_contract = dict(
+        run_kernel.state.current_answer_contract
+        or run_kernel.state.initial_answer_contract
+        or {}
     )
+    work_components = list(
+        accepted_contract.get("accepted_answer_component_refs") or ()
+    )
+    obligation_specs = {
+        str(item.get("source_obligation_id") or item.get("candidate_id") or ""): dict(item)
+        for item in accepted_contract.get("accepted_source_obligation_refs") or ()
+        if isinstance(item, Mapping)
+        and str(item.get("source_obligation_id") or item.get("candidate_id") or "")
+    }
     initial_query_refs = query_authority.plan.execution_item_refs(1)
     query_refs_by_component: dict[str, list[dict[str, Any]]] = {}
     for query_ref in initial_query_refs:
@@ -1888,6 +1899,12 @@ def _active_slots(
             [],
         )
         clarifications = clarification_by_component.get(component_id, [])
+        inferred_only = {
+            str(item)
+            for item in work_component.get("allowed_support_kinds") or ()
+        } == {"inferred"}
+        if inferred_only and not query_refs and not clarifications:
+            continue
         if not component_semantic_refs or (
             not query_refs and not clarifications
         ):
@@ -2018,38 +2035,20 @@ def _active_slots(
             )
         requirement = work_component.get("requirement_posture")
         if requirement not in {"required", "optional"}:
-            accepted_component = next(
-                (
-                    dict(item)
-                    for item in (
-                        run_kernel.state.initial_answer_contract.get(
-                            "accepted_answer_component_refs"
-                        )
-                        or ()
-                    )
-                    if isinstance(item, Mapping)
-                    and item.get("component_id") == component_id
-                ),
-                {},
-            )
-            requirement = accepted_component.get("requirement_posture")
-        if requirement not in {"required", "optional"}:
             raise SearchOSRuntimeError(
                 "accepted component required-versus-optional posture is ambiguous"
             )
-        for raw_obligation in work_component.get("source_obligations") or ():
-            obligation = (
-                dict(raw_obligation)
-                if isinstance(raw_obligation, Mapping)
-                else {}
-            )
-            obligation_id = str(
-                obligation.get("obligation_id")
-                or obligation.get("source_obligation_id")
-                or ""
-            )
+        obligation_ids = [
+            str(item)
+            for item in work_component.get("source_obligation_candidate_ids") or ()
+            if str(item)
+        ]
+        for obligation_id in obligation_ids:
+            spec = dict(obligation_specs.get(obligation_id) or {})
             obligation_ref = dict(obligations.get(obligation_id) or {})
-            strictness = str(obligation.get("strictness") or "")
+            strictness = str(
+                spec.get("strictness") or "required"
+            )
             if strictness not in {"required", "preferred", "contextual"}:
                 raise SearchOSRuntimeError(
                     "source-obligation strictness is ambiguous"
@@ -2069,7 +2068,7 @@ def _active_slots(
                     "source_obligation_ref": obligation_ref,
                     "requirement_posture": slot_requirement,
                     "support_kind": str(
-                        obligation.get("kind") or ""
+                        spec.get("kind") or spec.get("obligation_kind") or ""
                     ).strip(),
                     "semantic_obligations": semantic_obligations,
                     "query_plan_item_refs": query_refs,
@@ -2667,59 +2666,64 @@ def _build_active_need_projection(
     if dict(dict(authority.get("source_obligations_by_id") or {}).get(obligation_id) or {}) != obligation_ref:
         raise SearchOSRuntimeError("active source-obligation ref is stale")
 
-    search_work_plan = dict(run_kernel.state.search_work_plan or {})
-    work_component = next(
+    accepted = next(
         (
             dict(item)
-            for item in search_work_plan.get("components") or ()
+            for item in contract.get("accepted_answer_component_refs") or ()
             if isinstance(item, Mapping) and item.get("component_id") == component_id
         ),
         {},
     )
-    work_component_ref = dict(
-        dict(work_component.get("metadata") or {}).get("accepted_component_ref")
-        or {}
-    )
+    accepted_ref = {
+        "component_id": accepted.get("component_id"),
+        "component_revision": accepted.get("component_revision"),
+        "component_digest": accepted.get("component_digest"),
+    }
     if {
-        key: work_component_ref.get(key)
+        key: accepted_ref.get(key)
         for key in ("component_id", "component_revision", "component_digest")
-    } != accepted_ref:
-        raise SearchOSRuntimeError("SearchWorkPlan component ref is stale")
-    work_obligation = next(
+    } != {
+        key: component_ref.get(key)
+        for key in ("component_id", "component_revision", "component_digest")
+    }:
+        raise SearchOSRuntimeError("accepted component ref is stale")
+    obligation_spec = next(
         (
             dict(item)
-            for item in work_component.get("source_obligations") or ()
-            if isinstance(item, Mapping) and item.get("obligation_id") == obligation_id
+            for item in contract.get("accepted_source_obligation_refs") or ()
+            if isinstance(item, Mapping)
+            and str(
+                item.get("source_obligation_id") or item.get("candidate_id") or ""
+            )
+            == obligation_id
         ),
         {},
     )
-    if not work_obligation:
-        raise SearchOSRuntimeError("SearchWorkPlan source obligation is stale")
+    if not obligation_spec:
+        raise SearchOSRuntimeError("accepted source obligation is stale")
+    planner_state = dict(run_kernel.state.search_planner_proposal_state or {})
     requirement_refs = [
         dict(item)
-        for item in dict(work_component.get("metadata") or {}).get(
-            "search_requirement_refs"
-        )
-        or ()
+        for item in planner_state.get("component_search_requirements") or ()
         if isinstance(item, Mapping)
         and item.get("component_id") == component_id
         and obligation_id
         in set(item.get("source_obligation_candidate_ids") or ())
     ]
     if len(requirement_refs) != 1:
-        raise SearchOSRuntimeError(
-            "SearchWorkPlan requirement ref is missing or ambiguous"
-        )
-    metadata = dict(search_work_plan.get("metadata") or {})
-    plan_contract_ref = dict(metadata.get("accepted_contract_ref") or {})
+        requirement = {
+            "requirement_id": f"searchreq:{component_id}:{obligation_id}",
+            "component_id": component_id,
+            "source_obligation_candidate_ids": [obligation_id],
+            "requirement_summary": (
+                accepted.get("user_facing_question")
+                or "Find direct support for the accepted component need."
+            ),
+        }
+    else:
+        requirement = requirement_refs[0]
     contract_digest = str(contract.get("accepted_contract_digest") or "")
     contract_version = str(contract.get("accepted_contract_version") or "")
-    if (
-        plan_contract_ref.get("contract_digest") != contract_digest
-        or str(plan_contract_ref.get("contract_version") or "")
-        != contract_version
-    ):
-        raise SearchOSRuntimeError("SearchWorkPlan is not bound to the active contract")
     answer_contract_ref = dict(run_kernel.state.searchos_state["answer_contract_ref"])
     if (
         answer_contract_ref.get("answer_contract_digest") != contract_digest
@@ -2727,18 +2731,6 @@ def _build_active_need_projection(
         != contract_version
     ):
         raise SearchOSRuntimeError("SearchOS AnswerContract ref is stale")
-    search_work_plan_id = str(
-        metadata.get("search_work_plan_id")
-        or metadata.get("construction_id")
-        or ""
-    )
-    if not search_work_plan_id:
-        raise SearchOSRuntimeError("SearchWorkPlan exact identity is missing")
-    search_work_plan_ref = {
-        "search_work_plan_id": search_work_plan_id,
-        "search_work_plan_digest": _digest(search_work_plan),
-    }
-    requirement = requirement_refs[0]
     requirement_summary = _bounded_judgment_text(
         requirement.get("requirement_summary"),
         320,
@@ -2749,8 +2741,7 @@ def _build_active_need_projection(
             "component_ref": component_ref,
             "component_id": component_id,
             "user_facing_question": _bounded_judgment_text(
-                accepted.get("user_facing_question")
-                or work_component.get("user_facing_subquestion"),
+                accepted.get("user_facing_question"),
                 500,
             ),
             "user_facing_label": _bounded_judgment_text(
@@ -2766,25 +2757,25 @@ def _build_active_need_projection(
         "source_obligation": {
             "source_obligation_ref": obligation_ref,
             "obligation_id": obligation_id,
-            "kind": work_obligation.get("kind"),
-            "strictness": work_obligation.get("strictness"),
+            "kind": obligation_spec.get("kind")
+            or obligation_spec.get("obligation_kind"),
+            "strictness": obligation_spec.get("strictness") or "required",
             "currentness_requirement": _bounded_judgment_text(
-                work_obligation.get("currentness_requirement")
+                obligation_spec.get("currentness_requirement")
                 or requirement.get("recency_requirement"),
                 220,
             ),
             "satisfaction_rule": _bounded_judgment_text(
-                work_obligation.get("satisfaction_rule") or requirement_summary,
+                obligation_spec.get("satisfaction_rule") or requirement_summary,
                 320,
             ),
             "requirement_summary": requirement_summary,
             "search_constraint": _bounded_judgment_text(
-                work_obligation.get("search_constraint"),
+                obligation_spec.get("search_constraint"),
                 240,
             ),
         },
         "search_work": {
-            "search_work_plan_ref": search_work_plan_ref,
             "search_requirement_ref": requirement,
             "answer_contract_ref": answer_contract_ref,
         },

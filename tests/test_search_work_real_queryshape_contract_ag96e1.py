@@ -3,30 +3,24 @@ from __future__ import annotations
 import ast
 import json
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 import pytest
 
-from core.query_production_runtime import (
-    QueryStrategyConvergenceError,
-    execute_query_production_action,
-)
-from core.router_query_preparation_contract import build_router_query_preparation_state
-from core.run_authority_contract_runtime import execute_run_contract_synthesis_action
-from core.run_kernel import QUERY_PLAN_ADMISSION_STAGE, QUERY_PRODUCTION_STAGE, RunKernel
-from core.search_work_plan import (
+from core.query_shape_contract_resolution import (
     EffectiveContractKind,
     ModeMismatchPosture,
     ProviderJobKind,
     QueryShapeKind,
     SearchMode,
-    SourceObligationKind,
 )
-from core.search_work_plan_shadow_runtime import (
-    RuntimeShadowSearchWorkPlanInput,
-    build_runtime_shadow_search_work_plan_input,
+from core.run_authority_contract_runtime import execute_run_contract_synthesis_action
+from core.run_kernel import QUERY_PLAN_ADMISSION_STAGE, RunKernel
+from core.search_work_query_shape_runtime import (
+    DeterministicSearchWorkRuntimeInput,
+    build_deterministic_search_work_runtime_records,
 )
-from core.search_work_shadow_lane_runtime import run_search_work_shadow_lane
+from core.semantic_contract_foundation import SourceObligationKind
 
 ROOT = Path(__file__).resolve().parents[1]
 PIPELINE = ROOT / "core" / "pipeline_orchestrator.py"
@@ -75,10 +69,11 @@ def _contract(query: str, *, mode: str = "Balanced") -> tuple[dict[str, Any], di
 
 def _construction_input(query: str, *, mode: str = "Balanced") -> Any:
     contract, route = _contract(query, mode=mode)
-    return build_runtime_shadow_search_work_plan_input(
-        RuntimeShadowSearchWorkPlanInput(
+    return build_deterministic_search_work_runtime_records(
+        DeterministicSearchWorkRuntimeInput(
+            contract_id=str(contract.get("contract_id") or "ag96e1"),
             run_contract_projection=contract,
-            route_projection=route,
+            route_facts=route,
             requested_mode=mode,
             selected_depth=contract.get("selected_depth"),
             safe_query_preview=query,
@@ -93,101 +88,6 @@ def _assessment_payload(query: str, *, mode: str = "Balanced") -> dict[str, Any]
 
 def _resolution_payload(query: str, *, mode: str = "Balanced") -> dict[str, Any]:
     return _construction_input(query, mode=mode).contract_resolution.to_dict()
-
-
-def _run_lane(query: str, *, mode: str = "Balanced") -> tuple[RunKernel, dict[str, Any], dict[str, Any]]:
-    contract, route = _contract(query, mode=mode)
-    kernel = RunKernel.start(run_id=f"ag96e1-lane-{abs(hash((query, mode)))}", request_id="request")
-    action = kernel.authorize_run_contract_synthesis(inputs={"fixture": True})
-    kernel.reduce(
-        execute_run_contract_synthesis_action(
-            action,
-            query=query,
-            mode=mode,
-            current_date="June 15, 2026",
-            route_projection=route,
-        ).observation
-    )
-    contract = dict(kernel.state.run_contract_projection)
-    lane = run_search_work_shadow_lane(
-        run_kernel=kernel,
-        run_contract_projection=contract,
-        route_projection=route,
-        requested_mode=mode,
-        selected_depth=contract.get("selected_depth"),
-        safe_query_preview=query,
-        current_date_ref={"id": "current-date:test"},
-        metadata={"callsite": "ag96e1-unit-test"},
-    )
-    return kernel, contract, lane
-
-
-def _clean_query(value: str) -> str:
-    return " ".join(str(value or "").split())[:300]
-
-
-def _router_state(query: str) -> Any:
-    return build_router_query_preparation_state(
-        query=query,
-        router_text=json.dumps(
-            {
-                "intent": "general",
-                "report_type": "general_research",
-                "query_type": "rule",
-                "core_topic": query[:100],
-                "primary_entity": "ag96e1-fixture",
-                "entities": ["ag96e1-fixture"],
-                "is_academic": False,
-            }
-        ),
-    )
-
-
-def _query_production_result(
-    kernel: RunKernel,
-    *,
-    query: str,
-    run_contract_projection: Mapping[str, Any],
-) -> Any:
-    def ask_model(*_args: Any, **_kwargs: Any) -> str:
-        return '{"queries":["current official filing fee","effective filing fee"]}'
-
-    action = kernel.authorize_query_production(
-        inputs={
-            "strategy": "Balanced",
-            "run_contract_id": run_contract_projection["contract_id"],
-        }
-    )
-    return execute_query_production_action(
-        action,
-        router_query_preparation_contract=_router_state(query),
-        query=query,
-        strategy="Balanced",
-        current_date="June 15, 2026",
-        focus_academic=False,
-        force_intent_news=False,
-        include_domains=[],
-        news_preferred_domains=["reuters.com"],
-        ask_model=ask_model,
-        clean_json_response=lambda text: text,
-        default_system={
-            "researcher": "researcher-system",
-            "recon_query_rewriter": "recon-system",
-        },
-        fast_provider="fast-provider",
-        fast_model="fast-model",
-        local_url="http://local",
-        api_key=None,
-        use_reasoning=True,
-        measure_context_stage=lambda *_args, **_kwargs: None,
-        clean_query=_clean_query,
-        cost_accumulator=object(),
-        status=_Status(),
-        provider_diagnostics=[],
-        run_log=_Logger(),
-        brave_api_key_available=False,
-        run_contract_projection=dict(run_contract_projection),
-    )
 
 
 def _kinds(payload: dict[str, Any]) -> set[str]:
@@ -467,11 +367,17 @@ def test_explicit_structured_route_matrix_uses_one_authoritative_result(
         for question in _component_questions(assessment)
     )
     assert (
-        construction.metadata["route_qualification_behavior_changed"]
+        construction.query_shape_assessment.metadata[
+            "route_qualification_behavior_changed"
+        ]
         is expected_behavior_changed
     )
-    assert construction.metadata["query_plan_behavior_changed"] is False
-    assert construction.metadata["provider_search_behavior_changed"] is False
+    assert construction.query_shape_assessment.metadata[
+        "query_plan_behavior_changed"
+    ] is False
+    assert construction.query_shape_assessment.metadata[
+        "provider_search_behavior_changed"
+    ] is False
 
 
 @pytest.mark.parametrize(
@@ -679,16 +585,10 @@ def test_source_bound_numeric_query_derives_numeric_obligation_and_fetch_read_hi
 
 def test_multipart_query_produces_multiple_components_in_lane_projection() -> None:
     query = "What are the current official fee, legal deadline, and API parameter?"
-    kernel, _contract, lane = _run_lane(query)
-    query_plan_shadow = lane["query_plan_work_shadow_projection"]
+    assessment = _assessment_payload(query)
 
-    assert lane["implements_query_shape_classifier"] is True
-    assert lane["implements_contract_resolver"] is True
-    assert lane["search_work_plan_fallback_reason"] is None
-    assert kernel.state.search_work_plan_projection["component_count"] >= 3
-    assert query_plan_shadow["work_counts"]["component_count"] >= 3
-    assert len(query_plan_shadow["candidate_work_groups"]) >= 3
-    metadata = _assessment_payload(query)["metadata"]
+    assert len(assessment.get("component_candidates") or []) >= 3
+    metadata = assessment["metadata"]
     assert metadata["structured_route_posture"] == NOT_STRUCTURED
     assert metadata["explicit_factual_component_list"] is False
     assert metadata["requested_synthesis_directive"] is None
@@ -757,18 +657,16 @@ def test_fast_balanced_deep_modes_resolve_answer_contracts_without_queryplan_con
     assert balanced["effective_contract"] == EffectiveContractKind.EXPLANATORY.value
     assert deep["requested_mode"] == SearchMode.DEEP.value
     assert deep["effective_contract"] == EffectiveContractKind.RESEARCH_RECONCILIATION.value
-
-    kernel, _contract, lane = _run_lane(query, mode="Fast")
-    assert lane["runtime_consumed_by_query_plan"] is False
-    assert kernel.state.search_work_plan_projection["runtime_consumed_by_query_plan"] is False
-    assert QUERY_PRODUCTION_STAGE not in kernel.state.stage_statuses
-    assert QUERY_PLAN_ADMISSION_STAGE not in kernel.state.stage_statuses
+    assert QUERY_PLAN_ADMISSION_STAGE not in RunKernel.start(
+        run_id="ag96e1-no-qp",
+        request_id="request",
+    ).state.stage_statuses
 
 
 def test_complexity_mismatch_is_shadow_recorded_without_mutating_selected_mode() -> None:
     query = "What are the current official fee, legal deadline, and API parameter?"
     resolution = _resolution_payload(query, mode="Fast")
-    kernel, contract, lane = _run_lane(query, mode="Fast")
+    contract, _route = _contract(query, mode="Fast")
 
     assert resolution["requested_mode"] == SearchMode.FAST.value
     assert resolution["effective_contract"] == EffectiveContractKind.DIRECT_CONSTRAINED.value
@@ -777,88 +675,30 @@ def test_complexity_mismatch_is_shadow_recorded_without_mutating_selected_mode()
         == ModeMismatchPosture.SELECTED_MODE_INSUFFICIENT.value
     )
     assert contract["selected_depth"] == "Fast"
-    assert lane["query_plan_behavior_changed"] is False
-    assert lane["query_text_generated"] is False
 
 
-def test_real_shadow_path_cannot_restore_retired_legacy_query_production() -> None:
-    query = "What is the current official filing fee for Form I-130?"
-    baseline_contract, baseline_route = _contract(query)
-    shadow_contract, shadow_route = _contract(query)
-    baseline_kernel = RunKernel.start(run_id="ag96e1-baseline", request_id="request")
-    shadow_kernel = RunKernel.start(run_id="ag96e1-shadow", request_id="request")
+def test_query_shape_classifier_does_not_restore_query_production_carrier() -> None:
+    import core.query_production_runtime as query_runtime
 
-    with pytest.raises(
-        QueryStrategyConvergenceError,
-        match="legacy initial producer fallback is retired",
-    ):
-        _query_production_result(
-            baseline_kernel,
-            query=query,
-            run_contract_projection=baseline_contract,
-        )
-    action = shadow_kernel.authorize_run_contract_synthesis(inputs={"fixture": True})
-    shadow_kernel.reduce(
-        execute_run_contract_synthesis_action(
-            action,
-            query=query,
-            mode="Balanced",
-            current_date="June 15, 2026",
-            route_projection=shadow_route,
-        ).observation
-    )
-    shadow_contract = dict(shadow_kernel.state.run_contract_projection)
-    run_search_work_shadow_lane(
-        run_kernel=shadow_kernel,
-        run_contract_projection=shadow_contract,
-        route_projection=shadow_route,
-        requested_mode="Balanced",
-        selected_depth=shadow_contract.get("selected_depth"),
-        safe_query_preview=query,
-        current_date_ref={"id": "current-date:test"},
-    )
-    with pytest.raises(
-        QueryStrategyConvergenceError,
-        match="legacy initial producer fallback is retired",
-    ):
-        _query_production_result(
-            shadow_kernel,
-            query=query,
-            run_contract_projection=shadow_contract,
-        )
-
-
-def test_fallback_path_is_tagged_when_deterministic_records_fail(monkeypatch: Any) -> None:
-    import core.search_work_plan_shadow_runtime as shadow_runtime
-
-    def fail_records(*_args: Any, **_kwargs: Any) -> None:
-        raise ValueError("forced failure")
-
-    monkeypatch.setattr(
-        shadow_runtime,
-        "build_deterministic_search_work_runtime_records",
-        fail_records,
-    )
-    construction = _construction_input("What is the current official filing fee for Form I-130?")
-
-    metadata = construction.metadata
-    assert metadata["runtime_shadow_scaffolding"] is True
-    assert metadata["implements_query_shape_classifier"] is False
-    assert metadata["implements_contract_resolver"] is False
-    assert metadata["fallback_reason"] == "deterministic_ag96e1_failed:ValueError"
+    assert not hasattr(query_runtime, "execute_query_production_action")
+    assert not hasattr(query_runtime, "query_plan_admission_inputs_from_query_production_projection")
+    source = (ROOT / "core" / "pipeline_orchestrator.py").read_text(encoding="utf-8")
+    assert "execute_query_production_action(" not in source
+    assert "query_plan_admission_inputs_from_query_production_projection(" not in source
 
 
 def test_redaction_preserves_sensitive_key_boundary() -> None:
     contract, route = _contract("What is the current official filing fee for Form I-130?")
-    construction = build_runtime_shadow_search_work_plan_input(
-        RuntimeShadowSearchWorkPlanInput(
+    records = build_deterministic_search_work_runtime_records(
+        DeterministicSearchWorkRuntimeInput(
+            contract_id=str(contract.get("contract_id") or "ag96e1"),
             run_contract_projection={
                 **contract,
                 "raw_prompt": "RAW_PROMPT_SENTINEL",
                 "raw_provider_payload": "RAW_PROVIDER_SENTINEL",
                 "raw_model_response": "RAW_MODEL_SENTINEL",
             },
-            route_projection={
+            route_facts={
                 **route,
                 "secret": "SECRET_SENTINEL",  # pragma: allowlist secret
                 "token": "TOKEN_SENTINEL",
@@ -872,7 +712,13 @@ def test_redaction_preserves_sensitive_key_boundary() -> None:
             },
         )
     )
-    encoded = json.dumps(construction.to_dict(), sort_keys=True)
+    encoded = json.dumps(
+        {
+            "assessment": records.query_shape_assessment.to_dict(),
+            "resolution": records.contract_resolution.to_dict(),
+        },
+        sort_keys=True,
+    )
 
     for field_name in (
         "raw_prompt",

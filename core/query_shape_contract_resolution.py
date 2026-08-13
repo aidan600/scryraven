@@ -13,18 +13,87 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Mapping, Sequence
 
-from core.search_work_plan import (
-    AuditScope,
-    EffectiveContractKind,
-    ModeMismatchPosture,
-    ProviderJobKind,
-    QueryShapeKind,
-    RemediationPermission,
-    SearchMode,
+from core.semantic_contract_foundation import (
     SourceObligationKind,
     SourceObligationStrictness,
-    StopConditionKind,
 )
+
+
+class SearchMode(str, Enum):
+    FAST = "fast"
+    BALANCED = "balanced"
+    DEEP = "deep"
+    AUTO = "auto"
+    UNRESOLVED = "unresolved"
+
+
+class EffectiveContractKind(str, Enum):
+    DIRECT_CONSTRAINED = "direct_constrained"
+    EXPLANATORY = "explanatory"
+    RESEARCH_RECONCILIATION = "research_reconciliation"
+    AUTO_UNRESOLVED = "auto_unresolved"
+
+
+class ModeMismatchPosture(str, Enum):
+    NONE = "none"
+    POSSIBLE = "possible"
+    SELECTED_MODE_INSUFFICIENT = "selected_mode_insufficient"
+    QUALIFY_OR_REFUSE = "qualify_or_refuse"
+    ESCALATE_SUGGESTED = "escalate_suggested"
+
+
+class QueryShapeKind(str, Enum):
+    SIMPLE_LOOKUP = "simple_lookup"
+    MULTIPART = "multipart"
+    COMPARATIVE = "comparative"
+    QUANTITATIVE_COMPARISON = "quantitative_comparison"
+    OFFICIAL_CURRENT_LOOKUP = "official_current_lookup"
+    LEGAL_CURRENT_PRIMARY = "legal_current_primary"
+    CANONICAL_DOCUMENTATION = "canonical_documentation"
+    SOURCE_BOUND_NUMERIC = "source_bound_numeric"
+    AMBIGUOUS_ENTITY = "ambiguous_entity"
+    TIME_SENSITIVE = "time_sensitive"
+    CONFLICT_LIKELY = "conflict_likely"
+    NORMALIZATION_REQUIRED = "normalization_required"
+    MODE_MISMATCH_POSSIBLE = "mode_mismatch_possible"
+
+
+class ProviderJobKind(str, Enum):
+    SCOUT_DISAMBIGUATION = "scout_disambiguation"
+    DIRECT_CANDIDATE_SEARCH = "direct_candidate_search"
+    OFFICIAL_CANDIDATE_ACQUISITION = "official_candidate_acquisition"
+    SEMANTIC_RECALL = "semantic_recall"
+    FETCH_READ_EXTRACT = "fetch_read_extract"
+    BRIDGE_HINT_DISCOVERY = "bridge_hint_discovery"
+    CONFLICT_CURRENTNESS_CHECK = "conflict_currentness_check"
+    CANONICAL_EXTRACTION = "canonical_extraction"
+    RECONCILIATION_SUPPORT = "reconciliation_support"
+
+
+class StopConditionKind(str, Enum):
+    COMPONENT_SUFFICIENT = "component_sufficient"
+    SOURCE_OBLIGATION_UNSATISFIED = "source_obligation_unsatisfied"
+    BUDGET_EXHAUSTED = "budget_exhausted"
+    MODE_MISMATCH = "mode_mismatch"
+    REQUIRED_INFERENCE_EXCEEDS_SELECTED_MODE = "required_inference_exceeds_selected_mode"
+    MISSING_SOURCE_BOUND_NUMERIC_VALUES = "missing_source_bound_numeric_values"
+    UNRESOLVED_CONFLICT_CURRENTNESS = "unresolved_conflict_currentness"
+    LIVE_VALIDATION_NOT_AUTHORIZED = "live_validation_not_authorized"
+
+
+class AuditScope(str, Enum):
+    CLAIM_CHALLENGE = "claim_challenge"
+    ASSUMPTION_RED_TEAM = "assumption_red_team"
+    SOURCE_CONFLICT_RECONCILIATION = "source_conflict_reconciliation"
+    CURRENTNESS_AUDIT = "currentness_audit"
+    QUANTITATIVE_ASSUMPTION_AUDIT = "quantitative_assumption_audit"
+
+
+class RemediationPermission(str, Enum):
+    NOT_ALLOWED = "not_allowed"
+    CONDITIONAL_PASSIVE = "conditional_passive"
+    AUTHORIZE_BY_JUDGMENT_ONLY = "authorize_by_judgment_only"
+
 
 QUERY_SHAPE_CONTRACT_RESOLUTION_SCHEMA_VERSION = "query_shape_contract_resolution_ag96c4_v1"
 QUERY_SHAPE_ASSESSMENT_TRACE_KEY = "query_shape_assessment"
@@ -1158,18 +1227,28 @@ __all__ = [
     "AssessmentConfidence",
     "AssessmentPosture",
     "AuditJobCandidate",
+    "AuditScope",
     "ComponentCandidate",
     "ConstructionPosture",
     "ContractResolutionRecord",
+    "EffectiveContractKind",
     "FollowUpDepthPosture",
+    "ModeMismatchPosture",
     "OutputPosture",
     "PerceptionSignalCandidate",
     "ProviderJobCandidate",
+    "ProviderJobKind",
     "QuantWorkCandidate",
     "QueryShapeAssessment",
     "QueryShapeContractValidationResult",
+    "QueryShapeKind",
+    "RemediationPermission",
+    "SearchMode",
     "SearchWorkPlanConstructionDesignRecord",
     "SocialSignalCandidate",
     "SourceObligationCandidate",
+    "SourceObligationKind",
+    "SourceObligationStrictness",
+    "StopConditionKind",
     "StopEscalateRefusePosture",
 ]

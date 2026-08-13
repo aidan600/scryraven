@@ -28,17 +28,16 @@ from core.search_executor_handoff_runtime import (
     revision_ref_from_revision_state,
     scout_ref_from_scout_report_state,
 )
+from core.search_planner_runtime import (
+    SEARCH_PLANNER_SCHEMA_VERSION,
+    SearchPlannerInput,
+    execute_search_planner_action,
+)
+from core.search_planner_runtime import (
+    contract_ref_from_contract as planner_contract_ref_from_contract,
+)
 from tests.helpers.canonical_answer_contract_fixture import (
     apply_nonmaterial_current_contract_fixture,
-)
-from tests.test_ag_search_planner_revision_01 import (
-    COMPONENT_ID,
-    CONSUMED_HINT_IDS,
-    _accept_planner_qmr,
-    _kernel,
-    _prepare_kernel,
-    _produce_planner,
-    _reduce_revision,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -50,6 +49,10 @@ DOCS = (
     ROOT / "docs" / "architecture" / "SCRYRAVEN_CURRENT_STATE.md",
     ROOT / "docs" / "codex" / "RUNAUTHORITY_IMPLEMENTATION_GUIDE.md",
 )
+RUN_ID = "run:ag-search-executor-handoff-01"
+REQUEST_ID = "request:ag-search-executor-handoff-01"
+QUERY = "What is the current official Example Permit threshold in 2026?"
+COMPONENT_ID = "component:official-threshold"
 
 FALSE_FLAGS = {
     "provider_calls_executed": False,
@@ -77,6 +80,152 @@ FALSE_FLAGS = {
 }
 
 
+class DeterministicPlannerAdapter:
+    def produce(self, planner_input: Mapping[str, Any]) -> Mapping[str, Any]:
+        return _planner_result()
+
+
+def _planner_result() -> dict[str, Any]:
+    return {
+        "question_meaning_summary": (
+            "Determine the official current threshold while preserving material identity and jurisdiction ambiguity."
+        ),
+        "requested_output": "Concise answer with official-current source support.",
+        "semantic_slots": [
+            {
+                "slot_id": "slot:program",
+                "slot_kind": "entity",
+                "status": "ambiguous",
+                "candidate_values": ["Example Permit", "Example Permit Renewal"],
+                "materiality": "material",
+                "user_confirmation_required": True,
+            },
+            {
+                "slot_id": "slot:jurisdiction",
+                "slot_kind": "jurisdiction",
+                "status": "unresolved",
+                "candidate_values": ["State A", "State B"],
+                "materiality": "material",
+                "user_confirmation_required": True,
+            },
+            {
+                "slot_id": "slot:time-period",
+                "slot_kind": "time_period",
+                "status": "explicit",
+                "selected_value": "2026",
+                "materiality": "material",
+            },
+        ],
+        "answer_components": [
+            {
+                "component_id": COMPONENT_ID,
+                "component_revision": "1",
+                "user_facing_label": "Official threshold",
+                "user_facing_question": (
+                    "What is the official current filing threshold for the requested program?"
+                ),
+                "requirement_posture": "required",
+                "acceptance_criteria": [
+                    "identify the likely program and jurisdiction",
+                    "preserve official-current source obligations",
+                ],
+                "semantic_slot_ids": [
+                    "slot:program",
+                    "slot:jurisdiction",
+                    "slot:time-period",
+                ],
+                "source_obligation_candidate_ids": ["obligation:official-current"],
+                "allowed_support_kinds": ["direct"],
+                "max_inference_depth": 0,
+                "mandatory_caveats": ["Keep ambiguity visible until resolved."],
+                "prohibited_upgrades": ["Do not cite Scout hints as evidence."],
+                "materiality": "material",
+            }
+        ],
+        "source_obligation_candidates": [
+            {
+                "candidate_id": "obligation:official-current",
+                "obligation_kind": "official_current_source",
+                "component_candidate_ids": [COMPONENT_ID],
+                "strictness": "required",
+            }
+        ],
+        "component_search_requirements": [
+            {
+                "component_id": COMPONENT_ID,
+                "requirement_id": "searchreq:official-current-threshold",
+                "requirement_summary": "Find the official current threshold source.",
+                "source_obligation_candidate_ids": ["obligation:official-current"],
+                "preferred_source_kinds": ["official"],
+                "recency_requirement": "current for 2026",
+            }
+        ],
+        "material_ambiguity_posture": "material_ambiguity_present",
+        "mandatory_caveats": ["Scout may only produce direction hints."],
+        "prohibited_upgrades": ["Do not infer final answer from snippets."],
+        "normalization_obligations": ["Normalize the effective year to 2026."],
+        "assumptions": [],
+        "unsupported_outputs": ["No final answer is produced by the planner."],
+    }
+
+
+def _kernel() -> RunKernel:
+    return RunKernel.start(run_id=RUN_ID, request_id=REQUEST_ID)
+
+
+def _planner_input(kernel: RunKernel) -> SearchPlannerInput:
+    return SearchPlannerInput(
+        run_id=RUN_ID,
+        request_id=REQUEST_ID,
+        user_query_text=QUERY,
+        requested_mode="balanced",
+        safe_context={"source_policy": "official-current"},
+        parent_initial_contract_ref=planner_contract_ref_from_contract(
+            kernel.state.initial_answer_contract,
+            source="initial_answer_contract",
+        ),
+        parent_current_contract_ref=planner_contract_ref_from_contract(
+            kernel.state.current_answer_contract,
+            source="current_answer_contract",
+        ),
+    )
+
+
+def _produce_planner(kernel: RunKernel) -> Mapping[str, Any]:
+    planner_input = _planner_input(kernel)
+    action = kernel.authorize_search_planner_production(
+        user_query_digest=planner_input.user_query_digest,
+        planner_schema_version=SEARCH_PLANNER_SCHEMA_VERSION,
+    )
+    result = execute_search_planner_action(
+        action=action,
+        planner_input=planner_input,
+        adapter=DeterministicPlannerAdapter(),
+    )
+    observation = Observation.from_action(
+        action,
+        observation_type=ObservationType.SEARCH_PLANNER_PRODUCED,
+        status=RunStageStatus.COMPLETED,
+        payload=result.observation_payload,
+    )
+    kernel.reduce(observation)
+    return kernel.state.search_planner_proposal_projection["question_meaning_record"]
+
+
+def _accept_planner_qmr(kernel: RunKernel, qmr_payload: Mapping[str, Any]) -> None:
+    action = kernel.authorize_initial_answer_contract_acceptance(
+        parent_question_meaning_record_id=str(qmr_payload["record_id"]),
+        parent_proposal_digest=str(qmr_payload["record_digest"]),
+    )
+    observation = Observation.from_action(
+        action,
+        observation_type=ObservationType.INITIAL_ANSWER_CONTRACT_ACCEPTED,
+        status=RunStageStatus.COMPLETED,
+        payload={"question_meaning_record": dict(qmr_payload)},
+    )
+    kernel.reduce(observation)
+
+
 def _initial_only_kernel() -> RunKernel:
     kernel = _kernel()
     qmr = _produce_planner(kernel)
@@ -89,16 +238,6 @@ def _current_contract_kernel() -> RunKernel:
     apply_nonmaterial_current_contract_fixture(
         kernel,
         fixture_id="ag-search-executor-handoff",
-    )
-    return kernel
-
-
-def _revision_context_current_contract_kernel() -> RunKernel:
-    kernel = _prepare_kernel()
-    _reduce_revision(kernel)
-    apply_nonmaterial_current_contract_fixture(
-        kernel,
-        fixture_id="ag-search-executor-revision-context",
     )
     return kernel
 
@@ -348,9 +487,9 @@ def test_search_executor_handoff_reduces_to_run_kernel_state_projection_history(
     assert kernel.state.projections[SEARCH_EXECUTOR_HANDOFF_STAGE] == projection
 
 
-def test_search_executor_handoff_binds_to_planner_revision_scout_and_contracts() -> None:
+def test_search_executor_handoff_binds_to_planner_and_contracts() -> None:
     def assert_reject(mutator, match: str) -> None:
-        kernel = _revision_context_current_contract_kernel()
+        kernel = _current_contract_kernel()
         input_ = _handoff_input(kernel)
         observation, _payload = _payload_from_input(kernel, input_, mutator)
         with pytest.raises(RunKernelTransitionError, match=match):
@@ -373,14 +512,6 @@ def test_search_executor_handoff_binds_to_planner_revision_scout_and_contracts()
             {"question_meaning_record_digest": "stale-qmr"}
         ),
         "stale parent planner",
-    )
-    assert_reject(
-        lambda payload: payload["parent_search_planner_revision_ref"].update({"revision_digest": "stale-revision"}),
-        "stale planner revision",
-    )
-    assert_reject(
-        lambda payload: payload["parent_scout_disambiguation_report_ref"].update({"report_digest": "stale-scout"}),
-        "stale Scout report",
     )
 
 
@@ -425,51 +556,6 @@ def test_search_executor_handoff_constructs_query_intents_and_search_tasks() -> 
     assert state["query_budget"]["max_search_tasks"] == 5
     assert state["query_budget"]["max_results_per_task"] == 8
     assert task["max_results"] == 8
-
-
-def test_scout_direction_refs_remain_non_evidence() -> None:
-    kernel = _revision_context_current_contract_kernel()
-    evidence_before = kernel.state.evidence_ledger.to_projection().to_dict()
-    citation_before = deepcopy(kernel.state.followup_citation_eligibility_history)
-
-    _reduce_handoff(kernel)
-
-    state = kernel.state.search_executor_handoff_state
-    assert state["scout_direction_hint_refs"]
-    assert state["non_evidence_direction_refs"]
-    assert state["scout_direction_hint_refs"][0]["hint_id"] in CONSUMED_HINT_IDS
-    for ref in state["non_evidence_direction_refs"]:
-        assert ref["role"] == "search_direction_only"
-        assert ref["evidence_admitted"] is False
-        assert ref["citation_eligible"] is False
-        assert ref["source_obligation_satisfied"] is False
-        assert ref["fetch_read_retrieval_executed"] is False
-    assert kernel.state.evidence_ledger.to_projection().to_dict() == evidence_before
-    assert kernel.state.followup_citation_eligibility_history == citation_before
-
-
-def test_search_executor_handoff_rejects_scout_direction_evidence_role() -> None:
-    kernel = _revision_context_current_contract_kernel()
-    input_ = _handoff_input(kernel)
-    action = kernel.authorize_search_executor_handoff()
-    payload = build_search_executor_handoff_observation_payload(
-        handoff_input=input_.to_payload(),
-        authorized_action_id=action.action_id,
-    )
-    payload["search_executor_handoff"]["scout_direction_hint_refs"][0]["role"] = "evidence_support"
-    observation = Observation.from_action(
-        action,
-        observation_type=ObservationType.SEARCH_EXECUTOR_HANDOFF_CREATED,
-        status=RunStageStatus.COMPLETED,
-        payload=payload,
-    )
-
-    with pytest.raises(RunKernelTransitionError, match="search_direction_only"):
-        kernel.reduce(observation)
-
-    assert kernel.state.search_executor_handoff_state == {}
-    assert kernel.state.search_executor_handoff_projection == {}
-    assert kernel.state.search_executor_handoff_history == []
 
 
 def test_search_executor_handoff_does_not_mutate_contracts() -> None:

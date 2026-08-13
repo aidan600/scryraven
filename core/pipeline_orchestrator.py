@@ -210,7 +210,6 @@ from core.query_plan_runtime_adapter import build_query_plan_runtime_adapter
 from core.query_production_runtime import (
     execute_initial_query_strategy_convergence,
     execute_query_plan_admission_action,
-    query_plan_admission_inputs_from_query_production_projection,
 )
 from core.recovered_evidence_visibility import (
     apply_controller_recovered_evidence_visibility,
@@ -284,7 +283,6 @@ from core.run_authority_sufficiency_runtime import (
 from core.run_config import RunConfig, RunDeps, RunOutcome
 from core.run_controller import RunController
 from core.run_kernel import (
-    QUERY_PRODUCTION_STAGE,
     Observation,
     ObservationType,
     RunKernel,
@@ -1105,38 +1103,28 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         provider_diagnostics=provider_diagnostics,
         waste_flags=waste_flags,
     )
-    query_production_action = convergence.query_production_action
-    query_production_result = convergence.query_production_result
-    query_production_projection = run_kernel.state.projections[QUERY_PRODUCTION_STAGE]
-    query_plan_inputs = query_plan_admission_inputs_from_query_production_projection(
-        query_production_projection
-    )
-
-    intent = query_production_result.intent
-    report_type = query_production_result.report_type
-    image_mode = query_production_result.image_mode
-    core_topic = query_production_result.core_topic
-    is_academic = query_production_result.is_academic
-    query_type = query_production_result.query_type
-    primary_entity = query_production_result.primary_entity
-    entities_list = query_production_result.entities_list
-    routing_override_applied = query_production_result.routing_override_applied
-    routing_override_reason = query_production_result.routing_override_reason
-    complexity = query_production_result.complexity
-    max_queries = query_production_result.max_queries
-    results_per_query = query_production_result.results_per_query
-    search_depth = query_production_result.search_depth
-    top_chunks = query_production_result.top_chunks
-    max_iterations = query_production_result.max_iterations
-    include_domains = query_production_result.include_domains
-    anchor_packet_telemetry = query_production_result.anchor_packet_telemetry
-    nutrition_lookup_telemetry = query_production_result.nutrition_lookup_telemetry
-    waste_flags = query_production_result.waste_flags
-    recon_fired = query_production_result.recon_fired
-    recon_confidence = query_production_result.recon_confidence
-    canonical_subject_resolved = query_production_result.canonical_subject_resolved
-    recon_seconds = query_production_result.recon_seconds
-    empty_entity_flag = query_production_result.empty_entity_flag
+    query_plan_inputs_candidate_source = convergence.candidate_source
+    intent = convergence.intent
+    report_type = convergence.report_type
+    image_mode = convergence.image_mode
+    core_topic = convergence.core_topic
+    is_academic = convergence.is_academic
+    query_type = convergence.query_type
+    primary_entity = convergence.primary_entity
+    entities_list = convergence.entities_list
+    routing_override_applied = convergence.routing_override_applied
+    routing_override_reason = convergence.routing_override_reason
+    complexity = convergence.complexity
+    max_queries = convergence.max_queries
+    results_per_query = convergence.results_per_query
+    search_depth = convergence.search_depth
+    top_chunks = convergence.top_chunks
+    max_iterations = convergence.max_iterations
+    include_domains = convergence.include_domains
+    anchor_packet_telemetry = convergence.anchor_packet_telemetry
+    nutrition_lookup_telemetry = convergence.nutrition_lookup_telemetry
+    waste_flags = convergence.waste_flags
+    empty_entity_flag = convergence.empty_entity_flag
 
     query_authority = build_query_plan_runtime_adapter(
         run_id=run_id,
@@ -1152,14 +1140,14 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         "query_plan_admission",
         lambda: run_kernel.authorize_query_plan_admission(
             inputs={
-                "query_production_action_id": query_production_action.action_id,
-                "candidate_source": query_plan_inputs.candidate_source,
-                "candidate_count": len(query_plan_inputs.candidate_queries),
+                "planner_action_id": convergence.planner_action.action_id,
+                "candidate_source": query_plan_inputs_candidate_source,
+                "candidate_count": len(convergence.candidate_queries),
                 "query_plan_id": query_authority.plan.plan_id,
                 "allocation_policy_version": (
-                    query_plan_inputs.initial_query_allocation_policy.policy_version
+                    convergence.initial_query_allocation_policy.policy_version
                 ),
-                "legacy_downstream_max_queries": query_plan_inputs.max_queries,
+                "legacy_downstream_max_queries": convergence.max_queries,
                 "small_global_initial_query_cap_applied": False,
             }
         ),
@@ -1168,20 +1156,19 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         query_admission_action,
         query_authority=query_authority,
         router_query_preparation_contract=router_query_preparation_contract,
-        candidate_queries=query_plan_inputs.candidate_queries,
-        candidate_strategies=query_plan_inputs.candidate_strategies,
-        candidate_source=query_plan_inputs.candidate_source,
-        query_type=query_plan_inputs.query_type,
+        candidate_queries=convergence.candidate_queries,
+        candidate_strategies=convergence.candidate_strategies,
+        candidate_source=query_plan_inputs_candidate_source,
+        query_type=convergence.query_type,
         current_date=current_date,
-        max_queries=query_plan_inputs.max_queries,
-        route_runtime_posture=query_plan_inputs.effective_route_posture,
-        search_work_projection=convergence.search_work_plan,
+        max_queries=convergence.max_queries,
+        route_runtime_posture=convergence.effective_route_posture,
         accepted_contract=(
             run_kernel.state.current_answer_contract
             or run_kernel.state.initial_answer_contract
         ),
         initial_query_allocation_policy=(
-            query_plan_inputs.initial_query_allocation_policy
+            convergence.initial_query_allocation_policy
         ),
     )
     invoke_run_kernel_initial_planning(
@@ -3313,7 +3300,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 ),
                 current_authorized_queries=current_queries,
                 retrieval_records=all_passages,
-                search_work_projection=run_kernel.state.search_work_plan,
+                search_work_projection=None,
             )
         )
         evidence_ledger_projection = provider_job_evidence_reduction[
@@ -4831,7 +4818,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 query_plan_trace=query_authority.to_trace_fragment(),
                 search_judgment_projection=search_judgment_projection,
                 evidence_ledger_projection=evidence_ledger_projection,
-                search_work_projection=run_kernel.state.search_work_plan,
+                search_work_projection=None,
                 query=query,
                 intent=intent,
                 complexity=complexity,

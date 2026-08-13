@@ -95,6 +95,25 @@ class RequirementPosture(str, Enum):
     OPTIONAL = "optional"
 
 
+class SourceObligationKind(str, Enum):
+    OFFICIAL_CURRENT = "official_current"
+    LEGAL_CURRENT_PRIMARY = "legal_current_primary"
+    CANONICAL_DOCUMENTATION = "canonical_documentation"
+    SOURCE_BOUND_NUMERIC = "source_bound_numeric"
+    PEER_REVIEWED = "peer_reviewed"
+    REPUTABLE_SECONDARY = "reputable_secondary"
+    CONFLICT_RESOLUTION = "conflict_resolution"
+    DATE_BOUND_CURRENTNESS = "date_bound_currentness"
+    USER_DOCUMENT = "user_document"
+    NO_SPECIAL_OBLIGATION = "no_special_obligation"
+
+
+class SourceObligationStrictness(str, Enum):
+    REQUIRED = "required"
+    PREFERRED = "preferred"
+    CONTEXTUAL = "contextual"
+
+
 class SupportKind(str, Enum):
     DIRECT = "direct"
     INFERRED = "inferred"
@@ -996,6 +1015,8 @@ __all__ = [
     "SemanticSlotKind",
     "SemanticSlotStatus",
     "SourceObligationCandidateRef",
+    "SourceObligationKind",
+    "SourceObligationStrictness",
     "SupportKind",
     "inference_depth_ceiling_for_mode",
     "validate_answer_component_contract_set",

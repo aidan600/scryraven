@@ -205,7 +205,7 @@ def test_route_executor_consumes_action_and_preserves_prompt_bytes() -> None:
     assert calls[0][1] == {
         "provider": "fast-provider",
         "model": "fast-model",
-        "effort": "low",
+        "effort": "medium",
         "base_url": "http://local",
         "api_key": None,
         "require_json": True,
@@ -254,37 +254,37 @@ def test_query_plan_admission_consumes_action_and_keeps_queryplan_as_order_owner
         query_type="product",
         current_date="June 8, 2026",
         max_queries=2,
-        search_work_projection={
-            "trace_key": "search_work_plan",
-            "passive": False,
-            "runtime_consumed": True,
-            "components": [
+            accepted_contract={
+                "accepted_contract_version": "1",
+                "accepted_contract_digest": "contract-digest:run-query",
+                "accepted_answer_component_refs": [
                 {
                     "component_id": component_id,
-                    "source_obligations": [],
-                    "metadata": {
-                        "accepted_component_ref": {
-                            "component_id": component_id,
-                            "component_revision": "1",
-                            "component_digest": f"digest:{component_id}",
-                            "requirement_posture": "required",
-                        },
-                        "search_requirement_refs": [],
-                    },
+                    "component_revision": "1",
+                    "component_digest": f"digest:{component_id}",
+                    "requirement_posture": "required",
+                    "semantic_slot_ids": [f"slot:{component_id}"],
+                    "source_obligation_candidate_ids": [],
                 }
                 for component_id in (
                     "component-deployment",
                     "component-support",
                 )
             ],
-            "provider_jobs": [],
-            "metadata": {
-                "search_work_plan_id": "search-work:run-query",
-                "accepted_contract_ref": {
-                    "contract_version": "1",
-                    "contract_digest": "contract-digest:run-query",
-                },
-            },
+            "accepted_semantic_slot_refs": [
+                {
+                    "slot_id": f"slot:{component_id}",
+                    "slot_kind": "entity",
+                    "status": "explicit",
+                    "materiality": "material",
+                    "unresolved_material": False,
+                    "user_confirmation_required": False,
+                }
+                for component_id in (
+                    "component-deployment",
+                    "component-support",
+                )
+            ],
         },
         route_runtime_posture={
             "intent": "general",
@@ -613,17 +613,15 @@ def test_pipeline_orchestrator_consumes_run_kernel_for_migrated_stages() -> None
         if isinstance(node, ast.ImportFrom) and node.module == "core.run_kernel"
         for alias in node.names
     }
-    assert {"QUERY_PRODUCTION_STAGE", "RunKernel"} <= run_kernel_imports
+    assert {"RunKernel"} <= run_kernel_imports
     assert "run_kernel = RunKernel.start(" in source
     assert "run_kernel.authorize_route_request(" in source
     assert "execute_route_request_action(" in source
     assert "run_kernel.reduce(route_result.observation)" in source
     query_runtime_source = QUERY_RUNTIME.read_text()
     assert "execute_initial_query_strategy_convergence(" in source
-    assert "run_kernel.authorize_query_production(" in query_runtime_source
-    assert "execute_query_production_action(" in query_runtime_source
-    assert "run_kernel.reduce(query_production_result.observation)" in query_runtime_source
-    assert "query_plan_admission_inputs_from_query_production_projection(" in source
+    assert "execute_query_production_action(" not in query_runtime_source
+    assert "query_plan_admission_inputs_from_query_production_projection(" not in source
     assert "run_kernel.authorize_query_plan_admission(" in source
     assert "execute_query_plan_admission_action(" in source
     assert "run_kernel.reduce(query_admission_result.observation)" in source
@@ -660,8 +658,8 @@ def test_static_guards_for_authority_boundaries_and_closed_surfaces() -> None:
     assert "validate_authorized_action(" in routing_source
     assert "ActionType.ROUTE_REQUEST" in routing_source
     assert "validate_authorized_action(" in query_source
-    assert "ActionType.QUERY_PRODUCTION" in query_source
-    assert "ObservationType.QUERY_CANDIDATES_PRODUCED" in query_source
+    assert "ActionType.QUERY_PRODUCTION" not in query_source
+    assert "ObservationType.QUERY_CANDIDATES_PRODUCED" not in query_source
     assert "ActionType.QUERY_PLAN_ADMISSION" in query_source
     assert '"query_order_owner": "QueryPlan"' in query_source
     assert "scheduled_action: RetrievalScheduledAction" in dispatch_source

@@ -3849,7 +3849,6 @@ def test_visible_output_contract_and_adapter_contract_constants_stay_in_lockstep
             "requested_role",
             "source_obligation_candidate_ids",
             "distinct_need_justification",
-            "recon_requirement",
         ),
         "recon_candidate_query": (
             "dimension_id",

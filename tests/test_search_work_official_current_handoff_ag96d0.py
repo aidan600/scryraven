@@ -5,32 +5,10 @@ import json
 from pathlib import Path
 from typing import Any
 
+from core.query_shape_contract_resolution import SearchMode
 from core.search_work_official_current_handoff import (
     build_search_work_official_current_handoff,
     source_class_recovery_recommendation_from_handoff,
-)
-from core.search_work_plan import (
-    EffectiveContractDescriptor,
-    EffectiveContractKind,
-    FollowUpAuthority,
-    FollowUpPermission,
-    ProviderJob,
-    ProviderJobKind,
-    QueryShapeDescriptor,
-    QueryShapeKind,
-    RequestedModeDescriptor,
-    SearchMode,
-    SearchWorkComponent,
-    SearchWorkPlan,
-    SourceObligation,
-    SourceObligationKind,
-    SourceObligationStrictness,
-    StopCondition,
-    StopConditionKind,
-    StopOutcome,
-)
-from core.search_work_plan_query_plan_shadow import (
-    build_query_plan_work_shadow_projection,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -39,104 +17,70 @@ PIPELINE = ROOT / "core" / "pipeline_orchestrator.py"
 
 
 def _query_plan_shadow(mode: SearchMode = SearchMode.BALANCED) -> dict[str, Any]:
-    plan = SearchWorkPlan(
-        requested_mode=RequestedModeDescriptor(mode=mode, source="unit_test"),
-        effective_contract=EffectiveContractDescriptor(
-            contract_kind=EffectiveContractKind.EXPLANATORY,
-            depth_allowance="moderate",
-            follow_up_posture=FollowUpPermission.CONDITIONAL,
-        ),
-        query_shape=QueryShapeDescriptor(
-            kinds=(
-                QueryShapeKind.OFFICIAL_CURRENT_LOOKUP,
-                QueryShapeKind.LEGAL_CURRENT_PRIMARY,
-                QueryShapeKind.CANONICAL_DOCUMENTATION,
-                QueryShapeKind.SOURCE_BOUND_NUMERIC,
-            ),
-            component_count_hint=2,
-        ),
-        components=(
-            SearchWorkComponent(
-                component_id="fees",
-                user_facing_subquestion="Find current official fee facts.",
-                source_obligations=(
-                    SourceObligation(
-                        obligation_id="official-current",
-                        kind=SourceObligationKind.OFFICIAL_CURRENT,
-                        strictness=SourceObligationStrictness.REQUIRED,
-                        currentness_requirement="current at answer time",
-                        satisfaction_rule="official custody required",
-                    ),
-                    SourceObligation(
-                        obligation_id="source-bound-numeric",
-                        kind=SourceObligationKind.SOURCE_BOUND_NUMERIC,
-                        strictness=SourceObligationStrictness.REQUIRED,
-                        satisfaction_rule="numeric value must be source-bound",
-                    ),
-                ),
-                required_provider_jobs=(
-                    ProviderJobKind.OFFICIAL_CANDIDATE_ACQUISITION,
-                    ProviderJobKind.FETCH_READ_EXTRACT,
-                ),
-                stop_conditions=(
-                    StopCondition(
-                        condition=StopConditionKind.SOURCE_OBLIGATION_UNSATISFIED,
-                        outcome=StopOutcome.QUALIFY,
-                        component_id="fees",
-                    ),
-                ),
-            ),
-            SearchWorkComponent(
-                component_id="authority",
-                user_facing_subquestion="Identify governing authority.",
-                source_obligations=(
-                    SourceObligation(
-                        obligation_id="legal-primary",
-                        kind=SourceObligationKind.LEGAL_CURRENT_PRIMARY,
-                        strictness=SourceObligationStrictness.REQUIRED,
-                    ),
-                    SourceObligation(
-                        obligation_id="canonical-docs",
-                        kind=SourceObligationKind.CANONICAL_DOCUMENTATION,
-                        strictness=SourceObligationStrictness.REQUIRED,
-                    ),
-                ),
-                required_provider_jobs=(ProviderJobKind.CANONICAL_EXTRACTION,),
-            ),
-        ),
-        provider_jobs=(
-            ProviderJob(
-                provider_job_id="official-job",
-                job_kind=ProviderJobKind.OFFICIAL_CANDIDATE_ACQUISITION,
-                component_ids=("fees",),
-                source_obligation_ids=("official-current",),
-            ),
-            ProviderJob(
-                provider_job_id="numeric-job",
-                job_kind=ProviderJobKind.FETCH_READ_EXTRACT,
-                component_ids=("fees",),
-                source_obligation_ids=("source-bound-numeric",),
-            ),
-            ProviderJob(
-                provider_job_id="canonical-job",
-                job_kind=ProviderJobKind.CANONICAL_EXTRACTION,
-                component_ids=("authority",),
-                source_obligation_ids=("legal-primary", "canonical-docs"),
-            ),
-        ),
-        follow_up_authority=FollowUpAuthority(
-            permission=FollowUpPermission.CONDITIONAL,
-            authorizers=("RunAuthority", "SearchJudgment", "SufficiencyJudgment"),
-        ),
-        stop_conditions=(
-            StopCondition(
-                condition=StopConditionKind.SOURCE_OBLIGATION_UNSATISFIED,
-                outcome=StopOutcome.QUALIFY,
-            ),
-        ),
-        metadata={"construction_id": f"construction:{mode.value}"},
-    ).require_valid()
-    return build_query_plan_work_shadow_projection(plan.to_dict())
+    return {
+        "trace_key": "query_plan_work_shadow_projection",
+        "owner": "QueryPlan",
+        "source_construction_id": f"construction:{mode.value}",
+        "acquisition_needs": {
+            "official_current": [
+                {
+                    "component_id": "fees",
+                    "obligation_id": "official-current",
+                    "strictness": "required",
+                }
+            ],
+            "legal_current_primary": [
+                {
+                    "component_id": "authority",
+                    "obligation_id": "legal-primary",
+                    "strictness": "required",
+                }
+            ],
+            "canonical_documentation": [
+                {
+                    "component_id": "authority",
+                    "obligation_id": "canonical-docs",
+                    "strictness": "required",
+                }
+            ],
+            "source_bound_numeric": [
+                {
+                    "component_id": "fees",
+                    "obligation_id": "source-bound-numeric",
+                    "strictness": "required",
+                }
+            ],
+        },
+        "provider_jobs_by_component": {
+            "fees": [
+                {
+                    "work_id": "official-job",
+                    "work_kind": "official_candidate_acquisition",
+                    "source_obligation_ids": ["official-current"],
+                },
+                {
+                    "work_id": "numeric-job",
+                    "work_kind": "fetch_read_extract",
+                    "source_obligation_ids": ["source-bound-numeric"],
+                },
+            ],
+            "authority": [
+                {
+                    "work_id": "canonical-job",
+                    "work_kind": "canonical_extraction",
+                    "source_obligation_ids": ["legal-primary", "canonical-docs"],
+                }
+            ],
+        },
+        "stop_and_follow_up_posture": {
+            "stop_conditions": [
+                {
+                    "condition": "source_obligation_unsatisfied",
+                    "outcome": "qualify",
+                }
+            ]
+        },
+    }
 
 
 def _handoff(mode: SearchMode = SearchMode.BALANCED) -> dict[str, Any]:

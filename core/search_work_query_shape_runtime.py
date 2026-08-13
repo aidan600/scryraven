@@ -18,22 +18,22 @@ from core.query_shape_contract_resolution import (
     AssessmentPosture,
     ComponentCandidate,
     ContractResolutionRecord,
+    EffectiveContractKind,
     FollowUpDepthPosture,
+    ModeMismatchPosture,
     OutputPosture,
     ProviderJobCandidate,
-    QueryShapeAssessment,
-    SourceObligationCandidate,
-    StopEscalateRefusePosture,
-)
-from core.search_work_plan import (
-    EffectiveContractKind,
-    ModeMismatchPosture,
     ProviderJobKind,
+    QueryShapeAssessment,
     QueryShapeKind,
     SearchMode,
+    SourceObligationCandidate,
+    StopConditionKind,
+    StopEscalateRefusePosture,
+)
+from core.semantic_contract_foundation import (
     SourceObligationKind,
     SourceObligationStrictness,
-    StopConditionKind,
 )
 
 QUERY_SHAPE_RUNTIME_HELPER = "ag96e1_deterministic_query_shape_runtime"

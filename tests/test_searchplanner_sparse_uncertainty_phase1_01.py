@@ -150,6 +150,7 @@ def _all_recon_requirements(proposal: dict[str, Any]) -> list[dict[str, Any]]:
         strategy["recon_requirement"]
         for requirement in proposal["component_search_requirements"]
         for strategy in requirement["metadata"]["query_strategy_candidates"]
+        if "recon_requirement" in strategy
     ]
 
 
@@ -259,14 +260,9 @@ def test_valid_sparse_corpus_compiles_deterministically(case: dict[str, Any]) ->
     assert validate_and_sanitize_model_output(first) == first
     assert 1 <= len(first["answer_components"]) <= 5
     assert all(
-        requirement
-        == {
-            "posture": "not_needed",
-            "unresolved_dimension_ids": [],
-            "candidate_queries": [],
-            "required_for_truthful_targeting": False,
-        }
-        for requirement in _all_recon_requirements(first)
+        "recon_requirement" not in strategy
+        for requirement in first["component_search_requirements"]
+        for strategy in requirement["metadata"]["query_strategy_candidates"]
     )
     serialized = json.dumps(first, sort_keys=True)
     assert '"provider"' not in serialized
@@ -403,7 +399,7 @@ def test_true_user_intent_ambiguity_preserves_confirmation_requirement() -> None
     assert compiled["material_ambiguity_posture"] == "user_confirmation_required"
     assert slot["candidate_values"] == ["planet", "element", "automobile brand"]
     assert slot["user_confirmation_required"] is True
-    assert _all_recon_requirements(compiled)[0]["posture"] == "not_needed"
+    assert _all_recon_requirements(compiled) == []
 
 
 def test_case_a_stable_component_dispatches_standard_discovery(

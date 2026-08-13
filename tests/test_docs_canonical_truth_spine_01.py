@@ -467,7 +467,7 @@ def test_structured_route_qualification_is_current_and_narrow() -> None:
 
     assert "No route-qualification repair was performed." not in current
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
-    assert "Active Decision Gate: SearchOS Carrier Consolidation + Product Proof" in roadmap
+    assert "Active Decision Gate: Representative Bounded Real-Model/Product Validation" in roadmap
 
 
 def test_current_state_has_all_installed_capability_markers() -> None:
@@ -533,7 +533,7 @@ def test_mode_policy_recovery_custody_is_installed_and_narrow() -> None:
     assert "Completed Repair: Mode-Policy Recovery Authority Containment" in roadmap
     assert "Completed Repair: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01" in roadmap
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
-    assert "Active Decision Gate: SearchOS Carrier Consolidation + Product Proof" in roadmap
+    assert "Active Decision Gate: Representative Bounded Real-Model/Product Validation" in roadmap
     assert "No live recovery" in roadmap
 
 
@@ -650,7 +650,7 @@ def test_acquisition_runtime_convergence_truth_is_consistent_across_spine() -> N
 
     assert roadmap.count("## Active Next:") == 0
     assert roadmap.count("## Blocked Next:") == 0
-    assert "## Active Decision Gate: SearchOS Carrier Consolidation + Product Proof" in roadmap
+    assert "## Active Decision Gate: Representative Bounded Real-Model/Product Validation" in roadmap
     for stale in (
         "## Active Next: KNOWN-URL-READ-FOUNDATION-01",
         "### TAVILY-EXTRACT-AND-MAP-ADAPTERS-01",
@@ -741,7 +741,7 @@ def test_discovery_retirement_and_candidate_handoff_truth_is_consistent() -> Non
         "## completed build: searchos-one-hop-navigation-product-activation-01"
     )
     active_index = roadmap_folded.index(
-        "## active decision gate: searchos carrier consolidation + product proof"
+        "## active decision gate: representative bounded real-model/product validation"
     )
     assert (
         handoff_index
@@ -775,8 +775,9 @@ def test_searchos_slice_a_is_installed_and_navigation_remains_active() -> None:
         "The model authors only the discriminated `direct_simple | components` semantic proposal",
         "DeterministicSearchPlannerAdapter` is an explicit validation-only fixture",
         "The typed `search_planner_adapter` `RunDeps` seam is the ordinary initial-model injection point",
-        "Retained Scout and PlannerRevision dependency fields and modules are legacy/evaluation compatibility only",
-        "ordinary `run_pipeline()` no longer reads them or accepts them in initial convergence",
+        "Retained Scout and PlannerRevision RunDeps fields are unused ordinary compatibility only",
+        "the former Scout and PlannerRevision runtime modules are deleted",
+        "Ordinary `run_pipeline()` no longer reads them or accepts them in initial convergence",
         "Invalid JSON, schema, component/query structure, selected-model configuration, or model-call failure stops before proposal acceptance",
         "Future large-document support must enter this model boundary through bounded safe supplied-context references or summaries",
         "A transient, non-retained call wrapper supplies the current run's configured local base URL, OpenRouter key, `CostAccumulator`, and `search_planner` cost phase",
@@ -826,7 +827,7 @@ def test_searchos_slice_a_is_installed_and_navigation_remains_active() -> None:
     assert "Completed Build: SEARCHOS-READ-SOURCE-AND-CUSTODY-01" in roadmap
     assert "Completed Build: SEARCHOS-FIRST-WAVE-AND-ITERATIVE-JUDGMENT-CUTOVER-01" in roadmap
     assert "Completed Build: SEARCHOS-ONE-HOP-NAVIGATION-PRODUCT-ACTIVATION-01" in roadmap
-    assert "## Active Decision Gate: SearchOS Carrier Consolidation + Product Proof" in roadmap
+    assert "## Active Decision Gate: Representative Bounded Real-Model/Product Validation" in roadmap
     assert "Phase 1 - Sparse uncertainty-aware planning" in roadmap
     assert "Phase 2 - Unified iterative acquisition" in roadmap
     assert "Phase 3 - Carrier consolidation + product proof" in roadmap
@@ -839,7 +840,7 @@ def test_searchos_slice_a_is_installed_and_navigation_remains_active() -> None:
     assert "no singular compatibility field remains an authority" in current
     assert "One physical query may serve multiple semantic obligations" in operating_model
     assert "focused multi-slot semantic-cardinality repair" in roadmap
-    assert "SearchWorkPlan and QueryProduction remain deferred Phase-3 carriers" in roadmap
+    assert "SearchWorkPlan` and `QueryProduction` are retired as ordinary semantic/query compatibility carriers" in roadmap
 
 
 def test_provider_offerings_census_is_current_complete_and_records_installed_routing() -> None:
@@ -924,7 +925,7 @@ def test_provider_offerings_census_is_current_complete_and_records_installed_rou
     roadmap = _read(ROADMAP)
     assert roadmap.count("## Active Next:") == 0
     assert roadmap.count("## Blocked Next:") == 0
-    assert "## Active Decision Gate: SearchOS Carrier Consolidation + Product Proof" in roadmap
+    assert "## Active Decision Gate: Representative Bounded Real-Model/Product Validation" in roadmap
     assert "## Completed Repair: PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01" in roadmap
     assert "Linkup `standard/searchResults` first" in roadmap
 
@@ -954,7 +955,7 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
     discovery_retirement = roadmap.index("## Completed Build: INITIAL-DISCOVERY-SELECTIVE-FETCH-RETIREMENT-01")
     candidate_handoff = roadmap.index("## Completed Build: DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01")
     convergence = roadmap.index(
-        "## Active Decision Gate: SearchOS Carrier Consolidation + Product Proof"
+        "## Active Decision Gate: Representative Bounded Real-Model/Product Validation"
     )
     assert (
         s0
@@ -1022,7 +1023,7 @@ def test_searchos_phase3_gate_and_searchplanner_record_are_exclusive() -> None:
         re.MULTILINE,
     )
     assert active_gates == [
-        "## Active Decision Gate: SearchOS Carrier Consolidation + Product Proof"
+        "## Active Decision Gate: Representative Bounded Real-Model/Product Validation"
     ]
     assert "Runtime-audit-through:" not in roadmap
     assert "Verified-against-runtime:" not in roadmap
@@ -1037,15 +1038,16 @@ def test_searchos_phase3_gate_and_searchplanner_record_are_exclusive() -> None:
 
     for phrase in (
         "Option C modified into a unified iterative loop",
-        "Phases 1 and 2 are installed at runtime/test checkpoint",
-        "Phase 3 remains the selected next target",
-        "Ordinary initial and iterative acquisition no longer executes",
-        "`SearchWorkPlan` and `QueryProduction` remain temporary ordinary compatibility carriers pending Phase 3",
+        "Phases 1, 2, and 3 are installed",
+        "Ordinary planning completion is",
+        "SearchWorkPlan` and `QueryProduction` are retired as ordinary semantic/query compatibility carriers",
         "one RunKernel component worklist",
         "QueryPlan exact query + provider-neutral job class + component/slot lineage",
         "InterpretationBinding, clarification, semantic handoff, or honest blocker",
         "direct_simple | components",
         "Installed Phase 2 - Unified iterative acquisition",
+        "Installed Phase 3 - Carrier consolidation + product proof",
+        "representative bounded real-model/product validation",
         "supported-product evidence",
         "existing front- or back-half localization",
         "smallest owning repair",
@@ -1120,10 +1122,10 @@ def test_semantic_scout_and_provider_synthesis_retirement_is_current_and_narrow(
     assert roadmap.count("## Active Next:") == 0
     assert roadmap.count("## Blocked Next:") == 0
     assert "## Completed Repair: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01" in roadmap
-    assert "## Active Decision Gate: SearchOS Carrier Consolidation + Product Proof" in roadmap
+    assert "## Active Decision Gate: Representative Bounded Real-Model/Product Validation" in roadmap
     assert "## Active Next: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01" not in roadmap
     assert roadmap.index("## Completed Repair: PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01") < roadmap.index(
-        "## Active Decision Gate: SearchOS Carrier Consolidation + Product Proof"
+        "## Active Decision Gate: Representative Bounded Real-Model/Product Validation"
     )
     for noninstalled in (
         "provider-failure retry",
@@ -1158,7 +1160,7 @@ def test_legacy_economist_ordinary_execution_retirement_is_current_and_narrow() 
     assert "Completed Repair: Mode-Policy Recovery Authority Containment" in roadmap
     assert "Completed Repair: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01" in roadmap
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
-    assert "Active Decision Gate: SearchOS Carrier Consolidation + Product Proof" in roadmap
+    assert "Active Decision Gate: Representative Bounded Real-Model/Product Validation" in roadmap
     assert "answer-producing paths" in roadmap
     assert "remaining orchestrator authority islands" in roadmap
 

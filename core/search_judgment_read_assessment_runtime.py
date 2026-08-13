@@ -488,9 +488,11 @@ def derive_selected_candidate_material_need_bindings(
         and recovery_admission.get("recovery_classification")
         == "searched_premise"
     )
-    search_work_plan = _mapping(run_kernel.state.search_work_plan)
-    if not search_work_plan:
-        raise SearchJudgmentReadAssessmentError("search_work_plan_missing")
+    search_work_plan_ref = {
+        "authority_kind": "accepted_answer_contract",
+        "contract_version": str(active_contract_ref.get("contract_version") or ""),
+        "contract_digest": str(active_contract_ref.get("contract_digest") or ""),
+    }
     if searched_premise_recovery:
         recovery_contract_ref = _mapping(
             recovery_admission.get("current_contract_ref")
@@ -531,19 +533,6 @@ def derive_selected_candidate_material_need_bindings(
             ): recovery_obligation_ref
         }
     else:
-        accepted_ref = _mapping(
-            _mapping(search_work_plan.get("metadata")).get(
-                "accepted_contract_ref"
-            )
-        )
-        if not _search_work_plan_contract_ref_matches(
-            accepted_ref,
-            active_contract_ref=active_contract_ref,
-        ):
-            raise SearchJudgmentReadAssessmentError(
-                "search_work_plan_contract_stale"
-            )
-        search_work_plan_ref = _search_work_plan_ref(search_work_plan)
         try:
             authority_snapshot = run_kernel.acquisition_authority_snapshot()
         except RunKernelTransitionError as exc:
@@ -557,10 +546,58 @@ def derive_selected_candidate_material_need_bindings(
         for item in _sequence(active_contract.get("accepted_answer_component_refs"))
         if _mapping(item).get("component_id")
     }
+    planner_requirements = [
+        _mapping(item)
+        for item in _sequence(
+            _mapping(run_kernel.state.search_planner_proposal_state).get(
+                "component_search_requirements"
+            )
+        )
+    ]
     work_components = {
-        str(_mapping(item).get("component_id")): _mapping(item)
-        for item in _sequence(search_work_plan.get("components"))
-        if _mapping(item).get("component_id")
+        component_id: {
+            "component_id": component_id,
+            "source_obligations": [
+                {
+                    "obligation_id": str(obligation_id),
+                    "kind": str(
+                        _mapping(spec).get("kind")
+                        or _mapping(spec).get("obligation_kind")
+                        or "no_special_obligation"
+                    ),
+                    "strictness": str(_mapping(spec).get("strictness") or "required"),
+                }
+                for obligation_id in _sequence(
+                    contract_component.get("source_obligation_candidate_ids")
+                )
+                for spec in (
+                    next(
+                        (
+                            item
+                            for item in _sequence(
+                                active_contract.get("accepted_source_obligation_refs")
+                            )
+                            if str(
+                                _mapping(item).get("source_obligation_id")
+                                or _mapping(item).get("candidate_id")
+                                or ""
+                            )
+                            == str(obligation_id)
+                        ),
+                        {},
+                    ),
+                )
+            ],
+            "metadata": {
+                "accepted_component_ref": _component_ref(contract_component),
+                "search_requirement_refs": [
+                    item
+                    for item in planner_requirements
+                    if str(item.get("component_id") or "") == component_id
+                ],
+            },
+        }
+        for component_id, contract_component in contract_components.items()
     }
     if searched_premise_recovery:
         recovery_component_ref = _mapping(
@@ -986,9 +1023,15 @@ def validate_search_judgment_read_binding_reduction(
     )
     if _mapping(expected.get("answer_contract_ref")) != active_ref:
         raise SearchJudgmentReadAssessmentError("binding_contract_became_stale")
-    work_ref = _search_work_plan_ref(_mapping(search_work_plan))
-    if _mapping(expected.get("search_work_plan_ref")) != work_ref:
-        raise SearchJudgmentReadAssessmentError("binding_work_plan_became_stale")
+    expected_work_ref = _mapping(expected.get("search_work_plan_ref"))
+    if expected_work_ref and expected_work_ref.get("authority_kind") == "accepted_answer_contract":
+        if (
+            str(expected_work_ref.get("contract_digest") or "")
+            != str(active_ref.get("contract_digest") or "")
+            or str(expected_work_ref.get("contract_version") or "")
+            != str(active_ref.get("contract_version") or "")
+        ):
+            raise SearchJudgmentReadAssessmentError("binding_work_plan_became_stale")
     packet_ref = _mapping(
         search_executor_handoff_projection.get("search_result_candidate_packet_ref")
     )

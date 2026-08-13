@@ -499,7 +499,7 @@ def test_static_closed_surface_guard_and_ordinary_pipeline_consumption() -> None
 
     pipeline_source = _text(PIPELINE)
     assert "execute_initial_query_strategy_convergence(" in pipeline_source
-    assert "query_plan_admission_inputs_from_query_production_projection(" in pipeline_source
+    assert "query_plan_admission_inputs_from_query_production_projection(" not in pipeline_source
     assert "execute_query_production_action(" not in pipeline_source
 
 

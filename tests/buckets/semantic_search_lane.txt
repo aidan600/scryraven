@@ -7,10 +7,11 @@ tests/test_ag_gap_01_offline_product_path.py
 # component gaps remain search-judgment facts with version-bound identity.
 tests/test_runauthority_iterative_search_judgment_ag92b.py
 
-# Owner: QueryPlan/SearchWorkPlan semantic gap consumer. Reason: SearchJudgment
+# Owner: QueryPlan existing-gap consumer. Reason: SearchJudgment
 # component-gap authority can tag existing queries without provider/fetch/search
 # execution behavior changes.
-tests/test_search_work_query_plan_consumption_ag96e2.py
+tests/test_searchos_carrier_consolidation_topology_01.py
+tests/test_searchos_carrier_consolidation_product_proof_01.py
 
 # Owner: component-gap recovery compatibility. Reason: direct legacy recovery
 # contracts remain isolated and baseline-equivalent, while retired ordinary

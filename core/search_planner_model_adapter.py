@@ -2621,6 +2621,8 @@ def _validate_query_strategy_metadata(
             failure_code=(_FailureCode.INVALID_QUERY_STRATEGY_METADATA),
             predicate_ids=_QUERY_STRATEGY_DISTINCT_NEED_JUSTIFICATION_PREDICATES,
         )
+        if candidate.get("recon_requirement") is None:
+            continue
         recon = _required_mapping(
             candidate.get("recon_requirement"),
             "recon requirement",
