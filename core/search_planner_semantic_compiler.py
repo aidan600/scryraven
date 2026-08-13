@@ -474,7 +474,10 @@ def build_search_planner_model_visible_schema() -> dict[str, Any]:
         "posture": list(exhaustive["posture"]),
         "support": list(exhaustive["support"]),
         "limits": {
-            "components": exhaustive["limits"]["components"],
+            "components": [
+                exhaustive["components"]["min_items"],
+                exhaustive["components"]["max_items"],
+            ],
             "uncertainties": exhaustive["limits"]["uncertainties"],
             "need_chars": exhaustive["limits"]["need_chars"],
         },

@@ -747,7 +747,7 @@ def build_search_planner_model_prompt(planner_input: Mapping[str, Any]) -> str:
         "SEARCHPLANNER SEMANTIC TASK",
         "Choose one disposition: direct_simple or components.",
         "direct_simple: one required direct need; never fallback.",
-        "components: local keys, not runtime identity; omit empty optionals/defaults.",
+        "components: 1-5 objects; local keys, not runtime identity; omit empty optionals/defaults.",
         "Direct: no depends_on. inferred|direct_or_inferred: needs depends_on. inferred: no source/freshness.",
         "uncertainty: kind+status. unresolved|ambiguous: no selected. selected in candidates. confirm=true only if material unresolved|ambiguous.",
         "Never author queries/recon/Scout/PlannerRevision, IDs/digests/lineage, routing, evidence/citations, accepted state, or answers.",

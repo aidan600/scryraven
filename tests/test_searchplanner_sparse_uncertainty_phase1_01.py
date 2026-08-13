@@ -280,6 +280,8 @@ def test_prompt_uses_compact_sparse_contract_and_phase1_budget_gate() -> None:
         "caveat",
     ]
     assert schema["components"] == ["disposition", "components"]
+    assert schema["limits"]["components"] == [1, 5]
+    assert "1-5 objects" in prompt
     assert schema["component"]["required"] == ["need"]
     assert set(packet["planner_input"]) == {
         "requested_mode",
@@ -319,7 +321,11 @@ def test_compact_model_visible_schema_is_derived_from_validator_constants() -> N
     assert visible["component"]["optional"] == exhaustive["component"]["optional"]
     assert visible["source"]["kind"] == exhaustive["source"]["kind"]["enum"]
     assert visible["uncertainty"]["kind"] == exhaustive["uncertainty"]["kind"]["enum"]
-    assert visible["limits"]["components"] == exhaustive["limits"]["components"]
+    assert visible["limits"]["components"] == [
+        exhaustive["components"]["min_items"],
+        exhaustive["components"]["max_items"],
+    ]
+    assert visible["limits"]["components"][0] == 1
     assert visible["limits"]["need_chars"] == exhaustive["limits"]["need_chars"]
     assert exhaustive["branches"]["direct_simple"]["forbidden_fields"] == ["components"]
     assert exhaustive["branches"]["components"]["forbidden_fields"] == [
