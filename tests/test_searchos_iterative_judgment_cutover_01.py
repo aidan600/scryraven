@@ -215,9 +215,6 @@ def _post_read_judgment_request() -> tuple[
         request=initial_request,
         model_output={
             "schema_version": "searchos_judgment_decision_v1",
-            "judgment_request_id": initial_request["judgment_request_id"],
-            "judgment_request_digest": initial_request["judgment_request_digest"],
-            "slot_id": "slot-1",
             "action": "REQUEST_READ_PAGE",
             "candidate_use_option_ref": candidate_use_option_ref(options[0]),
             "reason": "read the first exact admitted candidate",
@@ -360,9 +357,6 @@ def _new_judgment_action_output(
 ) -> dict[str, object]:
     output: dict[str, object] = {
         "schema_version": "searchos_judgment_decision_v1",
-        "judgment_request_id": request["judgment_request_id"],
-        "judgment_request_digest": request["judgment_request_digest"],
-        "slot_id": "slot-1",
         "action": action,
         "reason": "bounded offline uncertainty decision",
     }
@@ -569,11 +563,6 @@ def test_candidate_option_identity_is_stable_while_lineage_snapshot_grows() -> N
             request=current_request,
             model_output={
                 "schema_version": "searchos_judgment_decision_v1",
-                "judgment_request_id": current_request["judgment_request_id"],
-                "judgment_request_digest": current_request[
-                    "judgment_request_digest"
-                ],
-                "slot_id": "slot-1",
                 "action": "REQUEST_READ_PAGE",
                 "candidate_use_option_ref": candidate_use_option_ref(initial),
                 "reason": "obsolete lineage snapshot",
@@ -986,11 +975,6 @@ def test_iteration_candidate_admission_rejects_altered_slot_lineage(
         request=request,
         model_output={
             "schema_version": "searchos_judgment_decision_v1",
-            "judgment_request_id": request["judgment_request_id"],
-            "judgment_request_digest": request[
-                "judgment_request_digest"
-            ],
-            "slot_id": "slot-1",
             "action": "PROPOSE_FOLLOWUP_QUERY",
             "followup_query": "Alpha stable exact follow-up",
             "discovery_job_class": "standard_discovery",
@@ -1125,9 +1109,9 @@ def test_uncertainty_actions_reject_unknown_authority_fields(
     ("mutation", "message"),
     [
         ("missing_required", "requires a bounded reason"),
-        ("wrong_request", "nomination is stale"),
-        ("stale_request", "nomination is stale"),
-        ("wrong_slot", "slot is stale"),
+        ("wrong_request", "must not author request identity"),
+        ("stale_request", "must not author request identity"),
+        ("wrong_slot", "must not author request identity"),
     ],
 )
 def test_uncertainty_actions_reject_missing_wrong_or_stale_refs(
@@ -1258,11 +1242,6 @@ def test_semantic_handoff_is_not_legal_before_required_binding() -> None:
             request=request,
             model_output={
                 "schema_version": "searchos_judgment_decision_v1",
-                "judgment_request_id": request["judgment_request_id"],
-                "judgment_request_digest": request[
-                    "judgment_request_digest"
-                ],
-                "slot_id": "slot-1",
                 "action": (
                     "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION"
                 ),
@@ -1285,9 +1264,6 @@ def test_strict_validator_accepts_each_exact_post_read_action(action: str) -> No
     request, custody, remaining_option = _post_read_judgment_request()
     output = {
         "schema_version": "searchos_judgment_decision_v1",
-        "judgment_request_id": request["judgment_request_id"],
-        "judgment_request_digest": request["judgment_request_digest"],
-        "slot_id": "slot-1",
         "action": action,
         "reason": "exact post-read action",
     }
@@ -1363,9 +1339,6 @@ def test_strict_validator_rejects_invalid_post_read_assessments(
         assessment["unsupported_field"] = "must fail closed"
     output = {
         "schema_version": "searchos_judgment_decision_v1",
-        "judgment_request_id": request["judgment_request_id"],
-        "judgment_request_digest": request["judgment_request_digest"],
-        "slot_id": "slot-1",
         "action": "HANDOFF_UNRESOLVED",
         "reason": "current READ material does not meet the active need",
     }
@@ -1389,9 +1362,6 @@ def test_strict_validator_rejects_assessment_on_exact_semantic_handoff() -> None
             request=request,
             model_output={
                 "schema_version": "searchos_judgment_decision_v1",
-                "judgment_request_id": request["judgment_request_id"],
-                "judgment_request_digest": request["judgment_request_digest"],
-                "slot_id": "slot-1",
                 "action": "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION",
                 "read_custody_refs": [custody],
                 "reason": "exact custody is ready for semantic evaluation",
@@ -1437,9 +1407,6 @@ def test_read_custody_is_the_only_semantic_entry_and_required_block_is_safe() ->
             request=read_request,
             model_output={
                 "schema_version": "searchos_judgment_decision_v1",
-                "judgment_request_id": read_request["judgment_request_id"],
-                "judgment_request_digest": read_request["judgment_request_digest"],
-                "slot_id": "slot-1",
                 "action": "REQUEST_READ_PAGE",
                 "candidate_use_option_ref": altered_option_ref,
                 "reason": "attempt to alter an admitted option ref",
@@ -1449,9 +1416,6 @@ def test_read_custody_is_the_only_semantic_entry_and_required_block_is_safe() ->
         request=read_request,
         model_output={
             "schema_version": "searchos_judgment_decision_v1",
-            "judgment_request_id": read_request["judgment_request_id"],
-            "judgment_request_digest": read_request["judgment_request_digest"],
-            "slot_id": "slot-1",
             "action": "REQUEST_READ_PAGE",
             "candidate_use_option_ref": candidate_use_option_ref(options[0]),
             "reason": "read the exact admitted candidate",
@@ -1497,9 +1461,6 @@ def test_read_custody_is_the_only_semantic_entry_and_required_block_is_safe() ->
             request=request,
             model_output={
                 "schema_version": "searchos_judgment_decision_v1",
-                "judgment_request_id": request["judgment_request_id"],
-                "judgment_request_digest": request["judgment_request_digest"],
-                "slot_id": "slot-1",
                 "action": "REQUEST_READ_PAGE",
                 "candidate_use_option_ref": candidate_use_option_ref(options[0]),
                 "reason": "repeat an already-custodied option",
@@ -1512,9 +1473,6 @@ def test_read_custody_is_the_only_semantic_entry_and_required_block_is_safe() ->
         request=request,
         model_output={
             "schema_version": "searchos_judgment_decision_v1",
-            "judgment_request_id": request["judgment_request_id"],
-            "judgment_request_digest": request["judgment_request_digest"],
-            "slot_id": "slot-1",
             "action": "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION",
             "read_custody_refs": [custody],
             "reason": "current read custody is suitable for governed analysis",
@@ -2016,7 +1974,6 @@ def test_runkernel_owns_judgment_readiness_block_and_downstream_guard() -> None:
         slot_id="slot-1",
         candidate_window=window,
     )
-    request = judgment.inputs["judgment_request"]
     kernel.reduce(
         Observation.from_action(
             judgment,
@@ -2025,9 +1982,6 @@ def test_runkernel_owns_judgment_readiness_block_and_downstream_guard() -> None:
             payload={
                 "model_output": {
                     "schema_version": "searchos_judgment_decision_v1",
-                    "judgment_request_id": request["judgment_request_id"],
-                    "judgment_request_digest": request["judgment_request_digest"],
-                    "slot_id": "slot-1",
                     "action": "HANDOFF_UNRESOLVED",
                     "reason": "current candidates cannot resolve the required need",
                 }

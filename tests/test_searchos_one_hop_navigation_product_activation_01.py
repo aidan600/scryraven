@@ -231,9 +231,6 @@ def _install_navigation_model(
             navigation_options = list(request.get("navigation_options") or ())
             common = {
                 "schema_version": contract["decision_schema_version"],
-                "judgment_request_id": request["judgment_request_id"],
-                "judgment_request_digest": request["judgment_request_digest"],
-                "slot_id": dict(request["slot_ref"])["slot_id"],
             }
             assessments = [
                 {
@@ -277,7 +274,7 @@ def _install_navigation_model(
                     }
             elif navigation_options:
                 already_navigated = any(
-                    item.get("action") == "REQUEST_NAVIGATE_BREADCRUMB" and item.get("slot_id") == common["slot_id"]
+                    item.get("action") == "REQUEST_NAVIGATE_BREADCRUMB"
                     for item in self.__dict__.get("navigation_decisions", [])
                 )
                 if self.read_assessment_decision == "NAVIGATE_THEN_UNRESOLVED" and already_navigated:
@@ -549,10 +546,10 @@ def test_navigation_request_authority_preserves_ordinary_contract() -> None:
     ordinary = build_searchos_judgment_decision_contract_v1()
     navigation = build_searchos_judgment_decision_contract_v1(navigation_enabled=True)
     assert hashlib.sha256(SEARCHOS_JUDGMENT_SYSTEM_PROMPT.encode()).hexdigest() == (
-        "5bc06caa8c6054af427ff0d377384b2cca18651ddf70233d1d694eafd00eb86b"  # pragma: allowlist secret
+        "261b09e541c8ae01995661507eb947d9b4dd69c111739b5809589823514be246"  # pragma: allowlist secret
     )
     assert ordinary["decision_contract_digest"] == (
-        "f65523e177b956e6257ac75972347fdfc6425cde2d2554a05e0a6795c33496fd"  # pragma: allowlist secret
+        "a0d5171fce5c1c7ac4c153f58695a1998eccdb556fa9ce5cdc877b37446ad54e"  # pragma: allowlist secret
     )
     assert ordinary["decision_schema_version"] == "searchos_judgment_decision_v1"
     assert "REQUEST_NAVIGATE_BREADCRUMB" not in ordinary["actions"]
@@ -591,7 +588,10 @@ def test_one_hop_navigation_reaches_component_and_final_answer(tmp_path: Path, m
                 }
                 for slot in harness.run_kernel.state.searchos_state["slots_by_id"].values()
             ],
-            "decisions": [(item["slot_id"], item["action"]) for item in getattr(harness, "navigation_decisions", [])],
+            "decisions": [
+                (item.get("slot_id"), item["action"])
+                for item in getattr(harness, "navigation_decisions", [])
+            ],
             "inputs": [
                 (
                     item["authorized_request"]["slot_ref"]["slot_id"],

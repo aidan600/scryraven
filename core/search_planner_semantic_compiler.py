@@ -7,6 +7,7 @@ constructs the rich state still required by Phase-1 downstream consumers.
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import Any, Mapping
 
 from core.semantic_contract_foundation import (
@@ -19,15 +20,28 @@ from core.semantic_contract_foundation import (
     inference_depth_ceiling_for_mode,
 )
 
-SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA_VERSION = "search_planner_sparse_semantic_proposal_v2"
-SEARCH_PLANNER_SEMANTIC_PROPOSAL_CONTRACT_FORMAT = "search_planner_sparse_semantic_proposal_v2"
+SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA_VERSION = "search_planner_sparse_semantic_proposal_v3"
+SEARCH_PLANNER_SEMANTIC_PROPOSAL_CONTRACT_FORMAT = "search_planner_sparse_semantic_proposal_v3"
 
 SEARCH_PLANNER_SEMANTIC_PROPOSAL_REQUIRED_TOP_LEVEL_FIELDS = ("disposition",)
-SEARCH_PLANNER_SEMANTIC_PROPOSAL_OPTIONAL_TOP_LEVEL_FIELDS = (
+SEARCH_PLANNER_SEMANTIC_PROPOSAL_DIRECT_SIMPLE_OPTIONAL_FIELDS = (
     "source",
     "freshness",
     "caveat",
+)
+SEARCH_PLANNER_SEMANTIC_PROPOSAL_COMPONENTS_BRANCH_REQUIRED_FIELDS = (
+    "disposition",
     "components",
+)
+SEARCH_PLANNER_SEMANTIC_PROPOSAL_COMPONENTS_BRANCH_FORBIDDEN_TOP_LEVEL_FIELDS = (
+    "source",
+    "freshness",
+    "caveat",
+)
+# Not a single optional set. direct_simple may omit source/freshness/caveat;
+# components requires components and forbids those three top-level fields.
+SEARCH_PLANNER_SEMANTIC_PROPOSAL_OPTIONAL_TOP_LEVEL_FIELDS = (
+    SEARCH_PLANNER_SEMANTIC_PROPOSAL_DIRECT_SIMPLE_OPTIONAL_FIELDS
 )
 
 _DISPOSITIONS = frozenset({"direct_simple", "components"})
@@ -176,13 +190,100 @@ _SENSITIVE_KEYS = frozenset(
     }
 )
 
-# The validator uses these exact vocabularies and field sets. The prompt
-# serializes this compact object instead of a second handwritten contract.
+# Exhaustive validator-owned catalog. Not serialized into ordinary model prompts.
 SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA: dict[str, Any] = {
     "format": SEARCH_PLANNER_SEMANTIC_PROPOSAL_CONTRACT_FORMAT,
-    "disposition": sorted(_DISPOSITIONS),
-    "direct_simple_optional": ["source", "freshness", "caveat"],
+    "json_type": "object",
+    "required_top_level": ["disposition"],
+    "disposition": {
+        "json_type": "string",
+        "required": True,
+        "enum": sorted(_DISPOSITIONS),
+        "empty_vs_omitted": "required nonempty",
+    },
+    "branches": {
+        "direct_simple": {
+            "when": "disposition == direct_simple",
+            "allowed_fields": ["disposition", "source", "freshness", "caveat"],
+            "required_fields": ["disposition"],
+            "optional_fields": ["source", "freshness", "caveat"],
+            "forbidden_fields": ["components"],
+            "unknown_fields": "fail closed",
+            "empty_optional_rule": "omit empty strings; do not emit empty values",
+            "cross_field": (
+                "never a fallback; authoritative query must fit 300 characters; "
+                "no dependency, inference, material uncertainty, calculation, "
+                "or nonstandard normalization"
+            ),
+        },
+        "components": {
+            "when": "disposition == components",
+            "allowed_fields": ["disposition", "components"],
+            "required_fields": ["disposition", "components"],
+            "optional_fields": [],
+            "forbidden_fields": ["source", "freshness", "caveat"],
+            "unknown_fields": "fail closed",
+            "empty_optional_rule": (
+                "components must be a nonempty array; omit empty nested optionals"
+            ),
+            "cross_field": "requires at least one required user_facing_answer_target",
+        },
+    },
+    "source": {
+        "json_type": "object",
+        "required": False,
+        "allowed_fields": ["kind", "strictness"],
+        "presence": {
+            "direct_simple": "optional top-level",
+            "components_top_level": "forbidden",
+            "component": "optional; forbidden when support is inferred",
+        },
+        "kind": {
+            "json_type": "string",
+            "required": True,
+            "enum": sorted(_SOURCE_KINDS),
+        },
+        "strictness": {
+            "json_type": "string",
+            "required": False,
+            "enum": sorted(_SOURCE_STRICTNESSES),
+            "empty_vs_omitted": "omit instead of empty",
+        },
+        "empty_vs_omitted": "omit the object instead of empty",
+    },
+    "freshness": {
+        "json_type": "string",
+        "required": False,
+        "max_chars": _MAX_FRESHNESS_CHARS,
+        "empty_vs_omitted": "omit instead of empty",
+        "presence": {
+            "direct_simple": "optional top-level",
+            "components_top_level": "forbidden",
+            "component": "optional; forbidden when support is inferred",
+        },
+    },
+    "caveat": {
+        "json_type": "string",
+        "required": False,
+        "max_chars": _MAX_CAVEAT_CHARS,
+        "empty_vs_omitted": "omit instead of empty",
+        "presence": {
+            "direct_simple": "optional top-level",
+            "components_top_level": "forbidden",
+            "component": "optional",
+        },
+    },
+    "components": {
+        "json_type": "array",
+        "required_when": "disposition == components",
+        "forbidden_when": "disposition == direct_simple",
+        "min_items": 1,
+        "max_items": _MAX_COMPONENTS,
+        "empty_vs_omitted": "must be nonempty when present; omit instead of empty",
+        "item": "component",
+    },
     "component": {
+        "json_type": "object",
         "required": ["need"],
         "optional": [
             "key",
@@ -198,12 +299,81 @@ SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA: dict[str, Any] = {
             "normalization",
             "calculation",
         ],
-    },
-    "source": {
-        "kind": sorted(_SOURCE_KINDS),
-        "strictness": sorted(_SOURCE_STRICTNESSES),
+        "unknown_fields": "fail closed",
+        "need": {
+            "json_type": "string",
+            "required": True,
+            "max_chars": _MAX_NEED_CHARS,
+            "empty_vs_omitted": "required nonempty",
+        },
+        "key": {
+            "json_type": "string",
+            "required": False,
+            "max_chars": _MAX_LOCAL_KEY_CHARS,
+            "empty_vs_omitted": "omit instead of empty",
+        },
+        "purpose": {
+            "json_type": "string",
+            "required": False,
+            "enum": sorted(_COMPONENT_PURPOSES),
+            "omitted_means": "user_facing_answer_target",
+            "empty_vs_omitted": "omit instead of empty",
+        },
+        "posture": {
+            "json_type": "string",
+            "required": False,
+            "enum": sorted(_REQUIREMENT_POSTURES),
+            "omitted_means": "required",
+            "empty_vs_omitted": "omit instead of empty",
+        },
+        "support": {
+            "json_type": "string",
+            "required": False,
+            "enum": sorted(_SUPPORT_VALUES),
+            "omitted_means": "direct",
+            "empty_vs_omitted": "omit instead of empty",
+        },
+        "depends_on": {
+            "json_type": "array",
+            "item_json_type": "string",
+            "required": False,
+            "max_items": _MAX_COMPONENTS,
+            "item_max_chars": _MAX_LOCAL_KEY_CHARS,
+            "empty_vs_omitted": "omit instead of empty",
+            "cross_field": (
+                "required when support is inferred or direct_or_inferred; "
+                "forbidden when support is direct or omitted; keys must resolve "
+                "to other component keys; no self-dependency"
+            ),
+        },
+        "uncertainties": {
+            "json_type": "array",
+            "required": False,
+            "max_items": _MAX_UNCERTAINTIES_PER_COMPONENT,
+            "empty_vs_omitted": "omit instead of empty",
+            "item": "uncertainty",
+        },
+        "prohibited_upgrade": {
+            "json_type": "string",
+            "required": False,
+            "max_chars": _MAX_CAVEAT_CHARS,
+            "empty_vs_omitted": "omit instead of empty",
+        },
+        "normalization": {
+            "json_type": "string",
+            "required": False,
+            "max_chars": _MAX_POLICY_CHARS,
+            "empty_vs_omitted": "omit instead of empty",
+        },
+        "calculation": {
+            "json_type": "string",
+            "required": False,
+            "max_chars": _MAX_POLICY_CHARS,
+            "empty_vs_omitted": "omit instead of empty",
+        },
     },
     "uncertainty": {
+        "json_type": "object",
         "required": ["kind", "status"],
         "optional": [
             "candidates",
@@ -211,20 +381,175 @@ SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA: dict[str, Any] = {
             "user_confirmation_required",
             "materiality",
         ],
-        "kind": sorted(_UNCERTAINTY_KINDS),
-        "status": sorted(_UNCERTAINTY_STATUSES),
-        "materiality": sorted(_MATERIALITY_VALUES),
+        "unknown_fields": "fail closed",
+        "kind": {
+            "json_type": "string",
+            "required": True,
+            "enum": sorted(_UNCERTAINTY_KINDS),
+        },
+        "status": {
+            "json_type": "string",
+            "required": True,
+            "enum": sorted(_UNCERTAINTY_STATUSES),
+        },
+        "candidates": {
+            "json_type": "array",
+            "item_json_type": "string",
+            "required": False,
+            "max_items": 8,
+            "item_max_chars": _MAX_UNCERTAINTY_VALUE_CHARS,
+            "empty_vs_omitted": "omit instead of empty",
+        },
+        "selected": {
+            "json_type": "string",
+            "required": False,
+            "max_chars": _MAX_UNCERTAINTY_VALUE_CHARS,
+            "empty_vs_omitted": "omit instead of empty",
+            "cross_field": (
+                "forbidden when status is unresolved or ambiguous; when "
+                "candidates are present it must match one declared candidate"
+            ),
+        },
+        "user_confirmation_required": {
+            "json_type": "boolean",
+            "required": False,
+            "cross_field": (
+                "true only when status is unresolved or ambiguous and "
+                "materiality is material (omitted materiality means material)"
+            ),
+        },
+        "materiality": {
+            "json_type": "string",
+            "required": False,
+            "enum": sorted(_MATERIALITY_VALUES),
+            "omitted_means": "material",
+            "empty_vs_omitted": "omit instead of empty",
+        },
     },
     "purpose": sorted(_COMPONENT_PURPOSES),
     "posture": sorted(_REQUIREMENT_POSTURES),
     "support": sorted(_SUPPORT_VALUES),
-    "limits": {"components": 5, "uncertainties": 5, "need_chars": 300},
-    "reject": "unknown/rich/mechanical/provider/authority fields",
+    "limits": {
+        "components": _MAX_COMPONENTS,
+        "uncertainties": _MAX_UNCERTAINTIES_PER_COMPONENT,
+        "need_chars": _MAX_NEED_CHARS,
+        "local_key_chars": _MAX_LOCAL_KEY_CHARS,
+        "freshness_chars": _MAX_FRESHNESS_CHARS,
+        "caveat_chars": _MAX_CAVEAT_CHARS,
+        "policy_chars": _MAX_POLICY_CHARS,
+        "uncertainty_value_chars": _MAX_UNCERTAINTY_VALUE_CHARS,
+        "uncertainty_candidates": 8,
+    },
+    "reject": "unknown/rich/mechanical/provider/authority/runtime fields",
 }
+
+
+def build_search_planner_model_visible_schema() -> dict[str, Any]:
+    """Compact model-facing projection of the accepted sparse language."""
+
+    exhaustive = SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA
+    component = exhaustive["component"]
+    uncertainty = exhaustive["uncertainty"]
+    return {
+        "format": exhaustive["format"],
+        "disposition": list(exhaustive["disposition"]["enum"]),
+        "direct_simple": list(exhaustive["branches"]["direct_simple"]["allowed_fields"]),
+        "components": list(exhaustive["branches"]["components"]["allowed_fields"]),
+        "component": {
+            "required": list(component["required"]),
+            "optional": list(component["optional"]),
+        },
+        "source": {
+            "kind": list(exhaustive["source"]["kind"]["enum"]),
+            "strictness": list(exhaustive["source"]["strictness"]["enum"]),
+        },
+        "uncertainty": {
+            "required": list(uncertainty["required"]),
+            "optional": list(uncertainty["optional"]),
+            "kind": list(uncertainty["kind"]["enum"]),
+            "status": list(uncertainty["status"]["enum"]),
+            "materiality": list(uncertainty["materiality"]["enum"]),
+        },
+        "purpose": list(exhaustive["purpose"]),
+        "posture": list(exhaustive["posture"]),
+        "support": list(exhaustive["support"]),
+        "limits": {
+            "components": [
+                exhaustive["components"]["min_items"],
+                exhaustive["components"]["max_items"],
+            ],
+            "uncertainties": exhaustive["limits"]["uncertainties"],
+            "need_chars": exhaustive["limits"]["need_chars"],
+        },
+        "reject": exhaustive["reject"],
+    }
+
+
+SEARCH_PLANNER_MODEL_VISIBLE_SCHEMA = build_search_planner_model_visible_schema()
+
+
+class SearchPlannerSemanticProposalSubtype(str, Enum):
+    """Closed privacy-safe M02 families under INVALID_SEMANTIC_PROPOSAL."""
+
+    FORBIDDEN_SURFACE = "forbidden_surface"
+    BRANCH_FIELD_SET = "branch_field_set"
+    OMISSION_CONTRACT = "omission_contract"
+    TYPE_ENUM_OR_BOUND = "type_enum_or_bound"
+    CROSS_FIELD_CONDITION = "cross_field_condition"
 
 
 class SearchPlannerSemanticProposalError(ValueError):
     """Fail-closed sparse semantic proposal validation or compilation error."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        subtype: SearchPlannerSemanticProposalSubtype | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.subtype = subtype or classify_semantic_proposal_subtype(message)
+
+
+def classify_semantic_proposal_subtype(message: str) -> SearchPlannerSemanticProposalSubtype:
+    """Map an owned validator message to one closed privacy-safe M02 family."""
+
+    text = str(message)
+    if any(
+        token in text
+        for token in (
+            "unsafe/raw/private fields",
+            "must not author mechanical identity fields",
+            "must not author rich administrative fields",
+            "must not claim closed authority",
+            "must not select provider/model/routing authority",
+        )
+    ):
+        return SearchPlannerSemanticProposalSubtype.FORBIDDEN_SURFACE
+    if "must be omitted instead of empty" in text:
+        return SearchPlannerSemanticProposalSubtype.OMISSION_CONTRACT
+    if "has unknown fields" in text or text.startswith(
+        "components disposition requires a nonempty components array"
+    ):
+        return SearchPlannerSemanticProposalSubtype.BRANCH_FIELD_SET
+    if any(
+        token in text
+        for token in (
+            "requires a required user-facing target",
+            "must not depend on itself",
+            "has unresolved local key",
+            "direct support must not declare depends_on",
+            "inferred support requires depends_on",
+            "inferred-only support must not declare source",
+            "inferred-only support must not declare freshness",
+            "unresolved/ambiguous status must not claim selected",
+            "selected must match one declared candidate",
+            "confirmation requires material unresolved/ambiguous status",
+            "direct_simple requires the authoritative query to fit",
+        )
+    ):
+        return SearchPlannerSemanticProposalSubtype.CROSS_FIELD_CONDITION
+    return SearchPlannerSemanticProposalSubtype.TYPE_ENUM_OR_BOUND
 
 
 def is_semantic_planner_proposal(payload: Mapping[str, Any]) -> bool:
@@ -903,12 +1228,19 @@ def _normalize_whitespace(value: str) -> str:
 
 
 __all__ = [
+    "SEARCH_PLANNER_MODEL_VISIBLE_SCHEMA",
+    "SEARCH_PLANNER_SEMANTIC_PROPOSAL_COMPONENTS_BRANCH_FORBIDDEN_TOP_LEVEL_FIELDS",
+    "SEARCH_PLANNER_SEMANTIC_PROPOSAL_COMPONENTS_BRANCH_REQUIRED_FIELDS",
     "SEARCH_PLANNER_SEMANTIC_PROPOSAL_CONTRACT_FORMAT",
+    "SEARCH_PLANNER_SEMANTIC_PROPOSAL_DIRECT_SIMPLE_OPTIONAL_FIELDS",
     "SEARCH_PLANNER_SEMANTIC_PROPOSAL_OPTIONAL_TOP_LEVEL_FIELDS",
     "SEARCH_PLANNER_SEMANTIC_PROPOSAL_REQUIRED_TOP_LEVEL_FIELDS",
     "SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA",
     "SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA_VERSION",
     "SearchPlannerSemanticProposalError",
+    "SearchPlannerSemanticProposalSubtype",
+    "build_search_planner_model_visible_schema",
+    "classify_semantic_proposal_subtype",
     "compile_semantic_planner_proposal",
     "count_model_authored_mechanical_identity_keys",
     "is_semantic_planner_proposal",

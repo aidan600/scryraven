@@ -87,7 +87,7 @@ def _establish_official_current_qualification_truth(
 def test_production_judgment_prompt_states_the_strict_validator_contract() -> None:
     normalized_prompt = " ".join(SEARCHOS_JUDGMENT_SYSTEM_PROMPT.split())
     required_instructions = (
-        "copy judgment_request_id, judgment_request_digest, and slot_id exactly",
+        "Do not author judgment_request_id, judgment_request_digest, or slot_id",
         "read_insufficient assessment for every current READ custody ref",
         "PROPOSE_FOLLOWUP_QUERY authors new bounded followup_query text",
         "Forbidden fields must be absent",
@@ -112,18 +112,21 @@ def test_production_judgment_prompt_states_the_strict_validator_contract() -> No
 
 def test_transient_decision_contract_describes_every_action_and_input_role() -> None:
     contract = build_searchos_judgment_decision_contract_v1()
-    shared = [
-        "schema_version",
+    mechanical = {
         "judgment_request_id",
         "judgment_request_digest",
         "slot_id",
+    }
+    shared = [
+        "schema_version",
         "action",
         "reason",
     ]
     action_expectations = {
         "REQUEST_READ_PAGE": (
             [*shared, "candidate_use_option_ref"],
-            {
+            mechanical
+            | {
                 "read_custody_refs",
                 "followup_query",
                 "discovery_job_class",
@@ -134,7 +137,8 @@ def test_transient_decision_contract_describes_every_action_and_input_role() -> 
         ),
         "PROPOSE_FOLLOWUP_QUERY": (
             [*shared, "followup_query", "discovery_job_class"],
-            {
+            mechanical
+            | {
                 "candidate_use_option_ref",
                 "read_custody_refs",
                 "interpretation_binding",
@@ -144,7 +148,8 @@ def test_transient_decision_contract_describes_every_action_and_input_role() -> 
         ),
         "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION": (
             [*shared, "read_custody_refs"],
-            {
+            mechanical
+            | {
                 "candidate_use_option_ref",
                 "followup_query",
                 "read_custody_assessments",
@@ -156,7 +161,8 @@ def test_transient_decision_contract_describes_every_action_and_input_role() -> 
         ),
         "HANDOFF_UNRESOLVED": (
             shared,
-            {
+            mechanical
+            | {
                 "candidate_use_option_ref",
                 "read_custody_refs",
                 "followup_query",
@@ -168,7 +174,8 @@ def test_transient_decision_contract_describes_every_action_and_input_role() -> 
         ),
         "PROPOSE_INTERPRETATION_BINDING": (
             [*shared, "interpretation_binding"],
-            {
+            mechanical
+            | {
                 "candidate_use_option_ref",
                 "read_custody_refs",
                 "followup_query",
@@ -180,7 +187,8 @@ def test_transient_decision_contract_describes_every_action_and_input_role() -> 
         ),
         "REQUIRE_CLARIFICATION": (
             [*shared, "semantic_slot_ref"],
-            {
+            mechanical
+            | {
                 "candidate_use_option_ref",
                 "read_custody_refs",
                 "followup_query",
@@ -194,9 +202,20 @@ def test_transient_decision_contract_describes_every_action_and_input_role() -> 
     assert contract["schema_version"] == (
         SEARCHOS_JUDGMENT_DECISION_CONTRACT_SCHEMA_VERSION
     )
-    assert contract["contract_name"] == "SearchOSJudgmentDecisionContractV1"
+    assert contract["contract_name"] == "SearchOSJudgmentDecisionContractV2"
     assert contract["decision_schema_version"] == "searchos_judgment_decision_v1"
     assert contract["shared_required_fields"] == shared
+    assert contract["copy_exactly_from_authorized_request"] == {}
+    assert contract["model_must_not_author"] == [
+        "judgment_request_id",
+        "judgment_request_digest",
+        "slot_id",
+    ]
+    assert contract["runtime_bound_from_authorized_request"] == {
+        "judgment_request_id": "judgment_request_id",
+        "judgment_request_digest": "judgment_request_digest",
+        "slot_id": "slot_ref.slot_id",
+    }
     assert contract["unsupported_fields_forbidden"] is True
     assert set(contract["input_field_roles"]) == {
         "authorized_request",
@@ -1288,6 +1307,15 @@ def test_bounded_searchos_n1_causal_projection_transport_exception_class(
             "none",
             "unsupported_fields",
             ("judgment_output_contains_unsupported_fields",),
+        ),
+        (
+            # Case D2 — model-authored request identity
+            "model_output_invalid:judgment_output_must_not_author_request_identity",
+            "judgment_failed",
+            "model_output_invalid",
+            "none",
+            "request_identity_authored",
+            ("judgment_output_must_not_author_request_identity",),
         ),
         (
             # Case E — non-model-output transport failure

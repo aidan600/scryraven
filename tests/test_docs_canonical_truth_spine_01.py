@@ -329,7 +329,7 @@ def test_active_technical_debt_register_is_unique_routed_and_nonactivating() -> 
     for phrase in (
         "Status: current",
         "Default-read: no",
-        "Next-ID: TD-0004",
+        "Next-ID: TD-0005",
         "canonical active-only inventory",
         "sole owner of priority and phase order",
         "IDs are monotonic and never reused",

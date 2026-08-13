@@ -363,6 +363,7 @@ def test_bounded_terminal_preserves_adapter_rich_path_exclusively() -> None:
         "predicate_id": None,
         "provider_completion_posture": None,
         "strict_parse_subtype": None,
+        "semantic_proposal_subtype": None,
         "cleaner_modified": None,
     }
     assert INITIAL_QUERY_STRATEGY_FAILURE_TERMINAL_KEY not in terminal

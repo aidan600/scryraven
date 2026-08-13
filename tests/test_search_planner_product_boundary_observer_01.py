@@ -34,6 +34,7 @@ from core.search_planner_model_adapter import (
     SearchPlannerModelAdapterFailureCode,
     SearchPlannerModelAdapterFailureStage,
     SearchPlannerModelAdapterPredicateId,
+    validate_and_sanitize_model_output,
 )
 from core.search_planner_model_prompt import SEARCH_PLANNER_MODEL_SYSTEM_PROMPT
 from core.text_utils import clean_json_response
@@ -71,6 +72,23 @@ def _canonical(value: Any) -> str:
 
 
 def _model_payload() -> dict[str, Any]:
+    fact = SCENARIO.direct_facts[0]
+    return {
+        "disposition": "components",
+        "components": [
+            {
+                "key": fact.component_id,
+                "need": fact.query,
+                "source": {
+                    "kind": "official_current",
+                    "strictness": "required",
+                },
+            }
+        ],
+    }
+
+
+def _compiled_rich_payload() -> dict[str, Any]:
     payload = planner_payload(SCENARIO)
     payload.pop("planner_model_metadata", None)
     for obligation in payload["source_obligation_candidates"]:
@@ -315,7 +333,9 @@ def test_observer_matches_exact_ordinary_product_boundary(
     assert observation.validator_posture == "PASS"
     assert observation.runtime_projection_posture == "PASS"
     assert observation.initial_acceptance_posture == "PASS"
-    assert observation.search_work_plan_posture == "PASS"
+    assert observation.search_work_plan_posture == "REVIEW_REQUIRED"
+    assert not hasattr(kernel.state, "search_work_plan")
+    assert "query_plan_admission" in kernel.state.projections
     assert PRODUCT_BOUNDARY_OBSERVER_SCHEMA_VERSION == (
         "search_planner_product_boundary_observer_v2"
     )
@@ -546,6 +566,63 @@ def _m10_stale_binding(payload: dict[str, Any]) -> None:
 
 
 @pytest.mark.parametrize(
+    "mutate",
+    (
+        _m02_invalid_nested_type,
+        _m03_invalid_cross_reference,
+        _m04_invalid_dependency,
+        _m05_invalid_support_matrix,
+        _m06_invalid_component_purpose,
+        _m07_invalid_query_strategy,
+        _m08_closed_authority,
+        _m09_raw_material,
+        _m10_stale_binding,
+    ),
+)
+def test_model_facing_rich_defects_fail_closed_at_m02(mutate: Any) -> None:
+    payload = deepcopy(_compiled_rich_payload())
+    mutate(payload)
+
+    failure, observation = _observe_adapter_result(payload)
+
+    assert isinstance(failure, SearchPlannerModelAdapterError)
+    assert (
+        failure.failure_stage
+        == SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION
+    )
+    assert (
+        failure.failure_code
+        == SearchPlannerModelAdapterFailureCode.INVALID_SEMANTIC_PROPOSAL
+    )
+    assert failure.mechanical_rule_id == "M02"
+    assert failure.predicate_registry_version == (
+        SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY_VERSION
+    )
+    assert failure.predicate_id is not None
+    assert failure.args == (str(failure),)
+    assert observation.parser_posture == "PASS"
+    assert observation.validator_posture == "FAIL"
+    assert observation.runtime_projection_posture == "NOT_REACHED"
+    assert observation.canonical_failure_rule_ids == ("M02",)
+    assert observation.canonical_failure_predicate_registry_version == (
+        failure.predicate_registry_version
+    )
+    assert observation.canonical_failure_predicate_id == (
+        failure.predicate_id.value
+    )
+    rules = {
+        item.rule_id: item
+        for item in validate_product_observation(observation).rule_results
+    }
+    assert rules["M02"].posture == "FAIL"
+    assert all(
+        rules[f"M{index:02d}"].posture != "FAIL"
+        for index in range(1, 11)
+        if f"M{index:02d}" != "M02"
+    )
+
+
+@pytest.mark.parametrize(
     ("rule_id", "stage", "code", "mutate"),
     (
         (
@@ -604,18 +681,19 @@ def _m10_stale_binding(payload: dict[str, Any]) -> None:
         ),
     ),
 )
-def test_validator_failure_attestation_maps_exactly_m02_through_m10(
+def test_compiled_rich_validator_still_maps_exactly_m02_through_m10(
     rule_id: str,
     stage: SearchPlannerModelAdapterFailureStage,
     code: SearchPlannerModelAdapterFailureCode,
     mutate: Any,
 ) -> None:
-    payload = deepcopy(_model_payload())
+    payload = deepcopy(_compiled_rich_payload())
     mutate(payload)
 
-    failure, observation = _observe_adapter_result(payload)
+    with pytest.raises(SearchPlannerModelAdapterError) as captured:
+        validate_and_sanitize_model_output(payload)
+    failure = captured.value
 
-    assert isinstance(failure, SearchPlannerModelAdapterError)
     assert failure.failure_stage == stage
     assert failure.failure_code == code
     assert failure.mechanical_rule_id == rule_id
@@ -624,26 +702,6 @@ def test_validator_failure_attestation_maps_exactly_m02_through_m10(
     )
     assert failure.predicate_id is not None
     assert failure.args == (str(failure),)
-    assert observation.parser_posture == "PASS"
-    assert observation.validator_posture == "FAIL"
-    assert observation.runtime_projection_posture == "NOT_REACHED"
-    assert observation.canonical_failure_rule_ids == (rule_id,)
-    assert observation.canonical_failure_predicate_registry_version == (
-        failure.predicate_registry_version
-    )
-    assert observation.canonical_failure_predicate_id == (
-        failure.predicate_id.value
-    )
-    rules = {
-        item.rule_id: item
-        for item in validate_product_observation(observation).rule_results
-    }
-    assert rules[rule_id].posture == "FAIL"
-    assert all(
-        rules[f"M{index:02d}"].posture != "FAIL"
-        for index in range(1, 11)
-        if f"M{index:02d}" != rule_id
-    )
 
 
 def test_validated_proposal_followed_by_runtime_failure_is_distinct() -> None:
@@ -699,14 +757,12 @@ def test_unexpected_post_response_failure_does_not_overclaim_validation() -> Non
 
 def test_adapter_failure_metadata_and_packet_are_immutable_and_sanitized() -> None:
     payload = deepcopy(_model_payload())
-    _m10_stale_binding(payload)
-    model_component_id = payload["answer_components"][0]["component_id"]
-    model_field_value = payload["answer_components"][0][
-        "user_facing_question"
-    ]
-    model_query_text = payload["component_search_requirements"][0][
-        "metadata"
-    ]["query_strategy_candidates"][0]["candidate_query_text"]
+    payload["components"][0]["component_id"] = (
+        "model-generated-stale-binding-sentinel"
+    )
+    model_component_id = payload["components"][0]["component_id"]
+    model_field_value = payload["components"][0]["need"]
+    model_query_text = payload["components"][0]["key"]
 
     failure, observation = _observe_adapter_result(payload)
 
@@ -749,9 +805,9 @@ def test_adapter_failure_metadata_and_packet_are_immutable_and_sanitized() -> No
     assert packet["canonical_failure_predicate_id"] == failure.predicate_id.value
     assert packet["bounded_failure_reason"] == (
         "SearchPlannerModelAdapterError:"
-        "failure_stage=CROSS_REFERENCE_VALIDATION:"
-        "failure_code=LINEAGE_OR_BINDING_FAILURE:"
-        "mechanical_rule_id=M10:"
+        "failure_stage=MODEL_OUTPUT_VALIDATION:"
+        "failure_code=INVALID_SEMANTIC_PROPOSAL:"
+        "mechanical_rule_id=M02:"
         "predicate_registry_version="
         f"{SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY_VERSION}:"
         f"predicate_id={failure.predicate_id.value}:"

@@ -59,7 +59,7 @@ SEARCHOS_JUDGMENT_MODEL_INPUT_SCHEMA_VERSION = (
     "searchos_judgment_model_input_v1"
 )
 SEARCHOS_JUDGMENT_DECISION_CONTRACT_SCHEMA_VERSION = (
-    "searchos_judgment_decision_contract_v1"
+    "searchos_judgment_decision_contract_v2"
 )
 SEARCHOS_ZERO_RESULT_INITIAL_DISCOVER_WAVE_SCHEMA_VERSION = (
     "searchos_zero_result_initial_discover_wave_v1"
@@ -78,10 +78,9 @@ semantic evaluation. Do not treat custody-ref presence alone as readiness.
 decision_contract is the normative output contract.
 
 Return exactly one JSON object matching searchos_judgment_decision_v1. Always
-include schema_version, judgment_request_id, judgment_request_digest, slot_id,
-action, and a nonempty bounded reason; copy judgment_request_id,
-judgment_request_digest, and slot_id exactly from authorized_request. Choose
-exactly one action from
+include schema_version, action, and a nonempty bounded reason. Do not author
+judgment_request_id, judgment_request_digest, or slot_id; the runtime binds
+those from the authorized current request. Choose exactly one action from
 authorized_request.legal_actions:
 - REQUEST_READ_PAGE copies one exact candidate_use_option_ref from the request.
 - PROPOSE_FOLLOWUP_QUERY authors new bounded followup_query text from
@@ -127,9 +126,9 @@ as readiness. decision_contract is the normative output contract.
 
 Return exactly one JSON object matching
 searchos_navigation_judgment_decision_v1. Always include schema_version,
-judgment_request_id, judgment_request_digest, slot_id, action, and a nonempty
-bounded reason; copy judgment_request_id, judgment_request_digest, and slot_id
-exactly from authorized_request. Choose exactly one action from
+action, and a nonempty bounded reason. Do not author judgment_request_id,
+judgment_request_digest, or slot_id; the runtime binds those from the
+authorized current request. Choose exactly one action from
 authorized_request.legal_actions:
 - REQUEST_READ_PAGE copies one exact candidate_use_option_ref from the request.
 - PROPOSE_FOLLOWUP_QUERY authors new bounded followup_query text from
@@ -175,11 +174,13 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
 
     shared_required_fields = [
         "schema_version",
+        "action",
+        "reason",
+    ]
+    mechanical_identity_fields = [
         "judgment_request_id",
         "judgment_request_digest",
         "slot_id",
-        "action",
-        "reason",
     ]
     conditionally_assessed = "required_exact_if_current_custody_else_absent"
     actions = {
@@ -189,6 +190,7 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
                 "candidate_use_option_ref",
             ],
             "forbidden_fields": [
+                *mechanical_identity_fields,
                 "read_custody_refs",
                 "followup_query",
                 "discovery_job_class",
@@ -212,6 +214,7 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
                 "discovery_job_class",
             ],
             "forbidden_fields": [
+                *mechanical_identity_fields,
                 "candidate_use_option_ref",
                 "read_custody_refs",
                 "interpretation_binding",
@@ -239,6 +242,7 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
         SearchOSJudgmentAction.HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION.value: {
             "required_fields": [*shared_required_fields, "read_custody_refs"],
             "forbidden_fields": [
+                *mechanical_identity_fields,
                 "candidate_use_option_ref",
                 "followup_query",
                 "read_custody_assessments",
@@ -259,6 +263,7 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
         SearchOSJudgmentAction.HANDOFF_UNRESOLVED.value: {
             "required_fields": list(shared_required_fields),
             "forbidden_fields": [
+                *mechanical_identity_fields,
                 "candidate_use_option_ref",
                 "read_custody_refs",
                 "followup_query",
@@ -278,6 +283,7 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
                 "interpretation_binding",
             ],
             "forbidden_fields": [
+                *mechanical_identity_fields,
                 "candidate_use_option_ref",
                 "read_custody_refs",
                 "followup_query",
@@ -312,6 +318,7 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
                 "semantic_slot_ref",
             ],
             "forbidden_fields": [
+                *mechanical_identity_fields,
                 "candidate_use_option_ref",
                 "read_custody_refs",
                 "followup_query",
@@ -332,6 +339,7 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
         actions[SearchOSJudgmentAction.REQUEST_NAVIGATE_BREADCRUMB.value] = {
             "required_fields": [*shared_required_fields, "navigation_candidate_ref"],
             "forbidden_fields": [
+                *mechanical_identity_fields,
                 "candidate_use_option_ref",
                 "read_custody_refs",
                 "followup_query",
@@ -347,17 +355,19 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
             "read_custody_assessments_mode": conditionally_assessed,
         }
     core = {
-        "contract_name": "SearchOSJudgmentDecisionContractV1",
+        "contract_name": "SearchOSJudgmentDecisionContractV2",
         "schema_version": SEARCHOS_JUDGMENT_DECISION_CONTRACT_SCHEMA_VERSION,
         "decision_schema_version": SEARCHOS_NAVIGATION_JUDGMENT_DECISION_SCHEMA_VERSION
         if navigation_enabled
         else SEARCHOS_JUDGMENT_DECISION_SCHEMA_VERSION,
         "shared_required_fields": shared_required_fields,
-        "copy_exactly_from_authorized_request": {
+        "copy_exactly_from_authorized_request": {},
+        "runtime_bound_from_authorized_request": {
             "judgment_request_id": "judgment_request_id",
             "judgment_request_digest": "judgment_request_digest",
             "slot_id": "slot_ref.slot_id",
         },
+        "model_must_not_author": list(mechanical_identity_fields),
         "allowed_output_fields": [
             *shared_required_fields,
             "candidate_use_option_ref",
@@ -372,8 +382,9 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
         "unsupported_fields_forbidden": True,
         "input_field_roles": {
             "authorized_request": (
-                "sole request identity and legal-action authority; its option "
-                "and custody refs are exact-copy sources"
+                "sole legal-action and exact-ref authority; runtime binds "
+                "request identity and active slot_id from this request; "
+                "option and custody refs are exact-copy sources"
                 + ("; navigation_options are URL-free exact-copy sources" if navigation_enabled else "")
             ),
             "active_need": (
@@ -3630,6 +3641,7 @@ _SAFE_MODEL_OUTPUT_INVALID_SUBTYPE_BY_SUFFIX: dict[str, str] = {
     "judgment_request_schema_version_mismatch": "schema_version_mismatch",
     "judgment_output_contains_unsupported_fields": "unsupported_fields",
     "judgment_output_schema_version_mismatch": "schema_version_mismatch",
+    "judgment_output_must_not_author_request_identity": "request_identity_authored",
     "judgment_nomination_is_stale": "request_identity_mismatch",
     "judgment_nomination_slot_is_stale": "slot_identity_mismatch",
     "judgment_action_is_not_in_the_neutral_vocabulary": "action_vocabulary_invalid",
@@ -3664,6 +3676,7 @@ _SAFE_MODEL_OUTPUT_INVALID_SUBTYPE_BY_SUFFIX: dict[str, str] = {
         "post_read_assessment_incomplete"
     ),
     "pre-read_action_cannot_assess_custody": "pre_read_assessment_forbidden",
+    "judgment_action_fields_are_not_exact": "exact_action_fields_invalid",
     "navigation_judgment_action_fields_are_not_exact": "exact_action_fields_invalid",
 }
 
