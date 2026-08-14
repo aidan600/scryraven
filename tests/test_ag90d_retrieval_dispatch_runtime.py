@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 import ast
+import json
 from pathlib import Path
 from typing import Any
 
+import pytest
+
+import core.retrieval_dispatch_runtime as retrieval_runtime
+import proplex.__main__ as compatibility_cli
 from core.retrieval_dispatch_runtime import (
     RecordedRetrievalDispatch,
     RetrievalDispatchDeps,
+    RetrievalPostMaterialDispatchError,
+    RetrievalPostMaterialFailureSubtype,
     build_retrieval_pass_record,
     execute_main_retrieval_pass_from_scope,
     execute_recorded_retrieval_dispatch,
@@ -16,7 +23,8 @@ from core.retrieval_scheduler import (
     schedule_main_retrieval_action,
 )
 from core.router_query_preparation_contract import build_router_query_preparation_state
-from core.run_kernel import RunKernel
+from core.run_config import RunConfig
+from core.run_kernel import MAIN_RETRIEVAL_STAGE, RunKernel
 
 ROOT = Path(__file__).resolve().parents[1]
 HELPER = ROOT / "core" / "retrieval_dispatch_runtime.py"
@@ -339,8 +347,190 @@ def test_main_retrieval_dispatch_consumes_scheduler_action_over_legacy_locals() 
     assert outcome.descriptor.provider_list == ("scheduled-provider",)
     assert outcome.descriptor.search_depth == "advanced"
     assert outcome.observation.action_id == main_retrieval_kernel_action.action_id
+    kernel.reduce(outcome.observation)
+    assert kernel.state.projections[MAIN_RETRIEVAL_STAGE]["chunk_delta"] == 1
     assert records[0]["queries"] == ["scheduled query"]
     assert records[0]["providers"] == ["scheduled-provider"]
+
+
+def _post_material_test_scope() -> tuple[dict[str, Any], RunKernel]:
+    class _Deps:
+        @staticmethod
+        def compute_similarities(*_args: Any, **_kwargs: Any) -> list[Any]:
+            return []
+
+    kernel = RunKernel.start(run_id="run-post-material", request_id="request-post-material")
+    action = kernel.authorize_main_retrieval_pass(
+        inputs={"iteration": 1, "query_count": 1}
+    )
+    scheduled_action = schedule_main_retrieval_action(
+        RetrievalScheduleInput(
+            stage="main_retrieval",
+            current_queries=["fixture query"],
+            iteration=1,
+            provider_role="main_retrieval",
+            search_depth="basic",
+            providers=["fixture-provider"],
+        )
+    )
+
+    def fake_process(*args: Any, **_kwargs: Any) -> list[dict[str, Any]]:
+        args[8].add("https://fixture.invalid/result")
+        return [{"url": "https://fixture.invalid/result", "text": "fixture"}]
+
+    return (
+        {
+            "iteration": 1,
+            "router_query_preparation_contract": build_router_query_preparation_state(
+                query="fixture topic", router_text=None
+            ),
+            "main_retrieval_kernel_action": action,
+            "retrieval_scheduled_action": scheduled_action,
+            "results_per_query": 4,
+            "top_chunks": 8,
+            "max_iterations": 3,
+            "intent": "research",
+            "complexity": "medium",
+            "include_domains": [],
+            "exclude_domains": [],
+            "ACADEMIC_DOMAINS": ["edu"],
+            "is_academic": False,
+            "entity_hint_for_retrieval": None,
+            "retrieval_stop_active_telemetry": {},
+            "run_id": "run-post-material",
+            "retrieval_batch_dispatch_trace": {"authorized": True},
+            "active_source_class_recovery_lifecycle": {},
+            "weak_corpus_recovery_used": False,
+            "weak_corpus_recovery_attempted": False,
+            "weak_corpus_recovery_decision": "not_attempted",
+            "retrieval_loop_contract_state": None,
+            "similarity_prior_queries": None,
+            "query_similarity_basis": None,
+            "process_search_queries": fake_process,
+            "query_embedding": [0.1],
+            "seen_urls": set(),
+            "collected_images": set(),
+            "embed_provider": "embed-provider",
+            "embed_model": "embed-model",
+            "local_url": None,
+            "embed_texts": lambda *_args, **_kwargs: [],
+            "deps": _Deps(),
+            "status": object(),
+            "provider_diagnostics": [],
+        },
+        kernel,
+    )
+
+
+_PRIVATE_FAILURE_FRAGMENTS = (
+    "private raw prompt",
+    "private provider payload",
+    "https://private.invalid/source",
+    "private model response",
+    "private traceback",
+)
+
+
+@pytest.mark.parametrize(
+    ("boundary", "expected_subtype"),
+    (
+        (
+            "identity",
+            RetrievalPostMaterialFailureSubtype.SOURCE_RESULT_IDENTITY_SET_PROJECTION,
+        ),
+        (
+            "telemetry",
+            RetrievalPostMaterialFailureSubtype.DISCOVERY_RESULT_TELEMETRY_PROJECTION,
+        ),
+        (
+            "observation",
+            RetrievalPostMaterialFailureSubtype.RETRIEVAL_PASS_OBSERVATION_CONSTRUCTION,
+        ),
+        (
+            "outcome",
+            RetrievalPostMaterialFailureSubtype.MAIN_RETRIEVAL_OUTCOME_CONSTRUCTION,
+        ),
+        (
+            "unclassified",
+            RetrievalPostMaterialFailureSubtype.POST_MATERIAL_UNCLASSIFIED,
+        ),
+    ),
+)
+def test_post_material_failures_project_only_closed_bounded_causes(
+    boundary: str,
+    expected_subtype: RetrievalPostMaterialFailureSubtype,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scope, kernel = _post_material_test_scope()
+    private_message = " | ".join(_PRIVATE_FAILURE_FRAGMENTS)
+
+    def fail(*_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError(private_message)
+
+    if boundary in {"identity", "telemetry"}:
+        original_store_mapping = retrieval_runtime._store_mapping
+
+        def selective_store_failure(
+            store: Any, *method_names: str
+        ) -> dict[str, Any] | None:
+            if method_names[0] == (
+                "identity_set_ref" if boundary == "identity" else "telemetry"
+            ):
+                fail()
+            return original_store_mapping(store, *method_names)
+
+        monkeypatch.setattr(
+            retrieval_runtime,
+            "_store_mapping",
+            selective_store_failure,
+        )
+    elif boundary == "observation":
+        monkeypatch.setattr(retrieval_runtime.Observation, "from_action", fail)
+    elif boundary == "outcome":
+        monkeypatch.setattr(retrieval_runtime, "MainRetrievalPassOutcome", fail)
+    else:
+        monkeypatch.setattr(
+            retrieval_runtime,
+            "summarize_retrieval_pass_result",
+            fail,
+        )
+
+    with pytest.raises(RetrievalPostMaterialDispatchError) as caught:
+        execute_main_retrieval_pass_from_scope(scope, retrieval_pass_records=[])
+
+    assert caught.value.subtype is expected_subtype
+    assert MAIN_RETRIEVAL_STAGE not in kernel.state.projections
+    payload = compatibility_cli._bounded_terminal_payload(
+        entrypoint="scryraven",
+        exc=caught.value,
+        config=RunConfig(query="fixture query"),
+    )
+    terminal = payload["terminal"]
+    assert payload["terminal_status"] == "stopped"
+    assert terminal["code"] == "bounded_run_failed"
+    assert terminal["owner"] == "core.pipeline_orchestrator.run_pipeline"
+    assert terminal["classification"] == "pipeline_failure"
+    assert terminal["cause_owner"] == (
+        "core.retrieval_dispatch_runtime.execute_main_retrieval_pass_from_scope"
+    )
+    assert terminal["cause_classification"] == "retrieval_post_material_failure"
+    assert terminal["cause_subtype"] == expected_subtype.value
+    assert payload["answer_present"] is False
+    assert payload["citation_count"] == 0
+    encoded = json.dumps(payload, sort_keys=True).casefold()
+    assert "traceback" not in encoded
+    for fragment in _PRIVATE_FAILURE_FRAGMENTS:
+        assert fragment.casefold() not in encoded
+
+
+def test_invalid_retrieval_lineage_is_not_laundered_into_post_material_failure() -> None:
+    scope, _kernel = _post_material_test_scope()
+    scope["main_retrieval_kernel_action"] = object()
+
+    with pytest.raises(ValueError, match="AuthorizedAction") as caught:
+        execute_main_retrieval_pass_from_scope(scope, retrieval_pass_records=[])
+
+    assert not isinstance(caught.value, RetrievalPostMaterialDispatchError)
 
 
 def test_pipeline_embedding_and_main_retrieval_consume_action_records() -> None:

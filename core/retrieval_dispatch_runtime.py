@@ -14,8 +14,9 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from enum import Enum
 from hashlib import sha256
-from typing import Any, Callable, Mapping, MutableSequence, Sequence
+from typing import Any, Callable, Final, Mapping, MutableSequence, Sequence
 
 from core.retrieval_loop_contract import (
     RetrievalLoopState,
@@ -254,6 +255,69 @@ class MainRetrievalPassOutcome(RetrievalDispatchOutcome):
     descriptor: Any
     execution_envelope: Any
     observation: Observation
+
+
+RETRIEVAL_POST_MATERIAL_CAUSE_OWNER: Final = (
+    "core.retrieval_dispatch_runtime.execute_main_retrieval_pass_from_scope"
+)
+RETRIEVAL_POST_MATERIAL_CAUSE_CLASSIFICATION: Final = (
+    "retrieval_post_material_failure"
+)
+
+
+class RetrievalPostMaterialFailureSubtype(str, Enum):
+    """Closed mechanical failures inside the post-material packaging span."""
+
+    SOURCE_RESULT_IDENTITY_SET_PROJECTION = (
+        "source_result_identity_set_projection"
+    )
+    DISCOVERY_RESULT_TELEMETRY_PROJECTION = (
+        "discovery_result_telemetry_projection"
+    )
+    RETRIEVAL_PASS_OBSERVATION_CONSTRUCTION = (
+        "retrieval_pass_observation_construction"
+    )
+    MAIN_RETRIEVAL_OUTCOME_CONSTRUCTION = (
+        "main_retrieval_outcome_construction"
+    )
+    POST_MATERIAL_UNCLASSIFIED = "post_material_unclassified"
+
+
+class RetrievalPostMaterialDispatchError(RuntimeError):
+    """Message-free carrier for one closed post-material failure subtype."""
+
+    __slots__ = ("_subtype",)
+
+    def __init__(self, subtype: RetrievalPostMaterialFailureSubtype) -> None:
+        if not isinstance(subtype, RetrievalPostMaterialFailureSubtype):
+            raise TypeError("subtype must be a closed post-material failure subtype")
+        super().__init__("retrieval post-material dispatch failed")
+        self._subtype = subtype
+
+    @property
+    def subtype(self) -> RetrievalPostMaterialFailureSubtype:
+        return self._subtype
+
+    def to_terminal_cause_projection(self) -> dict[str, str]:
+        return {
+            "cause_owner": RETRIEVAL_POST_MATERIAL_CAUSE_OWNER,
+            "cause_classification": (
+                RETRIEVAL_POST_MATERIAL_CAUSE_CLASSIFICATION
+            ),
+            "cause_subtype": self._subtype.value,
+        }
+
+
+def _invoke_post_material_operation(
+    subtype: RetrievalPostMaterialFailureSubtype,
+    operation: Callable[[], Any],
+) -> Any:
+    try:
+        return operation()
+    except RetrievalPostMaterialDispatchError:
+        raise
+    except Exception as exc:
+        raise RetrievalPostMaterialDispatchError(subtype) from exc
 
 
 _DISPATCH_DEP_KEYS = (
@@ -720,71 +784,90 @@ def execute_main_retrieval_pass_from_scope(
             dispatch_action,
             deps,
         ).passages
-    seen_url_delta = max(0, len(deps.seen_urls) - seen_before)
-    loop_state = loop_state.with_pass_result(
-        summarize_retrieval_pass_result(
-            descriptor=descriptor,
-            result_count=len(passages),
-            seen_url_delta=seen_url_delta,
+    try:
+        seen_url_delta = max(0, len(deps.seen_urls) - seen_before)
+        loop_state = loop_state.with_pass_result(
+            summarize_retrieval_pass_result(
+                descriptor=descriptor,
+                result_count=len(passages),
+                seen_url_delta=seen_url_delta,
+            )
         )
-    )
-    pass_record = build_retrieval_pass_record(
-        stage=dispatch_action.stage,
-        iteration=dispatch_action.iteration,
-        queries=dispatch_action.queries,
-        providers=dispatch_action.providers,
-        provider_role=dispatch_action.provider_role,
-        search_depth=dispatch_action.search_depth,
-        results_per_query=dispatch_action.results_per_query,
-    )
-    retrieval_pass_records.append(pass_record)
-    observation_payload: dict[str, Any] = {
-        "stage": dispatch_action.stage,
-        "iteration": dispatch_action.iteration,
-        "provider_role": dispatch_action.provider_role,
-        "provider_count": len(tuple(dispatch_action.providers)),
-        "query_count": len(tuple(dispatch_action.queries)),
-        "search_depth": dispatch_action.search_depth,
-        "results_per_query": dispatch_action.results_per_query,
-        "seen_url_delta": seen_url_delta,
-        "chunk_delta": len(passages),
-        "scheduled_action": scheduled_action.to_trace(),
-        "pass_record": pass_record,
-    }
-    source_result_identity_set_ref = _store_mapping(
-        discovery_result_store,
-        "identity_set_ref",
-        "to_identity_set_ref",
-    )
-    if source_result_identity_set_ref is not None:
-        observation_payload["source_result_identity_set_ref"] = (
-            source_result_identity_set_ref
+        pass_record = build_retrieval_pass_record(
+            stage=dispatch_action.stage,
+            iteration=dispatch_action.iteration,
+            queries=dispatch_action.queries,
+            providers=dispatch_action.providers,
+            provider_role=dispatch_action.provider_role,
+            search_depth=dispatch_action.search_depth,
+            results_per_query=dispatch_action.results_per_query,
         )
-    discovery_result_telemetry = _store_mapping(
-        discovery_result_store,
-        "telemetry",
-        "to_telemetry",
-    )
-    if discovery_result_telemetry is not None:
-        observation_payload["discovery_result_telemetry"] = (
-            discovery_result_telemetry
+        retrieval_pass_records.append(pass_record)
+        observation_payload: dict[str, Any] = {
+            "stage": dispatch_action.stage,
+            "iteration": dispatch_action.iteration,
+            "provider_role": dispatch_action.provider_role,
+            "provider_count": len(tuple(dispatch_action.providers)),
+            "query_count": len(tuple(dispatch_action.queries)),
+            "search_depth": dispatch_action.search_depth,
+            "results_per_query": dispatch_action.results_per_query,
+            "seen_url_delta": seen_url_delta,
+            "chunk_delta": len(passages),
+            "scheduled_action": scheduled_action.to_trace(),
+            "pass_record": pass_record,
+        }
+        source_result_identity_set_ref = _invoke_post_material_operation(
+            RetrievalPostMaterialFailureSubtype.SOURCE_RESULT_IDENTITY_SET_PROJECTION,
+            lambda: _store_mapping(
+                discovery_result_store,
+                "identity_set_ref",
+                "to_identity_set_ref",
+            ),
         )
-    observation = Observation.from_action(
-        kernel_action,
-        observation_type=ObservationType.RETRIEVAL_PASS_RESULT,
-        status=RunStageStatus.COMPLETED,
-        payload=observation_payload,
-    )
-    return MainRetrievalPassOutcome(
-        passages=passages,
-        pass_record=pass_record,
-        seen_url_delta=seen_url_delta,
-        chunk_delta=len(passages),
-        retrieval_loop_contract_state=loop_state,
-        descriptor=descriptor,
-        execution_envelope=envelope,
-        observation=observation,
-    )
+        if source_result_identity_set_ref is not None:
+            observation_payload["source_result_identity_set_ref"] = (
+                source_result_identity_set_ref
+            )
+        discovery_result_telemetry = _invoke_post_material_operation(
+            RetrievalPostMaterialFailureSubtype.DISCOVERY_RESULT_TELEMETRY_PROJECTION,
+            lambda: _store_mapping(
+                discovery_result_store,
+                "telemetry",
+                "to_telemetry",
+            ),
+        )
+        if discovery_result_telemetry is not None:
+            observation_payload["discovery_result_telemetry"] = (
+                discovery_result_telemetry
+            )
+        observation = _invoke_post_material_operation(
+            RetrievalPostMaterialFailureSubtype.RETRIEVAL_PASS_OBSERVATION_CONSTRUCTION,
+            lambda: Observation.from_action(
+                kernel_action,
+                observation_type=ObservationType.RETRIEVAL_PASS_RESULT,
+                status=RunStageStatus.COMPLETED,
+                payload=observation_payload,
+            ),
+        )
+        return _invoke_post_material_operation(
+            RetrievalPostMaterialFailureSubtype.MAIN_RETRIEVAL_OUTCOME_CONSTRUCTION,
+            lambda: MainRetrievalPassOutcome(
+                passages=passages,
+                pass_record=pass_record,
+                seen_url_delta=seen_url_delta,
+                chunk_delta=len(passages),
+                retrieval_loop_contract_state=loop_state,
+                descriptor=descriptor,
+                execution_envelope=envelope,
+                observation=observation,
+            ),
+        )
+    except RetrievalPostMaterialDispatchError:
+        raise
+    except Exception as exc:
+        raise RetrievalPostMaterialDispatchError(
+            RetrievalPostMaterialFailureSubtype.POST_MATERIAL_UNCLASSIFIED
+        ) from exc
 
 
 def _execute_scope_dispatch(
