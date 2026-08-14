@@ -2,7 +2,7 @@
 
 RunConfig  — pure data describing one pipeline invocation (no callables).
 RunDeps    — injected callables and constants the orchestrator needs.
-RunOutcome — everything produced by a completed pipeline run.
+RunOutcome — everything produced by a terminal pipeline execution.
 """
 
 from __future__ import annotations
@@ -172,7 +172,7 @@ class RunDeps:
 
 @dataclass
 class RunOutcome:
-    """Everything a completed pipeline run produces.
+    """Everything a terminal pipeline execution produces.
 
     The Streamlit layer renders this (report, failure_card, KB warning, …)
     and saves new_session via save_session().
@@ -185,7 +185,7 @@ class RunOutcome:
     query: str
     core_topic: str
 
-    # The final report text (accumulated from the author step, streaming or not).
+    # The Author report or sanitized non-Author terminal report.
     report: str
 
     # Evidence and retrieval artefacts
@@ -210,6 +210,10 @@ class RunOutcome:
     corpus_state: str
     pipeline_config: dict[str, Any]
 
+    # Exact governed terminal posture. A blocked FAP returns a displayable
+    # terminal outcome, but it is not a successfully completed answer.
+    terminal_status: str
+
     # KB review instrumentation — Streamlit stashes this in session_state
     kb_instrumentation: dict[str, Any] | None = None
 
@@ -219,6 +223,10 @@ class RunOutcome:
 
     # True when the UI wired author_stream_display so the report was streamed live.
     author_streamed: bool = False
+
+    def __post_init__(self) -> None:
+        if self.terminal_status not in {"blocked", "completed"}:
+            raise ValueError("RunOutcome terminal_status must be blocked or completed")
 
 
 def compose_component_gap_recovery_deps(

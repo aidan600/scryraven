@@ -1619,6 +1619,7 @@ def test_ordinary_pipeline_executes_bounded_isclose_with_explicit_policy(
         CostAccumulator(),
     )
     assert outcome.report
+    assert outcome.terminal_status == "completed"
     assert "0.000000001" in outcome.report or "rel_tol" in outcome.report
     physical = policy.physical_snapshot()
     assert physical["enforcement"] == "physical_attempt_envelope"
@@ -1626,6 +1627,7 @@ def test_ordinary_pipeline_executes_bounded_isclose_with_explicit_policy(
     assert physical["retry_attempts"] == 0
     assert physical["fallback_attempts"] == 0
     assert physical["active_attempts"] == 0
+    assert physical["furthest_product_stage"] == "run_outcome_completed"
     assert all(
         physical["physical_attempts_by_family"][family.value] > 0
         for family in ExternalCallFamily
@@ -1639,6 +1641,8 @@ def test_ordinary_pipeline_executes_bounded_isclose_with_explicit_policy(
     )
     assert success["entrypoint"] == entrypoint
     assert success["authorization_id"] == "fixture-v1"
+    assert success["status"] == "completed"
+    assert success["terminal_status"] == "completed"
     assert success["answer_present"] is True
     assert success["physical_envelope"]["physical_attempts"] > 0
     assert "profile_name" not in success
