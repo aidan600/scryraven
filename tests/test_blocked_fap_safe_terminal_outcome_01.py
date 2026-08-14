@@ -140,9 +140,11 @@ def test_run_outcome_shape_accepts_blocked_terminal_fields() -> None:
         complexity="simple",
         corpus_state="ok",
         pipeline_config={},
+        terminal_status="blocked",
         author_streamed=False,
     )
     assert isinstance(outcome, RunOutcome)
+    assert outcome.terminal_status == "blocked"
     assert outcome.failure_card["author_called"] is False
     assert outcome.execution_trace[BLOCKED_FAP_TERMINAL_TRACE_KEY][
         "exported_terminal_posture"

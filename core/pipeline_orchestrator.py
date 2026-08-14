@@ -98,6 +98,7 @@ from core.failure_card import (
     normalize_force_corpus_state,
 )
 from core.final_answer_packet_runtime import (
+    BLOCKED_FAP_TERMINAL_EXPORTED_POSTURE,
     build_blocked_fap_terminal_report,
     build_blocked_fap_terminal_trace_fragment,
     build_safe_blocked_fap_summary,
@@ -5330,7 +5331,14 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             kb_instrumentation = persistence_side_effect_result.kb_instrumentation
             kb_warning = persistence_side_effect_result.kb_warning
 
+    run_outcome_terminal_status = (
+        BLOCKED_FAP_TERMINAL_EXPORTED_POSTURE
+        if final_answer_packet_handoff.author_input_blocked
+        else "completed"
+    )
     outcome = build_run_outcome_from_scope(locals())
     if cap_policy is not None and cap_policy.bounded:
-        cap_policy.note_product_stage("run_outcome_completed")
+        cap_policy.note_product_stage(
+            f"run_outcome_{outcome.terminal_status}"
+        )
     return outcome

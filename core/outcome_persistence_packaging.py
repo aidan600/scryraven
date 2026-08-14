@@ -244,11 +244,12 @@ def build_run_outcome(
     complexity: str,
     corpus_state: str,
     pipeline_config: Mapping[str, Any],
+    terminal_status: str,
     kb_instrumentation: dict[str, Any] | None = None,
     kb_warning: str | None = None,
     author_streamed: bool = False,
 ) -> RunOutcome:
-    """Assemble the RunOutcome dataclass without changing field names."""
+    """Assemble the canonical RunOutcome dataclass and terminal posture."""
 
     return RunOutcome(
         session_id=session_id,
@@ -269,6 +270,7 @@ def build_run_outcome(
         complexity=complexity,
         corpus_state=corpus_state,
         pipeline_config=dict(pipeline_config),
+        terminal_status=terminal_status,
         kb_instrumentation=kb_instrumentation,
         kb_warning=kb_warning,
         author_streamed=author_streamed,

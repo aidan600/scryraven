@@ -88,6 +88,11 @@ PRODUCT_MODEL_ROUTE_CONFIG_INITIALIZATION = (
 import core.pipeline_orchestrator as pipeline_orchestrator  # noqa: E402
 from core.cap_enforcement import RunCapExceeded  # noqa: E402
 from core.cost_accounting import CostAccumulator  # noqa: E402
+from core.final_answer_packet_runtime import (  # noqa: E402
+    BLOCKED_FAP_TERMINAL_EXPORTED_POSTURE,
+    BLOCKED_FAP_TERMINAL_SCHEMA_VERSION,
+    BLOCKED_FAP_TERMINAL_TRACE_KEY,
+)
 from core.generic_query_to_relation_planning import (  # noqa: E402
     MVP_QUERY_PLANNING_OUTPUT_DIR,
     build_generic_query_plan_status_output,
@@ -730,23 +735,51 @@ def _bounded_success_payload(
 ) -> dict[str, object]:
     policy = config.cap_policy
     if policy is None or not policy.bounded:
-        raise RuntimeError("bounded success requires an active bounded policy")
+        raise RuntimeError("bounded result requires an active bounded policy")
     report = str(outcome.report or "")
+    terminal_status = str(outcome.terminal_status or "").strip()
+    if terminal_status not in {"blocked", "completed"}:
+        raise RuntimeError("bounded result requires a governed terminal status")
+    execution_trace = dict(getattr(outcome, "execution_trace", {}) or {})
+    blocked_terminal = dict(
+        execution_trace.get(BLOCKED_FAP_TERMINAL_TRACE_KEY) or {}
+    )
+    if terminal_status == BLOCKED_FAP_TERMINAL_EXPORTED_POSTURE:
+        if (
+            blocked_terminal.get("schema_version")
+            != BLOCKED_FAP_TERMINAL_SCHEMA_VERSION
+            or blocked_terminal.get("exported_terminal_posture")
+            != BLOCKED_FAP_TERMINAL_EXPORTED_POSTURE
+            or blocked_terminal.get("author_called") is not False
+        ):
+            raise RuntimeError(
+                "blocked bounded result requires the typed blocked FAP terminal"
+            )
+        answer = ""
+        terminal_owner = "core.final_answer_packet_runtime"
+    else:
+        if blocked_terminal:
+            raise RuntimeError(
+                "completed bounded result cannot carry a blocked FAP terminal"
+            )
+        answer = report
+        terminal_owner = "core.pipeline_orchestrator.run_pipeline"
     physical_envelope = policy.physical_snapshot()
     citation_count = len(
         re.findall(
             r"\[{1,2}[^\]\r\n]+\]\]?\(https?://[^)\s]+\)",
-            report,
+            answer,
         )
     )
+    terminal: dict[str, object] = {
+        "owner": terminal_owner,
+        "classification": terminal_status,
+    }
     payload: dict[str, object] = {
         "schema_version": "bounded_product_cli_result_v1",
-        "status": "completed",
-        "terminal_status": "completed",
-        "terminal": {
-            "owner": "core.pipeline_orchestrator.run_pipeline",
-            "classification": "completed",
-        },
+        "status": terminal_status,
+        "terminal_status": terminal_status,
+        "terminal": terminal,
         "bounded_posture": True,
         "entrypoint": entrypoint,
         "ordinary_consumer": "core.pipeline_orchestrator.run_pipeline",
@@ -757,8 +790,8 @@ def _bounded_success_payload(
         "furthest_product_stage": physical_envelope["furthest_product_stage"],
         "run_id": outcome.run_id,
         "session_id": outcome.session_id,
-        "answer": report,
-        "answer_present": bool(report.strip()),
+        "answer": answer,
+        "answer_present": bool(answer.strip()),
         "citation_count": citation_count,
         "citation_present": citation_count > 0,
         "physical_envelope": physical_envelope,
@@ -772,6 +805,9 @@ def _bounded_success_payload(
             "database": False,
         },
     }
+    if terminal_status == BLOCKED_FAP_TERMINAL_EXPORTED_POSTURE:
+        terminal[BLOCKED_FAP_TERMINAL_TRACE_KEY] = blocked_terminal
+        payload["terminal_report"] = report
     causal_projection = build_bounded_searchos_n1_causal_projection(
         searchos_slice_a_projection=dict(
             dict(getattr(outcome, "execution_trace", {}) or {}).get(
