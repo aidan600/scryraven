@@ -59,6 +59,64 @@ def test_normal_cli_startup_loads_dotenv_before_search_provider_import(
     assert result["brave_search_timeout_sec"] == 17.0
 
 
+@pytest.mark.parametrize("entrypoint", ["proplex", "scryraven"])
+def test_bounded_cli_startup_does_not_require_dotenv_import(
+    entrypoint: str,
+    tmp_path: Path,
+) -> None:
+    """The bounded module path reaches its JSON terminal without dotenv."""
+
+    private_sentinel = "fixture-dotenv-import-sentinel"
+    (tmp_path / "dotenv.py").write_text(
+        f"raise ModuleNotFoundError({private_sentinel!r})\n",
+        encoding="utf-8",
+    )
+    env = _startup_probe_env()
+    env["PYTHONPATH"] = str(tmp_path) + os.pathsep + env["PYTHONPATH"]
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            entrypoint,
+            "offline bounded import probe",
+            "--mode",
+            "Balanced",
+            "--include-domains",
+            "example.com",
+            "--fast-provider",
+            "OpenAI",
+            "--fast-model",
+            "gpt-5.4-mini",
+            "--smart-provider",
+            "OpenAI",
+            "--smart-model",
+            "gpt-5.4",
+            "--embed-provider",
+            "OpenAI",
+            "--embed-model",
+            "text-embedding-3-small",
+            "--bounded-run-authorization",
+            str(tmp_path / "missing-authorization.json"),
+        ],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert proc.returncode == 2, proc.stdout + proc.stderr
+    assert len(proc.stdout.strip().splitlines()) == 1
+    payload = json.loads(proc.stdout)
+    assert payload["entrypoint"] == entrypoint
+    assert payload["bounded_posture"] is True
+    assert payload["answer_present"] is False
+    assert payload["terminal"]["code"] == "bounded_configuration_unavailable"
+    assert private_sentinel not in proc.stdout
+    assert private_sentinel not in proc.stderr
+    assert "ModuleNotFoundError" not in proc.stdout
+    assert "ModuleNotFoundError" not in proc.stderr
+
 
 def test_dry_run_startup_skips_dotenv_before_search_provider_import(
     tmp_path: Path,

@@ -35,14 +35,20 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from dotenv import load_dotenv
-
 # Ensure the project root is on sys.path when run as "python -m proplex" from
 # outside the repo root (e.g. installed as a script).
 _HERE = Path(__file__).resolve().parent
 _ROOT = _HERE.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
+
+
+def load_dotenv() -> bool:
+    """Load the ordinary local environment without burdening bounded startup."""
+
+    from dotenv import load_dotenv as _load_dotenv
+
+    return bool(_load_dotenv())
 
 from core.product_model_route_config import (  # noqa: E402
     CONFIRM_CURRENT_SOURCE_FOLLOWUP_REENTRY_FLAG,
@@ -1006,6 +1012,39 @@ def _print_bounded_payload(payload: dict[str, object]) -> None:
     print(json.dumps(payload, sort_keys=True, ensure_ascii=True))
 
 
+def _print_bounded_result_projection_failure(*, entrypoint: str) -> None:
+    """Write one fixed sanitized terminal without reusing result projection."""
+
+    payload: dict[str, object] = {
+        "schema_version": "bounded_product_cli_terminal_v1",
+        "status": "stopped",
+        "terminal_status": "stopped",
+        "bounded_posture": True,
+        "entrypoint": entrypoint,
+        "ordinary_consumer": "core.pipeline_orchestrator.run_pipeline",
+        "terminal": {
+            "code": "bounded_result_projection_failed",
+            "owner": "proplex.__main__.main",
+            "classification": "result_projection_failure",
+        },
+        "answer_present": False,
+        "citation_count": 0,
+        "citation_present": False,
+        "retention": {
+            "raw_prompt": False,
+            "raw_provider_payload": False,
+            "raw_model_response": False,
+            "execution_jsonl": False,
+            "policy_journal": False,
+            "knowledge_base": False,
+            "database": False,
+        },
+    }
+    sys.stdout.write(
+        json.dumps(payload, sort_keys=True, ensure_ascii=True) + "\n"
+    )
+
+
 def _print_bounded_entrypoint_setup_failure(
     *,
     entrypoint: str,
@@ -1661,14 +1700,17 @@ def main(
         return 1
 
     if bounded:
-        _print_bounded_payload(
-            _bounded_success_payload(
+        try:
+            payload = _bounded_success_payload(
                 entrypoint=entrypoint,
                 config=config,
                 outcome=outcome,
                 compiled_authorization=compiled,
             )
-        )
+            _print_bounded_payload(payload)
+        except Exception:
+            _print_bounded_result_projection_failure(entrypoint=entrypoint)
+            return 1
         return 0
 
     # Output the report plus allowed-artifact diagnostics built from sanitized

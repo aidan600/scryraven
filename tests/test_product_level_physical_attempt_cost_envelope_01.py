@@ -2306,6 +2306,86 @@ def test_public_bounded_cli_preserves_missing_openai_key_terminal(
 
 
 @pytest.mark.parametrize("entrypoint", ["proplex", "scryraven"])
+@pytest.mark.parametrize("failure_seam", ["projection", "emission"])
+def test_public_bounded_cli_fails_closed_after_run_result(
+    entrypoint: str,
+    failure_seam: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Post-run result handling emits one fixed terminal on either failure seam."""
+
+    private_exception = "fixture-private-result-projection-exception"
+    private_report = "fixture-private-outcome-report-prose"
+    argv = _bounded_entrypoint_setup_argv(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        compatibility_cli,
+        "missing_required_api_keys",
+        lambda **_kwargs: [],
+    )
+    monkeypatch.setattr(
+        compatibility_cli,
+        "_build_run_deps",
+        lambda _log: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        compatibility_cli,
+        "run_pipeline",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            report=private_report,
+            terminal_status="completed",
+            execution_trace={},
+            run_id="fixture-private-run-id",
+            session_id="fixture-private-session-id",
+        ),
+    )
+
+    def fail_result_handling(*_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError(private_exception)
+
+    failing_owner = (
+        "_bounded_success_payload"
+        if failure_seam == "projection"
+        else "_print_bounded_payload"
+    )
+    monkeypatch.setattr(
+        compatibility_cli,
+        failing_owner,
+        fail_result_handling,
+    )
+
+    assert compatibility_cli.main(argv, entrypoint=entrypoint) == 1
+    captured = capsys.readouterr()
+    lines = captured.out.strip().splitlines()
+    assert len(lines) == 1
+    assert lines[0]
+    payload = json.loads(lines[0])
+    assert payload["schema_version"] == "bounded_product_cli_terminal_v1"
+    assert payload["entrypoint"] == entrypoint
+    assert payload["status"] == "stopped"
+    assert payload["terminal_status"] == "stopped"
+    assert payload["terminal"] == {
+        "code": "bounded_result_projection_failed",
+        "owner": "proplex.__main__.main",
+        "classification": "result_projection_failure",
+    }
+    assert payload["answer_present"] is False
+    assert payload["citation_count"] == 0
+    assert payload["citation_present"] is False
+    serialized = json.dumps(payload, sort_keys=True)
+    for forbidden in (
+        private_exception,
+        private_report,
+        "RuntimeError",
+        "Traceback",
+    ):
+        assert forbidden not in captured.out
+        assert forbidden not in captured.err
+        assert forbidden not in serialized
+
+
+@pytest.mark.parametrize("entrypoint", ["proplex", "scryraven"])
 def test_public_bounded_cli_preserves_setup_run_cap_terminal(
     entrypoint: str,
     tmp_path: Path,
