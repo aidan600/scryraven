@@ -229,24 +229,60 @@ def execute_recorded_retrieval_dispatch(
             deps.compute_similarities,
             **kwargs,
         )
-    pass_record = build_retrieval_pass_record(
-        stage=dispatch.stage,
-        iteration=dispatch.iteration,
-        queries=dispatch.queries,
-        providers=dispatch.providers,
-        provider_role=dispatch.provider_role,
-        search_depth=dispatch.search_depth,
-        results_per_query=dispatch.results_per_query,
-    )
+    try:
+        pass_record = _invoke_post_material_operation(
+            RetrievalPostMaterialFailureSubtype.RETRIEVAL_PASS_RECORD_CONSTRUCTION,
+            lambda: build_retrieval_pass_record(
+                stage=dispatch.stage,
+                iteration=dispatch.iteration,
+                queries=dispatch.queries,
+                providers=dispatch.providers,
+                provider_role=dispatch.provider_role,
+                search_depth=dispatch.search_depth,
+                results_per_query=dispatch.results_per_query,
+            ),
+        )
+    except RetrievalPostMaterialDispatchError:
+        raise
+    except Exception as exc:
+        raise RetrievalPostMaterialDispatchError(
+            RetrievalPostMaterialFailureSubtype.RECORDED_DISPATCH_POST_MATERIAL_UNCLASSIFIED
+        ) from exc
     if retrieval_pass_records is not None:
         retrieval_pass_records.append(pass_record)
-    seen_url_delta = max(0, len(deps.seen_urls) - seen_before)
-    return RetrievalDispatchOutcome(
-        passages=passages,
-        pass_record=pass_record,
-        seen_url_delta=seen_url_delta,
-        chunk_delta=len(passages),
-    )
+    try:
+        seen_url_delta, chunk_delta = _invoke_post_material_operation(
+            RetrievalPostMaterialFailureSubtype.RETRIEVAL_DISPATCH_DELTA_PROJECTION,
+            lambda: _project_retrieval_dispatch_deltas(
+                seen_urls=deps.seen_urls,
+                seen_before=seen_before,
+                passages=passages,
+            ),
+        )
+        return _invoke_post_material_operation(
+            RetrievalPostMaterialFailureSubtype.RETRIEVAL_DISPATCH_OUTCOME_CONSTRUCTION,
+            lambda: RetrievalDispatchOutcome(
+                passages=passages,
+                pass_record=pass_record,
+                seen_url_delta=seen_url_delta,
+                chunk_delta=chunk_delta,
+            ),
+        )
+    except RetrievalPostMaterialDispatchError:
+        raise
+    except Exception as exc:
+        raise RetrievalPostMaterialDispatchError(
+            RetrievalPostMaterialFailureSubtype.RECORDED_DISPATCH_POST_MATERIAL_UNCLASSIFIED
+        ) from exc
+
+
+def _project_retrieval_dispatch_deltas(
+    *,
+    seen_urls: set[str],
+    seen_before: int,
+    passages: list[dict[str, Any]],
+) -> tuple[int, int]:
+    return max(0, len(seen_urls) - seen_before), len(passages)
 
 
 @dataclass(frozen=True)
@@ -259,6 +295,9 @@ class MainRetrievalPassOutcome(RetrievalDispatchOutcome):
 
 RETRIEVAL_POST_MATERIAL_CAUSE_OWNER: Final = (
     "core.retrieval_dispatch_runtime.execute_main_retrieval_pass_from_scope"
+)
+RECORDED_DISPATCH_POST_MATERIAL_CAUSE_OWNER: Final = (
+    "core.retrieval_dispatch_runtime.execute_recorded_retrieval_dispatch"
 )
 RETRIEVAL_POST_MATERIAL_CAUSE_CLASSIFICATION: Final = (
     "retrieval_post_material_failure"
@@ -281,6 +320,24 @@ class RetrievalPostMaterialFailureSubtype(str, Enum):
         "main_retrieval_outcome_construction"
     )
     POST_MATERIAL_UNCLASSIFIED = "post_material_unclassified"
+    RETRIEVAL_PASS_RECORD_CONSTRUCTION = "retrieval_pass_record_construction"
+    RETRIEVAL_DISPATCH_DELTA_PROJECTION = "retrieval_dispatch_delta_projection"
+    RETRIEVAL_DISPATCH_OUTCOME_CONSTRUCTION = (
+        "retrieval_dispatch_outcome_construction"
+    )
+    RECORDED_DISPATCH_POST_MATERIAL_UNCLASSIFIED = (
+        "recorded_dispatch_post_material_unclassified"
+    )
+
+
+_RECORDED_DISPATCH_POST_MATERIAL_SUBTYPES: Final = frozenset(
+    {
+        RetrievalPostMaterialFailureSubtype.RETRIEVAL_PASS_RECORD_CONSTRUCTION,
+        RetrievalPostMaterialFailureSubtype.RETRIEVAL_DISPATCH_DELTA_PROJECTION,
+        RetrievalPostMaterialFailureSubtype.RETRIEVAL_DISPATCH_OUTCOME_CONSTRUCTION,
+        RetrievalPostMaterialFailureSubtype.RECORDED_DISPATCH_POST_MATERIAL_UNCLASSIFIED,
+    }
+)
 
 
 class RetrievalPostMaterialDispatchError(RuntimeError):
@@ -299,8 +356,13 @@ class RetrievalPostMaterialDispatchError(RuntimeError):
         return self._subtype
 
     def to_terminal_cause_projection(self) -> dict[str, str]:
+        cause_owner = (
+            RECORDED_DISPATCH_POST_MATERIAL_CAUSE_OWNER
+            if self._subtype in _RECORDED_DISPATCH_POST_MATERIAL_SUBTYPES
+            else RETRIEVAL_POST_MATERIAL_CAUSE_OWNER
+        )
         return {
-            "cause_owner": RETRIEVAL_POST_MATERIAL_CAUSE_OWNER,
+            "cause_owner": cause_owner,
             "cause_classification": (
                 RETRIEVAL_POST_MATERIAL_CAUSE_CLASSIFICATION
             ),

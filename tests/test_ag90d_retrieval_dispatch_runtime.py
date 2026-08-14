@@ -432,33 +432,59 @@ _PRIVATE_FAILURE_FRAGMENTS = (
 
 
 @pytest.mark.parametrize(
-    ("boundary", "expected_subtype"),
+    ("boundary", "expected_subtype", "expected_owner"),
     (
         (
             "identity",
             RetrievalPostMaterialFailureSubtype.SOURCE_RESULT_IDENTITY_SET_PROJECTION,
+            "core.retrieval_dispatch_runtime.execute_main_retrieval_pass_from_scope",
         ),
         (
             "telemetry",
             RetrievalPostMaterialFailureSubtype.DISCOVERY_RESULT_TELEMETRY_PROJECTION,
+            "core.retrieval_dispatch_runtime.execute_main_retrieval_pass_from_scope",
         ),
         (
             "observation",
             RetrievalPostMaterialFailureSubtype.RETRIEVAL_PASS_OBSERVATION_CONSTRUCTION,
+            "core.retrieval_dispatch_runtime.execute_main_retrieval_pass_from_scope",
         ),
         (
             "outcome",
             RetrievalPostMaterialFailureSubtype.MAIN_RETRIEVAL_OUTCOME_CONSTRUCTION,
+            "core.retrieval_dispatch_runtime.execute_main_retrieval_pass_from_scope",
         ),
         (
             "unclassified",
             RetrievalPostMaterialFailureSubtype.POST_MATERIAL_UNCLASSIFIED,
+            "core.retrieval_dispatch_runtime.execute_main_retrieval_pass_from_scope",
+        ),
+        (
+            "record",
+            RetrievalPostMaterialFailureSubtype.RETRIEVAL_PASS_RECORD_CONSTRUCTION,
+            "core.retrieval_dispatch_runtime.execute_recorded_retrieval_dispatch",
+        ),
+        (
+            "delta",
+            RetrievalPostMaterialFailureSubtype.RETRIEVAL_DISPATCH_DELTA_PROJECTION,
+            "core.retrieval_dispatch_runtime.execute_recorded_retrieval_dispatch",
+        ),
+        (
+            "dispatch_outcome",
+            RetrievalPostMaterialFailureSubtype.RETRIEVAL_DISPATCH_OUTCOME_CONSTRUCTION,
+            "core.retrieval_dispatch_runtime.execute_recorded_retrieval_dispatch",
+        ),
+        (
+            "recorded_unclassified",
+            RetrievalPostMaterialFailureSubtype.RECORDED_DISPATCH_POST_MATERIAL_UNCLASSIFIED,
+            "core.retrieval_dispatch_runtime.execute_recorded_retrieval_dispatch",
         ),
     ),
 )
 def test_post_material_failures_project_only_closed_bounded_causes(
     boundary: str,
     expected_subtype: RetrievalPostMaterialFailureSubtype,
+    expected_owner: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     scope, kernel = _post_material_test_scope()
@@ -467,7 +493,33 @@ def test_post_material_failures_project_only_closed_bounded_causes(
     def fail(*_args: Any, **_kwargs: Any) -> Any:
         raise RuntimeError(private_message)
 
-    if boundary in {"identity", "telemetry"}:
+    if boundary == "record":
+        monkeypatch.setattr(retrieval_runtime, "build_retrieval_pass_record", fail)
+    elif boundary == "delta":
+        monkeypatch.setattr(
+            retrieval_runtime,
+            "_project_retrieval_dispatch_deltas",
+            fail,
+        )
+    elif boundary == "dispatch_outcome":
+        monkeypatch.setattr(retrieval_runtime, "RetrievalDispatchOutcome", fail)
+    elif boundary == "recorded_unclassified":
+        original_invoke = retrieval_runtime._invoke_post_material_operation
+
+        def selective_invoke_failure(
+            subtype: RetrievalPostMaterialFailureSubtype,
+            operation: Any,
+        ) -> Any:
+            if subtype is RetrievalPostMaterialFailureSubtype.RETRIEVAL_PASS_RECORD_CONSTRUCTION:
+                fail()
+            return original_invoke(subtype, operation)
+
+        monkeypatch.setattr(
+            retrieval_runtime,
+            "_invoke_post_material_operation",
+            selective_invoke_failure,
+        )
+    elif boundary in {"identity", "telemetry"}:
         original_store_mapping = retrieval_runtime._store_mapping
 
         def selective_store_failure(
@@ -510,9 +562,7 @@ def test_post_material_failures_project_only_closed_bounded_causes(
     assert terminal["code"] == "bounded_run_failed"
     assert terminal["owner"] == "core.pipeline_orchestrator.run_pipeline"
     assert terminal["classification"] == "pipeline_failure"
-    assert terminal["cause_owner"] == (
-        "core.retrieval_dispatch_runtime.execute_main_retrieval_pass_from_scope"
-    )
+    assert terminal["cause_owner"] == expected_owner
     assert terminal["cause_classification"] == "retrieval_post_material_failure"
     assert terminal["cause_subtype"] == expected_subtype.value
     assert payload["answer_present"] is False
