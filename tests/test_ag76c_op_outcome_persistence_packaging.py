@@ -232,6 +232,7 @@ def test_ag76c_op_run_outcome_fields_and_final_metadata() -> None:
         complexity="medium",
         corpus_state="strong",
         pipeline_config={"intent": "informational", "complexity": "medium", "search_depth": 2, "mode": "Balanced"},
+        terminal_status="completed",
         kb_instrumentation={"fired": False},
         kb_warning="warning",
         author_streamed=True,
@@ -244,6 +245,7 @@ def test_ag76c_op_run_outcome_fields_and_final_metadata() -> None:
         "cost": {"total_cost": 0.01},
     }
     assert isinstance(outcome, RunOutcome)
+    assert outcome.terminal_status == "completed"
     assert {field.name for field in fields(RunOutcome)} == set(outcome.__dict__)
     assert outcome.new_session is session
     assert outcome.execution_trace is trace
