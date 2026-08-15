@@ -24,7 +24,7 @@ from core.semantic_contract_foundation import (
     SupportKind,
 )
 
-SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION = "search_planner_sparse_model_prompt_v9"
+SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION = "search_planner_sparse_model_prompt_v10"
 
 SEARCH_PLANNER_MODEL_STRICT_JSON_OUTPUT_CONTRACT = (
     "Return exactly one JSON object.",
@@ -42,9 +42,10 @@ _STRICT_JSON_OUTPUT_CONTRACT_TEXT = "\n".join(
 )
 
 SEARCH_PLANNER_MODEL_SYSTEM_PROMPT = (
-    "Author semantic planning only. Return one JSON object matching "
-    "output_schema. Never answer, cite, claim evidence, select providers/models, "
-    "execute tools, or author runtime, query, or recon mechanics."
+    "Plan semantics only; JSON matches output_schema. Copy exact types/fields/enums "
+    '(case/underscores)/bounds. Clear fact: {"disposition":"direct_simple"} '
+    "(no top-level need). Omit null/empty optionals. Never answer/cite/evidence, "
+    "select providers/models, execute tools, or author runtime/query/recon mechanics."
 )
 SEARCH_PLANNER_MODEL_REQUIRED_TOP_LEVEL_FIELDS = ("disposition",)
 SEARCH_PLANNER_MODEL_OPTIONAL_TOP_LEVEL_FIELDS = (
@@ -745,14 +746,13 @@ def build_search_planner_model_prompt(planner_input: Mapping[str, Any]) -> str:
     }
     instructions = [
         "SEARCHPLANNER SEMANTIC TASK",
-        "Choose one disposition: direct_simple or components.",
-        "direct_simple: one required direct need; never fallback.",
-        "components: 1-5 semantically distinct needs; retain independently requested subjects separately; local keys only; omit empty optionals/defaults.",
-        "Direct: no depends_on. inferred|direct_or_inferred: needs depends_on. inferred: no source/freshness.",
-        "Explicit current official-source needs use source.kind=official_current plus freshness.",
-        "uncertainty: kind+status. unresolved|ambiguous: no selected. selected in candidates. Factual orientation/acquisition may resolve factual identity/currentness; material direct targets and their needed orientation stay required (declare source.strictness=required; preferred/contextual only ancillary work), but must not choose among materially plausible user-intent meanings: set user_confirmation_required=true before acquisition.",
-        "Never author queries/recon/Scout/PlannerRevision, runtime identity, IDs/digests/lineage, routing, evidence/citations, accepted state, or answers.",
-        "Return one JSON object only. Unknown fields, old rich output, prose/Markdown, duplicate keys, and nonfinite JSON fail closed.",
+        "Choose direct_simple (one need; never fallback) or components.",
+        "components: 1-5 semantically distinct needs; retain independently requested subjects separately; local keys; omit empty/default optionals.",
+        "direct: no depends_on; inferred/direct_or_inferred: needs depends_on; inferred: no source/freshness.",
+        "Source object: canonical docs=source.kind=canonical_documentation; current official=source.kind=official_current+freshness.",
+        "uncertainty: kind+status; unresolved|ambiguous: no selected; selected in candidates. Factual orientation/acquisition may resolve factual identity/currentness; material direct targets/orientation stay required (source.strictness=required; preferred/contextual ancillary only); never choose materially plausible user-intent meanings: set user_confirmation_required=true before acquisition.",
+        "Never author queries/recon/Scout/PlannerRevision, runtime IDs/lineage, routing, evidence/citations, accepted state, or answers.",
+        "Return one JSON object only. Unknown/rich/prose/Markdown/duplicate/nonfinite output fails closed.",
         "Sanitized planner input JSON:",
         _json(prompt_payload),
     ]

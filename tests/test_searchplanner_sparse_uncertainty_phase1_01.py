@@ -300,15 +300,16 @@ def test_prompt_uses_compact_sparse_contract_and_phase1_budget_gate() -> None:
     assert "no selected" in prompt
     assert "selected in candidates" in prompt
     assert "Factual orientation/acquisition may resolve factual identity/currentness" in prompt
-    assert "material direct targets and their needed orientation stay required" in prompt
-    assert "declare source.strictness=required" in prompt
-    assert "preferred/contextual only ancillary work" in prompt
-    assert "must not choose among materially plausible user-intent meanings" in prompt
+    assert "material direct targets/orientation stay required" in prompt
+    assert "source.strictness=required" in prompt
+    assert "preferred/contextual ancillary only" in prompt
+    assert "never choose materially plausible user-intent meanings" in prompt
     assert "user_confirmation_required=true before acquisition" in prompt
     assert "set user_confirmation_required=true" in prompt
-    assert "omit empty optionals" in prompt
+    assert "omit empty/default optionals" in prompt
     assert "retain independently requested subjects separately" in prompt
-    assert "source.kind=official_current plus freshness" in prompt
+    assert "canonical docs=source.kind=canonical_documentation" in prompt
+    assert "current official=source.kind=official_current+freshness" in prompt
     assert "answer_components" not in prompt
     assert "component_search_requirements" not in prompt
     assert "run_id" not in prompt

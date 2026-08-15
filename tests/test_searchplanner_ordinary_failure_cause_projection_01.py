@@ -416,6 +416,37 @@ def test_bounded_terminal_projects_closed_branch_field_detail_without_model_mate
         assert private_fragment not in encoded
 
 
+def test_bounded_terminal_projects_closed_type_enum_bound_without_model_material() -> None:
+    rejected_value = "fictional-enum-value-sentinel"
+    raw_query = "fictional-raw-query-sentinel"
+    with pytest.raises(SearchPlannerModelAdapterError) as caught:
+        accept_planner_model_output(
+            {"disposition": rejected_value},
+            user_query_text=raw_query,
+            requested_mode="Balanced",
+        )
+    assert (
+        caught.value.failure_code
+        is SearchPlannerModelAdapterFailureCode.INVALID_SEMANTIC_PROPOSAL
+    )
+    assert caught.value.semantic_proposal_subtype is (
+        SearchPlannerSemanticProposalSubtype.TYPE_ENUM_OR_BOUND
+    )
+    assert caught.value.branch_field_set_detail is None
+
+    payload = compatibility_cli._bounded_terminal_payload(
+        entrypoint="scryraven",
+        exc=caught.value,
+        config=RunConfig(query=_ISCLOSE_QUERY),
+    )
+    failure = payload["terminal"]["search_planner_failure"]
+    assert failure["semantic_proposal_subtype"] == "type_enum_or_bound"
+    assert failure["branch_field_set_detail"] is None
+    encoded = json.dumps(payload, sort_keys=True)
+    for private_fragment in (rejected_value, raw_query, *_PRIVATE_FRAGMENTS):
+        assert private_fragment not in encoded
+
+
 def test_unknown_failure_remains_generic_without_attribution() -> None:
     payload = compatibility_cli._bounded_terminal_payload(
         entrypoint="scryraven",

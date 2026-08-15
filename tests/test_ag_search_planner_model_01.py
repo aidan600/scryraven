@@ -3088,9 +3088,11 @@ def test_model_adapter_calls_injected_model_with_json_requirement() -> None:
     system_prompt = args[1]
     assert "SEARCHPLANNER SEMANTIC TASK" in prompt
     assert "Never author queries/recon/Scout/PlannerRevision" in prompt
-    assert "Unknown fields, old rich output" in prompt
+    assert "Unknown/rich/prose/Markdown/duplicate/nonfinite output fails closed" in prompt
     assert LONG_SUFFIX.strip() in prompt
-    assert "semantic planning only" in system_prompt
+    assert "Plan semantics only" in system_prompt
+    assert "exact types/fields/enums (case/underscores)/bounds" in system_prompt
+    assert '{"disposition":"direct_simple"} (no top-level need)' in system_prompt
     assert kwargs["require_json"] is True
     assert kwargs["provider"] == "FakeProvider"
     assert kwargs["model"] == "fake-fast-model"
@@ -3496,7 +3498,7 @@ def test_model_prompt_embeds_the_exact_sparse_contract_and_version() -> None:
     prompt = search_planner_model_prompt.build_search_planner_model_prompt(planner_input)
     prompt_packet = json.loads(prompt.split("Sanitized planner input JSON:\n", 1)[1])
 
-    assert SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION == "search_planner_sparse_model_prompt_v9"
+    assert SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION == "search_planner_sparse_model_prompt_v10"
     assert SEARCH_PLANNER_MODEL_ADAPTER_SCHEMA_VERSION == "search_planner_model_adapter_ag_search_planner_model_01_v2"
     assert prompt_packet["schema_version"] == SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION
     assert prompt_packet["output_schema"] == search_planner_model_prompt.SEARCH_PLANNER_MODEL_OUTPUT_SCHEMA
@@ -3506,7 +3508,7 @@ def test_model_prompt_embeds_the_exact_sparse_contract_and_version() -> None:
         "safe_context",
     }
     assert "Never author queries/recon/Scout/PlannerRevision" in prompt
-    assert "runtime identity" in prompt
+    assert "runtime IDs/lineage" in prompt
 
 
 def test_sparse_prompt_and_parser_share_strict_json_boundary() -> None:
@@ -3514,9 +3516,8 @@ def test_sparse_prompt_and_parser_share_strict_json_boundary() -> None:
     prompt = search_planner_model_prompt.build_search_planner_model_prompt(planner_input)
 
     assert "Return one JSON object only" in prompt
-    assert "duplicate keys" in prompt
-    assert "nonfinite JSON fail closed" in prompt
-    assert "Return one JSON object" in search_planner_model_prompt.SEARCH_PLANNER_MODEL_SYSTEM_PROMPT
+    assert "Unknown/rich/prose/Markdown/duplicate/nonfinite output fails closed" in prompt
+    assert "JSON matches output_schema" in search_planner_model_prompt.SEARCH_PLANNER_MODEL_SYSTEM_PROMPT
 
 
 def test_required_narrative_text_schema_contract_is_explicit_and_exactly_scoped() -> None:
