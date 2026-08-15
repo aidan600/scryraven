@@ -40,7 +40,12 @@ from core.ordinary_discovery_candidate_handoff_runtime import (
     validate_ordinary_discovery_candidate_reduction,
 )
 from core.provider_plan import ProviderPlan, ProviderPlanRecord
-from core.query_plan import DiscoveryJobClass, QueryPlan
+from core.query_plan import (
+    DiscoveryJobClass,
+    QueryPlan,
+    QueryPlanRole,
+    QueryPlanStatus,
+)
 from core.retrieval_dispatch_runtime import (
     RecordedRetrievalDispatch,
     RetrievalDispatchDeps,
@@ -229,11 +234,30 @@ def _authority(
     request_id: str = "request-discover-handoff",
 ) -> _AuthorityFixture:
     ordered_queries = tuple(str(query) for query in queries)
-    query_plan = QueryPlan(plan_id=f"query-plan:{run_id}").admit_execution_queries(
-        ordered_queries,
-        phase="main_retrieval",
-        iteration=1,
-    )
+    if discovery_job_class is None:
+        query_plan = QueryPlan(
+            plan_id=f"query-plan:{run_id}"
+        ).admit_execution_queries(
+            ordered_queries,
+            phase="main_retrieval",
+            iteration=1,
+        )
+    else:
+        query_plan = QueryPlan(plan_id=f"query-plan:{run_id}")
+        for order, query in enumerate(ordered_queries, start=1):
+            query_plan = query_plan.append(
+                origin="test_discovery_job",
+                role=QueryPlanRole.FINALIZED,
+                status=QueryPlanStatus.ORDERED,
+                authorized_query=query,
+                phase="main_retrieval",
+                iteration=1,
+                order=order,
+                discovery_job_class=discovery_job_class,
+                component_ref={"component_id": f"component:{order:02d}"},
+                semantic_slot_refs=[{"slot_id": f"slot:{order:02d}"}],
+                admission_reason="test_discovery_job",
+            )
     available = {
         provider: provider in providers
         for provider in ("tavily", "linkup", "exa", "serper")
@@ -973,6 +997,10 @@ def test_provider_neutral_orientation_routes_to_serper_candidate_packet_without_
         providers=("serper",),
         discovery_job_class=DiscoveryJobClass.ORIENTATION,
         primary_override=(),
+    )
+    execution_item_ref = authority.query_plan.execution_item_refs(1)[0]
+    assert execution_item_ref["discovery_job_class"] == (
+        DiscoveryJobClass.ORIENTATION.value
     )
     route = authority.provider_records["serper"].route_decision
     assert route.providers() == ("serper",)
