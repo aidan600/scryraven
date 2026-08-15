@@ -21,6 +21,7 @@ from scripts import provider_execution_broker as broker
 from scripts import request_provider_proxy_broker as broker_client
 from scripts.evaluation import brokered_model_origination_transport
 from scripts.evaluation.model_cost_policy import (
+    GPT54_MINI_MODEL_ID,
     GPT54_MODEL_ID,
     ModelCostPolicy,
     resolve_model_cost_policy,
@@ -82,9 +83,7 @@ def _response(
         generation_incomplete_reason=reason,
         usage_observed=usage_observed,
         input_tokens=input_tokens if usage_observed else None,
-        cached_input_tokens=(
-            cached_input_tokens if usage_observed else None
-        ),
+        cached_input_tokens=(cached_input_tokens if usage_observed else None),
         output_tokens=output_tokens if usage_observed else None,
         reasoning_tokens=reasoning_tokens if usage_observed else None,
         total_tokens=total_tokens if usage_observed else None,
@@ -113,9 +112,7 @@ def _authorization(**updates: Any) -> LiveAuthorization:
         decision="offline",
         stop_condition="stop",
         raw_retention_posture="sanitized_only",
-        transport_factory_spec=(
-            brokered_model_origination_transport.TRANSPORT_FACTORY_SPEC
-        ),
+        transport_factory_spec=(brokered_model_origination_transport.TRANSPORT_FACTORY_SPEC),
         canonical_operator_command='["synthetic"]',
         canonical_operator_command_digest="b" * 64,
     )
@@ -250,6 +247,24 @@ def test_exact_cached_pricing_and_durable_nonretention() -> None:
     assert proof["reasoning_token_share"] == "0.25"
     assert "output_text" not in proof
     assert json.dumps(proof).find('{"status":"ok"}') == -1
+
+
+def test_exact_gpt54_mini_policy_supports_the_bounded_planner_route() -> None:
+    policy = resolve_model_cost_policy("openai", GPT54_MINI_MODEL_ID)
+
+    assert policy == ModelCostPolicy(
+        provider="openai",
+        model=GPT54_MINI_MODEL_ID,
+        ordinary_input_price_usd_per_million=Decimal("0.75"),
+        cached_input_price_usd_per_million=Decimal("0.075"),
+        output_price_usd_per_million=Decimal("4.50"),
+    )
+    assert route_priced_cost_decimal(
+        16_000,
+        0,
+        4_096,
+        policy=policy,
+    ) == Decimal("0.030432")
 
 
 def test_unknown_usage_proof_has_unknown_cost_and_may_be_billable() -> None:
@@ -396,6 +411,7 @@ def test_reasoning_effort_is_exact_authorization_not_cost_policy() -> None:
     ):
         _request(reasoning_effort="minimal")
     authorization = _authorization(reasoning_effort="medium")
+
     def mismatched_effort(
         _url: str,
         _token: str,
@@ -403,13 +419,11 @@ def test_reasoning_effort_is_exact_authorization_not_cost_policy() -> None:
     ) -> Mapping[str, Any]:
         return {**_response(), "reasoning_effort": "high"}
 
-    transport = (
-        brokered_model_origination_transport._create_brokered_model_origination_transport(
-            authorization,
-            broker_url="http://127.0.0.1:8765/run",
-            session_token="temporary",
-            request_function=mismatched_effort,
-        )
+    transport = brokered_model_origination_transport._create_brokered_model_origination_transport(
+        authorization,
+        broker_url="http://127.0.0.1:8765/run",
+        session_token="temporary",
+        request_function=mismatched_effort,
     )
     with pytest.raises(EvaluationTransportError, match="attestation"):
         transport(
@@ -449,14 +463,14 @@ def test_model_failure_attestation_survives_broker_client_and_evaluator(
     assert failure["reasoning_effort"] == "medium"
     assert failure["failure_class"] == failure_class
     assert failure["physical_attempt_count"] == physical_attempt_count
+    assert failure["provider_elapsed_milliseconds_total"] == elapsed_milliseconds
     assert (
-        failure["provider_elapsed_milliseconds_total"]
-        == elapsed_milliseconds
+        validate_provider_execution_response(
+            failure,
+            request_payload=request_payload,
+        )["failure_class"]
+        == failure_class
     )
-    assert validate_provider_execution_response(
-        failure,
-        request_payload=request_payload,
-    )["failure_class"] == failure_class
 
     def fake_post(
         _broker_url: str,
@@ -495,14 +509,11 @@ def test_model_failure_attestation_survives_broker_client_and_evaluator(
             request_payload=observed_request,
         )
 
-    transport = (
-        brokered_model_origination_transport
-        ._create_brokered_model_origination_transport(
-            authorization,
-            broker_url=broker_client.DEFAULT_BROKER_URL,
-            session_token="temporary",
-            request_function=evaluator_request,
-        )
+    transport = brokered_model_origination_transport._create_brokered_model_origination_transport(
+        authorization,
+        broker_url=broker_client.DEFAULT_BROKER_URL,
+        session_token="temporary",
+        request_function=evaluator_request,
     )
     with pytest.raises(
         EvaluationTransportError,
@@ -517,15 +528,9 @@ def test_model_failure_attestation_survives_broker_client_and_evaluator(
             maximum_input_tokens=512,
             maximum_output_tokens=512,
         )
-    assert str(evaluator_error.value) == (
-        "brokered model origination transport failed closed: "
-        f"{failure_class}"
-    )
+    assert str(evaluator_error.value) == (f"brokered model origination transport failed closed: {failure_class}")
 
-    rendered = (
-        json.dumps(failure, sort_keys=True)
-        + str(evaluator_error.value)
-    ).casefold()
+    rendered = (json.dumps(failure, sort_keys=True) + str(evaluator_error.value)).casefold()
     for forbidden in (
         "return json",
         "return one bounded object",
@@ -573,10 +578,13 @@ def test_search_failure_envelope_omits_reasoning_effort_and_remains_valid() -> N
         physical_attempt_count=0,
     )
     assert "reasoning_effort" not in failure
-    assert validate_provider_execution_response(
-        failure,
-        request_payload=request_payload,
-    )["failure_class"] == "missing_configuration"
+    assert (
+        validate_provider_execution_response(
+            failure,
+            request_payload=request_payload,
+        )["failure_class"]
+        == "missing_configuration"
+    )
 
 
 def test_broker_source_contains_no_pricing_or_dollar_policy() -> None:

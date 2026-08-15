@@ -7,7 +7,9 @@ constructs the rich state still required by Phase-1 downstream consumers.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import Enum
+from types import MappingProxyType
 from typing import Any, Mapping
 
 from core.semantic_contract_foundation import (
@@ -223,9 +225,7 @@ SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA: dict[str, Any] = {
             "optional_fields": [],
             "forbidden_fields": ["source", "freshness", "caveat"],
             "unknown_fields": "fail closed",
-            "empty_optional_rule": (
-                "components must be a nonempty array; omit empty nested optionals"
-            ),
+            "empty_optional_rule": ("components must be a nonempty array; omit empty nested optionals"),
             "cross_field": "requires at least one required user_facing_answer_target",
         },
     },
@@ -508,6 +508,251 @@ class SearchPlannerBranchFieldSetDetail(str, Enum):
     NESTED_DISALLOWED_FIELD = "nested_disallowed_field"
 
 
+class SearchPlannerSemanticValidationRuleId(str, Enum):
+    """Closed code-owned identities for sparse semantic validation rules."""
+
+    PROPOSAL_JSON_OBJECT_REQUIRED = "proposal_json_object_required"
+    DIRECT_SIMPLE_QUERY_COMPATIBILITY_BOUND = "direct_simple_query_compatibility_bound"
+    DIRECT_SIMPLE_WITH_COMPONENTS = "direct_simple_with_components"
+    DIRECT_SIMPLE_DISALLOWED_TOP_LEVEL = "direct_simple_disallowed_top_level"
+    COMPONENTS_DISALLOWED_TOP_LEVEL = "components_disallowed_top_level"
+    COMPONENTS_REQUIRED_NONEMPTY = "components_required_nonempty"
+    COMPONENT_ARRAY_MAX_ITEMS = "component_array_max_items"
+    DUPLICATE_COMPONENT_LOCAL_KEY = "duplicate_component_local_key"
+    DEPENDENCY_LOCAL_KEY_RESOLUTION = "dependency_local_key_resolution"
+    DEPENDENCY_SELF_REFERENCE_FORBIDDEN = "dependency_self_reference_forbidden"
+    COMPONENTS_REQUIRED_USER_FACING_TARGET = "components_required_user_facing_target"
+    COMPONENT_OBJECT_REQUIRED = "component_object_required"
+    NESTED_DISALLOWED_FIELD = "nested_disallowed_field"
+    DIRECT_SUPPORT_FORBIDS_DEPENDS_ON = "direct_support_forbids_depends_on"
+    INFERRED_SUPPORT_REQUIRES_DEPENDS_ON = "inferred_support_requires_depends_on"
+    INFERRED_SUPPORT_FORBIDS_SOURCE = "inferred_support_forbids_source"
+    INFERRED_SUPPORT_FORBIDS_FRESHNESS = "inferred_support_forbids_freshness"
+    SOURCE_OBJECT_REQUIRED = "source_object_required"
+    UNCERTAINTIES_ARRAY_REQUIRED = "uncertainties_array_required"
+    UNCERTAINTIES_OMIT_EMPTY = "uncertainties_omit_empty"
+    UNCERTAINTIES_MAX_ITEMS = "uncertainties_max_items"
+    UNCERTAINTY_OBJECT_REQUIRED = "uncertainty_object_required"
+    UNRESOLVED_AMBIGUOUS_FORBIDS_SELECTED = "unresolved_ambiguous_forbids_selected"
+    SELECTED_MUST_BE_DECLARED_CANDIDATE = "selected_must_be_declared_candidate"
+    CONFIRMATION_REQUIRES_MATERIAL_UNRESOLVED = "confirmation_requires_material_unresolved"
+    REQUIRED_TEXT_JSON_STRING = "required_text_json_string"
+    REQUIRED_TEXT_NONEMPTY = "required_text_nonempty"
+    REQUIRED_TEXT_MAX_BOUND = "required_text_max_bound"
+    OPTIONAL_TEXT_JSON_STRING = "optional_text_json_string"
+    OPTIONAL_TEXT_OMIT_EMPTY = "optional_text_omit_empty"
+    OPTIONAL_TEXT_MAX_BOUND = "optional_text_max_bound"
+    REQUIRED_ENUM_MEMBER = "required_enum_member"
+    OPTIONAL_ENUM_MEMBER = "optional_enum_member"
+    OPTIONAL_BOOLEAN_JSON_TYPE = "optional_boolean_json_type"
+    TEXT_LIST_ARRAY_REQUIRED = "text_list_array_required"
+    TEXT_LIST_OMIT_EMPTY = "text_list_omit_empty"
+    TEXT_LIST_MAX_ITEMS = "text_list_max_items"
+    TEXT_LIST_ITEM_JSON_STRING = "text_list_item_json_string"
+    TEXT_LIST_ITEM_TEXT_BOUND = "text_list_item_text_bound"
+    TEXT_LIST_UNIQUE_VALUES = "text_list_unique_values"
+    EXTERNAL_TEXT_JSON_STRING = "external_text_json_string"
+    EXTERNAL_TEXT_NONEMPTY = "external_text_nonempty"
+    EXTERNAL_TEXT_MAX_BOUND = "external_text_max_bound"
+    SENSITIVE_FIELD_FORBIDDEN = "sensitive_field_forbidden"
+    MECHANICAL_IDENTITY_FIELD_FORBIDDEN = "mechanical_identity_field_forbidden"
+    RICH_ADMINISTRATIVE_FIELD_FORBIDDEN = "rich_administrative_field_forbidden"
+    CLOSED_AUTHORITY_FIELD_FORBIDDEN = "closed_authority_field_forbidden"
+    PROVIDER_ROUTING_FIELD_FORBIDDEN = "provider_routing_field_forbidden"
+
+
+@dataclass(frozen=True, slots=True)
+class SearchPlannerSemanticValidationRule:
+    """One exact subtype/detail registration for a closed validator rule."""
+
+    semantic_proposal_subtype: SearchPlannerSemanticProposalSubtype
+    branch_field_set_detail: SearchPlannerBranchFieldSetDetail | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(
+            self.semantic_proposal_subtype,
+            SearchPlannerSemanticProposalSubtype,
+        ):
+            raise TypeError("semantic proposal subtype must be a closed enum")
+        if self.branch_field_set_detail is not None and not isinstance(
+            self.branch_field_set_detail,
+            SearchPlannerBranchFieldSetDetail,
+        ):
+            raise TypeError("branch field-set detail must be a closed enum")
+        if (self.semantic_proposal_subtype is SearchPlannerSemanticProposalSubtype.BRANCH_FIELD_SET) != (
+            self.branch_field_set_detail is not None
+        ):
+            raise ValueError("branch field-set detail must be present exactly for branch-field rules")
+
+
+def _build_semantic_validation_rule_registry() -> Mapping[
+    SearchPlannerSemanticValidationRuleId,
+    SearchPlannerSemanticValidationRule,
+]:
+    """Return the complete static rule-to-projection vocabulary."""
+
+    type_enum_or_bound = SearchPlannerSemanticProposalSubtype.TYPE_ENUM_OR_BOUND
+    cross_field = SearchPlannerSemanticProposalSubtype.CROSS_FIELD_CONDITION
+    omission = SearchPlannerSemanticProposalSubtype.OMISSION_CONTRACT
+    forbidden_surface = SearchPlannerSemanticProposalSubtype.FORBIDDEN_SURFACE
+    entries = {
+        SearchPlannerSemanticValidationRuleId.PROPOSAL_JSON_OBJECT_REQUIRED: SearchPlannerSemanticValidationRule(
+            type_enum_or_bound
+        ),
+        SearchPlannerSemanticValidationRuleId.DIRECT_SIMPLE_QUERY_COMPATIBILITY_BOUND: SearchPlannerSemanticValidationRule(
+            cross_field
+        ),
+        SearchPlannerSemanticValidationRuleId.DIRECT_SIMPLE_WITH_COMPONENTS: SearchPlannerSemanticValidationRule(
+            SearchPlannerSemanticProposalSubtype.BRANCH_FIELD_SET,
+            SearchPlannerBranchFieldSetDetail.DIRECT_SIMPLE_WITH_COMPONENTS,
+        ),
+        SearchPlannerSemanticValidationRuleId.DIRECT_SIMPLE_DISALLOWED_TOP_LEVEL: SearchPlannerSemanticValidationRule(
+            SearchPlannerSemanticProposalSubtype.BRANCH_FIELD_SET,
+            SearchPlannerBranchFieldSetDetail.DIRECT_SIMPLE_DISALLOWED_TOP_LEVEL,
+        ),
+        SearchPlannerSemanticValidationRuleId.COMPONENTS_DISALLOWED_TOP_LEVEL: SearchPlannerSemanticValidationRule(
+            SearchPlannerSemanticProposalSubtype.BRANCH_FIELD_SET,
+            SearchPlannerBranchFieldSetDetail.COMPONENTS_DISALLOWED_TOP_LEVEL,
+        ),
+        SearchPlannerSemanticValidationRuleId.COMPONENTS_REQUIRED_NONEMPTY: SearchPlannerSemanticValidationRule(
+            SearchPlannerSemanticProposalSubtype.BRANCH_FIELD_SET,
+            SearchPlannerBranchFieldSetDetail.COMPONENTS_REQUIRED_NONEMPTY,
+        ),
+        SearchPlannerSemanticValidationRuleId.COMPONENT_ARRAY_MAX_ITEMS: SearchPlannerSemanticValidationRule(
+            type_enum_or_bound
+        ),
+        SearchPlannerSemanticValidationRuleId.DUPLICATE_COMPONENT_LOCAL_KEY: SearchPlannerSemanticValidationRule(
+            cross_field
+        ),
+        SearchPlannerSemanticValidationRuleId.DEPENDENCY_LOCAL_KEY_RESOLUTION: SearchPlannerSemanticValidationRule(
+            cross_field
+        ),
+        SearchPlannerSemanticValidationRuleId.DEPENDENCY_SELF_REFERENCE_FORBIDDEN: SearchPlannerSemanticValidationRule(
+            cross_field
+        ),
+        SearchPlannerSemanticValidationRuleId.COMPONENTS_REQUIRED_USER_FACING_TARGET: SearchPlannerSemanticValidationRule(
+            cross_field
+        ),
+        SearchPlannerSemanticValidationRuleId.COMPONENT_OBJECT_REQUIRED: SearchPlannerSemanticValidationRule(
+            type_enum_or_bound
+        ),
+        SearchPlannerSemanticValidationRuleId.NESTED_DISALLOWED_FIELD: SearchPlannerSemanticValidationRule(
+            SearchPlannerSemanticProposalSubtype.BRANCH_FIELD_SET,
+            SearchPlannerBranchFieldSetDetail.NESTED_DISALLOWED_FIELD,
+        ),
+        SearchPlannerSemanticValidationRuleId.DIRECT_SUPPORT_FORBIDS_DEPENDS_ON: SearchPlannerSemanticValidationRule(
+            cross_field
+        ),
+        SearchPlannerSemanticValidationRuleId.INFERRED_SUPPORT_REQUIRES_DEPENDS_ON: SearchPlannerSemanticValidationRule(
+            cross_field
+        ),
+        SearchPlannerSemanticValidationRuleId.INFERRED_SUPPORT_FORBIDS_SOURCE: SearchPlannerSemanticValidationRule(
+            cross_field
+        ),
+        SearchPlannerSemanticValidationRuleId.INFERRED_SUPPORT_FORBIDS_FRESHNESS: SearchPlannerSemanticValidationRule(
+            cross_field
+        ),
+        SearchPlannerSemanticValidationRuleId.SOURCE_OBJECT_REQUIRED: SearchPlannerSemanticValidationRule(
+            type_enum_or_bound
+        ),
+        SearchPlannerSemanticValidationRuleId.UNCERTAINTIES_ARRAY_REQUIRED: SearchPlannerSemanticValidationRule(
+            type_enum_or_bound
+        ),
+        SearchPlannerSemanticValidationRuleId.UNCERTAINTIES_OMIT_EMPTY: SearchPlannerSemanticValidationRule(omission),
+        SearchPlannerSemanticValidationRuleId.UNCERTAINTIES_MAX_ITEMS: SearchPlannerSemanticValidationRule(
+            type_enum_or_bound
+        ),
+        SearchPlannerSemanticValidationRuleId.UNCERTAINTY_OBJECT_REQUIRED: SearchPlannerSemanticValidationRule(
+            type_enum_or_bound
+        ),
+        SearchPlannerSemanticValidationRuleId.UNRESOLVED_AMBIGUOUS_FORBIDS_SELECTED: SearchPlannerSemanticValidationRule(
+            cross_field
+        ),
+        SearchPlannerSemanticValidationRuleId.SELECTED_MUST_BE_DECLARED_CANDIDATE: SearchPlannerSemanticValidationRule(
+            cross_field
+        ),
+        SearchPlannerSemanticValidationRuleId.CONFIRMATION_REQUIRES_MATERIAL_UNRESOLVED: SearchPlannerSemanticValidationRule(
+            cross_field
+        ),
+        SearchPlannerSemanticValidationRuleId.REQUIRED_TEXT_JSON_STRING: SearchPlannerSemanticValidationRule(
+            type_enum_or_bound
+        ),
+        SearchPlannerSemanticValidationRuleId.REQUIRED_TEXT_NONEMPTY: SearchPlannerSemanticValidationRule(
+            type_enum_or_bound
+        ),
+        SearchPlannerSemanticValidationRuleId.REQUIRED_TEXT_MAX_BOUND: SearchPlannerSemanticValidationRule(
+            type_enum_or_bound
+        ),
+        SearchPlannerSemanticValidationRuleId.OPTIONAL_TEXT_JSON_STRING: SearchPlannerSemanticValidationRule(
+            type_enum_or_bound
+        ),
+        SearchPlannerSemanticValidationRuleId.OPTIONAL_TEXT_OMIT_EMPTY: SearchPlannerSemanticValidationRule(omission),
+        SearchPlannerSemanticValidationRuleId.OPTIONAL_TEXT_MAX_BOUND: SearchPlannerSemanticValidationRule(
+            type_enum_or_bound
+        ),
+        SearchPlannerSemanticValidationRuleId.REQUIRED_ENUM_MEMBER: SearchPlannerSemanticValidationRule(
+            type_enum_or_bound
+        ),
+        SearchPlannerSemanticValidationRuleId.OPTIONAL_ENUM_MEMBER: SearchPlannerSemanticValidationRule(
+            type_enum_or_bound
+        ),
+        SearchPlannerSemanticValidationRuleId.OPTIONAL_BOOLEAN_JSON_TYPE: SearchPlannerSemanticValidationRule(
+            type_enum_or_bound
+        ),
+        SearchPlannerSemanticValidationRuleId.TEXT_LIST_ARRAY_REQUIRED: SearchPlannerSemanticValidationRule(
+            type_enum_or_bound
+        ),
+        SearchPlannerSemanticValidationRuleId.TEXT_LIST_OMIT_EMPTY: SearchPlannerSemanticValidationRule(omission),
+        SearchPlannerSemanticValidationRuleId.TEXT_LIST_MAX_ITEMS: SearchPlannerSemanticValidationRule(
+            type_enum_or_bound
+        ),
+        SearchPlannerSemanticValidationRuleId.TEXT_LIST_ITEM_JSON_STRING: SearchPlannerSemanticValidationRule(
+            type_enum_or_bound
+        ),
+        SearchPlannerSemanticValidationRuleId.TEXT_LIST_ITEM_TEXT_BOUND: SearchPlannerSemanticValidationRule(
+            type_enum_or_bound
+        ),
+        SearchPlannerSemanticValidationRuleId.TEXT_LIST_UNIQUE_VALUES: SearchPlannerSemanticValidationRule(
+            type_enum_or_bound
+        ),
+        SearchPlannerSemanticValidationRuleId.EXTERNAL_TEXT_JSON_STRING: SearchPlannerSemanticValidationRule(
+            type_enum_or_bound
+        ),
+        SearchPlannerSemanticValidationRuleId.EXTERNAL_TEXT_NONEMPTY: SearchPlannerSemanticValidationRule(
+            type_enum_or_bound
+        ),
+        SearchPlannerSemanticValidationRuleId.EXTERNAL_TEXT_MAX_BOUND: SearchPlannerSemanticValidationRule(
+            type_enum_or_bound
+        ),
+        SearchPlannerSemanticValidationRuleId.SENSITIVE_FIELD_FORBIDDEN: SearchPlannerSemanticValidationRule(
+            forbidden_surface
+        ),
+        SearchPlannerSemanticValidationRuleId.MECHANICAL_IDENTITY_FIELD_FORBIDDEN: SearchPlannerSemanticValidationRule(
+            forbidden_surface
+        ),
+        SearchPlannerSemanticValidationRuleId.RICH_ADMINISTRATIVE_FIELD_FORBIDDEN: SearchPlannerSemanticValidationRule(
+            forbidden_surface
+        ),
+        SearchPlannerSemanticValidationRuleId.CLOSED_AUTHORITY_FIELD_FORBIDDEN: SearchPlannerSemanticValidationRule(
+            forbidden_surface
+        ),
+        SearchPlannerSemanticValidationRuleId.PROVIDER_ROUTING_FIELD_FORBIDDEN: SearchPlannerSemanticValidationRule(
+            forbidden_surface
+        ),
+    }
+    if set(entries) != set(SearchPlannerSemanticValidationRuleId):
+        raise ValueError("semantic validation rule registry must contain every rule exactly once")
+    if len(SearchPlannerSemanticValidationRuleId.__members__) != len(SearchPlannerSemanticValidationRuleId):
+        raise ValueError("semantic validation rule identifiers must not define aliases")
+    for rule_id in SearchPlannerSemanticValidationRuleId:
+        if rule_id.value != rule_id.name.casefold() or not rule_id.value.replace("_", "").isalnum():
+            raise ValueError("semantic validation rule identifiers must be lowercase snake case")
+    return MappingProxyType(entries)
+
+
+SEARCH_PLANNER_SEMANTIC_VALIDATION_RULE_REGISTRY = _build_semantic_validation_rule_registry()
+
+
 class SearchPlannerSemanticProposalError(ValueError):
     """Fail-closed sparse semantic proposal validation or compilation error."""
 
@@ -515,68 +760,20 @@ class SearchPlannerSemanticProposalError(ValueError):
         self,
         message: str,
         *,
-        subtype: SearchPlannerSemanticProposalSubtype | None = None,
-        branch_field_set_detail: SearchPlannerBranchFieldSetDetail | None = None,
+        semantic_validation_rule_id: SearchPlannerSemanticValidationRuleId,
     ) -> None:
-        resolved_subtype = subtype or classify_semantic_proposal_subtype(message)
-        if branch_field_set_detail is not None and not isinstance(
-            branch_field_set_detail,
-            SearchPlannerBranchFieldSetDetail,
+        if not isinstance(
+            semantic_validation_rule_id,
+            SearchPlannerSemanticValidationRuleId,
         ):
-            raise TypeError("branch_field_set_detail must be a closed enum")
-        if resolved_subtype is SearchPlannerSemanticProposalSubtype.BRANCH_FIELD_SET:
-            if branch_field_set_detail is None:
-                raise ValueError(
-                    "branch_field_set_detail is required for branch_field_set errors"
-                )
-        elif branch_field_set_detail is not None:
-            raise ValueError(
-                "branch_field_set_detail is reserved for branch_field_set errors"
-            )
+            raise TypeError("semantic_validation_rule_id must be a closed enum")
+        registration = SEARCH_PLANNER_SEMANTIC_VALIDATION_RULE_REGISTRY.get(semantic_validation_rule_id)
+        if registration is None:
+            raise ValueError("semantic_validation_rule_id is not registered")
         super().__init__(message)
-        self.subtype = resolved_subtype
-        self.branch_field_set_detail = branch_field_set_detail
-
-
-def classify_semantic_proposal_subtype(message: str) -> SearchPlannerSemanticProposalSubtype:
-    """Map an owned validator message to one closed privacy-safe M02 family."""
-
-    text = str(message)
-    if any(
-        token in text
-        for token in (
-            "unsafe/raw/private fields",
-            "must not author mechanical identity fields",
-            "must not author rich administrative fields",
-            "must not claim closed authority",
-            "must not select provider/model/routing authority",
-        )
-    ):
-        return SearchPlannerSemanticProposalSubtype.FORBIDDEN_SURFACE
-    if "must be omitted instead of empty" in text:
-        return SearchPlannerSemanticProposalSubtype.OMISSION_CONTRACT
-    if "has unknown fields" in text or text.startswith(
-        "components disposition requires a nonempty components array"
-    ):
-        return SearchPlannerSemanticProposalSubtype.BRANCH_FIELD_SET
-    if any(
-        token in text
-        for token in (
-            "requires a required user-facing target",
-            "must not depend on itself",
-            "has unresolved local key",
-            "direct support must not declare depends_on",
-            "inferred support requires depends_on",
-            "inferred-only support must not declare source",
-            "inferred-only support must not declare freshness",
-            "unresolved/ambiguous status must not claim selected",
-            "selected must match one declared candidate",
-            "confirmation requires material unresolved/ambiguous status",
-            "direct_simple requires the authoritative query to fit",
-        )
-    ):
-        return SearchPlannerSemanticProposalSubtype.CROSS_FIELD_CONDITION
-    return SearchPlannerSemanticProposalSubtype.TYPE_ENUM_OR_BOUND
+        self.semantic_validation_rule_id = semantic_validation_rule_id
+        self.subtype = registration.semantic_proposal_subtype
+        self.branch_field_set_detail = registration.branch_field_set_detail
 
 
 def is_semantic_planner_proposal(payload: Mapping[str, Any]) -> bool:
@@ -599,7 +796,10 @@ def validate_semantic_planner_proposal(
     """Validate and normalize the sparse, discriminated ordinary language."""
 
     if not isinstance(model_output, Mapping):
-        raise SearchPlannerSemanticProposalError("sparse planner proposal must be a JSON object")
+        raise SearchPlannerSemanticProposalError(
+            "sparse planner proposal must be a JSON object",
+            semantic_validation_rule_id=SearchPlannerSemanticValidationRuleId.PROPOSAL_JSON_OBJECT_REQUIRED,
+        )
     _reject_unsafe_payload(model_output)
     disposition = _required_enum(
         model_output,
@@ -630,7 +830,10 @@ def compile_semantic_planner_proposal(
         if len(query) > _MAX_NEED_CHARS:
             raise SearchPlannerSemanticProposalError(
                 "direct_simple requires the authoritative query to fit the current "
-                "300-character compatibility query bound"
+                "300-character compatibility query bound",
+                semantic_validation_rule_id=(
+                    SearchPlannerSemanticValidationRuleId.DIRECT_SIMPLE_QUERY_COMPATIBILITY_BOUND
+                ),
             )
         components_in = [
             {
@@ -775,9 +978,7 @@ def compile_semantic_planner_proposal(
                 "candidate_query_text": component["need"],
                 "requested_role": "initial",
                 "source_obligation_candidate_ids": obligation_ids,
-                "distinct_need_justification": (
-                    "Initial candidate copied from the accepted semantic need."
-                ),
+                "distinct_need_justification": ("Initial candidate copied from the accepted semantic need."),
             }
             requirement: dict[str, Any] = {
                 "component_id": component_id,
@@ -824,10 +1025,10 @@ def _validate_direct_simple(model_output: Mapping[str, Any]) -> dict[str, Any]:
         model_output,
         allowed=allowed,
         context="direct_simple",
-        branch_field_set_detail=(
-            SearchPlannerBranchFieldSetDetail.DIRECT_SIMPLE_WITH_COMPONENTS
+        semantic_validation_rule_id=(
+            SearchPlannerSemanticValidationRuleId.DIRECT_SIMPLE_WITH_COMPONENTS
             if "components" in model_output
-            else SearchPlannerBranchFieldSetDetail.DIRECT_SIMPLE_DISALLOWED_TOP_LEVEL
+            else SearchPlannerSemanticValidationRuleId.DIRECT_SIMPLE_DISALLOWED_TOP_LEVEL
         ),
     )
     result: dict[str, Any] = {"disposition": "direct_simple"}
@@ -859,21 +1060,19 @@ def _validate_components_branch(model_output: Mapping[str, Any]) -> dict[str, An
         model_output,
         allowed=allowed,
         context="components branch",
-        branch_field_set_detail=(
-            SearchPlannerBranchFieldSetDetail.COMPONENTS_DISALLOWED_TOP_LEVEL
-        ),
+        semantic_validation_rule_id=(SearchPlannerSemanticValidationRuleId.COMPONENTS_DISALLOWED_TOP_LEVEL),
     )
     raw_components = model_output.get("components")
     if not isinstance(raw_components, list) or not raw_components:
         raise SearchPlannerSemanticProposalError(
             "components disposition requires a nonempty components array",
-            subtype=SearchPlannerSemanticProposalSubtype.BRANCH_FIELD_SET,
-            branch_field_set_detail=(
-                SearchPlannerBranchFieldSetDetail.COMPONENTS_REQUIRED_NONEMPTY
-            ),
+            semantic_validation_rule_id=(SearchPlannerSemanticValidationRuleId.COMPONENTS_REQUIRED_NONEMPTY),
         )
     if len(raw_components) > _MAX_COMPONENTS:
-        raise SearchPlannerSemanticProposalError("components disposition exceeds the five-component ceiling")
+        raise SearchPlannerSemanticProposalError(
+            "components disposition exceeds the five-component ceiling",
+            semantic_validation_rule_id=SearchPlannerSemanticValidationRuleId.COMPONENT_ARRAY_MAX_ITEMS,
+        )
     components = [_validate_component(item, index=index) for index, item in enumerate(raw_components)]
     keyed: dict[str, int] = {}
     for index, component in enumerate(components):
@@ -881,26 +1080,41 @@ def _validate_components_branch(model_output: Mapping[str, Any]) -> dict[str, An
         if not local_key:
             continue
         if local_key in keyed:
-            raise SearchPlannerSemanticProposalError(f"duplicate proposal-local component key: {local_key}")
+            raise SearchPlannerSemanticProposalError(
+                f"duplicate proposal-local component key: {local_key}",
+                semantic_validation_rule_id=SearchPlannerSemanticValidationRuleId.DUPLICATE_COMPONENT_LOCAL_KEY,
+            )
         keyed[local_key] = index
     for index, component in enumerate(components):
         for local_key in component.get("depends_on") or ():
             if local_key not in keyed:
-                raise SearchPlannerSemanticProposalError(f"components[{index}].depends_on has unresolved local key")
+                raise SearchPlannerSemanticProposalError(
+                    f"components[{index}].depends_on has unresolved local key",
+                    semantic_validation_rule_id=SearchPlannerSemanticValidationRuleId.DEPENDENCY_LOCAL_KEY_RESOLUTION,
+                )
             if local_key == component.get("key"):
-                raise SearchPlannerSemanticProposalError(f"components[{index}] must not depend on itself")
+                raise SearchPlannerSemanticProposalError(
+                    f"components[{index}] must not depend on itself",
+                    semantic_validation_rule_id=SearchPlannerSemanticValidationRuleId.DEPENDENCY_SELF_REFERENCE_FORBIDDEN,
+                )
     if not any(
         (component.get("purpose") or "user_facing_answer_target") == "user_facing_answer_target"
         and (component.get("posture") or "required") == "required"
         for component in components
     ):
-        raise SearchPlannerSemanticProposalError("components disposition requires a required user-facing target")
+        raise SearchPlannerSemanticProposalError(
+            "components disposition requires a required user-facing target",
+            semantic_validation_rule_id=SearchPlannerSemanticValidationRuleId.COMPONENTS_REQUIRED_USER_FACING_TARGET,
+        )
     return {"disposition": "components", "components": components}
 
 
 def _validate_component(item: Any, *, index: int) -> dict[str, Any]:
     if not isinstance(item, Mapping):
-        raise SearchPlannerSemanticProposalError(f"components[{index}] must be an object")
+        raise SearchPlannerSemanticProposalError(
+            f"components[{index}] must be an object",
+            semantic_validation_rule_id=SearchPlannerSemanticValidationRuleId.COMPONENT_OBJECT_REQUIRED,
+        )
     allowed = {
         "key",
         "need",
@@ -920,9 +1134,7 @@ def _validate_component(item: Any, *, index: int) -> dict[str, Any]:
         item,
         allowed=allowed,
         context=f"components[{index}]",
-        branch_field_set_detail=(
-            SearchPlannerBranchFieldSetDetail.NESTED_DISALLOWED_FIELD
-        ),
+        semantic_validation_rule_id=(SearchPlannerSemanticValidationRuleId.NESTED_DISALLOWED_FIELD),
     )
     need = _required_text(
         item,
@@ -961,14 +1173,23 @@ def _validate_component(item: Any, *, index: int) -> dict[str, Any]:
     )
     support = result.get("support") or "direct"
     if support == "direct" and dependencies:
-        raise SearchPlannerSemanticProposalError(f"components[{index}] direct support must not declare depends_on")
+        raise SearchPlannerSemanticProposalError(
+            f"components[{index}] direct support must not declare depends_on",
+            semantic_validation_rule_id=SearchPlannerSemanticValidationRuleId.DIRECT_SUPPORT_FORBIDS_DEPENDS_ON,
+        )
     if support in {"inferred", "direct_or_inferred"} and not dependencies:
-        raise SearchPlannerSemanticProposalError(f"components[{index}] inferred support requires depends_on")
+        raise SearchPlannerSemanticProposalError(
+            f"components[{index}] inferred support requires depends_on",
+            semantic_validation_rule_id=SearchPlannerSemanticValidationRuleId.INFERRED_SUPPORT_REQUIRES_DEPENDS_ON,
+        )
     if dependencies:
         result["depends_on"] = dependencies
     source = _optional_source(item.get("source"), context=f"components[{index}].source")
     if support == "inferred" and source:
-        raise SearchPlannerSemanticProposalError(f"components[{index}] inferred-only support must not declare source")
+        raise SearchPlannerSemanticProposalError(
+            f"components[{index}] inferred-only support must not declare source",
+            semantic_validation_rule_id=SearchPlannerSemanticValidationRuleId.INFERRED_SUPPORT_FORBIDS_SOURCE,
+        )
     if source:
         result["source"] = source
     freshness = _optional_text(
@@ -979,7 +1200,8 @@ def _validate_component(item: Any, *, index: int) -> dict[str, Any]:
     )
     if support == "inferred" and freshness:
         raise SearchPlannerSemanticProposalError(
-            f"components[{index}] inferred-only support must not declare freshness"
+            f"components[{index}] inferred-only support must not declare freshness",
+            semantic_validation_rule_id=(SearchPlannerSemanticValidationRuleId.INFERRED_SUPPORT_FORBIDS_FRESHNESS),
         )
     if freshness:
         result["freshness"] = freshness
@@ -1010,14 +1232,15 @@ def _optional_source(value: Any, *, context: str) -> dict[str, str] | None:
     if value is None:
         return None
     if not isinstance(value, Mapping):
-        raise SearchPlannerSemanticProposalError(f"{context} must be an object")
+        raise SearchPlannerSemanticProposalError(
+            f"{context} must be an object",
+            semantic_validation_rule_id=(SearchPlannerSemanticValidationRuleId.SOURCE_OBJECT_REQUIRED),
+        )
     _reject_unknown_fields(
         value,
         allowed={"kind", "strictness"},
         context=context,
-        branch_field_set_detail=(
-            SearchPlannerBranchFieldSetDetail.NESTED_DISALLOWED_FIELD
-        ),
+        semantic_validation_rule_id=(SearchPlannerSemanticValidationRuleId.NESTED_DISALLOWED_FIELD),
     )
     kind = _required_enum(value, "kind", allowed=_SOURCE_KINDS, context=context)
     result = {"kind": kind}
@@ -1036,17 +1259,29 @@ def _optional_uncertainties(value: Any, *, context: str) -> list[dict[str, Any]]
     if value is None:
         return []
     if not isinstance(value, list):
-        raise SearchPlannerSemanticProposalError(f"{context} must be an array")
+        raise SearchPlannerSemanticProposalError(
+            f"{context} must be an array",
+            semantic_validation_rule_id=SearchPlannerSemanticValidationRuleId.UNCERTAINTIES_ARRAY_REQUIRED,
+        )
     if not value:
-        raise SearchPlannerSemanticProposalError(f"{context} must be omitted instead of empty")
+        raise SearchPlannerSemanticProposalError(
+            f"{context} must be omitted instead of empty",
+            semantic_validation_rule_id=SearchPlannerSemanticValidationRuleId.UNCERTAINTIES_OMIT_EMPTY,
+        )
     if len(value) > _MAX_UNCERTAINTIES_PER_COMPONENT:
-        raise SearchPlannerSemanticProposalError(f"{context} exceeds the five-item ceiling")
+        raise SearchPlannerSemanticProposalError(
+            f"{context} exceeds the five-item ceiling",
+            semantic_validation_rule_id=SearchPlannerSemanticValidationRuleId.UNCERTAINTIES_MAX_ITEMS,
+        )
     return [_validate_uncertainty(item, context=f"{context}[{index}]") for index, item in enumerate(value)]
 
 
 def _validate_uncertainty(item: Any, *, context: str) -> dict[str, Any]:
     if not isinstance(item, Mapping):
-        raise SearchPlannerSemanticProposalError(f"{context} must be an object")
+        raise SearchPlannerSemanticProposalError(
+            f"{context} must be an object",
+            semantic_validation_rule_id=(SearchPlannerSemanticValidationRuleId.UNCERTAINTY_OBJECT_REQUIRED),
+        )
     _reject_unknown_fields(
         item,
         allowed={
@@ -1058,9 +1293,7 @@ def _validate_uncertainty(item: Any, *, context: str) -> dict[str, Any]:
             "materiality",
         },
         context=context,
-        branch_field_set_detail=(
-            SearchPlannerBranchFieldSetDetail.NESTED_DISALLOWED_FIELD
-        ),
+        semantic_validation_rule_id=(SearchPlannerSemanticValidationRuleId.NESTED_DISALLOWED_FIELD),
     )
     status = _required_enum(
         item,
@@ -1093,9 +1326,15 @@ def _validate_uncertainty(item: Any, *, context: str) -> dict[str, Any]:
         context=context,
     )
     if selected and status in {"ambiguous", "unresolved"}:
-        raise SearchPlannerSemanticProposalError(f"{context} unresolved/ambiguous status must not claim selected")
+        raise SearchPlannerSemanticProposalError(
+            f"{context} unresolved/ambiguous status must not claim selected",
+            semantic_validation_rule_id=SearchPlannerSemanticValidationRuleId.UNRESOLVED_AMBIGUOUS_FORBIDS_SELECTED,
+        )
     if selected and candidates and selected not in candidates:
-        raise SearchPlannerSemanticProposalError(f"{context} selected must match one declared candidate")
+        raise SearchPlannerSemanticProposalError(
+            f"{context} selected must match one declared candidate",
+            semantic_validation_rule_id=SearchPlannerSemanticValidationRuleId.SELECTED_MUST_BE_DECLARED_CANDIDATE,
+        )
     if selected:
         result["selected"] = selected
     confirmation = _optional_bool(item, "user_confirmation_required", context=context)
@@ -1108,7 +1347,10 @@ def _validate_uncertainty(item: Any, *, context: str) -> dict[str, Any]:
     effective_materiality = materiality or "material"
     if confirmation is True and (status not in {"ambiguous", "unresolved"} or effective_materiality != "material"):
         raise SearchPlannerSemanticProposalError(
-            f"{context} confirmation requires material unresolved/ambiguous status"
+            f"{context} confirmation requires material unresolved/ambiguous status",
+            semantic_validation_rule_id=(
+                SearchPlannerSemanticValidationRuleId.CONFIRMATION_REQUIRES_MATERIAL_UNRESOLVED
+            ),
         )
     if confirmation is not None:
         result["user_confirmation_required"] = confirmation
@@ -1133,12 +1375,21 @@ def _required_text(
     context: str,
 ) -> str:
     if key not in mapping or not isinstance(mapping[key], str):
-        raise SearchPlannerSemanticProposalError(f"{context}.{key} must be a JSON string")
+        raise SearchPlannerSemanticProposalError(
+            f"{context}.{key} must be a JSON string",
+            semantic_validation_rule_id=SearchPlannerSemanticValidationRuleId.REQUIRED_TEXT_JSON_STRING,
+        )
     value = _normalize_whitespace(mapping[key])
     if not value:
-        raise SearchPlannerSemanticProposalError(f"{context}.{key} must be nonempty")
+        raise SearchPlannerSemanticProposalError(
+            f"{context}.{key} must be nonempty",
+            semantic_validation_rule_id=SearchPlannerSemanticValidationRuleId.REQUIRED_TEXT_NONEMPTY,
+        )
     if len(value) > limit:
-        raise SearchPlannerSemanticProposalError(f"{context}.{key} exceeds {limit} characters")
+        raise SearchPlannerSemanticProposalError(
+            f"{context}.{key} exceeds {limit} characters",
+            semantic_validation_rule_id=(SearchPlannerSemanticValidationRuleId.REQUIRED_TEXT_MAX_BOUND),
+        )
     return value
 
 
@@ -1152,12 +1403,21 @@ def _optional_text(
     if key not in mapping:
         return None
     if not isinstance(mapping[key], str):
-        raise SearchPlannerSemanticProposalError(f"{context}.{key} must be a JSON string when present")
+        raise SearchPlannerSemanticProposalError(
+            f"{context}.{key} must be a JSON string when present",
+            semantic_validation_rule_id=SearchPlannerSemanticValidationRuleId.OPTIONAL_TEXT_JSON_STRING,
+        )
     value = _normalize_whitespace(mapping[key])
     if not value:
-        raise SearchPlannerSemanticProposalError(f"{context}.{key} must be omitted instead of empty")
+        raise SearchPlannerSemanticProposalError(
+            f"{context}.{key} must be omitted instead of empty",
+            semantic_validation_rule_id=(SearchPlannerSemanticValidationRuleId.OPTIONAL_TEXT_OMIT_EMPTY),
+        )
     if len(value) > limit:
-        raise SearchPlannerSemanticProposalError(f"{context}.{key} exceeds {limit} characters")
+        raise SearchPlannerSemanticProposalError(
+            f"{context}.{key} exceeds {limit} characters",
+            semantic_validation_rule_id=(SearchPlannerSemanticValidationRuleId.OPTIONAL_TEXT_MAX_BOUND),
+        )
     return value
 
 
@@ -1170,7 +1430,10 @@ def _required_enum(
 ) -> str:
     value = _required_text(mapping, key, limit=80, context=context)
     if value not in allowed:
-        raise SearchPlannerSemanticProposalError(f"{context}.{key} is not an allowed value")
+        raise SearchPlannerSemanticProposalError(
+            f"{context}.{key} is not an allowed value",
+            semantic_validation_rule_id=(SearchPlannerSemanticValidationRuleId.REQUIRED_ENUM_MEMBER),
+        )
     return value
 
 
@@ -1183,7 +1446,10 @@ def _optional_enum(
 ) -> str | None:
     value = _optional_text(mapping, key, limit=80, context=context)
     if value is not None and value not in allowed:
-        raise SearchPlannerSemanticProposalError(f"{context}.{key} is not an allowed value")
+        raise SearchPlannerSemanticProposalError(
+            f"{context}.{key} is not an allowed value",
+            semantic_validation_rule_id=(SearchPlannerSemanticValidationRuleId.OPTIONAL_ENUM_MEMBER),
+        )
     return value
 
 
@@ -1197,7 +1463,10 @@ def _optional_bool(
         return None
     value = mapping[key]
     if not isinstance(value, bool):
-        raise SearchPlannerSemanticProposalError(f"{context}.{key} must be a JSON boolean")
+        raise SearchPlannerSemanticProposalError(
+            f"{context}.{key} must be a JSON boolean",
+            semantic_validation_rule_id=SearchPlannerSemanticValidationRuleId.OPTIONAL_BOOLEAN_JSON_TYPE,
+        )
     return value
 
 
@@ -1213,32 +1482,59 @@ def _optional_text_list(
         return []
     raw = mapping[key]
     if not isinstance(raw, list):
-        raise SearchPlannerSemanticProposalError(f"{context}.{key} must be an array")
+        raise SearchPlannerSemanticProposalError(
+            f"{context}.{key} must be an array",
+            semantic_validation_rule_id=SearchPlannerSemanticValidationRuleId.TEXT_LIST_ARRAY_REQUIRED,
+        )
     if not raw:
-        raise SearchPlannerSemanticProposalError(f"{context}.{key} must be omitted instead of empty")
+        raise SearchPlannerSemanticProposalError(
+            f"{context}.{key} must be omitted instead of empty",
+            semantic_validation_rule_id=(SearchPlannerSemanticValidationRuleId.TEXT_LIST_OMIT_EMPTY),
+        )
     if len(raw) > maximum_items:
-        raise SearchPlannerSemanticProposalError(f"{context}.{key} exceeds the item ceiling")
+        raise SearchPlannerSemanticProposalError(
+            f"{context}.{key} exceeds the item ceiling",
+            semantic_validation_rule_id=SearchPlannerSemanticValidationRuleId.TEXT_LIST_MAX_ITEMS,
+        )
     values: list[str] = []
     for index, item in enumerate(raw):
         if not isinstance(item, str):
-            raise SearchPlannerSemanticProposalError(f"{context}.{key}[{index}] must be a JSON string")
+            raise SearchPlannerSemanticProposalError(
+                f"{context}.{key}[{index}] must be a JSON string",
+                semantic_validation_rule_id=SearchPlannerSemanticValidationRuleId.TEXT_LIST_ITEM_JSON_STRING,
+            )
         value = _normalize_whitespace(item)
         if not value or len(value) > item_limit:
-            raise SearchPlannerSemanticProposalError(f"{context}.{key}[{index}] is empty or over the text bound")
+            raise SearchPlannerSemanticProposalError(
+                f"{context}.{key}[{index}] is empty or over the text bound",
+                semantic_validation_rule_id=SearchPlannerSemanticValidationRuleId.TEXT_LIST_ITEM_TEXT_BOUND,
+            )
         if value in values:
-            raise SearchPlannerSemanticProposalError(f"{context}.{key} contains a duplicate value")
+            raise SearchPlannerSemanticProposalError(
+                f"{context}.{key} contains a duplicate value",
+                semantic_validation_rule_id=SearchPlannerSemanticValidationRuleId.TEXT_LIST_UNIQUE_VALUES,
+            )
         values.append(value)
     return values
 
 
 def _normalized_external_text(value: Any, *, context: str, limit: int) -> str:
     if not isinstance(value, str):
-        raise SearchPlannerSemanticProposalError(f"{context} must be a string")
+        raise SearchPlannerSemanticProposalError(
+            f"{context} must be a string",
+            semantic_validation_rule_id=SearchPlannerSemanticValidationRuleId.EXTERNAL_TEXT_JSON_STRING,
+        )
     normalized = _normalize_whitespace(value)
     if not normalized:
-        raise SearchPlannerSemanticProposalError(f"{context} must be nonempty")
+        raise SearchPlannerSemanticProposalError(
+            f"{context} must be nonempty",
+            semantic_validation_rule_id=SearchPlannerSemanticValidationRuleId.EXTERNAL_TEXT_NONEMPTY,
+        )
     if len(normalized) > limit:
-        raise SearchPlannerSemanticProposalError(f"{context} exceeds {limit} characters")
+        raise SearchPlannerSemanticProposalError(
+            f"{context} exceeds {limit} characters",
+            semantic_validation_rule_id=SearchPlannerSemanticValidationRuleId.EXTERNAL_TEXT_MAX_BOUND,
+        )
     return normalized
 
 
@@ -1247,14 +1543,13 @@ def _reject_unknown_fields(
     *,
     allowed: set[str],
     context: str,
-    branch_field_set_detail: SearchPlannerBranchFieldSetDetail,
+    semantic_validation_rule_id: SearchPlannerSemanticValidationRuleId,
 ) -> None:
     unknown = sorted(str(key) for key in mapping if key not in allowed)
     if unknown:
         raise SearchPlannerSemanticProposalError(
             f"{context} has unknown fields: " + ", ".join(unknown),
-            subtype=SearchPlannerSemanticProposalSubtype.BRANCH_FIELD_SET,
-            branch_field_set_detail=branch_field_set_detail,
+            semantic_validation_rule_id=semantic_validation_rule_id,
         )
 
 
@@ -1277,20 +1572,33 @@ def _reject_unsafe_payload(payload: Mapping[str, Any]) -> None:
     normalized = {key.strip().casefold() for key in keys}
     sensitive = sorted(key for key in normalized if key.startswith("raw_") or key in _SENSITIVE_KEYS)
     if sensitive:
-        raise SearchPlannerSemanticProposalError("sparse planner proposal contains unsafe/raw/private fields")
+        raise SearchPlannerSemanticProposalError(
+            "sparse planner proposal contains unsafe/raw/private fields",
+            semantic_validation_rule_id=SearchPlannerSemanticValidationRuleId.SENSITIVE_FIELD_FORBIDDEN,
+        )
     mechanical = sorted(keys & _FORBIDDEN_MECHANICAL_IDENTITY_KEYS)
     if mechanical:
-        raise SearchPlannerSemanticProposalError("sparse planner proposal must not author mechanical identity fields")
+        raise SearchPlannerSemanticProposalError(
+            "sparse planner proposal must not author mechanical identity fields",
+            semantic_validation_rule_id=SearchPlannerSemanticValidationRuleId.MECHANICAL_IDENTITY_FIELD_FORBIDDEN,
+        )
     rich = sorted(keys & _FORBIDDEN_RICH_KEYS)
     if rich:
-        raise SearchPlannerSemanticProposalError("sparse planner proposal must not author rich administrative fields")
+        raise SearchPlannerSemanticProposalError(
+            "sparse planner proposal must not author rich administrative fields",
+            semantic_validation_rule_id=SearchPlannerSemanticValidationRuleId.RICH_ADMINISTRATIVE_FIELD_FORBIDDEN,
+        )
     authority = sorted(keys & _FORBIDDEN_AUTHORITY_KEYS)
     if authority:
-        raise SearchPlannerSemanticProposalError("sparse planner proposal must not claim closed authority")
+        raise SearchPlannerSemanticProposalError(
+            "sparse planner proposal must not claim closed authority",
+            semantic_validation_rule_id=SearchPlannerSemanticValidationRuleId.CLOSED_AUTHORITY_FIELD_FORBIDDEN,
+        )
     provider = sorted(keys & _FORBIDDEN_PROVIDER_KEYS)
     if provider:
         raise SearchPlannerSemanticProposalError(
-            "sparse planner proposal must not select provider/model/routing authority"
+            "sparse planner proposal must not select provider/model/routing authority",
+            semantic_validation_rule_id=(SearchPlannerSemanticValidationRuleId.PROVIDER_ROUTING_FIELD_FORBIDDEN),
         )
 
 
@@ -1308,11 +1616,13 @@ __all__ = [
     "SEARCH_PLANNER_SEMANTIC_PROPOSAL_REQUIRED_TOP_LEVEL_FIELDS",
     "SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA",
     "SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA_VERSION",
+    "SEARCH_PLANNER_SEMANTIC_VALIDATION_RULE_REGISTRY",
     "SearchPlannerBranchFieldSetDetail",
     "SearchPlannerSemanticProposalError",
     "SearchPlannerSemanticProposalSubtype",
+    "SearchPlannerSemanticValidationRule",
+    "SearchPlannerSemanticValidationRuleId",
     "build_search_planner_model_visible_schema",
-    "classify_semantic_proposal_subtype",
     "compile_semantic_planner_proposal",
     "count_model_authored_mechanical_identity_keys",
     "is_semantic_planner_proposal",

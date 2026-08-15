@@ -251,7 +251,7 @@ def test_mechanical_failure_skips_both_judges_and_remains_a_trial(
     ]
     failed = packet["trial_results"][0]
     product_failure = failed["product_boundary_result"]
-    assert product_failure["schema_version"] == "search_planner_product_boundary_observer_v2"
+    assert product_failure["schema_version"] == "search_planner_product_boundary_observer_v3"
     assert product_failure["boundary_status"] == "FAIL"
     assert product_failure["parser_posture"] == "PASS"
     assert product_failure["validator_posture"] == "FAIL"

@@ -48,13 +48,9 @@ def main(argv: list[str] | None = None) -> int:
     token: str | None = None
     try:
         if not args.confirm_provider_call:
-            raise ProviderExecutionOperatorError(
-                "provider_call_confirmation_required"
-            )
+            raise ProviderExecutionOperatorError("provider_call_confirmation_required")
         if not client._is_loopback_broker_url(args.broker_url):
-            raise ProviderExecutionOperatorError(
-                "broker_url_must_be_loopback_http"
-            )
+            raise ProviderExecutionOperatorError("broker_url_must_be_loopback_http")
         output_path = client._resolve_output_path(args.output)
         client.prepare_output_path_for_sanitized_write(output_path)
         env_file_path = normalize_environment_file_path(args.env_file)
@@ -79,9 +75,7 @@ def main(argv: list[str] | None = None) -> int:
                 token=token,
                 process_env=os.environ,
             ),
-            timeout_seconds=args.timeout_seconds
-            + args.readiness_timeout_seconds
-            + 30.0,
+            timeout_seconds=args.timeout_seconds + args.readiness_timeout_seconds + 30.0,
         )
     except client.OutputHygieneError as exc:
         client.print_output_hygiene_failure_summary(exc)
@@ -117,9 +111,7 @@ def main(argv: list[str] | None = None) -> int:
 
 def _parser() -> argparse.ArgumentParser:
     parser = client._parser()
-    parser.description = (
-        "Start the tracked loopback broker for one explicit provider execution."
-    )
+    parser.description = "Start the tracked loopback broker for one explicit provider execution."
     parser.add_argument(
         "--env-file",
         required=True,
@@ -129,7 +121,7 @@ def _parser() -> argparse.ArgumentParser:
         "--maximum-requests",
         type=int,
         default=1,
-        choices=(1, 2),
+        choices=(1, 2, 6),
         help="Mechanical broker-session request fuse.",
     )
     parser.add_argument(
@@ -162,7 +154,7 @@ def broker_environment(
 ) -> dict[str, str]:
     if not token:
         raise ProviderExecutionOperatorError("invalid_broker_session")
-    if maximum_requests not in {1, 2}:
+    if maximum_requests not in {1, 2, 6}:
         raise ProviderExecutionOperatorError("maximum_requests_out_of_bounds")
     env = _minimal_child_environment(process_env)
     env.update(

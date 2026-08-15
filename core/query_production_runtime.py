@@ -171,6 +171,15 @@ class InitialQueryStrategyConvergenceResult:
         return int(self.effective_route_posture["max_iterations"])
 
 
+@dataclass(frozen=True, slots=True)
+class InitialSearchPlannerAcceptanceResult:
+    """Product-owned state available exactly after initial contract acceptance."""
+
+    planner_action: AuthorizedAction
+    acceptance_action: AuthorizedAction
+    accepted_contract: Any
+
+
 def _clean_query_projection(queries: Sequence[str]) -> list[str]:
     return [" ".join(str(query or "").split())[:300] for query in queries if str(query or "").strip()]
 
@@ -285,9 +294,7 @@ def _initial_route_posture_from_preparation(
     router_original_query_type = router_query_preparation_contract.router_original_query_type
     routing_override_applied = False
     routing_override_reason: str | None = None
-    contract_source_requirement_hints = contract_query_hints_from_projection(
-        run_contract_projection
-    )
+    contract_source_requirement_hints = contract_query_hints_from_projection(run_contract_projection)
     run_contract_ref: dict[str, Any] = {}
     if isinstance(run_contract_projection, Mapping) and run_contract_projection:
         run_contract_ref = {
@@ -330,9 +337,7 @@ def _initial_route_posture_from_preparation(
         )
     active_include_domains = list(include_domains)
     if intent == "news":
-        active_include_domains = list(
-            set(active_include_domains + list(news_preferred_domains))
-        )
+        active_include_domains = list(set(active_include_domains + list(news_preferred_domains)))
     complexity = _complexity_for_strategy(strategy)
     budget = _budget_for_complexity(complexity)
     entity_count_before = len(entities_list)
@@ -374,32 +379,26 @@ def _initial_route_posture_from_preparation(
     }
 
 
-def execute_initial_query_strategy_convergence(
+def execute_initial_search_planner_acceptance(
     *,
     run_kernel: Any,
     router_query_preparation_contract: RouterQueryPreparationState,
     query: str,
     strategy: str,
     current_date: str,
-    focus_academic: bool,
-    force_intent_news: bool,
     include_domains: Sequence[str],
     exclude_domains: Sequence[str] = (),
-    news_preferred_domains: Sequence[str],
     route_projection: Mapping[str, Any],
     run_contract_projection: Mapping[str, Any],
     supplied_context: Mapping[str, Any] | None = None,
     planner_adapter: SearchPlannerAdapter,
-    provider_diagnostics: MutableSequence[dict[str, Any]],
-    waste_flags: Sequence[str] | None = None,
     initial_query_allocation_policy: InitialQueryAllocationPolicy = (DEFAULT_INITIAL_QUERY_ALLOCATION_POLICY),
-) -> InitialQueryStrategyConvergenceResult:
-    """Run the one ordinary initial semantic-planning producer chain.
+) -> InitialSearchPlannerAcceptanceResult:
+    """Run the existing production Planner path through initial acceptance only.
 
-    A malformed planner proposal or stale contract ref yields no
-    retrieval-dispatchable query. Initial uncertainty remains in the accepted
-    contract and enters QueryPlan/SearchOS without a SearchWorkPlan or
-    QueryProduction carrier.
+    This shared prefix deliberately stops before candidate-strategy derivation
+    and QueryPlan admission, preserving the ordinary convergence function as
+    the sole consumer that proceeds into downstream query work.
     """
 
     if not isinstance(initial_query_allocation_policy, InitialQueryAllocationPolicy):
@@ -486,9 +485,7 @@ def execute_initial_query_strategy_convergence(
     if not qmr:
         raise QueryStrategyConvergenceError(
             "SearchPlanner reduction did not produce a QuestionMeaningRecord",
-            failure_code=(
-                QueryStrategyConvergenceFailureCode.QUESTION_MEANING_RECORD_MISSING
-            ),
+            failure_code=(QueryStrategyConvergenceFailureCode.QUESTION_MEANING_RECORD_MISSING),
         )
     acceptance_action = invoke_run_kernel_initial_planning(
         "initial_answer_contract_acceptance",
@@ -516,10 +513,59 @@ def execute_initial_query_strategy_convergence(
     if not accepted_contract:
         raise QueryStrategyConvergenceError(
             "SearchPlanner reduction did not bind an accepted AnswerContract",
-            failure_code=(
-                QueryStrategyConvergenceFailureCode.ANSWER_CONTRACT_BINDING_MISSING
-            ),
+            failure_code=(QueryStrategyConvergenceFailureCode.ANSWER_CONTRACT_BINDING_MISSING),
         )
+    return InitialSearchPlannerAcceptanceResult(
+        planner_action=planner_action,
+        acceptance_action=acceptance_action,
+        accepted_contract=accepted_contract,
+    )
+
+
+def execute_initial_query_strategy_convergence(
+    *,
+    run_kernel: Any,
+    router_query_preparation_contract: RouterQueryPreparationState,
+    query: str,
+    strategy: str,
+    current_date: str,
+    focus_academic: bool,
+    force_intent_news: bool,
+    include_domains: Sequence[str],
+    exclude_domains: Sequence[str] = (),
+    news_preferred_domains: Sequence[str],
+    route_projection: Mapping[str, Any],
+    run_contract_projection: Mapping[str, Any],
+    supplied_context: Mapping[str, Any] | None = None,
+    planner_adapter: SearchPlannerAdapter,
+    provider_diagnostics: MutableSequence[dict[str, Any]],
+    waste_flags: Sequence[str] | None = None,
+    initial_query_allocation_policy: InitialQueryAllocationPolicy = (DEFAULT_INITIAL_QUERY_ALLOCATION_POLICY),
+) -> InitialQueryStrategyConvergenceResult:
+    """Run the one ordinary initial semantic-planning producer chain.
+
+    A malformed planner proposal or stale contract ref yields no
+    retrieval-dispatchable query. Initial uncertainty remains in the accepted
+    contract and enters QueryPlan/SearchOS without a SearchWorkPlan or
+    QueryProduction carrier.
+    """
+
+    acceptance = execute_initial_search_planner_acceptance(
+        run_kernel=run_kernel,
+        router_query_preparation_contract=router_query_preparation_contract,
+        query=query,
+        strategy=strategy,
+        current_date=current_date,
+        include_domains=include_domains,
+        exclude_domains=exclude_domains,
+        route_projection=route_projection,
+        run_contract_projection=run_contract_projection,
+        supplied_context=supplied_context,
+        planner_adapter=planner_adapter,
+        initial_query_allocation_policy=initial_query_allocation_policy,
+    )
+    planner_action = acceptance.planner_action
+    accepted_contract = acceptance.accepted_contract
     candidate_strategies = initial_query_strategies_from_planner_state(
         planner_state=run_kernel.state.search_planner_proposal_state,
         accepted_contract=accepted_contract,
@@ -531,16 +577,11 @@ def execute_initial_query_strategy_convergence(
             "legacy initial producer fallback is retired",
             failure_code=QueryStrategyConvergenceFailureCode.INITIAL_STRATEGIES_EMPTY,
         )
-    candidate_queries = [
-        str(item.get("candidate_query_text") or "").strip()
-        for item in candidate_strategies
-    ]
+    candidate_queries = [str(item.get("candidate_query_text") or "").strip() for item in candidate_strategies]
     if any(not query or len(query) > 300 for query in candidate_queries):
         raise QueryStrategyConvergenceError(
             "SearchPlanner initial query strategies require bounded exact text",
-            failure_code=(
-                QueryStrategyConvergenceFailureCode.INITIAL_STRATEGY_TEXT_UNBOUNDED
-            ),
+            failure_code=(QueryStrategyConvergenceFailureCode.INITIAL_STRATEGY_TEXT_UNBOUNDED),
         )
     route_bundle = _initial_route_posture_from_preparation(
         router_query_preparation_contract=router_query_preparation_contract,
@@ -565,9 +606,7 @@ def execute_initial_query_strategy_convergence(
         nutrition_lookup_telemetry=dict(route_bundle["nutrition_lookup_telemetry"]),
         waste_flags=list(route_bundle["waste_flags"]),
         empty_entity_flag=bool(route_bundle["empty_entity_flag"]),
-        contract_source_requirement_hints=list(
-            route_bundle["contract_source_requirement_hints"]
-        ),
+        contract_source_requirement_hints=list(route_bundle["contract_source_requirement_hints"]),
         initial_query_allocation_policy=initial_query_allocation_policy,
     )
 
@@ -779,9 +818,11 @@ def execute_query_plan_admission_action(
 
 __all__ = [
     "InitialQueryStrategyConvergenceResult",
+    "InitialSearchPlannerAcceptanceResult",
     "QueryPlanAdmissionResult",
     "QueryStrategyConvergenceError",
     "QueryStrategyConvergenceFailureCode",
     "execute_initial_query_strategy_convergence",
+    "execute_initial_search_planner_acceptance",
     "execute_query_plan_admission_action",
 ]

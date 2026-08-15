@@ -9,6 +9,7 @@ from typing import Mapping
 
 SUPPORTED_PROVIDER = "openai"
 GPT54_MODEL_ID = "gpt-5.4-2026-03-05"
+GPT54_MINI_MODEL_ID = "gpt-5.4-mini"
 TOKENS_PER_MILLION = Decimal("1000000")
 
 
@@ -29,7 +30,14 @@ MODEL_COST_POLICIES: Mapping[tuple[str, str], ModelCostPolicy] = MappingProxyTyp
             ordinary_input_price_usd_per_million=Decimal("2.50"),
             cached_input_price_usd_per_million=Decimal("0.25"),
             output_price_usd_per_million=Decimal("15.00"),
-        )
+        ),
+        (SUPPORTED_PROVIDER, GPT54_MINI_MODEL_ID): ModelCostPolicy(
+            provider=SUPPORTED_PROVIDER,
+            model=GPT54_MINI_MODEL_ID,
+            ordinary_input_price_usd_per_million=Decimal("0.75"),
+            cached_input_price_usd_per_million=Decimal("0.075"),
+            output_price_usd_per_million=Decimal("4.50"),
+        ),
     }
 )
 
@@ -57,19 +65,14 @@ def route_priced_cost_decimal(
     policy: ModelCostPolicy,
 ) -> Decimal:
     return (
-        (
-            Decimal(uncached_input_tokens)
-            * policy.ordinary_input_price_usd_per_million
-            + Decimal(cached_input_tokens)
-            * policy.cached_input_price_usd_per_million
-            + Decimal(output_tokens)
-            * policy.output_price_usd_per_million
-        )
-        / TOKENS_PER_MILLION
-    )
+        Decimal(uncached_input_tokens) * policy.ordinary_input_price_usd_per_million
+        + Decimal(cached_input_tokens) * policy.cached_input_price_usd_per_million
+        + Decimal(output_tokens) * policy.output_price_usd_per_million
+    ) / TOKENS_PER_MILLION
 
 
 __all__ = [
+    "GPT54_MINI_MODEL_ID",
     "GPT54_MODEL_ID",
     "MODEL_COST_POLICIES",
     "ModelCostPolicy",

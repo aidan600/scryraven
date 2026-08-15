@@ -49,9 +49,7 @@ from core.search_planner_semantic_compiler import (
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
-_ISCLOSE_QUERY = (
-    "Does Python's math.isclose use relative tolerance, absolute tolerance, or both?"
-)
+_ISCLOSE_QUERY = "Does Python's math.isclose use relative tolerance, absolute tolerance, or both?"
 _PRIVATE_FRAGMENTS = (
     "fictional-raw-exception-message-sentinel",
     "fictional-raw-prompt-sentinel",
@@ -80,9 +78,7 @@ def _raise_failure_codes(path: Path, exception_name: str) -> list[str]:
                 code_value = value.attr
             break
         if code_value is None:
-            raise AssertionError(
-                f"{path.name}:{node.lineno} {exception_name} raise lacks failure_code="
-            )
+            raise AssertionError(f"{path.name}:{node.lineno} {exception_name} raise lacks failure_code=")
         codes.append(code_value)
     return codes
 
@@ -126,15 +122,11 @@ def test_materially_different_runtime_categories_project_different_codes() -> No
 def test_materially_different_convergence_categories_project_different_codes() -> None:
     first = QueryStrategyConvergenceError(
         "private: " + _PRIVATE_FRAGMENTS[0],
-        failure_code=(
-            QueryStrategyConvergenceFailureCode.ANSWER_CONTRACT_BINDING_MISSING
-        ),
+        failure_code=(QueryStrategyConvergenceFailureCode.ANSWER_CONTRACT_BINDING_MISSING),
     )
     second = QueryStrategyConvergenceError(
         "private: " + _PRIVATE_FRAGMENTS[0],
-        failure_code=(
-            QueryStrategyConvergenceFailureCode.QUESTION_MEANING_RECORD_MISSING
-        ),
+        failure_code=(QueryStrategyConvergenceFailureCode.QUESTION_MEANING_RECORD_MISSING),
     )
     first_proj = project_initial_query_strategy_failure_for_terminal(first)
     second_proj = project_initial_query_strategy_failure_for_terminal(second)
@@ -158,10 +150,7 @@ def test_classifier_consumes_owner_authored_code_not_generic_rebuild() -> None:
     assert runtime_failure is not None
     assert convergence_failure is not None
     assert runtime_failure.failure_origin is InitialQueryStrategyFailureOrigin.PLANNER_RUNTIME
-    assert (
-        convergence_failure.failure_origin
-        is InitialQueryStrategyFailureOrigin.QUERY_STRATEGY_CONVERGENCE
-    )
+    assert convergence_failure.failure_origin is InitialQueryStrategyFailureOrigin.QUERY_STRATEGY_CONVERGENCE
     assert runtime_failure.failure_code == runtime.failure_code.value
     assert convergence_failure.failure_code == convergence.failure_code.value
     assert runtime_failure.failure_code != "search_planner_runtime_error"
@@ -182,23 +171,17 @@ def test_carrier_rejects_arbitrary_and_cross_origin_codes() -> None:
     with pytest.raises(ValueError, match="not licensed"):
         InitialQueryStrategyFailure(
             failure_origin=InitialQueryStrategyFailureOrigin.PLANNER_RUNTIME,
-            failure_code=(
-                QueryStrategyConvergenceFailureCode.INITIAL_STRATEGIES_EMPTY.value
-            ),
+            failure_code=(QueryStrategyConvergenceFailureCode.INITIAL_STRATEGIES_EMPTY.value),
         )
     with pytest.raises(ValueError, match="not licensed"):
         InitialQueryStrategyFailure(
             failure_origin=InitialQueryStrategyFailureOrigin.QUERY_STRATEGY_CONVERGENCE,
-            failure_code=(
-                SearchPlannerRuntimeSafeFailureCode.PROPOSAL_DIGEST_MISMATCH.value
-            ),
+            failure_code=(SearchPlannerRuntimeSafeFailureCode.PROPOSAL_DIGEST_MISMATCH.value),
         )
     with pytest.raises(ValueError, match="not licensed"):
         InitialQueryStrategyFailure(
             failure_origin=InitialQueryStrategyFailureOrigin.RUN_KERNEL,
-            failure_code=(
-                QueryStrategyConvergenceFailureCode.INITIAL_STRATEGIES_EMPTY.value
-            ),
+            failure_code=(QueryStrategyConvergenceFailureCode.INITIAL_STRATEGIES_EMPTY.value),
         )
 
 
@@ -211,17 +194,13 @@ def test_carrier_licenses_every_owner_enum_value_for_its_origin_only() -> None:
         assert failure.failure_code == member.value
         with pytest.raises(ValueError, match="not licensed"):
             InitialQueryStrategyFailure(
-                failure_origin=(
-                    InitialQueryStrategyFailureOrigin.QUERY_STRATEGY_CONVERGENCE
-                ),
+                failure_origin=(InitialQueryStrategyFailureOrigin.QUERY_STRATEGY_CONVERGENCE),
                 failure_code=member.value,
             )
 
     for member in QueryStrategyConvergenceFailureCode:
         failure = InitialQueryStrategyFailure(
-            failure_origin=(
-                InitialQueryStrategyFailureOrigin.QUERY_STRATEGY_CONVERGENCE
-            ),
+            failure_origin=(InitialQueryStrategyFailureOrigin.QUERY_STRATEGY_CONVERGENCE),
             failure_code=member.value,
         )
         assert failure.failure_code == member.value
@@ -298,15 +277,11 @@ def test_run_kernel_projection_unchanged() -> None:
 
 def test_invoke_run_kernel_translates_only_allowlisted_operations() -> None:
     def boom() -> None:
-        raise RunKernelTransitionError(
-            "private transition detail: " + " | ".join(_PRIVATE_FRAGMENTS)
-        )
+        raise RunKernelTransitionError("private transition detail: " + " | ".join(_PRIVATE_FRAGMENTS))
 
     with pytest.raises(InitialQueryStrategyFailureError) as caught:
         invoke_run_kernel_initial_planning("query_plan_admission", boom)
-    assert caught.value.failure == run_kernel_initial_planning_failure(
-        operation="query_plan_admission"
-    )
+    assert caught.value.failure == run_kernel_initial_planning_failure(operation="query_plan_admission")
     encoded = json.dumps(caught.value.to_terminal_projection(), sort_keys=True)
     for fragment in _PRIVATE_FRAGMENTS:
         assert fragment not in encoded
@@ -321,15 +296,9 @@ def test_bounded_terminal_projects_owner_codes_without_private_material() -> Non
         ),
         QueryStrategyConvergenceError(
             private_message,
-            failure_code=(
-                QueryStrategyConvergenceFailureCode.INITIAL_STRATEGIES_EMPTY
-            ),
+            failure_code=(QueryStrategyConvergenceFailureCode.INITIAL_STRATEGIES_EMPTY),
         ),
-        InitialQueryStrategyFailureError(
-            run_kernel_initial_planning_failure(
-                operation="query_plan_admission"
-            )
-        ),
+        InitialQueryStrategyFailureError(run_kernel_initial_planning_failure(operation="query_plan_admission")),
     )
     for exc in cases:
         payload = compatibility_cli._bounded_terminal_payload(
@@ -369,6 +338,7 @@ def test_bounded_terminal_preserves_adapter_rich_path_exclusively() -> None:
         "provider_completion_posture": None,
         "strict_parse_subtype": None,
         "semantic_proposal_subtype": None,
+        "semantic_validation_rule_id": None,
         "branch_field_set_detail": None,
         "cleaner_modified": None,
     }
@@ -405,6 +375,7 @@ def test_bounded_terminal_projects_closed_branch_field_detail_without_model_mate
     )
     failure = payload["terminal"]["search_planner_failure"]
     assert failure["semantic_proposal_subtype"] == "branch_field_set"
+    assert failure["semantic_validation_rule_id"] == "direct_simple_disallowed_top_level"
     assert failure["branch_field_set_detail"] == "direct_simple_disallowed_top_level"
     encoded = json.dumps(payload, sort_keys=True)
     for private_fragment in (
@@ -425,13 +396,8 @@ def test_bounded_terminal_projects_closed_type_enum_bound_without_model_material
             user_query_text=raw_query,
             requested_mode="Balanced",
         )
-    assert (
-        caught.value.failure_code
-        is SearchPlannerModelAdapterFailureCode.INVALID_SEMANTIC_PROPOSAL
-    )
-    assert caught.value.semantic_proposal_subtype is (
-        SearchPlannerSemanticProposalSubtype.TYPE_ENUM_OR_BOUND
-    )
+    assert caught.value.failure_code is SearchPlannerModelAdapterFailureCode.INVALID_SEMANTIC_PROPOSAL
+    assert caught.value.semantic_proposal_subtype is (SearchPlannerSemanticProposalSubtype.TYPE_ENUM_OR_BOUND)
     assert caught.value.branch_field_set_detail is None
 
     payload = compatibility_cli._bounded_terminal_payload(
@@ -441,6 +407,7 @@ def test_bounded_terminal_projects_closed_type_enum_bound_without_model_material
     )
     failure = payload["terminal"]["search_planner_failure"]
     assert failure["semantic_proposal_subtype"] == "type_enum_or_bound"
+    assert failure["semantic_validation_rule_id"] == "required_enum_member"
     assert failure["branch_field_set_detail"] is None
     encoded = json.dumps(payload, sort_keys=True)
     for private_fragment in (rejected_value, raw_query, *_PRIVATE_FRAGMENTS):
@@ -533,9 +500,7 @@ def test_public_bounded_cli_projects_decision_grade_failure_identity(
             private_message,
             failure_code=QueryStrategyConvergenceFailureCode.INITIAL_STRATEGIES_EMPTY,
         ),
-        InitialQueryStrategyFailureError(
-            run_kernel_initial_planning_failure(operation="query_plan_admission")
-        ),
+        InitialQueryStrategyFailureError(run_kernel_initial_planning_failure(operation="query_plan_admission")),
     )
     for expected_failure in expected_failures:
         failure_to_raise = expected_failure
