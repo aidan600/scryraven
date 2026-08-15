@@ -134,6 +134,47 @@ def _one_record(values: Any, reason: str, **expected: Any) -> dict[str, Any]:
     return records[0]
 
 
+_EVIDENCE_LEDGER_REQUIREMENT_KIND_BY_SOURCE_OBLIGATION_KIND = {
+    "official_current": "official_current",
+    "legal_current_primary": "legal",
+    "canonical_documentation": "canonical",
+    "source_bound_numeric": "source_bound",
+    "peer_reviewed": "academic",
+    "reputable_secondary": "general",
+    "conflict_resolution": "general",
+    "date_bound_currentness": "current",
+    "user_document": "user_document",
+    "no_special_obligation": "general",
+}
+
+
+def _evidence_ledger_requirement_kind_for_accepted_source_obligation(
+    *,
+    accepted_contract: Mapping[str, Any],
+    source_obligation_id: str,
+) -> str:
+    accepted_obligation = _one_record(
+        accepted_contract.get("accepted_source_obligation_refs"),
+        "SearchOS qualification source obligation is stale",
+        source_obligation_id=source_obligation_id,
+    )
+    source_obligation_kind = str(
+        accepted_obligation.get("kind")
+        or accepted_obligation.get("obligation_kind")
+        or ""
+    ).strip().casefold()
+    ledger_requirement_kind = (
+        _EVIDENCE_LEDGER_REQUIREMENT_KIND_BY_SOURCE_OBLIGATION_KIND.get(
+            source_obligation_kind
+        )
+    )
+    if not ledger_requirement_kind:
+        raise OrdinaryMulticomponentRuntimeError(
+            "SearchOS qualification source obligation kind is unsupported"
+        )
+    return ledger_requirement_kind
+
+
 def _candidate_ids(projection: Mapping[str, Any]) -> set[str]:
     return {str(_safe_mapping(item).get("candidate_id") or "") for item in projection.get("candidate_records") or ()}
 
@@ -632,6 +673,15 @@ def _qualify_searchos_read_material_after_component_dprime(
     slot_id = str(slot_ref["slot_id"])
     obligation_id = str(slot_ref["source_obligation_id"])
     qualification_obligation_ids = [obligation_id]
+    requirement_kinds_by_obligation = {
+        qualified_obligation_id: (
+            _evidence_ledger_requirement_kind_for_accepted_source_obligation(
+                accepted_contract=accepted,
+                source_obligation_id=qualified_obligation_id,
+            )
+        )
+        for qualified_obligation_id in qualification_obligation_ids
+    }
     requirement_ids_by_obligation = {
         qualified_obligation_id: (
             "searchos_semantic_requirement:"
@@ -756,14 +806,9 @@ def _qualify_searchos_read_material_after_component_dprime(
         "source_requirements": [
             {
                 "requirement_id": requirement_ids_by_obligation[qualified_obligation_id],
-                "requirement_kind": {
-                    "canonical_docs": "canonical",
-                    "legal_primary": "legal",
-                    "source_bound_numeric": "source_bound",
-                }.get(
-                    qualified_obligation_id.split(":", 1)[-1],
-                    qualified_obligation_id.split(":", 1)[-1],
-                ),
+                "requirement_kind": requirement_kinds_by_obligation[
+                    qualified_obligation_id
+                ],
                 "source_obligation_id": qualified_obligation_id,
                 "component_id": component_id,
                 "run_id": run_kernel.state.run_id,

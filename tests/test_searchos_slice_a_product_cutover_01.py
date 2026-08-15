@@ -84,6 +84,30 @@ def _establish_official_current_qualification_truth(
     )
 
 
+def _make_official_current_obligation_id_opaque(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from core.search_planner_runtime import DeterministicSearchPlannerAdapter
+
+    original = DeterministicSearchPlannerAdapter.produce
+    source_id = "obligation:official_current"
+    opaque_id = "obligation:opaque_requirement_42"
+
+    def rewrite(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {key: rewrite(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [rewrite(item) for item in value]
+        if isinstance(value, tuple):
+            return tuple(rewrite(item) for item in value)
+        return opaque_id if value == source_id else value
+
+    def produce(self: Any, planner_input: dict[str, Any]) -> dict[str, Any]:
+        return rewrite(original(self, planner_input))
+
+    monkeypatch.setattr(DeterministicSearchPlannerAdapter, "produce", produce)
+
+
 def test_production_judgment_prompt_states_the_strict_validator_contract() -> None:
     normalized_prompt = " ".join(SEARCHOS_JUDGMENT_SYSTEM_PROMPT.split())
     required_instructions = (
@@ -454,6 +478,101 @@ def test_one_component_read_credits_only_exact_owned_obligation(
     )
     assert harness.full_search_judgment_inputs == []
     assert trace["searchos_slice_a"]["all_passages_iteration_append_count"] == 0
+
+
+def test_searchos_qualification_uses_exact_accepted_obligation_kind_in_ledger(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _establish_official_current_qualification_truth(monkeypatch)
+    _make_official_current_obligation_id_opaque(monkeypatch)
+    _outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        mode="Balanced",
+        query="What is Alpha current official operating rule?",
+        core_topic="Alpha current official operating rule",
+        primary_entity="Alpha",
+        researcher_queries=["Alpha current official operating rule"],
+        raw_author_response="Alpha current official operating rule is supported.",
+    )
+
+    terminal_slot = next(
+        iter(harness.run_kernel.state.searchos_state["slots_by_id"].values())
+    )
+    obligation_id = terminal_slot["slot_ref"]["source_obligation_id"]
+    assert obligation_id == "obligation:opaque_requirement_42"
+    accepted_obligation = next(
+        item
+        for item in harness.run_kernel.state.initial_answer_contract[
+            "accepted_source_obligation_refs"
+        ]
+        if item["source_obligation_id"] == obligation_id
+    )
+    assert accepted_obligation["kind"] == "official_current"
+    ledger_requirements = [
+        item
+        for item in harness.run_kernel.state.evidence_ledger.to_projection()
+        .to_dict()["source_requirements"]
+        if item.get("source_obligation_id") == obligation_id
+    ]
+    assert len(ledger_requirements) == 1
+    assert ledger_requirements[0]["requirement_kind"] == "official_current"
+    assert ledger_requirements[0]["status"] == "satisfied"
+
+
+@pytest.mark.parametrize(
+    ("source_kind", "expected_requirement_kind"),
+    (
+        ("official_current", "official_current"),
+        ("legal_current_primary", "legal"),
+        ("canonical_documentation", "canonical"),
+        ("source_bound_numeric", "source_bound"),
+        ("peer_reviewed", "academic"),
+        ("reputable_secondary", "general"),
+        ("conflict_resolution", "general"),
+        ("date_bound_currentness", "current"),
+        ("user_document", "user_document"),
+        ("no_special_obligation", "general"),
+    ),
+)
+def test_accepted_source_obligation_kinds_have_closed_ledger_normalizations(
+    source_kind: str,
+    expected_requirement_kind: str,
+) -> None:
+    from core import ordinary_multicomponent_synthesis_runtime as multicomponent
+
+    assert (
+        multicomponent._evidence_ledger_requirement_kind_for_accepted_source_obligation(
+            accepted_contract={
+                "accepted_source_obligation_refs": [
+                    {
+                        "source_obligation_id": "obligation:opaque_requirement_42",
+                        "kind": source_kind,
+                    }
+                ]
+            },
+            source_obligation_id="obligation:opaque_requirement_42",
+        )
+        == expected_requirement_kind
+    )
+
+
+def test_unknown_accepted_source_obligation_kind_fails_closed() -> None:
+    from core import ordinary_multicomponent_synthesis_runtime as multicomponent
+
+    with pytest.raises(multicomponent.OrdinaryMulticomponentRuntimeError):
+        multicomponent._evidence_ledger_requirement_kind_for_accepted_source_obligation(
+            accepted_contract={
+                "accepted_source_obligation_refs": [
+                    {
+                        "source_obligation_id": "obligation:opaque_requirement_42",
+                        "kind": "unsupported_kind",
+                    }
+                ]
+            },
+            source_obligation_id="obligation:opaque_requirement_42",
+        )
 
 
 def test_readable_insufficient_read_remains_iterative_and_is_not_retained(
