@@ -140,6 +140,10 @@ VALID_SPARSE_PLANNER_CASES: tuple[dict[str, Any], ...] = (
                 {
                     "key": "subject",
                     "need": "Identify the current controversy and the relevant Galloway",
+                    "source": {
+                        "kind": "reputable_secondary",
+                        "strictness": "required",
+                    },
                     "freshness": "recent and current",
                     "uncertainties": [
                         {

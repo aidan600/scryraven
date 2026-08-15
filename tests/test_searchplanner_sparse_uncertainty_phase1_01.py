@@ -299,9 +299,12 @@ def test_prompt_uses_compact_sparse_contract_and_phase1_budget_gate() -> None:
     assert "no source/freshness" in prompt
     assert "no selected" in prompt
     assert "selected in candidates" in prompt
-    assert "factual orientation or acquisition may resolve factual identity/currentness" in prompt
+    assert "Factual orientation/acquisition may resolve factual identity/currentness" in prompt
+    assert "material direct targets and their needed orientation stay required" in prompt
+    assert "declare source.strictness=required" in prompt
+    assert "preferred/contextual only ancillary work" in prompt
     assert "must not choose among materially plausible user-intent meanings" in prompt
-    assert "require confirmation before acquisition" in prompt
+    assert "user_confirmation_required=true before acquisition" in prompt
     assert "set user_confirmation_required=true" in prompt
     assert "omit empty optionals" in prompt
     assert "retain independently requested subjects separately" in prompt
@@ -556,6 +559,12 @@ def test_current_official_resolved_context_and_independent_components_compile() 
 
 def test_factual_uncertainty_survives_initial_answer_contract_acceptance() -> None:
     case = valid_case("factual_identity_uncertainty")
+    compiled = _accept(case)
+    [component] = compiled["answer_components"]
+    [source_obligation] = compiled["source_obligation_candidates"]
+    assert component["requirement_posture"] == "required"
+    assert source_obligation["obligation_kind"] == "reputable_secondary"
+    assert source_obligation["strictness"] == "required"
     kernel, fake = _run_to_initial_answer_contract(case)
 
     assert len(fake.calls) == 1
@@ -714,6 +723,9 @@ def test_case_b_factual_uncertainty_binds_then_runs_standard_discovery(
     )
     assert projection is not None
     assert projection["searchos_exit"] == "SEMANTIC_HANDOFF"
+    assert projection["active_slot_count"] == 1
+    assert projection["required_slot_count"] == 1
+    assert projection.get("optional_slots", []) == []
     [handoff_slot] = projection["slots"]
     assert handoff_slot["final_posture"] == "semantically_handed_off"
     assert handoff_slot["semantic_handoff_present"] is True
@@ -901,7 +913,7 @@ def test_optional_factual_orientation_does_not_infer_a_terminal_handoff(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Vacuous required readiness cannot certify an unfinished optional slot."""
+    """A preferred ancillary source stays optional and cannot certify handoff."""
 
     case = valid_case("factual_identity_uncertainty")
     proposal = deepcopy(case["proposal"])
