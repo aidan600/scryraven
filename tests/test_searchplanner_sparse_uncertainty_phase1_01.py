@@ -286,7 +286,7 @@ def test_prompt_uses_compact_sparse_contract_and_phase1_budget_gate() -> None:
     ]
     assert schema["components"] == ["disposition", "components"]
     assert schema["limits"]["components"] == [1, 5]
-    assert "1-5 semantically distinct needs" in prompt
+    assert "1-5 objects" in prompt
     assert schema["component"]["required"] == ["need"]
     assert set(packet["planner_input"]) == {
         "requested_mode",
@@ -299,17 +299,8 @@ def test_prompt_uses_compact_sparse_contract_and_phase1_budget_gate() -> None:
     assert "no source/freshness" in prompt
     assert "no selected" in prompt
     assert "selected in candidates" in prompt
-    assert "Factual orientation/acquisition may resolve factual identity/currentness" in prompt
-    assert "material direct targets/orientation stay required" in prompt
-    assert "source.strictness=required" in prompt
-    assert "preferred/contextual ancillary only" in prompt
-    assert "never choose materially plausible user-intent meanings" in prompt
-    assert "user_confirmation_required=true before acquisition" in prompt
-    assert "set user_confirmation_required=true" in prompt
-    assert "omit empty/default optionals" in prompt
-    assert "retain independently requested subjects separately" in prompt
-    assert "canonical docs=source.kind=canonical_documentation" in prompt
-    assert "current official=source.kind=official_current+freshness" in prompt
+    assert "confirm=true only if material unresolved|ambiguous" in prompt
+    assert "omit empty optionals" in prompt
     assert "answer_components" not in prompt
     assert "component_search_requirements" not in prompt
     assert "run_id" not in prompt
@@ -320,7 +311,7 @@ def test_prompt_uses_compact_sparse_contract_and_phase1_budget_gate() -> None:
         "official Python math.isclose default values"
     )
     assert prompt_chars < _CLEAR_DIRECT_HISTORICAL_BASELINE_CHARS
-    assert 1 - (prompt_chars / _CLEAR_DIRECT_HISTORICAL_BASELINE_CHARS) >= 0.81
+    assert 1 - (prompt_chars / _CLEAR_DIRECT_HISTORICAL_BASELINE_CHARS) >= 0.84
 
 
 def test_compact_model_visible_schema_is_derived_from_validator_constants() -> None:
@@ -363,7 +354,10 @@ def test_phase1_prompt_scenarios_keep_historical_reduction_envelope(
     prompt_chars = _prompt_request_chars(query)
     reduction = 1 - (prompt_chars / baseline_chars)
     assert prompt_chars < baseline_chars
-    assert reduction >= 0.81
+    if case_id == "clear_direct":
+        assert reduction >= 0.84
+    else:
+        assert reduction >= 0.83
 
 
 @pytest.mark.parametrize(
