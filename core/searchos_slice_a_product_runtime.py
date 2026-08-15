@@ -85,7 +85,12 @@ include schema_version, action, and a nonempty bounded reason. Do not author
 judgment_request_id, judgment_request_digest, or slot_id; the runtime binds
 those from the authorized current request. Choose exactly one action from
 authorized_request.legal_actions:
-- REQUEST_READ_PAGE copies one exact candidate_use_option_ref from the request.
+- REQUEST_READ_PAGE selects exactly one
+  authorized_request.candidate_use_options[*].candidate_use_option_ref and
+  emits that nested JSON object structurally unchanged. candidate_use_option_ref
+  must deep-equal that authorized member, including nested lineage_snapshot_ref;
+  never reconstruct, normalize, or augment it from candidate_directional_contexts,
+  an ID, URL, digest, slot, or lineage field.
 - PROPOSE_FOLLOWUP_QUERY authors new bounded followup_query text from
   active_need and inspected material and selects exactly one provider-neutral
   discovery_job_class from authorized_request.allowed_followup_job_classes;
@@ -136,7 +141,12 @@ action, and a nonempty bounded reason. Do not author judgment_request_id,
 judgment_request_digest, or slot_id; the runtime binds those from the
 authorized current request. Choose exactly one action from
 authorized_request.legal_actions:
-- REQUEST_READ_PAGE copies one exact candidate_use_option_ref from the request.
+- REQUEST_READ_PAGE selects exactly one
+  authorized_request.candidate_use_options[*].candidate_use_option_ref and
+  emits that nested JSON object structurally unchanged. candidate_use_option_ref
+  must deep-equal that authorized member, including nested lineage_snapshot_ref;
+  never reconstruct, normalize, or augment it from candidate_directional_contexts,
+  an ID, URL, digest, slot, or lineage field.
 - PROPOSE_FOLLOWUP_QUERY authors new bounded followup_query text from
   active_need and inspected material and selects exactly one provider-neutral
   discovery_job_class from authorized_request.allowed_followup_job_classes;
@@ -207,8 +217,13 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
                 "semantic_slot_ref",
             ],
             "candidate_use_option_ref_rule": (
-                "copy exactly one candidate_use_option_ref from "
-                "authorized_request.candidate_use_options"
+                "select exactly one nested candidate_use_option_ref from "
+                "authorized_request.candidate_use_options and copy it "
+                "structurally unchanged; candidate_use_option_ref must "
+                "deep-equal that authorized member including nested "
+                "lineage_snapshot_ref, never reconstruct, normalize, or "
+                "augment it from candidate_directional_contexts, an ID, URL, "
+                "digest, slot, or lineage field"
             ),
             "post_read_assessment_rule": (
                 "each existing READ material was inspected and does not satisfy "

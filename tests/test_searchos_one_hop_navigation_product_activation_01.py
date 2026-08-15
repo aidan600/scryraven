@@ -546,10 +546,10 @@ def test_navigation_request_authority_preserves_ordinary_contract() -> None:
     ordinary = build_searchos_judgment_decision_contract_v1()
     navigation = build_searchos_judgment_decision_contract_v1(navigation_enabled=True)
     assert hashlib.sha256(SEARCHOS_JUDGMENT_SYSTEM_PROMPT.encode()).hexdigest() == (
-        "3e6e324523067d3fb81bc522256f945ed2ae13a44da337416eecbf14405230b7"  # pragma: allowlist secret
+        "0ba3a608896bbef4b2b07fb2521cc64b2a085089c22ab49e8dc85a55a02a55e3"  # pragma: allowlist secret
     )
     assert ordinary["decision_contract_digest"] == (
-        "c61349288be2524898e64740dff5a735304306fdae7d69dd770687e269776217"  # pragma: allowlist secret
+        "d3bb5d56196b8e04f975e3368503cee7bf6c708738fc188ee57b94a11e52e4d2"  # pragma: allowlist secret
     )
     assert ordinary["decision_schema_version"] == "searchos_judgment_decision_v1"
     assert "REQUEST_NAVIGATE_BREADCRUMB" not in ordinary["actions"]
@@ -816,6 +816,11 @@ def test_one_hop_navigation_reaches_component_and_final_answer(tmp_path: Path, m
         ) in normalized_prompt
         assert ("Return exactly one JSON object matching searchos_judgment_decision_v1.") not in normalized_prompt
         assert all(f"- {action}" in prompt for action in expected_actions)
+        assert (
+            "REQUEST_READ_PAGE selects exactly one "
+            "authorized_request.candidate_use_options[*].candidate_use_option_ref"
+        ) in normalized_prompt
+        assert "candidate_use_option_ref must deep-equal that authorized member" in normalized_prompt
         assert (
             "After READ custody exists, REQUEST_READ_PAGE, "
             "PROPOSE_FOLLOWUP_QUERY, REQUIRE_CLARIFICATION, "

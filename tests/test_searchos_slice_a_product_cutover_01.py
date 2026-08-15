@@ -126,6 +126,9 @@ def test_production_judgment_prompt_states_the_strict_validator_contract() -> No
         "Never invent or alter a URL, authority ref",
         "Do not treat custody-ref presence alone as readiness",
         "Exact opaque-ref copy means copy the entire selected JSON object unchanged",
+        "REQUEST_READ_PAGE selects exactly one authorized_request.candidate_use_options[*].candidate_use_option_ref",
+        "candidate_use_option_ref must deep-equal that authorized member",
+        "never reconstruct, normalize, or augment it from candidate_directional_contexts",
         "reviewed_custody_ref is the whole unchanged source object",
     )
 
@@ -255,7 +258,17 @@ def test_transient_decision_contract_describes_every_action_and_input_role() -> 
         assert action_contract["required_fields"] == required
         assert set(action_contract["forbidden_fields"]) == forbidden
         assert action_contract["read_custody_assessments_mode"] == assessment_mode
-    assert "copy exactly one" in contract["actions"]["REQUEST_READ_PAGE"][
+    read_contract = contract["actions"]["REQUEST_READ_PAGE"]
+    assert "select exactly one nested candidate_use_option_ref" in read_contract[
+        "candidate_use_option_ref_rule"
+    ]
+    assert "deep-equal that authorized member" in read_contract[
+        "candidate_use_option_ref_rule"
+    ]
+    assert "nested lineage_snapshot_ref" in read_contract[
+        "candidate_use_option_ref_rule"
+    ]
+    assert "candidate_directional_contexts" in read_contract[
         "candidate_use_option_ref_rule"
     ]
     followup_contract = contract["actions"]["PROPOSE_FOLLOWUP_QUERY"]
@@ -851,7 +864,12 @@ def test_component_receiver_and_gap_basis_failures_reach_sufficiency(
 
 @pytest.mark.parametrize(
     "decision",
-    ["MALFORMED", "WRAPPED_JSON", "INVALID_NOMINATION"],
+    [
+        "MALFORMED",
+        "WRAPPED_JSON",
+        "INVALID_NOMINATION",
+        "ALTERED_NOMINATION_REF",
+    ],
 )
 def test_judgment_failure_is_typed_closed_without_read_or_fallback(
     tmp_path: Path,
@@ -874,7 +892,9 @@ def test_judgment_failure_is_typed_closed_without_read_or_fallback(
     readiness = dict(searchos["readiness_projection"])
     assert readiness["all_required_slots_slice_a_ready"] is False
     expected_posture = (
-        "stale_or_invalid" if decision == "INVALID_NOMINATION" else "judgment_failed"
+        "stale_or_invalid"
+        if decision in {"INVALID_NOMINATION", "ALTERED_NOMINATION_REF"}
+        else "judgment_failed"
     )
     assert all(
         item["latest_judgment_posture"] == expected_posture
@@ -1084,6 +1104,12 @@ def test_bounded_searchos_n1_causal_projection_successful_path(
             "stale_or_invalid",
             "read_nomination_outside_window",
         ),
+        (
+            "ALTERED_NOMINATION_REF",
+            "stale_or_invalid",
+            "stale_or_invalid",
+            "read_nomination_ref_invalid",
+        ),
     ],
 )
 def test_bounded_searchos_n1_causal_projection_judgment_failure_path(
@@ -1122,6 +1148,10 @@ def test_bounded_searchos_n1_causal_projection_judgment_failure_path(
     assert "fictional-" not in serialized
     assert "Traceback" not in serialized
     assert "Exception" not in serialized
+    if decision == "ALTERED_NOMINATION_REF":
+        assert "f" * 64 not in serialized
+        assert "candidate_use_option_ref" not in serialized
+        assert "https://alpha.example/report-1" not in serialized
 
 
 def test_bounded_searchos_n1_causal_projection_read_then_receiver_failure(

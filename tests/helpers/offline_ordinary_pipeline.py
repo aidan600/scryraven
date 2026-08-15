@@ -568,6 +568,18 @@ class OfflineOrdinaryPipelineHarness:
                     candidate_use_option_ref=invalid_ref,
                     reason="offline_invalid_nomination",
                 )
+            if self.read_assessment_decision == "ALTERED_NOMINATION_REF":
+                altered_ref = deepcopy(
+                    dict(options[0])["candidate_use_option_ref"]
+                )
+                altered_ref["lineage_snapshot_ref"][
+                    "lineage_snapshot_digest"
+                ] = "f" * 64
+                return contract_decision(
+                    "REQUEST_READ_PAGE",
+                    candidate_use_option_ref=altered_ref,
+                    reason="offline_altered_nomination_ref",
+                )
             need_text = " ".join(
                 str(value or "")
                 for value in (

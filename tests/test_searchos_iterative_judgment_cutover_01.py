@@ -1413,6 +1413,20 @@ def test_read_custody_is_the_only_semantic_entry_and_required_block_is_safe() ->
                 "reason": "attempt to alter an admitted option ref",
             },
         )
+    altered_lineage_ref = candidate_use_option_ref(options[0])
+    altered_lineage_ref["lineage_snapshot_ref"]["lineage_snapshot_digest"] = (
+        "f" * 64
+    )
+    with pytest.raises(SearchOSRuntimeError, match="stale or altered"):
+        validate_searchos_judgment_model_output(
+            request=read_request,
+            model_output={
+                "schema_version": "searchos_judgment_decision_v1",
+                "action": "REQUEST_READ_PAGE",
+                "candidate_use_option_ref": altered_lineage_ref,
+                "reason": "attempt to alter nested lineage",
+            },
+        )
     read_decision = validate_searchos_judgment_model_output(
         request=read_request,
         model_output={
