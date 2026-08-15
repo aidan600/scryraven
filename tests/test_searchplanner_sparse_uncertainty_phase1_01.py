@@ -30,6 +30,7 @@ from core.search_planner_runtime import (
 from core.search_planner_semantic_compiler import (
     SEARCH_PLANNER_MODEL_VISIBLE_SCHEMA,
     SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA,
+    SearchPlannerBranchFieldSetDetail,
     SearchPlannerSemanticProposalError,
     SearchPlannerSemanticProposalSubtype,
     compile_semantic_planner_proposal,
@@ -421,7 +422,15 @@ def test_invalid_sparse_corpus_fails_closed_without_rich_fallback(
 ) -> None:
     with pytest.raises(SearchPlannerSemanticProposalError) as semantic:
         validate_semantic_planner_proposal(deepcopy(case["proposal"]))
-    assert semantic.value.subtype is SearchPlannerSemanticProposalSubtype(case["expected_subtype"])
+    assert semantic.value.subtype is SearchPlannerSemanticProposalSubtype(
+        case["expected_subtype"]
+    )
+    expected_detail = case.get("expected_branch_field_set_detail")
+    assert semantic.value.branch_field_set_detail is (
+        SearchPlannerBranchFieldSetDetail(expected_detail)
+        if expected_detail is not None
+        else None
+    )
     with pytest.raises(SearchPlannerModelAdapterError) as caught:
         accept_planner_model_output(
             deepcopy(case["proposal"]),
@@ -430,9 +439,22 @@ def test_invalid_sparse_corpus_fails_closed_without_rich_fallback(
         )
     assert caught.value.failure_code is (SearchPlannerModelAdapterFailureCode.INVALID_SEMANTIC_PROPOSAL)
     assert caught.value.semantic_proposal_subtype is semantic.value.subtype
+    assert caught.value.branch_field_set_detail is semantic.value.branch_field_set_detail
     assert caught.value.predicate_id is not None
     assert str(caught.value) == "search planner semantic proposal failed closed"
 
+
+def test_branch_field_set_detail_inventory_is_closed_and_value_free() -> None:
+    assert {item.value for item in SearchPlannerBranchFieldSetDetail} == {
+        "direct_simple_with_components",
+        "direct_simple_disallowed_top_level",
+        "components_disallowed_top_level",
+        "components_required_nonempty",
+        "nested_disallowed_field",
+    }
+    assert len(SearchPlannerBranchFieldSetDetail.__members__) == len(
+        SearchPlannerBranchFieldSetDetail
+    )
 
 def test_direct_simple_and_mode_defaults_are_deterministic() -> None:
     official = _accept(valid_case("official_source_direct_simple"))

@@ -527,6 +527,7 @@ def test_searchos_qualification_uses_exact_accepted_obligation_kind_in_ledger(
         ("official_current", "official_current"),
         ("legal_current_primary", "legal"),
         ("canonical_documentation", "canonical"),
+        ("primary_source_documents", "canonical"),
         ("source_bound_numeric", "source_bound"),
         ("peer_reviewed", "academic"),
         ("reputable_secondary", "general"),

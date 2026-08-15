@@ -138,6 +138,7 @@ _EVIDENCE_LEDGER_REQUIREMENT_KIND_BY_SOURCE_OBLIGATION_KIND = {
     "official_current": "official_current",
     "legal_current_primary": "legal",
     "canonical_documentation": "canonical",
+    "primary_source_documents": "canonical",
     "source_bound_numeric": "source_bound",
     "peer_reviewed": "academic",
     "reputable_secondary": "general",

@@ -158,16 +158,19 @@ INVALID_SPARSE_PLANNER_CASES: tuple[dict[str, Any], ...] = (
         "case_id": "direct_simple_plus_components",
         "proposal": {"disposition": "direct_simple", "components": [{"need": "x"}]},
         "expected_subtype": "branch_field_set",
+        "expected_branch_field_set_detail": "direct_simple_with_components",
     },
     {
         "case_id": "direct_simple_plus_dependency",
         "proposal": {"disposition": "direct_simple", "depends_on": ["x"]},
         "expected_subtype": "branch_field_set",
+        "expected_branch_field_set_detail": "direct_simple_disallowed_top_level",
     },
     {
         "case_id": "direct_simple_plus_inference",
         "proposal": {"disposition": "direct_simple", "support": "inferred"},
         "expected_subtype": "branch_field_set",
+        "expected_branch_field_set_detail": "direct_simple_disallowed_top_level",
     },
     {
         "case_id": "direct_simple_plus_uncertainty",
@@ -176,11 +179,13 @@ INVALID_SPARSE_PLANNER_CASES: tuple[dict[str, Any], ...] = (
             "uncertainties": [{"kind": "entity", "status": "unresolved"}],
         },
         "expected_subtype": "branch_field_set",
+        "expected_branch_field_set_detail": "direct_simple_disallowed_top_level",
     },
     {
         "case_id": "direct_simple_plus_calculation",
         "proposal": {"disposition": "direct_simple", "calculation": "add values"},
         "expected_subtype": "branch_field_set",
+        "expected_branch_field_set_detail": "direct_simple_disallowed_top_level",
     },
     {
         "case_id": "old_rich_administrative_output",
@@ -227,6 +232,7 @@ INVALID_SPARSE_PLANNER_CASES: tuple[dict[str, Any], ...] = (
             "components": [{"need": "x"}],
         },
         "expected_subtype": "branch_field_set",
+        "expected_branch_field_set_detail": "components_disallowed_top_level",
     },
     {
         "case_id": "empty_optional_freshness",
@@ -237,6 +243,13 @@ INVALID_SPARSE_PLANNER_CASES: tuple[dict[str, Any], ...] = (
         "case_id": "empty_components_array",
         "proposal": {"disposition": "components", "components": []},
         "expected_subtype": "branch_field_set",
+        "expected_branch_field_set_detail": "components_required_nonempty",
+    },
+    {
+        "case_id": "component_nested_unknown_field",
+        "proposal": {"disposition": "components", "components": [{"need": "x", "extra": "value"}]},
+        "expected_subtype": "branch_field_set",
+        "expected_branch_field_set_detail": "nested_disallowed_field",
     },
     {
         "case_id": "empty_uncertainties_array",

@@ -1464,6 +1464,11 @@ def test_public_bounded_cli_preserves_safe_search_planner_failure_identity(
                 if expected_failure.semantic_proposal_subtype is not None
                 else None
             ),
+            "branch_field_set_detail": (
+                expected_failure.branch_field_set_detail.value
+                if expected_failure.branch_field_set_detail is not None
+                else None
+            ),
             "cleaner_modified": expected_failure.cleaner_modified,
         }
         assert terminal["search_planner_failure"] == expected_projection
