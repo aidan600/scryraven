@@ -37,10 +37,15 @@ from core.run_kernel import RunKernelTransitionError
 from core.search_planner_model_adapter import (
     SearchPlannerModelAdapterError,
     SearchPlannerModelAdapterFailureCode,
+    accept_planner_model_output,
 )
 from core.search_planner_runtime import (
     SearchPlannerRuntimeError,
     SearchPlannerRuntimeSafeFailureCode,
+)
+from core.search_planner_semantic_compiler import (
+    SearchPlannerBranchFieldSetDetail,
+    SearchPlannerSemanticProposalSubtype,
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -364,6 +369,7 @@ def test_bounded_terminal_preserves_adapter_rich_path_exclusively() -> None:
         "provider_completion_posture": None,
         "strict_parse_subtype": None,
         "semantic_proposal_subtype": None,
+        "branch_field_set_detail": None,
         "cleaner_modified": None,
     }
     assert INITIAL_QUERY_STRATEGY_FAILURE_TERMINAL_KEY not in terminal
@@ -371,6 +377,43 @@ def test_bounded_terminal_preserves_adapter_rich_path_exclusively() -> None:
     encoded = json.dumps(payload, sort_keys=True)
     for fragment in _PRIVATE_FRAGMENTS:
         assert fragment not in encoded
+
+
+def test_bounded_terminal_projects_closed_branch_field_detail_without_model_material() -> None:
+    rejected_field = "fictional-branch-field-sentinel"
+    rejected_value = "fictional-model-value-sentinel"
+    raw_query = "fictional-raw-query-sentinel"
+    with pytest.raises(SearchPlannerModelAdapterError) as caught:
+        accept_planner_model_output(
+            {
+                "disposition": "direct_simple",
+                rejected_field: rejected_value,
+            },
+            user_query_text=raw_query,
+            requested_mode="Balanced",
+        )
+    assert caught.value.failure_code is SearchPlannerModelAdapterFailureCode.INVALID_SEMANTIC_PROPOSAL
+    assert caught.value.semantic_proposal_subtype is SearchPlannerSemanticProposalSubtype.BRANCH_FIELD_SET
+    assert caught.value.branch_field_set_detail is (
+        SearchPlannerBranchFieldSetDetail.DIRECT_SIMPLE_DISALLOWED_TOP_LEVEL
+    )
+
+    payload = compatibility_cli._bounded_terminal_payload(
+        entrypoint="scryraven",
+        exc=caught.value,
+        config=RunConfig(query=_ISCLOSE_QUERY),
+    )
+    failure = payload["terminal"]["search_planner_failure"]
+    assert failure["semantic_proposal_subtype"] == "branch_field_set"
+    assert failure["branch_field_set_detail"] == "direct_simple_disallowed_top_level"
+    encoded = json.dumps(payload, sort_keys=True)
+    for private_fragment in (
+        rejected_field,
+        rejected_value,
+        raw_query,
+        *_PRIVATE_FRAGMENTS,
+    ):
+        assert private_fragment not in encoded
 
 
 def test_unknown_failure_remains_generic_without_attribution() -> None:

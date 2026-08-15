@@ -953,6 +953,11 @@ def _bounded_terminal_payload(
                 if exc.semantic_proposal_subtype is not None
                 else None
             ),
+            "branch_field_set_detail": (
+                exc.branch_field_set_detail.value
+                if exc.branch_field_set_detail is not None
+                else None
+            ),
             "cleaner_modified": exc.cleaner_modified,
         }
     else:

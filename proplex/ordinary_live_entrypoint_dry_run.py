@@ -20,6 +20,7 @@ from core.ordinary_live_main_runkernel_coverage_runtime import (
 )
 from core.prompts import DEFAULT_SYSTEM
 from core.run_config import RunConfig, RunDeps
+from core.search_planner_model_prompt import SEARCH_PLANNER_MODEL_SYSTEM_PROMPT
 
 ORDINARY_LIVE_ENTRYPOINT_DRY_RUN_FLAG = (
     "--ordinary-live-main-runkernel-coverage-dry-run"
@@ -83,6 +84,16 @@ class OrdinaryLiveEntrypointDryRunDeps:
             return "Example Program Threshold"
         if system_prompt == DEFAULT_SYSTEM["researcher"]:
             return json.dumps({"queries": [_RESEARCH_QUERY]})
+        if system_prompt == SEARCH_PLANNER_MODEL_SYSTEM_PROMPT:
+            return json.dumps(
+                {
+                    "disposition": "direct_simple",
+                    "source": {
+                        "kind": "official_current",
+                        "strictness": "required",
+                    },
+                }
+            )
         if _is_expander_prompt(system_prompt):
             return json.dumps(
                 {"component_queries": [], "reasoning": "dry-run fixture sufficient"}
@@ -129,6 +140,59 @@ class OrdinaryLiveEntrypointDryRunDeps:
         if seen_urls is None and len(_args) >= 4:
             seen_urls = _args[3]
         passages = [_retrieval_passage()]
+        discovery_context = kwargs.get("discovery_result_context")
+        discovery_store = kwargs.get("discovery_result_store")
+        if discovery_context is not None and discovery_store is not None:
+            context = dict(discovery_context)
+            item_refs = [
+                dict(item)
+                for item in context.get("query_plan_item_refs") or ()
+                if isinstance(item, Mapping)
+            ]
+            if not item_refs:
+                raise RuntimeError(
+                    "ordinary-live dry-run fixture lacks QueryPlan item lineage"
+                )
+            provider = str(context.get("provider") or "")
+            call_ordinal = discovery_store.reserve_provider_call_ordinal()
+            discovery_store.note_call(
+                returned_count=len(passages),
+                admitted_limit=results_per_query,
+            )
+            lineaged: list[dict[str, Any]] = []
+            for rank, raw_passage in enumerate(
+                passages[:results_per_query],
+                start=1,
+            ):
+                item_ref = item_refs[(rank - 1) % len(item_refs)]
+                result_context = {
+                    **context,
+                    "query_plan_item_ref": item_ref,
+                    "query_role": item_ref.get("query_plan_role"),
+                }
+                passage = dict(raw_passage)
+                identity = discovery_store.admit_result(
+                    context=result_context,
+                    provider=provider,
+                    call_ordinal=call_ordinal,
+                    result_rank=rank,
+                    result=passage,
+                    material_text=str(passage.get("text") or ""),
+                    material_class="provider_returned_discovery_material",
+                )
+                if identity is None:
+                    continue
+                passage["source_result_ref"] = identity.ref()
+                passage["source_material_ref"] = dict(identity.material_ref)
+                passage["source_result_material_class"] = identity.material_class
+                passage["source_result_material_digest"] = identity.material_digest
+                passage["provider_call_ordinal"] = identity.provider_call_ordinal
+                passage["provider_rank_or_position"] = identity.result_rank
+                passage["query_digest"] = identity.query_digest
+                passage["normalized_url"] = identity.normalized_url
+                passage["url"] = identity.normalized_url
+                lineaged.append(passage)
+            passages = lineaged
         if seen_urls is not None:
             for passage in passages:
                 seen_urls.add(passage["url"])

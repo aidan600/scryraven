@@ -498,6 +498,16 @@ class SearchPlannerSemanticProposalSubtype(str, Enum):
     CROSS_FIELD_CONDITION = "cross_field_condition"
 
 
+class SearchPlannerBranchFieldSetDetail(str, Enum):
+    """Closed privacy-safe detail for branch-field-set rejections."""
+
+    DIRECT_SIMPLE_WITH_COMPONENTS = "direct_simple_with_components"
+    DIRECT_SIMPLE_DISALLOWED_TOP_LEVEL = "direct_simple_disallowed_top_level"
+    COMPONENTS_DISALLOWED_TOP_LEVEL = "components_disallowed_top_level"
+    COMPONENTS_REQUIRED_NONEMPTY = "components_required_nonempty"
+    NESTED_DISALLOWED_FIELD = "nested_disallowed_field"
+
+
 class SearchPlannerSemanticProposalError(ValueError):
     """Fail-closed sparse semantic proposal validation or compilation error."""
 
@@ -506,9 +516,26 @@ class SearchPlannerSemanticProposalError(ValueError):
         message: str,
         *,
         subtype: SearchPlannerSemanticProposalSubtype | None = None,
+        branch_field_set_detail: SearchPlannerBranchFieldSetDetail | None = None,
     ) -> None:
+        resolved_subtype = subtype or classify_semantic_proposal_subtype(message)
+        if branch_field_set_detail is not None and not isinstance(
+            branch_field_set_detail,
+            SearchPlannerBranchFieldSetDetail,
+        ):
+            raise TypeError("branch_field_set_detail must be a closed enum")
+        if resolved_subtype is SearchPlannerSemanticProposalSubtype.BRANCH_FIELD_SET:
+            if branch_field_set_detail is None:
+                raise ValueError(
+                    "branch_field_set_detail is required for branch_field_set errors"
+                )
+        elif branch_field_set_detail is not None:
+            raise ValueError(
+                "branch_field_set_detail is reserved for branch_field_set errors"
+            )
         super().__init__(message)
-        self.subtype = subtype or classify_semantic_proposal_subtype(message)
+        self.subtype = resolved_subtype
+        self.branch_field_set_detail = branch_field_set_detail
 
 
 def classify_semantic_proposal_subtype(message: str) -> SearchPlannerSemanticProposalSubtype:
@@ -793,7 +820,16 @@ def compile_semantic_planner_proposal(
 
 def _validate_direct_simple(model_output: Mapping[str, Any]) -> dict[str, Any]:
     allowed = {"disposition", "source", "freshness", "caveat"}
-    _reject_unknown_fields(model_output, allowed=allowed, context="direct_simple")
+    _reject_unknown_fields(
+        model_output,
+        allowed=allowed,
+        context="direct_simple",
+        branch_field_set_detail=(
+            SearchPlannerBranchFieldSetDetail.DIRECT_SIMPLE_WITH_COMPONENTS
+            if "components" in model_output
+            else SearchPlannerBranchFieldSetDetail.DIRECT_SIMPLE_DISALLOWED_TOP_LEVEL
+        ),
+    )
     result: dict[str, Any] = {"disposition": "direct_simple"}
     source = _optional_source(model_output.get("source"), context="direct_simple.source")
     if source:
@@ -819,10 +855,23 @@ def _validate_direct_simple(model_output: Mapping[str, Any]) -> dict[str, Any]:
 
 def _validate_components_branch(model_output: Mapping[str, Any]) -> dict[str, Any]:
     allowed = {"disposition", "components"}
-    _reject_unknown_fields(model_output, allowed=allowed, context="components branch")
+    _reject_unknown_fields(
+        model_output,
+        allowed=allowed,
+        context="components branch",
+        branch_field_set_detail=(
+            SearchPlannerBranchFieldSetDetail.COMPONENTS_DISALLOWED_TOP_LEVEL
+        ),
+    )
     raw_components = model_output.get("components")
     if not isinstance(raw_components, list) or not raw_components:
-        raise SearchPlannerSemanticProposalError("components disposition requires a nonempty components array")
+        raise SearchPlannerSemanticProposalError(
+            "components disposition requires a nonempty components array",
+            subtype=SearchPlannerSemanticProposalSubtype.BRANCH_FIELD_SET,
+            branch_field_set_detail=(
+                SearchPlannerBranchFieldSetDetail.COMPONENTS_REQUIRED_NONEMPTY
+            ),
+        )
     if len(raw_components) > _MAX_COMPONENTS:
         raise SearchPlannerSemanticProposalError("components disposition exceeds the five-component ceiling")
     components = [_validate_component(item, index=index) for index, item in enumerate(raw_components)]
@@ -867,7 +916,14 @@ def _validate_component(item: Any, *, index: int) -> dict[str, Any]:
         "normalization",
         "calculation",
     }
-    _reject_unknown_fields(item, allowed=allowed, context=f"components[{index}]")
+    _reject_unknown_fields(
+        item,
+        allowed=allowed,
+        context=f"components[{index}]",
+        branch_field_set_detail=(
+            SearchPlannerBranchFieldSetDetail.NESTED_DISALLOWED_FIELD
+        ),
+    )
     need = _required_text(
         item,
         "need",
@@ -955,7 +1011,14 @@ def _optional_source(value: Any, *, context: str) -> dict[str, str] | None:
         return None
     if not isinstance(value, Mapping):
         raise SearchPlannerSemanticProposalError(f"{context} must be an object")
-    _reject_unknown_fields(value, allowed={"kind", "strictness"}, context=context)
+    _reject_unknown_fields(
+        value,
+        allowed={"kind", "strictness"},
+        context=context,
+        branch_field_set_detail=(
+            SearchPlannerBranchFieldSetDetail.NESTED_DISALLOWED_FIELD
+        ),
+    )
     kind = _required_enum(value, "kind", allowed=_SOURCE_KINDS, context=context)
     result = {"kind": kind}
     strictness = _optional_enum(
@@ -995,6 +1058,9 @@ def _validate_uncertainty(item: Any, *, context: str) -> dict[str, Any]:
             "materiality",
         },
         context=context,
+        branch_field_set_detail=(
+            SearchPlannerBranchFieldSetDetail.NESTED_DISALLOWED_FIELD
+        ),
     )
     status = _required_enum(
         item,
@@ -1181,10 +1247,15 @@ def _reject_unknown_fields(
     *,
     allowed: set[str],
     context: str,
+    branch_field_set_detail: SearchPlannerBranchFieldSetDetail,
 ) -> None:
     unknown = sorted(str(key) for key in mapping if key not in allowed)
     if unknown:
-        raise SearchPlannerSemanticProposalError(f"{context} has unknown fields: " + ", ".join(unknown))
+        raise SearchPlannerSemanticProposalError(
+            f"{context} has unknown fields: " + ", ".join(unknown),
+            subtype=SearchPlannerSemanticProposalSubtype.BRANCH_FIELD_SET,
+            branch_field_set_detail=branch_field_set_detail,
+        )
 
 
 def _collect_keys(value: Any) -> set[str]:
@@ -1237,6 +1308,7 @@ __all__ = [
     "SEARCH_PLANNER_SEMANTIC_PROPOSAL_REQUIRED_TOP_LEVEL_FIELDS",
     "SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA",
     "SEARCH_PLANNER_SEMANTIC_PROPOSAL_SCHEMA_VERSION",
+    "SearchPlannerBranchFieldSetDetail",
     "SearchPlannerSemanticProposalError",
     "SearchPlannerSemanticProposalSubtype",
     "build_search_planner_model_visible_schema",
