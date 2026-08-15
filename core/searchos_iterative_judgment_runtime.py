@@ -4057,6 +4057,70 @@ def searchos_semantic_handoff_ref(handoff: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def validate_searchos_recorded_semantic_handoff_ref(
+    *,
+    state: Mapping[str, Any],
+    semantic_handoff_ref: Mapping[str, Any],
+    expected_slot_ref: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Resolve an exact terminal handoff ref against sealed canonical state.
+
+    The recorded transition exists only after the owner has admitted exact,
+    current READ custody into a semantic handoff. Callers receive the compact
+    recorded ref, never state, custody, or handoff material.
+    """
+
+    canonical = _validated_state_copy(state)
+    requested_ref = _required_ref(semantic_handoff_ref, "semantic_handoff_ref")
+    if set(requested_ref) == {"semantic_handoff_id", "semantic_handoff_digest"}:
+        compact_ref = requested_ref
+    elif requested_ref.get("schema_version") == SEARCHOS_SEMANTIC_HANDOFF_SCHEMA_VERSION:
+        compact_ref = searchos_semantic_handoff_ref(requested_ref)
+    else:
+        raise SearchOSRuntimeError("recorded semantic handoff ref is invalid")
+    compact_ref = {
+        "semantic_handoff_id": _token(
+            compact_ref.get("semantic_handoff_id"), "semantic_handoff_id"
+        ),
+        "semantic_handoff_digest": _digest_token(
+            compact_ref.get("semantic_handoff_digest"), "semantic_handoff_digest"
+        ),
+    }
+    state_matches = [
+        _mapping(item)
+        for item in canonical.get("semantic_handoff_refs") or ()
+        if isinstance(item, Mapping)
+        and item.get("semantic_handoff_id") == compact_ref["semantic_handoff_id"]
+        and item.get("semantic_handoff_digest")
+        == compact_ref["semantic_handoff_digest"]
+        and item.get("schema_version") == SEARCHOS_SEMANTIC_HANDOFF_SCHEMA_VERSION
+    ]
+    if len(state_matches) != 1:
+        raise SearchOSRuntimeError("recorded semantic handoff ref is not current")
+    recorded_ref = state_matches[0]
+    slot_ref = _required_ref(recorded_ref.get("slot_ref"), "slot_ref")
+    if expected_slot_ref is not None and _mapping(expected_slot_ref) != slot_ref:
+        raise SearchOSRuntimeError("recorded semantic handoff slot ref is stale")
+    slot_id = _token(slot_ref.get("slot_id"), "slot_id")
+    slots = _mapping(canonical.get("slots_by_id"))
+    if slot_id not in slots:
+        raise SearchOSRuntimeError("recorded semantic handoff slot is unknown")
+    slot = _mapping(slots[slot_id])
+    if (
+        slot.get("posture") != SearchOSSlotPosture.SEMANTICALLY_HANDED_OFF.value
+        or _mapping(slot.get("slot_ref")) != slot_ref
+    ):
+        raise SearchOSRuntimeError("recorded semantic handoff slot is stale")
+    slot_matches = [
+        _mapping(item)
+        for item in slot.get("semantic_handoff_refs") or ()
+        if isinstance(item, Mapping) and _mapping(item) == recorded_ref
+    ]
+    if len(slot_matches) != 1:
+        raise SearchOSRuntimeError("recorded semantic handoff slot ref is stale")
+    return deepcopy(recorded_ref)
+
+
 def build_searchos_slice_a_readiness_v1(
     *,
     state: Mapping[str, Any],
@@ -4077,9 +4141,22 @@ def build_searchos_slice_a_readiness_v1(
         recovery_evidence_ref = _optional_ref(
             outcome.get("searchos_recovery_evidence_ref")
         )
+        semantic_handoff_ref = _optional_ref(outcome.get("semantic_handoff_ref"))
+        try:
+            recorded_semantic_handoff_ref = (
+                validate_searchos_recorded_semantic_handoff_ref(
+                    state=canonical,
+                    semantic_handoff_ref=semantic_handoff_ref,
+                    expected_slot_ref=slot["slot_ref"],
+                )
+                if semantic_handoff_ref
+                else {}
+            )
+        except SearchOSRuntimeError:
+            recorded_semantic_handoff_ref = {}
         exact_chain = all(
             (
-                _optional_ref(outcome.get("semantic_handoff_ref")),
+                semantic_handoff_ref,
                 _optional_ref(outcome.get("component_analyst_proposal_ref")),
                 _optional_ref(outcome.get("component_dprime_validation_ref")),
                 _optional_ref(outcome.get("semantic_admission_outcome_ref")),
@@ -4136,7 +4213,8 @@ def build_searchos_slice_a_readiness_v1(
                 )
             ),
             "custody_refs": deepcopy(slot["custody_refs"]),
-            "semantic_handoff_ref": _optional_ref(outcome.get("semantic_handoff_ref")),
+            "semantic_handoff_ref": semantic_handoff_ref,
+            "recorded_searchos_semantic_handoff_ref": recorded_semantic_handoff_ref,
             "component_analyst_proposal_ref": _optional_ref(outcome.get("component_analyst_proposal_ref")),
             "component_dprime_validation_ref": _optional_ref(outcome.get("component_dprime_validation_ref")),
             "semantic_admission_outcome_ref": _optional_ref(outcome.get("semantic_admission_outcome_ref")),
@@ -5202,6 +5280,7 @@ __all__ = [
     "validate_searchos_iteration_candidate_set",
     "validate_searchos_interpretation_binding",
     "validate_searchos_judgment_model_output",
+    "validate_searchos_recorded_semantic_handoff_ref",
     "validate_searchos_required_needs_block",
     "validate_searchos_revision_1_candidate_state",
     "validate_searchos_state",

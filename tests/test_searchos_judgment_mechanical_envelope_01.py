@@ -123,6 +123,126 @@ def test_old_read_custody_ref_cannot_cross_requests() -> None:
         )
 
 
+def _whole_custody_variant(
+    custody: dict[str, object],
+    *,
+    variant: str,
+) -> dict[str, object]:
+    if variant == "partial":
+        return {
+            "read_custody_material_id": custody["read_custody_material_id"],
+            "read_custody_material_digest": custody[
+                "read_custody_material_digest"
+            ],
+        }
+    altered = deepcopy(custody)
+    if variant == "augmented":
+        altered["unrecognized_custody_payload"] = "must-fail"
+        return altered
+    if variant == "nested_altered":
+        slot_ref = dict(altered["slot_ref"])
+        slot_ref["slot_id"] = "slot:altered"
+        altered["slot_ref"] = slot_ref
+        return altered
+    raise AssertionError(f"unknown custody variant: {variant}")
+
+
+def test_whole_current_custody_objects_are_valid_for_handoff_and_assessment(
+) -> None:
+    request, custody, _ = _post_read_judgment_request()
+
+    handoff = validate_searchos_judgment_model_output(
+        request=request,
+        model_output={
+            "schema_version": "searchos_judgment_decision_v1",
+            "action": "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION",
+            "read_custody_refs": [deepcopy(custody)],
+            "reason": "current custody supports semantic evaluation",
+        },
+    )
+    assert handoff["action"] == (
+        "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION"
+    )
+    assert handoff["read_custody_refs"] == [custody]
+
+    unresolved = validate_searchos_judgment_model_output(
+        request=request,
+        model_output={
+            "schema_version": "searchos_judgment_decision_v1",
+            "action": "HANDOFF_UNRESOLVED",
+            "reason": "current custody does not resolve the active need",
+            "read_custody_assessments": [
+                {
+                    "reviewed_custody_ref": deepcopy(custody),
+                    "material_disposition": "read_insufficient",
+                    "reason_code": "needed_detail_absent",
+                }
+            ],
+        },
+    )
+    assert unresolved["action"] == "HANDOFF_UNRESOLVED"
+    assert unresolved["read_custody_assessments"][0][
+        "reviewed_custody_ref"
+    ] == custody
+
+
+@pytest.mark.parametrize(
+    "variant",
+    ("partial", "augmented", "nested_altered"),
+)
+def test_handoff_rejects_non_whole_current_custody_objects(variant: str) -> None:
+    request, custody, _ = _post_read_judgment_request()
+
+    with pytest.raises(
+        SearchOSRuntimeError,
+        match="semantic handoff nominated stale or altered READ custody",
+    ):
+        validate_searchos_judgment_model_output(
+            request=request,
+            model_output={
+                "schema_version": "searchos_judgment_decision_v1",
+                "action": "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION",
+                "read_custody_refs": [
+                    _whole_custody_variant(custody, variant=variant)
+                ],
+                "reason": "non-whole custody must fail closed",
+            },
+        )
+
+
+@pytest.mark.parametrize(
+    "variant",
+    ("partial", "augmented", "nested_altered"),
+)
+def test_assessment_rejects_non_whole_current_custody_objects(
+    variant: str,
+) -> None:
+    request, custody, _ = _post_read_judgment_request()
+
+    with pytest.raises(
+        SearchOSRuntimeError,
+        match="READ custody assessment is stale or altered",
+    ):
+        validate_searchos_judgment_model_output(
+            request=request,
+            model_output={
+                "schema_version": "searchos_judgment_decision_v1",
+                "action": "HANDOFF_UNRESOLVED",
+                "reason": "non-whole assessment custody must fail closed",
+                "read_custody_assessments": [
+                    {
+                        "reviewed_custody_ref": _whole_custody_variant(
+                            custody,
+                            variant=variant,
+                        ),
+                        "material_disposition": "read_insufficient",
+                        "reason_code": "needed_detail_absent",
+                    }
+                ],
+            },
+        )
+
+
 def test_old_semantic_slot_ref_cannot_cross_requests() -> None:
     request = _orientation_judgment_request()
     stale_slot = deepcopy(request["clarification_eligible_semantic_slot_refs"][0])

@@ -14,6 +14,7 @@ import time
 import uuid
 from dataclasses import replace
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Any, Mapping
 
 from core import (
@@ -227,6 +228,7 @@ from core.retrieval_depth_policy import (
 )
 from core.retrieval_dispatch_runtime import (
     EmbeddingActionRecord,
+    RetrievalPostMaterialDispatchError,
     execute_conflict_resolution_from_scope,
     execute_disambiguation_retry_from_scope,
     execute_embedding_action,
@@ -418,6 +420,43 @@ class PipelineError(RuntimeError):
             metadata["blocked_fap_summary"] = blocked_summary
         self.safe_metadata = metadata
         self.blocked_fap_summary = blocked_summary
+
+
+
+class RetrievalKernelObservedFailureSubtype(str, Enum):
+    """Closed bounded-only causes after successful retrieval-kernel reduction."""
+
+    POST_REDUCTION_OUTCOME_CONSUMPTION = "post_reduction_outcome_consumption"
+
+
+class RetrievalKernelObservedFailureError(PipelineError):
+    """Project one value-free post-reduction retrieval-kernel failure cause."""
+
+    __slots__ = ("_subtype",)
+
+    _MESSAGE = "The bounded run stopped after retrieval-kernel observation."
+
+    def __init__(
+        self,
+        subtype: RetrievalKernelObservedFailureSubtype,
+    ) -> None:
+        if not isinstance(subtype, RetrievalKernelObservedFailureSubtype):
+            raise TypeError(
+                "subtype must be a closed retrieval-kernel failure subtype"
+            )
+        super().__init__(self._MESSAGE)
+        self._subtype = subtype
+
+    @property
+    def subtype(self) -> RetrievalKernelObservedFailureSubtype:
+        return self._subtype
+
+    def to_terminal_cause_projection(self) -> dict[str, str]:
+        return {
+            "cause_owner": "core.pipeline_orchestrator.run_pipeline",
+            "cause_classification": "retrieval_kernel_observed_failure",
+            "cause_subtype": self._subtype.value,
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -2293,14 +2332,23 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             run_kernel.reduce(main_retrieval_outcome.observation)
             if cap_policy is not None and cap_policy.bounded:
                 cap_policy.note_product_stage("retrieval_kernel_observed")
-            new_passages.extend(main_retrieval_outcome.passages)
-            discover_candidate_urls_admitted += (
-                main_retrieval_outcome.seen_url_delta
-            )
-            total_chunks_embedded += main_retrieval_outcome.chunk_delta
-            retrieval_loop_contract_state = (
-                main_retrieval_outcome.retrieval_loop_contract_state
-            )
+            try:
+                new_passages.extend(main_retrieval_outcome.passages)
+                discover_candidate_urls_admitted += (
+                    main_retrieval_outcome.seen_url_delta
+                )
+                total_chunks_embedded += main_retrieval_outcome.chunk_delta
+                retrieval_loop_contract_state = (
+                    main_retrieval_outcome.retrieval_loop_contract_state
+                )
+            except (RunCapExceeded, RetrievalPostMaterialDispatchError):
+                raise
+            except Exception as exc:
+                if cap_policy is not None and cap_policy.bounded:
+                    raise RetrievalKernelObservedFailureError(
+                        RetrievalKernelObservedFailureSubtype.POST_REDUCTION_OUTCOME_CONSUMPTION
+                    ) from exc
+                raise
         current_queries = iteration_queries
         past_searches.extend(iteration_queries)
         to_merge = list(new_passages)
