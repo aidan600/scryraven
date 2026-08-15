@@ -50,6 +50,8 @@ from core.protocols import NullStatusWriter
 from core.retrieval_dispatch_runtime import (
     RecordedRetrievalDispatch,
     RetrievalDispatchDeps,
+    RetrievalPostMaterialDispatchError,
+    RetrievalPostMaterialFailureSubtype,
     execute_recorded_retrieval_dispatch,
 )
 from core.routing import (
@@ -1921,7 +1923,7 @@ def test_bounded_retrieval_kernel_observation_stage_follows_successful_reduction
     )
     _harness, policy, config, deps = _bounded_isclose_runtime(tmp_path, monkeypatch)
 
-    with pytest.raises(RuntimeError, match="fixture-after-kernel-observation-failed"):
+    with pytest.raises(orchestrator.RetrievalKernelObservedFailureError) as caught:
         orchestrator.run_pipeline(
             config,
             deps,
@@ -1929,6 +1931,68 @@ def test_bounded_retrieval_kernel_observation_stage_follows_successful_reduction
             CostAccumulator(),
         )
 
+    assert caught.value.subtype is (
+        orchestrator.RetrievalKernelObservedFailureSubtype.POST_REDUCTION_OUTCOME_CONSUMPTION
+    )
+    assert caught.value.to_terminal_cause_projection() == {
+        "cause_owner": "core.pipeline_orchestrator.run_pipeline",
+        "cause_classification": "retrieval_kernel_observed_failure",
+        "cause_subtype": "post_reduction_outcome_consumption",
+    }
+    assert "fixture-after-kernel-observation-failed" not in str(caught.value)
+    assert policy.physical_snapshot()["furthest_product_stage"] == "retrieval_kernel_observed"
+
+
+def test_bounded_retrieval_kernel_observation_preserves_post_material_cause(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_dispatch = orchestrator.execute_main_retrieval_pass_from_scope
+    expected = RetrievalPostMaterialDispatchError(
+        RetrievalPostMaterialFailureSubtype.POST_MATERIAL_UNCLASSIFIED
+    )
+
+    class FailureAfterKernelObservation:
+        def __init__(self, outcome: Any) -> None:
+            self._observation = outcome.observation
+
+        @property
+        def observation(self) -> Any:
+            return self._observation
+
+        @property
+        def passages(self) -> list[dict[str, Any]]:
+            raise expected
+
+    def fail_after_kernel_observation(*args: Any, **kwargs: Any) -> Any:
+        outcome = original_dispatch(*args, **kwargs)
+        return FailureAfterKernelObservation(outcome)
+
+    monkeypatch.setattr(
+        orchestrator,
+        "execute_main_retrieval_pass_from_scope",
+        fail_after_kernel_observation,
+    )
+    _harness, policy, config, deps = _bounded_isclose_runtime(tmp_path, monkeypatch)
+
+    with pytest.raises(RetrievalPostMaterialDispatchError) as caught:
+        orchestrator.run_pipeline(
+            config,
+            deps,
+            NullStatusWriter(),
+            CostAccumulator(),
+        )
+
+    assert caught.value is expected
+    payload = compatibility_cli._bounded_terminal_payload(
+        entrypoint="scryraven",
+        exc=caught.value,
+        config=config,
+    )
+    terminal = payload["terminal"]
+    assert terminal["cause_classification"] == "retrieval_post_material_failure"
+    assert terminal["cause_subtype"] == "post_material_unclassified"
+    assert "retrieval_kernel_observed_failure" not in terminal.values()
     assert policy.physical_snapshot()["furthest_product_stage"] == "retrieval_kernel_observed"
 
 
@@ -2655,6 +2719,114 @@ def test_public_bounded_cli_enters_pipeline_once_after_successful_setup(
     assert "RuntimeError" not in captured.out
     assert "RuntimeError" not in captured.err
     assert "RuntimeError" not in serialized
+
+
+@pytest.mark.parametrize("entrypoint", ["proplex", "scryraven"])
+def test_public_bounded_cli_projects_closed_retrieval_kernel_observed_cause(
+    entrypoint: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A typed post-reduction carrier is public only through its closed cause."""
+
+    private_sentinel = "fixture-private-kernel-observed-sentinel"
+    argv = _bounded_entrypoint_setup_argv(tmp_path, monkeypatch)
+    pipeline_calls: list[tuple[Any, ...]] = []
+
+    def fail_pipeline(*args: Any, **_kwargs: Any) -> Any:
+        pipeline_calls.append(args)
+        try:
+            raise RuntimeError(private_sentinel)
+        except RuntimeError as exc:
+            raise orchestrator.RetrievalKernelObservedFailureError(
+                orchestrator.RetrievalKernelObservedFailureSubtype.POST_REDUCTION_OUTCOME_CONSUMPTION
+            ) from exc
+
+    monkeypatch.setattr(
+        compatibility_cli,
+        "missing_required_api_keys",
+        lambda **_kwargs: [],
+    )
+    monkeypatch.setattr(
+        compatibility_cli,
+        "_build_run_deps",
+        lambda _log: SimpleNamespace(),
+    )
+    monkeypatch.setattr(compatibility_cli, "run_pipeline", fail_pipeline)
+
+    assert compatibility_cli.main(argv, entrypoint=entrypoint) == 1
+    captured = capsys.readouterr()
+    assert len(captured.out.strip().splitlines()) == 1
+    payload = json.loads(captured.out)
+    assert payload["terminal"] == {
+        "code": "bounded_run_failed",
+        "message": "The bounded run stopped without retaining raw diagnostics.",
+        "owner": "core.pipeline_orchestrator.run_pipeline",
+        "classification": "pipeline_failure",
+        "cause_owner": "core.pipeline_orchestrator.run_pipeline",
+        "cause_classification": "retrieval_kernel_observed_failure",
+        "cause_subtype": "post_reduction_outcome_consumption",
+    }
+    assert payload["answer_present"] is False
+    assert payload["citation_count"] == 0
+    assert "bounded_entrypoint_setup_failure" not in payload["terminal"]
+    assert len(pipeline_calls) == 1
+    serialized = json.dumps(payload, sort_keys=True)
+    assert private_sentinel not in captured.out
+    assert private_sentinel not in captured.err
+    assert private_sentinel not in serialized
+    assert "RuntimeError" not in captured.out
+    assert "RuntimeError" not in captured.err
+    assert "RuntimeError" not in serialized
+
+
+@pytest.mark.parametrize("entrypoint", ["proplex", "scryraven"])
+def test_public_bounded_cli_keeps_generic_pipeline_error_opaque(
+    entrypoint: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A generic PipelineError does not acquire the retrieval-kernel cause."""
+
+    private_sentinel = "fixture-private-generic-pipeline-error"
+    argv = _bounded_entrypoint_setup_argv(tmp_path, monkeypatch)
+
+    def fail_pipeline(*_args: Any, **_kwargs: Any) -> Any:
+        raise orchestrator.PipelineError(private_sentinel)
+
+    monkeypatch.setattr(
+        compatibility_cli,
+        "missing_required_api_keys",
+        lambda **_kwargs: [],
+    )
+    monkeypatch.setattr(
+        compatibility_cli,
+        "_build_run_deps",
+        lambda _log: SimpleNamespace(),
+    )
+    monkeypatch.setattr(compatibility_cli, "run_pipeline", fail_pipeline)
+
+    assert compatibility_cli.main(argv, entrypoint=entrypoint) == 1
+    captured = capsys.readouterr()
+    assert len(captured.out.strip().splitlines()) == 1
+    payload = json.loads(captured.out)
+    assert payload["terminal"] == {
+        "code": "bounded_run_failed",
+        "message": "The bounded run stopped without retaining raw diagnostics.",
+        "owner": "core.pipeline_orchestrator.run_pipeline",
+        "classification": "pipeline_failure",
+    }
+    assert not {
+        "cause_owner",
+        "cause_classification",
+        "cause_subtype",
+    }.intersection(payload["terminal"])
+    serialized = json.dumps(payload, sort_keys=True)
+    assert private_sentinel not in captured.out
+    assert private_sentinel not in captured.err
+    assert private_sentinel not in serialized
 
 
 @pytest.mark.parametrize("entrypoint", ["proplex", "scryraven"])

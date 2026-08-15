@@ -116,7 +116,11 @@ from core.pipeline import (  # noqa: E402
     QUANT_REPORT_TYPES,
     process_search_queries,
 )
-from core.pipeline_orchestrator import PipelineError, run_pipeline  # noqa: E402
+from core.pipeline_orchestrator import (  # noqa: E402
+    PipelineError,
+    RetrievalKernelObservedFailureError,
+    run_pipeline,
+)
 from core.prompts import DEFAULT_SYSTEM  # noqa: E402
 from core.protocols import NullStatusWriter  # noqa: E402
 from core.provider_validation import missing_required_api_keys  # noqa: E402
@@ -841,6 +845,7 @@ def _bounded_terminal_payload(
         | QueryStrategyConvergenceError
         | SearchPlannerRuntimeError
         | RetrievalPostMaterialDispatchError
+        | RetrievalKernelObservedFailureError
         | None
     ),
     config: RunConfig | None,
@@ -968,7 +973,10 @@ def _bounded_terminal_payload(
             terminal[INITIAL_QUERY_STRATEGY_FAILURE_TERMINAL_KEY] = (
                 initial_planning_failure
             )
-    if isinstance(exc, RetrievalPostMaterialDispatchError):
+    if isinstance(
+        exc,
+        (RetrievalPostMaterialDispatchError, RetrievalKernelObservedFailureError),
+    ):
         terminal.update(exc.to_terminal_cause_projection())
     policy = config.cap_policy if config is not None else None
     payload: dict[str, object] = {
@@ -1675,7 +1683,11 @@ def main(
             _print_bounded_payload(
                 _bounded_terminal_payload(
                     entrypoint=entrypoint,
-                    exc=None,
+                    exc=(
+                        exc
+                        if isinstance(exc, RetrievalKernelObservedFailureError)
+                        else None
+                    ),
                     config=config,
                     compiled_authorization=compiled,
                 )
