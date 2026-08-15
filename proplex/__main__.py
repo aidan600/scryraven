@@ -131,6 +131,9 @@ from core.retrieval import (  # noqa: E402
     filter_top_evidence,
     is_plausible_domain,
 )
+from core.retrieval_dispatch_runtime import (  # noqa: E402
+    RetrievalPostMaterialDispatchError,
+)
 from core.run_cap_authorization import (  # noqa: E402
     BoundedRunAuthorizationError,
     CompiledRunCapAuthorization,
@@ -837,6 +840,7 @@ def _bounded_terminal_payload(
         | InitialQueryStrategyFailureError
         | QueryStrategyConvergenceError
         | SearchPlannerRuntimeError
+        | RetrievalPostMaterialDispatchError
         | None
     ),
     config: RunConfig | None,
@@ -959,6 +963,8 @@ def _bounded_terminal_payload(
             terminal[INITIAL_QUERY_STRATEGY_FAILURE_TERMINAL_KEY] = (
                 initial_planning_failure
             )
+    if isinstance(exc, RetrievalPostMaterialDispatchError):
+        terminal.update(exc.to_terminal_cause_projection())
     policy = config.cap_policy if config is not None else None
     payload: dict[str, object] = {
         "schema_version": "bounded_product_cli_terminal_v1",
@@ -1686,6 +1692,7 @@ def main(
                                 InitialQueryStrategyFailureError,
                                 QueryStrategyConvergenceError,
                                 SearchPlannerRuntimeError,
+                                RetrievalPostMaterialDispatchError,
                             ),
                         )
                         else None
