@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import ast
 import hashlib
-import inspect
 import json
 import threading
 from collections.abc import Mapping, Sequence
@@ -41,7 +40,7 @@ from core.ordinary_discovery_candidate_handoff_runtime import (
     validate_ordinary_discovery_candidate_reduction,
 )
 from core.provider_plan import ProviderPlan, ProviderPlanRecord
-from core.query_plan import QueryPlan
+from core.query_plan import DiscoveryJobClass, QueryPlan
 from core.retrieval_dispatch_runtime import (
     RecordedRetrievalDispatch,
     RetrievalDispatchDeps,
@@ -74,7 +73,6 @@ from tests.helpers.offline_ordinary_pipeline import (
 
 ROOT = Path(__file__).resolve().parents[1]
 CORE = ROOT / "core"
-CLI = ROOT / "proplex" / "__main__.py"
 
 
 def _digest(seed: str) -> str:
@@ -225,6 +223,8 @@ def _authority(
     *,
     queries: Sequence[str] = ("official current rule",),
     providers: Sequence[str] = ("tavily",),
+    discovery_job_class: DiscoveryJobClass | None = None,
+    primary_override: Sequence[str] | None = None,
     run_id: str = "run-discover-handoff",
     request_id: str = "request-discover-handoff",
 ) -> _AuthorityFixture:
@@ -234,7 +234,10 @@ def _authority(
         phase="main_retrieval",
         iteration=1,
     )
-    available = {provider: provider in providers for provider in ("tavily", "linkup", "exa")}
+    available = {
+        provider: provider in providers
+        for provider in ("tavily", "linkup", "exa", "serper")
+    }
     provider_plan = ProviderPlan.from_available_keys(
         available,
         plan_id=f"provider-plan:{run_id}",
@@ -250,9 +253,14 @@ def _authority(
             suppress_tavily=False,
             base_search_depth="basic",
             iteration=1,
-            primary_override=[provider],
+            primary_override=(
+                list(primary_override)
+                if primary_override is not None
+                else [provider]
+            ),
             scout_override=None,
             choose_search_depth=lambda _complexity, base, _iteration: base or "basic",
+            discovery_job_class=discovery_job_class,
         )
     snapshot = build_ordinary_discovery_authority_snapshot(
         query_plan=query_plan,
@@ -960,34 +968,71 @@ def test_invalid_observation_surface_and_packet_ref_are_rejected() -> None:
         )
 
 
-def test_serper_and_lightweight_disambiguation_remain_outside_ordinary_packet() -> None:
-    process_source = inspect.getsource(pipeline.process_search_queries).casefold()
-    assert "serper" not in process_source
-    assert "search_serper" not in process_source
-    assert "fetch_linkup_precision_block" not in process_source
+def test_provider_neutral_orientation_routes_to_serper_candidate_packet_without_evidence_or_read_authority() -> None:
+    authority = _authority(
+        providers=("serper",),
+        discovery_job_class=DiscoveryJobClass.ORIENTATION,
+        primary_override=(),
+    )
+    route = authority.provider_records["serper"].route_decision
+    assert route.providers() == ("serper",)
+    assert _enum_value(route.capability) == "DISCOVER"
+    assert _enum_value(route.qualifier) == "lightweight_disambiguation"
+    assert route.operation == "search"
+    assert route.variant == "web"
+    assert route.output_type == "searchResults"
+    assert route.authority_posture == "candidate_only_no_evidence_authority"
 
-    authority = _authority()
     store = DiscoveryResultMaterialStore()
-    identity = _admit(store, authority)
+    identity = _admit(store, authority, provider="serper")
     assert identity is not None
     _inputs, _action, execution = _execute_selection(
         authority,
         store,
         [identity],
     )
-    packet_text = json.dumps(execution.packet, sort_keys=True).casefold()
-    assert "serper" not in packet_text
-    assert "lightweight_disambiguation" not in packet_text
+    packet = validate_ordinary_search_result_candidate_packet(execution.packet)
+    record = packet["candidate_records"][0]
 
-    cli_source = CLI.read_text(encoding="utf-8")
-    cli_tree = ast.parse(cli_source)
-    main_node = next(node for node in cli_tree.body if isinstance(node, ast.FunctionDef) and node.name == "main")
-    main_source = ast.get_source_segment(cli_source, main_node) or ""
-    assert "RunConfig(" in main_source
-    assert "RunDeps(" in main_source
-    assert "process_search_queries=process_search_queries" in main_source
-    assert "outcome = run_pipeline(config, deps, status, accumulator)" in main_source
-    assert "discover-result-candidate-handoff" not in main_source.casefold()
+    assert record["provider_authorized"] == "serper"
+    assert record["provider_used"] == "serper"
+    for key in (
+        "closed_surface",
+        "non_evidence",
+        "not_fetched",
+        "not_read",
+        "not_citation",
+        "not_citation_eligible",
+        "not_source_obligation_satisfaction",
+    ):
+        assert packet[key] is True
+        assert record[key] is True
+    for key in (
+        "acquisition_need_proposal_created",
+        "read_work_order_created",
+        "focused_extract_work_order_created",
+        "exact_url_transport_executed",
+        "exact_url_cap_charged",
+    ):
+        assert execution.projection[key] is False
+    assert execution.projection["urls_fetched"] == 0
+    for key in (
+        "provider_call_caused_by_handoff",
+        "retrieval_action_caused_by_handoff",
+        "acquisition_need_proposal_created",
+        "exact_url_transport_executed",
+        "exact_url_fetch_executed",
+        "fetch_read_retrieval_executed",
+        "read_executed",
+        "evidence_admitted",
+        "evidence_ledger_custody_created",
+        "citation_eligible",
+        "source_obligation_satisfied",
+        "sufficiency_decided",
+        "final_answer_packet_created",
+        "author_input_created",
+    ):
+        assert execution.handoff[key] is False
 
 
 def test_recorded_dispatch_with_store_and_providers_requires_lineage_before_call() -> None:
