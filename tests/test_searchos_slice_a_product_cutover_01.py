@@ -1264,7 +1264,7 @@ def test_bounded_searchos_n1_causal_projection_privacy_allowlist() -> None:
     assert slot["safe_failure_class"] == "model_transport_failed"
     assert slot["safe_transport_exception_class"] == "other_safe"
     assert slot["safe_model_output_invalid_subtype"] == "none"
-    assert slot["read_custody_observed"] is True
+    assert slot["read_custody_observed"] is False
     assert "custody_refs" not in slot
     assert "action_history" not in slot
     assert "latest_judgment_reason" not in slot
@@ -1273,6 +1273,110 @@ def test_bounded_searchos_n1_causal_projection_privacy_allowlist() -> None:
 
     assert '"safe_transport_exception_class": "RuntimeError"' not in serialized
     assert '"safe_transport_exception_class": "other_safe"' in serialized
+
+
+def test_bounded_optional_handoff_projection_fails_closed_without_canonical_readiness() -> None:
+    private_sentinel = "fictional-optional-handoff-private-sentinel"
+    raw_slot_digest = "fictional-optional-handoff-slot-digest-sentinel"
+    handoff_ref = {
+        "semantic_handoff_id": "searchos-semantic-handoff:fixture",
+        "semantic_handoff_digest": "a" * 64,
+    }
+    fixture = {
+        "slot_postures": {"slot-private": "semantically_handed_off"},
+        "semantic_outcomes_by_slot": {
+            "slot-private": {
+                "semantic_handoff_ref": handoff_ref,
+                "component_analyst_proposal_ref": {},
+                "component_analyst_proposal_status": "not_proposed",
+                "component_dprime_validation_ref": {},
+                "component_dprime_validation_status": "not_accepted",
+                "semantic_admission_outcome_ref": {},
+                "semantic_admission_status": "not_admitted",
+                "searchos_handoff_material_consumed": False,
+            }
+        },
+        "readiness_projection": {
+            "required_slot_count": 0,
+            "optional_slot_count": 1,
+            "all_required_slots_slice_a_ready": True,
+            "slot_records": [
+                {
+                    "slot_ref": {
+                        "slot_id": "slot-private",
+                        "slot_digest": raw_slot_digest,
+                        "component_id": "component-private",
+                        "source_obligation_id": "obligation-private",
+                    },
+                    "requirement_posture": "optional",
+                    "support_kind": "reputable_secondary",
+                    "latest_judgment_posture": "semantically_handed_off",
+                    "latest_judgment_reason": private_sentinel,
+                    "judgment_call_count": 1,
+                    "action_history": [
+                        {"event": "judgment_decided", "reason": private_sentinel}
+                    ],
+                    "custody_refs": [
+                        {
+                            "read_custody_material_id": "custody-private",
+                            "normalized_url": "https://fixture.invalid/private",
+                        }
+                    ],
+                    "semantic_handoff_ref": handoff_ref,
+                    "slice_a_ready": False,
+                }
+            ],
+        },
+    }
+
+    projection = build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=fixture,
+        expected_run_id="run-private",
+        expected_request_id="request-private",
+    )
+
+    assert projection is not None
+    assert projection["projection_status"] == "available"
+    assert "searchos_exit" not in projection
+    assert projection["active_slot_count"] == 1
+    assert projection["required_slot_count"] == 0
+    assert projection["all_required_slots_ready"] is True
+    assert projection["slots"] == []
+    [optional_slot] = projection["optional_slots"]
+    assert optional_slot["required"] is False
+    assert optional_slot["final_posture"] == "semantically_handed_off"
+    assert optional_slot["semantic_handoff_present"] is False
+    assert optional_slot["read_custody_observed"] is False
+    serialized = json.dumps(projection, sort_keys=True)
+    assert private_sentinel not in serialized
+    assert raw_slot_digest not in serialized
+    assert "https://fixture.invalid/private" not in serialized
+
+    not_ready_fixture = json.loads(json.dumps(fixture))
+    not_ready_fixture["readiness_projection"]["slot_records"][0][
+        "latest_judgment_posture"
+    ] = "ready_for_semantic_evaluation"
+    not_ready_projection = build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=not_ready_fixture,
+        expected_run_id="run-private",
+        expected_request_id="request-private",
+    )
+    assert not_ready_projection is not None
+    assert "searchos_exit" not in not_ready_projection
+
+    malformed_fixture = json.loads(json.dumps(fixture))
+    malformed_fixture["readiness_projection"]["slot_records"][0][
+        "requirement_posture"
+    ] = "unknown"
+    malformed_projection = build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=malformed_fixture,
+        expected_run_id="run-private",
+        expected_request_id="request-private",
+    )
+    assert malformed_projection is not None
+    assert "searchos_exit" not in malformed_projection
+
+
 def test_bounded_clarification_projection_requires_closed_zero_evidence() -> None:
     private_candidate = "fictional-clarification-candidate-sentinel"
     fixture = {
@@ -1353,6 +1457,16 @@ def test_bounded_clarification_projection_requires_closed_zero_evidence() -> Non
         )
         assert unavailable is not None
         assert unavailable["projection_status"] == "insufficient"
+
+    scalar_postures = {
+        **fixture,
+        "semantic_obligation_clarification_postures": 1,
+    }
+    scalar_projection = build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=scalar_postures,
+    )
+    assert scalar_projection is not None
+    assert scalar_projection["projection_status"] == "insufficient"
 
 
 

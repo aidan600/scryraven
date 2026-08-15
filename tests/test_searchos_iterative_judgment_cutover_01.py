@@ -56,6 +56,7 @@ from core.searchos_iterative_judgment_runtime import (
     searchos_iteration_candidate_set_ref,
     validate_searchos_append_only_lineage,
     validate_searchos_judgment_model_output,
+    validate_searchos_recorded_semantic_handoff_ref,
     validate_searchos_required_needs_block,
 )
 
@@ -1498,6 +1499,18 @@ def test_read_custody_is_the_only_semantic_entry_and_required_block_is_safe() ->
         read_custody_material_refs=[custody],
     )
     state = record_searchos_semantic_handoff(state, handoff=handoff)
+    recorded_handoff_ref = validate_searchos_recorded_semantic_handoff_ref(
+        state=state,
+        semantic_handoff_ref=handoff,
+        expected_slot_ref=slot_ref,
+    )
+    assert recorded_handoff_ref == state["semantic_handoff_refs"][0]
+    with pytest.raises(SearchOSRuntimeError, match="slot ref is stale"):
+        validate_searchos_recorded_semantic_handoff_ref(
+            state=state,
+            semantic_handoff_ref=handoff,
+            expected_slot_ref={**slot_ref, "slot_id": "foreign-slot"},
+        )
     readiness = build_searchos_slice_a_readiness_v1(
         state=state,
         semantic_outcomes_by_slot={
@@ -1513,6 +1526,9 @@ def test_read_custody_is_the_only_semantic_entry_and_required_block_is_safe() ->
             }
         },
     )
+    assert readiness["slot_records"][0][
+        "recorded_searchos_semantic_handoff_ref"
+    ] == recorded_handoff_ref
     assert readiness["all_required_slots_slice_a_ready"] is True
     assert readiness["semantic_receiver_ready"] is True
     assert readiness["sufficiency_adjudication_required"] is True

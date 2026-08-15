@@ -37,6 +37,9 @@ from core.searchos_iterative_judgment_runtime import (
     SEARCHOS_JUDGMENT_DECISION_SCHEMA_VERSION,
     SEARCHOS_NAVIGATION_JUDGMENT_DECISION_SCHEMA_VERSION,
     SEARCHOS_NAVIGATION_JUDGMENT_REQUEST_SCHEMA_VERSION,
+    SEARCHOS_OWNER,
+    SEARCHOS_SEMANTIC_HANDOFF_SCHEMA_VERSION,
+    SEARCHOS_SLICE_A_READINESS_SCHEMA_VERSION,
     SearchOSJudgmentAction,
     SearchOSRuntimeError,
     SearchOSSlotPosture,
@@ -3818,46 +3821,56 @@ def _project_safe_model_output_invalid_subtype(*, posture: str, reason: Any) -> 
     return "other_safe"
 
 
-def _slot_read_custody_observed(record: Mapping[str, Any]) -> bool:
-    custody_refs = record.get("custody_refs") or ()
-    if isinstance(custody_refs, Sequence) and len(custody_refs) > 0:
-        return True
-    history = record.get("action_history") or ()
-    if not isinstance(history, Sequence):
-        return False
-    return any(
-        isinstance(item, Mapping) and item.get("event") == "read_custody_admitted"
-        for item in history
+def _nonnegative_int_or_none(value: Any) -> int | None:
+    return (
+        value
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0
+        else None
     )
 
 
 def _slot_judgment_counts(record: Mapping[str, Any]) -> tuple[int, int]:
-    history = [
-        item for item in (record.get("action_history") or ()) if isinstance(item, Mapping)
-    ]
+    history_value = record.get("action_history")
+    history = (
+        [item for item in history_value if isinstance(item, Mapping)]
+        if isinstance(history_value, Sequence)
+        and not isinstance(history_value, (str, bytes))
+        else []
+    )
     failure_count = sum(1 for item in history if item.get("event") == "judgment_failed")
     decision_count = sum(
         1
         for item in history
         if item.get("judgment_decision_ref") or item.get("event") == "judgment_failed"
     )
-    call_count = int(record.get("judgment_call_count") or 0)
+    call_count = _nonnegative_int_or_none(record.get("judgment_call_count")) or 0
     return max(call_count, decision_count), failure_count
 
 
-def _project_required_slot_summary(
+def _mapping_or_empty(value: Any) -> dict[str, Any]:
+    try:
+        return dict(value) if isinstance(value, Mapping) else {}
+    except (TypeError, ValueError):
+        return {}
+
+
+def _project_slot_summary(
     *,
     record: Mapping[str, Any],
     outcome: Mapping[str, Any],
+    required: bool,
 ) -> dict[str, Any]:
-    slot_ref = dict(record.get("slot_ref") or {})
-    admission_ref = dict(outcome.get("semantic_admission_outcome_ref") or {})
-    coverage_ref = dict(admission_ref.get("component_coverage_ref") or {})
-    handoff_ref = dict(outcome.get("semantic_handoff_ref") or record.get("semantic_handoff_ref") or {})
-    dprime_ref = dict(
+    slot_ref = _mapping_or_empty(record.get("slot_ref"))
+    admission_ref = _mapping_or_empty(outcome.get("semantic_admission_outcome_ref"))
+    coverage_ref = _mapping_or_empty(admission_ref.get("component_coverage_ref"))
+    recorded_handoff_ref = _recorded_semantic_handoff_ref_for_slot(
+        record=record,
+        outcome=outcome,
+    )
+    handoff_present = bool(recorded_handoff_ref)
+    dprime_ref = _mapping_or_empty(
         outcome.get("component_dprime_validation_ref")
         or record.get("component_dprime_validation_ref")
-        or {}
     )
     final_posture = _allowlisted_slot_posture(record.get("latest_judgment_posture"))
     judgment_event_count, judgment_failure_count = _slot_judgment_counts(record)
@@ -3880,14 +3893,12 @@ def _project_required_slot_summary(
         reason=reason,
     )
     return {
-        "slot_identity_digest": str(
-            slot_ref.get("slot_digest") or _opaque_identity_digest(slot_ref.get("slot_id"))
-        ),
+        "slot_identity_digest": _opaque_identity_digest(slot_ref.get("slot_id")),
         "component_identity_digest": _opaque_identity_digest(slot_ref.get("component_id")),
         "source_obligation_identity_digest": _opaque_identity_digest(
             slot_ref.get("source_obligation_id")
         ),
-        "required": True,
+        "required": required,
         "support_kind": _allowlisted_support_kind(record.get("support_kind")),
         "final_posture": final_posture,
         "safe_failure_class": safe_failure_class,
@@ -3901,8 +3912,8 @@ def _project_required_slot_summary(
         ),
         "judgment_event_count": judgment_event_count,
         "judgment_failure_count": judgment_failure_count,
-        "read_custody_observed": _slot_read_custody_observed(record),
-        "semantic_handoff_present": bool(handoff_ref),
+        "read_custody_observed": handoff_present,
+        "semantic_handoff_present": handoff_present,
         "handoff_material_consumed": bool(
             outcome.get("searchos_handoff_material_consumed") is True
         ),
@@ -3915,10 +3926,228 @@ def _project_required_slot_summary(
     }
 
 
+def _has_complete_slot_identity(record: Mapping[str, Any]) -> bool:
+    slot_ref = _mapping_or_empty(record.get("slot_ref"))
+    return all(
+        isinstance(slot_ref.get(field), str) and slot_ref[field].strip()
+        for field in ("slot_id", "component_id", "source_obligation_id")
+    )
+
+
+def _is_canonical_digest_token(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    token = value.strip()
+    return len(token) == 64 and all(
+        character in "0123456789abcdef" for character in token
+    )
+
+
+def _compact_semantic_handoff_ref(value: Any) -> dict[str, str]:
+    if not isinstance(value, Mapping):
+        return {}
+    ref = _mapping_or_empty(value)
+    if (
+        set(ref) != {"semantic_handoff_id", "semantic_handoff_digest"}
+        and (
+            ref.get("schema_version") != SEARCHOS_SEMANTIC_HANDOFF_SCHEMA_VERSION
+            or not isinstance(ref.get("slot_ref"), Mapping)
+        )
+    ):
+        return {}
+    handoff_id = ref.get("semantic_handoff_id")
+    handoff_digest = ref.get("semantic_handoff_digest")
+    if (
+        not isinstance(handoff_id, str)
+        or not _is_canonical_digest_token(handoff_digest)
+        or handoff_id != f"searchos-semantic-handoff:{handoff_digest[:24]}"
+    ):
+        return {}
+    return {
+        "semantic_handoff_id": handoff_id,
+        "semantic_handoff_digest": handoff_digest,
+    }
+
+
+def _recorded_semantic_handoff_ref_for_slot(
+    *,
+    record: Mapping[str, Any],
+    outcome: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Accept only the owner-resolved handoff ref sealed in readiness."""
+
+    slot_ref = _mapping_or_empty(record.get("slot_ref"))
+    if not _has_complete_slot_identity(record):
+        return {}
+    record_ref = _compact_semantic_handoff_ref(record.get("semantic_handoff_ref"))
+    outcome_ref = _compact_semantic_handoff_ref(outcome.get("semantic_handoff_ref"))
+    if not record_ref or outcome_ref != record_ref:
+        return {}
+    recorded_value = record.get("recorded_searchos_semantic_handoff_ref")
+    if not isinstance(recorded_value, Mapping):
+        return {}
+    recorded_ref = _mapping_or_empty(recorded_value)
+    if (
+        set(recorded_ref)
+        != {
+            "semantic_handoff_id",
+            "semantic_handoff_digest",
+            "slot_ref",
+            "schema_version",
+        }
+        or recorded_ref.get("semantic_handoff_id")
+        != record_ref["semantic_handoff_id"]
+        or recorded_ref.get("semantic_handoff_digest")
+        != record_ref["semantic_handoff_digest"]
+        or recorded_ref.get("schema_version")
+        != SEARCHOS_SEMANTIC_HANDOFF_SCHEMA_VERSION
+        or _mapping_or_empty(recorded_ref.get("slot_ref")) != slot_ref
+    ):
+        return {}
+    return recorded_ref
+
+
+def _readiness_projection_is_canonical_for_bounded_run(
+    *,
+    searchos_slice_a_projection: Mapping[str, Any],
+    readiness: Mapping[str, Any],
+    expected_run_id: str | None,
+    expected_request_id: str | None,
+) -> bool:
+    """Accept only the recorded readiness artifact for this bounded run."""
+
+    run_id = str(expected_run_id or "").strip()
+    request_id = str(expected_request_id or "").strip()
+    if not run_id or not request_id:
+        return False
+    if (
+        searchos_slice_a_projection.get("schema_version")
+        != "searchos_slice_a_product_runtime_v1"
+        or searchos_slice_a_projection.get("owner") != SEARCHOS_OWNER
+        or readiness.get("schema_version")
+        != SEARCHOS_SLICE_A_READINESS_SCHEMA_VERSION
+        or readiness.get("owner") != SEARCHOS_OWNER
+        or readiness.get("canonical_state") is not True
+        or readiness.get("run_id") != run_id
+        or readiness.get("request_id") != request_id
+    ):
+        return False
+    claimed_digest = readiness.get("readiness_projection_digest")
+    if not _is_canonical_digest_token(claimed_digest):
+        return False
+    try:
+        core = {
+            key: deepcopy(value)
+            for key, value in readiness.items()
+            if key
+            not in {
+                "readiness_projection_id",
+                "readiness_projection_digest",
+                "replay_identity",
+            }
+        }
+        core_digest = _digest(core)
+    except Exception:
+        return False
+    digest = str(claimed_digest)
+    if (
+        core_digest != digest
+        or readiness.get("readiness_projection_id")
+        != f"searchos-readiness:{digest[:24]}"
+        or readiness.get("replay_identity") != f"searchos-readiness:{digest}"
+    ):
+        return False
+    projection_ref = searchos_slice_a_projection.get("readiness_projection_ref")
+    return isinstance(projection_ref, Mapping) and _mapping_or_empty(projection_ref) == {
+        "readiness_projection_id": readiness.get("readiness_projection_id"),
+        "readiness_projection_digest": digest,
+    }
+
+
+def _readiness_records_match_active_slot_postures(
+    *,
+    readiness: Mapping[str, Any],
+    slot_records: Sequence[Mapping[str, Any]],
+    slot_postures: Mapping[str, Any],
+) -> bool:
+    """Require a one-to-one canonical readiness view of active SearchOS slots."""
+
+    raw_records = readiness.get("slot_records")
+    if not isinstance(raw_records, list) or len(raw_records) != len(slot_records):
+        return False
+    active_slot_ids = list(slot_postures)
+    if (
+        not active_slot_ids
+        or len(active_slot_ids) != len(slot_postures)
+        or any(
+            not isinstance(slot_id, str) or not slot_id.strip()
+            for slot_id in active_slot_ids
+        )
+        or len(slot_records) != len(active_slot_ids)
+    ):
+        return False
+    seen_slot_ids: set[str] = set()
+    for record in slot_records:
+        action_history = record.get("action_history")
+        if (
+            not isinstance(action_history, Sequence)
+            or isinstance(action_history, (str, bytes))
+            or not _has_complete_slot_identity(record)
+        ):
+            return False
+        slot_id = str(
+            _mapping_or_empty(record.get("slot_ref")).get("slot_id") or ""
+        ).strip()
+        if (
+            not slot_id
+            or slot_id in seen_slot_ids
+            or slot_id not in slot_postures
+            or record.get("latest_judgment_posture") != slot_postures[slot_id]
+            or record.get("requirement_posture") not in {"required", "optional"}
+        ):
+            return False
+        seen_slot_ids.add(slot_id)
+    return seen_slot_ids == set(active_slot_ids)
+
+
+def _record_has_canonical_semantic_handoff_ref(
+    *,
+    record: Mapping[str, Any],
+    outcome: Mapping[str, Any],
+) -> bool:
+    """Check record/outcome equality against the owner-resolved state ref."""
+
+    return bool(
+        _recorded_semantic_handoff_ref_for_slot(record=record, outcome=outcome)
+    )
+
+
+def _is_semantic_handoff_exit_record(
+    *,
+    record: Mapping[str, Any],
+    outcome: Mapping[str, Any],
+    summary: Mapping[str, Any],
+) -> bool:
+    """Return only a canonically recorded, custody-backed SearchOS handoff."""
+
+    return bool(
+        _has_complete_slot_identity(record)
+        and summary.get("final_posture") == "semantically_handed_off"
+        and summary.get("semantic_handoff_present") is True
+        and summary.get("read_custody_observed") is True
+        and _record_has_canonical_semantic_handoff_ref(
+            record=record,
+            outcome=outcome,
+        )
+    )
+
+
 def build_bounded_searchos_n1_causal_projection(
     *,
     searchos_slice_a_projection: Mapping[str, Any] | None,
     enabled: bool = True,
+    expected_run_id: str | None = None,
+    expected_request_id: str | None = None,
 ) -> dict[str, Any] | None:
     """Project allowlisted SearchOS N=1 causal facts for bounded product output."""
 
@@ -3937,11 +4166,10 @@ def build_bounded_searchos_n1_causal_projection(
             "slots": [],
         }
 
-    clarification_postures = dict(
+    clarification_postures = _mapping_or_empty(
         searchos_slice_a_projection.get(
             "semantic_obligation_clarification_postures"
         )
-        or {}
     )
     clarification_required_obligation_count = sum(
         1
@@ -4041,19 +4269,33 @@ def build_bounded_searchos_n1_causal_projection(
             ],
         }
 
-    readiness = dict(searchos_slice_a_projection.get("readiness_projection") or {})
-    outcomes = dict(searchos_slice_a_projection.get("semantic_outcomes_by_slot") or {})
+    readiness_value = searchos_slice_a_projection.get("readiness_projection")
+    readiness = _mapping_or_empty(readiness_value)
+    outcomes_value = searchos_slice_a_projection.get("semantic_outcomes_by_slot")
+    outcomes = _mapping_or_empty(outcomes_value)
+    slot_postures_value = searchos_slice_a_projection.get("slot_postures")
+    slot_postures = _mapping_or_empty(slot_postures_value)
+    slot_records_value = readiness.get("slot_records")
+    slot_record_items = (
+        slot_records_value
+        if isinstance(slot_records_value, Sequence)
+        and not isinstance(slot_records_value, (str, bytes))
+        else ()
+    )
     slot_records = [
-        dict(item)
-        for item in readiness.get("slot_records") or ()
+        _mapping_or_empty(item)
+        for item in slot_record_items
         if isinstance(item, Mapping)
     ]
+    declared_required_slot_count = _nonnegative_int_or_none(
+        readiness.get("required_slot_count")
+    )
     if not readiness or not slot_records:
         return {
             "schema_version": BOUNDED_SEARCHOS_N1_CAUSAL_PROJECTION_SCHEMA,
             "projection_status": "insufficient",
-            "active_slot_count": len(dict(searchos_slice_a_projection.get("slot_postures") or {})),
-            "required_slot_count": int(readiness.get("required_slot_count") or 0),
+            "active_slot_count": len(slot_postures),
+            "required_slot_count": declared_required_slot_count or 0,
             "all_required_slots_ready": False,
             "component_receiver_selected": False,
             "component_receiver_failure_class": "none",
@@ -4061,16 +4303,103 @@ def build_bounded_searchos_n1_causal_projection(
             "slots": [],
         }
 
+    readiness_is_canonical = _readiness_projection_is_canonical_for_bounded_run(
+        searchos_slice_a_projection=searchos_slice_a_projection,
+        readiness=readiness,
+        expected_run_id=expected_run_id,
+        expected_request_id=expected_request_id,
+    )
+    records_match_active_slots = _readiness_records_match_active_slot_postures(
+        readiness=readiness,
+        slot_records=slot_records,
+        slot_postures=slot_postures,
+    )
     required_records = [
         record
         for record in slot_records
         if str(record.get("requirement_posture") or "") == "required"
     ]
+    optional_records = [
+        record
+        for record in slot_records
+        if str(record.get("requirement_posture") or "") == "optional"
+    ]
+
+    def _outcome_for_slot(slot_id: str) -> dict[str, Any]:
+        outcome_value = outcomes.get(slot_id)
+        return _mapping_or_empty(outcome_value)
+
     slots: list[dict[str, Any]] = []
     for record in required_records:
-        slot_id = str(dict(record.get("slot_ref") or {}).get("slot_id") or "")
-        outcome = dict(outcomes.get(slot_id) or {})
-        slots.append(_project_required_slot_summary(record=record, outcome=outcome))
+        slot_id = str(
+            _mapping_or_empty(record.get("slot_ref")).get("slot_id") or ""
+        )
+        outcome = _outcome_for_slot(slot_id)
+        slots.append(
+            _project_slot_summary(
+                record=record,
+                outcome=outcome,
+                required=True,
+            )
+        )
+    optional_slots: list[dict[str, Any]] = []
+    for record in optional_records:
+        slot_id = str(
+            _mapping_or_empty(record.get("slot_ref")).get("slot_id") or ""
+        )
+        outcome = _outcome_for_slot(slot_id)
+        optional_slots.append(
+            _project_slot_summary(
+                record=record,
+                outcome=outcome,
+                required=False,
+            )
+        )
+    all_slot_summaries = slots + optional_slots
+    required_slot_count = declared_required_slot_count
+    optional_slot_count = _nonnegative_int_or_none(
+        readiness.get("optional_slot_count")
+    )
+    if required_slot_count is None or optional_slot_count is None:
+        return {
+            "schema_version": BOUNDED_SEARCHOS_N1_CAUSAL_PROJECTION_SCHEMA,
+            "projection_status": "insufficient",
+            "active_slot_count": len(slot_postures),
+            "required_slot_count": 0,
+            "all_required_slots_ready": False,
+            "component_receiver_selected": False,
+            "component_receiver_failure_class": "none",
+            "logical_call_correlation": "not_directly_available",
+            "slots": [],
+        }
+    projected_records = required_records + optional_records
+    handoff_records: list[bool] = []
+    if (
+        readiness_is_canonical
+        and records_match_active_slots
+        and len(projected_records) == len(slot_records)
+    ):
+        handoff_records = [
+            _is_semantic_handoff_exit_record(
+                record=record,
+                outcome=_outcome_for_slot(
+                    str(
+                        _mapping_or_empty(record.get("slot_ref")).get("slot_id") or ""
+                    )
+                ),
+                summary=summary,
+            )
+            for record, summary in zip(projected_records, all_slot_summaries)
+        ]
+    all_active_slots_semantically_handed_off = bool(
+        all_slot_summaries
+        and readiness_is_canonical
+        and records_match_active_slots
+        and len(required_records) == required_slot_count
+        and len(optional_records) == optional_slot_count
+        and len(all_slot_summaries) == required_slot_count + optional_slot_count
+        and all(handoff_records)
+    )
 
     receiver_failure = searchos_slice_a_projection.get("component_receiver_failure")
     receiver_failure_class = "none"
@@ -4085,7 +4414,7 @@ def build_bounded_searchos_n1_causal_projection(
             item.get("component_analyst_proposal_status") == "proposed"
             or item.get("semantic_admission_status") == "admitted"
             or item.get("semantic_handoff_present") is True
-            for item in slots
+            for item in all_slot_summaries
         )
         or any(
             str(record.get("latest_judgment_posture") or "")
@@ -4095,22 +4424,25 @@ def build_bounded_searchos_n1_causal_projection(
             }
             for record in required_records
         )
+        or all_active_slots_semantically_handed_off
     )
 
-    return {
+    result = {
         "schema_version": BOUNDED_SEARCHOS_N1_CAUSAL_PROJECTION_SCHEMA,
         "projection_status": "available",
-        "active_slot_count": int(
-            readiness.get("required_slot_count") or 0
-        )
-        + int(readiness.get("optional_slot_count") or 0),
-        "required_slot_count": int(readiness.get("required_slot_count") or len(required_records)),
+        "active_slot_count": required_slot_count + optional_slot_count,
+        "required_slot_count": required_slot_count,
         "all_required_slots_ready": readiness.get("all_required_slots_slice_a_ready") is True,
         "component_receiver_selected": receiver_selected,
         "component_receiver_failure_class": receiver_failure_class,
         "logical_call_correlation": "not_directly_available",
         "slots": slots,
     }
+    if optional_slots:
+        result["optional_slots"] = optional_slots
+    if all_active_slots_semantically_handed_off:
+        result["searchos_exit"] = "SEMANTIC_HANDOFF"
+    return result
 
 
 __all__ = [

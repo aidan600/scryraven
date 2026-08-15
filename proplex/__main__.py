@@ -829,6 +829,8 @@ def _bounded_success_payload(
             or {}
         ),
         enabled=include_searchos_n1_causal_projection,
+        expected_run_id=str(outcome.run_id or ""),
+        expected_request_id=str(outcome.session_id or ""),
     )
     if causal_projection is not None:
         payload["searchos_n1_causal_projection"] = causal_projection

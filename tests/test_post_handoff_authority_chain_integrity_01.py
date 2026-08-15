@@ -86,6 +86,7 @@ def test_returned_blocked_fap_is_not_a_completed_bounded_answer(
 
     projection = dict(payload["searchos_n1_causal_projection"])
     assert projection["projection_status"] == "available"
+    assert projection["searchos_exit"] == "SEMANTIC_HANDOFF"
     assert projection["component_receiver_selected"] is True
     assert projection["slots"]
     assert any(slot["read_custody_observed"] is True for slot in projection["slots"])

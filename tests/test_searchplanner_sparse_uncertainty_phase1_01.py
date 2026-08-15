@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from copy import deepcopy
+from hashlib import sha256
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -706,6 +707,242 @@ def test_case_b_factual_uncertainty_binds_then_runs_standard_discovery(
     assert effective["effective_value"] == "Scott Galloway"
     assert effective["resolution_source"] == "interpretation_binding"
     assert effective["base_answer_contract_mutated"] is False
+    projection = build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=outcome.execution_trace["searchos_slice_a"],
+        expected_run_id=outcome.run_id,
+        expected_request_id=outcome.session_id,
+    )
+    assert projection is not None
+    assert projection["searchos_exit"] == "SEMANTIC_HANDOFF"
+    [handoff_slot] = projection["slots"]
+    assert handoff_slot["final_posture"] == "semantically_handed_off"
+    assert handoff_slot["semantic_handoff_present"] is True
+    assert handoff_slot["read_custody_observed"] is True
+
+    def assert_no_handoff_exit(trace: dict[str, Any]) -> None:
+        tampered_projection = build_bounded_searchos_n1_causal_projection(
+            searchos_slice_a_projection=trace,
+            expected_run_id=outcome.run_id,
+            expected_request_id=outcome.session_id,
+        )
+        assert tampered_projection is not None
+        assert "searchos_exit" not in tampered_projection
+
+    def assert_handoff_exit(trace: dict[str, Any]) -> None:
+        tampered_projection = build_bounded_searchos_n1_causal_projection(
+            searchos_slice_a_projection=trace,
+            expected_run_id=outcome.run_id,
+            expected_request_id=outcome.session_id,
+        )
+        assert tampered_projection is not None
+        assert tampered_projection["searchos_exit"] == "SEMANTIC_HANDOFF"
+
+    canonical_trace = deepcopy(outcome.execution_trace["searchos_slice_a"])
+    corrupt_digest = deepcopy(canonical_trace)
+    corrupt_digest["readiness_projection"]["readiness_projection_digest"] = "0" * 64
+    assert_no_handoff_exit(corrupt_digest)
+
+    mismatched_ref = deepcopy(canonical_trace)
+    mismatched_ref["readiness_projection_ref"]["readiness_projection_digest"] = "f" * 64
+    assert_no_handoff_exit(mismatched_ref)
+
+    foreign_slot_set = deepcopy(canonical_trace)
+    foreign_slot_set["slot_postures"] = {
+        "foreign-slot": "semantically_handed_off"
+    }
+    assert_no_handoff_exit(foreign_slot_set)
+
+    mismatched_outcome_ref = deepcopy(canonical_trace)
+    slot_id = next(iter(mismatched_outcome_ref["semantic_outcomes_by_slot"]))
+    mismatched_outcome_ref["semantic_outcomes_by_slot"][slot_id][
+        "semantic_handoff_ref"
+    ] = {}
+    assert_no_handoff_exit(mismatched_outcome_ref)
+
+    deleted_outcome_ref = deepcopy(canonical_trace)
+    deleted_slot_id = next(iter(deleted_outcome_ref["semantic_outcomes_by_slot"]))
+    del deleted_outcome_ref["semantic_outcomes_by_slot"][deleted_slot_id][
+        "semantic_handoff_ref"
+    ]
+    assert_no_handoff_exit(deleted_outcome_ref)
+
+    def reseal_readiness(trace: dict[str, Any]) -> None:
+        readiness = trace["readiness_projection"]
+        core = {
+            key: value
+            for key, value in readiness.items()
+            if key
+            not in {
+                "readiness_projection_id",
+                "readiness_projection_digest",
+                "replay_identity",
+            }
+        }
+        digest = sha256(
+            json.dumps(
+                core,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+            ).encode("utf-8")
+        ).hexdigest()
+        readiness["readiness_projection_id"] = f"searchos-readiness:{digest[:24]}"
+        readiness["readiness_projection_digest"] = digest
+        readiness["replay_identity"] = f"searchos-readiness:{digest}"
+        trace["readiness_projection_ref"] = {
+            "readiness_projection_id": readiness["readiness_projection_id"],
+            "readiness_projection_digest": digest,
+        }
+
+    duplicate_record = deepcopy(canonical_trace)
+    duplicate_record["readiness_projection"]["slot_records"].append(
+        deepcopy(duplicate_record["readiness_projection"]["slot_records"][0])
+    )
+    reseal_readiness(duplicate_record)
+    assert_no_handoff_exit(duplicate_record)
+
+    missing_identity = deepcopy(canonical_trace)
+    missing_identity["readiness_projection"]["slot_records"][0]["slot_ref"][
+        "component_id"
+    ] = ""
+    reseal_readiness(missing_identity)
+    assert_no_handoff_exit(missing_identity)
+
+    for identity_field, malformed_identity in (
+        ("slot_id", 1),
+        ("component_id", ["not-a-token"]),
+        ("source_obligation_id", {"not": "a-token"}),
+    ):
+        malformed_identity_trace = deepcopy(canonical_trace)
+        malformed_identity_trace["readiness_projection"]["slot_records"][0][
+            "slot_ref"
+        ][identity_field] = malformed_identity
+        reseal_readiness(malformed_identity_trace)
+        assert_no_handoff_exit(malformed_identity_trace)
+
+    malformed_slot_ref = deepcopy(canonical_trace)
+    malformed_slot_ref["readiness_projection"]["slot_records"][0][
+        "slot_ref"
+    ] = "not-a-mapping"
+    reseal_readiness(malformed_slot_ref)
+    assert_no_handoff_exit(malformed_slot_ref)
+
+    malformed_count = deepcopy(canonical_trace)
+    malformed_count["readiness_projection"]["optional_slot_count"] = "not-an-int"
+    reseal_readiness(malformed_count)
+    assert_no_handoff_exit(malformed_count)
+
+    unserializable_core = deepcopy(canonical_trace)
+    unserializable_core["readiness_projection"]["malformed_core"] = object()
+    assert_no_handoff_exit(unserializable_core)
+
+    scalar_slot_records = deepcopy(canonical_trace)
+    scalar_slot_records["readiness_projection"]["slot_records"] = 1
+    assert_no_handoff_exit(scalar_slot_records)
+
+    scalar_action_history = deepcopy(canonical_trace)
+    scalar_action_history["readiness_projection"]["slot_records"][0][
+        "action_history"
+    ] = 1
+    reseal_readiness(scalar_action_history)
+    assert_no_handoff_exit(scalar_action_history)
+
+    for malformed_custody_refs in (1, {"not": "a-list"}):
+        malformed_custody = deepcopy(canonical_trace)
+        malformed_custody["readiness_projection"]["slot_records"][0][
+            "custody_refs"
+        ] = malformed_custody_refs
+        reseal_readiness(malformed_custody)
+        assert_handoff_exit(malformed_custody)
+
+    for malformed_custody_id in (1, ["not-a-token"], {"not": "a-token"}):
+        malformed_custody_id_trace = deepcopy(canonical_trace)
+        malformed_custody_id_trace["readiness_projection"]["slot_records"][0][
+            "custody_refs"
+        ][0]["read_custody_material_id"] = malformed_custody_id
+        reseal_readiness(malformed_custody_id_trace)
+        assert_handoff_exit(malformed_custody_id_trace)
+
+    missing_recorded_ref = deepcopy(canonical_trace)
+    del missing_recorded_ref["readiness_projection"]["slot_records"][0][
+        "recorded_searchos_semantic_handoff_ref"
+    ]
+    reseal_readiness(missing_recorded_ref)
+    assert_no_handoff_exit(missing_recorded_ref)
+
+    mismatched_recorded_ref = deepcopy(canonical_trace)
+    mismatched_recorded_ref["readiness_projection"]["slot_records"][0][
+        "recorded_searchos_semantic_handoff_ref"
+    ]["semantic_handoff_digest"] = "a" * 64
+    reseal_readiness(mismatched_recorded_ref)
+    assert_no_handoff_exit(mismatched_recorded_ref)
+
+    foreign_recorded_slot = deepcopy(canonical_trace)
+    foreign_recorded_slot["readiness_projection"]["slot_records"][0][
+        "recorded_searchos_semantic_handoff_ref"
+    ]["slot_ref"] = {
+        **foreign_recorded_slot["readiness_projection"]["slot_records"][0][
+            "recorded_searchos_semantic_handoff_ref"
+        ]["slot_ref"],
+        "slot_id": "foreign-slot",
+    }
+    reseal_readiness(foreign_recorded_slot)
+    assert_no_handoff_exit(foreign_recorded_slot)
+
+    nonstring_handoff_digest = deepcopy(canonical_trace)
+    nonstring_handoff_digest["readiness_projection"]["slot_records"][0][
+        "semantic_handoff_ref"
+    ]["semantic_handoff_digest"] = int("1" * 64)
+    reseal_readiness(nonstring_handoff_digest)
+    assert_no_handoff_exit(nonstring_handoff_digest)
+
+
+def test_optional_factual_orientation_does_not_infer_a_terminal_handoff(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Vacuous required readiness cannot certify an unfinished optional slot."""
+
+    case = valid_case("factual_identity_uncertainty")
+    proposal = deepcopy(case["proposal"])
+    proposal["components"][0]["source"] = {
+        "kind": "reputable_secondary",
+        "strictness": "preferred",
+    }
+    outcome, _harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        query=case["query"],
+        core_topic="recent Galloway controversy",
+        primary_entity="Galloway",
+        evidence_rows=[
+            _evidence_row("Scott Galloway", suffix="optional-case-b-orientation")
+        ],
+        followup_evidence_rows=[
+            _evidence_row("Scott Galloway", suffix="optional-case-b-standard")
+        ],
+        read_assessment_decision="BIND_THEN_FOLLOWUP_THEN_READ",
+        deps_overrides=_product_deps(proposal),
+    )
+
+    projection = build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=outcome.execution_trace["searchos_slice_a"],
+    )
+
+    assert projection is not None
+    assert projection["projection_status"] == "available"
+    assert "searchos_exit" not in projection
+    assert projection["active_slot_count"] == 1
+    assert projection["required_slot_count"] == 0
+    assert projection["slots"] == []
+    [optional_slot] = projection["optional_slots"]
+    assert optional_slot["required"] is False
+    assert optional_slot["final_posture"] == "stale_or_invalid"
+    assert optional_slot["semantic_handoff_present"] is False
+    assert optional_slot["read_custody_observed"] is False
+    serialized = json.dumps(projection, sort_keys=True)
+    assert "Scott Galloway" not in serialized
+    assert "optional-case-b" not in serialized
 
 
 def test_unclassified_factual_term_uses_orientation_and_bounded_binding(
