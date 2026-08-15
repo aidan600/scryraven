@@ -125,6 +125,8 @@ def test_production_judgment_prompt_states_the_strict_validator_contract() -> No
         "QueryPlan independently validates the exact text",
         "Never invent or alter a URL, authority ref",
         "Do not treat custody-ref presence alone as readiness",
+        "Exact opaque-ref copy means copy the entire selected JSON object unchanged",
+        "reviewed_custody_ref is the whole unchanged source object",
     )
 
     assert all(
@@ -271,9 +273,10 @@ def test_transient_decision_contract_describes_every_action_and_input_role() -> 
     handoff_contract = contract["actions"][
         "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION"
     ]
-    assert "nonempty selection of exact refs" in handoff_contract[
+    assert "whole unchanged objects" in handoff_contract[
         "read_custody_refs_rule"
     ]
+    assert "IDs/digests alone" in handoff_contract["read_custody_refs_rule"]
     assert "not simultaneously labeled insufficient" in handoff_contract[
         "semantic_handoff_rule"
     ]
@@ -286,6 +289,12 @@ def test_transient_decision_contract_describes_every_action_and_input_role() -> 
         "reviewed_custody_ref",
         "material_disposition",
         "reason_code",
+    ]
+    assert "whole authorized_request.read_custody_refs object unchanged" in (
+        assessment_contract["reviewed_custody_ref_rule"]
+    )
+    assert "IDs/digests alone" in assessment_contract[
+        "reviewed_custody_ref_rule"
     ]
     assert assessment_contract["material_disposition"] == "read_insufficient"
     assert contract["durable_retention_allowed"] is False
@@ -1261,8 +1270,91 @@ def test_bounded_searchos_n1_causal_projection_privacy_allowlist() -> None:
     assert "latest_judgment_reason" not in slot
     assert "normalized_url" not in serialized
     assert "private_raw" not in serialized
+
     assert '"safe_transport_exception_class": "RuntimeError"' not in serialized
     assert '"safe_transport_exception_class": "other_safe"' in serialized
+def test_bounded_clarification_projection_requires_closed_zero_evidence() -> None:
+    private_candidate = "fictional-clarification-candidate-sentinel"
+    fixture = {
+        "slot_postures": {
+            "slot-required": "clarification_required",
+            "slot-optional": "clarification_required",
+        },
+        "semantic_obligation_clarification_postures": {
+            "obligation-required": {
+                "clarification_required": True,
+                "declared_candidates": [private_candidate],
+            },
+            "obligation-optional": {
+                "clarification_required": True,
+                "declared_candidates": [private_candidate],
+            },
+        },
+        "clarification_required": True,
+        "clarification_only_no_dispatch": True,
+        "clarification_acquisition_job_count": 0,
+        "provider_calls_attempted": 0,
+        "provider_calls_completed": 0,
+        "clarification_slot_count": 2,
+        "clarification_required_slot_count": 1,
+        "clarification_optional_slot_count": 1,
+    }
+
+    projection = build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=fixture,
+    )
+    assert projection is not None
+    assert projection["projection_status"] == "available"
+    assert projection["searchos_exit"] == "REQUIRE_CLARIFICATION"
+    assert projection["clarification_required_obligation_count"] == 2
+    assert projection["clarification_acquisition_job_count"] == 0
+    assert projection["provider_calls_attempted"] == 0
+    assert projection["provider_calls_completed"] == 0
+    assert projection["active_slot_count"] == 2
+    assert projection["required_slot_count"] == 1
+    assert projection["clarification_optional_slot_count"] == 1
+    assert projection["all_required_slots_ready"] is False
+    assert projection["slot_summary_variant"] == "clarification_no_acquisition"
+    assert len(projection["slots"]) == projection["required_slot_count"]
+    [required_slot] = projection["slots"]
+    assert required_slot["final_posture"] == "clarification_required"
+    assert required_slot["safe_transport_exception_class"] == "none"
+    assert required_slot["read_custody_observed"] is False
+    assert private_candidate not in json.dumps(projection, sort_keys=True)
+
+    invalid_fixtures = (
+        {**fixture, "clarification_acquisition_job_count": 1},
+        {**fixture, "provider_calls_attempted": 1},
+        {**fixture, "provider_calls_completed": 1},
+        {**fixture, "clarification_slot_count": 3},
+        {
+            **fixture,
+            "slot_postures": {},
+            "clarification_slot_count": 0,
+            "clarification_required_slot_count": 0,
+            "clarification_optional_slot_count": 0,
+        },
+        {
+            **fixture,
+            "slot_postures": {
+                "slot-required": "ready_for_semantic_evaluation",
+                "slot-optional": "clarification_required",
+            },
+        },
+        {
+            key: value
+            for key, value in fixture.items()
+            if key != "clarification_acquisition_job_count"
+        },
+    )
+    for invalid in invalid_fixtures:
+        unavailable = build_bounded_searchos_n1_causal_projection(
+            searchos_slice_a_projection=invalid,
+        )
+        assert unavailable is not None
+        assert unavailable["projection_status"] == "insufficient"
+
+
 
 
 def _transport_cause_fixture(*, reason: str, posture: str = "judgment_failed") -> dict[str, Any]:

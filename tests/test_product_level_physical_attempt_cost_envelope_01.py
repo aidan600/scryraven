@@ -2120,6 +2120,175 @@ def test_public_cli_executes_bounded_isclose_with_authorization_file(
     assert harness.forbidden_live_calls == []
 
 
+def test_public_bounded_cli_clarification_only_has_zero_search_and_read_attempts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The ordinary bounded CLI emits a value-safe no-dispatch result."""
+
+    from core.search_planner_model_adapter import accept_planner_model_output
+
+    query = "Tell me about Mercury"
+    fixture_sha = "e" * 40
+    authorization = _offline_proof_authorization_document(
+        repository_sha=fixture_sha
+    )
+    authorization["request"] = {
+        "query_sha256": query_sha256(query),
+        "mode": "Balanced",
+        "include_domains": ["example.invalid"],
+        "exclude_domains": [],
+    }
+    auth_path = tmp_path / "offline-clarification-auth.json"
+    auth_path.write_text(json.dumps(authorization), encoding="utf-8")
+
+    def clarification_only_adapter(planner_input: dict[str, Any]) -> dict[str, Any]:
+        return accept_planner_model_output(
+            {
+                "disposition": "components",
+                "components": [
+                    {
+                        "key": "mercury",
+                        "need": "Explain the intended Mercury subject",
+                        "uncertainties": [
+                            {
+                                "kind": "entity",
+                                "status": "ambiguous",
+                                "candidates": [
+                                    "planet",
+                                    "element",
+                                    "automobile brand",
+                                ],
+                                "user_confirmation_required": True,
+                            }
+                        ],
+                    }
+                ],
+            },
+            user_query_text=str(planner_input["user_query_text_for_planning"]),
+            requested_mode=str(planner_input["requested_mode"]),
+        )
+
+    monkeypatch.setattr(
+        "core.run_cap_authorization.resolve_local_repository_identity",
+        lambda _repo_root: fixture_sha,
+    )
+    monkeypatch.setattr(
+        compatibility_cli,
+        "missing_required_api_keys",
+        lambda **_kwargs: [],
+    )
+    monkeypatch.setattr(
+        compatibility_cli,
+        "_build_logger",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            info=lambda *_a, **_k: None,
+            error=lambda *_a, **_k: None,
+            warning=lambda *_a, **_k: None,
+            debug=lambda *_a, **_k: None,
+        ),
+    )
+
+    harness = PostRetirementOrdinaryPipelineHarness(
+        tmp_path=tmp_path / "clarification-cli",
+        query=query,
+        core_topic="Mercury",
+        primary_entity="Mercury",
+        raw_author_response="the Author must not be called for clarification",
+    )
+    captured: dict[str, Any] = {}
+
+    def fake_build_run_deps(_log: Any) -> RunDeps:
+        deps = _bounded_harness_deps(harness, captured["policy"])
+        return replace(deps, search_planner_adapter=clarification_only_adapter)
+
+    monkeypatch.setattr(compatibility_cli, "_build_run_deps", fake_build_run_deps)
+
+    def forbidden_persistence(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("bounded path reached a persistence or raw-log path")
+
+    for name in (
+        "execute_persistence_side_effects",
+        "load_policy_state",
+        "recent_recurring_kb_hints",
+        "log_run_started",
+        "log_run_failed",
+    ):
+        monkeypatch.setattr(orchestrator, name, forbidden_persistence)
+
+    original_build = compatibility_cli._build_run_config
+
+    def capturing_build(args: Any, *, compiled_authorization=None):
+        config = original_build(args, compiled_authorization=compiled_authorization)
+        assert compiled_authorization is not None
+        captured["policy"] = compiled_authorization.policy
+        return config
+
+    monkeypatch.setattr(compatibility_cli, "_build_run_config", capturing_build)
+
+    argv = [
+        query,
+        "--mode",
+        "Balanced",
+        "--include-domains",
+        "example.invalid",
+        "--fast-provider",
+        "OpenAI",
+        "--fast-model",
+        "gpt-5.4-mini",
+        "--smart-provider",
+        "OpenAI",
+        "--smart-model",
+        "gpt-5.4",
+        "--embed-provider",
+        "OpenAI",
+        "--embed-model",
+        "text-embedding-3-small",
+        "--bounded-run-authorization",
+        str(auth_path),
+    ]
+    assert compatibility_cli.main(argv, entrypoint="scryraven") == 0
+    payload = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+
+    assert payload["schema_version"] == "bounded_product_cli_result_v1"
+    assert payload["status"] == "blocked"
+    assert payload["entrypoint"] == "scryraven"
+    assert payload["answer_present"] is False
+    projection = dict(payload["searchos_n1_causal_projection"])
+    assert projection["projection_status"] == "available"
+    assert projection["searchos_exit"] == "REQUIRE_CLARIFICATION"
+    assert projection["clarification_observed"] is True
+    assert projection["clarification_only_no_dispatch"] is True
+    assert projection["clarification_required_obligation_count"] == 1
+    assert projection["clarification_acquisition_job_count"] == 0
+    assert projection["provider_calls_attempted"] == 0
+    assert projection["provider_calls_completed"] == 0
+    assert projection["active_slot_count"] == 1
+    assert projection["clarification_slot_count"] == 1
+    assert projection["clarification_required_slot_count"] == 1
+    assert projection["clarification_optional_slot_count"] == 0
+    assert projection["required_slot_count"] == 1
+    assert projection["all_required_slots_ready"] is False
+    assert projection["slot_summary_variant"] == "clarification_no_acquisition"
+    assert len(projection["slots"]) == projection["required_slot_count"]
+    [clarification_slot] = projection["slots"]
+    assert clarification_slot["final_posture"] == "clarification_required"
+    assert clarification_slot["safe_transport_exception_class"] == "none"
+    assert clarification_slot["read_custody_observed"] is False
+
+    physical = dict(payload["physical_envelope"])
+    attempts_by_family = dict(physical["physical_attempts_by_family"])
+    assert attempts_by_family["search"] == 0
+    assert attempts_by_family["read"] == 0
+    assert harness.search_calls == []
+    assert harness.read_transport_calls == []
+    assert harness.forbidden_live_calls == []
+    serialized = json.dumps(payload, sort_keys=True)
+    for candidate_value in ("planet", "element", "automobile brand"):
+        assert candidate_value not in serialized
+
+
 def _bounded_entrypoint_setup_argv(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -98,8 +98,11 @@ authorized_request.legal_actions:
   READ-insufficient assessments when custody exists). It does not author prose.
 - HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION copies a nonempty selection
   of exact current read_custody_refs.
-- HANDOFF_UNRESOLVED supplies only the shared fields and its reason.
+- HANDOFF_UNRESOLVED supplies the shared fields and its reason, plus only the required exact READ-insufficient assessments when current custody exists.
 
+Exact opaque-ref copy means copy the entire selected JSON object unchanged, including nested fields. IDs or digests alone, partial, reconstructed, normalized, or augmented objects are invalid.
+For HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION, read_custody_refs is a nonempty selection of whole unchanged authorized_request.read_custody_refs members; read_custody_assessments is absent.
+For a post-READ action whose decision_contract requires assessments, supply one per current custody ref with exactly reviewed_custody_ref, material_disposition, and reason_code; reviewed_custody_ref is the whole unchanged source object and material_disposition is read_insufficient.
 After READ custody exists, REQUEST_READ_PAGE, PROPOSE_FOLLOWUP_QUERY,
 REQUIRE_CLARIFICATION, and HANDOFF_UNRESOLVED must include exactly one
 read_insufficient assessment for every current READ custody ref, copied
@@ -152,6 +155,9 @@ authorized_request.legal_actions:
   navigation_candidate_ref from authorized_request.navigation_options and no
   other navigation field.
 
+Exact opaque-ref copy means copy the entire selected JSON object unchanged, including nested fields. IDs or digests alone, partial, reconstructed, normalized, or augmented objects are invalid.
+For HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION, read_custody_refs is a nonempty selection of whole unchanged authorized_request.read_custody_refs members; read_custody_assessments is absent.
+For a post-READ action whose decision_contract requires assessments, supply one per current custody ref with exactly reviewed_custody_ref, material_disposition, and reason_code; reviewed_custody_ref is the whole unchanged source object and material_disposition is read_insufficient.
 After READ custody exists, REQUEST_READ_PAGE, PROPOSE_FOLLOWUP_QUERY,
 REQUIRE_CLARIFICATION, HANDOFF_UNRESOLVED, and REQUEST_NAVIGATE_BREADCRUMB must
 include exactly one read_insufficient assessment for every current READ custody
@@ -251,8 +257,8 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
                 "semantic_slot_ref",
             ],
             "read_custody_refs_rule": (
-                "copy a nonempty selection of exact refs from "
-                "authorized_request.read_custody_refs"
+                "copy a nonempty selection of whole unchanged objects from "
+                "authorized_request.read_custody_refs; IDs/digests alone and partial, reconstructed, normalized, or augmented objects are invalid"
             ),
             "semantic_handoff_rule": (
                 "material selected for semantic handoff is not simultaneously "
@@ -415,7 +421,7 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
                 "reason_code",
             ],
             "reviewed_custody_ref_rule": (
-                "copy each authorized_request.read_custody_refs item exactly"
+                "copy each whole authorized_request.read_custody_refs object unchanged; IDs/digests alone and partial, reconstructed, normalized, or augmented objects are invalid"
             ),
             "material_disposition": "read_insufficient",
             "reason_code_rule": (
@@ -681,6 +687,23 @@ def initialize_searchos_clarification_only(
         raise SearchOSRuntimeError(
             "clarification-only initialization requires only explicit confirmation slots"
         )
+    initial_acquisition_job_refs = query_authority.plan.execution_item_refs(1)
+    if initial_acquisition_job_refs:
+        raise SearchOSRuntimeError(
+            "clarification-only initialization requires no QueryPlan acquisition jobs"
+        )
+    clarification_required_slot_count = sum(
+        1 for item in active_slots if item.get("requirement_posture") == "required"
+    )
+    clarification_optional_slot_count = sum(
+        1 for item in active_slots if item.get("requirement_posture") == "optional"
+    )
+    if clarification_required_slot_count + clarification_optional_slot_count != len(
+        active_slots
+    ):
+        raise SearchOSRuntimeError(
+            "clarification-only initialization requires explicit slot requirement postures"
+        )
     policy = build_searchos_policy_snapshot(
         run_id=run_kernel.state.run_id,
         request_id=run_kernel.state.request_id,
@@ -739,6 +762,10 @@ def initialize_searchos_clarification_only(
         },
         "clarification_required": True,
         "clarification_only_no_dispatch": True,
+        "clarification_acquisition_job_count": len(initial_acquisition_job_refs),
+        "clarification_slot_count": len(active_slots),
+        "clarification_required_slot_count": clarification_required_slot_count,
+        "clarification_optional_slot_count": clarification_optional_slot_count,
         "interpretation_binding_refs": [],
         "directional_candidate_context_support_eligible": False,
         "read_custody_is_only_support_proposal_eligible_material": True,
@@ -3908,6 +3935,110 @@ def build_bounded_searchos_n1_causal_projection(
             "component_receiver_failure_class": "none",
             "logical_call_correlation": "not_directly_available",
             "slots": [],
+        }
+
+    clarification_postures = dict(
+        searchos_slice_a_projection.get(
+            "semantic_obligation_clarification_postures"
+        )
+        or {}
+    )
+    clarification_required_obligation_count = sum(
+        1
+        for posture in clarification_postures.values()
+        if isinstance(posture, Mapping)
+        and posture.get("clarification_required") is True
+    )
+    clarification_slot_postures = searchos_slice_a_projection.get("slot_postures")
+    clarification_acquisition_job_count = searchos_slice_a_projection.get(
+        "clarification_acquisition_job_count"
+    )
+    clarification_slot_count = searchos_slice_a_projection.get(
+        "clarification_slot_count"
+    )
+    clarification_required_slot_count = searchos_slice_a_projection.get(
+        "clarification_required_slot_count"
+    )
+    clarification_optional_slot_count = searchos_slice_a_projection.get(
+        "clarification_optional_slot_count"
+    )
+    provider_calls_attempted = searchos_slice_a_projection.get(
+        "provider_calls_attempted"
+    )
+    provider_calls_completed = searchos_slice_a_projection.get(
+        "provider_calls_completed"
+    )
+    clarification_counts_are_closed = all(
+        isinstance(value, int) and not isinstance(value, bool) and value >= 0
+        for value in (
+            clarification_acquisition_job_count,
+            clarification_slot_count,
+            clarification_required_slot_count,
+            clarification_optional_slot_count,
+            provider_calls_attempted,
+            provider_calls_completed,
+        )
+    )
+    if (
+        searchos_slice_a_projection.get("clarification_required") is True
+        and searchos_slice_a_projection.get("clarification_only_no_dispatch")
+        is True
+        and isinstance(clarification_slot_postures, Mapping)
+        and clarification_required_obligation_count > 0
+        and clarification_counts_are_closed
+        and clarification_slot_count > 0
+        and all(
+            posture == "clarification_required"
+            for posture in clarification_slot_postures.values()
+        )
+        and clarification_acquisition_job_count == 0
+        and provider_calls_attempted == 0
+        and provider_calls_completed == 0
+        and clarification_slot_count == len(clarification_slot_postures)
+        and clarification_slot_count
+        == clarification_required_slot_count + clarification_optional_slot_count
+    ):
+        return {
+            "schema_version": BOUNDED_SEARCHOS_N1_CAUSAL_PROJECTION_SCHEMA,
+            "projection_status": "available",
+            "searchos_exit": "REQUIRE_CLARIFICATION",
+            "clarification_observed": True,
+            "clarification_required_obligation_count": (
+                clarification_required_obligation_count
+            ),
+            "clarification_only_no_dispatch": True,
+            "clarification_acquisition_job_count": 0,
+            "provider_calls_attempted": 0,
+            "provider_calls_completed": 0,
+            "active_slot_count": clarification_slot_count,
+            "required_slot_count": clarification_required_slot_count,
+            "clarification_slot_count": clarification_slot_count,
+            "clarification_required_slot_count": clarification_required_slot_count,
+            "clarification_optional_slot_count": clarification_optional_slot_count,
+            "all_required_slots_ready": False,
+            "component_receiver_selected": False,
+            "component_receiver_failure_class": "none",
+            "logical_call_correlation": "not_directly_available",
+            "slot_summary_variant": "clarification_no_acquisition",
+            "slots": [
+                {
+                    "required": True,
+                    "final_posture": "clarification_required",
+                    "safe_failure_class": "none",
+                    "safe_transport_exception_class": "none",
+                    "safe_model_output_invalid_subtype": "none",
+                    "judgment_event_count": 0,
+                    "judgment_failure_count": 0,
+                    "read_custody_observed": False,
+                    "semantic_handoff_present": False,
+                    "handoff_material_consumed": False,
+                    "component_analyst_proposal_status": "not_proposed",
+                    "component_dprime_validation_present": False,
+                    "semantic_admission_status": "not_admitted",
+                    "component_coverage_satisfied": False,
+                }
+                for _ in range(clarification_required_slot_count)
+            ],
         }
 
     readiness = dict(searchos_slice_a_projection.get("readiness_projection") or {})

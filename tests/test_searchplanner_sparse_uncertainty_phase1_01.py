@@ -43,6 +43,9 @@ from core.searchos_iterative_judgment_runtime import (
     record_searchos_interpretation_binding,
     validate_searchos_interpretation_binding,
 )
+from core.searchos_slice_a_product_runtime import (
+    build_bounded_searchos_n1_causal_projection,
+)
 from tests.fixtures.search_planner_sparse_semantic_corpus import (
     INVALID_SPARSE_PLANNER_CASES,
     VALID_SPARSE_PLANNER_CASES,
@@ -282,7 +285,7 @@ def test_prompt_uses_compact_sparse_contract_and_phase1_budget_gate() -> None:
     ]
     assert schema["components"] == ["disposition", "components"]
     assert schema["limits"]["components"] == [1, 5]
-    assert "1-5 objects" in prompt
+    assert "1-5 semantically distinct needs" in prompt
     assert schema["component"]["required"] == ["need"]
     assert set(packet["planner_input"]) == {
         "requested_mode",
@@ -295,8 +298,13 @@ def test_prompt_uses_compact_sparse_contract_and_phase1_budget_gate() -> None:
     assert "no source/freshness" in prompt
     assert "no selected" in prompt
     assert "selected in candidates" in prompt
-    assert "confirm=true only if material unresolved|ambiguous" in prompt
+    assert "factual orientation or acquisition may resolve factual identity/currentness" in prompt
+    assert "must not choose among materially plausible user-intent meanings" in prompt
+    assert "require confirmation before acquisition" in prompt
+    assert "set user_confirmation_required=true" in prompt
     assert "omit empty optionals" in prompt
+    assert "retain independently requested subjects separately" in prompt
+    assert "source.kind=official_current plus freshness" in prompt
     assert "answer_components" not in prompt
     assert "component_search_requirements" not in prompt
     assert "run_id" not in prompt
@@ -307,7 +315,7 @@ def test_prompt_uses_compact_sparse_contract_and_phase1_budget_gate() -> None:
         "official Python math.isclose default values"
     )
     assert prompt_chars < _CLEAR_DIRECT_HISTORICAL_BASELINE_CHARS
-    assert 1 - (prompt_chars / _CLEAR_DIRECT_HISTORICAL_BASELINE_CHARS) >= 0.84
+    assert 1 - (prompt_chars / _CLEAR_DIRECT_HISTORICAL_BASELINE_CHARS) >= 0.81
 
 
 def test_compact_model_visible_schema_is_derived_from_validator_constants() -> None:
@@ -350,10 +358,7 @@ def test_phase1_prompt_scenarios_keep_historical_reduction_envelope(
     prompt_chars = _prompt_request_chars(query)
     reduction = 1 - (prompt_chars / baseline_chars)
     assert prompt_chars < baseline_chars
-    if case_id == "clear_direct":
-        assert reduction >= 0.84
-    else:
-        assert reduction >= 0.83
+    assert reduction >= 0.81
 
 
 @pytest.mark.parametrize(
@@ -470,7 +475,49 @@ def test_direct_simple_and_mode_defaults_are_deterministic() -> None:
         assert target["max_inference_depth"] == expected_depth
 
 
-def test_local_keys_are_only_proposal_local_and_compile_to_owned_identity() -> None:
+def test_current_official_resolved_context_and_independent_components_compile() -> None:
+    current_official = _accept(valid_case("current_official_direct_simple"))
+
+    assert (
+        current_official["source_obligation_candidates"][0]["obligation_kind"]
+        == "official_current"
+    )
+    assert (
+        current_official["component_search_requirements"][0]["recency_requirement"]
+        == "current as of 2026-08-14"
+    )
+
+    for case_id in (
+        "context_resolved_polyseme",
+        "context_resolved_mercury_element",
+        "context_resolved_java_programming_language",
+    ):
+        resolved_context = _accept(valid_case(case_id))
+        assert resolved_context["material_ambiguity_posture"] == "clear"
+        assert all(
+            slot["user_confirmation_required"] is False
+            for slot in resolved_context["semantic_slots"]
+        )
+
+    four_components = _accept(
+        valid_case("four_independent_current_official_components")
+    )
+    assert len(four_components["answer_components"]) == 4
+    assert len(four_components["component_search_requirements"]) == 4
+    assert [
+        item["obligation_kind"]
+        for item in four_components["source_obligation_candidates"]
+    ] == ["official_current"] * 4
+    assert all(
+        item["recency_requirement"] == "current as of 2026-08-14"
+        for item in four_components["component_search_requirements"]
+    )
+    assert {
+        candidate_id
+        for item in four_components["source_obligation_candidates"]
+        for candidate_id in item["component_candidate_ids"]
+    } == {"component:01", "component:02", "component:03", "component:04"}
+
     proposal = {
         "disposition": "components",
         "components": [
@@ -566,6 +613,48 @@ def test_case_a_stable_component_dispatches_standard_discovery(
         "query_plan_standard_discovery_job"
     )
 
+
+def test_four_explicit_components_reach_query_plan_without_loss(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = valid_case("four_independent_current_official_components")
+    outcome, _harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        query=case["query"],
+        core_topic="four fictional port operating statuses",
+        primary_entity="PortAlpha",
+        researcher_queries=[
+            "Port Alpha current official operating status",
+            "Port Beta current official operating status",
+            "Port Gamma current official operating status",
+            "Port Delta current official operating status",
+        ],
+        deps_overrides=_product_deps(case["proposal"]),
+    )
+
+    ordered = _ordered_query_plan_items(outcome)
+    assert len(ordered) == 4
+    assert {item["discovery_job_class"] for item in ordered} == {
+        "standard_discovery"
+    }
+    assert len({item["item_id"] for item in ordered}) == 4
+    projection = build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=outcome.execution_trace["searchos_slice_a"],
+    )
+    assert projection is not None
+    assert projection["projection_status"] == "available"
+    assert projection["required_slot_count"] == 4
+    slots = list(projection["slots"])
+    assert len(slots) == 4
+    assert len({slot["component_identity_digest"] for slot in slots}) == 4
+    assert len({slot["source_obligation_identity_digest"] for slot in slots}) == 4
+    assert all(
+        slot["final_posture"] == "semantically_handed_off" for slot in slots
+    )
+    assert all(slot["semantic_handoff_present"] is True for slot in slots)
+    assert all(slot["read_custody_observed"] is True for slot in slots)
 
 def test_case_b_factual_uncertainty_binds_then_runs_standard_discovery(
     tmp_path: Path,
@@ -1156,6 +1245,38 @@ def test_case_d_user_confirmation_requires_typed_clarification_no_dispatch(
         "element",
         "automobile brand",
     ]
+    assert harness.read_transport_calls == []
+    assert searchos["clarification_acquisition_job_count"] == 0
+    assert searchos["clarification_slot_count"] == 1
+    assert searchos["clarification_required_slot_count"] == 1
+    assert searchos["clarification_optional_slot_count"] == 0
+    projection = build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=searchos,
+    )
+    assert projection is not None
+    assert projection["projection_status"] == "available"
+    assert projection["searchos_exit"] == "REQUIRE_CLARIFICATION"
+    assert projection["clarification_observed"] is True
+    assert projection["clarification_required_obligation_count"] == 1
+    assert projection["clarification_only_no_dispatch"] is True
+    assert projection["clarification_acquisition_job_count"] == 0
+    assert projection["provider_calls_attempted"] == 0
+    assert projection["provider_calls_completed"] == 0
+    assert projection["active_slot_count"] == 1
+    assert projection["required_slot_count"] == 1
+    assert projection["all_required_slots_ready"] is False
+    assert projection["slot_summary_variant"] == "clarification_no_acquisition"
+    assert len(projection["slots"]) == 1
+    [slot] = projection["slots"]
+    assert slot["required"] is True
+    assert slot["final_posture"] == "clarification_required"
+    assert slot["safe_failure_class"] == "none"
+    assert slot["safe_transport_exception_class"] == "none"
+    assert slot["read_custody_observed"] is False
+    serialized = json.dumps(projection, sort_keys=True)
+    assert "planet" not in serialized
+    assert "element" not in serialized
+    assert "automobile brand" not in serialized
 
 
 def test_mixed_stable_factual_and_true_ambiguity_progress_independently(

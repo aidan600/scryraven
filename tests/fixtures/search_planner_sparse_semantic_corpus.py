@@ -31,6 +31,72 @@ VALID_SPARSE_PLANNER_CASES: tuple[dict[str, Any], ...] = (
         },
     },
     {
+        "case_id": "current_official_direct_simple",
+        "query": "What is the current official Northstar mileage rate?",
+        "mode": "Balanced",
+        "proposal": {
+            "disposition": "direct_simple",
+            "source": {"kind": "official_current", "strictness": "required"},
+            "freshness": "current as of 2026-08-14",
+        },
+    },
+    {
+        "case_id": "context_resolved_polyseme",
+        "query": "What is the orbital period of Mercury, the planet?",
+        "mode": "Balanced",
+        "proposal": {"disposition": "direct_simple"},
+    },
+    {
+        "case_id": "context_resolved_mercury_element",
+        "query": "What is the atomic number of mercury, the chemical element?",
+        "mode": "Balanced",
+        "proposal": {"disposition": "direct_simple"},
+    },
+    {
+        "case_id": "context_resolved_java_programming_language",
+        "query": "How is Java, the programming language, statically typed?",
+        "mode": "Balanced",
+        "proposal": {"disposition": "direct_simple"},
+    },
+    {
+        "case_id": "four_independent_current_official_components",
+        "query": (
+            "Using the fictional port authorities' official current records, report "
+            "the current operating status for Port Alpha, Port Beta, Port Gamma, "
+            "and Port Delta."
+        ),
+        "mode": "Balanced",
+        "proposal": {
+            "disposition": "components",
+            "components": [
+                {
+                    "key": "port-alpha",
+                    "need": "Report the current operating status for Port Alpha",
+                    "source": {"kind": "official_current", "strictness": "required"},
+                    "freshness": "current as of 2026-08-14",
+                },
+                {
+                    "key": "port-beta",
+                    "need": "Report the current operating status for Port Beta",
+                    "source": {"kind": "official_current", "strictness": "required"},
+                    "freshness": "current as of 2026-08-14",
+                },
+                {
+                    "key": "port-gamma",
+                    "need": "Report the current operating status for Port Gamma",
+                    "source": {"kind": "official_current", "strictness": "required"},
+                    "freshness": "current as of 2026-08-14",
+                },
+                {
+                    "key": "port-delta",
+                    "need": "Report the current operating status for Port Delta",
+                    "source": {"kind": "official_current", "strictness": "required"},
+                    "freshness": "current as of 2026-08-14",
+                },
+            ],
+        },
+    },
+    {
         "case_id": "two_direct_components",
         "query": ("Using the fictional Northstar certificate and registry records, report both current facts."),
         "mode": "Balanced",
