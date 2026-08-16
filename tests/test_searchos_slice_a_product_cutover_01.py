@@ -112,7 +112,7 @@ def test_production_judgment_prompt_states_the_strict_validator_contract() -> No
     normalized_prompt = " ".join(SEARCHOS_JUDGMENT_SYSTEM_PROMPT.split())
     required_instructions = (
         "Do not author judgment_request_id, judgment_request_digest, or slot_id",
-        "read_insufficient assessment for every current READ custody ref",
+        "insufficiency reason_code for every current READ custody material id",
         "PROPOSE_FOLLOWUP_QUERY authors new bounded followup_query text",
         "Forbidden fields must be absent",
         "active_need",
@@ -129,7 +129,7 @@ def test_production_judgment_prompt_states_the_strict_validator_contract() -> No
         "REQUEST_READ_PAGE selects exactly one authorized_request.candidate_use_options[*].candidate_use_option_ref",
         "candidate_use_option_ref must deep-equal that authorized member",
         "never reconstruct, normalize, or augment it from candidate_directional_contexts",
-        "reviewed_custody_ref is the whole unchanged source object",
+        "do not copy the whole custody object",
     )
 
     assert all(
@@ -231,7 +231,7 @@ def test_transient_decision_contract_describes_every_action_and_input_role() -> 
     assert contract["schema_version"] == (
         SEARCHOS_JUDGMENT_DECISION_CONTRACT_SCHEMA_VERSION
     )
-    assert contract["contract_name"] == "SearchOSJudgmentDecisionContractV2"
+    assert contract["contract_name"] == "SearchOSJudgmentDecisionContractV3"
     assert contract["decision_schema_version"] == "searchos_judgment_decision_v1"
     assert contract["shared_required_fields"] == shared
     assert contract["copy_exactly_from_authorized_request"] == {}
@@ -299,16 +299,18 @@ def test_transient_decision_contract_describes_every_action_and_input_role() -> 
     assessment_contract = contract["post_read_assessment_contract"]
     assert assessment_contract["one_per_current_custody_ref"] is True
     assert assessment_contract["required_fields"] == [
-        "reviewed_custody_ref",
-        "material_disposition",
+        "read_custody_material_id",
         "reason_code",
     ]
-    assert "whole authorized_request.read_custody_refs object unchanged" in (
-        assessment_contract["reviewed_custody_ref_rule"]
+    assert assessment_contract["runtime_bound_fields"]["material_disposition"] == (
+        "read_insufficient"
     )
-    assert "IDs/digests alone" in assessment_contract[
-        "reviewed_custody_ref_rule"
-    ]
+    assert "read_custody_material_id" in (
+        assessment_contract["read_custody_material_id_rule"]
+    )
+    assert "do not copy the whole custody object" in (
+        assessment_contract["read_custody_material_id_rule"]
+    )
     assert assessment_contract["material_disposition"] == "read_insufficient"
     assert contract["durable_retention_allowed"] is False
     assert len(contract["decision_contract_digest"]) == 64

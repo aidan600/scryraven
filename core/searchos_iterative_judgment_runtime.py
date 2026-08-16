@@ -2571,6 +2571,11 @@ def validate_searchos_judgment_model_output(
         for item in request_safe.get("navigation_options") or ()
     }
     current_custody = {_first_ref_id(item): item for item in request_safe.get("read_custody_refs") or ()}
+    current_custody_by_material_id = {
+        str(_mapping(item).get("read_custody_material_id") or "").strip(): _mapping(item)
+        for item in request_safe.get("read_custody_refs") or ()
+    }
+    current_custody_by_material_id.pop("", None)
     visible_candidate_refs = {
         _first_ref_id(
             _mapping(_mapping(item).get("candidate_use_option_ref"))
@@ -2578,32 +2583,28 @@ def validate_searchos_judgment_model_output(
         for item in request_safe.get("candidate_use_options") or ()
     }
     assessments: list[dict[str, Any]] = []
+    assessed_ids: list[str] = []
     for raw_assessment in output.get("read_custody_assessments") or ():
         assessment = _mapping(raw_assessment)
         if set(assessment) != {
-            "reviewed_custody_ref",
-            "material_disposition",
+            "read_custody_material_id",
             "reason_code",
         }:
             raise SearchOSRuntimeError("READ custody assessment shape is invalid")
-        reviewed = _required_ref(
-            assessment.get("reviewed_custody_ref"),
-            "reviewed_custody_ref",
-        )
-        custody_id = _first_ref_id(reviewed)
-        if custody_id not in current_custody or reviewed != _mapping(current_custody[custody_id]):
+        custody_id = str(assessment.get("read_custody_material_id") or "").strip()
+        if not custody_id:
+            raise SearchOSRuntimeError("READ custody assessment shape is invalid")
+        if custody_id not in current_custody_by_material_id:
             raise SearchOSRuntimeError("READ custody assessment is stale or altered")
-        if assessment.get("material_disposition") != "read_insufficient":
-            raise SearchOSRuntimeError("READ custody assessment disposition is invalid")
         reason_code = _reason_code(assessment.get("reason_code"))
         assessments.append(
             {
-                "reviewed_custody_ref": reviewed,
+                "reviewed_custody_ref": deepcopy(current_custody_by_material_id[custody_id]),
                 "material_disposition": "read_insufficient",
                 "reason_code": reason_code,
             }
         )
-    assessed_ids = [_first_ref_id(item["reviewed_custody_ref"]) for item in assessments]
+        assessed_ids.append(custody_id)
     if len(assessed_ids) != len(set(assessed_ids)):
         raise SearchOSRuntimeError("READ custody assessment repeats material")
     if action is SearchOSJudgmentAction.REQUEST_READ_PAGE:
@@ -2803,7 +2804,8 @@ def validate_searchos_judgment_model_output(
         SearchOSJudgmentAction.PROPOSE_INTERPRETATION_BINDING,
     }
     if current_custody and action not in assessment_exempt_actions:
-        if set(assessed_ids) != set(current_custody):
+        expected_ids = set(current_custody_by_material_id)
+        if (not expected_ids) or set(assessed_ids) != expected_ids:
             raise SearchOSRuntimeError("post-READ action requires exact read_insufficient assessments")
     elif assessments:
         raise SearchOSRuntimeError("pre-READ action cannot assess custody")

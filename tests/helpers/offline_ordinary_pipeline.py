@@ -358,20 +358,22 @@ class OfflineOrdinaryPipelineHarness:
                 assessment_contract.get("required_fields") or ()
             )
             assert assessment_fields == [
-                "reviewed_custody_ref",
-                "material_disposition",
+                "read_custody_material_id",
                 "reason_code",
             ]
-            assessments = [
-                {
-                    assessment_fields[0]: item,
-                    assessment_fields[1]: assessment_contract[
-                        "material_disposition"
-                    ],
-                    assessment_fields[2]: "required_information_absent",
-                }
-                for item in custody_refs
-            ]
+
+            def assessments_for(reason_code: str) -> list[dict[str, Any]]:
+                return [
+                    {
+                        "read_custody_material_id": dict(item)[
+                            "read_custody_material_id"
+                        ],
+                        "reason_code": reason_code,
+                    }
+                    for item in custody_refs
+                ]
+
+            assessments = assessments_for("required_information_absent")
 
             def contract_decision(action: str, **action_payload: Any) -> str:
                 assert action in set(authorized.get("legal_actions") or ())
@@ -546,16 +548,7 @@ class OfflineOrdinaryPipelineHarness:
                     reason="offline_recovery_followup_needed",
                 )
             if self.read_assessment_decision == "REQUEST_FIRST_THEN_NO_READ" and len(self.read_assessment_calls) > 1:
-                assessments = [
-                    {
-                        assessment_fields[0]: item,
-                        assessment_fields[1]: assessment_contract[
-                            "material_disposition"
-                        ],
-                        assessment_fields[2]: "fixture_declined_later_read",
-                    }
-                    for item in custody_refs
-                ]
+                assessments = assessments_for("fixture_declined_later_read")
                 return contract_decision(
                     "HANDOFF_UNRESOLVED",
                     reason="offline_no_later_read",

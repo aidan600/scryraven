@@ -234,8 +234,7 @@ def _install_navigation_model(
             }
             assessments = [
                 {
-                    "reviewed_custody_ref": ref,
-                    "material_disposition": "read_insufficient",
+                    "read_custody_material_id": dict(ref)["read_custody_material_id"],
                     "reason_code": "linked_fact_not_yet_selected",
                 }
                 for ref in custody_refs
@@ -546,10 +545,10 @@ def test_navigation_request_authority_preserves_ordinary_contract() -> None:
     ordinary = build_searchos_judgment_decision_contract_v1()
     navigation = build_searchos_judgment_decision_contract_v1(navigation_enabled=True)
     assert hashlib.sha256(SEARCHOS_JUDGMENT_SYSTEM_PROMPT.encode()).hexdigest() == (
-        "0ba3a608896bbef4b2b07fb2521cc64b2a085089c22ab49e8dc85a55a02a55e3"  # pragma: allowlist secret
+        "879b68425a01e32d6e37ea751382849c0dd047fe14a0e314954bf05b9c02c3e1"  # pragma: allowlist secret
     )
     assert ordinary["decision_contract_digest"] == (
-        "d3bb5d56196b8e04f975e3368503cee7bf6c708738fc188ee57b94a11e52e4d2"  # pragma: allowlist secret
+        "e838c05bb76d3854d2c3d2bc56ce495bfd3bcdf534ae8f8e3e72fc5666260995"  # pragma: allowlist secret
     )
     assert ordinary["decision_schema_version"] == "searchos_judgment_decision_v1"
     assert "REQUEST_NAVIGATE_BREADCRUMB" not in ordinary["actions"]
@@ -825,10 +824,8 @@ def test_one_hop_navigation_reaches_component_and_final_answer(tmp_path: Path, m
             "After READ custody exists, REQUEST_READ_PAGE, "
             "PROPOSE_FOLLOWUP_QUERY, REQUIRE_CLARIFICATION, "
             "HANDOFF_UNRESOLVED, and REQUEST_NAVIGATE_BREADCRUMB must "
-            "include exactly one "
-            "read_insufficient assessment for every current READ custody ref, "
-            "copied exactly, with the contract's exact assessment fields and "
-            "disposition."
+            "include exactly one insufficiency reason_code for every current "
+            "READ custody material id."
         ) in normalized_prompt
         assert (
             "Never invent or alter a URL, destination binding, authority ref, "

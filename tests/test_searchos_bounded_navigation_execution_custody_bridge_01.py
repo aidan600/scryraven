@@ -259,8 +259,7 @@ def _selected_navigation() -> tuple[
             "reason": "The selected breadcrumb is the one bounded next read.",
             "read_custody_assessments": [
                 {
-                    "reviewed_custody_ref": parent,
-                    "material_disposition": "read_insufficient",
+                    "read_custody_material_id": parent["read_custody_material_id"],
                     "reason_code": "needed_detail_absent",
                 }
             ],

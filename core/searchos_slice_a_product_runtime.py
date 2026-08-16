@@ -62,7 +62,7 @@ SEARCHOS_JUDGMENT_MODEL_INPUT_SCHEMA_VERSION = (
     "searchos_judgment_model_input_v1"
 )
 SEARCHOS_JUDGMENT_DECISION_CONTRACT_SCHEMA_VERSION = (
-    "searchos_judgment_decision_contract_v2"
+    "searchos_judgment_decision_contract_v3"
 )
 SEARCHOS_ZERO_RESULT_INITIAL_DISCOVER_WAVE_SCHEMA_VERSION = (
     "searchos_zero_result_initial_discover_wave_v1"
@@ -110,11 +110,10 @@ authorized_request.legal_actions:
 
 Exact opaque-ref copy means copy the entire selected JSON object unchanged, including nested fields. IDs or digests alone, partial, reconstructed, normalized, or augmented objects are invalid.
 For HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION, read_custody_refs is a nonempty selection of whole unchanged authorized_request.read_custody_refs members; read_custody_assessments is absent.
-For a post-READ action whose decision_contract requires assessments, supply one per current custody ref with exactly reviewed_custody_ref, material_disposition, and reason_code; reviewed_custody_ref is the whole unchanged source object and material_disposition is read_insufficient.
+For a post-READ action whose decision_contract requires assessments, supply exactly one assessment per current authorized_request.read_custody_refs member. Each assessment has exactly read_custody_material_id and reason_code. Copy read_custody_material_id from that current custody object; do not copy the whole custody object, material_disposition, or other mechanical fields. The runtime binds the matching current custody object and records material_disposition as read_insufficient.
 After READ custody exists, REQUEST_READ_PAGE, PROPOSE_FOLLOWUP_QUERY,
 REQUIRE_CLARIFICATION, and HANDOFF_UNRESOLVED must include exactly one
-read_insufficient assessment for every current READ custody ref, copied
-exactly, with the contract's exact assessment fields and disposition. Semantic
+insufficiency reason_code for every current READ custody material id. Semantic
 handoff and interpretation-binding proposal must not include those assessments.
 Forbidden fields must be absent, and no unsupported fields are allowed. Never
 invent or alter a URL, authority ref, candidate ref, custody ref, component
@@ -170,12 +169,11 @@ authorized_request.legal_actions:
 
 Exact opaque-ref copy means copy the entire selected JSON object unchanged, including nested fields. IDs or digests alone, partial, reconstructed, normalized, or augmented objects are invalid.
 For HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION, read_custody_refs is a nonempty selection of whole unchanged authorized_request.read_custody_refs members; read_custody_assessments is absent.
-For a post-READ action whose decision_contract requires assessments, supply one per current custody ref with exactly reviewed_custody_ref, material_disposition, and reason_code; reviewed_custody_ref is the whole unchanged source object and material_disposition is read_insufficient.
+For a post-READ action whose decision_contract requires assessments, supply exactly one assessment per current authorized_request.read_custody_refs member. Each assessment has exactly read_custody_material_id and reason_code. Copy read_custody_material_id from that current custody object; do not copy the whole custody object, material_disposition, or other mechanical fields. The runtime binds the matching current custody object and records material_disposition as read_insufficient.
 After READ custody exists, REQUEST_READ_PAGE, PROPOSE_FOLLOWUP_QUERY,
 REQUIRE_CLARIFICATION, HANDOFF_UNRESOLVED, and REQUEST_NAVIGATE_BREADCRUMB must
-include exactly one read_insufficient assessment for every current READ custody
-ref, copied exactly, with the contract's exact assessment fields and
-disposition. Semantic handoff and interpretation-binding proposal must not
+include exactly one insufficiency reason_code for every current READ custody
+material id. Semantic handoff and interpretation-binding proposal must not
 include those assessments. Forbidden fields must be absent, and no unsupported
 fields are allowed. Never invent or alter a URL,
 destination binding, authority ref, candidate ref, navigation ref, custody ref,
@@ -379,7 +377,7 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
             "read_custody_assessments_mode": conditionally_assessed,
         }
     core = {
-        "contract_name": "SearchOSJudgmentDecisionContractV2",
+        "contract_name": "SearchOSJudgmentDecisionContractV3",
         "schema_version": SEARCHOS_JUDGMENT_DECISION_CONTRACT_SCHEMA_VERSION,
         "decision_schema_version": SEARCHOS_NAVIGATION_JUDGMENT_DECISION_SCHEMA_VERSION
         if navigation_enabled
@@ -434,12 +432,19 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
             "absent_when_no_current_custody": True,
             "one_per_current_custody_ref": True,
             "required_fields": [
-                "reviewed_custody_ref",
-                "material_disposition",
+                "read_custody_material_id",
                 "reason_code",
             ],
-            "reviewed_custody_ref_rule": (
-                "copy each whole authorized_request.read_custody_refs object unchanged; IDs/digests alone and partial, reconstructed, normalized, or augmented objects are invalid"
+            "runtime_bound_fields": {
+                "reviewed_custody_ref": (
+                    "authorized_request.read_custody_refs member whose "
+                    "read_custody_material_id matches"
+                ),
+                "material_disposition": "read_insufficient",
+            },
+            "read_custody_material_id_rule": (
+                "copy the current authorized_request.read_custody_refs[*]."
+                "read_custody_material_id; do not copy the whole custody object"
             ),
             "material_disposition": "read_insufficient",
             "reason_code_rule": (
