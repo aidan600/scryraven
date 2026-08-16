@@ -407,7 +407,7 @@ def test_bounded_terminal_projects_closed_type_enum_bound_without_model_material
     )
     failure = payload["terminal"]["search_planner_failure"]
     assert failure["semantic_proposal_subtype"] == "type_enum_or_bound"
-    assert failure["semantic_validation_rule_id"] == "required_enum_member"
+    assert failure["semantic_validation_rule_id"] == "disposition_enum"
     assert failure["branch_field_set_detail"] is None
     encoded = json.dumps(payload, sort_keys=True)
     for private_fragment in (rejected_value, raw_query, *_PRIVATE_FRAGMENTS):

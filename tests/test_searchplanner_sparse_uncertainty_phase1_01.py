@@ -439,7 +439,9 @@ def test_branch_field_set_detail_inventory_is_closed_and_value_free() -> None:
         "direct_simple_disallowed_top_level",
         "components_disallowed_top_level",
         "components_required_nonempty",
-        "nested_disallowed_field",
+        "component_unknown_field_forbidden",
+        "source_unknown_field_forbidden",
+        "uncertainty_unknown_field_forbidden",
     }
     assert len(SearchPlannerBranchFieldSetDetail.__members__) == len(SearchPlannerBranchFieldSetDetail)
 

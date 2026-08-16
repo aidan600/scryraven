@@ -319,7 +319,7 @@ INVALID_SPARSE_PLANNER_CASES: tuple[dict[str, Any], ...] = (
         "case_id": "component_nested_unknown_field",
         "proposal": {"disposition": "components", "components": [{"need": "x", "extra": "value"}]},
         "expected_subtype": "branch_field_set",
-        "expected_branch_field_set_detail": "nested_disallowed_field",
+        "expected_branch_field_set_detail": "component_unknown_field_forbidden",
     },
     {
         "case_id": "empty_uncertainties_array",
