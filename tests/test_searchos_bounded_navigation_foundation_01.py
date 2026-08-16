@@ -260,8 +260,7 @@ def _pending_navigation() -> tuple[
             "reason": "The current source identifies a bounded next page.",
             "read_custody_assessments": [
                 {
-                    "reviewed_custody_ref": custody,
-                    "material_disposition": "read_insufficient",
+                    "read_custody_material_id": custody["read_custody_material_id"],
                     "reason_code": "needed_detail_absent",
                 }
             ],
@@ -836,8 +835,7 @@ def test_navigation_judgment_is_exact_ref_only_and_pending_is_zero_charge() -> N
             "reason": "The current source identifies a bounded next page.",
             "read_custody_assessments": [
                 {
-                    "reviewed_custody_ref": custody,
-                    "material_disposition": "read_insufficient",
+                    "read_custody_material_id": custody["read_custody_material_id"],
                     "reason_code": "needed_detail_absent",
                 }
             ],
@@ -905,8 +903,7 @@ def test_ipv6_label_is_private_across_navigation_foundation_surfaces() -> None:
             "reason": "The current source identifies a bounded next page.",
             "read_custody_assessments": [
                 {
-                    "reviewed_custody_ref": custody,
-                    "material_disposition": "read_insufficient",
+                    "read_custody_material_id": custody["read_custody_material_id"],
                     "reason_code": "needed_detail_absent",
                 }
             ],

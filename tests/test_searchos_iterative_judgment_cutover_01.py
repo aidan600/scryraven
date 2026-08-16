@@ -265,6 +265,119 @@ def _post_read_judgment_request() -> tuple[
     return request, custody, candidate_use_option_ref(options[1])
 
 
+def _model_read_custody_assessment(
+    custody: dict[str, object],
+    *,
+    reason_code: str = "needed_detail_absent",
+) -> dict[str, object]:
+    return {
+        "read_custody_material_id": custody["read_custody_material_id"],
+        "reason_code": reason_code,
+    }
+
+
+def _post_read_two_custody_judgment_request() -> tuple[
+    dict[str, object], dict[str, object], dict[str, object]
+]:
+    state = _state()
+    slot_ref = state["slots_by_id"]["slot-1"]["slot_ref"]
+    options = build_candidate_use_options_v1(
+        [
+            _candidate(slot_ref=slot_ref, ordinal=1),
+            _candidate(slot_ref=slot_ref, ordinal=2),
+        ]
+    )
+    window = build_candidate_use_window_v1(
+        slot_ref=slot_ref,
+        ordered_options=options,
+        window_ordinal=1,
+        policy_snapshot=state["policy_snapshot"],
+    )
+    state = record_searchos_candidate_window(state, window=window)
+    custodies: list[dict[str, object]] = []
+    for ordinal, option in enumerate(options, start=1):
+        state, round_ref = begin_searchos_judgment_round(
+            state,
+            slot_ids=["slot-1"],
+        )
+        state, charge = charge_searchos_judgment_call(
+            state,
+            reservation_ref=round_ref,
+            slot_id="slot-1",
+        )
+        read_request = build_searchos_judgment_request_v1(
+            state=state,
+            slot_id="slot-1",
+            charge_ref=charge,
+            candidate_window=window,
+            read_custody_refs=list(custodies),
+        )
+        assessments = [
+            _model_read_custody_assessment(
+                item,
+                reason_code=f"prior_read_{index}_insufficient",
+            )
+            for index, item in enumerate(custodies, start=1)
+        ]
+        output: dict[str, object] = {
+            "schema_version": "searchos_judgment_decision_v1",
+            "action": "REQUEST_READ_PAGE",
+            "candidate_use_option_ref": candidate_use_option_ref(option),
+            "reason": f"read admitted candidate {ordinal}",
+        }
+        if assessments:
+            output["read_custody_assessments"] = assessments
+        read_decision = validate_searchos_judgment_model_output(
+            request=read_request,
+            model_output=output,
+        )
+        state = reduce_searchos_judgment_decision(state, decision=read_decision)
+        custody = build_searchos_read_custody_material_ref(
+            slot_ref=slot_ref,
+            candidate_use_option_ref=candidate_use_option_ref(option),
+            custody_record={
+                "normalized_url": option["normalized_url"],
+                "fetch_read_content_packet_ref": _ref(
+                    "fetch_read_content_packet", f"post-read-{ordinal}"
+                ),
+                "evidence_ledger_custody_ref": _ref(
+                    "evidence_ledger_custody", f"post-read-{ordinal}"
+                ),
+                "evidence_ledger_candidate_id": f"candidate:post-read-{ordinal}",
+                "terminal_receipt_ref": _ref(
+                    "terminal_receipt", f"post-read-{ordinal}"
+                ),
+                "custody_authorization_ref": _ref(
+                    "custody_authorization", f"post-read-{ordinal}"
+                ),
+                "bounded_content_present": True,
+            },
+            same_normalized_url_reused=False,
+        )
+        state = record_searchos_read_custody_material(
+            state,
+            custody_material_ref=custody,
+        )
+        custodies.append(custody)
+    state, round_ref = begin_searchos_judgment_round(
+        state,
+        slot_ids=["slot-1"],
+    )
+    state, charge = charge_searchos_judgment_call(
+        state,
+        reservation_ref=round_ref,
+        slot_id="slot-1",
+    )
+    request = build_searchos_judgment_request_v1(
+        state=state,
+        slot_id="slot-1",
+        charge_ref=charge,
+        candidate_window=window,
+        read_custody_refs=list(custodies),
+    )
+    return request, custodies[0], custodies[1]
+
+
 def _orientation_judgment_request(
     *,
     confirmation_required: bool = False,
@@ -1277,11 +1390,10 @@ def test_strict_validator_accepts_each_exact_post_read_action(action: str) -> No
         output["read_custody_refs"] = [custody]
     if action != "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION":
         output["read_custody_assessments"] = [
-            {
-                "reviewed_custody_ref": custody,
-                "material_disposition": "read_insufficient",
-                "reason_code": "active_need_not_met",
-            }
+            _model_read_custody_assessment(
+                custody,
+                reason_code="active_need_not_met",
+            )
         ]
 
     decision = validate_searchos_judgment_model_output(
@@ -1297,6 +1409,9 @@ def test_strict_validator_accepts_each_exact_post_read_action(action: str) -> No
         assert decision["read_custody_assessments"][0][
             "reviewed_custody_ref"
         ] == custody
+        assert decision["read_custody_assessments"][0][
+            "material_disposition"
+        ] == "read_insufficient"
 
 
 @pytest.mark.parametrize(
@@ -1305,9 +1420,11 @@ def test_strict_validator_accepts_each_exact_post_read_action(action: str) -> No
         ("missing", "requires exact read_insufficient assessments"),
         ("duplicate", "repeats material"),
         ("stale", "stale or altered"),
-        ("altered", "stale or altered"),
-        ("wrong_disposition", "disposition is invalid"),
+        ("unknown_id", "stale or altered"),
+        ("wrong_disposition_field", "shape is invalid"),
         ("unsupported_field", "shape is invalid"),
+        ("obsolete_whole_object", "shape is invalid"),
+        ("malformed_reason", "reason_code is not bounded vocabulary"),
     ],
 )
 def test_strict_validator_rejects_invalid_post_read_assessments(
@@ -1315,27 +1432,32 @@ def test_strict_validator_rejects_invalid_post_read_assessments(
     message: str,
 ) -> None:
     request, custody, _ = _post_read_judgment_request()
-    assessment = {
-        "reviewed_custody_ref": custody,
-        "material_disposition": "read_insufficient",
-        "reason_code": "active_need_not_met",
-    }
+    assessment = _model_read_custody_assessment(
+        custody,
+        reason_code="active_need_not_met",
+    )
     assessments = [assessment]
     if invalid_assessment == "missing":
         assessments = []
     elif invalid_assessment == "duplicate":
         assessments = [assessment, deepcopy(assessment)]
     elif invalid_assessment == "stale":
-        assessment["reviewed_custody_ref"] = _ref(
+        assessment["read_custody_material_id"] = _ref(
             "searchos_read_custody_material", "stale"
-        )
-    elif invalid_assessment == "altered":
-        assessment["reviewed_custody_ref"] = {
-            **custody,
-            "searchos_read_custody_material_digest": _digest("altered"),
-        }
-    elif invalid_assessment == "wrong_disposition":
+        )["searchos_read_custody_material_id"]
+    elif invalid_assessment == "unknown_id":
+        assessment["read_custody_material_id"] = "searchos-read-custody:foreign"
+    elif invalid_assessment == "wrong_disposition_field":
         assessment["material_disposition"] = "read_sufficient"
+    elif invalid_assessment == "obsolete_whole_object":
+        assessment = {
+            "reviewed_custody_ref": custody,
+            "material_disposition": "read_insufficient",
+            "reason_code": "active_need_not_met",
+        }
+        assessments = [assessment]
+    elif invalid_assessment == "malformed_reason":
+        assessment["reason_code"] = "NOT VALID"
     else:
         assessment["unsupported_field"] = "must fail closed"
     output = {
@@ -1367,11 +1489,10 @@ def test_strict_validator_rejects_assessment_on_exact_semantic_handoff() -> None
                 "read_custody_refs": [custody],
                 "reason": "exact custody is ready for semantic evaluation",
                 "read_custody_assessments": [
-                    {
-                        "reviewed_custody_ref": custody,
-                        "material_disposition": "read_insufficient",
-                        "reason_code": "incompatible_with_handoff",
-                    }
+                    _model_read_custody_assessment(
+                        custody,
+                        reason_code="incompatible_with_handoff",
+                    )
                 ],
             },
         )

@@ -33,9 +33,11 @@ from tests.test_searchos_bounded_navigation_foundation_01 import (
 )
 from tests.test_searchos_iterative_judgment_cutover_01 import (
     _digest,
+    _model_read_custody_assessment,
     _new_judgment_action_output,
     _orientation_judgment_request,
     _post_read_judgment_request,
+    _post_read_two_custody_judgment_request,
     _ref,
 )
 
@@ -172,11 +174,7 @@ def test_whole_current_custody_objects_are_valid_for_handoff_and_assessment(
             "action": "HANDOFF_UNRESOLVED",
             "reason": "current custody does not resolve the active need",
             "read_custody_assessments": [
-                {
-                    "reviewed_custody_ref": deepcopy(custody),
-                    "material_disposition": "read_insufficient",
-                    "reason_code": "needed_detail_absent",
-                }
+                _model_read_custody_assessment(custody)
             ],
         },
     )
@@ -184,6 +182,9 @@ def test_whole_current_custody_objects_are_valid_for_handoff_and_assessment(
     assert unresolved["read_custody_assessments"][0][
         "reviewed_custody_ref"
     ] == custody
+    assert unresolved["read_custody_assessments"][0][
+        "material_disposition"
+    ] == "read_insufficient"
 
 
 @pytest.mark.parametrize(
@@ -214,21 +215,21 @@ def test_handoff_rejects_non_whole_current_custody_objects(variant: str) -> None
     "variant",
     ("partial", "augmented", "nested_altered"),
 )
-def test_assessment_rejects_non_whole_current_custody_objects(
+def test_assessment_rejects_obsolete_whole_object_copy(
     variant: str,
 ) -> None:
     request, custody, _ = _post_read_judgment_request()
 
     with pytest.raises(
         SearchOSRuntimeError,
-        match="READ custody assessment is stale or altered",
+        match="READ custody assessment shape is invalid",
     ):
         validate_searchos_judgment_model_output(
             request=request,
             model_output={
                 "schema_version": "searchos_judgment_decision_v1",
                 "action": "HANDOFF_UNRESOLVED",
-                "reason": "non-whole assessment custody must fail closed",
+                "reason": "obsolete whole-object assessment must fail closed",
                 "read_custody_assessments": [
                     {
                         "reviewed_custody_ref": _whole_custody_variant(
@@ -325,10 +326,147 @@ def test_old_navigation_ref_cannot_cross_requests() -> None:
                 "navigation_candidate_ref": stale_navigation,
                 "reason": "old navigation ref must not cross requests",
                 "read_custody_assessments": [
+                    _model_read_custody_assessment(custody)
+                ],
+            },
+        )
+
+
+def test_extra_assessment_field_reproduces_custody_assessment_shape_invalid() -> None:
+    request, custody, _ = _post_read_judgment_request()
+    with pytest.raises(
+        SearchOSRuntimeError,
+        match="READ custody assessment shape is invalid",
+    ):
+        validate_searchos_judgment_model_output(
+            request=request,
+            model_output={
+                "schema_version": "searchos_judgment_decision_v1",
+                "action": "HANDOFF_UNRESOLVED",
+                "reason": "synthetic extra assessment field",
+                "read_custody_assessments": [
                     {
-                        "reviewed_custody_ref": custody,
-                        "material_disposition": "read_insufficient",
+                        **_model_read_custody_assessment(custody),
+                        "extra_mechanical_field": "must-fail",
+                    }
+                ],
+            },
+        )
+
+
+def test_id_and_reason_assessment_binds_current_custody_without_model_copy() -> None:
+    request, custody, _ = _post_read_judgment_request()
+    decision = validate_searchos_judgment_model_output(
+        request=request,
+        model_output={
+            "schema_version": "searchos_judgment_decision_v1",
+            "action": "HANDOFF_UNRESOLVED",
+            "reason": "current material is semantically insufficient",
+            "read_custody_assessments": [
+                _model_read_custody_assessment(
+                    custody,
+                    reason_code="needed_detail_absent",
+                )
+            ],
+        },
+    )
+    bound = decision["read_custody_assessments"][0]
+    assert bound["reviewed_custody_ref"] == custody
+    assert bound["material_disposition"] == "read_insufficient"
+    assert bound["reason_code"] == "needed_detail_absent"
+
+
+def test_multi_custody_assessments_bind_reason_codes_by_material_id() -> None:
+    request, first, second = _post_read_two_custody_judgment_request()
+    decision = validate_searchos_judgment_model_output(
+        request=request,
+        model_output={
+            "schema_version": "searchos_judgment_decision_v1",
+            "action": "HANDOFF_UNRESOLVED",
+            "reason": "neither current material satisfies the active need",
+            "read_custody_assessments": [
+                _model_read_custody_assessment(
+                    second,
+                    reason_code="second_material_off_point",
+                ),
+                _model_read_custody_assessment(
+                    first,
+                    reason_code="first_material_lacks_detail",
+                ),
+            ],
+        },
+    )
+    bound = decision["read_custody_assessments"]
+    assert bound[0]["reviewed_custody_ref"] == second
+    assert bound[0]["reason_code"] == "second_material_off_point"
+    assert bound[1]["reviewed_custody_ref"] == first
+    assert bound[1]["reason_code"] == "first_material_lacks_detail"
+    assert {item["reviewed_custody_ref"]["read_custody_material_id"] for item in bound} == {
+        first["read_custody_material_id"],
+        second["read_custody_material_id"],
+    }
+
+
+def test_omitting_one_of_two_current_assessments_fails_closed() -> None:
+    request, first, _second = _post_read_two_custody_judgment_request()
+    with pytest.raises(
+        SearchOSRuntimeError,
+        match="requires exact read_insufficient assessments",
+    ):
+        validate_searchos_judgment_model_output(
+            request=request,
+            model_output={
+                "schema_version": "searchos_judgment_decision_v1",
+                "action": "HANDOFF_UNRESOLVED",
+                "reason": "one inconvenient current material was omitted",
+                "read_custody_assessments": [
+                    _model_read_custody_assessment(first)
+                ],
+            },
+        )
+
+
+def test_empty_material_id_is_shape_invalid() -> None:
+    request, _custody, _ = _post_read_judgment_request()
+    with pytest.raises(
+        SearchOSRuntimeError,
+        match="READ custody assessment shape is invalid",
+    ):
+        validate_searchos_judgment_model_output(
+            request=request,
+            model_output={
+                "schema_version": "searchos_judgment_decision_v1",
+                "action": "HANDOFF_UNRESOLVED",
+                "reason": "empty correspondence identity must fail closed",
+                "read_custody_assessments": [
+                    {
+                        "read_custody_material_id": "   ",
                         "reason_code": "needed_detail_absent",
+                    }
+                ],
+            },
+        )
+
+
+def test_pre_read_decision_cannot_invent_assessments() -> None:
+    request = _orientation_judgment_request()
+    with pytest.raises(
+        SearchOSRuntimeError,
+        match="stale or altered",
+    ):
+        validate_searchos_judgment_model_output(
+            request=request,
+            model_output={
+                "schema_version": "searchos_judgment_decision_v1",
+                "action": "REQUIRE_CLARIFICATION",
+                "semantic_slot_ref": dict(
+                    request["clarification_eligible_semantic_slot_refs"][0]
+                ),
+                "reason": "no current custody exists to assess",
+                "read_custody_assessments": [
+                    {
+                        "read_custody_material_id": "searchos-read-custody:none",
+                        "reason_code": "invented_assessment",
                     }
                 ],
             },

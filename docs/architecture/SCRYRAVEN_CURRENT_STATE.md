@@ -594,12 +594,14 @@ source-obligation/SearchWorkPlan semantics, bounded directional context, and
 bounded sanitized content from exact current READ packets; none of that
 transient prompt text is retained in canonical state or persistence.
 The same transient input carries
-`searchos_judgment_decision_contract_v2`, a machine-readable mirror of the
+`searchos_judgment_decision_contract_v3`, a machine-readable mirror of the
 strict `searchos_judgment_decision_v1` validator. It defines the shared
 action/reason fields, exact per-action payload and forbidden fields, and the
-one-per-current-custody `read_insufficient` assessment required for every
+one-per-current-custody insufficiency assessment required for every
 post-READ action except exact semantic handoff and factual binding. The model
-authors only semantic judgment meaning. Deterministic runtime binds
+authors the semantic insufficiency `reason_code` and current
+`read_custody_material_id` correspondence. Deterministic runtime binds the
+matching current custody object, records `read_insufficient`, and binds
 `judgment_request_id`, `judgment_request_digest`, and the active `slot_id`
 from the authorized current request; model output that authors those
 mechanical identities fails closed. The model may author a bounded query only
