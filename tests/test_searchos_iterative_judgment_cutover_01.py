@@ -217,7 +217,9 @@ def _post_read_judgment_request() -> tuple[
         model_output={
             "schema_version": "searchos_judgment_decision_v1",
             "action": "REQUEST_READ_PAGE",
-            "candidate_use_option_ref": candidate_use_option_ref(options[0]),
+            "candidate_use_option_id": _compact_candidate_use_option_id(
+                candidate_use_option_ref(options[0])
+            ),
             "reason": "read the first exact admitted candidate",
         },
     )
@@ -276,6 +278,19 @@ def _model_read_custody_assessment(
     }
 
 
+def _compact_candidate_use_option_id(option_or_ref: dict[str, object]) -> str:
+    nested = dict(option_or_ref.get("candidate_use_option_ref") or {})
+    if nested.get("candidate_use_option_id"):
+        return str(nested["candidate_use_option_id"])
+    return str(option_or_ref["candidate_use_option_id"])
+
+
+def _compact_read_custody_material_ids(
+    *custodies: dict[str, object],
+) -> list[str]:
+    return [str(item["read_custody_material_id"]) for item in custodies]
+
+
 def _post_read_two_custody_judgment_request() -> tuple[
     dict[str, object], dict[str, object], dict[str, object]
 ]:
@@ -322,7 +337,7 @@ def _post_read_two_custody_judgment_request() -> tuple[
         output: dict[str, object] = {
             "schema_version": "searchos_judgment_decision_v1",
             "action": "REQUEST_READ_PAGE",
-            "candidate_use_option_ref": candidate_use_option_ref(option),
+            "candidate_use_option_id": _compact_candidate_use_option_id(option),
             "reason": f"read admitted candidate {ordinal}",
         }
         if assessments:
@@ -479,21 +494,31 @@ def _new_judgment_action_output(
         semantic_slot_ref = dict(
             list(contract["eligible_semantic_slot_refs"])[0]
         )
+        basis_candidate_ids = [
+            _compact_candidate_use_option_id(dict(item))
+            for item in list(contract["candidate_basis_refs"])[:1]
+        ]
+        basis_read_ids = [
+            str(dict(item)["read_custody_material_id"])
+            for item in list(contract["read_basis_refs"] or ())[:1]
+        ]
         output["interpretation_binding"] = {
-            "semantic_slot_ref": semantic_slot_ref,
+            "semantic_slot_id": semantic_slot_ref["slot_id"],
             "resolved_value": semantic_slot_ref["candidate_values"][0],
-            "basis_candidate_refs": [
-                dict(contract["candidate_basis_refs"][0])
-            ],
-            "basis_read_custody_refs": [],
+            "basis_candidate_use_option_ids": (
+                basis_candidate_ids if basis_candidate_ids else []
+            ),
+            "basis_read_custody_material_ids": (
+                [] if basis_candidate_ids else basis_read_ids
+            ),
             "disclose_assumption": True,
         }
     elif action == "REQUIRE_CLARIFICATION":
-        output["semantic_slot_ref"] = dict(
+        output["semantic_slot_id"] = dict(
             list(request["clarification_eligible_semantic_slot_refs"])[
                 0
             ]
-        )
+        )["slot_id"]
     return output
 
 
@@ -672,16 +697,19 @@ def test_candidate_option_identity_is_stable_while_lineage_snapshot_grows() -> N
         candidate_window=grown_available,
         read_custody_refs=[],
     )
-    with pytest.raises(SearchOSRuntimeError, match="stale or altered"):
-        validate_searchos_judgment_model_output(
-            request=current_request,
-            model_output={
-                "schema_version": "searchos_judgment_decision_v1",
-                "action": "REQUEST_READ_PAGE",
-                "candidate_use_option_ref": candidate_use_option_ref(initial),
-                "reason": "obsolete lineage snapshot",
-            },
-        )
+    decision = validate_searchos_judgment_model_output(
+        request=current_request,
+        model_output={
+            "schema_version": "searchos_judgment_decision_v1",
+            "action": "REQUEST_READ_PAGE",
+            "candidate_use_option_id": _compact_candidate_use_option_id(
+                candidate_use_option_ref(initial)
+            ),
+            "reason": "stable identity binds current lineage",
+        },
+    )
+    assert decision["candidate_use_option_ref"] == candidate_use_option_ref(grown)
+    assert decision["candidate_use_option_ref"] != candidate_use_option_ref(initial)
 
 
 def test_custodied_is_a_completed_candidate_window_disposition() -> None:
@@ -1269,16 +1297,10 @@ def test_interpretation_binding_action_rejects_wrong_or_stale_basis_refs(
     )
     binding = dict(output["interpretation_binding"])
     if mutation == "semantic_slot":
-        binding["semantic_slot_ref"] = {
-            **dict(binding["semantic_slot_ref"]),
-            "slot_id": "semantic:foreign",
-        }
+        binding["semantic_slot_id"] = "semantic:foreign"
     else:
-        binding["basis_candidate_refs"] = [
-            {
-                **dict(binding["basis_candidate_refs"][0]),
-                "candidate_use_option_digest": _digest("stale-basis"),
-            }
+        binding["basis_candidate_use_option_ids"] = [
+            "searchos-candidate-use:foreign-basis"
         ]
     output["interpretation_binding"] = binding
 
@@ -1359,7 +1381,7 @@ def test_semantic_handoff_is_not_legal_before_required_binding() -> None:
                 "action": (
                     "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION"
                 ),
-                "read_custody_refs": [],
+                "read_custody_material_ids": [],
                 "reason": "must not bypass interpretation binding",
             },
         )
@@ -1382,12 +1404,16 @@ def test_strict_validator_accepts_each_exact_post_read_action(action: str) -> No
         "reason": "exact post-read action",
     }
     if action == "REQUEST_READ_PAGE":
-        output["candidate_use_option_ref"] = remaining_option
+        output["candidate_use_option_id"] = _compact_candidate_use_option_id(
+            remaining_option
+        )
     elif action == "PROPOSE_FOLLOWUP_QUERY":
         output["followup_query"] = "Alpha exact post-READ follow-up query"
         output["discovery_job_class"] = request["allowed_followup_job_classes"][0]
     elif action == "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION":
-        output["read_custody_refs"] = [custody]
+        output["read_custody_material_ids"] = _compact_read_custody_material_ids(
+            custody
+        )
     if action != "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION":
         output["read_custody_assessments"] = [
             _model_read_custody_assessment(
@@ -1486,7 +1512,9 @@ def test_strict_validator_rejects_assessment_on_exact_semantic_handoff() -> None
             model_output={
                 "schema_version": "searchos_judgment_decision_v1",
                 "action": "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION",
-                "read_custody_refs": [custody],
+                "read_custody_material_ids": _compact_read_custody_material_ids(
+                    custody
+                ),
                 "reason": "exact custody is ready for semantic evaluation",
                 "read_custody_assessments": [
                     _model_read_custody_assessment(
@@ -1524,7 +1552,7 @@ def test_read_custody_is_the_only_semantic_entry_and_required_block_is_safe() ->
     )
     altered_option_ref = candidate_use_option_ref(options[0])
     altered_option_ref["normalized_url"] = "https://example.com/altered"
-    with pytest.raises(SearchOSRuntimeError, match="stale or altered"):
+    with pytest.raises(SearchOSRuntimeError, match="unsupported fields"):
         validate_searchos_judgment_model_output(
             request=read_request,
             model_output={
@@ -1538,7 +1566,7 @@ def test_read_custody_is_the_only_semantic_entry_and_required_block_is_safe() ->
     altered_lineage_ref["lineage_snapshot_ref"]["lineage_snapshot_digest"] = (
         "f" * 64
     )
-    with pytest.raises(SearchOSRuntimeError, match="stale or altered"):
+    with pytest.raises(SearchOSRuntimeError, match="unsupported fields"):
         validate_searchos_judgment_model_output(
             request=read_request,
             model_output={
@@ -1553,9 +1581,14 @@ def test_read_custody_is_the_only_semantic_entry_and_required_block_is_safe() ->
         model_output={
             "schema_version": "searchos_judgment_decision_v1",
             "action": "REQUEST_READ_PAGE",
-            "candidate_use_option_ref": candidate_use_option_ref(options[0]),
+            "candidate_use_option_id": _compact_candidate_use_option_id(
+                candidate_use_option_ref(options[0])
+            ),
             "reason": "read the exact admitted candidate",
         },
+    )
+    assert read_decision["candidate_use_option_ref"] == candidate_use_option_ref(
+        options[0]
     )
     state = reduce_searchos_judgment_decision(state, decision=read_decision)
     custody = build_searchos_read_custody_material_ref(
@@ -1598,7 +1631,9 @@ def test_read_custody_is_the_only_semantic_entry_and_required_block_is_safe() ->
             model_output={
                 "schema_version": "searchos_judgment_decision_v1",
                 "action": "REQUEST_READ_PAGE",
-                "candidate_use_option_ref": candidate_use_option_ref(options[0]),
+                "candidate_use_option_id": _compact_candidate_use_option_id(
+                    candidate_use_option_ref(options[0])
+                ),
                 "reason": "repeat an already-custodied option",
             },
         )
@@ -1610,7 +1645,9 @@ def test_read_custody_is_the_only_semantic_entry_and_required_block_is_safe() ->
         model_output={
             "schema_version": "searchos_judgment_decision_v1",
             "action": "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION",
-            "read_custody_refs": [custody],
+            "read_custody_material_ids": _compact_read_custody_material_ids(
+                custody
+            ),
             "reason": "current read custody is suitable for governed analysis",
         },
     )

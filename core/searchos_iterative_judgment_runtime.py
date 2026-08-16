@@ -2488,6 +2488,93 @@ def build_searchos_navigation_judgment_request_v1(
     }
 
 
+def _index_unique_authorized_by_compact_id(
+    items: Sequence[Any],
+    *,
+    compact_id: Any,
+    exact_object: Any,
+    label: str,
+) -> dict[str, dict[str, Any]]:
+    """Map each compact ID to exactly one current object, or fail closed."""
+
+    indexed: dict[str, dict[str, Any]] = {}
+    for raw in items:
+        item = _mapping(raw)
+        identity = str(compact_id(item) or "").strip()
+        if not identity:
+            raise SearchOSRuntimeError(f"authorized {label} identity is empty")
+        exact = deepcopy(_mapping(exact_object(item)))
+        prior = indexed.get(identity)
+        if prior is not None and prior != exact:
+            raise SearchOSRuntimeError("authorized compact identity is not unique")
+        indexed[identity] = exact
+    return indexed
+
+
+def _compact_identity_token(value: Any, *, label: str) -> str:
+    if isinstance(value, (Mapping, list, tuple)):
+        raise SearchOSRuntimeError(f"{label} identity must be a compact token")
+    token = str(value or "").strip()
+    if not token:
+        raise SearchOSRuntimeError(f"{label} identity is empty")
+    return token
+
+
+def _compact_identity_tokens(value: Any, *, label: str, duplicate_message: str) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, (str, bytes, Mapping)):
+        raise SearchOSRuntimeError(
+            f"{label} selection must be a list of compact identities"
+        )
+    if not isinstance(value, Sequence):
+        raise SearchOSRuntimeError(
+            f"{label} selection must be a list of compact identities"
+        )
+    tokens = [_compact_identity_token(item, label=label) for item in value]
+    if len(tokens) != len(set(tokens)):
+        raise SearchOSRuntimeError(duplicate_message)
+    return tokens
+
+
+def _bind_compact_authorized_object(
+    compact_id: Any,
+    authorized_by_id: Mapping[str, Mapping[str, Any]],
+    *,
+    label: str,
+    unknown_message: str,
+) -> dict[str, Any]:
+    identity = _compact_identity_token(compact_id, label=label)
+    exact = authorized_by_id.get(identity)
+    if exact is None:
+        raise SearchOSRuntimeError(unknown_message)
+    return deepcopy(dict(exact))
+
+
+def _bind_compact_authorized_objects(
+    compact_ids: Any,
+    authorized_by_id: Mapping[str, Mapping[str, Any]],
+    *,
+    label: str,
+    unknown_message: str,
+    duplicate_message: str,
+) -> list[dict[str, Any]]:
+    tokens = _compact_identity_tokens(
+        compact_ids,
+        label=label,
+        duplicate_message=duplicate_message,
+    )
+    return [
+        _bind_compact_authorized_object(
+            token,
+            authorized_by_id,
+            label=label,
+            unknown_message=unknown_message,
+        )
+        for token in tokens
+    ]
+
+
 def validate_searchos_judgment_model_output(
     *, request: Mapping[str, Any], model_output: Mapping[str, Any]
 ) -> dict[str, Any]:
@@ -2512,18 +2599,18 @@ def validate_searchos_judgment_model_output(
     allowed_keys = {
         "schema_version",
         "action",
-        "candidate_use_option_ref",
-        "navigation_candidate_ref",
-        "read_custody_refs",
+        "candidate_use_option_id",
+        "navigation_candidate_id",
+        "read_custody_material_ids",
         "followup_query",
         "discovery_job_class",
         "interpretation_binding",
-        "semantic_slot_ref",
+        "semantic_slot_id",
         "reason",
         "read_custody_assessments",
     }
     if not navigation_enabled:
-        allowed_keys.remove("navigation_candidate_ref")
+        allowed_keys.remove("navigation_candidate_id")
     if set(output) - allowed_keys:
         raise SearchOSRuntimeError("judgment output contains unsupported fields")
     expected_decision_schema = (
@@ -2540,12 +2627,6 @@ def validate_searchos_judgment_model_output(
         raise SearchOSRuntimeError("judgment action is not in the neutral vocabulary") from exc
     if action.value not in set(request_safe.get("legal_actions") or ()):
         raise SearchOSRuntimeError("judgment action is not currently authorized")
-    option_ref = _optional_ref(output.get("candidate_use_option_ref"))
-    navigation_ref = _optional_ref(output.get("navigation_candidate_ref"))
-    custody_refs = [_required_ref(item, "read_custody_ref") for item in output.get("read_custody_refs") or ()]
-    custody_ids = [_first_ref_id(item) for item in custody_refs]
-    if len(custody_ids) != len(set(custody_ids)):
-        raise SearchOSRuntimeError("semantic handoff repeats READ custody")
     followup_query = _bounded_optional(output.get("followup_query"), MAX_FOLLOWUP_QUERY_CHARS)
     discovery_job_class: str | None = None
     if output.get("discovery_job_class") is not None:
@@ -2558,30 +2639,46 @@ def validate_searchos_judgment_model_output(
                 "follow-up discovery job class is invalid"
             ) from exc
     interpretation_binding = _mapping(output.get("interpretation_binding"))
-    clarification_semantic_slot_ref = _mapping(
-        output.get("semantic_slot_ref")
-    )
     reason = _bounded_reason(output.get("reason"))
-    visible_options = {
-        _first_ref_id(_mapping(_mapping(item).get("candidate_use_option_ref"))): item
-        for item in request_safe.get("candidate_use_options") or ()
-    }
-    visible_navigation = {
-        _first_ref_id(_mapping(item).get("navigation_candidate_ref")): _mapping(item).get("navigation_candidate_ref")
-        for item in request_safe.get("navigation_options") or ()
-    }
-    current_custody = {_first_ref_id(item): item for item in request_safe.get("read_custody_refs") or ()}
-    current_custody_by_material_id = {
-        str(_mapping(item).get("read_custody_material_id") or "").strip(): _mapping(item)
-        for item in request_safe.get("read_custody_refs") or ()
-    }
-    current_custody_by_material_id.pop("", None)
-    visible_candidate_refs = {
-        _first_ref_id(
-            _mapping(_mapping(item).get("candidate_use_option_ref"))
-        ): _mapping(_mapping(item).get("candidate_use_option_ref"))
-        for item in request_safe.get("candidate_use_options") or ()
-    }
+    authorized_options = _index_unique_authorized_by_compact_id(
+        request_safe.get("candidate_use_options") or (),
+        compact_id=lambda item: _mapping(item.get("candidate_use_option_ref")).get(
+            "candidate_use_option_id"
+        ),
+        exact_object=lambda item: _mapping(item.get("candidate_use_option_ref")),
+        label="READ option",
+    )
+    authorized_navigation = _index_unique_authorized_by_compact_id(
+        request_safe.get("navigation_options") or (),
+        compact_id=lambda item: _mapping(item.get("navigation_candidate_ref")).get(
+            "navigation_candidate_id"
+        ),
+        exact_object=lambda item: _mapping(item.get("navigation_candidate_ref")),
+        label="navigation option",
+    )
+    authorized_custody = _index_unique_authorized_by_compact_id(
+        request_safe.get("read_custody_refs") or (),
+        compact_id=lambda item: item.get("read_custody_material_id"),
+        exact_object=lambda item: item,
+        label="READ custody",
+    )
+    authorized_clarification_slots = _index_unique_authorized_by_compact_id(
+        request_safe.get("clarification_eligible_semantic_slot_refs") or (),
+        compact_id=lambda item: item.get("slot_id"),
+        exact_object=lambda item: item,
+        label="clarification semantic slot",
+    )
+    binding_contract = _mapping(request_safe.get("interpretation_binding_contract"))
+    authorized_binding_slots = _index_unique_authorized_by_compact_id(
+        binding_contract.get("eligible_semantic_slot_refs") or (),
+        compact_id=lambda item: item.get("slot_id"),
+        exact_object=lambda item: item,
+        label="interpretation semantic slot",
+    )
+    option_ref: dict[str, Any] = {}
+    navigation_ref: dict[str, Any] = {}
+    custody_refs: list[dict[str, Any]] = []
+    clarification_semantic_slot_ref: dict[str, Any] = {}
     assessments: list[dict[str, Any]] = []
     assessed_ids: list[str] = []
     for raw_assessment in output.get("read_custody_assessments") or ():
@@ -2591,39 +2688,86 @@ def validate_searchos_judgment_model_output(
             "reason_code",
         }:
             raise SearchOSRuntimeError("READ custody assessment shape is invalid")
-        custody_id = str(assessment.get("read_custody_material_id") or "").strip()
-        if not custody_id:
-            raise SearchOSRuntimeError("READ custody assessment shape is invalid")
-        if custody_id not in current_custody_by_material_id:
-            raise SearchOSRuntimeError("READ custody assessment is stale or altered")
+        try:
+            bound_custody = _bind_compact_authorized_object(
+                assessment.get("read_custody_material_id"),
+                authorized_custody,
+                label="READ custody assessment",
+                unknown_message="READ custody assessment is stale or altered",
+            )
+        except SearchOSRuntimeError as exc:
+            if str(exc) in {
+                "READ custody assessment identity is empty",
+                "READ custody assessment identity must be a compact token",
+            }:
+                raise SearchOSRuntimeError(
+                    "READ custody assessment shape is invalid"
+                ) from exc
+            raise
         reason_code = _reason_code(assessment.get("reason_code"))
         assessments.append(
             {
-                "reviewed_custody_ref": deepcopy(current_custody_by_material_id[custody_id]),
+                "reviewed_custody_ref": bound_custody,
                 "material_disposition": "read_insufficient",
                 "reason_code": reason_code,
             }
         )
-        assessed_ids.append(custody_id)
+        assessed_ids.append(
+            str(bound_custody.get("read_custody_material_id") or "").strip()
+        )
     if len(assessed_ids) != len(set(assessed_ids)):
         raise SearchOSRuntimeError("READ custody assessment repeats material")
     if action is SearchOSJudgmentAction.REQUEST_READ_PAGE:
-        option_id = _first_ref_id(option_ref)
-        if not option_ref or option_id not in visible_options:
-            raise SearchOSRuntimeError("READ nomination is outside current candidate window")
-        if option_ref != _mapping(_mapping(visible_options[option_id]).get("candidate_use_option_ref")):
-            raise SearchOSRuntimeError("READ nomination ref is stale or altered")
-        if custody_refs or followup_query or navigation_ref:
+        try:
+            option_ref = _bind_compact_authorized_object(
+                output.get("candidate_use_option_id"),
+                authorized_options,
+                label="READ nomination",
+                unknown_message="READ nomination is outside current candidate window",
+            )
+        except SearchOSRuntimeError as exc:
+            if str(exc) == "READ nomination identity is empty":
+                raise SearchOSRuntimeError(
+                    "READ nomination is outside current candidate window"
+                ) from exc
+            if str(exc) == "READ nomination identity must be a compact token":
+                raise SearchOSRuntimeError(
+                    "READ nomination contains incompatible payload"
+                ) from exc
+            raise
+        if (
+            "navigation_candidate_id" in output
+            or "read_custody_material_ids" in output
+            or followup_query
+        ):
             raise SearchOSRuntimeError("READ nomination contains incompatible payload")
     elif action is SearchOSJudgmentAction.REQUEST_NAVIGATE_BREADCRUMB:
         if not navigation_enabled:
             raise SearchOSRuntimeError("navigation nomination requires navigation request")
-        navigation_id = _first_ref_id(navigation_ref)
-        if not navigation_ref or navigation_id not in visible_navigation:
-            raise SearchOSRuntimeError("navigation nomination is outside current navigation window")
-        if navigation_ref != _mapping(visible_navigation[navigation_id]):
-            raise SearchOSRuntimeError("navigation nomination ref is stale or altered")
-        if option_ref or custody_refs or followup_query:
+        try:
+            navigation_ref = _bind_compact_authorized_object(
+                output.get("navigation_candidate_id"),
+                authorized_navigation,
+                label="navigation nomination",
+                unknown_message="navigation nomination is outside current navigation window",
+            )
+        except SearchOSRuntimeError as exc:
+            if str(exc) == "navigation nomination identity is empty":
+                raise SearchOSRuntimeError(
+                    "navigation nomination is outside current navigation window"
+                ) from exc
+            if str(exc) == (
+                "navigation nomination identity must be a compact token"
+            ):
+                raise SearchOSRuntimeError(
+                    "navigation nomination contains incompatible payload"
+                ) from exc
+            raise
+        if (
+            "candidate_use_option_id" in output
+            or "read_custody_material_ids" in output
+            or followup_query
+        ):
             raise SearchOSRuntimeError("navigation nomination contains incompatible payload")
     elif action is SearchOSJudgmentAction.PROPOSE_FOLLOWUP_QUERY:
         if (
@@ -2631,43 +2775,40 @@ def validate_searchos_judgment_model_output(
             or not discovery_job_class
             or discovery_job_class
             not in set(request_safe.get("allowed_followup_job_classes") or ())
-            or option_ref
-            or navigation_ref
-            or custody_refs
+            or "candidate_use_option_id" in output
+            or "navigation_candidate_id" in output
+            or "read_custody_material_ids" in output
             or interpretation_binding
         ):
             raise SearchOSRuntimeError("follow-up nomination payload is invalid")
     elif action is SearchOSJudgmentAction.PROPOSE_INTERPRETATION_BINDING:
         if set(interpretation_binding) != {
-            "semantic_slot_ref",
+            "semantic_slot_id",
             "resolved_value",
-            "basis_candidate_refs",
-            "basis_read_custody_refs",
+            "basis_candidate_use_option_ids",
+            "basis_read_custody_material_ids",
             "disclose_assumption",
         }:
             raise SearchOSRuntimeError(
                 "interpretation-binding proposal shape is invalid"
             )
-        binding_contract = _mapping(
-            request_safe.get("interpretation_binding_contract")
-        )
-        semantic_slot_ref = _mapping(
-            interpretation_binding.get("semantic_slot_ref")
-        )
-        if (
-            binding_contract.get("enabled") is not True
-            or semantic_slot_ref
-            not in [
-                _mapping(item)
-                for item in binding_contract.get(
-                    "eligible_semantic_slot_refs"
-                )
-                or ()
-            ]
-        ):
+        if binding_contract.get("enabled") is not True:
             raise SearchOSRuntimeError(
                 "interpretation-binding semantic slot is stale or altered"
             )
+        try:
+            semantic_slot_ref = _bind_compact_authorized_object(
+                interpretation_binding.get("semantic_slot_id"),
+                authorized_binding_slots,
+                label="interpretation semantic slot",
+                unknown_message="interpretation-binding semantic slot is stale or altered",
+            )
+        except SearchOSRuntimeError as exc:
+            if "identity" in str(exc):
+                raise SearchOSRuntimeError(
+                    "interpretation-binding semantic slot is stale or altered"
+                ) from exc
+            raise
         resolved_value = _bounded_optional(
             interpretation_binding.get("resolved_value"),
             220,
@@ -2684,49 +2825,50 @@ def validate_searchos_judgment_model_output(
             raise SearchOSRuntimeError(
                 "interpretation-binding value violates declared candidate policy"
             )
-        basis_candidate_refs = [
-            _required_ref(item, "basis_candidate_ref")
-            for item in interpretation_binding.get("basis_candidate_refs")
-            or ()
-        ]
-        basis_read_refs = [
-            _required_ref(item, "basis_read_custody_ref")
-            for item in interpretation_binding.get("basis_read_custody_refs")
-            or ()
-        ]
+        try:
+            basis_candidate_refs = _bind_compact_authorized_objects(
+                interpretation_binding.get("basis_candidate_use_option_ids"),
+                authorized_options,
+                label="interpretation candidate basis",
+                unknown_message="interpretation-binding candidate basis is stale or altered",
+                duplicate_message="interpretation-binding basis refs repeat identity",
+            )
+        except SearchOSRuntimeError as exc:
+            if str(exc).endswith("identity is empty") or str(exc).endswith(
+                "must be a compact token"
+            ):
+                raise SearchOSRuntimeError(
+                    "interpretation-binding candidate basis is stale or altered"
+                ) from exc
+            if "must be a list of compact identities" in str(exc):
+                raise SearchOSRuntimeError(
+                    "interpretation-binding proposal shape is invalid"
+                ) from exc
+            raise
+        try:
+            basis_read_refs = _bind_compact_authorized_objects(
+                interpretation_binding.get("basis_read_custody_material_ids"),
+                authorized_custody,
+                label="interpretation READ basis",
+                unknown_message="interpretation-binding READ basis is stale or altered",
+                duplicate_message="interpretation-binding basis refs repeat identity",
+            )
+        except SearchOSRuntimeError as exc:
+            if str(exc).endswith("identity is empty") or str(exc).endswith(
+                "must be a compact token"
+            ):
+                raise SearchOSRuntimeError(
+                    "interpretation-binding READ basis is stale or altered"
+                ) from exc
+            if "must be a list of compact identities" in str(exc):
+                raise SearchOSRuntimeError(
+                    "interpretation-binding proposal shape is invalid"
+                ) from exc
+            raise
         if not basis_candidate_refs and not basis_read_refs:
             raise SearchOSRuntimeError(
                 "interpretation binding requires exact current basis refs"
             )
-        candidate_basis_ids = [
-            _first_ref_id(item) for item in basis_candidate_refs
-        ]
-        read_basis_ids = [_first_ref_id(item) for item in basis_read_refs]
-        if (
-            len(candidate_basis_ids) != len(set(candidate_basis_ids))
-            or len(read_basis_ids) != len(set(read_basis_ids))
-        ):
-            raise SearchOSRuntimeError(
-                "interpretation-binding basis refs repeat identity"
-            )
-        for item in basis_candidate_refs:
-            identity = _first_ref_id(item)
-            if (
-                identity not in visible_candidate_refs
-                or item != visible_candidate_refs[identity]
-            ):
-                raise SearchOSRuntimeError(
-                    "interpretation-binding candidate basis is stale or altered"
-                )
-        for item in basis_read_refs:
-            identity = _first_ref_id(item)
-            if (
-                identity not in current_custody
-                or item != _mapping(current_custody[identity])
-            ):
-                raise SearchOSRuntimeError(
-                    "interpretation-binding READ basis is stale or altered"
-                )
         if not isinstance(
             interpretation_binding.get("disclose_assumption"), bool
         ):
@@ -2743,31 +2885,34 @@ def validate_searchos_judgment_model_output(
             ],
         }
         if (
-            option_ref
-            or navigation_ref
-            or custody_refs
+            "candidate_use_option_id" in output
+            or "navigation_candidate_id" in output
+            or "read_custody_material_ids" in output
             or followup_query
             or discovery_job_class
-            or clarification_semantic_slot_ref
+            or "semantic_slot_id" in output
         ):
             raise SearchOSRuntimeError(
                 "interpretation-binding proposal contains incompatible payload"
             )
     elif action is SearchOSJudgmentAction.REQUIRE_CLARIFICATION:
-        clarification_eligible = [
-            _mapping(item)
-            for item in request_safe.get(
-                "clarification_eligible_semantic_slot_refs"
+        try:
+            clarification_semantic_slot_ref = _bind_compact_authorized_object(
+                output.get("semantic_slot_id"),
+                authorized_clarification_slots,
+                label="clarification semantic slot",
+                unknown_message="clarification decision contains incompatible payload",
             )
-            or ()
-        ]
+        except SearchOSRuntimeError as exc:
+            if "identity" in str(exc):
+                raise SearchOSRuntimeError(
+                    "clarification decision contains incompatible payload"
+                ) from exc
+            raise
         if (
-            not clarification_semantic_slot_ref
-            or clarification_semantic_slot_ref
-            not in clarification_eligible
-            or option_ref
-            or navigation_ref
-            or custody_refs
+            "candidate_use_option_id" in output
+            or "navigation_candidate_id" in output
+            or "read_custody_material_ids" in output
             or followup_query
             or discovery_job_class
             or interpretation_binding
@@ -2776,26 +2921,42 @@ def validate_searchos_judgment_model_output(
                 "clarification decision contains incompatible payload"
             )
     elif action is (SearchOSJudgmentAction.HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION):
+        try:
+            custody_refs = _bind_compact_authorized_objects(
+                output.get("read_custody_material_ids"),
+                authorized_custody,
+                label="semantic handoff READ custody",
+                unknown_message="semantic handoff nominated stale or altered READ custody",
+                duplicate_message="semantic handoff repeats READ custody",
+            )
+        except SearchOSRuntimeError as exc:
+            if str(exc).endswith("identity is empty") or str(exc).endswith(
+                "must be a compact token"
+            ):
+                raise SearchOSRuntimeError(
+                    "semantic handoff nominated stale or altered READ custody"
+                ) from exc
+            if "must be a list of compact identities" in str(exc):
+                raise SearchOSRuntimeError(
+                    "semantic handoff requires exact READ custody refs"
+                ) from exc
+            raise
         if (
             not custody_refs
-            or option_ref
-            or navigation_ref
+            or "candidate_use_option_id" in output
+            or "navigation_candidate_id" in output
             or followup_query
             or assessments
-            or clarification_semantic_slot_ref
+            or "semantic_slot_id" in output
         ):
             raise SearchOSRuntimeError("semantic handoff requires exact READ custody refs")
-        for item in custody_refs:
-            custody_id = _first_ref_id(item)
-            if custody_id not in current_custody or item != _mapping(current_custody[custody_id]):
-                raise SearchOSRuntimeError("semantic handoff nominated stale or altered READ custody")
     else:
         if (
-            option_ref
-            or navigation_ref
-            or custody_refs
+            "candidate_use_option_id" in output
+            or "navigation_candidate_id" in output
+            or "read_custody_material_ids" in output
             or followup_query
-            or clarification_semantic_slot_ref
+            or "semantic_slot_id" in output
             or not reason
         ):
             raise SearchOSRuntimeError("unresolved handoff payload is invalid")
@@ -2803,8 +2964,8 @@ def validate_searchos_judgment_model_output(
         SearchOSJudgmentAction.HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION,
         SearchOSJudgmentAction.PROPOSE_INTERPRETATION_BINDING,
     }
-    if current_custody and action not in assessment_exempt_actions:
-        expected_ids = set(current_custody_by_material_id)
+    if authorized_custody and action not in assessment_exempt_actions:
+        expected_ids = set(authorized_custody)
         if (not expected_ids) or set(assessed_ids) != expected_ids:
             raise SearchOSRuntimeError("post-READ action requires exact read_insufficient assessments")
     elif assessments:
@@ -2815,20 +2976,20 @@ def validate_searchos_judgment_model_output(
         "reason",
     }
     if action is SearchOSJudgmentAction.REQUEST_READ_PAGE:
-        exact_fields.add("candidate_use_option_ref")
+        exact_fields.add("candidate_use_option_id")
     elif action is SearchOSJudgmentAction.REQUEST_NAVIGATE_BREADCRUMB:
-        exact_fields.add("navigation_candidate_ref")
+        exact_fields.add("navigation_candidate_id")
     elif action is SearchOSJudgmentAction.PROPOSE_FOLLOWUP_QUERY:
         exact_fields.update({"followup_query", "discovery_job_class"})
     elif action is SearchOSJudgmentAction.PROPOSE_INTERPRETATION_BINDING:
         exact_fields.add("interpretation_binding")
     elif action is SearchOSJudgmentAction.REQUIRE_CLARIFICATION:
-        exact_fields.add("semantic_slot_ref")
+        exact_fields.add("semantic_slot_id")
     elif action is (
         SearchOSJudgmentAction.HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION
     ):
-        exact_fields.add("read_custody_refs")
-    if current_custody and action not in assessment_exempt_actions:
+        exact_fields.add("read_custody_material_ids")
+    if authorized_custody and action not in assessment_exempt_actions:
         exact_fields.add("read_custody_assessments")
     if set(output) != exact_fields:
         raise SearchOSRuntimeError("judgment action fields are not exact")

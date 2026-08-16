@@ -253,9 +253,9 @@ def _selected_navigation() -> tuple[
         model_output={
             "schema_version": SEARCHOS_NAVIGATION_JUDGMENT_DECISION_SCHEMA_VERSION,
             "action": SearchOSJudgmentAction.REQUEST_NAVIGATE_BREADCRUMB.value,
-            "navigation_candidate_ref": navigation_window[0][
+            "navigation_candidate_id": navigation_window[0][
                 "navigation_candidate_ref"
-            ],
+            ]["navigation_candidate_id"],
             "reason": "The selected breadcrumb is the one bounded next read.",
             "read_custody_assessments": [
                 {

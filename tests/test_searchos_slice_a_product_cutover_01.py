@@ -125,10 +125,10 @@ def test_production_judgment_prompt_states_the_strict_validator_contract() -> No
         "QueryPlan independently validates the exact text",
         "Never invent or alter a URL, authority ref",
         "Do not treat custody-ref presence alone as readiness",
-        "Exact opaque-ref copy means copy the entire selected JSON object unchanged",
-        "REQUEST_READ_PAGE selects exactly one authorized_request.candidate_use_options[*].candidate_use_option_ref",
-        "candidate_use_option_ref must deep-equal that authorized member",
-        "never reconstruct, normalize, or augment it from candidate_directional_contexts",
+        "Compact selection means emit only the current authorized identity token",
+        "REQUEST_READ_PAGE selects exactly one current authorized_request.candidate_use_options[*].candidate_use_option_ref.candidate_use_option_id",
+        "emits that compact candidate_use_option_id",
+        "Do not copy the whole option object",
         "do not copy the whole custody object",
     )
 
@@ -153,14 +153,17 @@ def test_transient_decision_contract_describes_every_action_and_input_role() -> 
     ]
     action_expectations = {
         "REQUEST_READ_PAGE": (
-            [*shared, "candidate_use_option_ref"],
+            [*shared, "candidate_use_option_id"],
             mechanical
             | {
+                "candidate_use_option_ref",
                 "read_custody_refs",
+                "read_custody_material_ids",
                 "followup_query",
                 "discovery_job_class",
                 "interpretation_binding",
                 "semantic_slot_ref",
+                "semantic_slot_id",
             },
             "required_exact_if_current_custody_else_absent",
         ),
@@ -168,23 +171,29 @@ def test_transient_decision_contract_describes_every_action_and_input_role() -> 
             [*shared, "followup_query", "discovery_job_class"],
             mechanical
             | {
+                "candidate_use_option_id",
                 "candidate_use_option_ref",
                 "read_custody_refs",
+                "read_custody_material_ids",
                 "interpretation_binding",
                 "semantic_slot_ref",
+                "semantic_slot_id",
             },
             "required_exact_if_current_custody_else_absent",
         ),
         "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION": (
-            [*shared, "read_custody_refs"],
+            [*shared, "read_custody_material_ids"],
             mechanical
             | {
+                "candidate_use_option_id",
                 "candidate_use_option_ref",
                 "followup_query",
                 "read_custody_assessments",
+                "read_custody_refs",
                 "discovery_job_class",
                 "interpretation_binding",
                 "semantic_slot_ref",
+                "semantic_slot_id",
             },
             "forbidden",
         ),
@@ -192,12 +201,15 @@ def test_transient_decision_contract_describes_every_action_and_input_role() -> 
             shared,
             mechanical
             | {
+                "candidate_use_option_id",
                 "candidate_use_option_ref",
                 "read_custody_refs",
+                "read_custody_material_ids",
                 "followup_query",
                 "discovery_job_class",
                 "interpretation_binding",
                 "semantic_slot_ref",
+                "semantic_slot_id",
             },
             "required_exact_if_current_custody_else_absent",
         ),
@@ -205,24 +217,30 @@ def test_transient_decision_contract_describes_every_action_and_input_role() -> 
             [*shared, "interpretation_binding"],
             mechanical
             | {
+                "candidate_use_option_id",
                 "candidate_use_option_ref",
                 "read_custody_refs",
+                "read_custody_material_ids",
                 "followup_query",
                 "discovery_job_class",
                 "read_custody_assessments",
                 "semantic_slot_ref",
+                "semantic_slot_id",
             },
             "forbidden",
         ),
         "REQUIRE_CLARIFICATION": (
-            [*shared, "semantic_slot_ref"],
+            [*shared, "semantic_slot_id"],
             mechanical
             | {
+                "candidate_use_option_id",
                 "candidate_use_option_ref",
                 "read_custody_refs",
+                "read_custody_material_ids",
                 "followup_query",
                 "discovery_job_class",
                 "interpretation_binding",
+                "semantic_slot_ref",
             },
             "required_exact_if_current_custody_else_absent",
         ),
@@ -231,7 +249,7 @@ def test_transient_decision_contract_describes_every_action_and_input_role() -> 
     assert contract["schema_version"] == (
         SEARCHOS_JUDGMENT_DECISION_CONTRACT_SCHEMA_VERSION
     )
-    assert contract["contract_name"] == "SearchOSJudgmentDecisionContractV3"
+    assert contract["contract_name"] == "SearchOSJudgmentDecisionContractV4"
     assert contract["decision_schema_version"] == "searchos_judgment_decision_v1"
     assert contract["shared_required_fields"] == shared
     assert contract["copy_exactly_from_authorized_request"] == {}
@@ -259,17 +277,17 @@ def test_transient_decision_contract_describes_every_action_and_input_role() -> 
         assert set(action_contract["forbidden_fields"]) == forbidden
         assert action_contract["read_custody_assessments_mode"] == assessment_mode
     read_contract = contract["actions"]["REQUEST_READ_PAGE"]
-    assert "select exactly one nested candidate_use_option_ref" in read_contract[
-        "candidate_use_option_ref_rule"
+    assert "select exactly one current" in read_contract[
+        "candidate_use_option_id_rule"
     ]
-    assert "deep-equal that authorized member" in read_contract[
-        "candidate_use_option_ref_rule"
+    assert "candidate_use_option_id" in read_contract[
+        "candidate_use_option_id_rule"
     ]
     assert "nested lineage_snapshot_ref" in read_contract[
-        "candidate_use_option_ref_rule"
+        "candidate_use_option_id_rule"
     ]
-    assert "candidate_directional_contexts" in read_contract[
-        "candidate_use_option_ref_rule"
+    assert "do not copy the whole option" in read_contract[
+        "candidate_use_option_id_rule"
     ]
     followup_contract = contract["actions"]["PROPOSE_FOLLOWUP_QUERY"]
     assert "accepted active need and the inspected material" in followup_contract[
@@ -286,10 +304,12 @@ def test_transient_decision_contract_describes_every_action_and_input_role() -> 
     handoff_contract = contract["actions"][
         "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION"
     ]
-    assert "whole unchanged objects" in handoff_contract[
-        "read_custody_refs_rule"
+    assert "read_custody_material_id" in handoff_contract[
+        "read_custody_material_ids_rule"
     ]
-    assert "IDs/digests alone" in handoff_contract["read_custody_refs_rule"]
+    assert "whole-object copies are invalid" in handoff_contract[
+        "read_custody_material_ids_rule"
+    ]
     assert "not simultaneously labeled insufficient" in handoff_contract[
         "semantic_handoff_rule"
     ]
@@ -895,7 +915,7 @@ def test_judgment_failure_is_typed_closed_without_read_or_fallback(
     assert readiness["all_required_slots_slice_a_ready"] is False
     expected_posture = (
         "stale_or_invalid"
-        if decision in {"INVALID_NOMINATION", "ALTERED_NOMINATION_REF"}
+        if decision == "INVALID_NOMINATION"
         else "judgment_failed"
     )
     assert all(
@@ -1108,9 +1128,9 @@ def test_bounded_searchos_n1_causal_projection_successful_path(
         ),
         (
             "ALTERED_NOMINATION_REF",
-            "stale_or_invalid",
-            "stale_or_invalid",
-            "read_nomination_ref_invalid",
+            "judgment_failed",
+            "model_output_invalid",
+            "unsupported_fields",
         ),
     ],
 )
@@ -1794,6 +1814,24 @@ def test_bounded_searchos_n1_causal_projection_transport_exception_class(
             "none",
             "navigation_nomination_invalid",
             ("navigation_nomination_ref_is_stale_or_altered",),
+        ),
+        (
+            # Authorized compact-ID collision remains visible and fail-closed
+            "model_output_invalid:authorized_compact_identity_is_not_unique",
+            "judgment_failed",
+            "model_output_invalid",
+            "none",
+            "authorized_identity_not_unique",
+            ("authorized_compact_identity_is_not_unique",),
+        ),
+        (
+            # Empty authorized compact identity remains visible and fail-closed
+            "model_output_invalid:authorized_read_option_identity_is_empty",
+            "judgment_failed",
+            "model_output_invalid",
+            "none",
+            "authorized_identity_empty",
+            ("authorized_read_option_identity_is_empty",),
         ),
         (
             # Stale posture — unknown model_output_invalid suffix collapses

@@ -90,11 +90,13 @@ The separately installed one-hop navigation request additionally permits
 `REQUEST_NAVIGATE_BREADCRUMB` under its existing eligibility boundary.
 
 Every decision is bound to the current slot, request, candidate window or READ
-custody, policy snapshot, and judgment request digest. Exact-object validation
-rejects malformed, wrapped, stale, unknown, or out-of-window output. There is no
-deterministic semantic fallback. Model failure, invalid nomination, exhausted
-budget, and unresolved handoff remain distinct canonical slot postures and
-cannot claim satisfaction.
+custody, policy snapshot, and judgment request digest. Compact current-identity
+selection is transient model-boundary data only. The validator proves authorized
+membership, rejects empty, colliding, stale, unknown, or foreign identities, and
+binds the exact current authoritative object before canonical reduction. There
+is no deterministic semantic fallback. Model failure, invalid nomination,
+exhausted budget, and unresolved handoff remain distinct canonical slot postures
+and cannot claim satisfaction.
 
 RunKernel authorizes and retains only a reference/digest judgment request. A
 separate transient `searchos_judgment_model_input_v1` validates and combines
@@ -105,27 +107,35 @@ transient text and prompt are not written to RunKernel state, actions,
 projections, execution traces, or persisted output.
 
 Every transient input also carries a versioned
-`searchos_judgment_decision_contract_v3`. It identifies the roles of the
+`searchos_judgment_decision_contract_v4`. It identifies the roles of the
 authorized request, active need, directional DISCOVER contexts, and current
 READ materials; enumerates the validator's allowed output fields; and gives the
-exact required, forbidden, copied-ref, and conditional assessment fields for
-all applicable actions. Every output supplies an action and bounded reason.
-The runtime binds request ID, request digest, and active slot ID from the
-authorized current request; model authorship of those mechanical identities
-fails closed. A non-semantic-handoff action after
+exact required, forbidden, compact-selection, and conditional assessment fields
+for all applicable actions. The broader canonical decision schema remains
+`searchos_judgment_decision_v1` after binding. Every output supplies an action
+and bounded reason. The runtime binds request ID, request digest, and active
+slot ID from the authorized current request; model authorship of those
+mechanical identities fails closed. Selection surfaces use compact current
+identities already present on authorized objects:
+`candidate_use_option_id`, `navigation_candidate_id`,
+`read_custody_material_id`, and semantic `slot_id` emitted as
+`semantic_slot_id`. The validator proves authorized-set uniqueness and binds
+the exact current refs before reduction. A non-semantic-handoff action after
 READ must account for every current custody material with one
 `read_custody_material_id` plus insufficiency `reason_code`. The runtime binds
 those semantic assessments to the matching current custody objects and records
-`read_insufficient`. Semantic handoff carries a nonempty exact
-custody selection and no assessments. Factual binding carries only the exact
-five-field proposal, one exact member of the plural eligible semantic-slot-ref
-set, and current basis refs. Clarification likewise names one exact eligible
+`read_insufficient`. Semantic handoff carries a nonempty compact custody
+selection that the runtime binds to exact current refs, and no assessments.
+Factual binding authors `resolved_value` and `disclose_assumption` and compact
+slot/basis identities; the runtime binds the exact eligible semantic-slot ref
+and current basis refs. Clarification likewise names one compact eligible
 semantic slot and carries no query, provider, evidence, support, or
 contract-mutation payload. Follow-up query text
 and job class are authored only by `PROPOSE_FOLLOWUP_QUERY` and remain
 independently validated by QueryPlan. The decision contract, like the bounded
 material and prompt, is a transient model-call aid; only non-content digests
-may cross the durable boundary.
+may cross the durable boundary. Compact model identities are not a second
+canonical representation in reducers, RunKernel state, or downstream consumers.
 
 `HANDOFF_UNRESOLVED` is a slot-level open-need record. It is not rewritten as
 `STOP_INSUFFICIENT` and does not authorize recovery or final stopping.
@@ -135,8 +145,9 @@ may cross the durable boundary.
 `PROPOSE_INTERPRETATION_BINDING` is legal only for an unresolved material
 factual slot already declared in the accepted AnswerContract, with no user
 confirmation requirement. The proposal must select exactly one eligible
-semantic-slot ref, one candidate declared by that slot, and exact current
-candidate-use or READ-custody basis refs. RunKernel alone
+semantic slot, one candidate declared by that slot, and current
+candidate-use or READ-custody basis identities that the runtime binds to exact
+current refs. RunKernel alone
 builds and append-only admits `searchos_interpretation_binding_v1`. Exact replay
 is a no-op; identity collision, conflicting second binding, stale basis, changed
 component or semantic-slot scope, new component/source-obligation scope, and

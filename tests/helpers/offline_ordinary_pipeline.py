@@ -447,11 +447,21 @@ class OfflineOrdinaryPipelineHarness:
                 return contract_decision(
                     "PROPOSE_INTERPRETATION_BINDING",
                     interpretation_binding={
-                        "semantic_slot_ref": semantic_slot_ref,
+                        "semantic_slot_id": semantic_slot_ref["slot_id"],
                         "resolved_value": declared_values[0],
-                        "basis_candidate_refs": candidate_basis_refs[:1],
-                        "basis_read_custody_refs": (
-                            [] if candidate_basis_refs else read_basis_refs[:1]
+                        "basis_candidate_use_option_ids": [
+                            str(item.get("candidate_use_option_id") or "")
+                            for item in candidate_basis_refs[:1]
+                            if item.get("candidate_use_option_id")
+                        ],
+                        "basis_read_custody_material_ids": (
+                            []
+                            if candidate_basis_refs
+                            else [
+                                str(item.get("read_custody_material_id") or "")
+                                for item in read_basis_refs[:1]
+                                if item.get("read_custody_material_id")
+                            ]
                         ),
                         "disclose_assumption": True,
                     },
@@ -554,24 +564,22 @@ class OfflineOrdinaryPipelineHarness:
                     reason="offline_no_later_read",
                 )
             if self.read_assessment_decision == "INVALID_NOMINATION":
-                invalid_ref = dict(dict(options[0])["candidate_use_option_ref"])
-                invalid_ref["candidate_use_option_id"] = "not-an-eligible-option"
+                invalid_id = "not-an-eligible-option"
                 return contract_decision(
                     "REQUEST_READ_PAGE",
-                    candidate_use_option_ref=invalid_ref,
+                    candidate_use_option_id=invalid_id,
                     reason="offline_invalid_nomination",
                 )
             if self.read_assessment_decision == "ALTERED_NOMINATION_REF":
-                altered_ref = deepcopy(
-                    dict(options[0])["candidate_use_option_ref"]
-                )
-                altered_ref["lineage_snapshot_ref"][
-                    "lineage_snapshot_digest"
-                ] = "f" * 64
-                return contract_decision(
-                    "REQUEST_READ_PAGE",
-                    candidate_use_option_ref=altered_ref,
-                    reason="offline_altered_nomination_ref",
+                return json.dumps(
+                    {
+                        **common,
+                        "action": "REQUEST_READ_PAGE",
+                        "candidate_use_option_ref": deepcopy(
+                            dict(options[0])["candidate_use_option_ref"]
+                        ),
+                        "reason": "offline_altered_nomination_ref",
+                    }
                 )
             need_text = " ".join(
                 str(value or "")
@@ -617,8 +625,13 @@ class OfflineOrdinaryPipelineHarness:
             ):
                 return contract_decision(
                     "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION",
-                    read_custody_refs=[
-                        dict(item.get("read_custody_ref") or {})
+                    read_custody_material_ids=[
+                        str(
+                            dict(item.get("read_custody_ref") or {}).get(
+                                "read_custody_material_id"
+                            )
+                            or ""
+                        )
                         for item in useful_materials
                     ],
                     reason="offline_read_material_ready",
@@ -636,8 +649,10 @@ class OfflineOrdinaryPipelineHarness:
                 )
                 return contract_decision(
                     "REQUEST_READ_PAGE",
-                    candidate_use_option_ref=dict(
-                        dict(selected_option)["candidate_use_option_ref"]
+                    candidate_use_option_id=str(
+                        dict(dict(selected_option)["candidate_use_option_ref"])[
+                            "candidate_use_option_id"
+                        ]
                     ),
                     reason="offline_request_page",
                 )
