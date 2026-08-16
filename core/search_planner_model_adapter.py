@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import inspect
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum, auto
 from types import MappingProxyType
 from typing import Any, Callable, Mapping, Sequence
@@ -41,9 +41,11 @@ from core.search_planner_runtime import (
     SearchPlannerRuntimeError,
 )
 from core.search_planner_semantic_compiler import (
+    SEARCH_PLANNER_SEMANTIC_VALIDATION_RULE_REGISTRY,
     SearchPlannerBranchFieldSetDetail,
     SearchPlannerSemanticProposalError,
     SearchPlannerSemanticProposalSubtype,
+    SearchPlannerSemanticValidationRuleId,
     compile_semantic_planner_proposal,
     validate_semantic_planner_proposal,
 )
@@ -1123,8 +1125,15 @@ class SearchPlannerModelAdapterFailureMetadata:
     predicate_id: SearchPlannerModelAdapterPredicateId | None = None
     provider_completion_posture: SearchPlannerProviderCompletionPosture | None = None
     strict_parse_subtype: SearchPlannerStrictParseSubtype | None = None
-    semantic_proposal_subtype: SearchPlannerSemanticProposalSubtype | None = None
-    branch_field_set_detail: SearchPlannerBranchFieldSetDetail | None = None
+    semantic_validation_rule_id: SearchPlannerSemanticValidationRuleId | None = None
+    semantic_proposal_subtype: SearchPlannerSemanticProposalSubtype | None = field(
+        init=False,
+        default=None,
+    )
+    branch_field_set_detail: SearchPlannerBranchFieldSetDetail | None = field(
+        init=False,
+        default=None,
+    )
     cleaner_modified: bool | None = None
 
     def __post_init__(self) -> None:
@@ -1153,16 +1162,11 @@ class SearchPlannerModelAdapterFailureMetadata:
             SearchPlannerStrictParseSubtype,
         ):
             raise TypeError("strict_parse_subtype must be a closed enum")
-        if self.semantic_proposal_subtype is not None and not isinstance(
-            self.semantic_proposal_subtype,
-            SearchPlannerSemanticProposalSubtype,
+        if self.semantic_validation_rule_id is not None and not isinstance(
+            self.semantic_validation_rule_id,
+            SearchPlannerSemanticValidationRuleId,
         ):
-            raise TypeError("semantic_proposal_subtype must be a closed enum")
-        if self.branch_field_set_detail is not None and not isinstance(
-            self.branch_field_set_detail,
-            SearchPlannerBranchFieldSetDetail,
-        ):
-            raise TypeError("branch_field_set_detail must be a closed enum")
+            raise TypeError("semantic_validation_rule_id must be a closed enum")
         if self.cleaner_modified is not None and not isinstance(self.cleaner_modified, bool):
             raise TypeError("cleaner_modified must be a boolean when present")
         if expected_rule is None:
@@ -1171,6 +1175,7 @@ class SearchPlannerModelAdapterFailureMetadata:
             if (
                 self.provider_completion_posture is not None
                 or self.strict_parse_subtype is not None
+                or self.semantic_validation_rule_id is not None
                 or self.semantic_proposal_subtype is not None
                 or self.branch_field_set_detail is not None
                 or self.cleaner_modified is not None
@@ -1210,13 +1215,11 @@ class SearchPlannerModelAdapterFailureMetadata:
             if self.strict_parse_subtype is SearchPlannerStrictParseSubtype.NOT_APPLICABLE:
                 raise ValueError("INVALID_JSON failures cannot use not_applicable subtype")
             if self.semantic_proposal_subtype is not None:
-                raise ValueError(
-                    "semantic_proposal_subtype is reserved for INVALID_SEMANTIC_PROPOSAL failures"
-                )
+                raise ValueError("semantic_proposal_subtype is reserved for INVALID_SEMANTIC_PROPOSAL failures")
+            if self.semantic_validation_rule_id is not None:
+                raise ValueError("semantic_validation_rule_id is reserved for INVALID_SEMANTIC_PROPOSAL failures")
             if self.branch_field_set_detail is not None:
-                raise ValueError(
-                    "branch_field_set_detail is reserved for INVALID_SEMANTIC_PROPOSAL failures"
-                )
+                raise ValueError("branch_field_set_detail is reserved for INVALID_SEMANTIC_PROPOSAL failures")
         elif self.failure_code is SearchPlannerModelAdapterFailureCode.INVALID_SEMANTIC_PROPOSAL:
             if (
                 self.provider_completion_posture is not None
@@ -1224,18 +1227,27 @@ class SearchPlannerModelAdapterFailureMetadata:
                 or self.cleaner_modified is not None
             ):
                 raise ValueError("parse diagnostics are reserved for INVALID_JSON failures")
-            if self.semantic_proposal_subtype is SearchPlannerSemanticProposalSubtype.BRANCH_FIELD_SET:
-                if self.branch_field_set_detail is None:
-                    raise ValueError(
-                        "branch_field_set_detail is required for branch_field_set failures"
-                    )
-            elif self.branch_field_set_detail is not None:
-                raise ValueError(
-                    "branch_field_set_detail is reserved for branch_field_set failures"
-                )
+            if self.semantic_validation_rule_id is None:
+                raise ValueError("INVALID_SEMANTIC_PROPOSAL failures require semantic_validation_rule_id")
+            semantic_registration = SEARCH_PLANNER_SEMANTIC_VALIDATION_RULE_REGISTRY.get(
+                self.semantic_validation_rule_id
+            )
+            if semantic_registration is None:
+                raise ValueError("semantic_validation_rule_id is not registered")
+            object.__setattr__(
+                self,
+                "semantic_proposal_subtype",
+                semantic_registration.semantic_proposal_subtype,
+            )
+            object.__setattr__(
+                self,
+                "branch_field_set_detail",
+                semantic_registration.branch_field_set_detail,
+            )
         elif (
             self.provider_completion_posture is not None
             or self.strict_parse_subtype is not None
+            or self.semantic_validation_rule_id is not None
             or self.semantic_proposal_subtype is not None
             or self.branch_field_set_detail is not None
             or self.cleaner_modified is not None
@@ -1256,8 +1268,7 @@ class SearchPlannerModelAdapterError(SearchPlannerRuntimeError):
         predicate_id: SearchPlannerModelAdapterPredicateId | None,
         provider_completion_posture: SearchPlannerProviderCompletionPosture | None = None,
         strict_parse_subtype: SearchPlannerStrictParseSubtype | None = None,
-        semantic_proposal_subtype: SearchPlannerSemanticProposalSubtype | None = None,
-        branch_field_set_detail: SearchPlannerBranchFieldSetDetail | None = None,
+        semantic_validation_rule_id: SearchPlannerSemanticValidationRuleId | None = None,
         cleaner_modified: bool | None = None,
     ) -> None:
         super().__init__(message)
@@ -1283,8 +1294,7 @@ class SearchPlannerModelAdapterError(SearchPlannerRuntimeError):
             predicate_id=predicate_id,
             provider_completion_posture=provider_completion_posture,
             strict_parse_subtype=strict_parse_subtype,
-            semantic_proposal_subtype=semantic_proposal_subtype,
-            branch_field_set_detail=branch_field_set_detail,
+            semantic_validation_rule_id=semantic_validation_rule_id,
             cleaner_modified=cleaner_modified,
         )
 
@@ -1324,6 +1334,12 @@ class SearchPlannerModelAdapterError(SearchPlannerRuntimeError):
     @property
     def strict_parse_subtype(self) -> SearchPlannerStrictParseSubtype | None:
         return self._failure_metadata.strict_parse_subtype
+
+    @property
+    def semantic_validation_rule_id(
+        self,
+    ) -> SearchPlannerSemanticValidationRuleId | None:
+        return self._failure_metadata.semantic_validation_rule_id
 
     @property
     def semantic_proposal_subtype(self) -> SearchPlannerSemanticProposalSubtype | None:
@@ -1941,8 +1957,7 @@ def accept_planner_model_output(
             "search planner semantic proposal failed closed",
             failure_code=_FailureCode.INVALID_SEMANTIC_PROPOSAL,
             predicate_id=_PredicateId.SEMANTIC_PROPOSAL_VALIDATION_FAILED,
-            semantic_proposal_subtype=exc.subtype,
-            branch_field_set_detail=exc.branch_field_set_detail,
+            semantic_validation_rule_id=exc.semantic_validation_rule_id,
         ) from None
     return validate_and_sanitize_model_output(compiled)
 
@@ -3364,6 +3379,7 @@ __all__ = [
     "SearchPlannerProviderCompletionPosture",
     "SearchPlannerStrictParseSubtype",
     "SearchPlannerSemanticProposalSubtype",
+    "SearchPlannerSemanticValidationRuleId",
     "validate_and_sanitize_model_output",
     "accept_planner_model_output",
 ]

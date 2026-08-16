@@ -103,11 +103,7 @@ def _observe_adapter_result(
     cleaner: Any = clean_json_response,
     later_failure: Exception | None = None,
 ) -> tuple[Exception | None, ProductBoundaryObservation]:
-    response_text = (
-        response
-        if isinstance(response, str | Exception)
-        else json.dumps(response)
-    )
+    response_text = response if isinstance(response, str | Exception) else json.dumps(response)
 
     def synthetic_model_call(
         _prompt: str,
@@ -144,9 +140,7 @@ def _observe_adapter_result(
     try:
         proposal = adapter.produce(
             {
-                "user_query_text_for_planning": (
-                    "attestation-input-private-sentinel"
-                ),
+                "user_query_text_for_planning": ("attestation-input-private-sentinel"),
                 "safe_context": {},
             }
         )
@@ -336,9 +330,7 @@ def test_observer_matches_exact_ordinary_product_boundary(
     assert observation.search_work_plan_posture == "REVIEW_REQUIRED"
     assert not hasattr(kernel.state, "search_work_plan")
     assert "query_plan_admission" in kernel.state.projections
-    assert PRODUCT_BOUNDARY_OBSERVER_SCHEMA_VERSION == (
-        "search_planner_product_boundary_observer_v2"
-    )
+    assert PRODUCT_BOUNDARY_OBSERVER_SCHEMA_VERSION == ("search_planner_product_boundary_observer_v3")
     assert observation.schema_version == PRODUCT_BOUNDARY_OBSERVER_SCHEMA_VERSION
     assert observation.canonical_failure_predicate_registry_version is None
     assert observation.canonical_failure_predicate_id is None
@@ -407,33 +399,21 @@ def test_json_parse_failures_are_typed_m01_and_stop_before_runtime(
     failure, observation = _observe_adapter_result(response)
 
     assert isinstance(failure, SearchPlannerModelAdapterError)
-    assert (
-        failure.failure_stage
-        == SearchPlannerModelAdapterFailureStage.JSON_PARSING
-    )
+    assert failure.failure_stage == SearchPlannerModelAdapterFailureStage.JSON_PARSING
     assert failure.failure_code == expected_code
     assert failure.mechanical_rule_id == "M01"
-    assert failure.predicate_registry_version == (
-        SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY_VERSION
-    )
+    assert failure.predicate_registry_version == (SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY_VERSION)
     assert failure.predicate_id == expected_predicate
     assert observation.parser_posture == "FAIL"
     assert observation.validator_posture == "NOT_REACHED"
     assert observation.runtime_projection_posture == "NOT_REACHED"
     assert observation.canonical_failure_rule_ids == ("M01",)
-    assert observation.canonical_failure_predicate_registry_version == (
-        failure.predicate_registry_version
-    )
-    assert observation.canonical_failure_predicate_id == (
-        failure.predicate_id.value
-    )
+    assert observation.canonical_failure_predicate_registry_version == (failure.predicate_registry_version)
+    assert observation.canonical_failure_predicate_id == (failure.predicate_id.value)
     mechanical = validate_product_observation(observation)
     rules = {item.rule_id: item for item in mechanical.rule_results}
     assert rules["M01"].posture == "FAIL"
-    assert all(
-        rules[f"M{index:02d}"].posture != "FAIL"
-        for index in range(2, 11)
-    )
+    assert all(rules[f"M{index:02d}"].posture != "FAIL" for index in range(2, 11))
 
 
 def test_output_cleaner_failure_is_typed_and_never_blames_runtime() -> None:
@@ -448,14 +428,8 @@ def test_output_cleaner_failure_is_typed_and_never_blames_runtime() -> None:
     )
 
     assert isinstance(failure, SearchPlannerModelAdapterError)
-    assert (
-        failure.failure_stage
-        == SearchPlannerModelAdapterFailureStage.OUTPUT_CLEANING
-    )
-    assert (
-        failure.failure_code
-        == SearchPlannerModelAdapterFailureCode.OUTPUT_CLEANING_FAILED
-    )
+    assert failure.failure_stage == SearchPlannerModelAdapterFailureStage.OUTPUT_CLEANING
+    assert failure.failure_code == SearchPlannerModelAdapterFailureCode.OUTPUT_CLEANING_FAILED
     assert failure.mechanical_rule_id is None
     assert failure.predicate_registry_version is None
     assert failure.predicate_id is None
@@ -475,29 +449,18 @@ def test_output_cleaner_failure_is_typed_and_never_blames_runtime() -> None:
         observation.to_packet(),
         sort_keys=True,
     )
-    rules = {
-        item.rule_id: item
-        for item in validate_product_observation(observation).rule_results
-    }
+    rules = {item.rule_id: item for item in validate_product_observation(observation).rule_results}
     assert rules["M01"].posture == "FAIL"
 
 
 def test_model_call_failure_is_typed_before_parser_and_runtime() -> None:
     raw_model_failure = "private-model-invocation-exception-sentinel"
 
-    failure, observation = _observe_adapter_result(
-        RuntimeError(raw_model_failure)
-    )
+    failure, observation = _observe_adapter_result(RuntimeError(raw_model_failure))
 
     assert isinstance(failure, SearchPlannerModelAdapterError)
-    assert (
-        failure.failure_stage
-        == SearchPlannerModelAdapterFailureStage.MODEL_CALL
-    )
-    assert (
-        failure.failure_code
-        == SearchPlannerModelAdapterFailureCode.MODEL_CALL_FAILED
-    )
+    assert failure.failure_stage == SearchPlannerModelAdapterFailureStage.MODEL_CALL
+    assert failure.failure_code == SearchPlannerModelAdapterFailureCode.MODEL_CALL_FAILED
     assert failure.mechanical_rule_id is None
     assert failure.predicate_registry_version is None
     assert failure.predicate_id is None
@@ -519,16 +482,12 @@ def _m02_invalid_nested_type(payload: dict[str, Any]) -> None:
 
 
 def _m03_invalid_cross_reference(payload: dict[str, Any]) -> None:
-    payload["answer_components"][0]["semantic_slot_ids"] = [
-        "model-generated-missing-slot-sentinel"
-    ]
+    payload["answer_components"][0]["semantic_slot_ids"] = ["model-generated-missing-slot-sentinel"]
 
 
 def _m04_invalid_dependency(payload: dict[str, Any]) -> None:
     component_id = payload["answer_components"][0]["component_id"]
-    payload["answer_components"][0]["dependency_component_ids"] = [
-        component_id
-    ]
+    payload["answer_components"][0]["dependency_component_ids"] = [component_id]
 
 
 def _m05_invalid_support_matrix(payload: dict[str, Any]) -> None:
@@ -536,33 +495,25 @@ def _m05_invalid_support_matrix(payload: dict[str, Any]) -> None:
 
 
 def _m06_invalid_component_purpose(payload: dict[str, Any]) -> None:
-    payload["answer_components"][0]["component_purpose"] = (
-        "model-generated-invalid-purpose-sentinel"
-    )
+    payload["answer_components"][0]["component_purpose"] = "model-generated-invalid-purpose-sentinel"
 
 
 def _m07_invalid_query_strategy(payload: dict[str, Any]) -> None:
-    payload["component_search_requirements"][0]["metadata"][
-        "query_strategy_candidates"
-    ] = []
+    payload["component_search_requirements"][0]["metadata"]["query_strategy_candidates"] = []
 
 
 def _m08_closed_authority(payload: dict[str, Any]) -> None:
-    payload["current_answer_contract"] = {
-        "model-generated-authority-value-sentinel": True
-    }
+    payload["current_answer_contract"] = {"model-generated-authority-value-sentinel": True}
 
 
 def _m09_raw_material(payload: dict[str, Any]) -> None:
-    payload["raw_provider_payload"] = (
-        "model-generated-private-payload-sentinel"
-    )
+    payload["raw_provider_payload"] = "model-generated-private-payload-sentinel"
 
 
 def _m10_stale_binding(payload: dict[str, Any]) -> None:
-    payload["component_search_requirements"][0]["metadata"][
-        "query_strategy_candidates"
-    ][0]["component_id"] = "model-generated-stale-binding-sentinel"
+    payload["component_search_requirements"][0]["metadata"]["query_strategy_candidates"][0]["component_id"] = (
+        "model-generated-stale-binding-sentinel"
+    )
 
 
 @pytest.mark.parametrize(
@@ -586,40 +537,24 @@ def test_model_facing_rich_defects_fail_closed_at_m02(mutate: Any) -> None:
     failure, observation = _observe_adapter_result(payload)
 
     assert isinstance(failure, SearchPlannerModelAdapterError)
-    assert (
-        failure.failure_stage
-        == SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION
-    )
-    assert (
-        failure.failure_code
-        == SearchPlannerModelAdapterFailureCode.INVALID_SEMANTIC_PROPOSAL
-    )
+    assert failure.failure_stage == SearchPlannerModelAdapterFailureStage.MODEL_OUTPUT_VALIDATION
+    assert failure.failure_code == SearchPlannerModelAdapterFailureCode.INVALID_SEMANTIC_PROPOSAL
     assert failure.mechanical_rule_id == "M02"
-    assert failure.predicate_registry_version == (
-        SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY_VERSION
-    )
+    assert failure.predicate_registry_version == (SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY_VERSION)
     assert failure.predicate_id is not None
     assert failure.args == (str(failure),)
     assert observation.parser_posture == "PASS"
     assert observation.validator_posture == "FAIL"
     assert observation.runtime_projection_posture == "NOT_REACHED"
     assert observation.canonical_failure_rule_ids == ("M02",)
-    assert observation.canonical_failure_predicate_registry_version == (
-        failure.predicate_registry_version
+    assert observation.canonical_failure_predicate_registry_version == (failure.predicate_registry_version)
+    assert observation.canonical_failure_predicate_id == (failure.predicate_id.value)
+    assert observation.semantic_validation_rule_id == (
+        failure.semantic_validation_rule_id.value if failure.semantic_validation_rule_id is not None else None
     )
-    assert observation.canonical_failure_predicate_id == (
-        failure.predicate_id.value
-    )
-    rules = {
-        item.rule_id: item
-        for item in validate_product_observation(observation).rule_results
-    }
+    rules = {item.rule_id: item for item in validate_product_observation(observation).rule_results}
     assert rules["M02"].posture == "FAIL"
-    assert all(
-        rules[f"M{index:02d}"].posture != "FAIL"
-        for index in range(1, 11)
-        if f"M{index:02d}" != "M02"
-    )
+    assert all(rules[f"M{index:02d}"].posture != "FAIL" for index in range(1, 11) if f"M{index:02d}" != "M02")
 
 
 @pytest.mark.parametrize(
@@ -697,18 +632,13 @@ def test_compiled_rich_validator_still_maps_exactly_m02_through_m10(
     assert failure.failure_stage == stage
     assert failure.failure_code == code
     assert failure.mechanical_rule_id == rule_id
-    assert failure.predicate_registry_version == (
-        SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY_VERSION
-    )
+    assert failure.predicate_registry_version == (SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY_VERSION)
     assert failure.predicate_id is not None
     assert failure.args == (str(failure),)
 
 
 def test_validated_proposal_followed_by_runtime_failure_is_distinct() -> None:
-    misleading_later_message = (
-        "search planner model output was not valid JSON but this is a later "
-        "runtime failure"
-    )
+    misleading_later_message = "search planner model output was not valid JSON but this is a later runtime failure"
     failure, observation = _observe_adapter_result(
         _model_payload(),
         later_failure=RuntimeError(misleading_later_message),
@@ -729,9 +659,7 @@ def test_validated_proposal_followed_by_runtime_failure_is_distinct() -> None:
 
 
 def test_unexpected_post_response_failure_does_not_overclaim_validation() -> None:
-    observer = CanonicalProductSearchPlannerBoundaryObserver(
-        lambda _prompt, _system_prompt, **_kwargs: "{}"
-    )
+    observer = CanonicalProductSearchPlannerBoundaryObserver(lambda _prompt, _system_prompt, **_kwargs: "{}")
     observer(
         "synthetic prompt",
         SEARCH_PLANNER_MODEL_SYSTEM_PROMPT,
@@ -757,9 +685,7 @@ def test_unexpected_post_response_failure_does_not_overclaim_validation() -> Non
 
 def test_adapter_failure_metadata_and_packet_are_immutable_and_sanitized() -> None:
     payload = deepcopy(_model_payload())
-    payload["components"][0]["component_id"] = (
-        "model-generated-stale-binding-sentinel"
-    )
+    payload["components"][0]["component_id"] = "model-generated-stale-binding-sentinel"
     model_component_id = payload["components"][0]["component_id"]
     model_field_value = payload["components"][0]["need"]
     model_query_text = payload["components"][0]["key"]
@@ -767,9 +693,7 @@ def test_adapter_failure_metadata_and_packet_are_immutable_and_sanitized() -> No
     failure, observation = _observe_adapter_result(payload)
 
     assert isinstance(failure, SearchPlannerModelAdapterError)
-    assert failure.predicate_registry_version == (
-        SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY_VERSION
-    )
+    assert failure.predicate_registry_version == (SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY_VERSION)
     assert failure.predicate_id is not None
     with pytest.raises(FrozenInstanceError):
         setattr(
@@ -799,9 +723,7 @@ def test_adapter_failure_metadata_and_packet_are_immutable_and_sanitized() -> No
     assert packet["raw_response_retained"] is False
     assert packet["raw_provider_payload_retained"] is False
     assert packet["observer_parsed_model_output"] is False
-    assert packet["canonical_failure_predicate_registry_version"] == (
-        SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY_VERSION
-    )
+    assert packet["canonical_failure_predicate_registry_version"] == (SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY_VERSION)
     assert packet["canonical_failure_predicate_id"] == failure.predicate_id.value
     assert packet["bounded_failure_reason"] == (
         "SearchPlannerModelAdapterError:"
@@ -816,9 +738,7 @@ def test_adapter_failure_metadata_and_packet_are_immutable_and_sanitized() -> No
 
 
 def test_observer_predicate_fields_are_closed_and_paired() -> None:
-    failure, observation = _observe_adapter_result(
-        "not-json-private-output-sentinel"
-    )
+    failure, observation = _observe_adapter_result("not-json-private-output-sentinel")
 
     assert isinstance(failure, SearchPlannerModelAdapterError)
     assert observation.canonical_failure_predicate_id is not None
@@ -841,9 +761,7 @@ def test_observer_predicate_fields_are_closed_and_paired() -> None:
 
 
 def test_observer_stage_classification_contains_no_message_search() -> None:
-    source = Path(
-        "scripts/evaluation/search_planner_product_boundary_observer.py"
-    ).read_text(encoding="utf-8")
+    source = Path("scripts/evaluation/search_planner_product_boundary_observer.py").read_text(encoding="utf-8")
     assert "str(failure).casefold()" not in source
     assert '"valid json" in reason' not in source.casefold()
     assert '"json object" in reason' not in source.casefold()
@@ -917,13 +835,8 @@ def test_observer_failure_reason_retains_only_type_and_digest() -> None:
     ) -> str:
         raise RuntimeError(raw_exception_material)
 
-    observer = CanonicalProductSearchPlannerBoundaryObserver(
-        failing_dependency
-    )
-    prompt = (
-        f'Instruction.\n{_PROMPT_MARKER}'
-        '{"planner_input":{"safe":"value"}}'
-    )
+    observer = CanonicalProductSearchPlannerBoundaryObserver(failing_dependency)
+    prompt = f'Instruction.\n{_PROMPT_MARKER}{{"planner_input":{{"safe":"value"}}}}'
     with pytest.raises(RuntimeError) as captured:
         observer(
             prompt,
@@ -939,11 +852,7 @@ def test_observer_failure_reason_retains_only_type_and_digest() -> None:
         run_kernel=None,
         failure=captured.value,
     )
-    assert raw_exception_material not in str(
-        observation.bounded_failure_reason
-    )
-    assert observation.bounded_failure_reason == (
-        f"RuntimeError:message_sha256={_digest(raw_exception_material)}"
-    )
+    assert raw_exception_material not in str(observation.bounded_failure_reason)
+    assert observation.bounded_failure_reason == (f"RuntimeError:message_sha256={_digest(raw_exception_material)}")
     assert observation.canonical_failure_predicate_registry_version is None
     assert observation.canonical_failure_predicate_id is None

@@ -34,7 +34,10 @@ from core.search_planner_runtime import (
     contract_ref_from_contract,
     execute_search_planner_action,
 )
-from core.search_planner_semantic_compiler import SearchPlannerSemanticProposalSubtype
+from core.search_planner_semantic_compiler import (
+    SearchPlannerSemanticProposalSubtype,
+    SearchPlannerSemanticValidationRuleId,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 ADAPTER_MODULE = ROOT / "core" / "search_planner_model_adapter.py"
@@ -5233,10 +5236,16 @@ def test_every_adapter_error_construction_supplies_a_registered_code() -> None:
             if registration.failure_code == code
         ]
         predicate_id = matching_predicates[0] if matching_predicates else None
+        semantic_rule_args = (
+            {"semantic_validation_rule_id": (SearchPlannerSemanticValidationRuleId.DIRECT_SIMPLE_DISALLOWED_TOP_LEVEL)}
+            if code is SearchPlannerModelAdapterFailureCode.INVALID_SEMANTIC_PROPOSAL
+            else {}
+        )
         error = SearchPlannerModelAdapterError(
             "bounded synthetic message",
             failure_code=code,
             predicate_id=predicate_id,
+            **semantic_rule_args,
         )
         assert isinstance(
             error.failure_stage,
@@ -5279,20 +5288,19 @@ def test_predicate_registry_and_failure_metadata_are_fail_closed_and_immutable()
     )
     assert metadata.predicate_id == SearchPlannerModelAdapterPredicateId.JSON_STRICT_PARSE_FAILED
 
-    semantic_registration = registry[
-        SearchPlannerModelAdapterPredicateId.SEMANTIC_PROPOSAL_VALIDATION_FAILED
-    ]
+    semantic_registration = registry[SearchPlannerModelAdapterPredicateId.SEMANTIC_PROPOSAL_VALIDATION_FAILED]
     branch_metadata = SearchPlannerModelAdapterFailureMetadata(
         failure_stage=semantic_registration.failure_stage,
         failure_code=semantic_registration.failure_code,
         mechanical_rule_id=semantic_registration.mechanical_rule_id,
         predicate_registry_version=semantic_registration.predicate_registry_version,
         predicate_id=SearchPlannerModelAdapterPredicateId.SEMANTIC_PROPOSAL_VALIDATION_FAILED,
-        semantic_proposal_subtype=SearchPlannerSemanticProposalSubtype.BRANCH_FIELD_SET,
-        branch_field_set_detail=(
-            SearchPlannerBranchFieldSetDetail.DIRECT_SIMPLE_DISALLOWED_TOP_LEVEL
-        ),
+        semantic_validation_rule_id=(SearchPlannerSemanticValidationRuleId.DIRECT_SIMPLE_DISALLOWED_TOP_LEVEL),
     )
+    assert branch_metadata.semantic_validation_rule_id is (
+        SearchPlannerSemanticValidationRuleId.DIRECT_SIMPLE_DISALLOWED_TOP_LEVEL
+    )
+    assert branch_metadata.semantic_proposal_subtype is (SearchPlannerSemanticProposalSubtype.BRANCH_FIELD_SET)
     assert branch_metadata.branch_field_set_detail is (
         SearchPlannerBranchFieldSetDetail.DIRECT_SIMPLE_DISALLOWED_TOP_LEVEL
     )
@@ -5304,46 +5312,29 @@ def test_predicate_registry_and_failure_metadata_are_fail_closed_and_immutable()
         "predicate_registry_version": semantic_registration.predicate_registry_version,
         "predicate_id": SearchPlannerModelAdapterPredicateId.SEMANTIC_PROPOSAL_VALIDATION_FAILED,
     }
-    with pytest.raises(TypeError, match="branch_field_set_detail"):
+    with pytest.raises(ValueError, match="require semantic_validation_rule_id"):
+        SearchPlannerModelAdapterFailureMetadata(**semantic_metadata_args)
+    with pytest.raises(TypeError, match="semantic_validation_rule_id"):
         SearchPlannerModelAdapterFailureMetadata(
             **semantic_metadata_args,
-            semantic_proposal_subtype=SearchPlannerSemanticProposalSubtype.BRANCH_FIELD_SET,
-            branch_field_set_detail="unbounded-detail",  # type: ignore[arg-type]
+            semantic_validation_rule_id="unbounded-rule",  # type: ignore[arg-type]
         )
-    with pytest.raises(ValueError, match="branch_field_set_detail is required"):
-        SearchPlannerModelAdapterFailureMetadata(
-            **semantic_metadata_args,
-            semantic_proposal_subtype=SearchPlannerSemanticProposalSubtype.BRANCH_FIELD_SET,
-        )
-    with pytest.raises(ValueError, match="reserved for branch_field_set"):
-        SearchPlannerModelAdapterFailureMetadata(
-            **semantic_metadata_args,
-            semantic_proposal_subtype=SearchPlannerSemanticProposalSubtype.TYPE_ENUM_OR_BOUND,
-            branch_field_set_detail=(
-                SearchPlannerBranchFieldSetDetail.DIRECT_SIMPLE_DISALLOWED_TOP_LEVEL
-            ),
-        )
-    with pytest.raises(ValueError, match="branch_field_set_detail is reserved"):
+    with pytest.raises(ValueError, match="reserved for INVALID_SEMANTIC_PROPOSAL"):
         SearchPlannerModelAdapterFailureMetadata(
             failure_stage=registration.failure_stage,
             failure_code=registration.failure_code,
             mechanical_rule_id=registration.mechanical_rule_id,
             predicate_registry_version=registration.predicate_registry_version,
             predicate_id=SearchPlannerModelAdapterPredicateId.JSON_STRICT_PARSE_FAILED,
-            branch_field_set_detail=(
-                SearchPlannerBranchFieldSetDetail.DIRECT_SIMPLE_DISALLOWED_TOP_LEVEL
-            ),
+            semantic_validation_rule_id=(SearchPlannerSemanticValidationRuleId.DIRECT_SIMPLE_DISALLOWED_TOP_LEVEL),
         )
     with pytest.raises(ValueError, match="infrastructure failures"):
         SearchPlannerModelAdapterFailureMetadata(
             failure_stage=SearchPlannerModelAdapterFailureStage.INPUT,
             failure_code=SearchPlannerModelAdapterFailureCode.ADAPTER_DISABLED,
             mechanical_rule_id=None,
-            branch_field_set_detail=(
-                SearchPlannerBranchFieldSetDetail.DIRECT_SIMPLE_DISALLOWED_TOP_LEVEL
-            ),
+            semantic_validation_rule_id=(SearchPlannerSemanticValidationRuleId.DIRECT_SIMPLE_DISALLOWED_TOP_LEVEL),
         )
-
 
     with pytest.raises(TypeError):
         SearchPlannerModelAdapterError(

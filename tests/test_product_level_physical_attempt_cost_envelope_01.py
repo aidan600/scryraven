@@ -188,7 +188,6 @@ def _fixture_route_pricing() -> dict[tuple[ExternalCallFamily, str, str], RouteP
     }
 
 
-
 def _compiled_from_policy(policy: RunCapPolicy, *, repository_sha: str = "a" * 40) -> CompiledRunCapAuthorization:
     """Build a minimal compiled authorization wrapper around an explicit fixture policy."""
 
@@ -1232,10 +1231,7 @@ def _ordinary_output_projection(outcome: Any) -> tuple[Any, ...]:
     )
     return (
         outcome.report,
-        [
-            {field: passage.get(field) for field in passage_fields}
-            for passage in outcome.top_passages
-        ],
+        [{field: passage.get(field) for field in passage_fields} for passage in outcome.top_passages],
         sorted(outcome.seen_urls),
         sorted(outcome.collected_images),
         outcome.failure_card,
@@ -1286,12 +1282,9 @@ def test_unbounded_cli_does_not_render_a_bounded_cap_terminal(
     assert "bounded_product_cli_terminal_v1" not in capsys.readouterr().out
 
 
-
 def test_public_cli_rejects_bounded_product_profile_flag() -> None:
     with pytest.raises(SystemExit):
-        compatibility_cli._parse_args(
-            [_ISCLOSE_QUERY, "--bounded-product-profile", "public-cli-v1"]
-        )
+        compatibility_cli._parse_args([_ISCLOSE_QUERY, "--bounded-product-profile", "public-cli-v1"])
     with pytest.raises(SystemExit):
         compatibility_cli._parse_args([_ISCLOSE_QUERY, "--bounded-product-profile"])
 
@@ -1352,9 +1345,7 @@ def test_public_bounded_cli_preserves_safe_search_planner_failure_identity(
     fixture_sha = "d" * 40
     auth_path = tmp_path / "offline-auth.json"
     auth_path.write_text(
-        json.dumps(
-            _offline_proof_authorization_document(repository_sha=fixture_sha)
-        ),
+        json.dumps(_offline_proof_authorization_document(repository_sha=fixture_sha)),
         encoding="utf-8",
     )
     monkeypatch.setattr(
@@ -1389,15 +1380,11 @@ def test_public_bounded_cli_preserves_safe_search_planner_failure_identity(
         "fictional-raw-passage-text-sentinel",
         "fictional-raw-exception-message-sentinel",
     )
-    private_message = (
-        "SearchPlanner fixture failure: " + " | ".join(private_fragments)
-    )
+    private_message = "SearchPlanner fixture failure: " + " | ".join(private_fragments)
     mechanical_failure = SearchPlannerModelAdapterError(
         private_message,
         failure_code=SearchPlannerModelAdapterFailureCode.INVALID_JSON,
-        predicate_id=(
-            SearchPlannerModelAdapterPredicateId.JSON_STRICT_PARSE_FAILED
-        ),
+        predicate_id=(SearchPlannerModelAdapterPredicateId.JSON_STRICT_PARSE_FAILED),
     )
     infrastructure_failure = SearchPlannerModelAdapterError(
         private_message,
@@ -1443,13 +1430,9 @@ def test_public_bounded_cli_preserves_safe_search_planner_failure_identity(
             "failure_stage": expected_failure.failure_stage.value,
             "failure_code": expected_failure.failure_code.value,
             "mechanical_rule_id": expected_failure.mechanical_rule_id,
-            "predicate_registry_version": (
-                expected_failure.predicate_registry_version
-            ),
+            "predicate_registry_version": (expected_failure.predicate_registry_version),
             "predicate_id": (
-                expected_failure.predicate_id.value
-                if expected_failure.predicate_id is not None
-                else None
+                expected_failure.predicate_id.value if expected_failure.predicate_id is not None else None
             ),
             "provider_completion_posture": (
                 expected_failure.provider_completion_posture.value
@@ -1466,6 +1449,11 @@ def test_public_bounded_cli_preserves_safe_search_planner_failure_identity(
                 if expected_failure.semantic_proposal_subtype is not None
                 else None
             ),
+            "semantic_validation_rule_id": (
+                expected_failure.semantic_validation_rule_id.value
+                if expected_failure.semantic_validation_rule_id is not None
+                else None
+            ),
             "branch_field_set_detail": (
                 expected_failure.branch_field_set_detail.value
                 if expected_failure.branch_field_set_detail is not None
@@ -1478,9 +1466,7 @@ def test_public_bounded_cli_preserves_safe_search_planner_failure_identity(
             assert private_fragment not in json.dumps(payload, sort_keys=True)
 
     assert mechanical_failure.mechanical_rule_id == "M01"
-    assert mechanical_failure.predicate_registry_version == (
-        SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY_VERSION
-    )
+    assert mechanical_failure.predicate_registry_version == (SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY_VERSION)
     assert infrastructure_failure.mechanical_rule_id is None
     assert infrastructure_failure.predicate_registry_version is None
     assert infrastructure_failure.predicate_id is None
@@ -1635,10 +1621,7 @@ def test_ordinary_pipeline_executes_bounded_isclose_with_explicit_policy(
     assert physical["fallback_attempts"] == 0
     assert physical["active_attempts"] == 0
     assert physical["furthest_product_stage"] == "run_outcome_completed"
-    assert all(
-        physical["physical_attempts_by_family"][family.value] > 0
-        for family in ExternalCallFamily
-    )
+    assert all(physical["physical_attempts_by_family"][family.value] > 0 for family in ExternalCallFamily)
     assert harness.forbidden_live_calls == []
     success = compatibility_cli._bounded_success_payload(
         entrypoint=entrypoint,
@@ -1685,21 +1668,14 @@ def test_ordinary_pipeline_executes_bounded_isclose_with_explicit_policy(
         include_searchos_n1_causal_projection=False,
     )
     ignore_keys = {"searchos_n1_causal_projection", "physical_envelope"}
-    enabled_core = {
-        key: value for key, value in success.items() if key not in ignore_keys
-    }
-    disabled_core = {
-        key: value for key, value in disabled.items() if key not in ignore_keys
-    }
+    enabled_core = {key: value for key, value in success.items() if key not in ignore_keys}
+    disabled_core = {key: value for key, value in disabled.items() if key not in ignore_keys}
     assert disabled_core == enabled_core
     assert "searchos_n1_causal_projection" not in disabled
     assert success["answer"] == disabled["answer"]
     assert success["answer_present"] == disabled["answer_present"]
     assert success["citation_count"] == disabled["citation_count"]
-    assert (
-        success["physical_envelope"]["physical_attempts"]
-        == disabled["physical_envelope"]["physical_attempts"]
-    )
+    assert success["physical_envelope"]["physical_attempts"] == disabled["physical_envelope"]["physical_attempts"]
     serialized = json.dumps(success, sort_keys=True)
     for sentinel in (
         "fictional-raw-query-text-sentinel",
@@ -1731,19 +1707,23 @@ def test_bounded_retrieval_local_stage_stops_at_last_completed_operation(
     policy = _policy()
     entity_hint: str | None = None
     failure_message = f"fixture-{failure_boundary}-failed"
+
     def embed_texts(texts: list[str], **_kwargs: Any) -> list[list[float]]:
         return [[1.0, 0.0] for _ in texts]
 
     if failure_boundary == "embedding":
+
         def embed_texts(*_args: Any, **_kwargs: Any) -> list[list[float]]:
             raise RuntimeError(failure_message)
 
         def compute_similarities(*_args: Any) -> list[float]:
             return [0.9]
     elif failure_boundary == "similarity":
+
         def compute_similarities(*_args: Any) -> list[float]:
             raise RuntimeError(failure_message)
     else:
+
         def compute_similarities(*_args: Any) -> list[float]:
             return [0.9]
 
@@ -1948,9 +1928,7 @@ def test_bounded_retrieval_kernel_observation_preserves_post_material_cause(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     original_dispatch = orchestrator.execute_main_retrieval_pass_from_scope
-    expected = RetrievalPostMaterialDispatchError(
-        RetrievalPostMaterialFailureSubtype.POST_MATERIAL_UNCLASSIFIED
-    )
+    expected = RetrievalPostMaterialDispatchError(RetrievalPostMaterialFailureSubtype.POST_MATERIAL_UNCLASSIFIED)
 
     class FailureAfterKernelObservation:
         def __init__(self, outcome: Any) -> None:
@@ -2025,12 +2003,10 @@ def test_bounded_retrieval_stage_projection_preserves_successful_output(
             "note_product_stage",
             lambda _self, _stage: None,
         )
-        _baseline_harness, _baseline_policy, baseline_config, baseline_deps = (
-            _bounded_isclose_runtime(
-                tmp_path / "baseline",
-                baseline_patch,
-                run_id=run_id,
-            )
+        _baseline_harness, _baseline_policy, baseline_config, baseline_deps = _bounded_isclose_runtime(
+            tmp_path / "baseline",
+            baseline_patch,
+            run_id=run_id,
         )
         baseline_outcome = orchestrator.run_pipeline(
             baseline_config,
@@ -2039,12 +2015,10 @@ def test_bounded_retrieval_stage_projection_preserves_successful_output(
             CostAccumulator(),
         )
 
-    _observed_harness, observed_policy, observed_config, observed_deps = (
-        _bounded_isclose_runtime(
-            tmp_path / "observed",
-            monkeypatch,
-            run_id=run_id,
-        )
+    _observed_harness, observed_policy, observed_config, observed_deps = _bounded_isclose_runtime(
+        tmp_path / "observed",
+        monkeypatch,
+        run_id=run_id,
     )
     observed_outcome = orchestrator.run_pipeline(
         observed_config,
@@ -2053,9 +2027,7 @@ def test_bounded_retrieval_stage_projection_preserves_successful_output(
         CostAccumulator(),
     )
 
-    assert _ordinary_output_projection(observed_outcome) == _ordinary_output_projection(
-        baseline_outcome
-    )
+    assert _ordinary_output_projection(observed_outcome) == _ordinary_output_projection(baseline_outcome)
     assert observed_policy.physical_snapshot()["furthest_product_stage"] == "run_outcome_completed"
 
 
@@ -2177,10 +2149,7 @@ def test_public_cli_executes_bounded_isclose_with_authorization_file(
     assert physical["fallback_attempts"] == 0
     assert physical["unreserved_dispatches"] == 0
     assert physical["persistence_suppressed"] is True
-    assert all(
-        physical["physical_attempts_by_family"][family.value] > 0
-        for family in ExternalCallFamily
-    )
+    assert all(physical["physical_attempts_by_family"][family.value] > 0 for family in ExternalCallFamily)
     assert harness.forbidden_live_calls == []
 
 
@@ -2195,9 +2164,7 @@ def test_public_bounded_cli_clarification_only_has_zero_search_and_read_attempts
 
     query = "Tell me about Mercury"
     fixture_sha = "e" * 40
-    authorization = _offline_proof_authorization_document(
-        repository_sha=fixture_sha
-    )
+    authorization = _offline_proof_authorization_document(repository_sha=fixture_sha)
     authorization["request"] = {
         "query_sha256": query_sha256(query),
         "mode": "Balanced",
@@ -2462,11 +2429,7 @@ def test_public_bounded_cli_projects_private_setup_failures(
                 (),
                 {"__init__": fail_setup},
             )
-            support_name = (
-                "NullStatusWriter"
-                if seam == "runtime_status"
-                else "CostAccumulator"
-            )
+            support_name = "NullStatusWriter" if seam == "runtime_status" else "CostAccumulator"
             monkeypatch.setattr(compatibility_cli, support_name, failing_support)
 
     assert compatibility_cli.main(argv, entrypoint=entrypoint) == 1
@@ -2487,9 +2450,7 @@ def test_public_bounded_cli_projects_private_setup_failures(
     assert payload["pricing_fact_set_id"] == "offline-isclose-pricing-v1"
     assert payload["repository_sha"] == "f" * 40
     if config_available:
-        assert payload["physical_envelope"]["enforcement"] == (
-            "physical_attempt_envelope"
-        )
+        assert payload["physical_envelope"]["enforcement"] == ("physical_attempt_envelope")
     else:
         assert "physical_envelope" not in payload
     assert pipeline_calls == []
@@ -2536,9 +2497,7 @@ def test_public_bounded_cli_preserves_missing_openai_key_terminal(
         "classification": "configuration",
     }
     assert "bounded_entrypoint_setup_failure" not in payload["terminal"]
-    assert payload["physical_envelope"]["enforcement"] == (
-        "physical_attempt_envelope"
-    )
+    assert payload["physical_envelope"]["enforcement"] == ("physical_attempt_envelope")
     assert pipeline_calls == []
     assert captured.err == ""
 
@@ -2582,11 +2541,7 @@ def test_public_bounded_cli_fails_closed_after_run_result(
     def fail_result_handling(*_args: Any, **_kwargs: Any) -> Any:
         raise RuntimeError(private_exception)
 
-    failing_owner = (
-        "_bounded_success_payload"
-        if failure_seam == "projection"
-        else "_print_bounded_payload"
-    )
+    failing_owner = "_bounded_success_payload" if failure_seam == "projection" else "_print_bounded_payload"
     monkeypatch.setattr(
         compatibility_cli,
         failing_owner,
@@ -2661,9 +2616,7 @@ def test_public_bounded_cli_preserves_setup_run_cap_terminal(
         "classification": "cap_enforcement",
     }
     assert "bounded_entrypoint_setup_failure" not in payload["terminal"]
-    assert payload["physical_envelope"]["enforcement"] == (
-        "physical_attempt_envelope"
-    )
+    assert payload["physical_envelope"]["enforcement"] == ("physical_attempt_envelope")
     assert pipeline_calls == []
     assert captured.err == ""
 
@@ -2708,9 +2661,7 @@ def test_public_bounded_cli_enters_pipeline_once_after_successful_setup(
         "classification": "pipeline_failure",
     }
     assert "bounded_entrypoint_setup_failure" not in payload["terminal"]
-    assert payload["physical_envelope"]["enforcement"] == (
-        "physical_attempt_envelope"
-    )
+    assert payload["physical_envelope"]["enforcement"] == ("physical_attempt_envelope")
     assert len(pipeline_calls) == 1
     serialized = json.dumps(payload, sort_keys=True)
     assert private_sentinel not in captured.out

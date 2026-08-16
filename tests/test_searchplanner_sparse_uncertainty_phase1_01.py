@@ -128,9 +128,7 @@ class _SparseProposalAdapter:
     def produce(self, planner_input: Mapping[str, Any]) -> Mapping[str, Any]:
         return accept_planner_model_output(
             deepcopy(self.proposal),
-            user_query_text=str(
-                planner_input["user_query_text_for_planning"]
-            ),
+            user_query_text=str(planner_input["user_query_text_for_planning"]),
             requested_mode=str(planner_input["requested_mode"]),
         )
 
@@ -146,11 +144,7 @@ def _product_deps(proposal: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _ordered_query_plan_items(outcome: Any) -> list[dict[str, Any]]:
-    return [
-        dict(item)
-        for item in outcome.execution_trace["query_plan"]["items"]
-        if item["status"] == "ordered"
-    ]
+    return [dict(item) for item in outcome.execution_trace["query_plan"]["items"] if item["status"] == "ordered"]
 
 
 def _evidence_row(name: str, *, suffix: str) -> dict[str, Any]:
@@ -184,9 +178,7 @@ def _reenvelope_binding(
     digest = searchos_runtime._digest(core)
     return {
         **core,
-        "interpretation_binding_id": (
-            f"searchos-interpretation-binding:{digest[:24]}"
-        ),
+        "interpretation_binding_id": (f"searchos-interpretation-binding:{digest[:24]}"),
         "interpretation_binding_digest": digest,
         "replay_identity": f"searchos-interpretation-binding:{digest}",
     }
@@ -268,9 +260,7 @@ def _run_to_initial_answer_contract(
 
 
 def test_prompt_uses_compact_sparse_contract_and_phase1_budget_gate() -> None:
-    planner_input = _prompt_planner_input(
-        "official Python math.isclose default values"
-    )
+    planner_input = _prompt_planner_input("official Python math.isclose default values")
     prompt = build_search_planner_model_prompt(planner_input)
     packet = json.loads(prompt.split(PROMPT_MARKER, 1)[1])
     schema = packet["output_schema"]
@@ -307,9 +297,7 @@ def test_prompt_uses_compact_sparse_contract_and_phase1_budget_gate() -> None:
     assert "request_id" not in prompt
     assert "recon_requirement" not in prompt
     assert "primary_query" not in prompt
-    prompt_chars = _prompt_request_chars(
-        "official Python math.isclose default values"
-    )
+    prompt_chars = _prompt_request_chars("official Python math.isclose default values")
     assert prompt_chars < _CLEAR_DIRECT_HISTORICAL_BASELINE_CHARS
     assert 1 - (prompt_chars / _CLEAR_DIRECT_HISTORICAL_BASELINE_CHARS) >= 0.84
 
@@ -426,14 +414,10 @@ def test_invalid_sparse_corpus_fails_closed_without_rich_fallback(
 ) -> None:
     with pytest.raises(SearchPlannerSemanticProposalError) as semantic:
         validate_semantic_planner_proposal(deepcopy(case["proposal"]))
-    assert semantic.value.subtype is SearchPlannerSemanticProposalSubtype(
-        case["expected_subtype"]
-    )
+    assert semantic.value.subtype is SearchPlannerSemanticProposalSubtype(case["expected_subtype"])
     expected_detail = case.get("expected_branch_field_set_detail")
     assert semantic.value.branch_field_set_detail is (
-        SearchPlannerBranchFieldSetDetail(expected_detail)
-        if expected_detail is not None
-        else None
+        SearchPlannerBranchFieldSetDetail(expected_detail) if expected_detail is not None else None
     )
     with pytest.raises(SearchPlannerModelAdapterError) as caught:
         accept_planner_model_output(
@@ -442,6 +426,7 @@ def test_invalid_sparse_corpus_fails_closed_without_rich_fallback(
             requested_mode="Balanced",
         )
     assert caught.value.failure_code is (SearchPlannerModelAdapterFailureCode.INVALID_SEMANTIC_PROPOSAL)
+    assert caught.value.semantic_validation_rule_id is semantic.value.semantic_validation_rule_id
     assert caught.value.semantic_proposal_subtype is semantic.value.subtype
     assert caught.value.branch_field_set_detail is semantic.value.branch_field_set_detail
     assert caught.value.predicate_id is not None
@@ -454,11 +439,12 @@ def test_branch_field_set_detail_inventory_is_closed_and_value_free() -> None:
         "direct_simple_disallowed_top_level",
         "components_disallowed_top_level",
         "components_required_nonempty",
-        "nested_disallowed_field",
+        "component_unknown_field_forbidden",
+        "source_unknown_field_forbidden",
+        "uncertainty_unknown_field_forbidden",
     }
-    assert len(SearchPlannerBranchFieldSetDetail.__members__) == len(
-        SearchPlannerBranchFieldSetDetail
-    )
+    assert len(SearchPlannerBranchFieldSetDetail.__members__) == len(SearchPlannerBranchFieldSetDetail)
+
 
 def test_direct_simple_and_mode_defaults_are_deterministic() -> None:
     official = _accept(valid_case("official_source_direct_simple"))
@@ -477,14 +463,8 @@ def test_direct_simple_and_mode_defaults_are_deterministic() -> None:
 def test_current_official_resolved_context_and_independent_components_compile() -> None:
     current_official = _accept(valid_case("current_official_direct_simple"))
 
-    assert (
-        current_official["source_obligation_candidates"][0]["obligation_kind"]
-        == "official_current"
-    )
-    assert (
-        current_official["component_search_requirements"][0]["recency_requirement"]
-        == "current as of 2026-08-14"
-    )
+    assert current_official["source_obligation_candidates"][0]["obligation_kind"] == "official_current"
+    assert current_official["component_search_requirements"][0]["recency_requirement"] == "current as of 2026-08-14"
 
     for case_id in (
         "context_resolved_polyseme",
@@ -493,20 +473,14 @@ def test_current_official_resolved_context_and_independent_components_compile() 
     ):
         resolved_context = _accept(valid_case(case_id))
         assert resolved_context["material_ambiguity_posture"] == "clear"
-        assert all(
-            slot["user_confirmation_required"] is False
-            for slot in resolved_context["semantic_slots"]
-        )
+        assert all(slot["user_confirmation_required"] is False for slot in resolved_context["semantic_slots"])
 
-    four_components = _accept(
-        valid_case("four_independent_current_official_components")
-    )
+    four_components = _accept(valid_case("four_independent_current_official_components"))
     assert len(four_components["answer_components"]) == 4
     assert len(four_components["component_search_requirements"]) == 4
-    assert [
-        item["obligation_kind"]
-        for item in four_components["source_obligation_candidates"]
-    ] == ["official_current"] * 4
+    assert [item["obligation_kind"] for item in four_components["source_obligation_candidates"]] == [
+        "official_current"
+    ] * 4
     assert all(
         item["recency_requirement"] == "current as of 2026-08-14"
         for item in four_components["component_search_requirements"]
@@ -605,18 +579,12 @@ def test_case_a_stable_component_dispatches_standard_discovery(
     )
 
     ordered = _ordered_query_plan_items(outcome)
-    assert {item["discovery_job_class"] for item in ordered} == {
-        "standard_discovery"
-    }
+    assert {item["discovery_job_class"] for item in ordered} == {"standard_discovery"}
     assert len(harness.search_calls) == 1
     assert harness.search_calls[0]["search_providers"] == ["tavily"]
     [route] = outcome.execution_trace["provider_plan"]["records"]
-    assert route["selection_inputs"]["discovery_job_class"] == (
-        "standard_discovery"
-    )
-    assert route["route_decision"]["derivation_reason"] == (
-        "query_plan_standard_discovery_job"
-    )
+    assert route["selection_inputs"]["discovery_job_class"] == ("standard_discovery")
+    assert route["route_decision"]["derivation_reason"] == ("query_plan_standard_discovery_job")
 
 
 def test_four_explicit_components_reach_query_plan_without_loss(
@@ -641,9 +609,7 @@ def test_four_explicit_components_reach_query_plan_without_loss(
 
     ordered = _ordered_query_plan_items(outcome)
     assert len(ordered) == 4
-    assert {item["discovery_job_class"] for item in ordered} == {
-        "standard_discovery"
-    }
+    assert {item["discovery_job_class"] for item in ordered} == {"standard_discovery"}
     assert len({item["item_id"] for item in ordered}) == 4
     projection = build_bounded_searchos_n1_causal_projection(
         searchos_slice_a_projection=outcome.execution_trace["searchos_slice_a"],
@@ -655,11 +621,10 @@ def test_four_explicit_components_reach_query_plan_without_loss(
     assert len(slots) == 4
     assert len({slot["component_identity_digest"] for slot in slots}) == 4
     assert len({slot["source_obligation_identity_digest"] for slot in slots}) == 4
-    assert all(
-        slot["final_posture"] == "semantically_handed_off" for slot in slots
-    )
+    assert all(slot["final_posture"] == "semantically_handed_off" for slot in slots)
     assert all(slot["semantic_handoff_present"] is True for slot in slots)
     assert all(slot["read_custody_observed"] is True for slot in slots)
+
 
 def test_case_b_factual_uncertainty_binds_then_runs_standard_discovery(
     tmp_path: Path,
@@ -672,32 +637,24 @@ def test_case_b_factual_uncertainty_binds_then_runs_standard_discovery(
         query=case["query"],
         core_topic="recent Galloway controversy",
         primary_entity="Galloway",
-        evidence_rows=[
-            _evidence_row("Scott Galloway", suffix="case-b-orientation")
-        ],
-        followup_evidence_rows=[
-            _evidence_row("Scott Galloway", suffix="case-b-standard")
-        ],
+        evidence_rows=[_evidence_row("Scott Galloway", suffix="case-b-orientation")],
+        followup_evidence_rows=[_evidence_row("Scott Galloway", suffix="case-b-standard")],
         read_assessment_decision="BIND_THEN_FOLLOWUP_THEN_READ",
         deps_overrides=_product_deps(case["proposal"]),
     )
 
-    assert [
-        item["discovery_job_class"]
-        for item in _ordered_query_plan_items(outcome)
-    ] == ["orientation", "standard_discovery"]
+    assert [item["discovery_job_class"] for item in _ordered_query_plan_items(outcome)] == [
+        "orientation",
+        "standard_discovery",
+    ]
     assert [call["search_providers"] for call in harness.search_calls] == [
         ["serper"],
         ["tavily"],
     ]
-    accepted_slot = harness.run_kernel.state.initial_answer_contract[
-        "accepted_semantic_slot_refs"
-    ][0]
+    accepted_slot = harness.run_kernel.state.initial_answer_contract["accepted_semantic_slot_refs"][0]
     assert accepted_slot["status"] == "unresolved"
     assert accepted_slot.get("selected_value") is None
-    [binding] = harness.run_kernel.state.searchos_state[
-        "interpretation_binding_history"
-    ]
+    [binding] = harness.run_kernel.state.searchos_state["interpretation_binding_history"]
     assert binding["resolved_value"] == "Scott Galloway"
     assert binding["base_answer_contract_mutated"] is False
     assert binding["evidence_admitted"] is False
@@ -754,23 +711,17 @@ def test_case_b_factual_uncertainty_binds_then_runs_standard_discovery(
     assert_no_handoff_exit(mismatched_ref)
 
     foreign_slot_set = deepcopy(canonical_trace)
-    foreign_slot_set["slot_postures"] = {
-        "foreign-slot": "semantically_handed_off"
-    }
+    foreign_slot_set["slot_postures"] = {"foreign-slot": "semantically_handed_off"}
     assert_no_handoff_exit(foreign_slot_set)
 
     mismatched_outcome_ref = deepcopy(canonical_trace)
     slot_id = next(iter(mismatched_outcome_ref["semantic_outcomes_by_slot"]))
-    mismatched_outcome_ref["semantic_outcomes_by_slot"][slot_id][
-        "semantic_handoff_ref"
-    ] = {}
+    mismatched_outcome_ref["semantic_outcomes_by_slot"][slot_id]["semantic_handoff_ref"] = {}
     assert_no_handoff_exit(mismatched_outcome_ref)
 
     deleted_outcome_ref = deepcopy(canonical_trace)
     deleted_slot_id = next(iter(deleted_outcome_ref["semantic_outcomes_by_slot"]))
-    del deleted_outcome_ref["semantic_outcomes_by_slot"][deleted_slot_id][
-        "semantic_handoff_ref"
-    ]
+    del deleted_outcome_ref["semantic_outcomes_by_slot"][deleted_slot_id]["semantic_handoff_ref"]
     assert_no_handoff_exit(deleted_outcome_ref)
 
     def reseal_readiness(trace: dict[str, Any]) -> None:
@@ -809,9 +760,7 @@ def test_case_b_factual_uncertainty_binds_then_runs_standard_discovery(
     assert_no_handoff_exit(duplicate_record)
 
     missing_identity = deepcopy(canonical_trace)
-    missing_identity["readiness_projection"]["slot_records"][0]["slot_ref"][
-        "component_id"
-    ] = ""
+    missing_identity["readiness_projection"]["slot_records"][0]["slot_ref"]["component_id"] = ""
     reseal_readiness(missing_identity)
     assert_no_handoff_exit(missing_identity)
 
@@ -821,16 +770,14 @@ def test_case_b_factual_uncertainty_binds_then_runs_standard_discovery(
         ("source_obligation_id", {"not": "a-token"}),
     ):
         malformed_identity_trace = deepcopy(canonical_trace)
-        malformed_identity_trace["readiness_projection"]["slot_records"][0][
-            "slot_ref"
-        ][identity_field] = malformed_identity
+        malformed_identity_trace["readiness_projection"]["slot_records"][0]["slot_ref"][identity_field] = (
+            malformed_identity
+        )
         reseal_readiness(malformed_identity_trace)
         assert_no_handoff_exit(malformed_identity_trace)
 
     malformed_slot_ref = deepcopy(canonical_trace)
-    malformed_slot_ref["readiness_projection"]["slot_records"][0][
-        "slot_ref"
-    ] = "not-a-mapping"
+    malformed_slot_ref["readiness_projection"]["slot_records"][0]["slot_ref"] = "not-a-mapping"
     reseal_readiness(malformed_slot_ref)
     assert_no_handoff_exit(malformed_slot_ref)
 
@@ -848,58 +795,52 @@ def test_case_b_factual_uncertainty_binds_then_runs_standard_discovery(
     assert_no_handoff_exit(scalar_slot_records)
 
     scalar_action_history = deepcopy(canonical_trace)
-    scalar_action_history["readiness_projection"]["slot_records"][0][
-        "action_history"
-    ] = 1
+    scalar_action_history["readiness_projection"]["slot_records"][0]["action_history"] = 1
     reseal_readiness(scalar_action_history)
     assert_no_handoff_exit(scalar_action_history)
 
     for malformed_custody_refs in (1, {"not": "a-list"}):
         malformed_custody = deepcopy(canonical_trace)
-        malformed_custody["readiness_projection"]["slot_records"][0][
-            "custody_refs"
-        ] = malformed_custody_refs
+        malformed_custody["readiness_projection"]["slot_records"][0]["custody_refs"] = malformed_custody_refs
         reseal_readiness(malformed_custody)
         assert_handoff_exit(malformed_custody)
 
     for malformed_custody_id in (1, ["not-a-token"], {"not": "a-token"}):
         malformed_custody_id_trace = deepcopy(canonical_trace)
-        malformed_custody_id_trace["readiness_projection"]["slot_records"][0][
-            "custody_refs"
-        ][0]["read_custody_material_id"] = malformed_custody_id
+        malformed_custody_id_trace["readiness_projection"]["slot_records"][0]["custody_refs"][0][
+            "read_custody_material_id"
+        ] = malformed_custody_id
         reseal_readiness(malformed_custody_id_trace)
         assert_handoff_exit(malformed_custody_id_trace)
 
     missing_recorded_ref = deepcopy(canonical_trace)
-    del missing_recorded_ref["readiness_projection"]["slot_records"][0][
-        "recorded_searchos_semantic_handoff_ref"
-    ]
+    del missing_recorded_ref["readiness_projection"]["slot_records"][0]["recorded_searchos_semantic_handoff_ref"]
     reseal_readiness(missing_recorded_ref)
     assert_no_handoff_exit(missing_recorded_ref)
 
     mismatched_recorded_ref = deepcopy(canonical_trace)
-    mismatched_recorded_ref["readiness_projection"]["slot_records"][0][
-        "recorded_searchos_semantic_handoff_ref"
-    ]["semantic_handoff_digest"] = "a" * 64
+    mismatched_recorded_ref["readiness_projection"]["slot_records"][0]["recorded_searchos_semantic_handoff_ref"][
+        "semantic_handoff_digest"
+    ] = "a" * 64
     reseal_readiness(mismatched_recorded_ref)
     assert_no_handoff_exit(mismatched_recorded_ref)
 
     foreign_recorded_slot = deepcopy(canonical_trace)
-    foreign_recorded_slot["readiness_projection"]["slot_records"][0][
-        "recorded_searchos_semantic_handoff_ref"
-    ]["slot_ref"] = {
-        **foreign_recorded_slot["readiness_projection"]["slot_records"][0][
-            "recorded_searchos_semantic_handoff_ref"
-        ]["slot_ref"],
+    foreign_recorded_slot["readiness_projection"]["slot_records"][0]["recorded_searchos_semantic_handoff_ref"][
+        "slot_ref"
+    ] = {
+        **foreign_recorded_slot["readiness_projection"]["slot_records"][0]["recorded_searchos_semantic_handoff_ref"][
+            "slot_ref"
+        ],
         "slot_id": "foreign-slot",
     }
     reseal_readiness(foreign_recorded_slot)
     assert_no_handoff_exit(foreign_recorded_slot)
 
     nonstring_handoff_digest = deepcopy(canonical_trace)
-    nonstring_handoff_digest["readiness_projection"]["slot_records"][0][
-        "semantic_handoff_ref"
-    ]["semantic_handoff_digest"] = int("1" * 64)
+    nonstring_handoff_digest["readiness_projection"]["slot_records"][0]["semantic_handoff_ref"][
+        "semantic_handoff_digest"
+    ] = int("1" * 64)
     reseal_readiness(nonstring_handoff_digest)
     assert_no_handoff_exit(nonstring_handoff_digest)
 
@@ -922,12 +863,8 @@ def test_optional_factual_orientation_does_not_infer_a_terminal_handoff(
         query=case["query"],
         core_topic="recent Galloway controversy",
         primary_entity="Galloway",
-        evidence_rows=[
-            _evidence_row("Scott Galloway", suffix="optional-case-b-orientation")
-        ],
-        followup_evidence_rows=[
-            _evidence_row("Scott Galloway", suffix="optional-case-b-standard")
-        ],
+        evidence_rows=[_evidence_row("Scott Galloway", suffix="optional-case-b-orientation")],
+        followup_evidence_rows=[_evidence_row("Scott Galloway", suffix="optional-case-b-standard")],
         read_assessment_decision="BIND_THEN_FOLLOWUP_THEN_READ",
         deps_overrides=_product_deps(proposal),
     )
@@ -978,23 +915,17 @@ def test_unclassified_factual_term_uses_orientation_and_bounded_binding(
         core_topic="applicable Acme term",
         primary_entity="Acme",
         evidence_rows=[_evidence_row("Acme Alpha", suffix="term-orientation")],
-        followup_evidence_rows=[
-            _evidence_row("Acme Alpha", suffix="term-standard")
-        ],
+        followup_evidence_rows=[_evidence_row("Acme Alpha", suffix="term-standard")],
         read_assessment_decision="BIND_THEN_FOLLOWUP_THEN_READ",
         deps_overrides=_product_deps(proposal),
     )
 
-    assert [
-        item["discovery_job_class"]
-        for item in _ordered_query_plan_items(outcome)
-    ] == ["orientation", "standard_discovery"]
-    [binding] = harness.run_kernel.state.searchos_state[
-        "interpretation_binding_history"
+    assert [item["discovery_job_class"] for item in _ordered_query_plan_items(outcome)] == [
+        "orientation",
+        "standard_discovery",
     ]
-    assert binding["binding_category"] == (
-        "externally_verifiable_terminology"
-    )
+    [binding] = harness.run_kernel.state.searchos_state["interpretation_binding_history"]
+    assert binding["binding_category"] == ("externally_verifiable_terminology")
     assert binding["base_answer_contract_mutated"] is False
 
 
@@ -1006,10 +937,7 @@ def test_one_component_preserves_and_binds_two_factual_uncertainties(
         "disposition": "components",
         "components": [
             {
-                "need": (
-                    "Report the current policy for the intended Acme "
-                    "product version"
-                ),
+                "need": ("Report the current policy for the intended Acme product version"),
                 "uncertainties": [
                     {
                         "kind": "entity",
@@ -1034,106 +962,70 @@ def test_one_component_preserves_and_binds_two_factual_uncertainties(
         query="What is the current policy for the intended Acme version?",
         core_topic="Acme current product policy and version",
         primary_entity="Acme",
-        evidence_rows=[
-            _evidence_row("Acme Current v3", suffix="multi-slot-orientation")
-        ],
-        followup_evidence_rows=[
-            _evidence_row("Acme Current v3", suffix="multi-slot-standard")
-        ],
+        evidence_rows=[_evidence_row("Acme Current v3", suffix="multi-slot-orientation")],
+        followup_evidence_rows=[_evidence_row("Acme Current v3", suffix="multi-slot-standard")],
         read_assessment_decision="BIND_THEN_FOLLOWUP_THEN_READ",
         deps_overrides=_product_deps(proposal),
     )
 
-    accepted_contract = (
-        harness.run_kernel.state.initial_answer_contract
-    )
-    accepted_slots = list(
-        accepted_contract["accepted_semantic_slot_refs"]
-    )
+    accepted_contract = harness.run_kernel.state.initial_answer_contract
+    accepted_slots = list(accepted_contract["accepted_semantic_slot_refs"])
     assert len(accepted_slots) == 2
-    assert len(
-        {
-            item["slot_id"]
-            for item in accepted_slots
-            if item["materiality"] == "material"
-            and item["unresolved_material"] is True
-        }
-    ) == 2
-    initial_items = [
-        item
-        for item in _ordered_query_plan_items(outcome)
-        if item["iteration"] == 1
-    ]
+    assert (
+        len(
+            {
+                item["slot_id"]
+                for item in accepted_slots
+                if item["materiality"] == "material" and item["unresolved_material"] is True
+            }
+        )
+        == 2
+    )
+    initial_items = [item for item in _ordered_query_plan_items(outcome) if item["iteration"] == 1]
     assert len(initial_items) == 1
     assert initial_items[0]["discovery_job_class"] == "orientation"
-    assert {
-        item["slot_id"]
-        for item in initial_items[0]["semantic_slot_refs"]
-    } == {item["slot_id"] for item in accepted_slots}
+    assert {item["slot_id"] for item in initial_items[0]["semantic_slot_refs"]} == {
+        item["slot_id"] for item in accepted_slots
+    }
     state = harness.run_kernel.state.searchos_state
     obligations = list(state["semantic_obligations_by_id"].values())
     assert len(obligations) == 2
-    assert {
-        item["semantic_slot_ref"]["slot_id"]
-        for item in obligations
-    } == {item["slot_id"] for item in accepted_slots}
+    assert {item["semantic_slot_ref"]["slot_id"] for item in obligations} == {
+        item["slot_id"] for item in accepted_slots
+    }
     bindings = list(state["interpretation_binding_history"])
     assert len(bindings) == 2
-    assert len(
-        {
-            item["semantic_slot_ref"]["slot_id"]
-            for item in bindings
-        }
-    ) == 2
+    assert len({item["semantic_slot_ref"]["slot_id"] for item in bindings}) == 2
     first_bound_request = next(
-        item
-        for item in harness.read_assessment_calls
-        if len(item["interpretation_binding_refs"]) == 1
+        item for item in harness.read_assessment_calls if len(item["interpretation_binding_refs"]) == 1
+    )
+    assert "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION" not in first_bound_request["legal_actions"]
+    assert (
+        first_bound_request["component_semantic_handoff_gate"]["all_relevant_material_semantic_obligations_satisfied"]
+        is False
+    )
+    assert len(first_bound_request["component_semantic_handoff_gate"]["blocking_semantic_obligation_refs"]) == 1
+    assert sorted(first_bound_request["semantic_obligation_binding_postures"].values()) == ["bound", "unbound_required"]
+    assert sorted(first_bound_request["semantic_obligation_effective_statuses"].values()) == [
+        "resolved_for_search_planning",
+        "unresolved",
+    ]
+    all_bound_request = next(
+        item for item in harness.read_assessment_calls if len(item["interpretation_binding_refs"]) == 2
     )
     assert (
-        "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION"
-        not in first_bound_request["legal_actions"]
+        all_bound_request["component_semantic_handoff_gate"]["all_relevant_material_semantic_obligations_satisfied"]
+        is True
     )
-    assert first_bound_request["component_semantic_handoff_gate"][
-        "all_relevant_material_semantic_obligations_satisfied"
-    ] is False
-    assert len(
-        first_bound_request["component_semantic_handoff_gate"][
-            "blocking_semantic_obligation_refs"
-        ]
-    ) == 1
-    assert sorted(
-        first_bound_request[
-            "semantic_obligation_binding_postures"
-        ].values()
-    ) == ["bound", "unbound_required"]
-    assert sorted(
-        first_bound_request[
-            "semantic_obligation_effective_statuses"
-        ].values()
-    ) == ["resolved_for_search_planning", "unresolved"]
-    all_bound_request = next(
-        item
-        for item in harness.read_assessment_calls
-        if len(item["interpretation_binding_refs"]) == 2
-    )
-    assert all_bound_request["component_semantic_handoff_gate"][
-        "all_relevant_material_semantic_obligations_satisfied"
-    ] is True
     assert all_bound_request["semantic_obligation_count"] == 2
     assert len(state["semantic_handoff_refs"]) == 1
     assert len(harness.search_calls) == 2
     assert all(
-        item.get("selected_value") is None
-        and item["status"] == "unresolved"
-        for item in accepted_contract[
-            "accepted_semantic_slot_refs"
-        ]
+        item.get("selected_value") is None and item["status"] == "unresolved"
+        for item in accepted_contract["accepted_semantic_slot_refs"]
     )
     assert all(
-        item["base_answer_contract_mutated"] is False
-        and item["evidence_admitted"] is False
-        for item in bindings
+        item["base_answer_contract_mutated"] is False and item["evidence_admitted"] is False for item in bindings
     )
 
 
@@ -1153,22 +1045,16 @@ def test_case_c_deep_escalation_is_typed_blocked_without_dispatch(
         deps_overrides=_product_deps(case["proposal"]),
     )
 
-    assert [
-        item["discovery_job_class"]
-        for item in _ordered_query_plan_items(outcome)
-    ] == ["standard_discovery", "deep_discovery"]
+    assert [item["discovery_job_class"] for item in _ordered_query_plan_items(outcome)] == [
+        "standard_discovery",
+        "deep_discovery",
+    ]
     assert len(harness.search_calls) == 1
     records = outcome.execution_trace["provider_plan"]["records"]
-    assert records[-1]["selection_inputs"]["discovery_job_class"] == (
-        "deep_discovery"
-    )
+    assert records[-1]["selection_inputs"]["discovery_job_class"] == ("deep_discovery")
     assert records[-1]["route_decision"]["fidelity"] == "blocked"
-    assert records[-1]["route_decision"]["block_reason"] == (
-        "general_deep_authorization_required"
-    )
-    assert records[-1]["route_decision"][
-        "general_deep_requested"
-    ] is True
+    assert records[-1]["route_decision"]["block_reason"] == ("general_deep_authorization_required")
+    assert records[-1]["route_decision"]["general_deep_requested"] is True
 
 
 def test_resolved_semantic_peers_are_preserved_but_only_unresolved_drives_search(
@@ -1211,9 +1097,7 @@ def test_resolved_semantic_peers_are_preserved_but_only_unresolved_drives_search
         query="Report Acme Current v3 policy for the intended year.",
         core_topic="Acme Current v3 policy year",
         primary_entity="Acme",
-        evidence_rows=[
-            _evidence_row("Acme Current v3 2026", suffix="resolved-peers")
-        ],
+        evidence_rows=[_evidence_row("Acme Current v3 2026", suffix="resolved-peers")],
         followup_evidence_rows=[
             _evidence_row(
                 "Acme Current v3 2026",
@@ -1224,65 +1108,30 @@ def test_resolved_semantic_peers_are_preserved_but_only_unresolved_drives_search
         deps_overrides=_product_deps(proposal),
     )
 
-    accepted_slots = list(
-        harness.run_kernel.state.initial_answer_contract[
-            "accepted_semantic_slot_refs"
-        ]
-    )
+    accepted_slots = list(harness.run_kernel.state.initial_answer_contract["accepted_semantic_slot_refs"])
     assert len(accepted_slots) == 3
-    unresolved_slot = next(
-        item
-        for item in accepted_slots
-        if item["unresolved_material"] is True
-    )
-    stable_slot_ids = {
-        item["slot_id"]
-        for item in accepted_slots
-        if item["unresolved_material"] is False
-    }
+    unresolved_slot = next(item for item in accepted_slots if item["unresolved_material"] is True)
+    stable_slot_ids = {item["slot_id"] for item in accepted_slots if item["unresolved_material"] is False}
     assert len(stable_slot_ids) == 2
     ordered = _ordered_query_plan_items(outcome)
     assert all(
-        {
-            item["slot_id"]
-            for item in query_item["semantic_slot_refs"]
-        }
-        == {unresolved_slot["slot_id"]}
+        {item["slot_id"] for item in query_item["semantic_slot_refs"]} == {unresolved_slot["slot_id"]}
         for query_item in ordered
     )
     state = harness.run_kernel.state.searchos_state
     obligations = list(state["semantic_obligations_by_id"].values())
     assert len(obligations) == 3
-    by_slot_id = {
-        item["semantic_slot_ref"]["slot_id"]: item
-        for item in obligations
-    }
-    assert {
-        by_slot_id[slot_id]["binding_posture"]
-        for slot_id in stable_slot_ids
-    } == {"not_required"}
-    assert all(
-        by_slot_id[slot_id]["acquisition_driving"] is False
-        for slot_id in stable_slot_ids
-    )
-    assert by_slot_id[unresolved_slot["slot_id"]][
-        "acquisition_driving"
-    ] is True
-    assert by_slot_id[unresolved_slot["slot_id"]][
-        "binding_posture"
-    ] == "bound"
+    by_slot_id = {item["semantic_slot_ref"]["slot_id"]: item for item in obligations}
+    assert {by_slot_id[slot_id]["binding_posture"] for slot_id in stable_slot_ids} == {"not_required"}
+    assert all(by_slot_id[slot_id]["acquisition_driving"] is False for slot_id in stable_slot_ids)
+    assert by_slot_id[unresolved_slot["slot_id"]]["acquisition_driving"] is True
+    assert by_slot_id[unresolved_slot["slot_id"]]["binding_posture"] == "bound"
     [binding] = state["interpretation_binding_history"]
-    assert binding["semantic_slot_ref"]["slot_id"] == (
-        unresolved_slot["slot_id"]
+    assert binding["semantic_slot_ref"]["slot_id"] == (unresolved_slot["slot_id"])
+    after_binding = next(item for item in harness.read_assessment_calls if item["interpretation_binding_refs"])
+    assert (
+        after_binding["component_semantic_handoff_gate"]["all_relevant_material_semantic_obligations_satisfied"] is True
     )
-    after_binding = next(
-        item
-        for item in harness.read_assessment_calls
-        if item["interpretation_binding_refs"]
-    )
-    assert after_binding["component_semantic_handoff_gate"][
-        "all_relevant_material_semantic_obligations_satisfied"
-    ] is True
     assert len(state["semantic_handoff_refs"]) == 1
 
 
@@ -1323,87 +1172,45 @@ def test_one_component_factual_and_clarification_postures_are_independent(
         query="Report the intended Acme policy.",
         core_topic="intended Acme policy",
         primary_entity="Acme",
-        evidence_rows=[
-            _evidence_row("Acme Current", suffix="mixed-slot-orientation")
-        ],
-        followup_evidence_rows=[
-            _evidence_row("Acme Current", suffix="mixed-slot-standard")
-        ],
+        evidence_rows=[_evidence_row("Acme Current", suffix="mixed-slot-orientation")],
+        followup_evidence_rows=[_evidence_row("Acme Current", suffix="mixed-slot-standard")],
         read_assessment_decision="BIND_THEN_FOLLOWUP_THEN_READ",
         deps_overrides=_product_deps(proposal),
     )
 
-    accepted_slots = list(
-        harness.run_kernel.state.initial_answer_contract[
-            "accepted_semantic_slot_refs"
-        ]
-    )
-    factual_slot = next(
-        item
-        for item in accepted_slots
-        if item["user_confirmation_required"] is False
-    )
-    clarification_slot = next(
-        item
-        for item in accepted_slots
-        if item["user_confirmation_required"] is True
-    )
+    accepted_slots = list(harness.run_kernel.state.initial_answer_contract["accepted_semantic_slot_refs"])
+    factual_slot = next(item for item in accepted_slots if item["user_confirmation_required"] is False)
+    clarification_slot = next(item for item in accepted_slots if item["user_confirmation_required"] is True)
     ordered = _ordered_query_plan_items(outcome)
     assert ordered
     assert all(
-        {
-            item["slot_id"]
-            for item in query_item["semantic_slot_refs"]
-        }
-        == {factual_slot["slot_id"]}
+        {item["slot_id"] for item in query_item["semantic_slot_refs"]} == {factual_slot["slot_id"]}
         for query_item in ordered
     )
     assert clarification_slot["slot_id"] not in {
-        item["slot_id"]
-        for query_item in ordered
-        for item in query_item["semantic_slot_refs"]
+        item["slot_id"] for query_item in ordered for item in query_item["semantic_slot_refs"]
     }
     state = harness.run_kernel.state.searchos_state
     obligations_by_slot_id = {
-        item["semantic_slot_ref"]["slot_id"]: item
-        for item in state["semantic_obligations_by_id"].values()
+        item["semantic_slot_ref"]["slot_id"]: item for item in state["semantic_obligations_by_id"].values()
     }
-    factual_obligation = obligations_by_slot_id[
-        factual_slot["slot_id"]
-    ]
-    clarification_obligation = obligations_by_slot_id[
-        clarification_slot["slot_id"]
-    ]
+    factual_obligation = obligations_by_slot_id[factual_slot["slot_id"]]
+    clarification_obligation = obligations_by_slot_id[clarification_slot["slot_id"]]
     assert factual_obligation["binding_posture"] == "bound"
-    assert factual_obligation["clarification_posture"][
-        "clarification_required"
-    ] is False
+    assert factual_obligation["clarification_posture"]["clarification_required"] is False
     assert clarification_obligation["binding_posture"] == "not_required"
-    assert clarification_obligation["clarification_posture"][
-        "clarification_required"
-    ] is True
+    assert clarification_obligation["clarification_posture"]["clarification_required"] is True
     [binding] = state["interpretation_binding_history"]
-    assert binding["semantic_slot_ref"]["slot_id"] == (
-        factual_slot["slot_id"]
-    )
-    after_binding = next(
-        item
-        for item in harness.read_assessment_calls
-        if item["interpretation_binding_refs"]
-    )
-    assert after_binding["component_semantic_handoff_gate"][
-        "all_relevant_material_semantic_obligations_satisfied"
-    ] is False
+    assert binding["semantic_slot_ref"]["slot_id"] == (factual_slot["slot_id"])
+    after_binding = next(item for item in harness.read_assessment_calls if item["interpretation_binding_refs"])
     assert (
-        "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION"
-        not in after_binding["legal_actions"]
+        after_binding["component_semantic_handoff_gate"]["all_relevant_material_semantic_obligations_satisfied"]
+        is False
     )
+    assert "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION" not in after_binding["legal_actions"]
     assert state["semantic_handoff_refs"] == []
     assert harness.search_calls
-    assert all(
-        item["base_answer_contract_mutated"] is False
-        for item in state["interpretation_binding_history"]
-    )
+    assert all(item["base_answer_contract_mutated"] is False for item in state["interpretation_binding_history"])
 
 
 def test_candidate_less_factual_uncertainty_never_advertises_binding(
@@ -1430,33 +1237,20 @@ def test_candidate_less_factual_uncertainty_never_advertises_binding(
         query="What is the current Acme designation?",
         core_topic="current Acme designation",
         primary_entity="Acme",
-        evidence_rows=[
-            _evidence_row("Acme", suffix="candidate-less-orientation")
-        ],
+        evidence_rows=[_evidence_row("Acme", suffix="candidate-less-orientation")],
         read_assessment_decision="NO_READ",
         deps_overrides=_product_deps(proposal),
     )
 
-    [accepted_slot] = harness.run_kernel.state.initial_answer_contract[
-        "accepted_semantic_slot_refs"
-    ]
+    [accepted_slot] = harness.run_kernel.state.initial_answer_contract["accepted_semantic_slot_refs"]
     assert accepted_slot["status"] == "unresolved"
     assert accepted_slot["candidate_values"] == []
-    [initial_item] = [
-        item
-        for item in _ordered_query_plan_items(outcome)
-        if item["iteration"] == 1
-    ]
+    [initial_item] = [item for item in _ordered_query_plan_items(outcome) if item["iteration"] == 1]
     assert initial_item["discovery_job_class"] == "orientation"
     [request] = harness.read_assessment_calls
     assert request["binding_eligible_semantic_slot_ids"] == []
-    assert (
-        "PROPOSE_INTERPRETATION_BINDING"
-        not in request["legal_actions"]
-    )
-    assert harness.run_kernel.state.searchos_state[
-        "interpretation_binding_history"
-    ] == []
+    assert "PROPOSE_INTERPRETATION_BINDING" not in request["legal_actions"]
+    assert harness.run_kernel.state.searchos_state["interpretation_binding_history"] == []
 
 
 def test_case_d_user_confirmation_requires_typed_clarification_no_dispatch(
@@ -1480,9 +1274,7 @@ def test_case_d_user_confirmation_requires_typed_clarification_no_dispatch(
     assert searchos["clarification_required"] is True
     assert searchos["clarification_only_no_dispatch"] is True
     assert searchos["provider_calls_attempted"] == 0
-    [clarification] = searchos[
-        "semantic_obligation_clarification_postures"
-    ].values()
+    [clarification] = searchos["semantic_obligation_clarification_postures"].values()
     assert clarification["clarification_required"] is True
     assert clarification["declared_candidates"] == [
         "planet",
@@ -1566,25 +1358,16 @@ def test_mixed_stable_factual_and_true_ambiguity_progress_independently(
     outcome, harness = run_post_retirement_ordinary_pipeline(
         tmp_path,
         monkeypatch,
-        query=(
-            "Report Alpha's rule, identify the relevant Galloway "
-            "controversy, and explain Mercury."
-        ),
+        query=("Report Alpha's rule, identify the relevant Galloway controversy, and explain Mercury."),
         core_topic="Alpha rule, Galloway controversy, and Mercury",
         primary_entity="Alpha",
         evidence_rows=[_evidence_row("Alpha", suffix="mixed-standard")],
-        followup_evidence_rows=[
-            _evidence_row("Scott Galloway", suffix="mixed-orientation")
-        ],
+        followup_evidence_rows=[_evidence_row("Scott Galloway", suffix="mixed-orientation")],
         read_assessment_decision="BIND_THEN_FOLLOWUP_THEN_READ",
         deps_overrides=_product_deps(proposal),
     )
 
-    initial = [
-        item
-        for item in _ordered_query_plan_items(outcome)
-        if item["iteration"] == 1
-    ]
+    initial = [item for item in _ordered_query_plan_items(outcome) if item["iteration"] == 1]
     assert [item["discovery_job_class"] for item in initial] == [
         "standard_discovery",
         "orientation",
@@ -1596,36 +1379,35 @@ def test_mixed_stable_factual_and_true_ambiguity_progress_independently(
     state = harness.run_kernel.state.searchos_state
     assert len(state["active_slot_ids"]) == 3
     clarification_slots = [
-        slot
-        for slot in state["slots_by_id"].values()
-        if slot["posture"] == "clarification_required"
+        slot for slot in state["slots_by_id"].values() if slot["posture"] == "clarification_required"
     ]
     assert len(clarification_slots) == 1
     assert clarification_slots[0]["current_discovery_job_class"] is None
     clarification_obligations = [
         state["semantic_obligations_by_id"][semantic_obligation_id]
-        for semantic_obligation_id in clarification_slots[0][
-            "semantic_obligation_ids"
+        for semantic_obligation_id in clarification_slots[0]["semantic_obligation_ids"]
+        if state["semantic_obligations_by_id"][semantic_obligation_id]["clarification_posture"][
+            "clarification_required"
         ]
-        if state["semantic_obligations_by_id"][
-            semantic_obligation_id
-        ]["clarification_posture"]["clarification_required"]
         is True
     ]
     assert len(clarification_obligations) == 1
-    assert clarification_obligations[0]["clarification_posture"][
-        "declared_candidates"
-    ] == ["planet", "element", "automobile brand"]
+    assert clarification_obligations[0]["clarification_posture"]["declared_candidates"] == [
+        "planet",
+        "element",
+        "automobile brand",
+    ]
     searchos = outcome.execution_trace["searchos_slice_a"]
     assert searchos["slot_local_candidate_ancestry_proven"] is True
     assert searchos["peer_slot_cursors_preserved"] is True
     assert len(searchos["interpretation_binding_refs"]) == 1
-    assert sum(
-        posture.get("clarification_required") is True
-        for posture in searchos[
-            "semantic_obligation_clarification_postures"
-        ].values()
-    ) == 1
+    assert (
+        sum(
+            posture.get("clarification_required") is True
+            for posture in searchos["semantic_obligation_clarification_postures"].values()
+        )
+        == 1
+    )
     assert searchos["provider_calls_attempted"] == 2
 
 
@@ -1653,10 +1435,7 @@ def test_zero_result_orientation_refines_once_then_stops_unresolved(
     ]
     assert [item["iteration"] for item in ordered] == [1, 2]
     assert len(harness.search_calls) == 2
-    assert all(
-        call["search_providers"] == ["serper"]
-        for call in harness.search_calls
-    )
+    assert all(call["search_providers"] == ["serper"] for call in harness.search_calls)
     [slot] = harness.run_kernel.state.searchos_state["slots_by_id"].values()
     assert slot["orientation_refinement_count"] == 1
     assert slot["posture"] in {
@@ -1665,9 +1444,7 @@ def test_zero_result_orientation_refines_once_then_stops_unresolved(
     }
     assert harness.searchos_product_result is not None
     assert len(harness.searchos_product_result.iteration_candidate_sets) == 1
-    assert harness.searchos_product_result.revision_1[
-        "zero_result_discover_wave_ref"
-    ]
+    assert harness.searchos_product_result.revision_1["zero_result_discover_wave_ref"]
 
 
 def test_binding_replay_conflict_and_exact_field_guards(
@@ -1681,20 +1458,21 @@ def test_binding_replay_conflict_and_exact_field_guards(
         query=case["query"],
         core_topic="recent Galloway controversy",
         primary_entity="Galloway",
-        evidence_rows=[
-            _evidence_row("Scott Galloway", suffix="binding-replay")
-        ],
+        evidence_rows=[_evidence_row("Scott Galloway", suffix="binding-replay")],
         deps_overrides=_product_deps(case["proposal"]),
     )
     state = harness.run_kernel.state.searchos_state
     [binding] = state["interpretation_binding_history"]
     accepted = harness.run_kernel.state.initial_answer_contract
 
-    assert record_searchos_interpretation_binding(
-        state,
-        accepted_contract=accepted,
-        binding=binding,
-    ) == state
+    assert (
+        record_searchos_interpretation_binding(
+            state,
+            accepted_contract=accepted,
+            binding=binding,
+        )
+        == state
+    )
     conflict = _reenvelope_binding(
         binding,
         resolved_value="George Galloway",
@@ -1753,9 +1531,7 @@ def test_binding_replay_conflict_and_exact_field_guards(
         binding,
         component_ref={
             **dict(binding["component_ref"]),
-            "source_obligation_candidate_ids": [
-                "source-obligation:foreign"
-            ],
+            "source_obligation_candidate_ids": ["source-obligation:foreign"],
         },
     )
     with pytest.raises(

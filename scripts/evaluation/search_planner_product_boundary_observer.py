@@ -23,8 +23,9 @@ from core.search_planner_model_adapter import (
     SearchPlannerStrictParseSubtype,
 )
 from core.search_planner_model_prompt import SEARCH_PLANNER_MODEL_SYSTEM_PROMPT
+from core.search_planner_semantic_compiler import SearchPlannerSemanticValidationRuleId
 
-PRODUCT_BOUNDARY_OBSERVER_SCHEMA_VERSION = "search_planner_product_boundary_observer_v2"
+PRODUCT_BOUNDARY_OBSERVER_SCHEMA_VERSION = "search_planner_product_boundary_observer_v3"
 CANONICAL_PRODUCT_BOUNDARY_REF = (
     "core.pipeline_orchestrator.run_pipeline -> "
     "core.query_production_runtime.execute_initial_query_strategy_convergence -> "
@@ -155,6 +156,7 @@ class ProductBoundaryObservation:
     canonical_failure_predicate_id: str | None = None
     provider_completion_posture: str | None = None
     strict_parse_subtype: str | None = None
+    semantic_validation_rule_id: str | None = None
     cleaner_modified: bool | None = None
 
     def __post_init__(self) -> None:
@@ -189,13 +191,8 @@ class ProductBoundaryObservation:
             raise ValueError("output digest must be one SHA-256 digest")
         if self.proposal_digest is not None and not re.fullmatch(r"[0-9a-f]{64}", self.proposal_digest):
             raise ValueError("proposal digest must be one SHA-256 digest")
-        if (
-            self.runtime_projection_posture == "PASS"
-            and self.proposal_digest is None
-        ):
-            raise ValueError(
-                "projected proposal observations require a proposal digest"
-            )
+        if self.runtime_projection_posture == "PASS" and self.proposal_digest is None:
+            raise ValueError("projected proposal observations require a proposal digest")
         if self.response_received != (self.output_digest is not None):
             raise ValueError("response posture must match the output digest")
         if not self.response_received and self.output_length:
@@ -205,34 +202,29 @@ class ProductBoundaryObservation:
             or not set(self.canonical_failure_rule_ids) <= _MECHANICAL_RULE_IDS
         ):
             raise ValueError("canonical failure rule identities are invalid")
-        if (
-            self.canonical_failure_predicate_registry_version is None
-        ) != (self.canonical_failure_predicate_id is None):
+        if (self.canonical_failure_predicate_registry_version is None) != (self.canonical_failure_predicate_id is None):
             raise ValueError("canonical failure predicate identities must be paired")
         if (
             self.canonical_failure_predicate_registry_version is not None
-            and self.canonical_failure_predicate_registry_version
-            != SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY_VERSION
+            and self.canonical_failure_predicate_registry_version != SEARCH_PLANNER_MODEL_PREDICATE_REGISTRY_VERSION
         ):
             raise ValueError("canonical failure predicate registry is unsupported")
-        if (
-            self.canonical_failure_predicate_id is not None
-            and self.canonical_failure_predicate_id
-            not in {item.value for item in SearchPlannerModelAdapterPredicateId}
-        ):
+        if self.canonical_failure_predicate_id is not None and self.canonical_failure_predicate_id not in {
+            item.value for item in SearchPlannerModelAdapterPredicateId
+        }:
             raise ValueError("canonical failure predicate identity is unsupported")
-        if (
-            self.provider_completion_posture is not None
-            and self.provider_completion_posture
-            not in {item.value for item in SearchPlannerProviderCompletionPosture}
-        ):
+        if self.provider_completion_posture is not None and self.provider_completion_posture not in {
+            item.value for item in SearchPlannerProviderCompletionPosture
+        }:
             raise ValueError("provider_completion_posture is unsupported")
-        if (
-            self.strict_parse_subtype is not None
-            and self.strict_parse_subtype
-            not in {item.value for item in SearchPlannerStrictParseSubtype}
-        ):
+        if self.strict_parse_subtype is not None and self.strict_parse_subtype not in {
+            item.value for item in SearchPlannerStrictParseSubtype
+        }:
             raise ValueError("strict_parse_subtype is unsupported")
+        if self.semantic_validation_rule_id is not None and self.semantic_validation_rule_id not in {
+            item.value for item in SearchPlannerSemanticValidationRuleId
+        }:
+            raise ValueError("semantic_validation_rule_id is unsupported")
         if self.cleaner_modified is not None and not isinstance(
             self.cleaner_modified,
             bool,
@@ -306,16 +298,12 @@ class CanonicalProductSearchPlannerBoundaryObserver:
         """Create one typed observation from the product-owned state."""
 
         if validated_proposal_returned and not self._response_received:
-            raise ValueError(
-                "validated adapter proposals require an observed response"
-            )
+            raise ValueError("validated adapter proposals require an observed response")
         if validated_proposal_returned and isinstance(
             failure,
             SearchPlannerModelAdapterError,
         ):
-            raise ValueError(
-                "adapter failures cannot accompany a validated adapter proposal"
-            )
+            raise ValueError("adapter failures cannot accompany a validated adapter proposal")
         state = getattr(run_kernel, "state", None)
         proposal_value = getattr(state, "search_planner_proposal_state", None)
         proposal_state = bool(proposal_value)
@@ -354,9 +342,7 @@ class CanonicalProductSearchPlannerBoundaryObserver:
             and failure.mechanical_rule_id not in canonical_failure_rule_ids
         ):
             canonical_failure_rule_ids.append(failure.mechanical_rule_id)
-        canonical_failure_rule_ids = list(
-            dict.fromkeys(canonical_failure_rule_ids)
-        )
+        canonical_failure_rule_ids = list(dict.fromkeys(canonical_failure_rule_ids))
         incomplete = (
             "NOT_REACHED"
             if self._call_count == 0
@@ -389,17 +375,12 @@ class CanonicalProductSearchPlannerBoundaryObserver:
             bounded_failure_reason=bounded_reason,
             safe_usage_refs=tuple(dict(item) for item in safe_usage_refs),
             safe_execution_refs=tuple(dict(item) for item in safe_execution_refs),
-            proposal_digest=(
-                _digest_text(_canonical_json(proposal_value))
-                if proposal_state
-                else None
-            ),
-            canonical_failure_predicate_registry_version=(
-                predicate_registry_version
-            ),
+            proposal_digest=(_digest_text(_canonical_json(proposal_value)) if proposal_state else None),
+            canonical_failure_predicate_registry_version=(predicate_registry_version),
             canonical_failure_predicate_id=predicate_id,
             provider_completion_posture=_safe_provider_completion_posture(failure),
             strict_parse_subtype=_safe_strict_parse_subtype(failure),
+            semantic_validation_rule_id=_safe_semantic_validation_rule_id(failure),
             cleaner_modified=_safe_cleaner_modified(failure),
         )
 
@@ -408,9 +389,7 @@ def _observe_prompt_identity(
     prompt: str,
     system_prompt: str,
 ) -> PromptDigestObservation:
-    prefix, marker, serialized_packet = prompt.partition(
-        SEARCH_PLANNER_PROMPT_PAYLOAD_MARKER
-    )
+    prefix, marker, serialized_packet = prompt.partition(SEARCH_PLANNER_PROMPT_PAYLOAD_MARKER)
     if not marker:
         return PromptDigestObservation(
             semantic_input_digest=_digest_text(""),
@@ -515,9 +494,7 @@ def _bounded_failure_reason(failure: Exception | None) -> str | None:
         ) = _canonical_failure_predicate_fields(failure)
         if failure.mechanical_rule_id is not None:
             if predicate_registry_version is None or predicate_id is None:
-                raise ValueError(
-                    "mechanical adapter failure lacks canonical predicate metadata"
-                )
+                raise ValueError("mechanical adapter failure lacks canonical predicate metadata")
             return (
                 "SearchPlannerModelAdapterError:"
                 f"failure_stage={failure.failure_stage.value}:"
@@ -528,9 +505,7 @@ def _bounded_failure_reason(failure: Exception | None) -> str | None:
                 f"message_sha256={message_digest}"
             )
         if predicate_registry_version is not None or predicate_id is not None:
-            raise ValueError(
-                "infrastructure adapter failure has canonical predicate metadata"
-            )
+            raise ValueError("infrastructure adapter failure has canonical predicate metadata")
         return (
             "SearchPlannerModelAdapterError:"
             f"failure_stage={failure.failure_stage.value}:"
@@ -566,6 +541,15 @@ def _safe_strict_parse_subtype(failure: Exception | None) -> str | None:
         return None
     subtype = failure.strict_parse_subtype
     return subtype.value if subtype is not None else None
+
+
+def _safe_semantic_validation_rule_id(failure: Exception | None) -> str | None:
+    """Copy the typed compiler rule only from the existing adapter failure carrier."""
+
+    if not isinstance(failure, SearchPlannerModelAdapterError):
+        return None
+    rule_id = failure.semantic_validation_rule_id
+    return rule_id.value if rule_id is not None else None
 
 
 def _safe_cleaner_modified(failure: Exception | None) -> bool | None:

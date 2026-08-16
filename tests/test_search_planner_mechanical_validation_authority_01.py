@@ -111,9 +111,7 @@ def test_successful_product_observation_passes_all_mechanical_rules() -> None:
     assert len(result.product_observation_digest) == 64
     assert result.overall_posture == "PASS"
     assert result.semantic_judgment_allowed is True
-    assert result.product_proposal_digest == _hex(
-        "canonical-proposal"
-    )
+    assert result.product_proposal_digest == _hex("canonical-proposal")
 
 
 def test_mechanical_result_identity_rejects_posture_substitution() -> None:
