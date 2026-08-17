@@ -25,9 +25,10 @@ from core.multicomponent_role_runtime import (
     ROLE_CROSS_COMPONENT_ANALYST,
     ROLE_SYNTHESIS_DPRIME,
     ROLE_SYSTEM_PROMPTS,
+    safe_packet_digest,
 )
 from core.prompts import DEFAULT_SYSTEM
-from core.run_kernel import ActionType
+from core.run_kernel import ActionType, RunKernel
 from core.searchos_iterative_judgment_runtime import (
     SEARCHOS_SLICE_A_REQUIRED_NEEDS_UNRESOLVED,
 )
@@ -1080,8 +1081,29 @@ def test_bounded_searchos_n1_causal_projection_successful_path(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    scheduler_initializations: list[dict[str, Any]] = []
+    original_scheduler_initialize = RunKernel.initialize_multicomponent_graph_scheduler
+
+    def capture_scheduler_initialization(self: Any, **kwargs: Any) -> Any:
+        result = original_scheduler_initialize(self, **kwargs)
+        scheduler_initializations.append(
+            {
+                "packets": {
+                    str(key): dict(value)
+                    for key, value in kwargs["component_analyst_input_packets"].items()
+                },
+                "ready_work": self.derive_current_multicomponent_ready_work(),
+            }
+        )
+        return result
+
+    monkeypatch.setattr(
+        RunKernel,
+        "initialize_multicomponent_graph_scheduler",
+        capture_scheduler_initialization,
+    )
     _establish_official_current_qualification_truth(monkeypatch)
-    outcome, _harness = run_post_retirement_ordinary_pipeline(
+    outcome, harness = run_post_retirement_ordinary_pipeline(
         tmp_path,
         monkeypatch,
         mode="Balanced",
@@ -1094,6 +1116,29 @@ def test_bounded_searchos_n1_causal_projection_successful_path(
             "[[1]](https://alpha.example/report-1)"
         ),
     )
+
+    assert len(scheduler_initializations) == 1
+    initialization = scheduler_initializations[0]
+    assert len(initialization["packets"]) == 1
+    [analyst_packet] = initialization["packets"].values()
+    assert analyst_packet["supported_query_class"] == (
+        "ordinary-bounded-multicomponent-factual-synthesis-v1"
+    )
+    run_binding = dict(analyst_packet["run_binding"])
+    contract = dict(harness.run_kernel.state.initial_answer_contract)
+    assert run_binding["run_id"] == outcome.run_id
+    assert run_binding["request_id"] == outcome.session_id
+    assert run_binding["accepted_contract_version"] == contract["accepted_contract_version"]
+    assert run_binding["accepted_contract_digest"] == contract["accepted_contract_digest"]
+    evidence = dict(analyst_packet["component_evidence"])
+    custody = dict(evidence["candidate_custody_ref"])
+    assert evidence["evidence_status"] == "available"
+    assert evidence["evidence_ref_id"]
+    assert custody["candidate_id"] == evidence["evidence_ref_id"]
+    ready_work = list(initialization["ready_work"])
+    assert ready_work
+    assert ready_work[0]["role"] == ROLE_COMPONENT_ANALYST
+    assert ready_work[0]["input_packet_digest"] == safe_packet_digest(analyst_packet)
 
     projection = build_bounded_searchos_n1_causal_projection(
         searchos_slice_a_projection=dict(outcome.execution_trace["searchos_slice_a"]),
@@ -1114,6 +1159,56 @@ def test_bounded_searchos_n1_causal_projection_successful_path(
     assert slot["safe_transport_exception_class"] == "none"
     assert slot["safe_model_output_invalid_subtype"] == "none"
 
+
+def test_searchos_receiver_block_cannot_report_completed_or_originate_analyst(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _establish_official_current_qualification_truth(monkeypatch)
+    import core.ordinary_multicomponent_synthesis_runtime as multicomponent
+
+    def block_before_analyst_dispatch(*_args: Any, **_kwargs: Any) -> None:
+        raise multicomponent._ScheduledSemanticWorkBlocked(
+            "forced required scheduler block before Analyst dispatch"
+        )
+
+    monkeypatch.setattr(
+        multicomponent,
+        "_drive_run_kernel_selected_semantic_work",
+        block_before_analyst_dispatch,
+    )
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        mode="Balanced",
+        query="What is Alpha's current official operating rule?",
+        core_topic="Alpha current official operating rule",
+        primary_entity="Alpha",
+        researcher_queries=["Alpha current official operating rule"],
+    )
+
+    searchos_projection = dict(outcome.execution_trace["searchos_slice_a"])
+    assert searchos_projection["component_receiver_failure"] == (
+        "OrdinaryMulticomponentRuntimeError"
+    )
+    assert "forced required scheduler block" in searchos_projection[
+        "component_receiver_failure_reason"
+    ]
+    projection = build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=searchos_projection,
+    )
+    assert projection is not None
+    assert projection["component_receiver_failure_class"] == (
+        "OrdinaryMulticomponentRuntimeError"
+    )
+    slot = _required_causal_slot(projection)
+    assert slot["component_analyst_proposal_status"] == "not_proposed"
+    assert slot["handoff_material_consumed"] is False
+    assert slot["component_dprime_validation_present"] is False
+    assert not any(
+        prompt == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST]
+        for prompt in harness.model_system_prompts
+    )
 
 @pytest.mark.parametrize(
     ("decision", "expected_posture", "expected_failure_class", "expected_subtype"),
