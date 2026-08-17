@@ -243,9 +243,9 @@ def _install_navigation_model(
                 decision = {
                     **common,
                     "action": "REQUEST_READ_PAGE",
-                    "candidate_use_option_ref": dict(
+                    "candidate_use_option_id": dict(
                         dict(request["candidate_use_options"][0])["candidate_use_option_ref"]
-                    ),
+                    )["candidate_use_option_id"],
                     "reason": "Read the admitted parent candidate.",
                 }
             elif navigation_materials:
@@ -268,7 +268,10 @@ def _install_navigation_model(
                     decision = {
                         **common,
                         "action": "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION",
-                        "read_custody_refs": [dict(item["read_custody_ref"]) for item in navigation_materials],
+                        "read_custody_material_ids": [
+                            dict(item["read_custody_ref"])["read_custody_material_id"]
+                            for item in navigation_materials
+                        ],
                         "reason": "The linked page contains the decisive fact.",
                     }
             elif navigation_options:
@@ -288,7 +291,9 @@ def _install_navigation_model(
                     decision = {
                         **common,
                         "action": "REQUEST_NAVIGATE_BREADCRUMB",
-                        "navigation_candidate_ref": dict(dict(navigation_options[0])["navigation_candidate_ref"]),
+                        "navigation_candidate_id": dict(
+                            dict(navigation_options[0])["navigation_candidate_ref"]
+                        )["navigation_candidate_id"],
                         "reason": "Select the exact current breadcrumb reference.",
                         "read_custody_assessments": assessments,
                     }
@@ -297,7 +302,10 @@ def _install_navigation_model(
                     decision = {
                         **common,
                         "action": "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION",
-                        "read_custody_refs": custody_refs,
+                        "read_custody_material_ids": [
+                            dict(item)["read_custody_material_id"]
+                            for item in custody_refs
+                        ],
                         "reason": "The existing READ custody satisfies this obligation.",
                     }
                 else:
@@ -545,18 +553,18 @@ def test_navigation_request_authority_preserves_ordinary_contract() -> None:
     ordinary = build_searchos_judgment_decision_contract_v1()
     navigation = build_searchos_judgment_decision_contract_v1(navigation_enabled=True)
     assert hashlib.sha256(SEARCHOS_JUDGMENT_SYSTEM_PROMPT.encode()).hexdigest() == (
-        "879b68425a01e32d6e37ea751382849c0dd047fe14a0e314954bf05b9c02c3e1"  # pragma: allowlist secret
+        "445aad3e375da451dde9140fed3f8cb8de6f0a369438036ceb4d4e2a80da8cd3"  # pragma: allowlist secret
     )
     assert ordinary["decision_contract_digest"] == (
-        "e838c05bb76d3854d2c3d2bc56ce495bfd3bcdf534ae8f8e3e72fc5666260995"  # pragma: allowlist secret
+        "76f7c802467c5b998e958e6b07e75fee1ba18dd37335f1512d365223d066d6b6"  # pragma: allowlist secret
     )
     assert ordinary["decision_schema_version"] == "searchos_judgment_decision_v1"
     assert "REQUEST_NAVIGATE_BREADCRUMB" not in ordinary["actions"]
-    assert "navigation_candidate_ref" not in ordinary["allowed_output_fields"]
+    assert "navigation_candidate_id" not in ordinary["allowed_output_fields"]
     nav_action = navigation["actions"]["REQUEST_NAVIGATE_BREADCRUMB"]
     assert navigation["decision_schema_version"] == ("searchos_navigation_judgment_decision_v1")
-    assert "navigation_candidate_ref" in navigation["allowed_output_fields"]
-    assert nav_action["required_fields"][-1] == "navigation_candidate_ref"
+    assert "navigation_candidate_id" in navigation["allowed_output_fields"]
+    assert nav_action["required_fields"][-1] == "navigation_candidate_id"
     assert set(nav_action["authorship_forbidden"]) == {
         "urls",
         "destination_bindings",
@@ -770,8 +778,12 @@ def test_one_hop_navigation_reaches_component_and_final_answer(tmp_path: Path, m
         "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION",
     ]
     assert (
-        navigation_decisions[1]["navigation_candidate_ref"]
-        == (selection_input["authorized_request"]["navigation_options"][0]["navigation_candidate_ref"])
+        navigation_decisions[1]["navigation_candidate_id"]
+        == (
+            selection_input["authorized_request"]["navigation_options"][0][
+                "navigation_candidate_ref"
+            ]["navigation_candidate_id"]
+        )
     )
     judgment_inputs = harness.navigation_model_inputs
     judgment_prompts = runtime_capture["judgment_system_prompts"]
@@ -816,10 +828,10 @@ def test_one_hop_navigation_reaches_component_and_final_answer(tmp_path: Path, m
         assert ("Return exactly one JSON object matching searchos_judgment_decision_v1.") not in normalized_prompt
         assert all(f"- {action}" in prompt for action in expected_actions)
         assert (
-            "REQUEST_READ_PAGE selects exactly one "
-            "authorized_request.candidate_use_options[*].candidate_use_option_ref"
+            "REQUEST_READ_PAGE selects exactly one current "
+            "authorized_request.candidate_use_options[*].candidate_use_option_ref.candidate_use_option_id"
         ) in normalized_prompt
-        assert "candidate_use_option_ref must deep-equal that authorized member" in normalized_prompt
+        assert "emits that compact candidate_use_option_id" in normalized_prompt
         assert (
             "After READ custody exists, REQUEST_READ_PAGE, "
             "PROPOSE_FOLLOWUP_QUERY, REQUIRE_CLARIFICATION, "
@@ -834,8 +846,9 @@ def test_one_hop_navigation_reaches_component_and_final_answer(tmp_path: Path, m
             "disposition, deterministic fallback, or unsupported field."
         ) in normalized_prompt
         assert (
-            "REQUEST_NAVIGATE_BREADCRUMB copies exactly one current, URL-free navigation_candidate_ref"
+            "REQUEST_NAVIGATE_BREADCRUMB selects exactly one current, URL-free"
         ) in normalized_prompt
+        assert "compact navigation_candidate_id" in normalized_prompt
         assert ("Exact navigation destination URLs are intentionally absent from the input.") in normalized_prompt
     assert CHILD_URL not in json.dumps(selection_input, sort_keys=True)
     assert CHILD_URL not in json.dumps(state, sort_keys=True)
@@ -882,7 +895,7 @@ def test_empty_navigation_rounds_use_exact_ordinary_request_and_prompt(
         assert request.get("navigation_options") is None
         assert "REQUEST_NAVIGATE_BREADCRUMB" not in request["legal_actions"]
         assert contract == ordinary_contract
-        assert "navigation_candidate_ref" not in contract["allowed_output_fields"]
+        assert "navigation_candidate_id" not in contract["allowed_output_fields"]
         assert prompt == SEARCHOS_JUDGMENT_SYSTEM_PROMPT
         assert "REQUEST_NAVIGATE_BREADCRUMB" not in prompt
         assert "searchos_navigation_judgment_decision_v1" not in prompt

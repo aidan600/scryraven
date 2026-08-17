@@ -32,13 +32,13 @@ from tests.test_searchos_bounded_navigation_foundation_01 import (
     _record_empty_candidate_window,
 )
 from tests.test_searchos_iterative_judgment_cutover_01 import (
-    _digest,
+    _compact_candidate_use_option_id,
+    _compact_read_custody_material_ids,
     _model_read_custody_assessment,
     _new_judgment_action_output,
     _orientation_judgment_request,
     _post_read_judgment_request,
     _post_read_two_custody_judgment_request,
-    _ref,
 )
 
 
@@ -93,33 +93,47 @@ def test_model_authored_mechanical_identity_is_rejected_even_when_stale(
 def test_old_candidate_ref_cannot_cross_requests() -> None:
     first = _orientation_judgment_request()
     second = _orientation_judgment_request()
-    stale_option = deepcopy(first["candidate_use_options"][0]["candidate_use_option_ref"])
-    stale_option["normalized_url"] = "https://example.com/stale-cross-request"
-    with pytest.raises(SearchOSRuntimeError, match="stale or altered|outside current candidate window"):
+    stale_id = _compact_candidate_use_option_id(
+        first["candidate_use_options"][0]
+    )
+    current = second["candidate_use_options"][0]["candidate_use_option_ref"]
+    if stale_id == current["candidate_use_option_id"]:
+        decision = validate_searchos_judgment_model_output(
+            request=second,
+            model_output={
+                "schema_version": "searchos_judgment_decision_v1",
+                "action": "REQUEST_READ_PAGE",
+                "candidate_use_option_id": stale_id,
+                "reason": "stable identity binds the current request object",
+            },
+        )
+        assert decision["candidate_use_option_ref"] == current
+    with pytest.raises(
+        SearchOSRuntimeError,
+        match="outside current candidate window",
+    ):
         validate_searchos_judgment_model_output(
             request=second,
             model_output={
                 "schema_version": "searchos_judgment_decision_v1",
                 "action": "REQUEST_READ_PAGE",
-                "candidate_use_option_ref": stale_option,
+                "candidate_use_option_id": "searchos-candidate-use:foreign-request",
                 "reason": "old candidate must not cross requests",
             },
         )
 
 
 def test_old_read_custody_ref_cannot_cross_requests() -> None:
-    request, custody, _ = _post_read_judgment_request()
-    stale_custody = {
-        **custody,
-        "searchos_read_custody_material_digest": _digest("other-request"),
-    }
+    request, _custody, _ = _post_read_judgment_request()
     with pytest.raises(SearchOSRuntimeError, match="stale or altered"):
         validate_searchos_judgment_model_output(
             request=request,
             model_output={
                 "schema_version": "searchos_judgment_decision_v1",
                 "action": "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION",
-                "read_custody_refs": [stale_custody],
+                "read_custody_material_ids": [
+                    "searchos-read-custody:other-request"
+                ],
                 "reason": "old READ custody must not cross requests",
             },
         )
@@ -149,7 +163,7 @@ def _whole_custody_variant(
     raise AssertionError(f"unknown custody variant: {variant}")
 
 
-def test_whole_current_custody_objects_are_valid_for_handoff_and_assessment(
+def test_compact_current_custody_ids_bind_exact_handoff_and_assessment_refs(
 ) -> None:
     request, custody, _ = _post_read_judgment_request()
 
@@ -158,7 +172,9 @@ def test_whole_current_custody_objects_are_valid_for_handoff_and_assessment(
         model_output={
             "schema_version": "searchos_judgment_decision_v1",
             "action": "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION",
-            "read_custody_refs": [deepcopy(custody)],
+            "read_custody_material_ids": _compact_read_custody_material_ids(
+                custody
+            ),
             "reason": "current custody supports semantic evaluation",
         },
     )
@@ -191,12 +207,12 @@ def test_whole_current_custody_objects_are_valid_for_handoff_and_assessment(
     "variant",
     ("partial", "augmented", "nested_altered"),
 )
-def test_handoff_rejects_non_whole_current_custody_objects(variant: str) -> None:
+def test_handoff_rejects_obsolete_whole_custody_objects(variant: str) -> None:
     request, custody, _ = _post_read_judgment_request()
 
     with pytest.raises(
         SearchOSRuntimeError,
-        match="semantic handoff nominated stale or altered READ custody",
+        match="unsupported fields",
     ):
         validate_searchos_judgment_model_output(
             request=request,
@@ -246,15 +262,13 @@ def test_assessment_rejects_obsolete_whole_object_copy(
 
 def test_old_semantic_slot_ref_cannot_cross_requests() -> None:
     request = _orientation_judgment_request()
-    stale_slot = deepcopy(request["clarification_eligible_semantic_slot_refs"][0])
-    stale_slot["slot_id"] = "semantic:foreign-request"
     with pytest.raises(SearchOSRuntimeError, match="incompatible payload"):
         validate_searchos_judgment_model_output(
             request=request,
             model_output={
                 "schema_version": "searchos_judgment_decision_v1",
                 "action": "REQUIRE_CLARIFICATION",
-                "semantic_slot_ref": stale_slot,
+                "semantic_slot_id": "semantic:foreign-request",
                 "reason": "old semantic slot must not cross requests",
             },
         )
@@ -268,7 +282,9 @@ def test_unauthorized_action_and_job_class_are_rejected() -> None:
             model_output={
                 "schema_version": "searchos_judgment_decision_v1",
                 "action": "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION",
-                "read_custody_refs": [_ref("searchos_read_custody_material", "none")],
+                "read_custody_material_ids": [
+                    "searchos-read-custody:none"
+                ],
                 "reason": "unauthorized semantic handoff",
             },
         )
@@ -312,8 +328,7 @@ def test_old_navigation_ref_cannot_cross_requests() -> None:
         navigation_window=navigation_window,
         read_custody_refs=[custody],
     )
-    stale_navigation = deepcopy(navigation_window[0]["navigation_candidate_ref"])
-    stale_navigation["navigation_option_id"] = "navigation-option:foreign-request"
+    stale_id = "searchos-navigation-candidate:foreign-request"
     with pytest.raises(
         SearchOSRuntimeError,
         match="stale or altered|outside current navigation window",
@@ -323,7 +338,7 @@ def test_old_navigation_ref_cannot_cross_requests() -> None:
             model_output={
                 "schema_version": "searchos_navigation_judgment_decision_v1",
                 "action": SearchOSJudgmentAction.REQUEST_NAVIGATE_BREADCRUMB.value,
-                "navigation_candidate_ref": stale_navigation,
+                "navigation_candidate_id": stale_id,
                 "reason": "old navigation ref must not cross requests",
                 "read_custody_assessments": [
                     _model_read_custody_assessment(custody)
@@ -459,9 +474,9 @@ def test_pre_read_decision_cannot_invent_assessments() -> None:
             model_output={
                 "schema_version": "searchos_judgment_decision_v1",
                 "action": "REQUIRE_CLARIFICATION",
-                "semantic_slot_ref": dict(
+                "semantic_slot_id": dict(
                     request["clarification_eligible_semantic_slot_refs"][0]
-                ),
+                )["slot_id"],
                 "reason": "no current custody exists to assess",
                 "read_custody_assessments": [
                     {

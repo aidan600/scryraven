@@ -62,7 +62,7 @@ SEARCHOS_JUDGMENT_MODEL_INPUT_SCHEMA_VERSION = (
     "searchos_judgment_model_input_v1"
 )
 SEARCHOS_JUDGMENT_DECISION_CONTRACT_SCHEMA_VERSION = (
-    "searchos_judgment_decision_contract_v3"
+    "searchos_judgment_decision_contract_v4"
 )
 SEARCHOS_ZERO_RESULT_INITIAL_DISCOVER_WAVE_SCHEMA_VERSION = (
     "searchos_zero_result_initial_discover_wave_v1"
@@ -83,33 +83,42 @@ decision_contract is the normative output contract.
 Return exactly one JSON object matching searchos_judgment_decision_v1. Always
 include schema_version, action, and a nonempty bounded reason. Do not author
 judgment_request_id, judgment_request_digest, or slot_id; the runtime binds
-those from the authorized current request. Choose exactly one action from
+those from the authorized current request. slot_id is the active SearchOS slot,
+not a semantic-slot selection. Choose exactly one action from
 authorized_request.legal_actions:
-- REQUEST_READ_PAGE selects exactly one
-  authorized_request.candidate_use_options[*].candidate_use_option_ref and
-  emits that nested JSON object structurally unchanged. candidate_use_option_ref
-  must deep-equal that authorized member, including nested lineage_snapshot_ref;
-  never reconstruct, normalize, or augment it from candidate_directional_contexts,
-  an ID, URL, digest, slot, or lineage field.
+- REQUEST_READ_PAGE selects exactly one current
+  authorized_request.candidate_use_options[*].candidate_use_option_ref.candidate_use_option_id
+  and emits that compact candidate_use_option_id. The runtime binds the exact
+  current candidate_use_option_ref, including nested lineage_snapshot_ref.
+  Do not copy the whole option object or reconstruct lineage, URL, digest, or
+  slot fields from candidate_directional_contexts.
 - PROPOSE_FOLLOWUP_QUERY authors new bounded followup_query text from
   active_need and inspected material and selects exactly one provider-neutral
   discovery_job_class from authorized_request.allowed_followup_job_classes;
   this is the only action allowed to author a query, and QueryPlan independently
   validates the exact text, job class, and component/semantic lineage.
 - PROPOSE_INTERPRETATION_BINDING supplies exactly interpretation_binding with
-  one exact semantic_slot_ref from the authorized eligible list, one declared
-  resolved_value, exact current candidate/READ basis refs, and
-  disclose_assumption. It does not admit the binding, evidence, support,
+  compact semantic_slot_id from the authorized eligible list, one declared
+  resolved_value, compact current basis_candidate_use_option_ids and/or
+  basis_read_custody_material_ids, and disclose_assumption. The runtime binds
+  the exact current refs. It does not admit the binding, evidence, support,
   satisfaction, or a contract mutation.
-- REQUIRE_CLARIFICATION supplies one exact semantic_slot_ref from the
-  authorized clarification-eligible list (plus exact required
-  READ-insufficient assessments when custody exists). It does not author prose.
-- HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION copies a nonempty selection
-  of exact current read_custody_refs.
+- REQUIRE_CLARIFICATION supplies one compact semantic_slot_id from
+  clarification_eligible_semantic_slot_refs[*].slot_id (plus exact required
+  READ-insufficient assessments when custody exists). The runtime binds the
+  exact eligible semantic_slot_ref. It does not author prose.
+- HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION supplies a nonempty
+  read_custody_material_ids list of current
+  authorized_request.read_custody_refs[*].read_custody_material_id values.
+  The runtime binds those exact current custody refs.
 - HANDOFF_UNRESOLVED supplies the shared fields and its reason, plus only the required exact READ-insufficient assessments when current custody exists.
 
-Exact opaque-ref copy means copy the entire selected JSON object unchanged, including nested fields. IDs or digests alone, partial, reconstructed, normalized, or augmented objects are invalid.
-For HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION, read_custody_refs is a nonempty selection of whole unchanged authorized_request.read_custody_refs members; read_custody_assessments is absent.
+Compact selection means emit only the current authorized identity token. Do not
+copy whole ref objects, nested lineage, digests, URLs, or reconstructed objects.
+The runtime verifies current authorized membership and binds the exact
+authoritative object. Foreign, stale, unknown, empty, or colliding identities
+are invalid.
+For HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION, read_custody_material_ids is a nonempty selection of current authorized_request.read_custody_refs[*].read_custody_material_id values; read_custody_assessments is absent. The runtime binds the exact current custody objects.
 For a post-READ action whose decision_contract requires assessments, supply exactly one assessment per current authorized_request.read_custody_refs member. Each assessment has exactly read_custody_material_id and reason_code. Copy read_custody_material_id from that current custody object; do not copy the whole custody object, material_disposition, or other mechanical fields. The runtime binds the matching current custody object and records material_disposition as read_insufficient.
 After READ custody exists, REQUEST_READ_PAGE, PROPOSE_FOLLOWUP_QUERY,
 REQUIRE_CLARIFICATION, and HANDOFF_UNRESOLVED must include exactly one
@@ -138,37 +147,48 @@ Return exactly one JSON object matching
 searchos_navigation_judgment_decision_v1. Always include schema_version,
 action, and a nonempty bounded reason. Do not author judgment_request_id,
 judgment_request_digest, or slot_id; the runtime binds those from the
-authorized current request. Choose exactly one action from
+authorized current request. slot_id is the active SearchOS slot, not a
+semantic-slot selection. Choose exactly one action from
 authorized_request.legal_actions:
-- REQUEST_READ_PAGE selects exactly one
-  authorized_request.candidate_use_options[*].candidate_use_option_ref and
-  emits that nested JSON object structurally unchanged. candidate_use_option_ref
-  must deep-equal that authorized member, including nested lineage_snapshot_ref;
-  never reconstruct, normalize, or augment it from candidate_directional_contexts,
-  an ID, URL, digest, slot, or lineage field.
+- REQUEST_READ_PAGE selects exactly one current
+  authorized_request.candidate_use_options[*].candidate_use_option_ref.candidate_use_option_id
+  and emits that compact candidate_use_option_id. The runtime binds the exact
+  current candidate_use_option_ref, including nested lineage_snapshot_ref.
+  Do not copy the whole option object or reconstruct lineage, URL, digest, or
+  slot fields from candidate_directional_contexts.
 - PROPOSE_FOLLOWUP_QUERY authors new bounded followup_query text from
   active_need and inspected material and selects exactly one provider-neutral
   discovery_job_class from authorized_request.allowed_followup_job_classes;
   this is the only action allowed to author a query, and QueryPlan independently
   validates the exact text, job class, and component/semantic lineage.
 - PROPOSE_INTERPRETATION_BINDING supplies exactly interpretation_binding with
-  one exact semantic_slot_ref from the authorized eligible list, one declared
-  resolved_value, exact current candidate/READ basis refs, and
-  disclose_assumption. It does not admit the binding, evidence, support,
+  compact semantic_slot_id from the authorized eligible list, one declared
+  resolved_value, compact current basis_candidate_use_option_ids and/or
+  basis_read_custody_material_ids, and disclose_assumption. The runtime binds
+  the exact current refs. It does not admit the binding, evidence, support,
   satisfaction, or a contract mutation.
-- REQUIRE_CLARIFICATION supplies one exact semantic_slot_ref from the
-  authorized clarification-eligible list (plus exact required
-  READ-insufficient assessments when custody exists). It does not author prose.
-- HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION copies a nonempty selection
-  of exact current read_custody_refs.
+- REQUIRE_CLARIFICATION supplies one compact semantic_slot_id from
+  clarification_eligible_semantic_slot_refs[*].slot_id (plus exact required
+  READ-insufficient assessments when custody exists). The runtime binds the
+  exact eligible semantic_slot_ref. It does not author prose.
+- HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION supplies a nonempty
+  read_custody_material_ids list of current
+  authorized_request.read_custody_refs[*].read_custody_material_id values.
+  The runtime binds those exact current custody refs.
 - HANDOFF_UNRESOLVED supplies the shared fields and its reason, plus only the
   required exact read-custody assessments when current custody exists.
-- REQUEST_NAVIGATE_BREADCRUMB copies exactly one current, URL-free
-  navigation_candidate_ref from authorized_request.navigation_options and no
-  other navigation field.
+- REQUEST_NAVIGATE_BREADCRUMB selects exactly one current, URL-free
+  authorized_request.navigation_options[*].navigation_candidate_ref.navigation_candidate_id
+  and emits that compact navigation_candidate_id. The runtime binds the exact
+  current navigation_candidate_ref. Do not copy the whole navigation object
+  or any other navigation field.
 
-Exact opaque-ref copy means copy the entire selected JSON object unchanged, including nested fields. IDs or digests alone, partial, reconstructed, normalized, or augmented objects are invalid.
-For HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION, read_custody_refs is a nonempty selection of whole unchanged authorized_request.read_custody_refs members; read_custody_assessments is absent.
+Compact selection means emit only the current authorized identity token. Do not
+copy whole ref objects, nested lineage, digests, URLs, or reconstructed objects.
+The runtime verifies current authorized membership and binds the exact
+authoritative object. Foreign, stale, unknown, empty, or colliding identities
+are invalid.
+For HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION, read_custody_material_ids is a nonempty selection of current authorized_request.read_custody_refs[*].read_custody_material_id values; read_custody_assessments is absent. The runtime binds the exact current custody objects.
 For a post-READ action whose decision_contract requires assessments, supply exactly one assessment per current authorized_request.read_custody_refs member. Each assessment has exactly read_custody_material_id and reason_code. Copy read_custody_material_id from that current custody object; do not copy the whole custody object, material_disposition, or other mechanical fields. The runtime binds the matching current custody object and records material_disposition as read_insufficient.
 After READ custody exists, REQUEST_READ_PAGE, PROPOSE_FOLLOWUP_QUERY,
 REQUIRE_CLARIFICATION, HANDOFF_UNRESOLVED, and REQUEST_NAVIGATE_BREADCRUMB must
@@ -204,25 +224,33 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
         SearchOSJudgmentAction.REQUEST_READ_PAGE.value: {
             "required_fields": [
                 *shared_required_fields,
-                "candidate_use_option_ref",
+                "candidate_use_option_id",
             ],
             "forbidden_fields": [
                 *mechanical_identity_fields,
+                "candidate_use_option_ref",
                 "read_custody_refs",
+                "read_custody_material_ids",
                 "followup_query",
                 "discovery_job_class",
                 "interpretation_binding",
                 "semantic_slot_ref",
+                "semantic_slot_id",
             ],
-            "candidate_use_option_ref_rule": (
-                "select exactly one nested candidate_use_option_ref from "
-                "authorized_request.candidate_use_options and copy it "
-                "structurally unchanged; candidate_use_option_ref must "
-                "deep-equal that authorized member including nested "
-                "lineage_snapshot_ref, never reconstruct, normalize, or "
-                "augment it from candidate_directional_contexts, an ID, URL, "
-                "digest, slot, or lineage field"
+            "candidate_use_option_id_rule": (
+                "select exactly one current "
+                "authorized_request.candidate_use_options[*]."
+                "candidate_use_option_ref.candidate_use_option_id; the runtime "
+                "binds the exact current candidate_use_option_ref including "
+                "nested lineage_snapshot_ref; do not copy the whole option "
+                "object or reconstruct lineage, URL, digest, or slot fields"
             ),
+            "runtime_bound_fields": {
+                "candidate_use_option_ref": (
+                    "authorized_request.candidate_use_options member whose "
+                    "candidate_use_option_ref.candidate_use_option_id matches"
+                ),
+            },
             "post_read_assessment_rule": (
                 "each existing READ material was inspected and does not satisfy "
                 "the active need, so another candidate READ is justified"
@@ -237,10 +265,13 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
             ],
             "forbidden_fields": [
                 *mechanical_identity_fields,
+                "candidate_use_option_id",
                 "candidate_use_option_ref",
                 "read_custody_refs",
+                "read_custody_material_ids",
                 "interpretation_binding",
                 "semantic_slot_ref",
+                "semantic_slot_id",
             ],
             "followup_query_rule": (
                 "SearchJudgment authors one exact bounded follow-up query from "
@@ -262,20 +293,31 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
             "read_custody_assessments_mode": conditionally_assessed,
         },
         SearchOSJudgmentAction.HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION.value: {
-            "required_fields": [*shared_required_fields, "read_custody_refs"],
+            "required_fields": [*shared_required_fields, "read_custody_material_ids"],
             "forbidden_fields": [
                 *mechanical_identity_fields,
+                "candidate_use_option_id",
                 "candidate_use_option_ref",
                 "followup_query",
                 "read_custody_assessments",
+                "read_custody_refs",
                 "discovery_job_class",
                 "interpretation_binding",
                 "semantic_slot_ref",
+                "semantic_slot_id",
             ],
-            "read_custody_refs_rule": (
-                "copy a nonempty selection of whole unchanged objects from "
-                "authorized_request.read_custody_refs; IDs/digests alone and partial, reconstructed, normalized, or augmented objects are invalid"
+            "read_custody_material_ids_rule": (
+                "select a nonempty list of current "
+                "authorized_request.read_custody_refs[*]."
+                "read_custody_material_id values; the runtime binds those exact "
+                "current custody objects; whole-object copies are invalid"
             ),
+            "runtime_bound_fields": {
+                "read_custody_refs": (
+                    "authorized_request.read_custody_refs members whose "
+                    "read_custody_material_id values match"
+                ),
+            },
             "semantic_handoff_rule": (
                 "material selected for semantic handoff is not simultaneously "
                 "labeled insufficient"
@@ -286,12 +328,15 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
             "required_fields": list(shared_required_fields),
             "forbidden_fields": [
                 *mechanical_identity_fields,
+                "candidate_use_option_id",
                 "candidate_use_option_ref",
                 "read_custody_refs",
+                "read_custody_material_ids",
                 "followup_query",
                 "discovery_job_class",
                 "interpretation_binding",
                 "semantic_slot_ref",
+                "semantic_slot_id",
             ],
             "unresolved_rule": (
                 "bounded explanation of an open need; this action is not success "
@@ -306,78 +351,120 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
             ],
             "forbidden_fields": [
                 *mechanical_identity_fields,
+                "candidate_use_option_id",
                 "candidate_use_option_ref",
                 "read_custody_refs",
+                "read_custody_material_ids",
                 "followup_query",
                 "discovery_job_class",
                 "read_custody_assessments",
                 "semantic_slot_ref",
+                "semantic_slot_id",
             ],
             "interpretation_binding_exact_fields": [
-                "semantic_slot_ref",
+                "semantic_slot_id",
                 "resolved_value",
-                "basis_candidate_refs",
-                "basis_read_custody_refs",
+                "basis_candidate_use_option_ids",
+                "basis_read_custody_material_ids",
                 "disclose_assumption",
             ],
-            "semantic_slot_ref_rule": (
-                "copy authorized_request.interpretation_binding_contract."
-                "eligible_semantic_slot_refs member exactly"
+            "semantic_slot_id_rule": (
+                "select authorized_request.interpretation_binding_contract."
+                "eligible_semantic_slot_refs[*].slot_id; the runtime binds the "
+                "exact eligible semantic_slot_ref"
             ),
             "resolved_value_rule": (
                 "select exactly one already-declared candidate value"
             ),
             "basis_ref_rule": (
-                "copy exact current candidate or READ custody refs; at least "
-                "one basis ref is required"
+                "select compact current candidate_use_option_id and/or "
+                "read_custody_material_id values; the runtime binds exact "
+                "current refs; at least one basis selection is required"
             ),
+            "runtime_bound_fields": {
+                "semantic_slot_ref": (
+                    "eligible_semantic_slot_refs member whose slot_id matches"
+                ),
+                "basis_candidate_refs": (
+                    "current candidate_use_option_ref members whose "
+                    "candidate_use_option_id values match"
+                ),
+                "basis_read_custody_refs": (
+                    "current read_custody_refs members whose "
+                    "read_custody_material_id values match"
+                ),
+            },
             "authority_created": [],
             "read_custody_assessments_mode": "forbidden",
         },
         SearchOSJudgmentAction.REQUIRE_CLARIFICATION.value: {
             "required_fields": [
                 *shared_required_fields,
-                "semantic_slot_ref",
+                "semantic_slot_id",
             ],
             "forbidden_fields": [
                 *mechanical_identity_fields,
+                "candidate_use_option_id",
                 "candidate_use_option_ref",
                 "read_custody_refs",
+                "read_custody_material_ids",
                 "followup_query",
                 "discovery_job_class",
                 "interpretation_binding",
+                "semantic_slot_ref",
             ],
-            "clarification_rule": (
-                "copy one exact member of authorized_request."
-                "clarification_eligible_semantic_slot_refs; do not select "
-                "or invent an interpretation"
+            "semantic_slot_id_rule": (
+                "select one current authorized_request."
+                "clarification_eligible_semantic_slot_refs[*].slot_id; the "
+                "runtime binds the exact eligible semantic_slot_ref; do not "
+                "select or invent an interpretation"
             ),
+            "runtime_bound_fields": {
+                "semantic_slot_ref": (
+                    "clarification_eligible_semantic_slot_refs member whose "
+                    "slot_id matches"
+                ),
+            },
             "read_custody_assessments_mode": conditionally_assessed,
         },
     }
     if navigation_enabled:
         for contract in actions.values():
+            contract["forbidden_fields"].append("navigation_candidate_id")
             contract["forbidden_fields"].append("navigation_candidate_ref")
         actions[SearchOSJudgmentAction.REQUEST_NAVIGATE_BREADCRUMB.value] = {
-            "required_fields": [*shared_required_fields, "navigation_candidate_ref"],
+            "required_fields": [*shared_required_fields, "navigation_candidate_id"],
             "forbidden_fields": [
                 *mechanical_identity_fields,
+                "candidate_use_option_id",
                 "candidate_use_option_ref",
+                "navigation_candidate_ref",
                 "read_custody_refs",
+                "read_custody_material_ids",
                 "followup_query",
                 "discovery_job_class",
                 "interpretation_binding",
                 "semantic_slot_ref",
+                "semantic_slot_id",
             ],
-            "navigation_candidate_ref_rule": (
-                "copy exactly one navigation_candidate_ref from "
-                "authorized_request.navigation_options"
+            "navigation_candidate_id_rule": (
+                "select exactly one current "
+                "authorized_request.navigation_options[*]."
+                "navigation_candidate_ref.navigation_candidate_id; the runtime "
+                "binds the exact current navigation_candidate_ref; do not copy "
+                "the whole navigation object"
             ),
+            "runtime_bound_fields": {
+                "navigation_candidate_ref": (
+                    "authorized_request.navigation_options member whose "
+                    "navigation_candidate_ref.navigation_candidate_id matches"
+                ),
+            },
             "authorship_forbidden": ["urls", "destination_bindings", "providers", "routes", "alternate_refs"],
             "read_custody_assessments_mode": conditionally_assessed,
         }
     core = {
-        "contract_name": "SearchOSJudgmentDecisionContractV3",
+        "contract_name": "SearchOSJudgmentDecisionContractV4",
         "schema_version": SEARCHOS_JUDGMENT_DECISION_CONTRACT_SCHEMA_VERSION,
         "decision_schema_version": SEARCHOS_NAVIGATION_JUDGMENT_DECISION_SCHEMA_VERSION
         if navigation_enabled
@@ -392,13 +479,13 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
         "model_must_not_author": list(mechanical_identity_fields),
         "allowed_output_fields": [
             *shared_required_fields,
-            "candidate_use_option_ref",
-            *(["navigation_candidate_ref"] if navigation_enabled else []),
-            "read_custody_refs",
+            "candidate_use_option_id",
+            *(["navigation_candidate_id"] if navigation_enabled else []),
+            "read_custody_material_ids",
             "followup_query",
             "discovery_job_class",
             "interpretation_binding",
-            "semantic_slot_ref",
+            "semantic_slot_id",
             "read_custody_assessments",
         ],
         "unsupported_fields_forbidden": True,
@@ -406,8 +493,10 @@ def build_searchos_judgment_decision_contract_v1(*, navigation_enabled: bool = F
             "authorized_request": (
                 "sole legal-action and exact-ref authority; runtime binds "
                 "request identity and active slot_id from this request; "
-                "option and custody refs are exact-copy sources"
-                + ("; navigation_options are URL-free exact-copy sources" if navigation_enabled else "")
+                "option, custody, semantic-slot, and basis refs are compact "
+                "current-identity selection sources that the runtime binds to "
+                "exact authoritative objects"
+                + ("; navigation_options are URL-free compact selection sources" if navigation_enabled else "")
             ),
             "active_need": (
                 "accepted component question, source-obligation standard, and "
@@ -3697,6 +3786,16 @@ _SAFE_MODEL_OUTPUT_INVALID_SUBTYPE_BY_SUFFIX: dict[str, str] = {
     "judgment_action_is_not_in_the_neutral_vocabulary": "action_vocabulary_invalid",
     "judgment_action_is_not_currently_authorized": "action_not_authorized",
     "semantic_handoff_repeats_read_custody": "semantic_handoff_payload_invalid",
+    "authorized_compact_identity_is_not_unique": "authorized_identity_not_unique",
+    "authorized_read_option_identity_is_empty": "authorized_identity_empty",
+    "authorized_navigation_option_identity_is_empty": "authorized_identity_empty",
+    "authorized_read_custody_identity_is_empty": "authorized_identity_empty",
+    "authorized_clarification_semantic_slot_identity_is_empty": (
+        "authorized_identity_empty"
+    ),
+    "authorized_interpretation_semantic_slot_identity_is_empty": (
+        "authorized_identity_empty"
+    ),
     "read_custody_assessment_shape_is_invalid": "custody_assessment_shape_invalid",
     "read_custody_assessment_is_stale_or_altered": "custody_assessment_ref_invalid",
     "read_custody_assessment_disposition_is_invalid": (

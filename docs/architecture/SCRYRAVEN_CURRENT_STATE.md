@@ -594,17 +594,24 @@ source-obligation/SearchWorkPlan semantics, bounded directional context, and
 bounded sanitized content from exact current READ packets; none of that
 transient prompt text is retained in canonical state or persistence.
 The same transient input carries
-`searchos_judgment_decision_contract_v3`, a machine-readable mirror of the
-strict `searchos_judgment_decision_v1` validator. It defines the shared
-action/reason fields, exact per-action payload and forbidden fields, and the
-one-per-current-custody insufficiency assessment required for every
-post-READ action except exact semantic handoff and factual binding. The model
-authors the semantic insufficiency `reason_code` and current
+`searchos_judgment_decision_contract_v4`, a machine-readable mirror of the
+strict `searchos_judgment_decision_v1` validator's model-visible field shape.
+It defines the shared action/reason fields, exact per-action compact-selection
+payload and forbidden fields, and the one-per-current-custody insufficiency
+assessment required for every post-READ action except exact semantic handoff
+and factual binding. Compact current identities are transient model-boundary
+data. The model authors semantic choice plus those compact identities. The
+validator proves authorized-set uniqueness, binds the exact current
+authoritative objects, and preserves the existing canonical decision shape.
+The model authors the semantic insufficiency `reason_code` and current
 `read_custody_material_id` correspondence. Deterministic runtime binds the
 matching current custody object, records `read_insufficient`, and binds
 `judgment_request_id`, `judgment_request_digest`, and the active `slot_id`
 from the authorized current request; model output that authors those
-mechanical identities fails closed. The model may author a bounded query only
+mechanical identities fails closed. READ, navigation, handoff, clarification,
+and interpretation slot/basis selections use compact current identities
+already present on authorized objects; the runtime binds exact current refs
+before reduction. The model may author a bounded query only
 for `PROPOSE_FOLLOWUP_QUERY`; QueryPlan still independently admits or rejects
 that exact text and its legal job transition. The contract is not canonical or
 persisted.
@@ -630,12 +637,14 @@ field remains an authority. SearchWorkPlan and QueryProduction are retired
 ordinary compatibility carriers and do not override that map.
 
 For an eligible unresolved factual semantic obligation, SearchJudgment may
-propose one exact candidate-backed binding. The authorized request exposes all
-eligible semantic-slot refs, while the proposal must select exactly one.
+propose one candidate-backed binding. The authorized request exposes all
+eligible semantic-slot refs, while the proposal selects exactly one compact
+current semantic-slot identity plus compact current basis identities. The
+runtime binds those to the exact current refs.
 RunKernel builds, validates, and append-only admits
 `searchos_interpretation_binding_v1`, with exact replay idempotence and
 conflicting second binding rejection per semantic obligation. Clarification
-likewise names one exact eligible semantic slot and leaves its siblings
+likewise names one compact eligible semantic slot and leaves its siblings
 unchanged. The accepted AnswerContract remains byte-stable.
 `searchos_effective_semantic_slot_view_v1` combines each accepted slot and its
 own admitted binding only for downstream acquisition planning. A binding cannot
@@ -885,8 +894,9 @@ product envelope.
 `SEARCHOS-ONE-HOP-NAVIGATION-PRODUCT-ACTIVATION-01` connects ordinary
 candidate-origin READ custody to the existing bounded navigation foundation.
 A fresh candidate READ may expose safe same-site Markdown links as URL-free
-depth-1 navigation refs. SearchJudgment may copy one exact current ref; the
-installed selection reducer, acquisition route, FetchRead, EvidenceLedger, and
+depth-1 navigation refs. SearchJudgment may select one current compact
+`navigation_candidate_id`; the runtime binds the exact current navigation ref.
+The installed selection reducer, acquisition route, FetchRead, EvidenceLedger, and
 SearchOS custody owners then read the selected destination. Navigation-origin
 custody may re-enter the existing SearchJudgment and component semantic path,
 and the canonical EvidenceLedger projection is refreshed after the selected
