@@ -470,14 +470,46 @@ and recursive-navigation limit calibration are not installed, are not part of
 the one-hop MVP, and have no ordinary product caller. Any later phase must reuse
 the installed acquisition and custody owners.
 
-## Active Decision Gate: Representative Bounded Real-Model/Product Validation
+## Active Decision Gate: SearchOS -> Component Analyst Same-Process Receiver/Origination
 
 The maintainer-selected **Option C modified into a unified iterative loop** is
 installed through SearchOS Phases 1, 2, and 3. Ordinary planning completion is
 `AnswerContract -> QueryPlan`. Post-rebase inert compatibility detritus is
-removed where zero current consumer existed. The active next checkpoint is
-representative bounded real-model/product validation. This roadmap grants no
-live license.
+removed where zero current consumer existed. A bounded Q1 ordinary PRODUCT
+observation has now reached a lawful SearchOS semantic handoff. This completed
+evidence does not establish broad live reliability, a supported cited answer,
+or AnalystOS origination. This roadmap grants no new live license.
+
+### Completed Q1 bounded product evidence
+
+```text
+COMPLETED:
+Q1 bounded ordinary PRODUCT reached lawful SearchOS semantic handoff.
+```
+
+The observed run selected the Component Analyst receiver but recorded no
+Component Analyst proposal, no handoff consumption, and no semantic admission;
+the product ended blocked without a supported cited answer. The canonical
+bounded conclusion is `SEARCHOS_COMPLETE_FOR_Q1 ONLY`.
+
+### Current frontier
+
+```text
+CURRENT FRONTIER:
+SearchOS -> Component Analyst same-process receiver/origination
+```
+
+The durable immediate seam is:
+
+```text
+authoritative SearchOS material
+-> valid Analyst input
+-> Component Analyst callable
+```
+
+The preceding ordinary product observation reached the receiver boundary, so
+the next product checkpoint must observe whether Component Analyst input is
+valid and whether the Component Analyst is actually callable/originated.
 
 ### Installed versus selected target
 
@@ -490,6 +522,23 @@ compatibility is reduced to current real consumers. Installed truth is
 owned by [ScryRaven Current State](../architecture/SCRYRAVEN_CURRENT_STATE.md),
 while architecture ownership remains with the
 [SearchOS Operating Model](../architecture/SEARCHOS_OPERATING_MODEL.md).
+
+### Installed AnalystOS topology versus selected retention target
+
+The installed post-analysis routes remain factual:
+
+```text
+Component Analyst -> component D-prime -> RunKernel component admission
+Cross-Component Analyst -> synthesis D-prime -> Scrutineer when triggered
+  -> RunKernel graph/synthesis admission
+```
+
+Mandatory serial D-prime is not protected target architecture. Component and
+synthesis D-prime are installed, executable, and provisional from a retention
+perspective. Future phases must explicitly select whether to keep, condition,
+fold, consolidate, or retire those roles; `KEEP_MANDATORY` requires an explicit
+future architecture decision. This roadmap does not select the final
+Analyst/Critic topology.
 
 The installed ordinary front-half shape is:
 
@@ -532,6 +581,31 @@ It must not return to `safe subtype -> micro repair -> PR -> pulse -> next
 subtype`. A newly exposed safe failure within this licensed architectural
 corridor remains in the same phase unless it proves a different owner or
 requires a new architecture decision.
+
+### Q1 frontier guardrails
+
+Do not build persistence or replay infrastructure merely to recreate the prior
+suppressed Q1 state. Do not manually reconstruct canonical RunKernel or
+SearchOS-handoff authority, and do not repair D-prime merely to obtain a
+baseline of the installed D-prime behavior. If Component Analyst origination
+cannot be cleanly separated from provisional D-prime or multi-component
+machinery, stop for AnalystOS architecture selection instead of repairing the
+entire installed post-analysis topology. Do not run Q2 before the current Q1
+downstream frontier is resolved.
+
+The selected sequence is:
+
+```text
+lawful same-process SearchOS handoff
+-> exact current bounded evidence binding
+-> valid Component Analyst input
+-> Component Analyst actually callable/originated
+-> one ordinary Q1 PRODUCT observation far enough to observe Component Analyst
+-> Analyst/D-prime/Scrutineer topology selection
+-> selected AnalystOS convergence
+-> supported cited Q1 answer
+-> representative corpus expansion
+```
 
 ### Installed Phase 1 - Sparse uncertainty-aware planning
 
@@ -633,7 +707,7 @@ supported consumer were deleted.
 Next:
 
 ```text
-representative bounded real-model/product validation
+SearchOS -> Component Analyst same-process receiver/origination
 ```
 
 No live provider, model, search, fetch/read, retrieval, or product call is

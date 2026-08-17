@@ -8,6 +8,15 @@ Does-not-authorize: model calls, retrieval, admission, contract mutation, FAP, A
 Verified-against-runtime: 540141acaaaf041bda303edd62211dd6a11958bc
 Update-trigger: merged change to component or synthesis D-prime authority or ordinary consumption
 
+Installed capability status: CURRENT
+Target-architecture status: PROVISIONAL / UNDER ANALYSTOS RE-SELECTION
+
+This document canonically describes what the installed component and synthesis
+D-prime roles currently do. It does not establish that either role is a
+mandatory-retained part of future AnalystOS architecture. Mandatory serial
+D-prime is not part of the selected AnalystOS North Star; the installed roles
+remain executable and are provisional from a retention perspective.
+
 ## Responsibility
 
 This document owns the durable role contract for component and synthesis
@@ -54,10 +63,34 @@ an inferred node into direct evidence. SearchOS never performs this validation.
 | Full Scrutineer | Adversarially challenges a component, synthesis, edge, subgraph, or whole-case posture when triggered. | Replace the first-pass Analyst, manufacture a replacement case, admit state, or render. |
 | RunKernel | Performs structural validation and alone admits, blocks, challenges, or authorizes bounded recovery. | Manufacture semantic output or delegate canonical admission to a worker. |
 
-The ordinary bounded multi-component path consumes both component D-prime and
-synthesis D-prime. Cross-component synthesis and ComponentWorkGraph V1
-admission are installed for the supported class; they are not future D-prime
-checkpoints.
+The currently installed ordinary bounded multi-component path consumes both
+component D-prime and synthesis D-prime. Cross-component synthesis and
+ComponentWorkGraph V1 admission are installed executable facts for the
+supported class; they are not a permanent retention requirement or future
+D-prime checkpoint doctrine.
+
+## Installed Capability And AnalystOS Re-selection
+
+Component D-prime is a strong candidate for conditional invocation, folding
+into the Component Analyst, replacement, consolidation, or retirement.
+Synthesis D-prime is likewise provisional and a strong consolidation or
+reselection candidate. Retiring synthesis D-prime would not retire independent
+synthesis-level semantic scrutiny. A differentiated whole-case Critic or
+Scrutineer remains a leading candidate for independent semantic challenge when
+policy or risk warrants it, while deterministic mechanical safeguards remain
+regardless of semantic-role topology.
+
+The future outcome space below is descriptive prose, not a runtime enum or
+schema:
+
+- `KEEP_CONDITIONAL`
+- `FOLD_INTO_ANALYST`
+- `CONSOLIDATE_INTO_DIFFERENTIATED_CRITIC`
+- `RETIRE`
+- `KEEP_MANDATORY` only after an explicit future architecture decision
+
+This phase does not select the final Analyst/Critic topology, a Critic schema,
+or a D-prime deletion plan.
 
 Durable mnemonic:
 
@@ -70,9 +103,38 @@ The existing narrow deterministic same-component multi-source Scrutineer gate
 is a supporting gate, not the full SmartModel Scrutineer role. Deterministic
 schema checks also do not replace evidence-relative D-prime judgment.
 
+## Durable Authority Principle
+
+```text
+MODEL AUTHORS MEANING.
+CODE AUTHORS MECHANICS.
+```
+
+Semantic workers own interpretation, evidence applicability, support judgment,
+alternatives, contradiction, uncertainty, warranted inference, synthesis
+meaning, and caveats. Deterministic code owns schemas, IDs, exact refs,
+digests, lineage, custody, cardinality, current revision identity, graph
+legality, dependency identity, inference-depth ceilings, exact calculator
+binding mechanics, budgets, privacy, replay/idempotency mechanics, stale-state
+rejection, impossible-state rejection, and canonical authority transitions.
+
+Deterministic code does not prove arbitrary natural-language semantic support.
+The installed component and synthesis paths may use D-prime semantic review,
+but semantic worker judgment or proposal is never canonical RunKernel
+authority:
+
+```text
+semantic worker judgment/proposal != canonical RunKernel authority
+```
+
+The architecture therefore does not require every semantic judgment to receive
+universal second-model approval before RunKernel can admit it. The applicable
+installed role contract, deterministic mechanical checks, and RunKernel
+authority boundary remain distinct.
+
 ## Proposal, Validation, And Admission
 
-The authority sequence is always:
+The currently installed component D-prime path executes:
 
 ```text
 Analyst proposal
@@ -81,7 +143,7 @@ Analyst proposal
 -> RunKernel admission, block, challenge, or recovery authorization
 ```
 
-For synthesis, the same separation applies:
+The currently installed synthesis D-prime path executes:
 
 ```text
 Cross-Component Analyst synthesis proposal
@@ -126,8 +188,9 @@ Non-negotiable negative controls include:
 - contradiction must remain challenge or contested posture;
 - model output without exact selector, proposition, component, and lineage
   binding must fail closed;
-- deterministic preflight and model review must each fail closed when the
-  other is absent or invalid.
+- deterministic preflight and the applicable D-prime semantic review must each
+  fail closed when the installed D-prime contract requires the other; this is
+  not a universal second-model approval rule for all semantic judgments.
 
 ## Supporting Single-Relation Capability
 
