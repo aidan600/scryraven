@@ -199,14 +199,17 @@ class AnalystRuntimeOutcome(_AnalystRuntimeOutcomeBase):
 
 def multicomponent_analyst_bypass_outcome_from_scope(
     scope: Mapping[str, Any],
+    *,
+    skip_reason: str | None = None,
+    post_retrieval_fast_path_used: bool = True,
 ) -> AnalystRuntimeOutcome:
-    """Keep the legacy Analyst lane closed after Graph V1 has completed."""
+    """Keep the legacy Analyst lane closed after the selected typed lane."""
 
-    reason = "ordinary_multicomponent_graph_v1_completed"
+    reason = skip_reason or "ordinary_multicomponent_graph_v1_completed"
     pre_analyst_gate = {
         "analyst_skipped": True,
         "analyst_skip_reason": reason,
-        "post_retrieval_fast_path_used": True,
+        "post_retrieval_fast_path_used": bool(post_retrieval_fast_path_used),
         "pre_analyst_gate_signals": [reason],
     }
     post_economist_gate = {
@@ -230,7 +233,7 @@ def multicomponent_analyst_bypass_outcome_from_scope(
         pre_analyst_gate_handoff=pre_analyst_gate_contract.to_trace(),
         analyst_skipped=True,
         analyst_skip_reason=reason,
-        post_retrieval_fast_path_used=True,
+        post_retrieval_fast_path_used=bool(post_retrieval_fast_path_used),
         pre_analyst_gate_signals=[reason],
         estimate_from_priors_blocked_by_pre_analyst_gate=False,
         economist_ran=bool(scope.get("economist_ran")),

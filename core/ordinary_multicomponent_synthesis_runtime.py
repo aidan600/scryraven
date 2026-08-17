@@ -3591,10 +3591,16 @@ def execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
                     requested_synthesis_directive=requested_synthesis_directive,
                     allow_searchos_component_receiver=(allow_searchos_component_receiver),
                 )
-            except _ScheduledSemanticWorkBlocked:
-                # Canonical exhaustion/failure is ordinary readiness input.  Do
-                # not escape the selected lane or invoke the direct producer.
-                pass
+            except _ScheduledSemanticWorkBlocked as exc:
+                # The ordinary bounded lane keeps canonical blockage as FAP
+                # readiness input. The separately licensed SearchOS receiver
+                # must expose the blockage at its orchestrator boundary;
+                # otherwise it can report COMPLETED without Analyst origination.
+                if allow_searchos_component_receiver:
+                    raise OrdinaryMulticomponentRuntimeError(
+                        "SearchOS component receiver did not complete: "
+                        + str(exc)[:240]
+                    ) from exc
             return OrdinaryMulticomponentResult(status=OrdinaryMulticomponentStatus.COMPLETED)
         return direct_or_deferred()
 

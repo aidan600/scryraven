@@ -861,6 +861,8 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     searchos_slice_a_projection: dict[str, Any] = {}
     searchos_slice_a_result: Any | None = None
     searchos_component_receiver_selected = False
+    searchos_component_receiver_completed = False
+    searchos_component_receiver_failure_reason: str | None = None
     run_contract_projection: dict[str, Any] = {}
     evidence_ledger_projection = run_kernel.state.evidence_ledger.to_projection().to_dict()
     provider_job_evidence_ledger_bridge_projection: dict[str, Any] = {}
@@ -3761,14 +3763,18 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             for slot_id in required_slot_ids
         )
         if all_required_material_handed:
+            searchos_component_receiver_selected = True
             try:
                 execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
                     run_kernel,
                     locals(),
                     allow_searchos_component_receiver=True,
                 )
-                searchos_component_receiver_selected = True
+                searchos_component_receiver_completed = True
             except OrdinaryMulticomponentRuntimeError as exc:
+                searchos_component_receiver_failure_reason = (
+                    "searchos_component_receiver_failure"
+                )
                 searchos_slice_a_projection["component_receiver_failure"] = (
                     type(exc).__name__
                 )
@@ -3776,13 +3782,14 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     "component_receiver_failure_reason"
                 ] = str(exc)[:240]
     elif ordinary_multicomponent_path_selected(run_kernel):
+        searchos_component_receiver_selected = True
         execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
             run_kernel,
             locals(),
         )
-        searchos_component_receiver_selected = True
+        searchos_component_receiver_completed = True
 
-    if searchos_component_receiver_selected:
+    if searchos_component_receiver_completed:
         # The selected component receiver may reduce new canonical evidence
         # after the earlier final-evidence projection was assembled. Carry the
         # current EvidenceLedger projection into every downstream consumer.
@@ -3792,7 +3799,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             evidence_ledger_projection=evidence_ledger_projection,
         )
     searched_premise_recovery_admission: dict[str, Any] = {}
-    if searchos_slice_a_active and searchos_component_receiver_selected:
+    if searchos_slice_a_active and searchos_component_receiver_completed:
         searched_premise_recovery_admission = dict(
             authorize_searched_premise_recovery_from_analyst_proposals(
                 run_kernel=run_kernel,
@@ -4598,7 +4605,15 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         post_economist_analyst_gate=_post_economist_analyst_gate,
     )
     if searchos_component_receiver_selected or ordinary_multicomponent_path_selected(run_kernel):
-        analyst_runtime_outcome = analyst_runtime_stage.multicomponent_analyst_bypass_outcome_from_scope(locals())
+        analyst_runtime_outcome = (
+            analyst_runtime_stage.multicomponent_analyst_bypass_outcome_from_scope(
+                locals(),
+                skip_reason=searchos_component_receiver_failure_reason,
+                post_retrieval_fast_path_used=(
+                    searchos_component_receiver_failure_reason is None
+                ),
+            )
+        )
     else:
         analyst_runtime_outcome = analyst_runtime_stage.execute_analyst_runtime_stage_from_scope(
             locals(), deps=analyst_runtime_deps
@@ -4647,8 +4662,15 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         choose_supplemental_search_depth=choose_supplemental_search_depth,
     )
     if searchos_component_receiver_selected or ordinary_multicomponent_path_selected(run_kernel):
-        legacy_review_outcome = legacy_review_runtime_stage.multicomponent_legacy_review_bypass_outcome_from_scope(
-            locals()
+        legacy_review_outcome = (
+            legacy_review_runtime_stage.multicomponent_legacy_review_bypass_outcome_from_scope(
+                locals(),
+                skip_posture=(
+                    "skipped_searchos_component_receiver_failure"
+                    if searchos_component_receiver_failure_reason
+                    else None
+                ),
+            )
         )
     else:
         legacy_review_outcome = legacy_review_runtime_stage.execute_legacy_review_runtime_stage_from_scope(
