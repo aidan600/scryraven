@@ -5317,6 +5317,23 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         )
     if search_judgment_read_assessment_projection:
         execution_trace[SEARCH_JUDGMENT_READ_TRACE_KEY] = search_judgment_read_assessment_projection
+    if searchos_slice_a_active:
+        from core.multicomponent_graph_scheduling import (
+            MULTICOMPONENT_SCHEDULER_STAGE,
+            project_current_component_analyst_failure,
+        )
+
+        component_analyst_failure = project_current_component_analyst_failure(
+            state=run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE),
+            expected_run_id=run_kernel.state.run_id,
+            expected_request_id=run_kernel.state.request_id,
+        )
+        if component_analyst_failure is not None:
+            searchos_slice_a_projection["component_analyst_failure"] = (
+                component_analyst_failure
+            )
+        else:
+            searchos_slice_a_projection.pop("component_analyst_failure", None)
     if searchos_slice_a_projection:
         execution_trace[SEARCHOS_SLICE_A_TRACE_KEY] = dict(searchos_slice_a_projection)
     if final_answer_packet_handoff.author_input_blocked:
