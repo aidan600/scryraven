@@ -55,8 +55,16 @@ The installed query class is:
 ordinary-bounded-multicomponent-factual-synthesis-v1
 ```
 
-It does not imply arbitrary-query multi-component support. Nonqualifying and
-single-component requests retain the established direct ordinary lane.
+It does not imply arbitrary-query multi-component support. Normal
+qualification for this bounded multi-component route remains an explicit
+2-5-component factual synthesis shape. Separately, after a lawful SearchOS
+semantic handoff, the ordinary orchestrator may invoke the installed same-
+process typed component receiver with `allow_searchos_component_receiver=True`.
+That receiver accepts 1-5 components, including the N=1 Q1 SearchOS ->
+Component Analyst path. This separately licensed entry does not establish
+general arbitrary single-component qualification into
+`ordinary-bounded-multicomponent-factual-synthesis-v1` and does not change the
+provisional Analyst/D-prime retention posture.
 
 ## Installed Query-Centered Recovery And Inference
 
@@ -89,7 +97,23 @@ history, amendment, lease, cycle, graph, FAP, or Author work.
 ## Lane Selection
 
 Lane selection occurs before canonical semantic production. The direct and
-bounded multi-component lanes are not both run and compared afterward.
+bounded multi-component lanes are not both run and compared afterward. The
+typed Component Analyst / D-prime machinery is also reachable through the
+separately licensed SearchOS same-process semantic-handoff receiver entry:
+
+SearchOS same-process receiver entry:
+
+```text
+lawful SearchOS semantic handoff
++ allow_searchos_component_receiver=True
+-> typed Component Analyst receiver (1-5 components, including N=1)
+-> component Analyst proposal
+-> component D-prime validation
+-> RunKernel component admission
+```
+
+This entry is not general single-component route qualification and does not
+replace or widen the explicit 2-5-component bounded synthesis route.
 
 Direct ordinary lane:
 
