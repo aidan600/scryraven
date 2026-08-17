@@ -1158,6 +1158,7 @@ def test_bounded_searchos_n1_causal_projection_successful_path(
     assert slot["safe_failure_class"] == "none"
     assert slot["safe_transport_exception_class"] == "none"
     assert slot["safe_model_output_invalid_subtype"] == "none"
+    assert "component_analyst_failure" not in projection
 
 
 def test_searchos_receiver_block_cannot_report_completed_or_originate_analyst(
@@ -1340,8 +1341,120 @@ def test_bounded_searchos_n1_causal_projection_read_then_receiver_failure(
     assert projection["component_receiver_failure_class"] == (
         "OrdinaryMulticomponentRuntimeError"
     )
+    assert "component_analyst_failure" not in projection
     assert harness.read_transport_calls
 
+
+@pytest.mark.parametrize(
+    ("failure_mode", "expected_failure_kind"),
+    [
+        ("output_validation", "output_validation_failure"),
+        ("model_transport", "model_transport_failure"),
+        ("provider_mismatch", "provider_identity_mismatch"),
+    ],
+)
+def test_bounded_searchos_n1_projects_current_component_analyst_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_mode: str,
+    expected_failure_kind: str,
+) -> None:
+    from copy import deepcopy
+    from dataclasses import replace
+
+    from core.multicomponent_graph_scheduling import (
+        MULTICOMPONENT_SCHEDULER_STAGE,
+        project_current_component_analyst_failure,
+    )
+
+    _establish_official_current_qualification_truth(monkeypatch)
+    harness_sink: list[Any] = []
+
+    def failing_transport(prompt: str, system_prompt: str, **kwargs: Any) -> Any:
+        harness = harness_sink[0]
+        base = harness.strict_one_shot_smart_model_transport(
+            prompt,
+            system_prompt,
+            **kwargs,
+        )
+        if system_prompt != ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST]:
+            return base
+        if failure_mode == "output_validation":
+            return replace(base, output_text="not-json")
+        if failure_mode == "model_transport":
+            return replace(base, return_code=2, output_text="")
+        return replace(base, canonical_provider="OpenRouter")
+
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        mode="Balanced",
+        query="What is Alpha's current official operating rule?",
+        core_topic="Alpha current official operating rule",
+        primary_entity="Alpha",
+        researcher_queries=["Alpha current official operating rule"],
+        deps_overrides={
+            "strict_one_shot_smart_model_transport": failing_transport,
+        },
+        harness_sink=harness_sink,
+    )
+
+    searchos_trace = dict(outcome.execution_trace["searchos_slice_a"])
+    assert searchos_trace["component_analyst_failure"] == {
+        "role": ROLE_COMPONENT_ANALYST,
+        "failure_kind": expected_failure_kind,
+        "settlement_posture": "failed_spent",
+    }
+    projection = build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=searchos_trace,
+        expected_run_id=outcome.run_id,
+        expected_request_id=outcome.session_id,
+    )
+    assert projection is not None
+    assert projection["component_analyst_failure"] == {
+        "role": ROLE_COMPONENT_ANALYST,
+        "failure_kind": expected_failure_kind,
+        "settlement_posture": "failed_spent",
+    }
+    assert projection["component_receiver_selected"] is True
+    assert projection["component_receiver_failure_class"] == (
+        "OrdinaryMulticomponentRuntimeError"
+    )
+    assert outcome.terminal_status == "blocked"
+    assert outcome.execution_trace["analyst_skipped"] is True
+    assert outcome.execution_trace["scrutineer_ran"] is False
+    assert not any(
+        prompt == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_DPRIME]
+        for prompt in harness.model_system_prompts
+    )
+
+    scheduler = harness.run_kernel.state.projections[MULTICOMPONENT_SCHEDULER_STAGE]
+    assert project_current_component_analyst_failure(
+        state=scheduler,
+        expected_run_id=outcome.run_id,
+        expected_request_id=outcome.session_id,
+    ) == projection["component_analyst_failure"]
+    assert project_current_component_analyst_failure(
+        state=scheduler,
+        expected_run_id="stale-run",
+        expected_request_id=outcome.session_id,
+    ) is None
+
+    wrong_role = deepcopy(scheduler)
+    wrong_role["failed_required_work_ref"]["role"] = ROLE_COMPONENT_DPRIME
+    assert project_current_component_analyst_failure(
+        state=wrong_role,
+        expected_run_id=outcome.run_id,
+        expected_request_id=outcome.session_id,
+    ) is None
+
+    unrelated_work = deepcopy(scheduler)
+    unrelated_work["failed_required_work_ref"]["work_id"] = "unrelated-work"
+    assert project_current_component_analyst_failure(
+        state=unrelated_work,
+        expected_run_id=outcome.run_id,
+        expected_request_id=outcome.session_id,
+    ) is None
 
 def test_bounded_searchos_n1_causal_projection_privacy_allowlist() -> None:
     sentinels = (
@@ -1362,6 +1475,11 @@ def test_bounded_searchos_n1_causal_projection_privacy_allowlist() -> None:
     fixture = {
         "slot_postures": {"slot-1": "judgment_failed"},
         "component_receiver_failure": "OrdinaryMulticomponentRuntimeError",
+        "component_analyst_failure": {
+            "role": ROLE_COMPONENT_ANALYST,
+            "failure_kind": sentinels[6],
+            "settlement_posture": "failed_spent",
+        },
         "component_receiver_failure_reason": sentinels[6],
         "semantic_material_refs": [
             {
@@ -1431,6 +1549,11 @@ def test_bounded_searchos_n1_causal_projection_privacy_allowlist() -> None:
         searchos_slice_a_projection=fixture,
     )
     assert projection is not None
+    assert projection["component_analyst_failure"] == {
+        "role": ROLE_COMPONENT_ANALYST,
+        "failure_kind": "other_safe",
+        "settlement_posture": "failed_spent",
+    }
     serialized = json.dumps(projection, sort_keys=True)
     for sentinel in sentinels:
         assert sentinel not in serialized

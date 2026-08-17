@@ -3973,6 +3973,42 @@ def _mapping_or_empty(value: Any) -> dict[str, Any]:
         return {}
 
 
+def _project_component_analyst_failure(
+    value: Any,
+    *,
+    receiver_failure: Any,
+) -> dict[str, str] | None:
+    """Project only the closed failure facts from the scheduler-owned fragment."""
+
+    if not receiver_failure or not isinstance(value, Mapping):
+        return None
+    if value.get("role") != "component_analyst":
+        return None
+    from core.multicomponent_graph_scheduling import (
+        LEASE_FAILED,
+        LEASE_STALE,
+        MULTICOMPONENT_SAFE_FAILURE_KINDS,
+    )
+
+    settlement = value.get("settlement_posture")
+    if settlement not in {LEASE_FAILED, LEASE_STALE}:
+        return None
+    failure_kind = value.get("failure_kind")
+    if not isinstance(failure_kind, str) or not failure_kind.strip():
+        return None
+    normalized_failure_kind = failure_kind.strip()
+    if (
+        normalized_failure_kind not in MULTICOMPONENT_SAFE_FAILURE_KINDS
+        and normalized_failure_kind != "other_safe"
+    ):
+        normalized_failure_kind = "other_safe"
+    return {
+        "role": "component_analyst",
+        "failure_kind": normalized_failure_kind,
+        "settlement_posture": str(settlement),
+    }
+
+
 def _project_slot_summary(
     *,
     record: Mapping[str, Any],
@@ -4557,6 +4593,16 @@ def build_bounded_searchos_n1_causal_projection(
         "logical_call_correlation": "not_directly_available",
         "slots": slots,
     }
+    component_analyst_failure = _project_component_analyst_failure(
+        searchos_slice_a_projection.get("component_analyst_failure"),
+        receiver_failure=receiver_failure,
+    )
+    if (
+        component_analyst_failure is not None
+        and required_slot_count == 1
+        and optional_slot_count == 0
+    ):
+        result["component_analyst_failure"] = component_analyst_failure
     if optional_slots:
         result["optional_slots"] = optional_slots
     if all_active_slots_semantically_handed_off:

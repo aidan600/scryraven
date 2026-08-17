@@ -93,6 +93,26 @@ LEASE_STALE = "stale_rejected_spent"
 LEASE_BLOCKED = "blocked_spent"
 LEASE_CONTESTED = "contested_spent"
 
+# These are the existing bounded failure values that may be retained by a
+# semantic-role observation or its scheduler settlement.  The public causal
+# projector consumes this closed vocabulary and maps anything else to its
+# existing generic safe posture.
+MULTICOMPONENT_SAFE_FAILURE_KINDS = frozenset(
+    {
+        "artifact_construction_failure",
+        "artifact_validation_failure",
+        "canonical_authority_changed_before_role_observation",
+        "executor_initialization_failure",
+        "failed_submission",
+        "model_transport_failure",
+        "output_validation_failure",
+        "prepared_transport_construction_failure",
+        "provider_identity_mismatch",
+        "semantic_authority_changed_after_dispatch",
+        "semantic_role_observation_reduction_failure",
+    }
+)
+
 _RESERVED_STATUSES = frozenset({LEASE_GRANTED})
 _SPENT_STATUSES = frozenset(
     {
@@ -3058,6 +3078,78 @@ def scheduler_trace_projection(state: Mapping[str, Any]) -> dict[str, Any]:
     return validate_scheduler_state(state)
 
 
+def project_current_component_analyst_failure(
+    *,
+    state: Mapping[str, Any] | None,
+    expected_run_id: str | None,
+    expected_request_id: str | None,
+) -> dict[str, str] | None:
+    """Project safe facts for the exact current failed Component Analyst work.
+
+    The scheduler owns the failed-required-work reference and its lease
+    settlement.  Match those references against exactly one terminal role
+    lease before returning the small role/failure/posture fragment consumed by
+    the SearchOS causal projection.  Work IDs and digests are used for
+    currentness here but are intentionally not returned.
+    """
+
+    run_id = str(expected_run_id or "").strip()
+    request_id = str(expected_request_id or "").strip()
+    if not run_id or not request_id or not isinstance(state, Mapping):
+        return None
+    try:
+        scheduler = validate_scheduler_state(_mapping(state))
+    except (TypeError, ValueError):
+        return None
+    if scheduler.get("run_id") != run_id or scheduler.get("request_id") != request_id:
+        return None
+    if scheduler.get("status") != "blocked_required_work_failed":
+        return None
+    failed_ref = _mapping(scheduler.get("failed_required_work_ref"))
+    if failed_ref.get("role") != ROLE_COMPONENT_ANALYST:
+        return None
+    settlement = failed_ref.get("settlement")
+    if settlement not in {LEASE_FAILED, LEASE_STALE}:
+        return None
+    work_id = failed_ref.get("work_id")
+    work_digest = failed_ref.get("work_digest")
+    if not isinstance(work_id, str) or not work_id:
+        return None
+    if not isinstance(work_digest, str) or not work_digest:
+        return None
+
+    matches: list[dict[str, Any]] = []
+    for raw_lease in scheduler.get("lease_history") or ():
+        lease = _mapping(raw_lease)
+        work = _mapping(lease.get("work"))
+        role_action_ref = _mapping(lease.get("role_action_ref"))
+        if (
+            lease.get("status") != settlement
+            or lease.get("settlement_reason") is None
+            or work.get("work_id") != work_id
+            or work.get("work_digest") != work_digest
+            or work.get("role") != ROLE_COMPONENT_ANALYST
+            or work.get("run_id") != run_id
+            or work.get("request_id") != request_id
+            or not isinstance(role_action_ref.get("action_id"), str)
+            or not role_action_ref.get("action_id")
+        ):
+            continue
+        matches.append(lease)
+    if len(matches) != 1:
+        return None
+
+    failure_kind = matches[0].get("settlement_reason")
+    if not isinstance(failure_kind, str) or not failure_kind.strip():
+        return None
+    normalized_failure_kind = failure_kind.strip()
+    if normalized_failure_kind not in MULTICOMPONENT_SAFE_FAILURE_KINDS:
+        normalized_failure_kind = "other_safe"
+    return {
+        "role": ROLE_COMPONENT_ANALYST,
+        "failure_kind": normalized_failure_kind,
+        "settlement_posture": str(settlement),
+    }
 __all__ = [
     "EXECUTOR_REGISTERED_DETERMINISTIC",
     "LEASE_BLOCKED",
@@ -3078,6 +3170,7 @@ __all__ = [
     "MULTICOMPONENT_CHILD_ACTION_DESCRIPTOR_SET_SCHEMA_VERSION",
     "MULTICOMPONENT_PREPARED_TRANSPORT_CALL_SCHEMA_VERSION",
     "MULTICOMPONENT_ROLE_CALL_LIMITS",
+    "MULTICOMPONENT_SAFE_FAILURE_KINDS",
     "MULTICOMPONENT_SAFE_WORKER_RESULT_SCHEMA_VERSION",
     "MULTICOMPONENT_SCHEDULER_OWNER",
     "MULTICOMPONENT_SCHEDULER_SCHEMA_VERSION",
@@ -3108,6 +3201,7 @@ __all__ = [
     "reconstruct_specialist_bounded_input",
     "reconstruct_specialist_input_for_work",
     "scheduler_trace_projection",
+    "project_current_component_analyst_failure",
     "settle_role_lease",
     "settle_specialist_lease",
     "validate_scheduler_state",
