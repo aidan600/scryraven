@@ -1201,10 +1201,37 @@ def test_searchos_receiver_block_cannot_report_completed_or_originate_analyst(
     assert projection["component_receiver_failure_class"] == (
         "OrdinaryMulticomponentRuntimeError"
     )
+    assert outcome.execution_trace["analyst_skipped"] is True
+    assert outcome.execution_trace["analyst_skip_reason"] == (
+        "searchos_component_receiver_failure"
+    )
+    assert outcome.execution_trace["analyst_skipped_after_economist"] is True
+    assert outcome.execution_trace["analyst_after_economist_skip_reason"] == (
+        "searchos_component_receiver_failure"
+    )
+    assert outcome.execution_trace["post_retrieval_fast_path_used"] is False
+    assert outcome.execution_trace["pre_analyst_gate_signals"] == [
+        "searchos_component_receiver_failure"
+    ]
+    assert outcome.execution_trace["scrutineer_ran"] is False
+    scrutineer_handoff = outcome.execution_trace["scrutineer_remediation_handoff"]
+    assert scrutineer_handoff["remediation_dispatch"]["authorized"] is False
+    assert scrutineer_handoff["remediation_dispatch"]["dispatch_posture"] == (
+        "skipped_searchos_component_receiver_failure"
+    )
+    assert scrutineer_handoff["resynthesis"]["reanalysis_triggered"] is False
     slot = _required_causal_slot(projection)
     assert slot["component_analyst_proposal_status"] == "not_proposed"
     assert slot["handoff_material_consumed"] is False
     assert slot["component_dprime_validation_present"] is False
+    assert slot["semantic_admission_status"] != "admitted"
+    assert harness.analyst_calls == 0
+    assert DEFAULT_SYSTEM["analyst"] not in harness.model_system_prompts
+    assert DEFAULT_SYSTEM["synth_evaluator"] not in harness.model_system_prompts
+    assert not any(
+        prompt.startswith("You are a ruthless fact-checker")
+        for prompt in harness.model_system_prompts
+    )
     assert not any(
         prompt == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST]
         for prompt in harness.model_system_prompts

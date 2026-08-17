@@ -84,8 +84,10 @@ class LegacyReviewRuntimeOutcome(_LegacyReviewRuntimeOutcomeBase):
 
 def multicomponent_legacy_review_bypass_outcome_from_scope(
     scope: Mapping[str, Any],
+    *,
+    skip_posture: str | None = None,
 ) -> LegacyReviewRuntimeOutcome:
-    """Close legacy synth-evaluator/Scrutineer after the typed Graph V1 lane."""
+    """Close legacy synth-evaluator/Scrutineer after the selected typed lane."""
 
     return LegacyReviewRuntimeOutcome(
         analysis="",
@@ -103,7 +105,9 @@ def multicomponent_legacy_review_bypass_outcome_from_scope(
         scrutineer_high_count=0,
         scrutineer_remediation_queries=[],
         scrutineer_remediation_dispatch_authorized=False,
-        scrutineer_remediation_dispatch_posture="skipped_multicomponent_graph_v1",
+        scrutineer_remediation_dispatch_posture=(
+            skip_posture or "skipped_multicomponent_graph_v1"
+        ),
         scrutineer_remediation_provider_role=None,
         scrutineer_remediation_providers=[],
         scrutineer_remediation_linkup_depth_override=None,
