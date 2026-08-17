@@ -35,9 +35,12 @@ composition no longer injects or executes the legacy Economist callable.
 PR #541 candidate (unmerged): physical attempt/cost envelope enforcement exists
 on the PR branch, and the public CLI requires one complete explicit per-run
 `--bounded-run-authorization` file to activate it. `public-cli-v1` remains
-removed; no reusable mode profiles exist. No live bounded ordinary-product run
-has occurred. Until merge, treat this as candidate state rather than merged
-product truth.
+removed; no reusable mode profiles exist. One bounded Q1 ordinary-product run
+at the current repository baseline is recorded below. It reached a lawful
+SearchOS semantic handoff but did not produce Component Analyst origination or
+a supported cited answer; this is bounded evidence, not broad live-validation
+proof. Until merge, treat the PR branch's envelope changes as candidate state
+rather than merged product truth.
 
 
 That downstream synthesis-class boundary does not limit initial semantic
@@ -78,6 +81,87 @@ and explicitly activated.
 Nothing here proves real-world model quality or arbitrary-query downstream
 multi-component synthesis, and no provider, search, retrieval, or
 live-validation license is widened.
+
+## Bounded Q1 Ordinary-Product Evidence
+
+The following bounded ordinary-product observation is current evidence, not a
+general reliability claim.
+
+```text
+Repo SHA: 605b51b4c4216a64baf2bbf9d769aa39b1d50473
+Run:     45f3319b-9b43-4dcc-ba81-2d1d12f40a77
+Query:   According to the official Python 3 documentation, what are the
+         default values for rel_tol and abs_tol in math.isclose()?
+```
+
+Observed ordinary product path:
+
+| Stage | Result |
+| --- | --- |
+| Planner | `PASS` |
+| AnswerContract | `PASS` |
+| QueryPlan | `PASS` |
+| DISCOVER | `PASS` |
+| READ | `PASS` |
+| SearchJudgment | `PASS` |
+
+SearchOS reached:
+
+```text
+searchos_exit = SEMANTIC_HANDOFF
+lawful semantic handoff = YES
+```
+
+Safe downstream projection recorded:
+
+```text
+component_receiver_selected       = true
+component_analyst_proposal_status = not_proposed
+handoff_material_consumed         = false
+semantic_admission_status         = not_admitted
+```
+
+Final product state:
+
+```text
+status         = blocked
+answer_present = false
+citation_count = 0
+Author invoked = NO
+```
+
+No supported cited Q1 answer was produced. The bounded conclusion is:
+
+```text
+SEARCHOS_COMPLETE_FOR_Q1 ONLY
+```
+
+This does not generalize to all Q1 repetitions, Q2-Q6, arbitrary queries,
+broad SearchOS reliability, acquisition completeness, or product correctness.
+
+### Frozen-handoff observation
+
+The Q1 product run used persistence suppression. Its sanitized output packet
+retained safe summary, digest, and presence information, but not the canonical
+live state required to replay downstream analysis, including the full current
+RunKernel state, accepted AnswerContract, SearchOS semantic handoff, READ
+custody/material, EvidenceLedger bindings, and downstream authority context.
+
+A later downstream-only observation therefore correctly classified
+`FROZEN_HANDOFF_NOT_AVAILABLE`. That result means the proposed replay
+experiment could not lawfully run; it does not mean missing replay persistence
+is the product blocker. Replay infrastructure is not the next product phase.
+
+### Current product frontier
+
+The immediate product frontier is:
+
+```text
+SearchOS -> Component Analyst same-process receiver/origination
+```
+
+The preceding ordinary product run selected the receiver, but observed no
+Component Analyst proposal, no handoff consumption, and no semantic admission.
 
 ## Operator Doorman Boundary
 
@@ -462,8 +546,10 @@ none of those authorities; the former pre-QueryPlan Scout lane is retired.
 Exact-candidate READ,
 custody, and governed component semantic handoff are installed; custody alone
 still ends before support authority. Compatibility names such as `proplex`, `python -m proplex`,
-`PROPLEX_*`, `proplex.db`, and `proplex_*` remain supported. No live provider,
-model, search, recon, fetch/read, or retrieval call was made. The initial
+`PROPLEX_*`, `proplex.db`, and `proplex_*` remain supported. This installed
+routing description makes no broad live provider, model, search, recon,
+fetch/read, or retrieval reliability claim; the bounded Q1 ordinary-product
+evidence is recorded above. The initial
 SearchPlanner-to-QueryPlan path and initial and in-loop SearchOS judgment are
 installed. PR #517 one-hop breadcrumb navigation and its
 qualification/source-truth path are installed. One canonical required
@@ -884,10 +970,11 @@ quality, or arbitrary-query behavior.
 ### Ordinary supported-product proof
 
 The evaluator is an OPERATOR/VALIDATION surface, not ordinary supported-product
-consumption. Current ordinary-CLI live product behavior remains unproved. No
-supported user input has been shown by this infrastructure to traverse the
-ordinary pipeline to a user-visible answer or honest blocker under a bounded live
-product envelope.
+consumption. A separate bounded Q1 ordinary-product run is recorded above; it
+traversed the ordinary pipeline to a lawful SearchOS handoff and an honest
+blocked terminal, but not to Component Analyst origination, semantic admission,
+or a supported cited answer. The evaluator itself does not establish broader
+live product behavior.
 
 ## Installed SearchOS One-Hop Breadcrumb Navigation
 
@@ -995,17 +1082,21 @@ Fetch, Tavily site acquisition, replacement semantic role, or live validation.
 
 ## Not Proved
 
-- No live validation was performed.
+- One bounded Q1 ordinary-product run is recorded above; it does not establish
+  broad live validation or repeatability.
 - Real-model factual InterpretationBinding selection accuracy, abstention
   quality, and false-binding rate remain unproved.
 - Real-model user-clarification quality and arbitrary-query job escalation
   quality remain unproved.
-- Current real-model SearchPlanner behavior remains unproved.
-- Current real-model Component/Cross-Component Analyst behavior remains
-  unproved.
-- Current ordinary-CLI live product behavior remains unproved.
-- No live bounded ordinary-product run has occurred under explicit per-run
-  authorization; offline public-CLI proof is not live supported-product evidence.
+- Broader real-model SearchPlanner behavior and quality remain unproved.
+- Real-model Component Analyst origination for Q1 remains unproved.
+- Broader real-model Component Analyst quality remains unproved.
+- Real-model Cross-Component Analyst behavior remains unproved.
+- Real-model component D-prime behavior remains unproved.
+- Real-model synthesis D-prime behavior remains unproved.
+- Real-model full Scrutineer behavior remains unproved.
+- Supported cited Q1 completion remains unproved.
+- Broad SearchOS or general-query reliability remains unproved.
 - The offline SearchOS/AnalystOS gate does not prove that a real SearchPlanner
   or Component/Cross-Component Analyst reliably originates its required
   semantic decomposition.

@@ -21,6 +21,34 @@ and [FinalAnswerPacket / Author Boundary](FAP_AUTHOR_BOUNDARY.md).
 [Quantitative Finalization Containment](AG_S1_QUANTITATIVE_FINALIZATION_CONTAINMENT_01.md)
 owns the claim-scoped numeric projection and final accepted-prose gate.
 
+## Installed Executable Topology Versus Selected Retention Target
+
+This document owns the current installed executable topology. That topology is
+not the selected retention target for future AnalystOS phases:
+
+```text
+INSTALLED EXECUTABLE TOPOLOGY != SELECTED RETENTION TARGET
+```
+
+The installed routes remain factual and executable:
+
+```text
+Component Analyst
+-> component D-prime
+-> RunKernel component admission
+-> ComponentCoverage / graph work
+-> Cross-Component Analyst
+-> synthesis D-prime
+-> Scrutineer when triggered
+-> RunKernel graph/synthesis admission
+```
+
+Mandatory serial D-prime is not protected target architecture. Component and
+synthesis D-prime are installed and currently executable, but provisional from
+a retention perspective. This document does not rewrite the installed route as
+an Analyst-to-Critic path, and it does not select the final replacement
+Analyst/Critic topology.
+
 The installed query class is:
 
 ```text
@@ -210,12 +238,13 @@ The shared semantic-call caps are:
 | --- | ---: |
 | Component Analyst | 5 |
 | Component D-prime | 5 |
-| Cross-Component Analyst | 2 |
+| Cross-Component Analyst | 3 |
 | Synthesis D-prime | 8 |
-| Scrutineer | 2 |
+| Scrutineer | 3 |
 
-These caps cover initial and authorized continuation work; they are not model
-quality claims or permanent mode budgets. Full Scrutineer is triggered by the
+These caps cover initial and authorized continuation work and sum to a 24-unit
+semantic-role envelope. They are installed runtime limits, not model-quality
+claims or permanent target budgets. Full Scrutineer is triggered by the
 installed policy, including Deep mode, contradiction, unresolved dependency,
 material caveat, high-stakes quantitative posture, layered synthesis, or a
 synthesis-D-prime challenge/follow-up/ambiguous-support result. Fast and
@@ -230,7 +259,7 @@ choice.
 
 The fixed ordinary CLI/UI product composition injects the S1 quantitative
 Specialist registry and execution policy and uses Scheduler V3. V3 preserves
-the same semantic ready-work owner and 22-unit envelope while adding a separate
+the same semantic ready-work owner and 24-unit semantic-role envelope while adding a separate
 zero-or-one deterministic Specialist pool.
 Specialist work is inserted after its bound role proposal and before the exact
 component or synthesis D-prime review. Generic closed-default and no-need runs
