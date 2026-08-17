@@ -32,15 +32,15 @@ SearchJudgment does not select a second semantic lane. Non-SearchOS compatibilit
 surfaces retain their established direct behavior. The ordinary CLI/backend
 composition no longer injects or executes the legacy Economist callable.
 
-PR #541 candidate (unmerged): physical attempt/cost envelope enforcement exists
-on the PR branch, and the public CLI requires one complete explicit per-run
-`--bounded-run-authorization` file to activate it. `public-cli-v1` remains
-removed; no reusable mode profiles exist. One bounded Q1 ordinary-product run
-at the current repository baseline is recorded below. It reached a lawful
-SearchOS semantic handoff but did not produce Component Analyst origination or
-a supported cited answer; this is bounded evidence, not broad live-validation
-proof. Until merge, treat the PR branch's envelope changes as candidate state
-rather than merged product truth.
+PR #541 merged on 2026-08-06 at
+`c742da77d4daa02d7cf5012ddc32da2b8cb5bc39`. Physical attempt/cost envelope
+enforcement is installed merged product state, and the public CLI requires one
+complete explicit per-run `--bounded-run-authorization` file to activate it.
+`public-cli-v1` remains removed; no reusable mode profiles exist. One bounded
+Q1 ordinary-product run at the current repository baseline is recorded below.
+It reached a lawful SearchOS semantic handoff but did not produce Component
+Analyst origination or a supported cited answer; this is bounded evidence, not
+broad live-validation proof.
 
 
 That downstream synthesis-class boundary does not limit initial semantic
