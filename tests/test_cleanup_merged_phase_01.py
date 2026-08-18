@@ -67,8 +67,11 @@ def build_merged_phase_fixture(
     phase_branch: str = "cursor/phase-a",
     with_worktree: bool = True,
     merge_to_origin_main: bool = True,
+    layout: str = "canonical",
 ) -> PhaseFixture:
     """Create bare origin + ordinary clone + optional merged phase worktree."""
+    if layout not in {"canonical", "legacy_flat"}:
+        raise ValueError(f"unknown fixture layout: {layout}")
     bare = tmp_path / "origin.git"
     subprocess.run(
         ["git", "init", "--bare", str(bare)],
@@ -120,8 +123,8 @@ def build_merged_phase_fixture(
 
     phase_parent = tmp_path / "sr-phases"
     phase_root = phase_parent / phase_name
-    phase_worktree = phase_root / "worktree"
-    phase_root.mkdir(parents=True, exist_ok=True)
+    canonical_worktree = phase_root / "worktree"
+    phase_parent.mkdir(parents=True, exist_ok=True)
 
     _git(repo, "switch", "-c", phase_branch)
     _write(repo / "phase.txt", "phase work\n")
@@ -129,11 +132,19 @@ def build_merged_phase_fixture(
     _git(repo, "commit", "-m", "phase commit")
     reviewed_head = _git(repo, "rev-parse", "HEAD").stdout.strip().lower()
 
+    phase_worktree = (
+        phase_root if layout == "legacy_flat" else canonical_worktree
+    )
     if with_worktree:
         _git(repo, "switch", "main")
-        _git(repo, "worktree", "add", str(phase_worktree), phase_branch)
+        if layout == "legacy_flat":
+            _git(repo, "worktree", "add", str(phase_root), phase_branch)
+        else:
+            phase_root.mkdir(parents=True, exist_ok=True)
+            _git(repo, "worktree", "add", str(canonical_worktree), phase_branch)
     else:
         _git(repo, "switch", "main")
+        phase_root.mkdir(parents=True, exist_ok=True)
 
     if merge_to_origin_main:
         # Fast-forward origin/main to the reviewed phase head without moving local main.
@@ -158,6 +169,7 @@ def run_cleanup(
     phase_root: Path | None = None,
     phase_branch: str | None = None,
     phase_parent: Path | None = None,
+    phase_worktree: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     args = [
         sys.executable,
@@ -173,6 +185,8 @@ def run_cleanup(
         "--phase-parent",
         str(phase_parent or fx.phase_parent),
     ]
+    if phase_worktree is not None:
+        args.extend(["--phase-worktree", str(phase_worktree)])
     return subprocess.run(
         args,
         check=False,
@@ -213,6 +227,7 @@ def test_case_a_ordinary_merged_phase(tmp_path: Path) -> None:
     result = run_cleanup(fx)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "cleanup complete" in result.stdout
+    assert "Worktree topology: canonical" in result.stdout
     assert not fx.phase_worktree.exists()
     assert not fx.phase_root.exists()
     branches = _git(fx.repo, "for-each-ref", "--format=%(refname:short)", "refs/heads/").stdout.splitlines()
@@ -1087,3 +1102,190 @@ def test_case_ad_generic_permission_error_does_not_chmod(
     assert chmod_calls == []
     assert target.exists()
     assert fx.phase_root.exists()
+
+
+def _assert_cleanup_removed_phase(fx: PhaseFixture, result: subprocess.CompletedProcess[str]) -> None:
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "cleanup complete" in result.stdout
+    assert not fx.phase_worktree.exists()
+    assert not fx.phase_root.exists()
+    branches = _git(fx.repo, "for-each-ref", "--format=%(refname:short)", "refs/heads/").stdout.splitlines()
+    assert branches == ["main"]
+    head = _git(fx.repo, "rev-parse", "HEAD").stdout.strip().lower()
+    origin = _git(fx.repo, "rev-parse", "origin/main").stdout.strip().lower()
+    assert head == origin
+    status = _git(fx.repo, "status", "--porcelain").stdout.strip()
+    assert status == ""
+    wt = _git(fx.repo, "worktree", "list", "--porcelain").stdout
+    assert wt.count("worktree ") == 1
+
+
+def test_legacy_flat_merged_phase_cleans_successfully(tmp_path: Path) -> None:
+    """Registered worktree at phase_root (legacy-flat) cleans through the same gates."""
+    fx = build_merged_phase_fixture(tmp_path, layout="legacy_flat")
+    assert fx.phase_worktree == fx.phase_root
+    porcelain = _git(fx.repo, "worktree", "list", "--porcelain").stdout
+    expected = os.path.normcase(os.path.normpath(str(fx.phase_root)))
+    assert any(
+        os.path.normcase(os.path.normpath(line[len("worktree ") :])) == expected
+        for line in porcelain.splitlines()
+        if line.startswith("worktree ")
+    )
+    assert not (fx.phase_root / "worktree").exists()
+
+    result = run_cleanup(fx)
+    _assert_cleanup_removed_phase(fx, result)
+    assert "Worktree topology: legacy_flat" in result.stdout
+    assert "resolved worktree topology: legacy_flat" in result.stdout
+    assert "removed phase worktree" in result.stdout
+    assert "deleted phase branch with -d" in result.stdout
+    assert "worktree remove --force" not in result.stdout
+    assert "branch -D" not in result.stdout
+
+
+def test_legacy_flat_wrong_branch_fails_closed(tmp_path: Path) -> None:
+    fx = build_merged_phase_fixture(tmp_path, layout="legacy_flat")
+    _git(fx.repo, "worktree", "remove", str(fx.phase_root))
+    _git(fx.repo, "branch", "unrelated-branch", "main")
+    _git(fx.repo, "worktree", "add", str(fx.phase_root), "unrelated-branch")
+    cache = fx.phase_root / ".pytest_cache"
+    cache.mkdir()
+    marker = cache / "keep.bin"
+    marker.write_bytes(b"keep")
+
+    result = run_cleanup(fx)
+    assert result.returncode == 9, result.stdout + result.stderr
+    assert "worktree identity gate = failed" in result.stdout
+    assert "refs/heads/unrelated-branch" in result.stdout
+    assert fx.phase_root.exists()
+    assert marker.exists()
+    assert _git(
+        fx.repo, "show-ref", "--verify", "--quiet", f"refs/heads/{fx.phase_branch}", check=False
+    ).returncode == 0
+    assert "removed phase worktree" not in result.stdout
+    assert "deleted phase branch" not in result.stdout
+
+
+def test_legacy_flat_head_mismatch_fails_closed(tmp_path: Path) -> None:
+    fx = build_merged_phase_fixture(tmp_path, layout="legacy_flat")
+    old_main = _git(fx.repo, "rev-parse", "main").stdout.strip().lower()
+    assert old_main != fx.reviewed_head
+    _git(fx.repo, "worktree", "remove", str(fx.phase_root))
+    _git(fx.repo, "worktree", "add", "--detach", str(fx.phase_root), old_main)
+
+    result = run_cleanup(fx)
+    assert result.returncode == 9, result.stdout + result.stderr
+    assert "worktree identity gate = failed" in result.stdout
+    assert fx.phase_root.exists()
+    assert _git(
+        fx.repo, "show-ref", "--verify", "--quiet", f"refs/heads/{fx.phase_branch}", check=False
+    ).returncode == 0
+
+
+def test_legacy_flat_dirty_worktree_fails_closed(tmp_path: Path) -> None:
+    fx = build_merged_phase_fixture(tmp_path, layout="legacy_flat")
+    target = fx.phase_root / "phase.txt"
+    original = target.read_text(encoding="utf-8")
+    target.write_text(original + "dirty\n", encoding="utf-8")
+
+    result = run_cleanup(fx)
+    assert result.returncode != 0
+    assert "tracked modifications" in result.stdout.lower() or "modifications" in result.stdout.lower()
+    assert target.read_text(encoding="utf-8") == original + "dirty\n"
+    assert fx.phase_root.exists()
+    assert _git(
+        fx.repo, "show-ref", "--verify", "--quiet", f"refs/heads/{fx.phase_branch}", check=False
+    ).returncode == 0
+
+
+def test_legacy_flat_path_exists_but_not_registered_fails_closed(tmp_path: Path) -> None:
+    fx = build_merged_phase_fixture(tmp_path, with_worktree=False)
+    keep = fx.phase_root / "tmp"
+    keep.mkdir()
+    (keep / "execution.jsonl").write_text("x\n", encoding="utf-8")
+
+    result = run_cleanup(fx, phase_worktree=fx.phase_root)
+    assert result.returncode == 4, result.stdout + result.stderr
+    assert "not registered" in result.stdout.lower()
+    assert keep.exists()
+    assert fx.phase_root.exists()
+    assert _git(
+        fx.repo, "show-ref", "--verify", "--quiet", f"refs/heads/{fx.phase_branch}", check=False
+    ).returncode == 0
+    assert "removed phase worktree" not in result.stdout
+    assert "deleted phase branch" not in result.stdout
+
+
+def test_ambiguous_canonical_and_flat_topology_fails_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fx = build_merged_phase_fixture(tmp_path)
+    sys.path.insert(0, str(ENGINE.parent))
+    import cleanup_merged_phase as mod
+
+    real_list = mod.list_worktree_entries
+
+    def both_topologies(repo: Path) -> list[dict[str, str]]:
+        entries = real_list(repo)
+        entries.append(
+            {
+                "worktree": str(fx.phase_root),
+                "HEAD": fx.reviewed_head,
+                "branch": f"refs/heads/{fx.phase_branch}",
+            }
+        )
+        return entries
+
+    monkeypatch.setattr(mod, "list_worktree_entries", both_topologies)
+    code = mod.run_cleanup(
+        [
+            "--reviewed-head",
+            fx.reviewed_head,
+            "--phase-branch",
+            fx.phase_branch,
+            "--phase-root",
+            str(fx.phase_root),
+            "--repo",
+            str(fx.repo),
+            "--phase-parent",
+            str(fx.phase_parent),
+        ]
+    )
+    captured = capsys.readouterr().out
+    assert code == mod.EXIT_PATH_BOUNDARY
+    assert "ambiguous phase worktree topology" in captured
+    assert fx.phase_worktree.exists()
+    assert fx.phase_root.exists()
+    assert _git(
+        fx.repo, "show-ref", "--verify", "--quiet", f"refs/heads/{fx.phase_branch}", check=False
+    ).returncode == 0
+    assert "removed phase worktree" not in captured
+    assert "deleted phase branch" not in captured
+
+
+def test_resolve_topology_uses_git_registration_not_directory_existence(tmp_path: Path) -> None:
+    sys.path.insert(0, str(ENGINE.parent))
+    import cleanup_merged_phase as mod
+
+    phase_root = tmp_path / "sr-phases" / "phase-a"
+    canonical = phase_root / "worktree"
+    phase_root.mkdir(parents=True)
+    canonical.mkdir()
+    # Unregistered directories must not select legacy-flat.
+    path, topology = mod.resolve_phase_worktree_topology(
+        phase_root=phase_root,
+        requested_worktree=None,
+        entries=[],
+    )
+    assert topology == mod.TOPOLOGY_CANONICAL
+    assert path == canonical
+
+    with pytest.raises(mod.CleanupBlocked) as raised:
+        mod.resolve_phase_worktree_topology(
+            phase_root=phase_root,
+            requested_worktree=tmp_path / "elsewhere",
+            entries=[],
+        )
+    assert raised.value.code == mod.EXIT_PATH_BOUNDARY

@@ -4,6 +4,11 @@
 Operator command that inspects actual Git/filesystem state and safely removes
 one explicitly identified, already-merged ScryRaven phase. Uses only the Python
 standard library and the installed ``git`` CLI (never ``shell=True``).
+
+New Cursor phases continue to use canonical ``<phase-root>/worktree``. This
+helper also recognizes one proven legacy-flat topology where Git registers
+``<phase-root>`` itself as the worktree, and only after the same merge,
+review-identity, cleanliness, and reparse gates.
 """
 
 from __future__ import annotations
@@ -28,6 +33,9 @@ EXIT_PATH_BOUNDARY = 6
 EXIT_REVIEW_IDENTITY = 7
 EXIT_INVARIANT = 8
 EXIT_WORKTREE_IDENTITY = 9
+
+TOPOLOGY_CANONICAL = "canonical"
+TOPOLOGY_LEGACY_FLAT = "legacy_flat"
 
 SHA40_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 
@@ -73,6 +81,7 @@ class CleanupReport:
     phase_root: str = ""
     phase_parent: str = ""
     phase_worktree: str = ""
+    worktree_topology: str = ""
     remote: str = "origin"
     main_branch: str = "main"
     initial_ordinary_posture: str = ""
@@ -110,6 +119,7 @@ class CleanupReport:
             f"Phase root: {self.phase_root}",
             f"Phase parent: {self.phase_parent}",
             f"Phase worktree: {self.phase_worktree}",
+            f"Worktree topology: {self.worktree_topology}",
             f"Remote: {self.remote}",
             f"Main branch: {self.main_branch}",
             f"Initial ordinary branch / detached posture: {self.initial_ordinary_posture}",
@@ -382,11 +392,11 @@ def prove_phase_path_boundaries(
             EXIT_PATH_BOUNDARY,
             "phase root must be a direct child of the trusted phase parent",
         )
-    expected_wt = lexical_normalize(root_n / "worktree")
-    if not paths_equal(wt_n, expected_wt):
+    canonical_wt = lexical_normalize(root_n / "worktree")
+    if not (paths_equal(wt_n, canonical_wt) or paths_equal(wt_n, root_n)):
         raise CleanupBlocked(
             EXIT_PATH_BOUNDARY,
-            "phase worktree must be exactly <phase-root>/worktree",
+            "phase worktree must be exactly <phase-root>/worktree or <phase-root>",
         )
     # Reject any reparse on existing path components used for deletion authority.
     for label, path in (
@@ -433,20 +443,87 @@ def parse_worktree_porcelain(text: str) -> list[dict[str, str]]:
     return entries
 
 
+def matching_worktree_entry(
+    entries: Sequence[dict[str, str]], target: Path
+) -> dict[str, str] | None:
+    expected = lexical_normalize(target)
+    for entry in entries:
+        path_text = entry.get("worktree")
+        if not path_text:
+            continue
+        if paths_equal(lexical_normalize(Path(path_text)), expected):
+            return entry
+    return None
+
+
 def find_worktree_entry(
     repo: Path, target: Path
 ) -> tuple[dict[str, str] | None, list[dict[str, str]]]:
     listed = run_git(repo, ["worktree", "list", "--porcelain"], check=True)
     entries = parse_worktree_porcelain(listed.stdout)
-    match = None
-    for entry in entries:
-        path_text = entry.get("worktree")
-        if not path_text:
-            continue
-        if paths_equal(lexical_normalize(Path(path_text)), target):
-            match = entry
-            break
-    return match, entries
+    return matching_worktree_entry(entries, target), entries
+
+
+def list_worktree_entries(repo: Path) -> list[dict[str, str]]:
+    listed = run_git(repo, ["worktree", "list", "--porcelain"], check=True)
+    return parse_worktree_porcelain(listed.stdout)
+
+
+def resolve_phase_worktree_topology(
+    *,
+    phase_root: Path,
+    requested_worktree: Path | None,
+    entries: Sequence[dict[str, str]],
+) -> tuple[Path, str]:
+    """Select canonical <phase-root>/worktree or proven legacy-flat <phase-root>.
+
+    Git registration is the topology signal. An unregistered directory at
+    phase_root is never treated as a worktree merely because it exists.
+    """
+    root_n = lexical_normalize(phase_root)
+    canonical = lexical_normalize(root_n / "worktree")
+    flat = root_n
+    canonical_entry = matching_worktree_entry(entries, canonical)
+    flat_entry = matching_worktree_entry(entries, flat)
+
+    if requested_worktree is not None:
+        requested = lexical_normalize(requested_worktree)
+        if not (paths_equal(requested, canonical) or paths_equal(requested, flat)):
+            raise CleanupBlocked(
+                EXIT_PATH_BOUNDARY,
+                "phase worktree must be exactly <phase-root>/worktree or <phase-root>",
+            )
+
+    if canonical_entry is not None and flat_entry is not None:
+        raise CleanupBlocked(
+            EXIT_PATH_BOUNDARY,
+            "ambiguous phase worktree topology: both <phase-root>/worktree and "
+            "<phase-root> are registered Git worktrees",
+        )
+
+    if requested_worktree is not None:
+        requested = lexical_normalize(requested_worktree)
+        if paths_equal(requested, canonical):
+            if flat_entry is not None and canonical_entry is None:
+                raise CleanupBlocked(
+                    EXIT_PATH_BOUNDARY,
+                    "requested canonical phase worktree but Git registers a "
+                    "legacy-flat worktree at <phase-root>",
+                )
+            return canonical, TOPOLOGY_CANONICAL
+        if canonical_entry is not None and flat_entry is None:
+            raise CleanupBlocked(
+                EXIT_PATH_BOUNDARY,
+                "requested legacy-flat phase worktree but Git registers a "
+                "canonical worktree at <phase-root>/worktree",
+            )
+        return flat, TOPOLOGY_LEGACY_FLAT
+
+    if canonical_entry is not None:
+        return canonical, TOPOLOGY_CANONICAL
+    if flat_entry is not None:
+        return flat, TOPOLOGY_LEGACY_FLAT
+    return canonical, TOPOLOGY_CANONICAL
 
 
 def ordinary_head_state(repo: Path) -> tuple[str, str, bool]:
@@ -1143,7 +1220,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--phase-worktree",
         default=None,
-        help="Optional override; must equal <phase-root>/worktree",
+        help=(
+            "Optional override; must equal <phase-root>/worktree or <phase-root>. "
+            "The flat form requires the same Git-registration and identity proof "
+            "as auto-resolved legacy-flat topology."
+        ),
     )
     return parser
 
@@ -1161,8 +1242,10 @@ def run_cleanup(argv: Sequence[str] | None = None) -> int:
             Path(args.phase_parent) if args.phase_parent else default_phase_parent(repo)
         )
         phase_root = lexical_normalize(Path(args.phase_root))
-        phase_worktree = lexical_normalize(
-            Path(args.phase_worktree) if args.phase_worktree else phase_root / "worktree"
+        requested_worktree = (
+            lexical_normalize(Path(args.phase_worktree))
+            if args.phase_worktree
+            else None
         )
 
         report.repo = str(repo)
@@ -1170,12 +1253,21 @@ def run_cleanup(argv: Sequence[str] | None = None) -> int:
         report.phase_branch = phase_branch
         report.phase_root = str(phase_root)
         report.phase_parent = str(phase_parent)
-        report.phase_worktree = str(phase_worktree)
         report.remote = remote
         report.main_branch = main_branch
 
         require_git_worktree(repo)
         validate_phase_branch_name(repo, phase_branch, main_branch)
+        phase_worktree, topology = resolve_phase_worktree_topology(
+            phase_root=phase_root,
+            requested_worktree=requested_worktree,
+            entries=list_worktree_entries(repo),
+        )
+        report.phase_worktree = str(phase_worktree)
+        report.worktree_topology = topology
+        report.add_action(
+            f"resolved worktree topology: {topology} ({phase_worktree})"
+        )
         repo, phase_parent, phase_root, phase_worktree = prove_phase_path_boundaries(
             repo=repo,
             phase_parent=phase_parent,
@@ -1186,6 +1278,7 @@ def run_cleanup(argv: Sequence[str] | None = None) -> int:
         report.phase_parent = str(phase_parent)
         report.phase_root = str(phase_root)
         report.phase_worktree = str(phase_worktree)
+        report.worktree_topology = topology
 
         merge_gate(repo, remote, main_branch, reviewed_head, report)
         review_identity_gate(repo, phase_branch, reviewed_head, report)
