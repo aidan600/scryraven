@@ -21,18 +21,20 @@ and [FinalAnswerPacket / Author Boundary](FAP_AUTHOR_BOUNDARY.md).
 [Quantitative Finalization Containment](AG_S1_QUANTITATIVE_FINALIZATION_CONTAINMENT_01.md)
 owns the claim-scoped numeric projection and final accepted-prose gate.
 
-## Installed Executable Topology Versus Selected Retention Target
+## Installed Executable Topology Versus Selected AnalystOS Target
 
-This document owns the current installed executable topology. That topology is
-not the selected retention target for future AnalystOS phases:
+This document owns the current **installed** executable topology. Selected
+AnalystOS target topology belongs to
+[AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md):
 
 ```text
-INSTALLED EXECUTABLE TOPOLOGY != SELECTED RETENTION TARGET
+INSTALLED EXECUTABLE TOPOLOGY != SELECTED ANALYSTOS TARGET
 ```
 
 The installed routes remain factual and executable:
 
 ```text
+INSTALLED:
 Component Analyst
 -> component D-prime
 -> RunKernel component admission
@@ -43,11 +45,10 @@ Component Analyst
 -> RunKernel graph/synthesis admission
 ```
 
-Mandatory serial D-prime is not protected target architecture. Component and
-synthesis D-prime are installed and currently executable, but provisional from
-a retention perspective. This document does not rewrite the installed route as
-an Analyst-to-Critic path, and it does not select the final replacement
-Analyst/Critic topology.
+Mandatory serial D-prime is not the selected AnalystOS target. Component and
+synthesis D-prime remain installed and currently executable until convergence
+phases retire the separate ordinary model calls. This document does not rewrite
+the installed route as already migrated.
 
 The installed query class is:
 
@@ -63,8 +64,9 @@ process typed component receiver with `allow_searchos_component_receiver=True`.
 That receiver accepts 1-5 components, including the N=1 Q1 SearchOS ->
 Component Analyst path. This separately licensed entry does not establish
 general arbitrary single-component qualification into
-`ordinary-bounded-multicomponent-factual-synthesis-v1` and does not change the
-provisional Analyst/D-prime retention posture.
+`ordinary-bounded-multicomponent-factual-synthesis-v1`. Selected N=1 target
+posture folds Cross/synthesis/D-prime ceremony; installed runtime may still
+execute component D-prime on that path until convergence.
 
 ## Installed Query-Centered Recovery And Inference
 

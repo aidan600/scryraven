@@ -470,21 +470,42 @@ and recursive-navigation limit calibration are not installed, are not part of
 the one-hop MVP, and have no ordinary product caller. Any later phase must reuse
 the installed acquisition and custody owners.
 
-## Active Decision Gate: COMPONENT ANALYST OUTPUT-CONTRACT / SEMANTIC-ORIGINATION FRONTIER
+## Active Decision Gate: ANALYSTOS COMPONENT-PATH REPLACEMENT
 
-The maintainer-selected **Option C modified into a unified iterative loop** is
-installed through SearchOS Phases 1, 2, and 3. Ordinary planning completion is
-`AnswerContract -> QueryPlan`. Post-rebase inert compatibility detritus is
-removed where zero current consumer existed. A bounded Q1 ordinary PRODUCT
-observation has now reached a lawful SearchOS semantic handoff, selected the
-Component Analyst receiver, and physically dispatched the Component Analyst.
-PR #579's safe Component Analyst failure projection is live-proven: the run
-stopped at output validation before a semantic artifact was produced. This
-completed evidence does not establish broad live reliability, a supported cited
-answer, or Component Analyst semantic-artifact origination. This roadmap grants
-no new live license.
+The AnalystOS target topology is selected. Component and synthesis D-prime
+ordinary model calls are selected for retirement per
+[AnalystOS Operating Model](../architecture/ANALYSTOS_OPERATING_MODEL.md).
+Mandatory serial D-prime is not the selected target. This gate does not reopen
+topology selection.
 
-### Completed Q1 bounded product evidence
+The current implementation phase is direct component-path replacement:
+
+```text
+lawful SearchOS N=1 handoff
+-> strong Component Analyst case/self-audit
+-> code-owned current-authority binding
+-> direct RunKernel component admission
+-> no separate component D-prime ordinary model call
+-> fold N=1 Cross/synthesis semantic ceremony
+```
+
+Later sequencing remains visible but is not the current gate:
+
+```text
+Q1 completion
+-> multi-component convergence
+-> Scrutineer policy
+-> recovery/Specialist integration
+```
+
+Those follow component-path replacement, not instead of it.
+
+SearchOS Phases 1, 2, and 3 remain installed. Ordinary planning completion is
+`AnswerContract -> QueryPlan`. This roadmap grants no new live license.
+
+### Historical Q1 bounded product evidence
+
+The following is completed evidence, not the current implementation gate:
 
 ```text
 COMPLETED:
@@ -506,48 +527,19 @@ path. The product ended blocked with no answer, citations, or Author result.
 The durable classification is
 `COMPONENT_ANALYST_OUTPUT_VALIDATION_FAILURE_OBSERVED`.
 
-The earlier bounded SearchOS pulse remains historical provenance only and does
-not define the current frontier.
+That historical frontier was Component Analyst dispatch stopping at the
+output-validation / semantic-artifact boundary. The architecture decision is
+complete; the active gate is component-path replacement under the selected
+AnalystOS target, not another prompt/parser inspection or topology branch.
 
-### Current frontier
-
-```text
-CURRENT FRONTIER:
-Component Analyst dispatch
--> Component Analyst output-validation / semantic-artifact boundary
-```
-
-The immediate next step is to offline inspect the current Component Analyst
-model-visible output contract, parser/normalizer, and semantic-artifact
-boundary.
-
-The durable immediate seam is:
-
-```text
-Component Analyst dispatch
--> Component Analyst output-validation / semantic-artifact boundary
-```
-
-Decision branches:
-
-```text
-A. narrow mechanical/parser/output-contract defect
-   -> repair that exact boundary
-   -> offline prove
-   -> one later PRODUCT pulse
-
-B. contract is burdened by unnecessary mechanical reproduction or by the old
-   mandatory-D-prime decomposition
-   -> stop for AnalystOS architecture decision before patching around it
-
-C. Analyst eventually produces a lawful semantic artifact
-   -> stop for explicit Analyst / D-prime / Scrutineer topology selection
-```
-
-D-prime is not the current blocker; it remains untested on the current live Q1
-path. Do not schedule Q2 yet.
+Do not schedule Q2 yet. Do not build persistence or replay infrastructure
+merely to recreate the prior suppressed Q1 state.
 
 ### Installed versus selected target
+
+The maintainer-selected **Option C modified into a unified iterative loop** is
+installed through SearchOS Phases 1, 2, and 3. Ordinary planning completion is
+`AnswerContract -> QueryPlan`.
 
 Phases 1, 2, and 3 are installed. Ordinary planning completion is
 `AnswerContract -> QueryPlan`. Ordinary initial and iterative acquisition no
@@ -559,23 +551,24 @@ owned by [ScryRaven Current State](../architecture/SCRYRAVEN_CURRENT_STATE.md),
 while architecture ownership remains with the
 [SearchOS Operating Model](../architecture/SEARCHOS_OPERATING_MODEL.md).
 
-### Installed AnalystOS topology versus selected retention target
+### Installed AnalystOS topology versus selected target
 
 The installed post-analysis routes remain factual:
 
 ```text
+INSTALLED:
 Component Analyst -> component D-prime -> RunKernel component admission
 Cross-Component Analyst -> synthesis D-prime -> Scrutineer when triggered
   -> RunKernel graph/synthesis admission
 ```
 
-Mandatory serial D-prime is not protected target architecture. Component and
-synthesis D-prime are installed, executable, and provisional from a retention
-perspective. Future phases must explicitly select whether to keep, condition,
-fold, consolidate, or retire those roles; `KEEP_MANDATORY` requires an explicit
-future architecture decision. This roadmap does not select the final
-Analyst/Critic topology. The current Q1 failure occurs before those routes;
-D-prime is not the current blocker.
+Mandatory serial D-prime is not the selected AnalystOS target. Component and
+synthesis D-prime remain installed and executable until convergence phases
+retire the separate ordinary model calls. Selected target topology, mode policy,
+and retirement sequencing belong to
+[AnalystOS Operating Model](../architecture/ANALYSTOS_OPERATING_MODEL.md).
+The current Q1 failure occurs before those routes; D-prime is not the current
+blocker.
 
 The installed ordinary front-half shape is:
 
@@ -619,30 +612,39 @@ subtype`. A newly exposed safe failure within this licensed architectural
 corridor remains in the same phase unless it proves a different owner or
 requires a new architecture decision.
 
-### Q1 frontier guardrails
+### Q1 implementation guardrails
 
-Do not build persistence or replay infrastructure merely to recreate the prior
-suppressed Q1 state. Do not manually reconstruct canonical RunKernel or
-SearchOS-handoff authority. The current live Q1 path stopped before D-prime, so
-D-prime remains untested and is not the current blocker. If the Component
-Analyst output contract is burdened by unnecessary mechanical reproduction or
-the old mandatory-D-prime decomposition, stop for AnalystOS architecture
-selection instead of patching around it. Do not schedule Q2 yet.
+Do not manually reconstruct canonical RunKernel or SearchOS-handoff authority.
+The historical live Q1 path stopped before D-prime; D-prime remains untested on
+that path and is not the current blocker. Implement component-path replacement
+under the selected AnalystOS target rather than patching around installed
+D-prime or reopening topology selection.
 
-The selected sequence is:
+The current implementation sequence is:
 
 ```text
-current Component Analyst model-visible output contract
--> parser/normalizer
--> semantic-artifact boundary
--> exact mechanical repair and offline proof, if branch A applies
--> one later PRODUCT pulse
+lawful SearchOS N=1 handoff
+-> strong Component Analyst case/self-audit
+-> code-owned current-authority binding
+-> direct RunKernel component admission
+-> no separate component D-prime ordinary model call
+-> fold N=1 Cross/synthesis semantic ceremony
+-> offline/deterministic proof
+-> one later PRODUCT pulse when warranted
 ```
 
-If branch B applies, stop for the AnalystOS architecture decision. If branch C
-applies, stop for explicit Analyst / D-prime / Scrutineer topology selection.
-Only after a selected topology converges does supported cited Q1 completion or
-representative corpus expansion become eligible.
+Deferred until after component-path replacement:
+
+```text
+Q1 completion
+-> multi-component convergence
+-> Scrutineer policy
+-> recovery/Specialist integration
+```
+
+Supported cited Q1 completion or representative corpus expansion becomes
+eligible after component-path replacement makes progress under
+[AnalystOS Operating Model](../architecture/ANALYSTOS_OPERATING_MODEL.md).
 
 ### Installed Phase 1 - Sparse uncertainty-aware planning
 

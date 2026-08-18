@@ -21,8 +21,14 @@ The one installed calculator product belongs to
 The substrate lets an existing semantic role propose a bounded need, lets
 RunKernel bind that proposal to exact current authority, resolves an explicitly
 registered deterministic capability under an injected execution policy, runs
-one governed work item, and routes its bounded result through the appropriate
-D-prime input. It does not make a Specialist result admitted truth.
+one governed work item, and routes its bounded result through the applicable
+validator input. It does not make a Specialist result admitted truth.
+
+**Installed consumption:** results route through component or synthesis D-prime
+via `specialist_need_handoff`. **Selected target:** Specialist results return
+to Analyst for reanalysis per
+[AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md). Do not treat
+installed D-prime handoff as the selected consumption path.
 
 ## Installed Contract
 
@@ -37,7 +43,8 @@ exact parsed Specialist proposal candidate from one role response
 -> Scheduler V3 Specialist lease in a separate compatibility pool
 -> either one registered deterministic capability execution or a typed nonexecution disposition
 -> immutable proposal disposition and optional result identity plus validator lifecycle
--> one `specialist_need_handoff` component or synthesis D-prime input
+-> INSTALLED: one `specialist_need_handoff` component or synthesis D-prime input
+-> SELECTED TARGET: Analyst reanalysis per AnalystOS Operating Model
 -> ordinary RunKernel graph/admission flow
 ```
 

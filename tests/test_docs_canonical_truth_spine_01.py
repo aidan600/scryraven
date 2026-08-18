@@ -35,6 +35,36 @@ CENSUS = ARCH / "PROVIDER_OFFERINGS_ADAPTER_AND_LEGACY_DOCTRINE_CENSUS.md"
 PROVIDER_ROUTING = ARCH / "PROVIDER_CAPABILITY_AND_ACQUISITION_ROUTING.md"
 ACQUISITION_CONTROL = ARCH / "RUNKERNEL_POST_DISCOVERY_ACQUISITION_CONTROL.md"
 SEARCHOS = ARCH / "SEARCHOS_OPERATING_MODEL.md"
+ANALYSTOS = ARCH / "ANALYSTOS_OPERATING_MODEL.md"
+ANALYST_WORKBENCH = ARCH / "ANALYST_WORKBENCH_FULL_SLICE.md"
+CROSS_WORKBENCH = ARCH / "CROSS_COMPONENT_ANALYST_WORKBENCH.md"
+ACTIVE_DECISION_GATE = "Active Decision Gate: ANALYSTOS COMPONENT-PATH REPLACEMENT"
+OBSOLETE_ACTIVE_DECISION_GATE = (
+    "Active Decision Gate: Representative Bounded Real-Model/Product Validation"
+)
+_REQUIRE_SEPARATE_DPRIME_CONSUMER = re.compile(
+    r"(?is)"
+    r"(?:must\s+not\s+replace\s+d-prime"
+    r"|synthesis\s+d-prime\s+dossier\s+refs"
+    r"|d-prime\s+synthesis\s+validation\s+refs"
+    r"|smallest\s+safe\s+next\s+architecture"
+    r"|must\s+hand\b.{0,80}d-prime"
+    r"|needs?\s+(?:one\s+|a\s+|the\s+)?(?:proposal-only\s+)?(?:cross-component\s+synthesis\s+layer.{0,80})?(?:synthesis\s+)?d-prime"
+    r"|->\s*synthesis\s+d-prime"
+    r"|d-prime\s+validates\s+only"
+    r"|only\s+downstream\s+authority\s+path"
+    r"|future[^\n.]{0,80}(?:must|needs?|required)[^\n.]{0,80}(?:synthesis\s+)?d-prime"
+    r"|future[^\n.]{0,80}->\s*(?:synthesis\s+)?d-prime)"
+)
+_CURRENT_ARCHITECTURE_VERDICT_HEADING = re.compile(
+    r"(?im)^#{1,6}\s+(?:\d+\.\s+)?architecture\s+verdict\s*$"
+)
+_DPRIME_AUTHORITY_LAUNDERING = re.compile(
+    r"(?i)d-prime\s+(?:admits|answer\s+authority|support/admission)"
+)
+_SKIP_WORKBENCH_SECTION = re.compile(
+    r"(?i)historical|installed|v0 phase|capability inventory|non-proofs|nonproofs"
+)
 SEARCHOS_RECOVERY_DIRECTION = (
     ARCH / "SEARCHOS_POST_ANALYSIS_RECOVERY_AND_INFERENCE_DIRECTION.md"
 )
@@ -49,6 +79,7 @@ ORCHESTRATOR_STRANGLER = ARCH / "AG94G_ORCHESTRATOR_AUTHORITY_STRANGLER_MAP.md"
 ECONOMIST_SAFETY = DOCS / "architecture_safety_contract.md"
 ECONOMIST_TELEMETRY_POLICY = DOCS / "economist_shadow_telemetry_promotion_policy.md"
 CONCERN_OWNERS = {
+    "canonical:analystos-operating-model": ANALYSTOS,
     "canonical:dprime-role-contract": ARCH / "DPRIME_ARCHITECTURE.md",
     "canonical:run-contract-semantic-loop": ARCH / "RUN_CONTRACT_SEMANTIC_LOOP.md",
     "canonical:component-dag-scheduling-concurrency": (ARCH / "RUNKERNEL_COMPONENT_DAG_CONCURRENCY.md"),
@@ -121,6 +152,26 @@ def _collapsed(path: Path) -> str:
 def _links(path: Path) -> list[Path]:
     targets = re.findall(r"\[[^]]+\]\(([^)#]+\.md)(?:#[^)]+)?\)", _read(path))
     return [(path.parent / target).resolve() for target in targets]
+
+
+def _drop_installed_labeled_spans(text: str) -> str:
+    text = re.sub(r"(?is)```(?:text)?\s*\n\s*INSTALLED:.*?```", "", text)
+    text = re.sub(r"(?i)\*\*installed:?\*\*[^\n]*", "", text)
+    return text
+
+
+def _current_selected_future_workbench_voice(text: str) -> str:
+    """Keep current/selected/future Workbench voice; drop INSTALLED/HISTORICAL material."""
+    sections = re.split(r"(?m)^(#{1,6}[^\n]*)$", text)
+    kept = [_drop_installed_labeled_spans(sections[0])]
+    for idx in range(1, len(sections), 2):
+        heading = sections[idx]
+        body = sections[idx + 1] if idx + 1 < len(sections) else ""
+        if _SKIP_WORKBENCH_SECTION.search(heading):
+            continue
+        kept.append(heading)
+        kept.append(_drop_installed_labeled_spans(body))
+    return "\n".join(kept)
 
 
 def test_guidance_links_resolve() -> None:
@@ -213,6 +264,63 @@ def test_guidance_routes_to_exact_concern_owners() -> None:
         assert owner.name in guidance
     assert "await D1 repair" not in guidance
     assert "implementation-status sections" not in guidance
+
+
+def test_analystos_target_owner_is_unique_routed_and_nonactivating() -> None:
+    markdown = tuple(DOCS.rglob("*.md"))
+    normalized = _collapsed(ANALYSTOS)
+    authority = "Authority: canonical:analystos-operating-model"
+
+    assert [path for path in markdown if authority in _read(path)] == [ANALYSTOS]
+    for phrase in (
+        "Status: current",
+        "Default-read: no",
+        "INSTALLED:",
+        "SELECTED TARGET:",
+        "SearchOS lawful handoff",
+        "Component Analyst case + self-audit",
+        "deterministic current-authority validation/binding",
+        "Cross-Component Analyst only for genuine N>=2 synthesis",
+        "Scrutineer is the sole separate semantic reviewer",
+        "Sufficiency is the sole whole-run stopper",
+        "Component D-prime and synthesis D-prime ordinary model calls are selected for retirement",
+        "Runtime still executes component D-prime and synthesis D-prime",
+        "Fast does not invoke Scrutineer under any trigger",
+    ):
+        assert phrase in normalized
+
+    guidance = _read(GUIDANCE)
+    assert ANALYSTOS.name in guidance
+    assert "`canonical:analystos-operating-model`" in guidance
+    for target in _links(ANALYSTOS):
+        assert target.is_file(), target
+
+
+def test_workbench_doctrine_does_not_require_dprime_as_selected_target() -> None:
+    """CURRENT Workbench docs must not require a separate D-prime consumer."""
+    forbidden_normative = (
+        "must hand proposal refs to synthesis D-prime",
+        "needs one proposal-only cross-component synthesis layer between per-component lanes and synthesis D-prime validation",
+        "synthesis D-prime validates synthesis support over component refs",
+        "D-prime validates only.",
+        "Existing D-prime authority remains the only downstream authority path",
+        "must hand proposal refs to synthesis D-prime and RunKernel",
+    )
+    for path in (ANALYST_WORKBENCH, CROSS_WORKBENCH):
+        raw = _read(path)
+        collapsed = _collapsed(path).casefold()
+        for phrase in forbidden_normative:
+            assert phrase.casefold() not in collapsed, (path.name, phrase)
+        assert ANALYSTOS.name in raw
+
+        current_voice = _current_selected_future_workbench_voice(raw)
+        current_fold = " ".join(current_voice.split()).casefold()
+        require = _REQUIRE_SEPARATE_DPRIME_CONSUMER.search(current_fold)
+        assert require is None, (path.name, require.group(0) if require else None)
+        assert _CURRENT_ARCHITECTURE_VERDICT_HEADING.search(current_voice) is None, path.name
+        assert "smallest safe next architecture" not in current_fold
+        launder = _DPRIME_AUTHORITY_LAUNDERING.search(collapsed)
+        assert launder is None, (path.name, launder.group(0) if launder else None)
 
 
 def test_searchos_target_owner_is_unique_routed_and_nonactivating() -> None:
@@ -467,7 +575,7 @@ def test_structured_route_qualification_is_current_and_narrow() -> None:
 
     assert "No route-qualification repair was performed." not in current
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
-    assert "Active Decision Gate: Representative Bounded Real-Model/Product Validation" in roadmap
+    assert "Active Decision Gate: ANALYSTOS COMPONENT-PATH REPLACEMENT" in roadmap
 
 
 def test_current_state_has_all_installed_capability_markers() -> None:
@@ -533,7 +641,7 @@ def test_mode_policy_recovery_custody_is_installed_and_narrow() -> None:
     assert "Completed Repair: Mode-Policy Recovery Authority Containment" in roadmap
     assert "Completed Repair: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01" in roadmap
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
-    assert "Active Decision Gate: Representative Bounded Real-Model/Product Validation" in roadmap
+    assert "Active Decision Gate: ANALYSTOS COMPONENT-PATH REPLACEMENT" in roadmap
     assert "No live recovery" in roadmap
 
 
@@ -650,7 +758,7 @@ def test_acquisition_runtime_convergence_truth_is_consistent_across_spine() -> N
 
     assert roadmap.count("## Active Next:") == 0
     assert roadmap.count("## Blocked Next:") == 0
-    assert "## Active Decision Gate: Representative Bounded Real-Model/Product Validation" in roadmap
+    assert "## Active Decision Gate: ANALYSTOS COMPONENT-PATH REPLACEMENT" in roadmap
     for stale in (
         "## Active Next: KNOWN-URL-READ-FOUNDATION-01",
         "### TAVILY-EXTRACT-AND-MAP-ADAPTERS-01",
@@ -741,8 +849,9 @@ def test_discovery_retirement_and_candidate_handoff_truth_is_consistent() -> Non
         "## completed build: searchos-one-hop-navigation-product-activation-01"
     )
     active_index = roadmap_folded.index(
-        "## active decision gate: representative bounded real-model/product validation"
+        f"## {ACTIVE_DECISION_GATE.casefold()}"
     )
+    assert "## active decision gate: representative bounded real-model/product validation" not in roadmap_folded
     assert (
         handoff_index
         < query_index
@@ -827,7 +936,7 @@ def test_searchos_slice_a_is_installed_and_navigation_remains_active() -> None:
     assert "Completed Build: SEARCHOS-READ-SOURCE-AND-CUSTODY-01" in roadmap
     assert "Completed Build: SEARCHOS-FIRST-WAVE-AND-ITERATIVE-JUDGMENT-CUTOVER-01" in roadmap
     assert "Completed Build: SEARCHOS-ONE-HOP-NAVIGATION-PRODUCT-ACTIVATION-01" in roadmap
-    assert "## Active Decision Gate: Representative Bounded Real-Model/Product Validation" in roadmap
+    assert "## Active Decision Gate: ANALYSTOS COMPONENT-PATH REPLACEMENT" in roadmap
     assert "Phase 1 - Sparse uncertainty-aware planning" in roadmap
     assert "Phase 2 - Unified iterative acquisition" in roadmap
     assert "Phase 3 - Carrier consolidation + product proof" in roadmap
@@ -925,7 +1034,7 @@ def test_provider_offerings_census_is_current_complete_and_records_installed_rou
     roadmap = _read(ROADMAP)
     assert roadmap.count("## Active Next:") == 0
     assert roadmap.count("## Blocked Next:") == 0
-    assert "## Active Decision Gate: Representative Bounded Real-Model/Product Validation" in roadmap
+    assert "## Active Decision Gate: ANALYSTOS COMPONENT-PATH REPLACEMENT" in roadmap
     assert "## Completed Repair: PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01" in roadmap
     assert "Linkup `standard/searchResults` first" in roadmap
 
@@ -955,7 +1064,7 @@ def test_current_roadmap_tracks_maintainer_remediation_sequence() -> None:
     discovery_retirement = roadmap.index("## Completed Build: INITIAL-DISCOVERY-SELECTIVE-FETCH-RETIREMENT-01")
     candidate_handoff = roadmap.index("## Completed Build: DISCOVER-RESULT-CANDIDATE-HANDOFF-CONVERGENCE-01")
     convergence = roadmap.index(
-        "## Active Decision Gate: Representative Bounded Real-Model/Product Validation"
+        "## Active Decision Gate: ANALYSTOS COMPONENT-PATH REPLACEMENT"
     )
     assert (
         s0
@@ -1022,9 +1131,9 @@ def test_searchos_phase3_gate_and_searchplanner_record_are_exclusive() -> None:
         roadmap_raw,
         re.MULTILINE,
     )
-    assert active_gates == [
-        "## Active Decision Gate: Representative Bounded Real-Model/Product Validation"
-    ]
+    assert active_gates == [f"## {ACTIVE_DECISION_GATE}"]
+    assert f"## {OBSOLETE_ACTIVE_DECISION_GATE}" not in roadmap_raw
+    assert roadmap_raw.count("## Active Decision Gate:") == 1
     assert "Runtime-audit-through:" not in roadmap
     assert "Verified-against-runtime:" not in roadmap
 
@@ -1047,7 +1156,6 @@ def test_searchos_phase3_gate_and_searchplanner_record_are_exclusive() -> None:
         "direct_simple | components",
         "Installed Phase 2 - Unified iterative acquisition",
         "Installed Phase 3 - Carrier consolidation + product proof",
-        "representative bounded real-model/product validation",
         "supported-product evidence",
         "existing front- or back-half localization",
         "smallest owning repair",
@@ -1122,10 +1230,10 @@ def test_semantic_scout_and_provider_synthesis_retirement_is_current_and_narrow(
     assert roadmap.count("## Active Next:") == 0
     assert roadmap.count("## Blocked Next:") == 0
     assert "## Completed Repair: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01" in roadmap
-    assert "## Active Decision Gate: Representative Bounded Real-Model/Product Validation" in roadmap
+    assert "## Active Decision Gate: ANALYSTOS COMPONENT-PATH REPLACEMENT" in roadmap
     assert "## Active Next: LEGACY-SEMANTIC-SCOUT-ORDINARY-EXECUTION-RETIREMENT-01" not in roadmap
     assert roadmap.index("## Completed Repair: PROVIDER-CAPABILITY-ROUTING-FOUNDATION-01") < roadmap.index(
-        "## Active Decision Gate: Representative Bounded Real-Model/Product Validation"
+        "## Active Decision Gate: ANALYSTOS COMPONENT-PATH REPLACEMENT"
     )
     for noninstalled in (
         "provider-failure retry",
@@ -1160,7 +1268,7 @@ def test_legacy_economist_ordinary_execution_retirement_is_current_and_narrow() 
     assert "Completed Repair: Mode-Policy Recovery Authority Containment" in roadmap
     assert "Completed Repair: SPECIALIST-PROPOSAL-INSTANCE-ADMISSION-HARDENING-01" in roadmap
     assert "Completed Repair: STRUCTURED-LIST-ROUTE-QUALIFICATION-REPAIR-01" in roadmap
-    assert "Active Decision Gate: Representative Bounded Real-Model/Product Validation" in roadmap
+    assert "Active Decision Gate: ANALYSTOS COMPONENT-PATH REPLACEMENT" in roadmap
     assert "answer-producing paths" in roadmap
     assert "remaining orchestrator authority islands" in roadmap
 

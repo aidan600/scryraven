@@ -4,6 +4,12 @@ Status: canonical current Analyst Workbench runtime contract, promoted from the
 BUILD phase note for
 `CURRENT-SOURCE-RECORD-ANALYST-WORKBENCH-FULL-SLICE-SCAFFOLD-01`.
 
+Selected AnalystOS target topology and consumption policy belong to
+[AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md). This document
+records **installed** current-source Workbench behavior and historical
+adaptation notes. It does not define D-prime as the selected or future required
+consumption path.
+
 Mode: BUILD
 
 This document records current merged Workbench behavior for future Codex phases.
@@ -11,21 +17,26 @@ It does not license runtime changes, live validation, provider/model/search/
 fetch/read calls, new answer paths, Scrutineer implementation, source-challenge
 recovery, FAP/Author wording changes, or product correctness claims.
 
-Future cross-component doctrine lives in
-[CROSS_COMPONENT_ANALYST_WORKBENCH.md](CROSS_COMPONENT_ANALYST_WORKBENCH.md).
-That doctrine adapts the same proposal-only Workbench posture for synthesis over
-compact component refs; it does not create a second Analyst authority path or
-open graph execution.
+[CROSS_COMPONENT_ANALYST_WORKBENCH.md](CROSS_COMPONENT_ANALYST_WORKBENCH.md) is
+supporting installed/provenance Workbench material. Selected future Cross
+topology is owned by
+[AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md). The Cross Workbench
+file adapts the same proposal-only Workbench posture for synthesis over compact
+component refs; it does not create a second Analyst authority path, a second
+target architecture, or open graph execution.
 
 The canonical durable direction is
-[MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md](MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md).
-The current default ordinary semantic producer does not establish a typed
-general component Analyst -> component D-prime lane. The approved Phase 1
-product path must add a configured-SmartModel regular component Analyst before
-component D-prime, then use a separate configured-SmartModel Cross-Component
-Analyst for synthesis proposals. Existing Workbench packets and specialized
-status lanes are reuse candidates; their presence is not proof that either
-ordinary producer role is installed.
+[MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md](MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md)
+for installed bounded multi-component execution and
+[AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md) for the selected
+target topology. The current default ordinary semantic producer does not
+establish a typed general component Analyst lane. **Installed Phase 1 path:**
+configured-SmartModel component Analyst before component D-prime, then separate
+Cross-Component Analyst and synthesis D-prime for N>=2 work. **Selected target:**
+strong Component Analyst with self-audit; no N=1 Cross/synthesis/D-prime
+ceremony; separate D-prime calls retired during convergence. Existing Workbench
+packets and specialized status lanes are reuse candidates; their presence is not
+proof that either ordinary producer role is installed.
 
 ## Canonical Runtime Contract
 
@@ -60,24 +71,27 @@ The Workbench does not:
 - open source display;
 - claim product correctness.
 
-### Future Cross-Component Adaptation Boundary
+### Cross-Component Adaptation Boundary (Historical Note)
 
-The future Cross-Component Analyst Workbench must inherit this proposal-only
-boundary. It may propose consistency, dependency, missing-component,
-contradiction, caveat, recovery, and synthesis refs over compact
-`ComponentWorkNode` and admitted synthesis-node outputs, including proposed
-semantic edges and first-class synthesis nodes. A real ordinary producer must
-be a dedicated configured-SmartModel role, not merely this Workbench contract.
-It must hand proposal refs to synthesis D-prime and RunKernel rather than
-validating, admitting, dispatching recovery, searching, packaging, or rendering
-by itself.
+Historical cross-component adaptation notes remain for provenance. Selected
+target: Cross-Component Analyst inherits this proposal-only boundary for genuine
+N>=2 synthesis; self-audit is part of case construction; separate synthesis
+D-prime is not the selected consumption path. See
+[AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md).
+
+A Cross-Component producer may propose consistency, dependency,
+missing-component, contradiction, caveat, recovery, and synthesis refs over
+compact `ComponentWorkNode` and admitted synthesis-node outputs, including
+proposed semantic edges and first-class synthesis nodes. It hands proposal refs
+to RunKernel rather than validating, admitting, dispatching recovery, searching,
+packaging, or rendering by itself.
 
 It must not become:
 
 - a parallel Analyst system beside this Workbench;
 - a ComponentWorkGraph executor or scheduler;
 - a retrieval dispatch path;
-- a D-prime substitute;
+- a separate review authority beside Scrutineer;
 - a Sufficiency/FAP/Author shortcut;
 - an Author glue layer over component finals.
 
@@ -136,7 +150,7 @@ admit evidence or prove answer correctness.
 | --- | --- | --- | --- | --- |
 | `not_required` | A strict-support candidate was proposed and contextual risks are preserved for downstream review. | No, not by itself. | No. | Does not mean D-prime support, source-obligation satisfaction, citation eligibility, Sufficiency, FAP, Author, source display, or PASS already happened. |
 | `strict_support_missing` | No strict answer-support candidate was identified, or contextual material is insufficient for the answer claim. | Yes, through the current-source answer blocker when unresolved. | Yes, through the existing licensed current-source follow-up path. | Does not mean provider/search/fetch/read occurred, and does not prove that contextual material is true, false, current, or citable. |
-| `unreadable_high_value_candidate` | An official-looking or high-value candidate needs readable strict support before it can feed D-prime answer authority. | Yes, through the current-source read-support blocker when unresolved. | Yes, through the existing licensed current-source follow-up path. | Does not infer the unreadable source content, citation eligibility, source-obligation satisfaction, or PDF/table read support. |
+| `unreadable_high_value_candidate` | An official-looking or high-value candidate needs readable strict support before installed D-prime semantic review and RunKernel admission. | Yes, through the current-source read-support blocker when unresolved. | Yes, through the existing licensed current-source follow-up path. | Does not infer the unreadable source content, citation eligibility, source-obligation satisfaction, or PDF/table read support. |
 | `overclaim_risk` | Contextual or qualifier material could support a narrower claim but risks overstating the answer without stricter support. | It can contribute to a blocker when strict support is missing or downstream review refuses the claim. | Only through an explicitly licensed recovery/follow-up path. | Does not by itself prove contradiction, support, challenge resolution, or answer readiness. |
 
 ### Follow-Up License Behavior
@@ -175,7 +189,8 @@ an official-looking source alone is not product PASS.
 
 Product PASS requires the existing downstream answer path to consume:
 
-- D-prime support/admission;
+- installed D-prime support review;
+- RunKernel admission of the exact current support state;
 - admitted `SemanticObservation`;
 - `ComponentCoverage`;
 - `SufficiencyReadiness`;
@@ -198,10 +213,14 @@ If those identities diverge, the product must block before FAP, Author, or
 source display. The blocker is authoritative even when a provider result is
 official-looking, readable, or answer-like.
 
-### Relationship To D-prime, Scrutineer, Sufficiency, FAP, And Author
+### Relationship To D-prime, Scrutineer, Sufficiency, FAP, And Author (Installed Current-Source Lane)
 
-D-prime is the evidence-relative support judge. It is not the whole Analyst, and
-Workbench context does not substitute for D-prime model review, proposal
+**Installed** current-source single-fact runs still route Workbench dossier
+context through component D-prime model review before RunKernel admission.
+That is installed fact, not selected target architecture.
+
+In the installed lane, D-prime is the evidence-relative support judge for that
+path. Workbench context does not substitute for D-prime model review, proposal
 validation, RunKernel admission, or downstream answer-path consumption.
 
 Scrutineer challenge posture is separate. It must not be silently treated as an
@@ -212,9 +231,13 @@ Sufficiency decides answer readiness after the required evidence, support,
 coverage, and challenge/follow-up posture exists.
 
 FAP is the authority manifest / safe-claim packet. Author is constrained
-rendering from that packet. The Workbench does not substitute for D-prime,
-Scrutineer, Sufficiency, FAP, Author, citation eligibility, citation rendering,
-or source display.
+rendering from that packet. The Workbench does not substitute for Scrutineer,
+Sufficiency, FAP, Author, citation eligibility, citation rendering, or source
+display.
+
+**Selected target:** separate D-prime ordinary model calls are retired;
+Analyst self-audit and RunKernel admission replace D-prime as the selected
+consumption path per [AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md).
 
 ### Review Report Expectations
 
@@ -309,29 +332,31 @@ New machinery introduced:
   source-authority finality, product correctness, raw/private retention, answer
   prose creation, or RunKernel reduction.
 
-Old path treatment:
+Old path treatment (**installed** current-source lane):
 
 - The prior optional evidence-triage deferral is replaced by a product-consumed
   Workbench bundle after fetch/read.
-- Existing D-prime authority remains the only downstream authority path; the
-  Workbench dossier is context, not admission.
+- In the installed lane, component D-prime remains the downstream review path;
+  the Workbench dossier is context, not admission.
 - The local Workbench projection is marked `run_kernel_reduced: false`,
   `run_kernel_reduction_pending: true`, and
   `proposed_for_runkernel_reduction: true`.
 
 Why this is not reinventing an existing surface:
 
-- The Workbench does not create a separate answer path, citation renderer,
-  source-obligation authority, or D-prime substitute.
+- The Workbench does not create a separate answer path, citation renderer, or
+  source-obligation authority.
 - It packages bounded candidate diagnostics already produced by the ordinary
-  runtime into proposal-only records, then hands compact refs to the existing
-  D-prime path and review report.
+  runtime into proposal-only records, then hands compact refs to the installed
+  downstream review path and review report.
 
 ## Authority Boundary
 
 Workbench packets are proposal-only. They may classify candidate roles, propose
 analyst findings, propose a gap search, prepare a local Workbench reduction
-projection, and hand a D-prime dossier ref to the existing D-prime path.
+projection, and hand a dossier ref to the **installed** current-source review
+path. Selected target consumption is Analyst self-audit and RunKernel admission
+per [AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md).
 
 They must not:
 

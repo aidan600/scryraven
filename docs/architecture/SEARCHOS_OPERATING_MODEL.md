@@ -101,8 +101,12 @@ separate ambiguity pipelines.
 - **RunKernel** owns admission and canonical state.
 - **InterpretationBinding** is a small append-only, RunKernel-admitted filling
   of an already-declared factual slot.
-- **EvidenceLedger, Analyst, D-prime, Sufficiency, FinalAnswerPacket, and
-  Author** retain their existing downstream authorities.
+- **EvidenceLedger, Analyst, Sufficiency, FinalAnswerPacket, and Author** retain
+  their existing downstream authorities. **Installed:** component and synthesis
+  D-prime remain in the executable recovery and graph path until convergence.
+  **Selected target:** recovery and Specialist results return to Analyst;
+  separate D-prime ordinary model calls are retired per
+  [AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md).
 
 SearchJudgment may propose a factual binding, but it may not create or redefine
 components, change requested scope, facts, or obligations, select providers,
@@ -310,8 +314,10 @@ QueryPlan retains sole ownership of exact query identity, admission, and
 material query equivalence. SearchOS searches direct premises and reports slot,
 cycle, expenditure, exhaustion, and blocker facts. It does not author,
 validate, admit, or render an inference. Component/Cross-Component Analyst,
-synthesis D-prime, RunKernel Graph V1, Sufficiency, FAP, and Author retain those
-separate responsibilities.
+RunKernel Graph V1, Sufficiency, FAP, and Author retain those separate
+responsibilities. **Installed:** synthesis D-prime may still validate on the
+executable path. **Selected target:** see
+[AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md).
 
 The installed ceilings are semantic inference depth 1 for Fast and Balanced
 and 2 for Deep; searched recovery generation is 0, 1, and 2 respectively.

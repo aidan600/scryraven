@@ -9,13 +9,14 @@ Verified-against-runtime: 540141acaaaf041bda303edd62211dd6a11958bc
 Update-trigger: merged change to component or synthesis D-prime authority or ordinary consumption
 
 Installed capability status: CURRENT
-Target-architecture status: PROVISIONAL / UNDER ANALYSTOS RE-SELECTION
+Target-architecture status: INSTALLED-ONLY / SELECTED RETIREMENT TARGET
 
 This document canonically describes what the installed component and synthesis
-D-prime roles currently do. It does not establish that either role is a
-mandatory-retained part of future AnalystOS architecture. Mandatory serial
-D-prime is not part of the selected AnalystOS North Star; the installed roles
-remain executable and are provisional from a retention perspective.
+D-prime roles currently do. Selected AnalystOS target topology and retirement
+direction belong to
+[AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md). Mandatory serial
+D-prime is not part of the selected AnalystOS target; the installed roles remain
+executable until convergence phases retire the separate ordinary model calls.
 
 ## Responsibility
 
@@ -69,30 +70,21 @@ ComponentWorkGraph V1 admission are installed executable facts for the
 supported class; they are not a permanent retention requirement or future
 D-prime checkpoint doctrine.
 
-## Installed Capability And AnalystOS Re-selection
+## Installed Capability And Selected AnalystOS Retirement
 
-Component D-prime is a strong candidate for conditional invocation, folding
-into the Component Analyst, replacement, consolidation, or retirement.
-Synthesis D-prime is likewise provisional and a strong consolidation or
-reselection candidate. Retiring synthesis D-prime would not retire independent
-synthesis-level semantic scrutiny. A differentiated whole-case Critic or
-Scrutineer remains a leading candidate for independent semantic challenge when
-policy or risk warrants it, while deterministic mechanical safeguards remain
-regardless of semantic-role topology.
+Selected target: component D-prime and synthesis D-prime ordinary model calls
+are retired during AnalystOS convergence. Useful semantic work folds into
+Component Analyst self-audit and Cross-Component Analyst self-audit respectively.
+Scrutineer remains the sole separate semantic reviewer under the mode policy in
+[AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md). Deterministic
+mechanical safeguards and RunKernel admission remain regardless of semantic-role
+topology.
 
-The future outcome space below is descriptive prose, not a runtime enum or
-schema:
+Do not treat this installed role contract as the selected target consumption
+path. Read [AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md) for the
+selected topology before designing new AnalystOS work.
 
-- `KEEP_CONDITIONAL`
-- `FOLD_INTO_ANALYST`
-- `CONSOLIDATE_INTO_DIFFERENTIATED_CRITIC`
-- `RETIRE`
-- `KEEP_MANDATORY` only after an explicit future architecture decision
-
-This phase does not select the final Analyst/Critic topology, a Critic schema,
-or a D-prime deletion plan.
-
-Durable mnemonic:
+Installed mnemonic (current executable path):
 
 ```text
 D-prime verifies the claim.
