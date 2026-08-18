@@ -85,7 +85,7 @@ Stop conditions:
 - Product decision:
 - Architecture fork:
 - Safety-sensitive or closed surface not licensed:
-- Live validation/budget needed:
+- Unlicensed live validation:
 - Secret/private artifact needed:
 - Destructive git or merge/rebase/force-push needed:
 - Broad scope expansion:
