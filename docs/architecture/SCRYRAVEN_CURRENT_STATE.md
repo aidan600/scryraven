@@ -38,8 +38,11 @@ enforcement is installed merged product state, and the public CLI requires one
 complete explicit per-run `--bounded-run-authorization` file to activate it.
 `public-cli-v1` remains removed; no reusable mode profiles exist. One bounded
 Q1 ordinary-product run at the current repository baseline is recorded below.
-It reached a lawful SearchOS semantic handoff but did not produce Component
-Analyst origination or a supported cited answer; this is bounded evidence, not
+It reached a lawful SearchOS semantic handoff, selected the Component Analyst
+receiver, and physically dispatched the Component Analyst. The PR #579 safe
+Component Analyst failure projection is live-proven in that observation: the
+dispatch reached an output-validation failure before a semantic artifact was
+produced. No supported cited answer resulted; this is bounded evidence, not
 broad live-validation proof.
 
 
@@ -84,42 +87,43 @@ live-validation license is widened.
 
 ## Bounded Q1 Ordinary-Product Evidence
 
-The following bounded ordinary-product observation is current evidence, not a
-general reliability claim.
+The latest accepted bounded Q1 ordinary-product observation is current
+evidence, not a general reliability claim.
 
 ```text
-Repo SHA: 605b51b4c4216a64baf2bbf9d769aa39b1d50473
-Run:     45f3319b-9b43-4dcc-ba81-2d1d12f40a77
-Query:   According to the official Python 3 documentation, what are the
-         default values for rel_tol and abs_tol in math.isclose()?
+Run ID:  90c035c6-8f53-438e-96e6-0a6e63895221
+Cost:    $0.066166
+Calls:   10 logical / 10 physical
+         model=6
+         embedding=2
+         search=1
+         read=1
 ```
 
-Observed ordinary product path:
-
-| Stage | Result |
-| --- | --- |
-| Planner | `PASS` |
-| AnswerContract | `PASS` |
-| QueryPlan | `PASS` |
-| DISCOVER | `PASS` |
-| READ | `PASS` |
-| SearchJudgment | `PASS` |
-
-SearchOS reached:
+Observed ordinary product path and safe projection:
 
 ```text
 searchos_exit = SEMANTIC_HANDOFF
-lawful semantic handoff = YES
+semantic_handoff_present = true
+
+component_receiver_selected          = true
+component_analyst_physical_dispatch  = true
+component_analyst_proposal_status     = not_proposed
+component_analyst_failure:
+  role = component_analyst
+  failure_kind = output_validation_failure
+  settlement_posture = failed_spent
+component_analyst_semantic_artifact_produced = false
+handoff_material_consumed = false
+semantic_admission_status = not_admitted
+component_dprime_reached = false
 ```
 
-Safe downstream projection recorded:
-
-```text
-component_receiver_selected       = true
-component_analyst_proposal_status = not_proposed
-handoff_material_consumed         = false
-semantic_admission_status         = not_admitted
-```
+This observation live-proves lawful SearchOS handoff, receiver selection, real
+Component Analyst physical dispatch, and the PR #579 safe failure projection.
+The Component Analyst semantic artifact was not produced, so the handoff was
+not consumed and semantic admission did not occur. Component D-prime was not
+reached and remains untested on the current live Q1 path.
 
 Final product state:
 
@@ -130,14 +134,19 @@ citation_count = 0
 Author invoked = NO
 ```
 
-No supported cited Q1 answer was produced. The bounded conclusion is:
+No answer, citations, or Author result was produced. The durable classification
+is:
 
 ```text
-SEARCHOS_COMPLETE_FOR_Q1 ONLY
+COMPONENT_ANALYST_OUTPUT_VALIDATION_FAILURE_OBSERVED
 ```
 
-This does not generalize to all Q1 repetitions, Q2-Q6, arbitrary queries,
-broad SearchOS reliability, acquisition completeness, or product correctness.
+The earlier bounded SearchOS pulse (`45f3319b-9b43-4dcc-ba81-2d1d12f40a77`,
+repo SHA `605b51b4c4216a64baf2bbf9d769aa39b1d50473`) remains historical
+provenance only; its `SEARCHOS_COMPLETE_FOR_Q1 ONLY` conclusion is not the
+current frontier. The latest observation does not generalize to all Q1
+repetitions, Q2-Q6, arbitrary queries, broad SearchOS reliability, acquisition
+completeness, or product correctness.
 
 ### Frozen-handoff observation
 
@@ -157,11 +166,15 @@ is the product blocker. Replay infrastructure is not the next product phase.
 The immediate product frontier is:
 
 ```text
-SearchOS -> Component Analyst same-process receiver/origination
+Component Analyst dispatch
+-> Component Analyst output-validation / semantic-artifact boundary
 ```
 
-The preceding ordinary product run selected the receiver, but observed no
-Component Analyst proposal, no handoff consumption, and no semantic admission.
+The latest Q1 observation live-proved the SearchOS handoff, receiver selection,
+physical Component Analyst dispatch, and safe failure projection. It stopped at
+the output-validation / semantic-artifact boundary without producing a
+semantic artifact, consuming handoff material, or admitting semantics.
+Component D-prime remains untested on the current live Q1 path.
 
 ## Operator Doorman Boundary
 
@@ -971,10 +984,11 @@ quality, or arbitrary-query behavior.
 
 The evaluator is an OPERATOR/VALIDATION surface, not ordinary supported-product
 consumption. A separate bounded Q1 ordinary-product run is recorded above; it
-traversed the ordinary pipeline to a lawful SearchOS handoff and an honest
-blocked terminal, but not to Component Analyst origination, semantic admission,
-or a supported cited answer. The evaluator itself does not establish broader
-live product behavior.
+traversed the ordinary pipeline to a lawful SearchOS handoff, physical
+Component Analyst dispatch, a safe output-validation failure, and an honest
+blocked terminal, but not to Component Analyst semantic-artifact origination,
+semantic admission, or a supported cited answer. The evaluator itself does not
+establish broader live product behavior.
 
 ## Installed SearchOS One-Hop Breadcrumb Navigation
 
@@ -1089,7 +1103,8 @@ Fetch, Tavily site acquisition, replacement semantic role, or live validation.
 - Real-model user-clarification quality and arbitrary-query job escalation
   quality remain unproved.
 - Broader real-model SearchPlanner behavior and quality remain unproved.
-- Real-model Component Analyst origination for Q1 remains unproved.
+- Real-model Component Analyst semantic-artifact origination for Q1 remains
+  unproved.
 - Broader real-model Component Analyst quality remains unproved.
 - Real-model Cross-Component Analyst behavior remains unproved.
 - Real-model component D-prime behavior remains unproved.

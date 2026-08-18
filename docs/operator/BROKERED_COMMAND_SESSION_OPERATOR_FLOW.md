@@ -93,6 +93,34 @@ commands that need ordinary environment access. Prefer
 only when the licensed work is one explicit provider-RPC operation through the
 tracked loopback broker.
 
+## Bounded Whole-Product Launch Warning
+
+When an LLM-controlled bounded ScryRaven command depends on credentials stored
+in the normal private `.env`, launch it through:
+
+```powershell
+py scripts\run_brokered_command_once.py `
+  --env-file <PRIVATE-ENV-FILE> `
+  ... `
+  -- `
+  python -m scryraven ...
+```
+
+Do not directly invoke:
+
+```powershell
+python -m scryraven --bounded-run-authorization ...
+```
+
+unless required provider credentials are already intentionally present in the
+target process environment and the phase explicitly licenses direct execution.
+Bounded CLI intentionally does not make the controlling agent parse or load the
+private `.env`. Missing provider prerequisites caused by bypassing the broker
+are operator/configuration failures, not PRODUCT evidence. This warning changes
+launch posture only; the doorman remains responsible for secret custody and
+process plumbing, not provider, route, token, attempt, dollar, or product
+policy.
+
 ## Parent And Private-Child Graph
 
 ```text
