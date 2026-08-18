@@ -43,6 +43,8 @@ WORKTREE_DISPOSABLE_TOPS = frozenset(
     {".pytest_cache", ".ruff_cache", "tmp", "cache", "evidence", "final"}
 )
 PHASE_ROOT_DISPOSABLE_CHILDREN = frozenset({"cache", "tmp", "evidence", "final"})
+# Exact ScryRaven-generated root file; do not broaden this to arbitrary *.db.
+WORKTREE_GENERATED_ROOT_FILES = frozenset({"proplex.db"})
 
 FILE_ATTRIBUTE_REPARSE_POINT = 0x400
 FILE_ATTRIBUTE_READONLY = 0x1
@@ -693,7 +695,10 @@ def _path_under_allowlisted_root(rel: Path) -> bool:
 
 def classify_ignored_path(rel_text: str) -> bool:
     """Return True when an ignored path is allowlisted for deletion."""
-    rel = Path(rel_text.replace("\\", "/"))
+    normalized = rel_text.replace("\\", "/")
+    if normalized in WORKTREE_GENERATED_ROOT_FILES:
+        return True
+    rel = Path(normalized)
     return _path_under_allowlisted_root(rel)
 
 
@@ -902,6 +907,17 @@ def remove_allowlisted_ignored(worktree: Path, ignored: Iterable[str], report: C
             EXIT_UNSAFE_FS,
             "unknown ignored artifact(s) outside allowlist: " + ", ".join(unknown),
         )
+    # Root-level generated files are exact regular-file entries. Reuse the
+    # existing no-follow regular-file unlink machinery; never open the file.
+    for rel in rel_paths:
+        if rel not in WORKTREE_GENERATED_ROOT_FILES:
+            continue
+        target = worktree / rel
+        st = _lstat_no_follow(target)
+        if st is None:
+            continue
+        _unlink_phase_root_regular_file(target, st)
+        report.add_action(f"removed allowlisted ignored root file: {rel}")
     # Prefer deleting top-level allowlisted disposable roots/directories once.
     tops: set[str] = set()
     for rel in rel_paths:

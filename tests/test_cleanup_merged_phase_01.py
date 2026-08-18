@@ -94,7 +94,7 @@ def build_merged_phase_fixture(
     _write(seed / "README.md", "main\n")
     _write(
         seed / ".gitignore",
-        ".pytest_cache/\n.ruff_cache/\n__pycache__/\ntmp/\ncache/\nevidence/\nfinal/\n",
+        ".pytest_cache/\n.ruff_cache/\n__pycache__/\ntmp/\ncache/\nevidence/\nfinal/\n*.db\n",
     )
     _git(seed, "add", "README.md", ".gitignore")
     _git(seed, "commit", "-m", "initial main")
@@ -1118,6 +1118,125 @@ def _assert_cleanup_removed_phase(fx: PhaseFixture, result: subprocess.Completed
     assert status == ""
     wt = _git(fx.repo, "worktree", "list", "--porcelain").stdout
     assert wt.count("worktree ") == 1
+
+
+def test_generated_root_telemetry_db_cleans_canonical_phase(tmp_path: Path) -> None:
+    fx = build_merged_phase_fixture(tmp_path, layout="canonical")
+    telemetry_db = fx.phase_worktree / "proplex.db"
+    telemetry_db.touch()
+    ignored = _git(
+        fx.phase_worktree,
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all",
+        "--ignored=matching",
+    ).stdout.splitlines()
+    assert "!! proplex.db" in ignored
+
+    result = run_cleanup(fx)
+
+    _assert_cleanup_removed_phase(fx, result)
+    assert not telemetry_db.exists()
+    assert "removed allowlisted ignored root file: proplex.db" in result.stdout
+    assert "Worktree topology: canonical" in result.stdout
+
+
+def test_generated_root_telemetry_db_cleans_legacy_flat_phase(tmp_path: Path) -> None:
+    fx = build_merged_phase_fixture(tmp_path, layout="legacy_flat")
+    telemetry_db = fx.phase_worktree / "proplex.db"
+    telemetry_db.touch()
+    ignored = _git(
+        fx.phase_worktree,
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all",
+        "--ignored=matching",
+    ).stdout.splitlines()
+    assert "!! proplex.db" in ignored
+
+    result = run_cleanup(fx)
+
+    _assert_cleanup_removed_phase(fx, result)
+    assert not telemetry_db.exists()
+    assert "removed allowlisted ignored root file: proplex.db" in result.stdout
+    assert "Worktree topology: legacy_flat" in result.stdout
+
+
+def test_other_ignored_database_remains_forbidden(tmp_path: Path) -> None:
+    fx = build_merged_phase_fixture(tmp_path)
+    other_db = fx.phase_worktree / "other.db"
+    other_db.touch()
+    ignored = _git(
+        fx.phase_worktree,
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all",
+        "--ignored=matching",
+    ).stdout.splitlines()
+    assert "!! other.db" in ignored
+
+    result = run_cleanup(fx)
+
+    assert result.returncode == 4, result.stdout + result.stderr
+    assert "other.db" in result.stdout
+    assert "outside allowlist" in result.stdout
+    assert other_db.exists()
+    assert fx.phase_worktree.exists()
+    assert fx.phase_root.exists()
+    assert _git(
+        fx.repo,
+        "show-ref",
+        "--verify",
+        "--quiet",
+        f"refs/heads/{fx.phase_branch}",
+        check=False,
+    ).returncode == 0
+    assert "removed phase worktree" not in result.stdout
+    assert "deleted phase branch" not in result.stdout
+
+
+def test_generated_root_telemetry_db_symlink_fails_closed(tmp_path: Path) -> None:
+    fx = build_merged_phase_fixture(tmp_path)
+    external_target = tmp_path / "external-target"
+    external_target.mkdir()
+    precious = external_target / "precious.txt"
+    precious.write_bytes(b"do-not-delete")
+    telemetry_db = fx.phase_worktree / "proplex.db"
+    _try_link_dir(telemetry_db, external_target)
+    assert os.path.lexists(telemetry_db)
+    ignored = _git(
+        fx.phase_worktree,
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all",
+        "--ignored=matching",
+    ).stdout.splitlines()
+    assert any(line.startswith("!! proplex.db") for line in ignored)
+
+    result = run_cleanup(fx)
+
+    assert result.returncode == 4, result.stdout + result.stderr
+    assert "proplex.db" in result.stdout
+    assert (
+        "outside allowlist" in result.stdout
+        or "symlink" in result.stdout.lower()
+        or "reparse" in result.stdout.lower()
+    )
+    assert os.path.lexists(telemetry_db)
+    assert external_target.exists()
+    assert precious.exists()
+    assert fx.phase_worktree.exists()
+    assert fx.phase_root.exists()
+    assert _git(
+        fx.repo,
+        "show-ref",
+        "--verify",
+        "--quiet",
+        f"refs/heads/{fx.phase_branch}",
+        check=False,
+    ).returncode == 0
+    assert "removed phase worktree" not in result.stdout
+    assert "deleted phase branch" not in result.stdout
 
 
 def test_legacy_flat_merged_phase_cleans_successfully(tmp_path: Path) -> None:
