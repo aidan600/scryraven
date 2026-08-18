@@ -18,14 +18,17 @@ compact component refs; it does not create a second Analyst authority path or
 open graph execution.
 
 The canonical durable direction is
-[MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md](MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md).
-The current default ordinary semantic producer does not establish a typed
-general component Analyst -> component D-prime lane. The approved Phase 1
-product path must add a configured-SmartModel regular component Analyst before
-component D-prime, then use a separate configured-SmartModel Cross-Component
-Analyst for synthesis proposals. Existing Workbench packets and specialized
-status lanes are reuse candidates; their presence is not proof that either
-ordinary producer role is installed.
+[MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md](MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md)
+for installed bounded multi-component execution and
+[AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md) for the selected
+target topology. The current default ordinary semantic producer does not
+establish a typed general component Analyst lane. **Installed Phase 1 path:**
+configured-SmartModel component Analyst before component D-prime, then separate
+Cross-Component Analyst and synthesis D-prime for N>=2 work. **Selected target:**
+strong Component Analyst with self-audit; no N=1 Cross/synthesis/D-prime
+ceremony; separate D-prime calls retired during convergence. Existing Workbench
+packets and specialized status lanes are reuse candidates; their presence is not
+proof that either ordinary producer role is installed.
 
 ## Canonical Runtime Contract
 

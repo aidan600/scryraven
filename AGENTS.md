@@ -153,4 +153,5 @@ merged-phase worktree/branch/phase-root cleanup as an ad-hoc PowerShell sequence
 - `docs/codex/PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md` — proof/product claims
 - `docs/codex/TEST_CLASSIFICATION_LIBRARY.md` and `docs/codex/VALIDATION_BUCKETS.md` — test scope
 - `docs/codex/RUNAUTHORITY_IMPLEMENTATION_GUIDE.md` — RunAuthority migrations
-- `docs/architecture/MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md` — current multi-component architecture
+- `docs/architecture/ANALYSTOS_OPERATING_MODEL.md` — selected AnalystOS target topology and semantic-role policy (installed D-prime paths remain until convergence)
+- `docs/architecture/MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md` — installed bounded multi-component runtime architecture

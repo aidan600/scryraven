@@ -35,6 +35,7 @@ CENSUS = ARCH / "PROVIDER_OFFERINGS_ADAPTER_AND_LEGACY_DOCTRINE_CENSUS.md"
 PROVIDER_ROUTING = ARCH / "PROVIDER_CAPABILITY_AND_ACQUISITION_ROUTING.md"
 ACQUISITION_CONTROL = ARCH / "RUNKERNEL_POST_DISCOVERY_ACQUISITION_CONTROL.md"
 SEARCHOS = ARCH / "SEARCHOS_OPERATING_MODEL.md"
+ANALYSTOS = ARCH / "ANALYSTOS_OPERATING_MODEL.md"
 SEARCHOS_RECOVERY_DIRECTION = (
     ARCH / "SEARCHOS_POST_ANALYSIS_RECOVERY_AND_INFERENCE_DIRECTION.md"
 )
@@ -49,6 +50,7 @@ ORCHESTRATOR_STRANGLER = ARCH / "AG94G_ORCHESTRATOR_AUTHORITY_STRANGLER_MAP.md"
 ECONOMIST_SAFETY = DOCS / "architecture_safety_contract.md"
 ECONOMIST_TELEMETRY_POLICY = DOCS / "economist_shadow_telemetry_promotion_policy.md"
 CONCERN_OWNERS = {
+    "canonical:analystos-operating-model": ANALYSTOS,
     "canonical:dprime-role-contract": ARCH / "DPRIME_ARCHITECTURE.md",
     "canonical:run-contract-semantic-loop": ARCH / "RUN_CONTRACT_SEMANTIC_LOOP.md",
     "canonical:component-dag-scheduling-concurrency": (ARCH / "RUNKERNEL_COMPONENT_DAG_CONCURRENCY.md"),
@@ -213,6 +215,33 @@ def test_guidance_routes_to_exact_concern_owners() -> None:
         assert owner.name in guidance
     assert "await D1 repair" not in guidance
     assert "implementation-status sections" not in guidance
+
+
+def test_analystos_target_owner_is_unique_routed_and_nonactivating() -> None:
+    markdown = tuple(DOCS.rglob("*.md"))
+    normalized = _collapsed(ANALYSTOS)
+    authority = "Authority: canonical:analystos-operating-model"
+
+    assert [path for path in markdown if authority in _read(path)] == [ANALYSTOS]
+    for phrase in (
+        "Status: current",
+        "Default-read: no",
+        "INSTALLED:",
+        "SELECTED TARGET:",
+        "strong Component Analyst case + self-audit",
+        "Cross-Component Analyst only for genuine N>=2 synthesis",
+        "Scrutineer is the sole separate semantic reviewer",
+        "Sufficiency is the sole whole-run stopper",
+        "Component D-prime and synthesis D-prime ordinary model calls are selected for retirement",
+        "Runtime still executes component D-prime and synthesis D-prime",
+    ):
+        assert phrase in normalized
+
+    guidance = _read(GUIDANCE)
+    assert ANALYSTOS.name in guidance
+    assert "`canonical:analystos-operating-model`" in guidance
+    for target in _links(ANALYSTOS):
+        assert target.is_file(), target
 
 
 def test_searchos_target_owner_is_unique_routed_and_nonactivating() -> None:

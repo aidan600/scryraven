@@ -14,13 +14,16 @@ Checkpoint-appendix expiry: completed with SEARCHOS-GAP-RECOVERY-AND-STOP-CONVER
 ## Durable North Star
 
 Scrutineer identifies defects and exact unresolved nodes. Analyst owns
-component and inference proposals. Existing independent authorities admit or
-reject those proposals. SearchOS retrieves missing evidentiary premises through
-one canonical recovery-cycle owner. D-prime validates support and inference
-relationships. Existing ContractAmendment and component-graph machinery is
-reused. Recovery cycles are append-only, purpose-bound, novelty-bound, and
-cumulatively budgeted. Sufficiency owns whole-run posture and honest whole-run
-stopping.
+component and inference proposals with self-audit in the selected target.
+Existing independent authorities admit or reject those proposals. SearchOS
+retrieves missing evidentiary premises through one canonical recovery-cycle
+owner. **Installed:** D-prime validates support and inference relationships.
+**Selected target:** recovery and Specialist results return to Analyst for
+reanalysis; separate component and synthesis D-prime ordinary model calls are
+retired per [AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md).
+Existing ContractAmendment and component-graph machinery is reused. Recovery
+cycles are append-only, purpose-bound, novelty-bound, and cumulatively
+budgeted. Sufficiency owns whole-run posture and honest whole-run stopping.
 FinalAnswerPacket packages only admitted results. No parallel recovery,
 inference, graph, amendment, query, or stopping authority is created.
 
@@ -60,18 +63,22 @@ never reactivated.
 Purpose admission precedes executable query work. QueryPlan retains query
 identity and equivalence. EvidenceLedger retains source truth.
 ComponentCoverage retains component support truth. Analyst proposes derived
-relationships, and D-prime validates exact relationship strength. RunKernel
-admits and administers canonical state. Sufficiency decides the whole-run
-posture. FinalAnswerPacket and Author remain downstream only.
+relationships with self-audit in the selected target. **Installed:** D-prime
+validates exact relationship strength. **Selected target:** validation folds
+into Analyst/Cross self-audit; recovery returns to Analyst. RunKernel admits
+and administers canonical state. Sufficiency decides the whole-run posture.
+FinalAnswerPacket and Author remain downstream only.
 
 The steady-state gap classifier is:
 
 ```text
 missing evidentiary premise
 -> SearchOS recovery is eligible
+-> Analyst reanalyzes with retrieved custody
 
 premises present but inference not admitted
--> Analyst / D-prime inference evaluation is required
+-> Analyst self-audit / inference evaluation is required
+   (installed: component or synthesis D-prime validation may still execute)
 
 premises and inference admitted
 -> component is supported;

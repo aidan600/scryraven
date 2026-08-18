@@ -536,12 +536,16 @@ A. narrow mechanical/parser/output-contract defect
    -> offline prove
    -> one later PRODUCT pulse
 
-B. contract is burdened by unnecessary mechanical reproduction or by the old
-   mandatory-D-prime decomposition
-   -> stop for AnalystOS architecture decision before patching around it
+B. contract is burdened by unnecessary mechanical reproduction or by installed
+   mandatory-D-prime decomposition that is not the selected AnalystOS target
+   -> implement selected AnalystOS convergence on the component path instead of
+      patching around installed D-prime
 
-C. Analyst eventually produces a lawful semantic artifact
-   -> stop for explicit Analyst / D-prime / Scrutineer topology selection
+C. Analyst eventually produces a lawful semantic artifact under the selected
+   AnalystOS target
+   -> continue Q1 completion, multi-component convergence, Scrutineer policy,
+      and recovery/Specialist integration per
+      [AnalystOS Operating Model](../architecture/ANALYSTOS_OPERATING_MODEL.md)
 ```
 
 D-prime is not the current blocker; it remains untested on the current live Q1
@@ -559,23 +563,24 @@ owned by [ScryRaven Current State](../architecture/SCRYRAVEN_CURRENT_STATE.md),
 while architecture ownership remains with the
 [SearchOS Operating Model](../architecture/SEARCHOS_OPERATING_MODEL.md).
 
-### Installed AnalystOS topology versus selected retention target
+### Installed AnalystOS topology versus selected target
 
 The installed post-analysis routes remain factual:
 
 ```text
+INSTALLED:
 Component Analyst -> component D-prime -> RunKernel component admission
 Cross-Component Analyst -> synthesis D-prime -> Scrutineer when triggered
   -> RunKernel graph/synthesis admission
 ```
 
-Mandatory serial D-prime is not protected target architecture. Component and
-synthesis D-prime are installed, executable, and provisional from a retention
-perspective. Future phases must explicitly select whether to keep, condition,
-fold, consolidate, or retire those roles; `KEEP_MANDATORY` requires an explicit
-future architecture decision. This roadmap does not select the final
-Analyst/Critic topology. The current Q1 failure occurs before those routes;
-D-prime is not the current blocker.
+Mandatory serial D-prime is not the selected AnalystOS target. Component and
+synthesis D-prime remain installed and executable until convergence phases
+retire the separate ordinary model calls. Selected target topology, mode policy,
+and retirement sequencing belong to
+[AnalystOS Operating Model](../architecture/ANALYSTOS_OPERATING_MODEL.md).
+The current Q1 failure occurs before those routes; D-prime is not the current
+blocker.
 
 The installed ordinary front-half shape is:
 
@@ -626,8 +631,9 @@ suppressed Q1 state. Do not manually reconstruct canonical RunKernel or
 SearchOS-handoff authority. The current live Q1 path stopped before D-prime, so
 D-prime remains untested and is not the current blocker. If the Component
 Analyst output contract is burdened by unnecessary mechanical reproduction or
-the old mandatory-D-prime decomposition, stop for AnalystOS architecture
-selection instead of patching around it. Do not schedule Q2 yet.
+installed mandatory-D-prime decomposition that is not the selected AnalystOS
+target, implement selected AnalystOS convergence on the component path instead
+of patching around installed D-prime. Do not schedule Q2 yet.
 
 The selected sequence is:
 
@@ -636,13 +642,19 @@ current Component Analyst model-visible output contract
 -> parser/normalizer
 -> semantic-artifact boundary
 -> exact mechanical repair and offline proof, if branch A applies
+-> AnalystOS component-path convergence per selected target
 -> one later PRODUCT pulse
+-> Q1 completion, multi-component convergence, Scrutineer policy, and
+   recovery/Specialist integration
 ```
 
-If branch B applies, stop for the AnalystOS architecture decision. If branch C
-applies, stop for explicit Analyst / D-prime / Scrutineer topology selection.
-Only after a selected topology converges does supported cited Q1 completion or
-representative corpus expansion become eligible.
+Branch B applies when installed D-prime decomposition blocks the selected
+AnalystOS target; implement convergence rather than topology re-selection.
+Branch C continues Q1 and downstream convergence under the selected target in
+[AnalystOS Operating Model](../architecture/ANALYSTOS_OPERATING_MODEL.md).
+Supported cited Q1 completion or representative corpus expansion becomes
+eligible after the component-path boundary and selected-target convergence make
+progress.
 
 ### Installed Phase 1 - Sparse uncertainty-aware planning
 

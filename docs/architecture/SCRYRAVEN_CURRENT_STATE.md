@@ -196,7 +196,7 @@ configuration.
 
 | Marker | Installed behavior for the supported class |
 | --- | --- |
-| `MC-P1-ORDINARY` | Component Analyst and component D-prime feed RunKernel component admission; ComponentWorkGraph V1, Cross-Component Analyst, synthesis D-prime, and the full Scrutineer posture when triggered feed canonical graph/synthesis admission. The result is consumed by ordinary Sufficiency, FinalAnswerPacket, Author, RunOutcome, and CLI-visible output, with safe blocked non-Author terminal behavior where required. |
+| `MC-P1-ORDINARY` | **Installed:** Component Analyst and component D-prime feed RunKernel component admission; ComponentWorkGraph V1, Cross-Component Analyst, synthesis D-prime, and the full Scrutineer posture when triggered feed canonical graph/synthesis admission. The result is consumed by ordinary Sufficiency, FinalAnswerPacket, Author, RunOutcome, and CLI-visible output, with safe blocked non-Author terminal behavior where required. **Selected target:** separate component and synthesis D-prime ordinary model calls are retired per [AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md). |
 | `MC-P2-DYNAMIC-RECOVERY` | One bounded missing-component recovery may amend the AnswerContract, re-enter ordinary research, admit the recovered component, and resume the governed graph. |
 | `MC-P3-SELECTIVE-RECOMPUTE` | Recovery invalidates and recomputes only the affected synthesis closure while exact unaffected admitted synthesis is carried forward under new deterministic authority. |
 | `MC-P4-SCHEDULER-LEASES` | RunKernel owns semantic-work scheduling and exact work/budget leases, including grant-first dispatch, pretransport spend commitment, cancellation accounting, and terminal zero-active-lease enforcement. |
@@ -907,8 +907,12 @@ Deep depth-two chain whose supporting premise is itself inference-supported.
 
 PR #521 installs one reusable seven-scenario fictional ordinary-product gate
 over the existing Component Analyst and Cross-Component Analyst semantic work
-plane. `AnalystOS` is a product-level name for that work plane, not another
-kernel, controller, graph, or canonical-state owner.
+plane. **AnalystOS** names that semantic work plane and the selected target
+topology owner in
+[AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md). It is not another
+kernel, controller, graph, or canonical-state owner. Installed runtime still
+executes separate component and synthesis D-prime ordinary model calls until
+convergence phases retire them.
 
 The gate proves direct closure, one searched-premise recovery, pure depth-two
 reconstruction, nested recovery followed by fresh whole-case reconciliation,
@@ -1159,10 +1163,11 @@ and this document does not license changes to that surface.
 
 ## Canonical Architecture Links
 
+- [AnalystOS operating model](ANALYSTOS_OPERATING_MODEL.md) owns the selected AnalystOS target topology, semantic-role policy, mode policy, and D-prime retirement direction.
 - [Multi-component synthesis runtime architecture](MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md) owns the deep installed multi-component contracts.
 - [Specialist graph substrate](SPECIALIST_GRAPH_SUBSTRATE.md) owns generic Specialist proposal, registry, policy, work, result, scheduling, and validator-consumption contracts.
 - [Quantitative Specialist product activation](AG_SPECIALIST_SOURCE_BOUND_CALCULATION_01.md) owns the installed calculator registry/policy, model-visible proposal contract, evidence bridge/quality, source catalogs, parser, provenance, claim alignment, and handoff use.
-- [D-prime architecture](DPRIME_ARCHITECTURE.md) owns component and synthesis D-prime role boundaries.
+- [D-prime architecture](DPRIME_ARCHITECTURE.md) owns installed component and synthesis D-prime role contracts; selected retirement target is in [AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md).
 - [Run-contract semantic loop](RUN_CONTRACT_SEMANTIC_LOOP.md) owns the integrated query-to-answer proposal and reduction flow.
 - [RunKernel component DAG, scheduling, and concurrency](RUNKERNEL_COMPONENT_DAG_CONCURRENCY.md) owns graph, scheduler, lease, batch, and concurrency invariants.
 - [RunKernel post-discovery acquisition control](RUNKERNEL_POST_DISCOVERY_ACQUISITION_CONTROL.md) owns post-discovery capability, work-order, route, execution, terminal, and custody authorization.

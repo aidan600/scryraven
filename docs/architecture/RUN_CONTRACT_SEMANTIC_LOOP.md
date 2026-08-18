@@ -41,8 +41,11 @@ target, dependency, role-artifact, and stable-replay lineage. Exact applied
 amendment replay returns the prior record, admission, application, new-contract
 projection, and graph-transition ref without new canonical work.
 
-Cross-Component Analyst proposes exact target-mapped relationships, synthesis
-D-prime validates them, and RunKernel admits bounded Graph V1 inference.
+Cross-Component Analyst proposes exact target-mapped relationships. **Installed:**
+synthesis D-prime validates them, and RunKernel admits bounded Graph V1
+inference. **Selected target:** validation folds into Cross self-audit; separate
+synthesis D-prime ordinary model calls are retired per
+[AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md).
 Semantic depth is capped at 1 in Fast/Balanced and 2 in Deep. Sufficiency then
 selects one exact current direct or inferred fulfillment; FAP preserves its
 lineage and Author only renders the packet. Boundary A/B recovery never becomes
@@ -107,13 +110,14 @@ The current loop is one authority flow, not a phase chronology:
     current AnswerContract obligations.
 15. Nonqualifying and single-component requests continue through the direct
     ordinary semantic lane.
-16. Requests qualifying for
+16. **Installed loop:** Requests qualifying for
     `ordinary-bounded-multicomponent-factual-synthesis-v1` enter the bounded
     multi-component lane: component Analyst proposes, component D-prime
     validates, and RunKernel admits component state into ComponentWorkGraph V1.
-17. Cross-Component Analyst proposes dependencies and synthesis; synthesis
-    D-prime validates nominated synthesis; RunKernel admits canonical graph and
-    synthesis state.
+17. **Installed loop:** Cross-Component Analyst proposes dependencies and
+    synthesis; synthesis D-prime validates nominated synthesis; RunKernel admits
+    canonical graph and synthesis state. **Selected target loop:** see
+    [AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md).
 18. Full Scrutineer adversarially challenges the case when its installed
     triggers require review.
 19. In the fixed CLI/UI product composition, component and ordinary Cross-

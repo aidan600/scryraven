@@ -52,11 +52,14 @@ owners. Live validation and arbitrary-query coverage remain nonproofs.
 
 For the ordinary product target, the Workbench contract alone is not a
 producer. The product needs a real dedicated configured-SmartModel
-Cross-Component Analyst call. That role may propose first-class synthesis nodes
-and semantic edges over admitted component/synthesis refs. It may not validate
-its own proposal, admit graph state, dispatch recovery, or render answer prose;
-a separate configured-SmartModel synthesis D-prime validates, full Scrutineer
-challenges when triggered, and RunKernel alone admits or authorizes recovery.
+Cross-Component Analyst call for genuine N>=2 synthesis. That role may propose
+first-class synthesis nodes and semantic edges over admitted component/synthesis
+refs with self-audit in the selected target. It may not validate its own
+proposal, admit graph state, dispatch recovery, or render answer prose. **Installed:**
+a separate configured-SmartModel synthesis D-prime validates; full Scrutineer
+challenges when triggered; RunKernel alone admits or authorizes recovery.
+**Selected target:** synthesis D-prime ordinary model calls are retired per
+[AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md).
 
 ## Capability Inventory / Reuse-First Gate
 
@@ -222,9 +225,9 @@ The Workbench extends the current Analyst Workbench posture by doctrine: it
 keeps proposal-only behavior, compact dossier refs, and no dispatch. It does not
 fork an alternate Analyst authority path.
 
-## 5. D-prime At Two Levels
+## 5. Installed D-prime At Two Levels Versus Selected Target
 
-D-prime has two future levels:
+**Installed** ordinary product execution still uses two D-prime levels:
 
 ```text
 per-component evidence-relative support validation
@@ -235,6 +238,12 @@ and
 ```text
 cross-component synthesis validation over component refs and dependency refs
 ```
+
+**Selected target:** useful work from both levels folds into Component Analyst
+and Cross-Component Analyst self-audit respectively. Separate component and
+synthesis D-prime ordinary model calls are retired per
+[AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md). Dual D-prime is not
+future architecture.
 
 Per-component D-prime asks whether bounded evidence supports a proposed claim
 inside one component/source-obligation lane.

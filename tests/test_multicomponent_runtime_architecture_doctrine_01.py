@@ -30,6 +30,7 @@ ARCH = ROOT / "docs" / "architecture"
 CODEX = ROOT / "docs" / "codex"
 
 CANONICAL = ARCH / "MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md"
+ANALYSTOS = ARCH / "ANALYSTOS_OPERATING_MODEL.md"
 CURRENT_STATE = ARCH / "SCRYRAVEN_CURRENT_STATE.md"
 SEMANTIC_LOOP = ARCH / "RUN_CONTRACT_SEMANTIC_LOOP.md"
 DAG = ARCH / "RUNKERNEL_COMPONENT_DAG_CONCURRENCY.md"
@@ -55,8 +56,9 @@ def test_canonical_owner_has_current_metadata_and_supported_boundary() -> None:
     assert "Authority: canonical:bounded-multicomponent-runtime" in text
     assert "Default-read: no" in text
     assert "ordinary-bounded-multicomponent-factual-synthesis-v1" in text
-    assert "Nonqualifying and single-component requests retain" in collapsed
-    assert "arbitrary-query multi-component support" in text
+    assert "Nonqualifying requests continue through the existing general multipart fallback" in collapsed
+    assert "INSTALLED EXECUTABLE TOPOLOGY != SELECTED ANALYSTOS TARGET" in text
+    assert ANALYSTOS.name in text
     assert "Mode:" not in text
     assert "Verdict target:" not in text
 
@@ -131,9 +133,9 @@ def test_current_bounded_envelope_and_role_caps_are_exact() -> None:
         "Graph/AnswerContract amendment rounds | at most 1",
         "Component Analyst | 5",
         "Component D-prime | 5",
-        "Cross-Component Analyst | 2",
+        "Cross-Component Analyst | 3",
         "Synthesis D-prime | 8",
-        "Scrutineer | 2",
+        "Scrutineer | 3",
     ):
         assert phrase in text
 
