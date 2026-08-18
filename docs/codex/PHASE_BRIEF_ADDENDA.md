@@ -97,6 +97,10 @@ For a repeated tiny observation using an already-settled authorization
 posture, instruct the agent to bind/reuse that posture and execute, not to
 research or derive a new budget.
 
+Private-data / redaction boundary, raw-retention posture, and sanitized
+output path are separate required fields. Do not collapse privacy or
+raw-retention into the sanitized output path.
+
 ```text
 Exact PRODUCT/validation target:
 Maximum PRODUCT runs:
@@ -104,6 +108,8 @@ Retry/replacement authority, if relevant:
 Expected cost/risk posture:
 Operator path:
 Command/harness:
+Private-data / redaction boundary:
+Raw-retention posture:
 Sanitized output path:
 Decision:
 Stop condition:

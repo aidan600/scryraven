@@ -512,11 +512,12 @@ Live validation remains default-off.
 redaction plan, output packet path, and stop condition.
 
 `live_product_proof` requires a licensed ordinary product-path command and the
-live-validation addendum: exact PRODUCT/validation target, maximum PRODUCT
-runs, operator path, command/harness, sanitized output path, decision, and
-stop condition. Hard provider/model/search/read/embedding attempt, token, and
-dollar ceilings are policy requirements only when that addendum requires them,
-not a default live-product budget.
+completed live-validation addendum. Do not treat private-data / redaction
+boundary, raw-retention posture, or sanitized output path as optional; those
+fields remain required by the addendum and are separate concerns. Hard
+provider/model/search/read/embedding attempt, token, and dollar ceilings are
+policy requirements only when that addendum requires them, not a default
+live-product budget.
 
 A live component proof is not a live product proof.
 
