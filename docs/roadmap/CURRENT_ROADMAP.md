@@ -470,46 +470,82 @@ and recursive-navigation limit calibration are not installed, are not part of
 the one-hop MVP, and have no ordinary product caller. Any later phase must reuse
 the installed acquisition and custody owners.
 
-## Active Decision Gate: SearchOS -> Component Analyst Same-Process Receiver/Origination
+## Active Decision Gate: COMPONENT ANALYST OUTPUT-CONTRACT / SEMANTIC-ORIGINATION FRONTIER
 
 The maintainer-selected **Option C modified into a unified iterative loop** is
 installed through SearchOS Phases 1, 2, and 3. Ordinary planning completion is
 `AnswerContract -> QueryPlan`. Post-rebase inert compatibility detritus is
 removed where zero current consumer existed. A bounded Q1 ordinary PRODUCT
-observation has now reached a lawful SearchOS semantic handoff. This completed
-evidence does not establish broad live reliability, a supported cited answer,
-or AnalystOS origination. This roadmap grants no new live license.
+observation has now reached a lawful SearchOS semantic handoff, selected the
+Component Analyst receiver, and physically dispatched the Component Analyst.
+PR #579's safe Component Analyst failure projection is live-proven: the run
+stopped at output validation before a semantic artifact was produced. This
+completed evidence does not establish broad live reliability, a supported cited
+answer, or Component Analyst semantic-artifact origination. This roadmap grants
+no new live license.
 
 ### Completed Q1 bounded product evidence
 
 ```text
 COMPLETED:
-Q1 bounded ordinary PRODUCT reached lawful SearchOS semantic handoff.
+Q1 bounded ordinary PRODUCT reached lawful SearchOS handoff and Component
+Analyst physical dispatch, then observed an output-validation failure before
+semantic-artifact production.
 ```
 
-The observed run selected the Component Analyst receiver but recorded no
-Component Analyst proposal, no handoff consumption, and no semantic admission;
-the product ended blocked without a supported cited answer. The canonical
-bounded conclusion is `SEARCHOS_COMPLETE_FOR_Q1 ONLY`.
+The accepted observation is run
+`90c035c6-8f53-438e-96e6-0a6e63895221` at `$0.066166` across 10 logical / 10
+physical calls (`model=6`, `embedding=2`, `search=1`, `read=1`). It recorded
+`searchos_exit = SEMANTIC_HANDOFF`, `semantic_handoff_present = true`, receiver
+selection, real Component Analyst physical dispatch, and the safe PR #579
+failure projection with `failure_kind = output_validation_failure` and
+`settlement_posture = failed_spent`. No semantic artifact was produced;
+handoff material was not consumed and semantic admission did not occur.
+Component D-prime was not reached and remains untested on the current live Q1
+path. The product ended blocked with no answer, citations, or Author result.
+The durable classification is
+`COMPONENT_ANALYST_OUTPUT_VALIDATION_FAILURE_OBSERVED`.
+
+The earlier bounded SearchOS pulse remains historical provenance only and does
+not define the current frontier.
 
 ### Current frontier
 
 ```text
 CURRENT FRONTIER:
-SearchOS -> Component Analyst same-process receiver/origination
+Component Analyst dispatch
+-> Component Analyst output-validation / semantic-artifact boundary
 ```
+
+The immediate next step is to offline inspect the current Component Analyst
+model-visible output contract, parser/normalizer, and semantic-artifact
+boundary.
 
 The durable immediate seam is:
 
 ```text
-authoritative SearchOS material
--> valid Analyst input
--> Component Analyst callable
+Component Analyst dispatch
+-> Component Analyst output-validation / semantic-artifact boundary
 ```
 
-The preceding ordinary product observation reached the receiver boundary, so
-the next product checkpoint must observe whether Component Analyst input is
-valid and whether the Component Analyst is actually callable/originated.
+Decision branches:
+
+```text
+A. narrow mechanical/parser/output-contract defect
+   -> repair that exact boundary
+   -> offline prove
+   -> one later PRODUCT pulse
+
+B. contract is burdened by unnecessary mechanical reproduction or by the old
+   mandatory-D-prime decomposition
+   -> stop for AnalystOS architecture decision before patching around it
+
+C. Analyst eventually produces a lawful semantic artifact
+   -> stop for explicit Analyst / D-prime / Scrutineer topology selection
+```
+
+D-prime is not the current blocker; it remains untested on the current live Q1
+path. Do not schedule Q2 yet.
 
 ### Installed versus selected target
 
@@ -538,7 +574,8 @@ synthesis D-prime are installed, executable, and provisional from a retention
 perspective. Future phases must explicitly select whether to keep, condition,
 fold, consolidate, or retire those roles; `KEEP_MANDATORY` requires an explicit
 future architecture decision. This roadmap does not select the final
-Analyst/Critic topology.
+Analyst/Critic topology. The current Q1 failure occurs before those routes;
+D-prime is not the current blocker.
 
 The installed ordinary front-half shape is:
 
@@ -586,26 +623,26 @@ requires a new architecture decision.
 
 Do not build persistence or replay infrastructure merely to recreate the prior
 suppressed Q1 state. Do not manually reconstruct canonical RunKernel or
-SearchOS-handoff authority, and do not repair D-prime merely to obtain a
-baseline of the installed D-prime behavior. If Component Analyst origination
-cannot be cleanly separated from provisional D-prime or multi-component
-machinery, stop for AnalystOS architecture selection instead of repairing the
-entire installed post-analysis topology. Do not run Q2 before the current Q1
-downstream frontier is resolved.
+SearchOS-handoff authority. The current live Q1 path stopped before D-prime, so
+D-prime remains untested and is not the current blocker. If the Component
+Analyst output contract is burdened by unnecessary mechanical reproduction or
+the old mandatory-D-prime decomposition, stop for AnalystOS architecture
+selection instead of patching around it. Do not schedule Q2 yet.
 
 The selected sequence is:
 
 ```text
-lawful same-process SearchOS handoff
--> exact current bounded evidence binding
--> valid Component Analyst input
--> Component Analyst actually callable/originated
--> one ordinary Q1 PRODUCT observation far enough to observe Component Analyst
--> Analyst/D-prime/Scrutineer topology selection
--> selected AnalystOS convergence
--> supported cited Q1 answer
--> representative corpus expansion
+current Component Analyst model-visible output contract
+-> parser/normalizer
+-> semantic-artifact boundary
+-> exact mechanical repair and offline proof, if branch A applies
+-> one later PRODUCT pulse
 ```
+
+If branch B applies, stop for the AnalystOS architecture decision. If branch C
+applies, stop for explicit Analyst / D-prime / Scrutineer topology selection.
+Only after a selected topology converges does supported cited Q1 completion or
+representative corpus expansion become eligible.
 
 ### Installed Phase 1 - Sparse uncertainty-aware planning
 
@@ -707,7 +744,8 @@ supported consumer were deleted.
 Next:
 
 ```text
-SearchOS -> Component Analyst same-process receiver/origination
+Component Analyst dispatch
+-> Component Analyst output-validation / semantic-artifact boundary
 ```
 
 No live provider, model, search, fetch/read, retrieval, or product call is
