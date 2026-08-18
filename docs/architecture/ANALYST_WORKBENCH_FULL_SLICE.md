@@ -29,14 +29,15 @@ The canonical durable direction is
 [MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md](MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md)
 for installed bounded multi-component execution and
 [AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md) for the selected
-target topology. The current default ordinary semantic producer does not
-establish a typed general component Analyst lane. **Installed Phase 1 path:**
-configured-SmartModel component Analyst before component D-prime, then separate
-Cross-Component Analyst and synthesis D-prime for N>=2 work. **Selected target:**
-strong Component Analyst with self-audit; no N=1 Cross/synthesis/D-prime
-ceremony; separate D-prime calls retired during convergence. Existing Workbench
-packets and specialized status lanes are reuse candidates; their presence is not
-proof that either ordinary producer role is installed.
+target topology. The current ordinary semantic producer establishes a typed,
+self-audited Component Analyst case and sends its exact current binding directly
+to RunKernel component admission. Cross-Component Analyst and synthesis D-prime
+remain installed for genuine N>=2 work. N=1 has no Cross, synthesis, or
+component-D-prime semantic ceremony. Component D-prime is retained only for an
+explicit legacy SearchOS recovery compatibility corridor, not as an ordinary
+Workbench consumer. Existing Workbench packets and specialized status lanes are
+reuse candidates; their presence is not proof that an ordinary producer role is
+installed.
 
 ## Canonical Runtime Contract
 
@@ -213,15 +214,16 @@ If those identities diverge, the product must block before FAP, Author, or
 source display. The blocker is authoritative even when a provider result is
 official-looking, readable, or answer-like.
 
-### Relationship To D-prime, Scrutineer, Sufficiency, FAP, And Author (Installed Current-Source Lane)
+### Relationship To Analyst Admission, D-prime Compatibility, Scrutineer, Sufficiency, FAP, And Author
 
-**Installed** current-source single-fact runs still route Workbench dossier
-context through component D-prime model review before RunKernel admission.
-That is installed fact, not selected target architecture.
+**Installed** current-source single-fact runs bind Workbench dossier context to
+a self-audited Component Analyst case and then to direct RunKernel component
+admission. Component D-prime does not review ordinary component work; it remains
+only for the explicit legacy SearchOS recovery compatibility corridor.
 
-In the installed lane, D-prime is the evidence-relative support judge for that
-path. Workbench context does not substitute for D-prime model review, proposal
-validation, RunKernel admission, or downstream answer-path consumption.
+Workbench context does not substitute for Analyst case construction,
+deterministic exact-current binding, RunKernel admission, or downstream
+answer-path consumption.
 
 Scrutineer challenge posture is separate. It must not be silently treated as an
 implemented answer blocker or remediation layer unless a phase explicitly
@@ -332,12 +334,14 @@ New machinery introduced:
   source-authority finality, product correctness, raw/private retention, answer
   prose creation, or RunKernel reduction.
 
-Old path treatment (**installed** current-source lane):
+Current path treatment (**installed** current-source lane):
 
 - The prior optional evidence-triage deferral is replaced by a product-consumed
   Workbench bundle after fetch/read.
-- In the installed lane, component D-prime remains the downstream review path;
-  the Workbench dossier is context, not admission.
+- In the installed lane, the self-audited Component Analyst case is the
+  downstream semantic case and direct RunKernel admission is the canonical
+  transition; the Workbench dossier is context, not admission. Component
+  D-prime remains only for explicit legacy SearchOS recovery compatibility.
 - The local Workbench projection is marked `run_kernel_reduced: false`,
   `run_kernel_reduction_pending: true`, and
   `proposed_for_runkernel_reduction: true`.

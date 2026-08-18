@@ -1670,6 +1670,9 @@ def _specialist_quantitative_authority_refs_from_inputs(
         mapped = _safe_mapping(item)
         ref = specialist_quantitative_authority_ref_from_handoff(
             _safe_mapping(mapped.get("specialist_need_handoff")),
+            applicable_analyst_case_ref=_safe_mapping(
+                mapped.get("applicable_analyst_case_ref")
+            ),
             applicable_dprime_ref=_safe_mapping(mapped.get("applicable_dprime_ref")),
         )
         target = _safe_mapping(

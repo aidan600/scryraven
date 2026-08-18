@@ -776,6 +776,9 @@ class ActionType(str, Enum):
     MULTICOMPONENT_COMPONENT_ANALYST_EXECUTE = (
         "multicomponent_component_analyst_execute"
     )
+    MULTICOMPONENT_COMPONENT_ANALYST_RESUME_EXECUTE = (
+        "multicomponent_component_analyst_resume_execute"
+    )
     MULTICOMPONENT_SCHEDULER_INITIALIZE = (
         "multicomponent_graph_scheduler_initialize"
     )
@@ -929,6 +932,9 @@ class ObservationType(str, Enum):
     SEMANTIC_PRODUCER_BUNDLE_COMMITTED = "semantic_producer_bundle_committed"
     MULTICOMPONENT_COMPONENT_ANALYST_COMPLETED = (
         "multicomponent_component_analyst_completed"
+    )
+    MULTICOMPONENT_COMPONENT_ANALYST_RESUME_COMPLETED = (
+        "multicomponent_component_analyst_resume_completed"
     )
     MULTICOMPONENT_SCHEDULER_INITIALIZED = (
         "multicomponent_graph_scheduler_initialized"
@@ -1438,6 +1444,7 @@ class Observation:
         object.__setattr__(self, "status", RunStageStatus(self.status))
         semantic_role_observation_types = {
             ObservationType.MULTICOMPONENT_COMPONENT_ANALYST_COMPLETED,
+            ObservationType.MULTICOMPONENT_COMPONENT_ANALYST_RESUME_COMPLETED,
             ObservationType.MULTICOMPONENT_COMPONENT_DPRIME_COMPLETED,
             ObservationType.MULTICOMPONENT_CROSS_ANALYST_COMPLETED,
             ObservationType.MULTICOMPONENT_SYNTHESIS_DPRIME_COMPLETED,
@@ -4794,6 +4801,53 @@ class RunKernel:
         )
         return deepcopy(self.state.projections[SPECIALIST_WORK_PLANE_STAGE])
 
+    def consume_specialist_handoff_by_analyst_case(
+        self,
+        *,
+        handoff_id: str,
+        analyst_case_artifact_ref: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Bind one exact component Specialist result to an Analyst self-audit."""
+
+        from core.specialist_graph_runtime import (
+            SPECIALIST_WORK_PLANE_STAGE,
+            handoff_by_id,
+        )
+
+        handoff = handoff_by_id(
+            _safe_mapping(
+                self.state.projections.get(SPECIALIST_WORK_PLANE_STAGE)
+            ),
+            handoff_id=handoff_id,
+        )
+        if not handoff:
+            raise RunKernelTransitionError(
+                "Component Analyst consumption requires a retained Specialist handoff"
+            )
+        action = self.authorize(
+            stage=f"specialist_validator_consumption:{handoff_id}",
+            action_type=ActionType.SPECIALIST_VALIDATOR_CONSUME,
+            reason="component_analyst_resume_consume_exact_specialist_need_handoff",
+            inputs={
+                "handoff_id": handoff_id,
+                "handoff_digest": handoff.get("handoff_digest"),
+                "validator_route": "component_analyst",
+                "validator_artifact_ref": deepcopy(
+                    dict(analyst_case_artifact_ref)
+                ),
+            },
+            expected_observation_type=ObservationType.SPECIALIST_VALIDATOR_CONSUMED,
+        )
+        self.reduce(
+            Observation.from_action(
+                action,
+                observation_type=action.expected_observation_type,
+                status=RunStageStatus.COMPLETED,
+                payload={},
+            )
+        )
+        return deepcopy(self.state.projections[SPECIALIST_WORK_PLANE_STAGE])
+
     def dispose_exhausted_optional_specialist_proposals(self) -> int:
         """Record each optional accepted need that cannot receive another unit."""
 
@@ -4988,6 +5042,10 @@ class RunKernel:
         role: str,
     ) -> tuple[ActionType, ObservationType]:
         role_types = {
+            "component_analyst_resume": (
+                ActionType.MULTICOMPONENT_COMPONENT_ANALYST_RESUME_EXECUTE,
+                ObservationType.MULTICOMPONENT_COMPONENT_ANALYST_RESUME_COMPLETED,
+            ),
             "component_analyst": (
                 ActionType.MULTICOMPONENT_COMPONENT_ANALYST_EXECUTE,
                 ObservationType.MULTICOMPONENT_COMPONENT_ANALYST_COMPLETED,
@@ -5793,6 +5851,12 @@ class RunKernel:
         role_name = _clean_text(role, limit=80)
         input_digest = _clean_text(input_packet_digest, limit=128)
         evaluation_key = _clean_text(logical_evaluation_key, limit=180)
+        if role_name == "component_dprime" and not searchos_recovery_cycle_ref:
+            raise RunKernelTransitionError(
+                "ordinary component-D-prime execution is retired; only the "
+                "explicit legacy SearchOS recovery corridor may execute it"
+            )
+
         handoff_digest = _clean_text(specialist_handoff_digest, limit=128)
         if role_name not in ROLE_SYSTEM_PROMPTS:
             raise RunKernelTransitionError("unknown multi-component semantic role")
@@ -5802,15 +5866,20 @@ class RunKernel:
             )
         if handoff_digest and role_name not in {
             "component_dprime",
+            "component_analyst_resume",
             "synthesis_dprime",
         }:
             raise RunKernelTransitionError(
-                "only D-prime role actions may bind a Specialist handoff digest"
+                "only validator or Analyst-resume role actions may bind a Specialist handoff digest"
             )
         role_types = {
             "component_analyst": (
                 ActionType.MULTICOMPONENT_COMPONENT_ANALYST_EXECUTE,
                 ObservationType.MULTICOMPONENT_COMPONENT_ANALYST_COMPLETED,
+            ),
+            "component_analyst_resume": (
+                ActionType.MULTICOMPONENT_COMPONENT_ANALYST_RESUME_EXECUTE,
+                ObservationType.MULTICOMPONENT_COMPONENT_ANALYST_RESUME_COMPLETED,
             ),
             "component_dprime": (
                 ActionType.MULTICOMPONENT_COMPONENT_DPRIME_EXECUTE,
@@ -5862,7 +5931,7 @@ class RunKernel:
                 or handoff_digest
             ):
                 raise RunKernelTransitionError(
-                    "SearchOS recovery may execute only unchanged Component Analyst and component D-prime calls"
+                    "SearchOS recovery may execute only the retained legacy Component Analyst and component-D-prime corridor"
                 )
             try:
                 cycle = validate_active_searchos_generalized_recovery_cycle_ref(
@@ -5997,7 +6066,6 @@ class RunKernel:
         *,
         component_id: str,
         analyst_artifact_digest: str,
-        dprime_artifact_digest: str,
         logical_evaluation_key: str | None = None,
         searchos_recovery_cycle_ref: Mapping[str, Any] | None = None,
     ) -> AuthorizedAction:
@@ -6007,7 +6075,6 @@ class RunKernel:
             )
         component = _clean_text(component_id, limit=180)
         analyst_digest = _clean_text(analyst_artifact_digest, limit=128)
-        dprime_digest = _clean_text(dprime_artifact_digest, limit=128)
         evaluation_key = _clean_text(
             logical_evaluation_key or component,
             limit=180,
@@ -6015,7 +6082,6 @@ class RunKernel:
         if (
             not component
             or not analyst_digest
-            or not dprime_digest
             or not evaluation_key
         ):
             raise RunKernelTransitionError(
@@ -6054,12 +6120,11 @@ class RunKernel:
         return self.authorize(
             stage="multicomponent_component_admission",
             action_type=ActionType.MULTICOMPONENT_COMPONENT_ADMISSION_REDUCE,
-            reason="component_analyst_then_dprime_admission",
+            reason="component_analyst_case_direct_admission",
             inputs={
                 "component_id": component,
                 "logical_evaluation_key": evaluation_key,
                 "analyst_artifact_digest": analyst_digest,
-                "dprime_artifact_digest": dprime_digest,
                 "accepted_contract_digest": accepted_contract.get(
                     "accepted_contract_digest"
                 ),
@@ -15663,6 +15728,7 @@ class RunKernel:
 
         semantic_role_transition = action.action_type in {
             ActionType.MULTICOMPONENT_COMPONENT_ANALYST_EXECUTE,
+            ActionType.MULTICOMPONENT_COMPONENT_ANALYST_RESUME_EXECUTE,
             ActionType.MULTICOMPONENT_COMPONENT_DPRIME_EXECUTE,
             ActionType.MULTICOMPONENT_CROSS_ANALYST_EXECUTE,
             ActionType.MULTICOMPONENT_SYNTHESIS_DPRIME_EXECUTE,
@@ -20648,6 +20714,180 @@ class RunKernel:
                 )
             )
             self.state.projections[action.stage] = deepcopy(result)
+        elif (
+            action.action_type is ActionType.SPECIALIST_VALIDATOR_CONSUME
+            and action.inputs.get("validator_route") == "component_analyst"
+        ):
+            from core.multicomponent_component_admission import (
+                component_analyst_resume_input_packet,
+            )
+            from core.multicomponent_role_runtime import (
+                ROLE_COMPONENT_ANALYST,
+                ROLE_COMPONENT_ANALYST_RESUME,
+                role_artifact_ref,
+                safe_packet_digest,
+                validate_multicomponent_role_artifact,
+            )
+            from core.specialist_graph_runtime import (
+                EXECUTION_COMPLETED,
+                SPECIALIST_WORK_PLANE_STAGE,
+                VALIDATOR_PENDING,
+                handoff_by_id,
+                mark_validator_consumption,
+            )
+
+            plane = _safe_mapping(
+                self.state.projections.get(SPECIALIST_WORK_PLANE_STAGE)
+            )
+            handoff_id = str(action.inputs.get("handoff_id") or "")
+            handoff = handoff_by_id(plane, handoff_id=handoff_id)
+            if (
+                not handoff
+                or handoff.get("handoff_digest")
+                != action.inputs.get("handoff_digest")
+                or handoff.get("validator_consumption") != VALIDATOR_PENDING
+            ):
+                raise RunKernelTransitionError(
+                    "Component Analyst Specialist handoff identity is stale or terminal"
+                )
+            target = _safe_mapping(handoff.get("canonical_target_ref"))
+            target_key = str(target.get("target_key") or "")
+            analyst_case_ref = _safe_mapping(
+                action.inputs.get("validator_artifact_ref")
+            )
+            resume_action_id = str(
+                _safe_mapping(analyst_case_ref.get("authorized_action_ref")).get(
+                    "action_id"
+                )
+                or ""
+            )
+            resume_action = self.state.issued_actions.get(resume_action_id)
+            if (
+                target.get("target_kind") != "component"
+                or not target_key
+                or resume_action is None
+                or resume_action.action_id not in self.state.reduced_action_ids
+                or resume_action.action_type
+                is not ActionType.MULTICOMPONENT_COMPONENT_ANALYST_RESUME_EXECUTE
+                or resume_action.inputs.get("role")
+                != ROLE_COMPONENT_ANALYST_RESUME
+                or resume_action.inputs.get("target_kind") != "component"
+                or resume_action.inputs.get("component_id") != target_key
+                or resume_action.inputs.get("specialist_handoff_digest")
+                != handoff.get("handoff_digest")
+            ):
+                raise RunKernelTransitionError(
+                    "Specialist handoff requires the exact completed Component Analyst resume"
+                )
+            completed_resume = validate_multicomponent_role_artifact(
+                _safe_mapping(self.state.projections.get(resume_action.stage)),
+                expected_role=ROLE_COMPONENT_ANALYST_RESUME,
+            )
+            if role_artifact_ref(completed_resume) != analyst_case_ref:
+                raise RunKernelTransitionError(
+                    "Specialist handoff Analyst-resume artifact reference is forged or unrelated"
+                )
+            accepted = _safe_mapping(
+                self.state.current_answer_contract or self.state.initial_answer_contract
+            )
+            component_ref = next(
+                (
+                    _safe_mapping(item)
+                    for item in accepted.get("accepted_answer_component_refs") or ()
+                    if _safe_mapping(item).get("component_id") == target_key
+                ),
+                {},
+            )
+            node_ref = _safe_mapping(resume_action.inputs.get("node_ref"))
+            if (
+                not component_ref
+                or component_ref.get("component_revision")
+                != target.get("target_revision")
+                or component_ref.get("component_digest") != target.get("target_digest")
+                or (
+                    node_ref
+                    and (
+                        node_ref.get("component_revision")
+                        != target.get("target_revision")
+                        or node_ref.get("component_digest")
+                        != target.get("target_digest")
+                    )
+                )
+            ):
+                raise RunKernelTransitionError(
+                    "Specialist component handoff target is no longer exact"
+                )
+            initial_analyst = validate_multicomponent_role_artifact(
+                _safe_mapping(
+                    self.state.projections.get(
+                        f"multicomponent_role:{ROLE_COMPONENT_ANALYST}:{target_key}"
+                    )
+                ),
+                expected_role=ROLE_COMPONENT_ANALYST,
+            )
+            scheduler_context = _safe_mapping(
+                self.state.multicomponent_scheduler_context
+            )
+            analyst_input = _safe_mapping(
+                scheduler_context.get("component_analyst_input_packets", {}).get(
+                    target_key
+                )
+            )
+            if not analyst_input:
+                raise RunKernelTransitionError(
+                    "Component Analyst resume requires the exact retained Analyst input"
+                )
+            packet = component_analyst_resume_input_packet(
+                analyst_artifact=initial_analyst,
+                analyst_input_packet=analyst_input,
+                specialist_need_handoff=handoff,
+            )
+            reconstructed_packet_digest = safe_packet_digest(packet)
+            if (
+                reconstructed_packet_digest
+                != resume_action.inputs.get("input_packet_digest")
+                or completed_resume.get("input_packet_digest")
+                != resume_action.inputs.get("input_packet_digest")
+            ):
+                raise RunKernelTransitionError(
+                    "Specialist handoff was not consumed by the exact Analyst-resume input"
+                )
+            case_posture = str(
+                _safe_mapping(completed_resume.get("semantic_output")).get(
+                    "case_posture"
+                )
+                or _safe_mapping(completed_resume.get("semantic_output")).get(
+                    "support_status"
+                )
+                or ""
+            )
+            specialist_result = _safe_mapping(handoff.get("result"))
+            result_posture = str(
+                specialist_result.get("execution_posture")
+                or ""
+            )
+            if specialist_result and result_posture != EXECUTION_COMPLETED:
+                # A bounded Specialist failure, blockage, contest, stale result,
+                # or terminal non-result cannot be upgraded by the resumed
+                # Analyst's model output. Preserve that exact resume artifact as
+                # the validator provenance while deterministically rejecting the
+                # handoff for component admission.
+                case_posture = "blocked"
+            self.state.projections[SPECIALIST_WORK_PLANE_STAGE] = (
+                mark_validator_consumption(
+                    plane,
+                    handoff_id=handoff_id,
+                    route="component_analyst",
+                    validation_status=case_posture,
+                    validator_artifact_ref=analyst_case_ref,
+                )
+            )
+            self.state.projections[action.stage] = {
+                "handoff_id": handoff_id,
+                "handoff_digest": action.inputs.get("handoff_digest"),
+                "validator_route": "component_analyst",
+                "validator_artifact_ref": deepcopy(analyst_case_ref),
+            }
         elif action.action_type is ActionType.SPECIALIST_VALIDATOR_CONSUME:
             from core.component_work_graph_v1 import (
                 COMPONENT_WORK_GRAPH_V1_STAGE,
@@ -21235,6 +21475,7 @@ class RunKernel:
             )
         elif action.action_type in {
             ActionType.MULTICOMPONENT_COMPONENT_ANALYST_EXECUTE,
+            ActionType.MULTICOMPONENT_COMPONENT_ANALYST_RESUME_EXECUTE,
             ActionType.MULTICOMPONENT_COMPONENT_DPRIME_EXECUTE,
             ActionType.MULTICOMPONENT_CROSS_ANALYST_EXECUTE,
             ActionType.MULTICOMPONENT_SYNTHESIS_DPRIME_EXECUTE,
@@ -21492,6 +21733,10 @@ class RunKernel:
                 raise RunKernelTransitionError(
                     "multi-component admission requires canonical RunKernel projection"
                 )
+            case_ref = _safe_mapping(
+                component_ref.get("component_analyst_case_ref")
+                or component_ref.get("analyst_finding_ref")
+            )
             if (
                 component_ref.get("component_id") != action.inputs.get("component_id")
                 or component_ref.get("logical_evaluation_key")
@@ -21502,21 +21747,17 @@ class RunKernel:
                 != _safe_mapping(
                     action.inputs.get("searchos_recovery_cycle_ref")
                 )
-                or _safe_mapping(component_ref.get("analyst_finding_ref")).get(
+                or case_ref.get(
                     "artifact_digest"
                 )
                 != action.inputs.get("analyst_artifact_digest")
-                or _safe_mapping(component_ref.get("dprime_validation_ref")).get(
-                    "artifact_digest"
-                )
-                != action.inputs.get("dprime_artifact_digest")
             ):
                 raise RunKernelTransitionError(
                     "multi-component admission role/component binding mismatch"
                 )
             from core.multicomponent_role_runtime import (
                 ROLE_COMPONENT_ANALYST,
-                ROLE_COMPONENT_DPRIME,
+                ROLE_COMPONENT_ANALYST_RESUME,
                 role_artifact_ref,
                 validate_multicomponent_role_artifact,
             )
@@ -21526,26 +21767,23 @@ class RunKernel:
                 action.inputs.get("logical_evaluation_key")
                 or component_id
             )
+            case_role = str(case_ref.get("role") or ROLE_COMPONENT_ANALYST)
+            if case_role not in {
+                ROLE_COMPONENT_ANALYST,
+                ROLE_COMPONENT_ANALYST_RESUME,
+            }:
+                raise RunKernelTransitionError(
+                    "multi-component admission requires a Component Analyst case"
+                )
             completed_analyst = _safe_mapping(
                 self.state.projections.get(
-                    f"multicomponent_role:{ROLE_COMPONENT_ANALYST}:"
-                    f"{evaluation_key}"
-                )
-            )
-            completed_dprime = _safe_mapping(
-                self.state.projections.get(
-                    f"multicomponent_role:{ROLE_COMPONENT_DPRIME}:"
-                    f"{evaluation_key}"
+                    f"multicomponent_role:{case_role}:{evaluation_key}"
                 )
             )
             try:
                 completed_analyst = validate_multicomponent_role_artifact(
                     completed_analyst,
-                    expected_role=ROLE_COMPONENT_ANALYST,
-                )
-                completed_dprime = validate_multicomponent_role_artifact(
-                    completed_dprime,
-                    expected_role=ROLE_COMPONENT_DPRIME,
+                    expected_role=case_role,
                 )
             except Exception as exc:
                 raise RunKernelTransitionError(
@@ -21554,20 +21792,49 @@ class RunKernel:
             if (
                 completed_analyst.get("logical_evaluation_key")
                 != evaluation_key
-                or completed_dprime.get("logical_evaluation_key")
-                != evaluation_key
                 or role_artifact_ref(completed_analyst)
-                != _safe_mapping(component_ref.get("analyst_finding_ref"))
-                or role_artifact_ref(completed_dprime)
-                != _safe_mapping(component_ref.get("dprime_validation_ref"))
+                != case_ref
                 or completed_analyst.get("artifact_digest")
                 != action.inputs.get("analyst_artifact_digest")
-                or completed_dprime.get("artifact_digest")
-                != action.inputs.get("dprime_artifact_digest")
             ):
                 raise RunKernelTransitionError(
                     "multi-component admission role provenance does not match completed history"
                 )
+            if case_role == ROLE_COMPONENT_ANALYST_RESUME:
+                from core.specialist_graph_runtime import (
+                    SPECIALIST_WORK_PLANE_STAGE,
+                    VALIDATOR_COMPONENT_ANALYST,
+                    VALIDATOR_TERMINAL,
+                    handoff_for_target,
+                )
+
+                consumed_handoff = handoff_for_target(
+                    _safe_mapping(
+                        self.state.projections.get(SPECIALIST_WORK_PLANE_STAGE)
+                    ),
+                    target_kind="component",
+                    target_key=component_id,
+                    include_consumed=True,
+                )
+                if (
+                    _safe_mapping(consumed_handoff.get("canonical_target_ref")).get(
+                        "target_revision"
+                    )
+                    != component_ref.get("component_revision")
+                    or _safe_mapping(consumed_handoff.get("canonical_target_ref")).get(
+                        "target_digest"
+                    )
+                    != component_ref.get("component_digest")
+                    or consumed_handoff.get("validator_consumption")
+                    != VALIDATOR_COMPONENT_ANALYST
+                    or consumed_handoff.get("validator_consumption_terminal")
+                    != VALIDATOR_TERMINAL
+                    or _safe_mapping(consumed_handoff.get("validator_artifact_ref"))
+                    != case_ref
+                ):
+                    raise RunKernelTransitionError(
+                        "Component Analyst resume admission requires its exact consumed Specialist handoff"
+                    )
             admitted_claim = _safe_mapping(component_ref.get("admitted_claim_ref"))
             if component_ref.get("admission_status") in {
                 "admitted",

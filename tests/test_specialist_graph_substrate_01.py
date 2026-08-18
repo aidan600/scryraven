@@ -48,6 +48,7 @@ from core.multicomponent_graph_scheduling import (
 )
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
+    ROLE_COMPONENT_ANALYST_RESUME,
     ROLE_COMPONENT_DPRIME,
     ROLE_CROSS_COMPONENT_ANALYST,
     ROLE_SCRUTINEER,
@@ -125,6 +126,7 @@ class SpecialistNorthstarHarness(NorthstarHarness):
     def __init__(self, tmp_path: Path) -> None:
         super().__init__(tmp_path)
         self.specialist_dprime_inputs: list[dict[str, Any]] = []
+        self.specialist_analyst_resume_inputs: list[dict[str, Any]] = []
         self.all_dprime_inputs: list[dict[str, Any]] = []
         self.scrutineer_calls = 0
 
@@ -153,6 +155,8 @@ class SpecialistNorthstarHarness(NorthstarHarness):
         if system_prompt not in ROLE_SYSTEM_PROMPTS.values():
             return super().ask_model(prompt, system_prompt, **kwargs)
         payload = json.loads(prompt)
+        if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST_RESUME]:
+            self.specialist_analyst_resume_inputs.append(deepcopy(payload))
         if system_prompt in {
             ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_DPRIME],
             ROLE_SYSTEM_PROMPTS[ROLE_SYNTHESIS_DPRIME],
@@ -296,42 +300,92 @@ def _run(
     return outcome, captured["semantic_run_kernel"], captured
 
 
-def _run_with_pending_specialist_handoff(
+def _run_through_analyst_consumer(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    *,
+    forgery: str | None = None,
 ) -> tuple[Any, RunKernel, Any]:
-    original_consume = RunKernel.consume_specialist_handoff_by_dprime
+    original_consume = RunKernel.consume_specialist_handoff_by_analyst_case
 
-    def leave_pending(
+    def consume_then_stop(
         self: RunKernel,
         *,
         handoff_id: str,
-        dprime_artifact_ref: dict[str, Any],
+        analyst_case_artifact_ref: dict[str, Any],
     ) -> dict[str, Any]:
-        del handoff_id, dprime_artifact_ref
-        return deepcopy(self.state.projections[SPECIALIST_WORK_PLANE_STAGE])
+        artifact_ref = deepcopy(analyst_case_artifact_ref)
+        if forgery == "digest":
+            artifact_ref["artifact_digest"] = "0" * 64
+        elif forgery == "wrong_role":
+            handoff = next(
+                dict(item)
+                for item in self.state.projections[SPECIALIST_WORK_PLANE_STAGE][
+                    "need_handoffs"
+                ]
+                if dict(item).get("handoff_id") == handoff_id
+            )
+            target_key = str(
+                dict(handoff["canonical_target_ref"]).get("target_key") or ""
+            )
+            artifact_ref = role_artifact_ref(
+                self.state.projections[
+                    f"multicomponent_role:{ROLE_COMPONENT_ANALYST}:{target_key}"
+                ]
+            )
+        result = original_consume(
+            self,
+            handoff_id=handoff_id,
+            analyst_case_artifact_ref=artifact_ref,
+        )
+        if forgery is None:
+            raise RuntimeError("expected exact Analyst-resume consumption capture")
+        return result
 
     monkeypatch.setattr(
-        RunKernel, "consume_specialist_handoff_by_dprime", leave_pending
+        RunKernel,
+        "consume_specialist_handoff_by_analyst_case",
+        consume_then_stop,
     )
     harness = SpecialistNorthstarHarness(tmp_path)
-    outcome, kernel, _captured = _run(
-        tmp_path,
+    captured = install_handoff_capture(
         monkeypatch,
-        harness=harness,
-        registry=_registry([]),
-        policy=SpecialistExecutionPolicy(
-            enabled_capability_ids=("test.specialist.alpha",),
-            specialist_work_item_limit=1,
+        capture_stages=(
+            HANDOFF_SEMANTIC,
+            HANDOFF_SUFFICIENCY,
+            HANDOFF_PACKET,
+            HANDOFF_AUTHOR,
         ),
     )
-    assert outcome.report == NORTHSTAR_REPORT
-    assert (
-        kernel.state.projections[SPECIALIST_WORK_PLANE_STAGE]["need_handoffs"][
-            0
-        ]["validator_consumption"]
-        == "pending_validator_consumption"
+    deps = harness.deps()
+    deps.specialist_capability_registry = _registry([])
+    deps.specialist_execution_policy = SpecialistExecutionPolicy(
+        enabled_capability_ids=("test.specialist.alpha",),
+        specialist_work_item_limit=1,
     )
+    expected_error = RuntimeError if forgery is None else RunKernelTransitionError
+    with pytest.raises(expected_error):
+        orchestrator.run_pipeline(
+            offline_balanced_run_config(
+                query=harness.query,
+                current_date="2026-07-13",
+                session_id="specialist-consumer-session",
+                run_id="specialist-consumer-run",
+            ),
+            deps,
+            NullStatusWriter(),
+            CostAccumulator(),
+        )
+    kernel = captured["semantic_run_kernel"]
+    handoff = kernel.state.projections[SPECIALIST_WORK_PLANE_STAGE][
+        "need_handoffs"
+    ][0]
+    assert handoff["validator_consumption"] == (
+        "consumed_by_component_analyst"
+        if forgery is None
+        else "pending_validator_consumption"
+    )
+    outcome = SimpleNamespace(report="")
     return outcome, kernel, original_consume
 
 
@@ -385,7 +439,7 @@ def test_enabled_specialist_lane_without_proposal_omits_handoff_from_exact_packe
     )
 
 
-def test_component_origin_runs_through_v3_registry_and_component_dprime(
+def test_component_origin_runs_through_v3_registry_and_analyst_resume(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     calls: list[dict[str, Any]] = []
@@ -434,15 +488,23 @@ def test_component_origin_runs_through_v3_registry_and_component_dprime(
     )
     assert (
         plane["result_artifacts"][0]["validator_consumption"]
-        == "consumed_by_component_dprime"
+        == "consumed_by_component_analyst"
     )
     assert (
-        harness.specialist_dprime_inputs[0]["specialist_need_handoff"][
+        harness.specialist_analyst_resume_inputs[0]["specialist_need_handoff"][
             "namespace"
         ]
         == "specialist_need_handoff"
     )
     assert scheduler["compatibility_envelope"]["total_units"] == 24
+    assert not any(
+        item["system_prompt"] == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_DPRIME]
+        for item in harness.role_input_packets
+    )
+    assert any(
+        item["system_prompt"] == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST_RESUME]
+        for item in harness.role_input_packets
+    )
     assert plane["provider_request_attempt_count"] == plane["model_call_count"] == 0
     assert plane["token_usage"] == plane["model_cost"] == 0
     assert plane["maximum_observed_in_flight"] == 1
@@ -725,26 +787,21 @@ def test_required_reconstruction_failure_handoffs_once_then_blocks_safely(
     )
 
 
-def test_runkernel_reproves_exact_handoff_consumption_and_rejects_double_use(
+def test_runkernel_reproves_exact_analyst_resume_consumption_and_rejects_double_use(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _outcome, kernel, consume = _run_with_pending_specialist_handoff(
+    _outcome, kernel, consume = _run_through_analyst_consumer(
         tmp_path, monkeypatch
     )
     plane = kernel.state.projections[SPECIALIST_WORK_PLANE_STAGE]
     handoff = plane["need_handoffs"][0]
     target_key = handoff["canonical_target_ref"]["target_key"]
     artifact = kernel.state.projections[
-        f"multicomponent_role:{ROLE_COMPONENT_DPRIME}:{target_key}"
+        f"multicomponent_role:{ROLE_COMPONENT_ANALYST_RESUME}:{target_key}"
     ]
-    consume(
-        kernel,
-        handoff_id=handoff["handoff_id"],
-        dprime_artifact_ref=role_artifact_ref(artifact),
-    )
     consumed = kernel.state.projections[SPECIALIST_WORK_PLANE_STAGE]
     assert consumed["need_handoffs"][0]["validator_consumption"] == (
-        "consumed_by_component_dprime"
+        "consumed_by_component_analyst"
     )
     consumption_action = next(
         action
@@ -752,49 +809,29 @@ def test_runkernel_reproves_exact_handoff_consumption_and_rejects_double_use(
         if action.action_type.value == "specialist_validator_consume"
     )
     assert "route" not in consumption_action.inputs
-    assert "validation_status" not in consumption_action.inputs
+    assert consumption_action.inputs["validator_route"] == "component_analyst"
+    assert consumption_action.inputs["validator_artifact_ref"] == role_artifact_ref(artifact)
     with pytest.raises(RunKernelTransitionError):
         consume(
             kernel,
             handoff_id=handoff["handoff_id"],
-            dprime_artifact_ref=role_artifact_ref(artifact),
+            analyst_case_artifact_ref=role_artifact_ref(artifact),
         )
 
 
-@pytest.mark.parametrize("forgery", ["digest", "unrelated_dprime"])
-def test_runkernel_rejects_forged_or_unrelated_dprime_handoff_consumption(
+@pytest.mark.parametrize("forgery", ["digest", "wrong_role"])
+def test_runkernel_rejects_forged_or_wrong_role_analyst_handoff_consumption(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     forgery: str,
 ) -> None:
-    _outcome, kernel, consume = _run_with_pending_specialist_handoff(
-        tmp_path, monkeypatch
+    _outcome, kernel, _consume = _run_through_analyst_consumer(
+        tmp_path, monkeypatch, forgery=forgery
     )
     handoff = kernel.state.projections[SPECIALIST_WORK_PLANE_STAGE][
         "need_handoffs"
     ][0]
-    target_key = handoff["canonical_target_ref"]["target_key"]
-    if forgery == "digest":
-        artifact = kernel.state.projections[
-            f"multicomponent_role:{ROLE_COMPONENT_DPRIME}:{target_key}"
-        ]
-        artifact_ref = role_artifact_ref(artifact)
-        artifact_ref["artifact_digest"] = "0" * 64
-    else:
-        artifact = next(
-            value
-            for key, value in kernel.state.projections.items()
-            if key.startswith(f"multicomponent_role:{ROLE_COMPONENT_DPRIME}:")
-            and key
-            != f"multicomponent_role:{ROLE_COMPONENT_DPRIME}:{target_key}"
-        )
-        artifact_ref = role_artifact_ref(artifact)
-    with pytest.raises(RunKernelTransitionError):
-        consume(
-            kernel,
-            handoff_id=handoff["handoff_id"],
-            dprime_artifact_ref=artifact_ref,
-        )
+    assert handoff["validator_consumption"] == "pending_validator_consumption"
 
 
 def test_cross_component_unknown_target_is_typed_rejected_and_optional(
@@ -1186,13 +1223,13 @@ def test_required_versus_optional_policy_denial_in_ordinary_path(
     assert plane["need_handoffs"][0]["result"] == {}
     if posture == "optional":
         assert (
-            harness.specialist_dprime_inputs[0]["specialist_need_handoff"][
+            harness.specialist_analyst_resume_inputs[0]["specialist_need_handoff"][
                 "availability_posture"
             ]
             == AVAILABILITY_POLICY
         )
         assert plane["need_handoffs"][0]["validator_consumption"] == (
-            "consumed_by_component_dprime"
+            "consumed_by_component_analyst"
         )
     else:
         assert plane["need_handoffs"][0]["validator_consumption"] == (
@@ -1244,7 +1281,7 @@ def test_one_unit_budget_exhaustion_blocks_second_required_specialist(
     ]
 
 
-def test_one_unit_budget_exhaustion_hands_optional_need_to_dprime_without_second_lease(
+def test_one_unit_budget_exhaustion_hands_optional_need_to_analyst_resume_without_second_lease(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     calls: list[dict[str, Any]] = []
@@ -1286,13 +1323,13 @@ def test_one_unit_budget_exhaustion_hands_optional_need_to_dprime_without_second
         item["availability_posture"] for item in plane["need_handoffs"]
     ] == availability
     assert all(
-        item["validator_consumption"] == "consumed_by_component_dprime"
+        item["validator_consumption"] == "consumed_by_component_analyst"
         for item in plane["need_handoffs"]
     )
     assert any(
         packet["specialist_need_handoff"]["availability_posture"]
         == AVAILABILITY_BUDGET
-        for packet in harness.specialist_dprime_inputs
+        for packet in harness.specialist_analyst_resume_inputs
     )
 
 
@@ -1303,7 +1340,7 @@ def test_one_unit_budget_exhaustion_hands_optional_need_to_dprime_without_second
         ("target", PROPOSAL_UNSUPPORTED_TARGET, AVAILABILITY_TARGET),
     ),
 )
-def test_optional_capability_and_target_denials_are_visible_to_component_dprime(
+def test_optional_capability_and_target_denials_reach_component_analyst_resume(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     denial: str,
@@ -1336,7 +1373,16 @@ def test_optional_capability_and_target_denials_are_visible_to_component_dprime(
         assert plane["proposal_rejections"][0]["rejection_category"] == (
             "proposal_target_mismatch"
         )
-        assert not harness.specialist_dprime_inputs
+        assert not harness.specialist_analyst_resume_inputs
+        component_admission = next(
+            item
+            for item in kernel.state.projections[
+                "multicomponent_component_admission"
+            ]["component_admission_refs"]
+            if item["component_id"] == "component-1"
+        )
+        assert component_admission["component_analyst_case_ref"]["role"] == ROLE_COMPONENT_ANALYST
+        assert "dprime_validation_ref" not in component_admission
     else:
         assert plane["proposals"][0]["proposal_authority"] == expected_authority
         assert (
@@ -1344,7 +1390,7 @@ def test_optional_capability_and_target_denials_are_visible_to_component_dprime(
             == expected_availability
         )
         assert (
-            harness.specialist_dprime_inputs[0]["specialist_need_handoff"][
+            harness.specialist_analyst_resume_inputs[0]["specialist_need_handoff"][
                 "availability_posture"
             ]
             == expected_availability
@@ -1416,9 +1462,12 @@ def test_capability_failure_block_and_contested_remain_spent_and_validated(
         if (item.get("work") or {}).get("work_kind")
         == WORK_KIND_SPECIALIST_CAPABILITY
     )
-    assert outcome.report == NORTHSTAR_REPORT
+    assert outcome.report != NORTHSTAR_REPORT
+    assert outcome.terminal_status == "blocked"
+    assert outcome.execution_trace["blocked_fap_terminal"]["author_called"] is False
+    assert harness.author_prompts == []
     assert result["execution_posture"] == expected_result
-    assert result["validator_consumption"] == "consumed_by_component_dprime"
+    assert result["validator_consumption"] == "rejected_by_validator"
     assert lease["status"] == expected_lease
     assert scheduler["specialist_compatibility_pool"]["specialist_spent"] == 1
     assert len(calls) == 1
@@ -1433,7 +1482,7 @@ def test_capability_failure_block_and_contested_remain_spent_and_validated(
         == expected_availability
     )
     assert (
-        harness.specialist_dprime_inputs[0]["specialist_need_handoff"][
+        harness.specialist_analyst_resume_inputs[0]["specialist_need_handoff"][
             "availability_posture"
         ]
         == expected_availability

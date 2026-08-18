@@ -1634,7 +1634,7 @@ def build_searchos_read_custody_material_ref(
         "bounded_retention": True,
         "stale": False,
         "same_normalized_url_reused": bool(same_normalized_url_reused),
-        "component_analyst_proposal_eligible": True,
+        "component_analyst_case_eligible": True,
         "support_admitted": False,
         "source_obligation_satisfied": False,
         "citation_eligible": False,
@@ -4147,7 +4147,7 @@ def build_searchos_semantic_evaluation_handoff_v1(
         "judgment_decision_ref": decision_ref,
         "read_custody_material_refs": custody,
         "material_authority": SearchOSMaterialAuthority.READ_CUSTODY_MATERIAL.value,
-        "component_analyst_proposal_eligible": True,
+        "component_analyst_case_eligible": True,
         "semantic_observation_admitted": False,
         "support_admitted": False,
         "source_obligation_satisfied": False,
@@ -4317,19 +4317,39 @@ def build_searchos_slice_a_readiness_v1(
             )
         except SearchOSRuntimeError:
             recorded_semantic_handoff_ref = {}
-        exact_chain = all(
-            (
-                semantic_handoff_ref,
-                _optional_ref(outcome.get("component_analyst_proposal_ref")),
-                _optional_ref(outcome.get("component_dprime_validation_ref")),
-                _optional_ref(outcome.get("semantic_admission_outcome_ref")),
-            )
+        component_case_ref = _optional_ref(outcome.get("component_analyst_case_ref"))
+        semantic_admission_ref = _optional_ref(outcome.get("semantic_admission_outcome_ref"))
+        admission_case_ref = _optional_ref(
+            _mapping(semantic_admission_ref).get("component_analyst_case_ref")
+        )
+        component_case_role = str(component_case_ref.get("role") or "")
+        admission_case_role = str(admission_case_ref.get("role") or "")
+        component_ref = _mapping(slot.get("component_ref"))
+        answer_contract_ref = _mapping(canonical.get("answer_contract_ref"))
+        exact_current_admission = bool(
+            semantic_admission_ref
+            and semantic_admission_ref.get("canonical_state") is True
+            and semantic_admission_ref.get("current") is True
+            and semantic_admission_ref.get("stale") is False
+            and semantic_admission_ref.get("case_posture") in {"supported", "supported_with_caveats"}
+            and semantic_admission_ref.get("component_id") == component_ref.get("component_id")
+            and semantic_admission_ref.get("component_revision") == component_ref.get("component_revision")
+            and semantic_admission_ref.get("component_digest") == component_ref.get("component_digest")
+            and semantic_admission_ref.get("accepted_contract_version") == answer_contract_ref.get("contract_version")
+            and semantic_admission_ref.get("accepted_contract_digest") == answer_contract_ref.get("answer_contract_digest")
+        )
+        exact_chain = bool(
+            semantic_handoff_ref
+            and recorded_semantic_handoff_ref
+            and component_case_ref
+            and component_case_role in {"component_analyst", "component_analyst_resume"}
+            and admission_case_role in {"component_analyst", "component_analyst_resume"}
+            and component_case_ref == admission_case_ref
+            and exact_current_admission
         )
         ready = (
             slot["posture"] == SearchOSSlotPosture.SEMANTICALLY_HANDED_OFF.value
             and exact_chain
-            and outcome.get("component_analyst_proposal_status") == "proposed"
-            and outcome.get("component_dprime_validation_status") == "accepted"
             and outcome.get("semantic_admission_status") == "admitted"
             and outcome.get("material_authority") == SearchOSMaterialAuthority.READ_CUSTODY_MATERIAL.value
         )
@@ -4378,9 +4398,8 @@ def build_searchos_slice_a_readiness_v1(
             "custody_refs": deepcopy(slot["custody_refs"]),
             "semantic_handoff_ref": semantic_handoff_ref,
             "recorded_searchos_semantic_handoff_ref": recorded_semantic_handoff_ref,
-            "component_analyst_proposal_ref": _optional_ref(outcome.get("component_analyst_proposal_ref")),
-            "component_dprime_validation_ref": _optional_ref(outcome.get("component_dprime_validation_ref")),
-            "semantic_admission_outcome_ref": _optional_ref(outcome.get("semantic_admission_outcome_ref")),
+            "component_analyst_case_ref": component_case_ref,
+            "semantic_admission_outcome_ref": semantic_admission_ref,
             "searchos_recovery_cycle_ref": recovery_cycle_ref,
             "searchos_recovery_evidence_ref": recovery_evidence_ref,
             "slice_a_ready": ready,
@@ -4769,10 +4788,13 @@ def _readiness_failure_reason(slot: Mapping[str, Any], outcome: Mapping[str, Any
         return "candidate_only_or_directional_context_only"
     if not _optional_ref(outcome.get("semantic_handoff_ref")):
         return "semantic_handoff_missing_or_rejected"
-    if not _optional_ref(outcome.get("component_analyst_proposal_ref")):
-        return "component_analyst_proposal_missing_or_rejected"
-    if outcome.get("component_dprime_validation_status") != "accepted":
-        return "component_dprime_validation_missing_or_rejected"
+    component_case_ref = _optional_ref(outcome.get("component_analyst_case_ref"))
+    if (
+        not component_case_ref
+        or str(component_case_ref.get("role") or "")
+        not in {"component_analyst", "component_analyst_resume"}
+    ):
+        return "component_analyst_case_missing_or_rejected"
     if outcome.get("semantic_admission_status") != "admitted":
         return "runkernel_semantic_admission_missing_or_rejected"
     return "stale_or_invalid"

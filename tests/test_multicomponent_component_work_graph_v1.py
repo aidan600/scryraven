@@ -30,7 +30,7 @@ from core.final_answer_runtime_adapter import (
 from core.multicomponent_component_admission import component_analyst_input_packet
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
-    ROLE_COMPONENT_DPRIME,
+    ROLE_COMPONENT_ANALYST_RESUME,
     ROLE_CROSS_COMPONENT_ANALYST,
     ROLE_SCRUTINEER,
     ROLE_SYNTHESIS_DPRIME,
@@ -141,11 +141,6 @@ def _component_node(
         "artifact_id": f"analyst:{index}",
         "artifact_digest": f"analyst-digest-{index}",
     }
-    dprime_ref = {
-        "role": ROLE_COMPONENT_DPRIME,
-        "artifact_id": f"dprime:{index}",
-        "artifact_digest": f"dprime-digest-{index}",
-    }
     admission = {
         "schema_version": "multicomponent_component_admission_ref_v1",
         "owner": "RunKernel.MulticomponentComponentAdmission",
@@ -161,8 +156,9 @@ def _component_node(
         "admission_status": "admitted",
         "current": True,
         "stale": False,
-        "analyst_finding_ref": analyst_ref,
-        "dprime_validation_ref": dprime_ref,
+        "case_posture": "supported",
+        "component_analyst_case_ref": analyst_ref,
+        "analyst_finding_ref": deepcopy(analyst_ref),
         "admitted_claim_ref": {
             "claim_id": f"claim:{index}",
             "claim_text": claim,
@@ -227,8 +223,9 @@ def _seed_component_admission(
                 "admission_status": node["admission_status"],
                 "current": node["current"],
                 "stale": node["stale"],
+                "case_posture": node.get("case_posture") or "supported",
+                "component_analyst_case_ref": node["component_analyst_case_ref"],
                 "analyst_finding_ref": node["analyst_finding_ref"],
-                "dprime_validation_ref": node["dprime_validation_ref"],
                 "admitted_claim_ref": node["admitted_claim_ref"],
                 "semantic_observation_ref": node["semantic_observation_ref"],
                 "component_coverage_ref": node["component_coverage_ref"],
@@ -1072,26 +1069,28 @@ def test_runkernel_enforces_role_logical_key_uniqueness_and_phase_cap() -> None:
         )
 
 
-def test_component_dprime_transport_cannot_replace_analyst_claim() -> None:
+def test_component_analyst_resume_cannot_reopen_specialist_need() -> None:
     kernel = RunKernel.start(run_id=RUN_ID, request_id=REQUEST_ID)
 
     with pytest.raises(
         MulticomponentRoleRuntimeError,
-        match="cannot create or replace",
+        match="resume cannot propose another Specialist need",
     ):
         execute_multicomponent_role_call(
             run_kernel=kernel,
-            role=ROLE_COMPONENT_DPRIME,
-            input_packet={"nominated_claim": "The nominated claim."},
+            role=ROLE_COMPONENT_ANALYST_RESUME,
+            input_packet={"prior_component_case": {}, "specialist_need_handoff": {}},
             strict_one_shot_transport=wrap_text_callable_as_strict_one_shot_transport(
                 lambda *_args, **_kwargs: json.dumps(
                     {
-                        "validation_status": "supported",
-                        "claim_text": "A replacement claim.",
-                        "reasons": [],
+                        "case_posture": "supported",
+                        "claim_text": "A resumed bounded claim.",
+                        "evidence_analysis": "The exact specialist handoff was reassessed.",
+                        "self_audit": "The resumed case makes no unsupported extension.",
                         "caveats": [],
                         "nonclaims": [],
                         "blockers": [],
+                        "specialist_need_proposal": {},
                     }
                 ),
                 canonical_provider="OpenAI",
@@ -1720,14 +1719,12 @@ def test_forged_accounting_is_rejected() -> None:
                 graph,
                 logical_accounting={
                     "component_analyst_evaluations": 99,
-                    "component_dprime_evaluations": 99,
                     "cross_component_analyst_evaluations": 99,
                     "synthesis_dprime_evaluations": 99,
                     "scrutineer_evaluations": 99,
                 },
                 physical_call_accounting={
                     "component_analyst_calls": 99,
-                    "component_dprime_calls": 99,
                     "cross_component_analyst_calls": 99,
                     "synthesis_dprime_calls": 99,
                     "scrutineer_calls": 99,

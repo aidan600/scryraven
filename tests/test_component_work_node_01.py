@@ -29,11 +29,17 @@ import pytest
 from core.component_work_node import (
     ComponentWorkNodeError,
     component_work_node_v0_refs_from_product_packet,
+    component_work_node_v1_from_admitted_component,
     validate_component_work_node_v0_input_ref,
     validate_component_work_node_v0_output_ref,
     validate_component_work_node_v0_refs,
+    validate_component_work_node_v1,
 )
 from core.generic_query_to_relation_planning import build_generic_query_relation_plan
+from core.multicomponent_role_runtime import (
+    ROLE_COMPONENT_ANALYST,
+    ROLE_COMPONENT_ANALYST_RESUME,
+)
 
 N400_QUERY = "What is the current USCIS Form N-400 paper filing fee?"
 
@@ -70,6 +76,66 @@ def test_component_work_node_refs_preserve_single_relation_contract() -> None:
         "component_coverage_treated_as_source_obligation_satisfaction"
     ] is False
 
+
+@pytest.mark.parametrize(
+    "role",
+    (ROLE_COMPONENT_ANALYST, ROLE_COMPONENT_ANALYST_RESUME),
+)
+def test_component_work_node_v1_keeps_final_component_analyst_case(
+    role: str,
+) -> None:
+    component = {
+        "component_id": "component:direct-case",
+        "component_revision": "1",
+        "component_digest": "component-digest:direct-case",
+        "user_facing_label": "Direct case",
+        "user_facing_question": "What does the direct case establish?",
+    }
+    analyst_case_ref = {
+        "role": role,
+        "artifact_id": f"artifact:{role}",
+        "artifact_digest": f"artifact-digest:{role}",
+    }
+    node = component_work_node_v1_from_admitted_component(
+        run_id="run:component-work-node-v1",
+        request_id="request:component-work-node-v1",
+        accepted_component_ref=component,
+        component_admission_ref={
+            "schema_version": "multicomponent_component_admission_ref_v1",
+            "owner": "RunKernel.MulticomponentComponentAdmission",
+            "canonical_state": True,
+            "run_id": "run:component-work-node-v1",
+            "request_id": "request:component-work-node-v1",
+            "action_id": "component-admission-action:direct-case",
+            "accepted_contract_version": "0.1-passive",
+            "accepted_contract_digest": "contract-digest:direct-case",
+            "component_id": component["component_id"],
+            "component_revision": component["component_revision"],
+            "component_digest": component["component_digest"],
+            "case_posture": "supported",
+            "admission_status": "admitted",
+            "current": True,
+            "stale": False,
+            "component_analyst_case_ref": analyst_case_ref,
+            "analyst_finding_ref": deepcopy(analyst_case_ref),
+            "admitted_claim_ref": {"claim_id": "claim:direct-case"},
+            "semantic_observation_ref": {"observation_id": "observation:direct-case"},
+            "component_coverage_ref": {"coverage_record_id": "coverage:direct-case"},
+            "evidence_refs": [],
+            "required_caveats": [],
+            "preserved_nonclaims": [],
+            "blocker_refs": [],
+        },
+    )
+
+    assert validate_component_work_node_v1(node) == node
+    assert node["component_analyst_case_ref"] == analyst_case_ref
+    assert node["analyst_finding_ref"] == analyst_case_ref
+    assert "dprime_validation_ref" not in node
+    legacy = deepcopy(node)
+    legacy["dprime_validation_ref"] = {"role": "component_dprime"}
+    with pytest.raises(ComponentWorkNodeError, match="cannot retain a component D-prime ref"):
+        validate_component_work_node_v1(legacy)
 
 def test_component_work_node_rejects_multiple_components() -> None:
     refs = component_work_node_v0_refs_from_product_packet(_product_packet())

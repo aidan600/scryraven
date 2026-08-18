@@ -3,7 +3,7 @@
 Status: current
 Authority: canonical:specialist-graph-substrate
 Default-read: no
-Applies-to: generic Specialist proposals, registry resolution, execution policy, work, results, scheduling, and D-prime consumption
+Applies-to: generic Specialist proposals, registry resolution, execution policy, work, results, scheduling, and semantic-case or retained synthesis-D-prime consumption
 Does-not-authorize: additional product capabilities, calculator scope expansion, provider or model calls, retrieval, recursion, parallel Specialist work, admission, FAP, Author, or live validation
 Verified-against-runtime: 72251c126770e41a9b52105d860154d1cfef811b
 Update-trigger: merged change to Specialist proposal, registry, policy, work, result, scheduling, or validator-consumption contracts
@@ -22,13 +22,13 @@ The substrate lets an existing semantic role propose a bounded need, lets
 RunKernel bind that proposal to exact current authority, resolves an explicitly
 registered deterministic capability under an injected execution policy, runs
 one governed work item, and routes its bounded result through the applicable
-validator input. It does not make a Specialist result admitted truth.
+semantic-consumer input. It does not make a Specialist result admitted truth.
 
-**Installed consumption:** results route through component or synthesis D-prime
-via `specialist_need_handoff`. **Selected target:** Specialist results return
-to Analyst for reanalysis per
-[AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md). Do not treat
-installed D-prime handoff as the selected consumption path.
+**Installed consumption:** component results route to the current Component
+Analyst case, while synthesis results route through synthesis D-prime, via
+`specialist_need_handoff`. The selected target retains Analyst/Cross reanalysis
+per [AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md). A handoff is never
+admitted truth or an authority bypass.
 
 ## Installed Contract
 
@@ -43,8 +43,8 @@ exact parsed Specialist proposal candidate from one role response
 -> Scheduler V3 Specialist lease in a separate compatibility pool
 -> either one registered deterministic capability execution or a typed nonexecution disposition
 -> immutable proposal disposition and optional result identity plus validator lifecycle
--> INSTALLED: one `specialist_need_handoff` component or synthesis D-prime input
--> SELECTED TARGET: Analyst reanalysis per AnalystOS Operating Model
+-> INSTALLED: one `specialist_need_handoff` current Component Analyst case or synthesis D-prime input
+-> SELECTED TARGET: Analyst/Cross reanalysis per AnalystOS Operating Model
 -> ordinary RunKernel graph/admission flow
 ```
 
@@ -95,8 +95,8 @@ That product additionally supplies a repository-owned model-visible proposal
 contract only to ordinary component and Cross-Component Analyst inputs. Its
 declarative schema facts are shared with product validation; the generic
 proposal schema, registry, scheduler, and handoff remain the existing consumers
-and are adapted rather than shadowed. D-prime, selective, Scrutineer, and
-nonqualifying inputs do not acquire the product contract.
+and are adapted rather than shadowed. Retained synthesis-D-prime, selective,
+Scrutineer, and nonqualifying inputs do not acquire the product contract.
 
 ## Scheduler V3 And Budget Separation
 
@@ -114,7 +114,7 @@ Specialist work uses its own compatibility pool:
 - no recursion;
 - no provider transport or model request;
 - no token or model-cost accounting;
-- no consumption of the five semantic role caps or their 22-unit envelope.
+- no consumption of the four active direct-path semantic role caps or their 17-unit envelope.
 
 Canonical ready-work ordering gives eligible component Specialist work priority
 before a later synthesis need. The one unit cannot be spent twice: later
@@ -158,26 +158,26 @@ lineage, and explicit zero-authority declarations. It has no component or
 synthesis admission, SemanticObservation, ComponentCoverage, Sufficiency,
 FinalAnswerPacket, Author, citation, or source-obligation authority.
 
-Disposition and result identities are immutable. Validator-consumption fields
+Disposition and result identities are immutable. Semantic-consumption fields
 carry a separate lifecycle on the disposition, unified handoff, and any result:
-pending, consumed by component D-prime, consumed by synthesis D-prime,
+pending, consumed by current Component Analyst case, consumed by synthesis D-prime,
 contested, or rejected. Stable refs and identity digests do not include that
 mutable lifecycle.
 
-Component and synthesis D-prime receive Specialist material only under the
-single top-level `specialist_need_handoff` namespace. It carries either a
-bounded result or the typed reason the proposed need was unavailable. Only the
-absence of a proposal omits the handoff. Ordinary nominated claims, evidence,
-component refs, graph refs, and admitted input refs remain unchanged. RunKernel
-independently rederives the current D-prime role, action, artifact, target, and
-exact handoff-bearing input digest before allowing exactly-once consumption;
-caller-supplied route or validation status is not trusted.
+The current Component Analyst case and synthesis D-prime receive Specialist
+material only under the single top-level `specialist_need_handoff` namespace. It
+carries either a bounded result or the typed reason the proposed need was
+unavailable. Only the absence of a proposal omits the handoff. Ordinary nominated
+claims, evidence, component refs, graph refs, and admitted input refs remain
+unchanged. RunKernel independently rederives the current case or synthesis role,
+action, artifact, target, and exact handoff-bearing input digest before exactly-
+once consumption; caller-supplied route or validation status is not trusted.
 
 For the installed quantitative capability, the result also carries exact
 source-literal binding, deterministic parser/operator/unit/precision facts,
 and claim alignment. Synthesis calculation lineage proves the literal through
 the admitted component claim to the same underlying current component evidence.
-Only the applicable D-prime may decide whether those facts support the nominated
+Only the current Component Analyst case or applicable synthesis D-prime may decide whether those facts support the nominated
 claim; successful arithmetic cannot validate itself.
 
 ## Scrutineer Boundary
@@ -199,9 +199,9 @@ failure cancels and refunds the exact reservation once, leaves zero Specialist
 spent units, publishes no Specialist execution action, creates no result, and
 never starts the adapter. Both optional and required proposals receive exactly
 one failed disposition and unified handoff. The optional handoff remains visible
-to D-prime and nonblocking. The required handoff remains pending and unconsumed
-because D-prime does not run; Scheduler V3 reaches
-`blocked_required_specialist_work` before the existing safe non-Author terminal.
+to the current Component Analyst case or synthesis D-prime and nonblocking. The
+required handoff remains pending and unconsumed because its semantic consumer
+does not run; Scheduler V3 reaches `blocked_required_specialist_work` before the existing safe non-Author terminal.
 The transient packet exists only in
 driver-local execution scope. It is absent from RunKernel, scheduler
 leases/batches/actions, the Specialist work plane, observations, graphs, logs,
@@ -215,9 +215,9 @@ The S1 model-visible proposal contract, complete source catalogs, source
 material, exact parsed candidate, and full evidence candidate records follow
 the same nonretention boundary. After scheduler-driven semantic work becomes
 terminal, the in-memory exact role-packet context is released and only already
-authorized packet, registry, and policy digests remain. Delayed D-prime
-consumption re-proves the current completed action/artifact, target, exact input
-digest, and safe handoff digest without retaining the source-bearing role
+authorized packet, registry, and policy digests remain. Delayed Component Analyst
+case or synthesis D-prime consumption re-proves the current completed action/
+artifact, target, exact input digest, and safe handoff digest without retaining the source-bearing role
 packet. Bounded retained refs may preserve only the safe identity and source-
 posture facts needed for exact result validation.
 

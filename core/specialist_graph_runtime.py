@@ -42,7 +42,13 @@ PROPOSAL_UNSUPPORTED_TARGET = "unsupported_target"
 PROPOSAL_DENIED_POLICY = "denied_by_policy"
 
 VALIDATOR_PENDING = "pending_validator_consumption"
-VALIDATOR_COMPONENT = "consumed_by_component_dprime"
+# Component Specialist results return to the Component Analyst's bounded
+# self-audit rather than becoming an implicit second semantic vote. Keep the
+# legacy value accepted by validators only for retained historical/out-of-scope
+# records; no new ordinary component path may create it.
+VALIDATOR_COMPONENT_ANALYST = "consumed_by_component_analyst"
+VALIDATOR_COMPONENT_DPRIME = "consumed_by_component_dprime"
+VALIDATOR_COMPONENT = VALIDATOR_COMPONENT_DPRIME
 VALIDATOR_SYNTHESIS = "consumed_by_synthesis_dprime"
 VALIDATOR_REJECTED = "rejected_by_validator"
 VALIDATOR_CONTESTED = "contested_by_validator"
@@ -1283,8 +1289,8 @@ def execute_specialist_capability(
         "blockers": list(_text_list(output.get("blockers"))),
         "confidence_posture": _text(output.get("confidence_posture"), limit=120),
         "execution_posture": posture,
-        "dprime_route": (
-            "component_dprime"
+        "validator_route": (
+            "component_analyst"
             if _mapping(work.get("canonical_target_ref")).get("target_kind") == "component"
             else "synthesis_dprime"
         ),
@@ -1356,8 +1362,8 @@ def build_specialist_terminal_result(
         "blockers": [_text(blocker, limit=500, required=True)],
         "confidence_posture": None,
         "execution_posture": execution_posture,
-        "dprime_route": (
-            "component_dprime"
+        "validator_route": (
+            "component_analyst"
             if _mapping(work.get("canonical_target_ref")).get("target_kind") == "component"
             else "synthesis_dprime"
         ),
@@ -1412,6 +1418,7 @@ def validate_specialist_result_artifact(value: Mapping[str, Any]) -> dict[str, A
         identity_payload.pop("validator_consumption_terminal", None)
         identity_payload.pop("validator_validation_status", None)
         identity_payload.pop("validator_dprime_artifact_ref", None)
+        identity_payload.pop("validator_artifact_ref", None)
     digest = specialist_digest(identity_payload)
     if (
         result.get("schema_version") != SPECIALIST_RESULT_SCHEMA_VERSION
@@ -1420,6 +1427,8 @@ def validate_specialist_result_artifact(value: Mapping[str, Any]) -> dict[str, A
         or validator_consumption
         not in {
             VALIDATOR_PENDING,
+            VALIDATOR_COMPONENT_ANALYST,
+            VALIDATOR_COMPONENT_DPRIME,
             VALIDATOR_COMPONENT,
             VALIDATOR_SYNTHESIS,
             VALIDATOR_CONTESTED,
@@ -1432,13 +1441,7 @@ def validate_specialist_result_artifact(value: Mapping[str, Any]) -> dict[str, A
         or not _token(result.get("bounded_input_schema_ref"), required=True)
         or result.get("execution_posture")
         not in {*_EXECUTION_POSTURES, EXECUTION_STALE}
-        or result.get("dprime_route")
-        != (
-            "component_dprime"
-            if _mapping(result.get("canonical_target_ref")).get("target_kind")
-            == "component"
-            else "synthesis_dprime"
-        )
+        or not _valid_specialist_validator_route(result)
         or any(
             result.get(key) is not False
             for key in (
@@ -1482,6 +1485,21 @@ def validate_specialist_result_artifact(value: Mapping[str, Any]) -> dict[str, A
     return {**result, "result_id": declared_id, "result_digest": declared_digest}
 
 
+def _valid_specialist_validator_route(result: Mapping[str, Any]) -> bool:
+    """Accept current component routes and retained legacy records."""
+
+    target_kind = str(
+        _mapping(result.get("canonical_target_ref")).get("target_kind") or ""
+    )
+    expected = "component_analyst" if target_kind == "component" else "synthesis_dprime"
+    route = result.get("validator_route")
+    if route == expected:
+        return True
+    return route is None and result.get("dprime_route") == (
+        "component_dprime" if target_kind == "component" else "synthesis_dprime"
+    )
+
+
 def _identity_without_validator_lifecycle(
     value: Mapping[str, Any],
 ) -> dict[str, Any]:
@@ -1490,6 +1508,7 @@ def _identity_without_validator_lifecycle(
     identity.pop("validator_consumption_terminal", None)
     identity.pop("validator_validation_status", None)
     identity.pop("validator_dprime_artifact_ref", None)
+    identity.pop("validator_artifact_ref", None)
     return identity
 
 
@@ -1649,6 +1668,8 @@ def validate_specialist_proposal_disposition(
         or lifecycle
         not in {
             VALIDATOR_PENDING,
+            VALIDATOR_COMPONENT_ANALYST,
+            VALIDATOR_COMPONENT_DPRIME,
             VALIDATOR_COMPONENT,
             VALIDATOR_SYNTHESIS,
             VALIDATOR_CONTESTED,
@@ -1761,6 +1782,8 @@ def validate_specialist_need_handoff(
         or lifecycle
         not in {
             VALIDATOR_PENDING,
+            VALIDATOR_COMPONENT_ANALYST,
+            VALIDATOR_COMPONENT_DPRIME,
             VALIDATOR_COMPONENT,
             VALIDATOR_SYNTHESIS,
             VALIDATOR_CONTESTED,
@@ -2043,7 +2066,8 @@ def mark_validator_consumption(
     handoff_id: str,
     route: str,
     validation_status: str,
-    dprime_artifact_ref: Mapping[str, Any],
+    validator_artifact_ref: Mapping[str, Any] | None = None,
+    dprime_artifact_ref: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     current = validate_specialist_work_plane(state)
     handoff_index = next(
@@ -2068,8 +2092,10 @@ def mark_validator_consumption(
         lifecycle = VALIDATOR_CONTESTED
     elif status in {"blocked", "rejected", "unsupported", "abstain"}:
         lifecycle = VALIDATOR_REJECTED
+    elif route == "component_analyst":
+        lifecycle = VALIDATOR_COMPONENT_ANALYST
     elif route == "component_dprime":
-        lifecycle = VALIDATOR_COMPONENT
+        lifecycle = VALIDATOR_COMPONENT_DPRIME
     elif route == "synthesis_dprime":
         lifecycle = VALIDATOR_SYNTHESIS
     else:
@@ -2080,8 +2106,8 @@ def mark_validator_consumption(
         "validator_consumption": lifecycle,
         "validator_consumption_terminal": VALIDATOR_TERMINAL,
         "validator_validation_status": status,
-        "validator_dprime_artifact_ref": _json_safe(
-            _mapping(dprime_artifact_ref)
+        "validator_artifact_ref": _json_safe(
+            _mapping(validator_artifact_ref or dprime_artifact_ref)
         ),
     }
     handoff.update(lifecycle_fields)

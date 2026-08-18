@@ -18,7 +18,6 @@ from core.component_coverage_reduction_runtime import (
 )
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
-    ROLE_COMPONENT_DPRIME,
     ROLE_SCRUTINEER,
     ROLE_SYSTEM_PROMPTS,
 )
@@ -1054,7 +1053,10 @@ def test_product_existing_gap_recovers_through_same_component_roles(
         == recovered_coverage_ref["coverage_record_digest"]
     )
     assert role_system_prompts.count(ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST]) == 2
-    assert role_system_prompts.count(ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_DPRIME]) == 2
+    assert not any(
+        "component D-prime" in prompt
+        for prompt in role_system_prompts
+    )
     assert ROLE_SYSTEM_PROMPTS[ROLE_SCRUTINEER] not in role_system_prompts
     assert not harness.full_search_judgment_inputs
     sufficiency = kernel.state.sufficiency_judgment_projection
@@ -2106,7 +2108,7 @@ def test_gap_eligibility_and_novelty_are_exact_and_fail_closed(
         )
 
     missing_role_projection = deepcopy(projection)
-    missing_role_projection["component_admission_refs"][-1]["dprime_validation_ref"] = {}
+    missing_role_projection["component_admission_refs"][-1]["component_analyst_case_ref"] = {}
     with pytest.raises(
         SearchOSExistingGapRecoveryError,
         match="role provenance",

@@ -1683,16 +1683,29 @@ def test_read_custody_is_the_only_semantic_entry_and_required_block_is_safe() ->
             semantic_handoff_ref=handoff,
             expected_slot_ref={**slot_ref, "slot_id": "foreign-slot"},
         )
+    component_case_ref = {
+        **_ref("component_analyst_case", "one"),
+        "role": "component_analyst",
+    }
+
+    semantic_admission_ref = {
+        **_ref("semantic_admission", "one"),
+        "canonical_state": True,
+        "current": True,
+        "stale": False,
+        "case_posture": "supported",
+        **state["slots_by_id"]["slot-1"]["component_ref"],
+        "accepted_contract_version": state["answer_contract_ref"].get("contract_version"),
+        "accepted_contract_digest": state["answer_contract_ref"]["answer_contract_digest"],
+        "component_analyst_case_ref": component_case_ref,
+    }
     readiness = build_searchos_slice_a_readiness_v1(
         state=state,
         semantic_outcomes_by_slot={
             "slot-1": {
                 "semantic_handoff_ref": handoff,
-                "component_analyst_proposal_ref": _ref("analyst_proposal", "one"),
-                "component_analyst_proposal_status": "proposed",
-                "component_dprime_validation_ref": _ref("dprime_validation", "one"),
-                "component_dprime_validation_status": "accepted",
-                "semantic_admission_outcome_ref": _ref("semantic_admission", "one"),
+                "component_analyst_case_ref": component_case_ref,
+                "semantic_admission_outcome_ref": semantic_admission_ref,
                 "semantic_admission_status": "admitted",
                 "material_authority": "read_custody_material",
             }
@@ -1709,11 +1722,8 @@ def test_read_custody_is_the_only_semantic_entry_and_required_block_is_safe() ->
 
     exact_outcome = {
         "semantic_handoff_ref": handoff,
-        "component_analyst_proposal_ref": _ref("analyst_proposal", "one"),
-        "component_analyst_proposal_status": "proposed",
-        "component_dprime_validation_ref": _ref("dprime_validation", "one"),
-        "component_dprime_validation_status": "accepted",
-        "semantic_admission_outcome_ref": _ref("semantic_admission", "one"),
+        "component_analyst_case_ref": component_case_ref,
+        "semantic_admission_outcome_ref": semantic_admission_ref,
         "semantic_admission_status": "admitted",
         "material_authority": "read_custody_material",
     }
@@ -1723,12 +1733,8 @@ def test_read_custody_is_the_only_semantic_entry_and_required_block_is_safe() ->
             "candidate_only_or_directional_context_only",
         ),
         (
-            {
-                **exact_outcome,
-                "component_dprime_validation_ref": {},
-                "component_dprime_validation_status": "not_accepted",
-            },
-            "component_dprime_validation_missing_or_rejected",
+            {**exact_outcome, "component_analyst_case_ref": {}},
+            "component_analyst_case_missing_or_rejected",
         ),
         (
             {

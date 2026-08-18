@@ -53,7 +53,7 @@ def _establish_official_current_qualification_truth(
 ) -> None:
     from core import ordinary_multicomponent_synthesis_runtime as multicomponent
 
-    original = multicomponent._qualify_searchos_read_material_after_component_dprime
+    original = multicomponent._qualify_searchos_read_material_after_component_analyst_case
 
     def qualify(*args: Any, **kwargs: Any) -> Any:
         bindable = kwargs["bindable"]
@@ -80,7 +80,7 @@ def _establish_official_current_qualification_truth(
 
     monkeypatch.setattr(
         multicomponent,
-        "_qualify_searchos_read_material_after_component_dprime",
+        "_qualify_searchos_read_material_after_component_analyst_case",
         qualify,
     )
 
@@ -1148,8 +1148,10 @@ def test_bounded_searchos_n1_causal_projection_successful_path(
     assert projection["all_required_slots_ready"] is True
     assert slot["semantic_handoff_present"] is True
     assert slot["handoff_material_consumed"] is True
-    assert slot["component_analyst_proposal_status"] == "proposed"
-    assert slot["component_dprime_validation_present"] is True
+    assert slot["component_analyst_case_present"] is True
+    assert slot["component_dprime_validation_present"] is False
+    assert slot["component_dprime_model_call_required"] is False
+    assert slot["component_dprime_model_call_executed"] is False
     assert slot["semantic_admission_status"] == "admitted"
     assert slot["component_coverage_satisfied"] is True
     assert slot["read_custody_observed"] is True
@@ -1159,6 +1161,14 @@ def test_bounded_searchos_n1_causal_projection_successful_path(
     assert slot["safe_transport_exception_class"] == "none"
     assert slot["safe_model_output_invalid_subtype"] == "none"
     assert "component_analyst_failure" not in projection
+    assert all(
+        ROLE_SYSTEM_PROMPTS[role] not in harness.model_system_prompts
+        for role in (
+            ROLE_COMPONENT_DPRIME,
+            ROLE_CROSS_COMPONENT_ANALYST,
+            ROLE_SYNTHESIS_DPRIME,
+        )
+    )
 
 
 def test_searchos_receiver_block_cannot_report_completed_or_originate_analyst(
@@ -1222,9 +1232,11 @@ def test_searchos_receiver_block_cannot_report_completed_or_originate_analyst(
     )
     assert scrutineer_handoff["resynthesis"]["reanalysis_triggered"] is False
     slot = _required_causal_slot(projection)
-    assert slot["component_analyst_proposal_status"] == "not_proposed"
+    assert slot["component_analyst_case_present"] is False
     assert slot["handoff_material_consumed"] is False
     assert slot["component_dprime_validation_present"] is False
+    assert slot["component_dprime_model_call_required"] is False
+    assert slot["component_dprime_model_call_executed"] is False
     assert slot["semantic_admission_status"] != "admitted"
     assert harness.analyst_calls == 0
     assert DEFAULT_SYSTEM["analyst"] not in harness.model_system_prompts
@@ -1333,8 +1345,10 @@ def test_bounded_searchos_n1_causal_projection_read_then_receiver_failure(
     assert slot["read_custody_observed"] is True
     assert slot["semantic_handoff_present"] is True
     assert slot["handoff_material_consumed"] is False
-    assert slot["component_analyst_proposal_status"] == "not_proposed"
+    assert slot["component_analyst_case_present"] is False
     assert slot["component_dprime_validation_present"] is False
+    assert slot["component_dprime_model_call_required"] is False
+    assert slot["component_dprime_model_call_executed"] is False
     assert slot["semantic_admission_status"] != "admitted"
     assert slot["component_coverage_satisfied"] is False
     assert projection["component_receiver_selected"] is True
@@ -1349,6 +1363,7 @@ def test_bounded_searchos_n1_causal_projection_read_then_receiver_failure(
     ("failure_mode", "expected_failure_kind"),
     [
         ("output_validation", "output_validation_failure"),
+        ("forbidden_runtime_authority", "output_validation_failure"),
         ("model_transport", "model_transport_failure"),
         ("provider_mismatch", "provider_identity_mismatch"),
     ],
@@ -1381,6 +1396,10 @@ def test_bounded_searchos_n1_projects_current_component_analyst_failure(
             return base
         if failure_mode == "output_validation":
             return replace(base, output_text="not-json")
+        if failure_mode == "forbidden_runtime_authority":
+            malformed = json.loads(base.output_text)
+            malformed["run_id"] = "model-authored"
+            return replace(base, output_text=json.dumps(malformed))
         if failure_mode == "model_transport":
             return replace(base, return_code=2, output_text="")
         return replace(base, canonical_provider="OpenRouter")
@@ -1492,10 +1511,7 @@ def test_bounded_searchos_n1_causal_projection_privacy_allowlist() -> None:
         "semantic_outcomes_by_slot": {
             "slot-1": {
                 "semantic_handoff_ref": {},
-                "component_analyst_proposal_ref": {},
-                "component_analyst_proposal_status": "not_proposed",
-                "component_dprime_validation_ref": {},
-                "component_dprime_validation_status": "not_accepted",
+                "component_analyst_case_ref": {},
                 "semantic_admission_outcome_ref": {},
                 "semantic_admission_status": "not_admitted",
                 "searchos_handoff_material_consumed": False,
@@ -1584,10 +1600,7 @@ def test_bounded_optional_handoff_projection_fails_closed_without_canonical_read
         "semantic_outcomes_by_slot": {
             "slot-private": {
                 "semantic_handoff_ref": handoff_ref,
-                "component_analyst_proposal_ref": {},
-                "component_analyst_proposal_status": "not_proposed",
-                "component_dprime_validation_ref": {},
-                "component_dprime_validation_status": "not_accepted",
+                "component_analyst_case_ref": {},
                 "semantic_admission_outcome_ref": {},
                 "semantic_admission_status": "not_admitted",
                 "searchos_handoff_material_consumed": False,
@@ -1774,8 +1787,7 @@ def _transport_cause_fixture(*, reason: str, posture: str = "judgment_failed") -
         "semantic_outcomes_by_slot": {
             "slot-1": {
                 "semantic_handoff_ref": {},
-                "component_analyst_proposal_status": "not_proposed",
-                "component_dprime_validation_ref": {},
+                "component_analyst_case_ref": {},
                 "semantic_admission_outcome_ref": {},
                 "semantic_admission_status": "not_admitted",
                 "searchos_handoff_material_consumed": False,
@@ -2158,8 +2170,10 @@ def test_bounded_searchos_n1_causal_projection_transport_field_parity(
     assert slot["safe_model_output_invalid_subtype"] == "none"
     assert slot["semantic_handoff_present"] is True
     assert slot["handoff_material_consumed"] is True
-    assert slot["component_analyst_proposal_status"] == "proposed"
-    assert slot["component_dprime_validation_present"] is True
+    assert slot["component_analyst_case_present"] is True
+    assert slot["component_dprime_validation_present"] is False
+    assert slot["component_dprime_model_call_required"] is False
+    assert slot["component_dprime_model_call_executed"] is False
     assert slot["semantic_admission_status"] == "admitted"
     assert slot["component_coverage_satisfied"] is True
     assert set(slot) >= {
@@ -2169,8 +2183,10 @@ def test_bounded_searchos_n1_causal_projection_transport_field_parity(
         "read_custody_observed",
         "semantic_handoff_present",
         "handoff_material_consumed",
-        "component_analyst_proposal_status",
+        "component_analyst_case_present",
         "component_dprime_validation_present",
+        "component_dprime_model_call_required",
+        "component_dprime_model_call_executed",
         "semantic_admission_status",
         "component_coverage_satisfied",
     }

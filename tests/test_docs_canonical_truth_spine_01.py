@@ -283,8 +283,8 @@ def test_analystos_target_owner_is_unique_routed_and_nonactivating() -> None:
         "Cross-Component Analyst only for genuine N>=2 synthesis",
         "Scrutineer is the sole separate semantic reviewer",
         "Sufficiency is the sole whole-run stopper",
-        "Component D-prime and synthesis D-prime ordinary model calls are selected for retirement",
-        "Runtime still executes component D-prime and synthesis D-prime",
+        "Component D-prime has no ordinary component consumer.",
+        "Genuine N>=2 synthesis still executes a separate synthesis D-prime ordinary model call",
         "Fast does not invoke Scrutineer under any trigger",
     ):
         assert phrase in normalized
@@ -479,7 +479,7 @@ def test_repaired_contracts_exclude_active_roadmap_and_obsolete_status() -> None
             assert phrase not in text, (path, phrase)
 
     dprime = _collapsed(CONCERN_OWNERS["canonical:dprime-role-contract"])
-    assert "ordinary bounded multi-component path consumes both component D-prime and synthesis D-prime" in dprime
+    assert "ordinary bounded multi-component path directly admits Component Analyst cases and retains synthesis D-prime for genuine N>=2 work" in dprime
     assert "Review and admission alone do not prove" in dprime
     assert "approved general ordinary component Analyst" not in dprime
 
@@ -515,8 +515,8 @@ def test_hardened_quantitative_component_boundary_is_current_and_narrow() -> Non
             "preserves two component-scoped quantitative authority classes",
             "exact current component, semantic-observation, content, coverage, evidence-custody, proposition-fingerprint, and complete literal-signature binding",
             "installed capability and version, result and handoff identities and digests, canonical component target, exact claim-material binding, canonical `result_unit` and precision",
-            "terminal consumption by the applicable component D-prime",
-            "Generic D-prime admission alone remains nonauthority",
+            "terminal consumption by the",
+            "admission alone remains nonauthority",
             "fails atomically on unsupported quantitative prose",
             "packages component entries only",
             "does not project synthesis entries",
@@ -528,6 +528,11 @@ def test_hardened_quantitative_component_boundary_is_current_and_narrow() -> Non
             assert phrase in text
 
     assert "No provider or model changed." in containment
+    assert "terminal consumption by the applicable Component Analyst case" in containment
+    assert "terminal consumption by the current Component Analyst case and direct RunKernel component admission" in current
+    assert "Generic D-prime admission alone remains nonauthority" in containment
+    assert "Generic semantic admission alone remains nonauthority" in current
+
     assert "Current real-model SearchPlanner behavior remains unproved." in current
     assert "`SEARCHPLANNER-BOUNDARY-INTEGRITY`" in current
 
@@ -1306,7 +1311,7 @@ def test_quantitative_specialist_has_one_current_owner_and_installed_boundaries(
         "contested_source_posture",
         "incomplete_lineage",
         "identical nonmaterial fields and `posture_digest`",
-        "Component D-prime receives the exact ordinary component input without it",
+        "Component Analyst receives the contract at the top level of",
         "full source catalogs, source material, and complete candidate records are absent from canonical RunKernel projections",
         "`docs/roadmap/CURRENT_ROADMAP.md`",
         "do not authorize live validation",

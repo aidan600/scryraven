@@ -43,7 +43,7 @@ S1:
   keeps the contract, full catalogs, and source material out of canonical state;
 - preserves exact source-literal and two-hop synthesis provenance, assumptions,
   units, precision, and deterministic claim alignment;
-- routes semantic use through component or synthesis D-prime;
+- routes component semantic use through the current Component Analyst case and synthesis use through D-prime;
 - keeps one serial unit with component-before-synthesis priority;
 - unconditionally reproofs every ordinary Cross input from either the exact
   transient packet or RunKernel's current scheduler-owned component packets,
@@ -440,9 +440,9 @@ follow-up query text through QueryPlan, or preserve a slot as unresolved.
 Follow-up results enter append-only iteration candidate sets; deterministic
 candidate-use windows preserve all admitted contributor lineage and same-URL
 custody reuse. DISCOVER remains directional, non-support-bearing context. READ
-custody alone may enter the shared N-component Analyst / D-prime / RunKernel
-semantic receiver, and it creates no support without current semantic
-admission. Required needs that do not complete that chain produce the typed
+custody alone may enter the shared N-component Analyst case / direct RunKernel
+semantic receiver, and it creates no support without current semantic admission.
+Required needs that do not complete that chain produce the typed
 Slice A required-needs block and the existing safe blocked non-Author terminal.
 
 Evaluator, expander, disambiguation retry, weak-corpus continuation, and AG-92B
@@ -472,9 +472,9 @@ the installed acquisition and custody owners.
 
 ## Active Decision Gate: ANALYSTOS COMPONENT-PATH REPLACEMENT
 
-The AnalystOS target topology is selected. Component and synthesis D-prime
-ordinary model calls are selected for retirement per
-[AnalystOS Operating Model](../architecture/ANALYSTOS_OPERATING_MODEL.md).
+The direct Component Analyst case to RunKernel component-admission topology is
+installed by this phase. The remaining synthesis D-prime ordinary model call is
+selected for retirement per [AnalystOS Operating Model](../architecture/ANALYSTOS_OPERATING_MODEL.md).
 Mandatory serial D-prime is not the selected target. This gate does not reopen
 topology selection.
 
@@ -557,17 +557,16 @@ The installed post-analysis routes remain factual:
 
 ```text
 INSTALLED:
-Component Analyst -> component D-prime -> RunKernel component admission
+Component Analyst case -> direct RunKernel component admission
 Cross-Component Analyst -> synthesis D-prime -> Scrutineer when triggered
   -> RunKernel graph/synthesis admission
 ```
 
-Mandatory serial D-prime is not the selected AnalystOS target. Component and
-synthesis D-prime remain installed and executable until convergence phases
-retire the separate ordinary model calls. Selected target topology, mode policy,
-and retirement sequencing belong to
-[AnalystOS Operating Model](../architecture/ANALYSTOS_OPERATING_MODEL.md).
-The current Q1 failure occurs before those routes; D-prime is not the current
+Mandatory serial D-prime is not the selected AnalystOS target. Component D-prime
+has no ordinary component consumer; synthesis D-prime remains installed and
+executable until its convergence phase retires the remaining ordinary model call.
+Selected target topology, mode policy, and retirement sequencing belong to
+[AnalystOS Operating Model](../architecture/ANALYSTOS_OPERATING_MODEL.md). The current Q1 failure occurs before those routes; D-prime is not the current
 blocker.
 
 The installed ordinary front-half shape is:
@@ -615,10 +614,10 @@ requires a new architecture decision.
 ### Q1 implementation guardrails
 
 Do not manually reconstruct canonical RunKernel or SearchOS-handoff authority.
-The historical live Q1 path stopped before D-prime; D-prime remains untested on
-that path and is not the current blocker. Implement component-path replacement
-under the selected AnalystOS target rather than patching around installed
-D-prime or reopening topology selection.
+The historical live Q1 path stopped before Component D-prime; that retired
+ordinary component role remains untested on that path and is not the current
+blocker. Implement direct component admission under the selected AnalystOS target
+rather than reinstating Component D-prime or reopening topology selection.
 
 The current implementation sequence is:
 
@@ -643,7 +642,7 @@ Q1 completion
 ```
 
 Supported cited Q1 completion or representative corpus expansion becomes
-eligible after component-path replacement makes progress under
+eligible after direct component admission completes focused proof under
 [AnalystOS Operating Model](../architecture/ANALYSTOS_OPERATING_MODEL.md).
 
 ### Installed Phase 1 - Sparse uncertainty-aware planning

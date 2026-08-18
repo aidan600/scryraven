@@ -3,25 +3,25 @@
 Status: current
 Authority: canonical:dprime-role-contract
 Default-read: no
-Applies-to: component and synthesis D-prime role boundaries
+Applies-to: retained synthesis D-prime and bounded ComponentDprime compatibility role boundaries
 Does-not-authorize: model calls, retrieval, admission, contract mutation, FAP, Author, additional Specialist activation, or live validation
 Verified-against-runtime: 540141acaaaf041bda303edd62211dd6a11958bc
-Update-trigger: merged change to component or synthesis D-prime authority or ordinary consumption
+Update-trigger: merged change to retained synthesis D-prime or ComponentDprime compatibility authority
 
 Installed capability status: CURRENT
 Target-architecture status: INSTALLED-ONLY / SELECTED RETIREMENT TARGET
 
-This document canonically describes what the installed component and synthesis
-D-prime roles currently do. Selected AnalystOS target topology and retirement
-direction belong to
-[AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md). Mandatory serial
-D-prime is not part of the selected AnalystOS target; the installed roles remain
-executable until convergence phases retire the separate ordinary model calls.
+This document canonically describes the retained synthesis D-prime role and
+bounded ComponentDprime compatibility contract. The ordinary component path is
+direct Component Analyst case to RunKernel admission; selected AnalystOS topology
+and retirement direction belong to [AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md).
+Mandatory serial D-prime is not part of the selected AnalystOS target; only the
+installed synthesis role remains an ordinary executable model call.
 
 ## Responsibility
 
-This document owns the durable role contract for component and synthesis
-D-prime. Installed-state claims belong to
+This document owns the durable retained synthesis role contract and ComponentDprime
+compatibility boundary. Installed-state claims belong to
 [ScryRaven Current State](SCRYRAVEN_CURRENT_STATE.md), phase order belongs to
 [Current Roadmap](../roadmap/CURRENT_ROADMAP.md), and the complete bounded
 multi-component path belongs to
@@ -40,12 +40,12 @@ It does not choose the proposal, admit the result, or render an answer.
 
 ## Boundary B Relationship Validation
 
-Component D-prime validates a searched premise only as direct depth-zero
-support against its exact source obligation and custody. It does not infer the
-answer target. Synthesis D-prime separately validates a Cross-Component
+The current Component Analyst case assesses a searched premise only as direct
+depth-zero support against its exact source obligation and custody; it does not
+infer the answer target. Synthesis D-prime separately validates a Cross-Component
 Analyst relationship proposal against exact current target, premise-node,
-ComponentCoverage, dependency, parent-graph, depth, caveat, and
-prohibited-upgrade refs.
+ComponentCoverage, dependency, parent-graph, depth, caveat, and prohibited-
+upgrade refs.
 
 RunKernel, not D-prime, enforces the profile ceiling and admits the relationship
 into Graph V1. A supporting premise may itself be inference-supported only when
@@ -58,23 +58,22 @@ an inferred node into direct evidence. SearchOS never performs this validation.
 | Role | Owns | Must not do |
 | --- | --- | --- |
 | Component Analyst | Proposes what bounded custodied evidence supports for one answer component and may nominate one exact source-bound quantitative need. | Validate or admit its own proposal, authorize the capability or recovery, or render. |
-| Component D-prime | Validates the nominated component proposal against its bound evidence and component obligations, including exact calculator claim alignment when handed off. | Act as first-pass Analyst, invent or calculate a claim, admit support, mutate the AnswerContract, or render. |
+| Component D-prime | Retained only as a bounded compatibility contract with no ordinary component work producer or consumer. | Re-enter ordinary component review, invent or calculate a claim, admit support, mutate the AnswerContract, or render. |
 | Cross-Component Analyst | Proposes dependencies, contradictions, constraints, synthesis nodes, missing components, caveats, recovery needs, and an exact cross-component quantitative need over admitted refs. | Validate or admit its own synthesis, authorize the capability or recovery, or render. |
 | Synthesis D-prime | Validates nominated synthesis against current admitted component, synthesis, edge, blocker, caveat, and two-hop calculator lineage refs. | Invent or calculate synthesis, act as Cross-Component Analyst, admit graph state, or render. |
 | Full Scrutineer | Adversarially challenges a component, synthesis, edge, subgraph, or whole-case posture when triggered. | Replace the first-pass Analyst, manufacture a replacement case, admit state, or render. |
 | RunKernel | Performs structural validation and alone admits, blocks, challenges, or authorizes bounded recovery. | Manufacture semantic output or delegate canonical admission to a worker. |
 
-The currently installed ordinary bounded multi-component path consumes both
-component D-prime and synthesis D-prime. Cross-component synthesis and
-ComponentWorkGraph V1 admission are installed executable facts for the
-supported class; they are not a permanent retention requirement or future
-D-prime checkpoint doctrine.
+The currently installed ordinary bounded multi-component path directly admits
+Component Analyst cases and retains synthesis D-prime for genuine N>=2 work.
+Cross-component synthesis and ComponentWorkGraph V1 admission are installed
+executable facts, not a permanent synthesis-D-prime checkpoint doctrine.
 
 ## Installed Capability And Selected AnalystOS Retirement
 
-Selected target: component D-prime and synthesis D-prime ordinary model calls
-are retired during AnalystOS convergence. Useful semantic work folds into
-Component Analyst self-audit and Cross-Component Analyst self-audit respectively.
+Selected target: the remaining synthesis D-prime ordinary model call is retired
+during AnalystOS convergence. Component Analyst self-audit is already the direct
+component-path semantic case posture; Cross-Component Analyst self-audit follows.
 Scrutineer remains the sole separate semantic reviewer under the mode policy in
 [AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md). Deterministic
 mechanical safeguards and RunKernel admission remain regardless of semantic-role
@@ -111,9 +110,9 @@ binding mechanics, budgets, privacy, replay/idempotency mechanics, stale-state
 rejection, impossible-state rejection, and canonical authority transitions.
 
 Deterministic code does not prove arbitrary natural-language semantic support.
-The installed component and synthesis paths may use D-prime semantic review,
-but semantic worker judgment or proposal is never canonical RunKernel
-authority:
+The installed component path uses a current Analyst case, while synthesis may
+use D-prime semantic review; neither semantic worker judgment nor proposal is
+canonical RunKernel authority:
 
 ```text
 semantic worker judgment/proposal != canonical RunKernel authority
@@ -126,12 +125,11 @@ authority boundary remain distinct.
 
 ## Proposal, Validation, And Admission
 
-The currently installed component D-prime path executes:
+The current ordinary component path executes:
 
 ```text
-Analyst proposal
--> D-prime evidence-relative validation
--> deterministic schema, identity, lineage, and digest checks
+Component Analyst case + self-audit
+-> deterministic schema, identity, currentness, lineage, and digest checks
 -> RunKernel admission, block, challenge, or recovery authorization
 ```
 
@@ -212,33 +210,31 @@ write prose, or claim correctness. Those downstream owners consume only
 RunKernel-admitted state.
 
 For an admitted quantitative claim, downstream projection may carry the exact
-applicable D-prime artifact ref and consumption lineage into FAP. That ref does
-not expand D-prime authority: it lets finalization prove that an admitted claim
-was reviewed by the applicable validator. Review and admission alone do not
-prove that the numeric proposition was explicitly source-stated or calculated
-by an authorized Specialist. Finalization therefore omits a generic admitted
-numeric proposition unless its complete proposition and literal signature bind
-to current FAP source material, or a completed installed Specialist result with
-exact claim-material alignment was consumed by the applicable D-prime. Missing,
-stale, nonapplicable, or otherwise unaccompanied D-prime lineage cannot authorize
-numeric prose.
+current Component Analyst case or applicable synthesis D-prime ref and consumption
+lineage into FAP. Those refs do not expand authority: they let finalization prove
+that an admitted claim was reviewed by the applicable semantic consumer. Review
+and admission alone do not prove that the numeric proposition was explicitly
+source-stated or calculated by an authorized Specialist. Finalization therefore
+omits a generic admitted numeric proposition unless its complete proposition and
+literal signature bind to current FAP source material, or a completed installed
+Specialist result with exact claim-material alignment was consumed by that case
+or synthesis D-prime. Missing or stale lineage cannot authorize numeric prose.
 
 The generic Specialist graph substrate provides the outcome of a proposed need
-to component or synthesis D-prime under one top-level
-`specialist_need_handoff` namespace. The handoff carries either a bounded
-result or a typed policy, capability, target, budget, failure, blocked, or
-contested availability posture. Only no proposal omits it. The nominated claim,
-evidence, component, graph, and admitted input bindings remain ordinary
-D-prime inputs. A required predispatch reconstruction failure still creates the
-failed handoff before the scheduler blocks; it creates no result and remains
-pending and unconsumed because D-prime does not run. Optional nonexecution
-handoffs remain visible to the applicable D-prime. RunKernel independently
-rederives the exact current D-prime
-role, action, artifact, target, and handoff-bearing input digest before
-exactly-once consumption; it does not trust a caller-supplied route or status.
-A Specialist outcome preserves provenance-labeled partial lineage for the
-fields its producer observed, cannot validate itself, and cannot bypass D-prime
-or RunKernel. It does not claim complete lineage for unobserved source metadata.
+to the current Component Analyst case or synthesis D-prime under one top-level
+`specialist_need_handoff` namespace. The handoff carries either a bounded result
+or a typed policy, capability, target, budget, failure, blocked, or contested
+availability posture. Only no proposal omits it. The nominated claim, evidence,
+component, graph, and admitted input bindings remain ordinary semantic-consumer
+inputs. A required predispatch reconstruction failure still creates the failed
+handoff before the scheduler blocks; it creates no result and remains pending
+and unconsumed because its consumer does not run. Optional nonexecution handoffs
+remain visible to the applicable consumer. RunKernel independently rederives the
+exact current Component Analyst case or synthesis D-prime role, action, artifact,
+target, and handoff-bearing input digest before exactly-once consumption; it does
+not trust a caller-supplied route or status. A Specialist outcome preserves
+provenance-labeled partial lineage, cannot validate itself, and cannot bypass
+the semantic consumer or RunKernel.
 
 The deterministic source-bound calculator is registered and activated by the
 fixed S1 ordinary product composition for the named bounded multi-component
@@ -251,11 +247,11 @@ non-exact alignment remains contested. D-prime does not rerun arithmetic or
 authorize the capability.
 
 The repository-owned model-visible quantitative proposal contract is an input
-only to ordinary component and Cross-Component Analyst proposal production. It
-is deliberately absent from component and synthesis D-prime input. D-prime
-receives the bounded result-or-disposition handoff and ordinary evidence or
-admitted-input refs; the contract cannot become validation or admission
-authority.
+only to ordinary Component and Cross-Component Analyst production. It reaches
+the Component Analyst case but is deliberately absent from synthesis D-prime
+input. The retained synthesis validator receives the bounded result-or-
+disposition handoff and ordinary admitted-input refs; the contract cannot become
+validation or admission authority.
 
 Before synthesis D-prime can receive graph-derived work, Cross input reproof is
 unconditional. The ordinary caller may bind the exact transient Cross packet;

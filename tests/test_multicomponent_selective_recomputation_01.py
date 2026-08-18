@@ -270,8 +270,8 @@ def _closure_fixture() -> tuple[RunKernel, dict, dict]:
         "current": True,
         "stale": False,
         "action_id": recovered_node["component_admission_action_ref"]["action_id"],
+        "component_analyst_case_ref": recovered_node["component_analyst_case_ref"],
         "analyst_finding_ref": recovered_node["analyst_finding_ref"],
-        "dprime_validation_ref": recovered_node["dprime_validation_ref"],
         "admitted_claim_ref": recovered_node["admitted_claim_ref"],
         "semantic_observation_ref": recovered_node["semantic_observation_ref"],
         "component_coverage_ref": recovered_node["component_coverage_ref"],
@@ -1155,7 +1155,6 @@ def test_boundary_b_product_path_selectively_reproves_and_finalizes(
     assert graph["selective_recomputation_rounds"] == 1
     assert graph["logical_accounting"] == {
         "component_analyst_evaluations": 2,
-        "component_dprime_evaluations": 2,
         "cross_component_analyst_evaluations": 2,
         "synthesis_dprime_evaluations": 2,
         "scrutineer_evaluations": 2,
@@ -1510,8 +1509,8 @@ def test_unrelated_carried_synthesis_is_excluded_from_preserved_boundary() -> No
         "current": True,
         "stale": False,
         "action_id": recovered_node["component_admission_action_ref"]["action_id"],
+        "component_analyst_case_ref": recovered_node["component_analyst_case_ref"],
         "analyst_finding_ref": recovered_node["analyst_finding_ref"],
-        "dprime_validation_ref": recovered_node["dprime_validation_ref"],
         "admitted_claim_ref": recovered_node["admitted_claim_ref"],
         "semantic_observation_ref": recovered_node["semantic_observation_ref"],
         "component_coverage_ref": recovered_node["component_coverage_ref"],

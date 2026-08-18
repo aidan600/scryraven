@@ -19,7 +19,7 @@ from core.analyst_query_resolution_proposal import (
 )
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
-    ROLE_COMPONENT_DPRIME,
+    ROLE_COMPONENT_ANALYST_RESUME,
     ROLE_CROSS_COMPONENT_ANALYST,
     ROLE_SCRUTINEER,
     ROLE_SYNTHESIS_DPRIME,
@@ -62,7 +62,6 @@ BACKEND_LOCAL_OPENAI_COMPATIBLE = "local_openai_compatible"
 BACKEND_CONSERVATIVE_UNKNOWN = "conservative_unknown"
 
 PARALLEL_INITIAL_COMPONENT_ANALYST = "parallel_initial_component_analyst"
-PARALLEL_INITIAL_COMPONENT_DPRIME = "parallel_initial_component_dprime"
 PARALLEL_SERIAL_ONLY = "serial_only"
 
 WORK_KIND_SEMANTIC_ROLE = "semantic_role"
@@ -77,7 +76,7 @@ EXECUTOR_REGISTERED_DETERMINISTIC = "registered_deterministic_capability"
 # authorization and the Phase 4 scheduler both consume it.
 MULTICOMPONENT_ROLE_CALL_LIMITS: Mapping[str, int] = {
     ROLE_COMPONENT_ANALYST: 5,
-    ROLE_COMPONENT_DPRIME: 5,
+    ROLE_COMPONENT_ANALYST_RESUME: 5,
     ROLE_CROSS_COMPONENT_ANALYST: 3,
     ROLE_SYNTHESIS_DPRIME: 8,
     ROLE_SCRUTINEER: 3,
@@ -254,10 +253,8 @@ def _component_admission_ref(value: Mapping[str, Any]) -> dict[str, Any]:
         "accepted_contract_version": value.get("accepted_contract_version"),
         "accepted_contract_digest": value.get("accepted_contract_digest"),
         "analyst_artifact_digest": _mapping(
-            value.get("analyst_finding_ref")
-        ).get("artifact_digest"),
-        "dprime_artifact_digest": _mapping(
-            value.get("dprime_validation_ref")
+            value.get("component_analyst_case_ref")
+            or value.get("analyst_finding_ref")
         ).get("artifact_digest"),
     }
 
@@ -1309,8 +1306,6 @@ def classify_work_parallelism(work: Mapping[str, Any]) -> str:
     )
     if initial_component and item.get("role") == ROLE_COMPONENT_ANALYST:
         return PARALLEL_INITIAL_COMPONENT_ANALYST
-    if initial_component and item.get("role") == ROLE_COMPONENT_DPRIME:
-        return PARALLEL_INITIAL_COMPONENT_DPRIME
     return PARALLEL_SERIAL_ONLY
 
 
@@ -1415,7 +1410,10 @@ def derive_ready_work(state: Any, *, allow_active_lease: bool = False) -> list[d
             )
             continue
         if specialist_state:
-            from core.specialist_graph_runtime import pending_proposal_for_target
+            from core.specialist_graph_runtime import (
+                handoff_for_target,
+                pending_proposal_for_target,
+            )
 
             pending_specialist = pending_proposal_for_target(
                 specialist_state,
@@ -1432,52 +1430,60 @@ def derive_ready_work(state: Any, *, allow_active_lease: bool = False) -> list[d
                         proposal=pending_specialist,
                     )
                 ]
-        dprime = _completed_artifact(state, ROLE_COMPONENT_DPRIME, component_id)
-        if not dprime:
-            from core.multicomponent_component_admission import (
-                component_dprime_input_packet,
+            specialist_handoff = handoff_for_target(
+                specialist_state,
+                target_kind="component",
+                target_key=component_id,
             )
-
-            specialist_handoff = {}
-            if specialist_state:
-                from core.specialist_graph_runtime import handoff_for_target
-
-                specialist_handoff = handoff_for_target(
-                    specialist_state,
-                    target_kind="component",
-                    target_key=component_id,
+            if specialist_handoff:
+                resume = _completed_artifact(
+                    state,
+                    ROLE_COMPONENT_ANALYST_RESUME,
+                    component_id,
                 )
-            dprime_input = component_dprime_input_packet(
-                analyst_artifact=analyst,
-                analyst_input_packet=analyst_input,
-                specialist_need_handoff=specialist_handoff or None,
-            )
-            ready.append(
-                (
-                    (index, 1, component_id),
-                    _work(
-                        state=state,
-                        scheduler=scheduler,
-                        role=ROLE_COMPONENT_DPRIME,
-                        evaluation_key=component_id,
-                        input_packet=dprime_input,
-                        target_kind="component",
-                        component_id=component_id,
-                        node_ref={
-                            "component_id": component_id,
-                            "component_revision": component_ref.get(
-                                "component_revision"
+                if not resume:
+                    from core.multicomponent_component_admission import (
+                        component_analyst_resume_input_packet,
+                    )
+
+                    resume_input = component_analyst_resume_input_packet(
+                        analyst_artifact=analyst,
+                        analyst_input_packet=analyst_input,
+                        specialist_need_handoff=specialist_handoff,
+                    )
+                    ready.append(
+                        (
+                            (index, 1, component_id),
+                            _work(
+                                state=state,
+                                scheduler=scheduler,
+                                role=ROLE_COMPONENT_ANALYST_RESUME,
+                                evaluation_key=component_id,
+                                input_packet=resume_input,
+                                target_kind="component",
+                                component_id=component_id,
+                                node_ref={
+                                    "component_id": component_id,
+                                    "component_revision": component_ref.get("component_revision"),
+                                    "component_digest": component_ref.get("component_digest"),
+                                },
+                                prerequisite_refs=(
+                                    _mapping(analyst.get("authorized_action_ref")),
+                                    {
+                                        "analyst_artifact_digest": analyst.get("artifact_digest"),
+                                    },
+                                    {
+                                        "specialist_handoff_id": specialist_handoff.get("handoff_id"),
+                                        "specialist_handoff_digest": specialist_handoff.get("handoff_digest"),
+                                    },
+                                ),
+                                recovery_binding=recovery,
                             ),
-                            "component_digest": component_ref.get("component_digest"),
-                        },
-                        prerequisite_refs=(
-                            _mapping(analyst.get("authorized_action_ref")),
-                            {"analyst_artifact_digest": analyst.get("artifact_digest")},
-                        ),
-                        recovery_binding=recovery,
-                    ),
-                )
-            )
+                        )
+                    )
+                continue
+        # With no pending Specialist handoff, the completed initial Analyst case
+        # is consumed directly by deterministic admission.
     if ready:
         return [item for _, item in sorted(ready, key=lambda pair: pair[0])]
 
@@ -2175,7 +2181,7 @@ def dispatch_batch(
         )
     expected_action_types = {
         ROLE_COMPONENT_ANALYST: "multicomponent_component_analyst_execute",
-        ROLE_COMPONENT_DPRIME: "multicomponent_component_dprime_execute",
+        ROLE_COMPONENT_ANALYST_RESUME: "multicomponent_component_analyst_resume_execute",
         ROLE_CROSS_COMPONENT_ANALYST: "multicomponent_cross_analyst_execute",
         ROLE_SYNTHESIS_DPRIME: "multicomponent_synthesis_dprime_execute",
         ROLE_SCRUTINEER: "multicomponent_scrutineer_execute",
@@ -3084,7 +3090,7 @@ def project_current_component_analyst_failure(
     expected_run_id: str | None,
     expected_request_id: str | None,
 ) -> dict[str, str] | None:
-    """Project safe facts for the exact current failed Component Analyst work.
+    """Project safe facts for the exact failed initial or final Component Analyst case.
 
     The scheduler owns the failed-required-work reference and its lease
     settlement.  Match those references against exactly one terminal role
@@ -3106,7 +3112,8 @@ def project_current_component_analyst_failure(
     if scheduler.get("status") != "blocked_required_work_failed":
         return None
     failed_ref = _mapping(scheduler.get("failed_required_work_ref"))
-    if failed_ref.get("role") != ROLE_COMPONENT_ANALYST:
+    failed_role = str(failed_ref.get("role") or "")
+    if failed_role not in {ROLE_COMPONENT_ANALYST, ROLE_COMPONENT_ANALYST_RESUME}:
         return None
     settlement = failed_ref.get("settlement")
     if settlement not in {LEASE_FAILED, LEASE_STALE}:
@@ -3128,7 +3135,7 @@ def project_current_component_analyst_failure(
             or lease.get("settlement_reason") is None
             or work.get("work_id") != work_id
             or work.get("work_digest") != work_digest
-            or work.get("role") != ROLE_COMPONENT_ANALYST
+            or work.get("role") != failed_role
             or work.get("run_id") != run_id
             or work.get("request_id") != request_id
             or not isinstance(role_action_ref.get("action_id"), str)

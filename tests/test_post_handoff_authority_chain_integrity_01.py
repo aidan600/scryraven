@@ -92,11 +92,12 @@ def test_returned_blocked_fap_is_not_a_completed_bounded_answer(
     assert any(slot["read_custody_observed"] is True for slot in projection["slots"])
     assert any(slot["semantic_handoff_present"] is True for slot in projection["slots"])
     assert all(
-        slot["component_analyst_proposal_status"] == "not_proposed"
+        slot["component_analyst_case_present"] is False
         for slot in projection["slots"]
     )
     assert all(
-        slot["component_dprime_validation_present"] is False
+        slot["component_dprime_model_call_required"] is False
+        and slot["component_dprime_model_call_executed"] is False
         for slot in projection["slots"]
     )
     assert all(

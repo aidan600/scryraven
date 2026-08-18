@@ -86,11 +86,14 @@ binding.
 Completed component S1 authority preserves the installed capability and
 version, result and handoff identities and digests, canonical component target,
 exact claim-material binding, canonical `result_unit` and precision, and
-terminal consumption by the applicable component D-prime. Generic D-prime
-admission alone remains nonauthority for arithmetic, conversion, aggregation,
-comparison, or same-value proposition reuse. Deterministic AuthorProse accepts
-valid bound direct-source and component S1 numeric claims and fails atomically
-on unsupported quantitative prose.
+terminal consumption by the applicable Component Analyst case, including its
+exact bounded Analyst-resume continuation when a Specialist result is used.
+Retained component-D-prime historical or explicit legacy-recovery records are
+not ordinary component authority. Generic D-prime admission alone remains
+nonauthority for arithmetic, conversion, aggregation, comparison, or same-value
+proposition reuse. Deterministic AuthorProse accepts valid bound direct-source
+and component S1 numeric claims and fails atomically on unsupported quantitative
+prose.
 
 The current hardened FinalAnswerPacket owner packages component entries only.
 It does not project synthesis entries and does not install a hardened synthesis

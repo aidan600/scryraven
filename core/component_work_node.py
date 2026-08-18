@@ -1081,11 +1081,13 @@ def component_work_node_v1_from_admitted_component(
     status = _clean_text(admission.get("admission_status"), limit=80)
     if status not in {"admitted", "admitted_with_caveats", "blocked", "unsupported"}:
         raise ComponentWorkNodeError("ComponentWorkNode V1 admission status invalid")
-    analyst_ref = _safe_mapping(admission.get("analyst_finding_ref"))
-    dprime_ref = _safe_mapping(admission.get("dprime_validation_ref"))
-    if not analyst_ref or not dprime_ref:
+    analyst_case_ref = _safe_mapping(
+        admission.get("component_analyst_case_ref")
+        or admission.get("analyst_finding_ref")
+    )
+    if not analyst_case_ref:
         raise ComponentWorkNodeError(
-            "ComponentWorkNode V1 requires Analyst and component D-prime refs"
+            "ComponentWorkNode V1 requires a Component Analyst case ref"
         )
     observation_ref = _safe_mapping(admission.get("semantic_observation_ref"))
     coverage_ref = _safe_mapping(admission.get("component_coverage_ref"))
@@ -1145,8 +1147,9 @@ def component_work_node_v1_from_admitted_component(
         "admission_status": status,
         "current": admission.get("current") is True,
         "stale": admission.get("stale") is True,
-        "analyst_finding_ref": analyst_ref,
-        "dprime_validation_ref": dprime_ref,
+        "component_analyst_case_ref": analyst_case_ref,
+        # Compatibility alias; component authority is the Analyst case ref.
+        "analyst_finding_ref": dict(analyst_case_ref),
         "specialist_quantitative_authority_ref": _safe_mapping(
             admission.get("specialist_quantitative_authority_ref")
         ),
@@ -1231,6 +1234,26 @@ def validate_component_work_node_v1(value: Mapping[str, Any]) -> dict[str, Any]:
         raise ComponentWorkNodeError("ComponentWorkNode V1 kind mismatch")
     if node.get("node_revision") != node.get("component_revision"):
         raise ComponentWorkNodeError("ComponentWorkNode V1 revision mismatch")
+    analyst_case_ref = _safe_mapping(
+        node.get("component_analyst_case_ref") or node.get("analyst_finding_ref")
+    )
+    if not analyst_case_ref:
+        raise ComponentWorkNodeError(
+            "ComponentWorkNode V1 requires a Component Analyst case ref"
+        )
+    if (
+        node.get("component_analyst_case_ref")
+        and node.get("analyst_finding_ref")
+        and _safe_mapping(node.get("component_analyst_case_ref"))
+        != _safe_mapping(node.get("analyst_finding_ref"))
+    ):
+        raise ComponentWorkNodeError(
+            "ComponentWorkNode V1 Analyst case compatibility ref mismatch"
+        )
+    if "dprime_validation_ref" in node:
+        raise ComponentWorkNodeError(
+            "ComponentWorkNode V1 cannot retain a component D-prime ref"
+        )
     if node.get("stale") is True or node.get("current") is not True:
         if node.get("direct_output_eligible") is True:
             raise ComponentWorkNodeError(

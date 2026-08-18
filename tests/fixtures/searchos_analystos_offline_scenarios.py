@@ -25,6 +25,7 @@ from core.analyst_query_resolution_proposal import (
 from core.cost_accounting import CostAccumulator
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
+    ROLE_COMPONENT_ANALYST_RESUME,
     ROLE_COMPONENT_DPRIME,
     ROLE_CROSS_COMPONENT_ANALYST,
     ROLE_SCRUTINEER,
@@ -1180,7 +1181,15 @@ class SearchOSAnalystOSHarness(OfflineOrdinaryPipelineHarness):
                 return json.dumps(
                     {
                         "claim_text": f"Direct fictional source support is current for {component.get('user_facing_label')}.",
-                        "support_status": "supported",
+                        "case_posture": "supported",
+                        "evidence_analysis": (
+                            "The exact current fictional source establishes "
+                            "only the stated direct component premise."
+                        ),
+                        "self_audit": (
+                            "The case does not extend beyond the exact "
+                            "bounded source material."
+                        ),
                         "caveats": [],
                         "nonclaims": [],
                         "blockers": [],
@@ -1191,6 +1200,26 @@ class SearchOSAnalystOSHarness(OfflineOrdinaryPipelineHarness):
                     {
                         "validation_status": "supported",
                         "reasons": ["The exact current fictional source supports only the nominated direct premise."],
+                        "caveats": [],
+                        "nonclaims": [],
+                        "blockers": [],
+                    }
+                )
+            if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST_RESUME]:
+                prior = dict(payload.get("prior_component_case") or {})
+                semantic = dict(prior)
+                return json.dumps(
+                    {
+                        "claim_text": semantic.get("claim_text") or "Offline resumed finding.",
+                        "case_posture": "supported",
+                        "evidence_analysis": (
+                            "The exact bounded Specialist handoff and current "
+                            "component evidence support only the resumed finding."
+                        ),
+                        "self_audit": (
+                            "The resumed case does not treat execution alone as "
+                            "support or extend beyond the bounded inputs."
+                        ),
                         "caveats": [],
                         "nonclaims": [],
                         "blockers": [],

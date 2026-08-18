@@ -26,9 +26,10 @@ The public CLI is the current supported executable interface. Both
 the backend pipeline and the installed path described below. Bounded
 multi-component behavior applies only to the named query class
 `ordinary-bounded-multicomponent-factual-synthesis-v1`. The ordinary SearchOS
-semantic receiver nevertheless uses the bounded component Analyst / D-prime /
+semantic receiver nevertheless uses the direct Component Analyst case /
 RunKernel admission chain for N=1 through the accepted component envelope;
-SearchJudgment does not select a second semantic lane. Non-SearchOS compatibility
+SearchJudgment does not select a second semantic lane. Non-SearchOS
+compatibility
 surfaces retain their established direct behavior. The ordinary CLI/backend
 composition no longer injects or executes the legacy Economist callable.
 
@@ -108,7 +109,7 @@ semantic_handoff_present = true
 
 component_receiver_selected          = true
 component_analyst_physical_dispatch  = true
-component_analyst_proposal_status     = not_proposed
+component_analyst_case_present         = false
 component_analyst_failure:
   role = component_analyst
   failure_kind = output_validation_failure
@@ -196,24 +197,24 @@ configuration.
 
 | Marker | Installed behavior for the supported class |
 | --- | --- |
-| `MC-P1-ORDINARY` | **Installed:** Component Analyst and component D-prime feed RunKernel component admission; ComponentWorkGraph V1, Cross-Component Analyst, synthesis D-prime, and the full Scrutineer posture when triggered feed canonical graph/synthesis admission. The result is consumed by ordinary Sufficiency, FinalAnswerPacket, Author, RunOutcome, and CLI-visible output, with safe blocked non-Author terminal behavior where required. **Selected target:** separate component and synthesis D-prime ordinary model calls are retired per [AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md). |
+| `MC-P1-ORDINARY` | **Installed:** A current Component Analyst case feeds direct RunKernel component admission; ComponentWorkGraph V1, Cross-Component Analyst, synthesis D-prime, and the full Scrutineer posture when triggered feed canonical graph/synthesis admission. The result is consumed by ordinary Sufficiency, FinalAnswerPacket, Author, RunOutcome, and CLI-visible output, with safe blocked non-Author terminal behavior where required. **Selected target:** the synthesis D-prime ordinary model call is retired per [AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md). |
 | `MC-P2-DYNAMIC-RECOVERY` | One bounded missing-component recovery may amend the AnswerContract, re-enter ordinary research, admit the recovered component, and resume the governed graph. |
 | `MC-P3-SELECTIVE-RECOMPUTE` | Recovery invalidates and recomputes only the affected synthesis closure while exact unaffected admitted synthesis is carried forward under new deterministic authority. |
 | `MC-P4-SCHEDULER-LEASES` | RunKernel owns semantic-work scheduling and exact work/budget leases, including grant-first dispatch, pretransport spend commitment, cancellation accounting, and terminal zero-active-lease enforcement. |
-| `MC-P5A-HOSTED-W2` | Scheduler V2 permits hosted OpenAI/OpenRouter initial component Analyst and D-prime width 2. Local and unsupported/conservative execution remain width 1. Batch grant, cancellation, dispatch spend, and child-action publication are atomic; transport-only workers may overlap, while canonical reduction remains deterministic on the main thread. |
+| `MC-P5A-HOSTED-W2` | Scheduler V2 permits hosted OpenAI/OpenRouter initial Component Analyst width 2. Local and unsupported/conservative execution remain width 1. Batch grant, cancellation, dispatch spend, and child-action publication are atomic; transport-only workers may overlap, while canonical reduction remains deterministic on the main thread. |
 | `MC-P5A-STRICT-ONE-SHOT` | Provider-faithful transport is strict one-shot: at most one provider request per child, no SDK retry, and no endpoint, provider, or model fallback. Unsupported providers fail closed with zero requests. |
 | `MC-P5A-SAMPLING-COMPAT` | OpenRouter and Local chat transport internally own temperature `0.3`; OpenAI Responses omits temperature; caller-authored temperature is rejected. |
 | `MC-P5A-MAIN-THREAD-COST` | Response-bearing model cost is recorded on the main thread before deterministic canonical reduction. |
 | `SPECIALIST-S0-GENERIC` | Component Analyst, Cross-Component Analyst, and full Scrutineer may emit one exact candidate mapping under `specialist_need_proposal_v1`. Generic S0 rejects missing/stale schema, unknown envelope/target fields, raw/private material, authority claims, aliases, recursion, and invalid posture before RunKernel admission; it never normalizes them into validity. RunKernel alone binds a valid candidate to current authority. Invalid candidates retain only a bounded receipt and create no Specialist work or derived authority; required/unclassified cases block while optional cases contribute nothing. Closed defaults register and enable no product capability. |
-| `SPECIALIST-S1-QUANTITATIVE` | The ordinary CLI composes one fixed product registry/policy for `specialist.source_bound_calculation` on the named bounded multi-component class. Component and ordinary Cross-Component Analyst receive exact contract `quantitative_specialist_proposal_contract.v2`; before work creation the current contract instance, role input/artifact, target, source aliases, fixed fields, and capability request are re-proved and validated. Malformed proposals create no work, spend, lease, batch, dispatch, result, handoff, or downstream Specialist authority. Required malformed needs block dependent claims; optional malformed needs permit only independently supported continuation. Valid behavior remains one serial unit with component-before-synthesis priority, deterministic execution, canonical `result_unit`, and existing D-prime custody. |
-| `QUANT-FINALIZATION-CONTAINMENT` | The ordinary `AuthorExecutor`, deterministic `AuthorProseFinalization`, and guarded follow-up response finalizer each use one claim-scoped quantitative authority manifest and the same deterministic post-prose validator. Direct source-explicit propositions and exact completed S1 propositions remain eligible only through their complete source or Specialist/D-prime lineage. Generic D-prime admission alone grants no numeric authority. Unsupported arithmetic, conversion, unit, precision, sign, scale, percentage, rate, subject, result, or same-value proposition reuse fails before successful finalization, without sentence surgery or automatic Author retry. |
+| `SPECIALIST-S1-QUANTITATIVE` | The ordinary CLI composes one fixed product registry/policy for `specialist.source_bound_calculation` on the named bounded multi-component class. Component and ordinary Cross-Component Analyst receive exact contract `quantitative_specialist_proposal_contract.v2`; before work creation the current contract instance, role input/artifact, target, source aliases, fixed fields, and capability request are re-proved and validated. Malformed proposals create no work, spend, lease, batch, dispatch, result, handoff, or downstream Specialist authority. Required malformed needs block dependent claims; optional malformed needs permit only independently supported continuation. Valid behavior remains one serial unit with component-before-synthesis priority, deterministic execution, canonical `result_unit`, and current semantic-case or synthesis-D-prime custody. |
+| `QUANT-FINALIZATION-CONTAINMENT` | The ordinary `AuthorExecutor`, deterministic `AuthorProseFinalization`, and guarded follow-up response finalizer each use one claim-scoped quantitative authority manifest and the same deterministic post-prose validator. Direct source-explicit propositions and exact completed S1 propositions remain eligible only through their complete source or Specialist lineage and the applicable current Component Analyst case or synthesis D-prime review. Generic semantic admission alone grants no numeric authority. Unsupported arithmetic, conversion, unit, precision, sign, scale, percentage, rate, subject, result, or same-value proposition reuse fails before successful finalization, without sentence surgery or automatic Author retry. |
 | `PROVIDER-CAPABILITY-ROUTING` | `core.routing` owns one deterministic capability catalog and code-owned route policy. Ordinary DISCOVER consumes completed ProviderPlan decisions. `retrieval.DiscoverySourceResultIdentity` and `retrieval.DiscoveryResultMaterialStore` preserve bounded provider-result occurrence truth before chunking/ranking; existing ranking and selection populate the canonical ordinary `RunKernel.SearchResultCandidatePacket` with zero separate candidate-URL transport. Candidate selection remains a nontrigger. The post-selection RunKernel controller and typed Linkup/Tavily adapters remain installed for a future independent material-need producer. Focused Extract, Map, Crawl, and general Linkup Deep remain PRODUCT-blocked with exact controller blockers. |
 | `GENERIC-PROVIDER-EXECUTION-BROKER-V2` | One tracked loopback-only broker consumes the versioned explicit-route `scryraven_provider_execution_request_v2` / response family. It supports Serper and Tavily `search.query` plus OpenAI `model.generate`; only the broker child parses the private environment file, while session tokens stay out of argv and the generic client persists safe completion, exact cache/reasoning/usage accounting, elapsed time, and output digest/length rather than output text. Caller/evaluator owns route selection, exact reasoning-effort authorization, prompts/query, retries/timeouts/caps, pricing, cost ceilings, interpretation, and durable sanitization. Incomplete generation is published as `REVIEW_REQUIRED / INCOMPLETE_GENERATION` before parser or semantic scoring and stops later calls. The job/profile bouncer is fail-closed, and new AnalystOS addenda select the provider-neutral brokered model-origination transport rather than the direct OpenAI fallback. |
 | `SEARCHPLANNER-BOUNDARY-INTEGRITY` | `SEARCHPLANNER-SPARSE-UNCERTAINTY-AWARE-PLANNING-01` installs one fail-closed ordinary language shared by prompt and validator: `direct_simple | components`. The model-visible descriptor is the compact sufficient projection of that language: `direct_simple` may omit `source`/`freshness`/`caveat`, while `components` requires a nonempty `components` array and forbids those three top-level fields. The deterministic validator remains the exhaustive enforcement owner. Empty optional material must be omitted. Strict JSON parsing still rejects duplicate/nonfinite material, while the deterministic compiler alone constructs and revalidates the rich compatibility state. Mechanical IDs, runtime/contract references, provider authority, exact query/recon programs, evidence, and accepted state are forbidden model output. Closed privacy-safe M02 subtypes distinguish forbidden-surface, branch-field-set, omission-contract, type/enum/bound, and cross-field families without exposing raw model text. |
 | `SEARCHOS-QUERY-CONVERGENCE` | The ordinary selected-fast-model SearchPlanner reaches RunKernel initial AnswerContract acceptance through the sparse validator and deterministic compiler. `direct_simple` becomes one required direct component; sparse components retain genuine semantic differences and compiler-owned ordinal identity. QueryPlan consumes the accepted AnswerContract directly and derives exactly one provider-neutral `orientation`, `standard_discovery`, or no-dispatch clarification posture from the accepted component/semantic-slot state, and every admitted item carries component/slot lineage. `deep_discovery` is available only as a typed in-loop escalation. SearchWorkPlan and QueryProduction are retired as ordinary semantic/query carriers. The ordinary ScoutDisambiguation, PlannerRevision, and routine initial PlannerRevision ContractAmendment lane is retired with no fallback. |
 | `SEARCHOS-SLICE-A-CUTOVER` | `SEARCHOS-FIRST-WAVE-AND-ITERATIVE-JUDGMENT-CUTOVER-01` now owns one unified RunKernel SearchJudgment across initial and iterative `orientation`, `standard_discovery`, and `deep_discovery` work. Immutable revision 1, exact zero-result orientation lineage, and append-only iteration sets feed slot-local windows and cursors. SearchJudgment may propose exact follow-up work, READ, a bounded factual InterpretationBinding, clarification, semantic handoff, navigation where separately eligible, or honest unresolved state. RunKernel admits `searchos_interpretation_binding_v1` append-only and exposes a planning-only effective semantic-slot view without mutating the accepted AnswerContract or creating evidence, support, coverage, satisfaction, or citation authority. Exact candidate READ retains existing custody meaning. Required slots that do not reach current semantic admission produce the typed Slice A required-needs block and the existing safe blocked non-Author product terminal. |
 | `SEARCHOS-ONE-HOP-NAVIGATION` | PR #517 installs bounded one-hop breadcrumb navigation and the qualification/source-truth path. Fresh candidate-origin READ custody may expose safe same-site URL-free navigation refs; one selected destination reuses the existing navigation, acquisition, FetchRead, EvidenceLedger, SearchOS custody, semantic, Sufficiency, FinalAnswerPacket, and Author owners. |
-| `SEARCHOS-EXISTING-GAP-RECOVERY` | `SEARCHOS-EXISTING-GAP-RECOVERY-AND-STOP-FOUNDATION-01` installs canonical SearchOS as the sole ordinary SearchOS authority for one required existing-component/source-obligation recovery cycle per whole run in Fast, Balanced, and Deep. A typed post-analysis gap basis and materially novel evidence purpose grant one exact lease; the prior slot stays byte-identical and a new append-only SearchOS slot reuses QueryPlan, SEARCH, READ/custody, navigation, the unchanged same-component Analyst and D-prime, and ComponentCoverage. Exact replay admits no new work. The lease closes as recovered or exhausted-insufficient, and ordinary Sufficiency remains the only final stopping authority. Scrutineer input, derived-component recovery, ContractAmendment, graph mutation, Specialist execution, and general inference remain excluded. |
+| `SEARCHOS-EXISTING-GAP-RECOVERY` | `SEARCHOS-EXISTING-GAP-RECOVERY-AND-STOP-FOUNDATION-01` installs canonical SearchOS as the sole ordinary SearchOS authority for one required existing-component/source-obligation recovery cycle per whole run in Fast, Balanced, and Deep. A typed post-analysis gap basis and materially novel evidence purpose grant one exact lease; the prior slot stays byte-identical and a new append-only SearchOS slot reuses QueryPlan, SEARCH, READ/custody, navigation, same-component Analyst case reassessment, direct RunKernel admission, and ComponentCoverage. Exact replay admits no new work. The lease closes as recovered or exhausted-insufficient, and ordinary Sufficiency remains the only final stopping authority. Scrutineer input, derived-component recovery, ContractAmendment, graph mutation, Specialist execution, and general inference remain excluded. |
 | `SEARCHOS-BOUNDARY-B-CONVERGENCE` | Boundary B is installed through the ordinary consumer. Component Analyst or Cross-Component Analyst may emit the shared typed query-resolution proposal; deterministic arbitration selects only an exact noncompeting proposal. A searched-premise winner reuses ContractAmendment v2, the same whole-run SearchOS lease/cycle owner, QueryPlan, acquisition/custody, ComponentCoverage, Graph V1 reproof, and affected-only resynthesis. SearchOS searches the missing premise but never authors or admits inference. Target-mapped Graph V1 inference is bounded to semantic depth 1 in Fast/Balanced and 2 in Deep. Sufficiency, FAP, Author, RunOutcome, and CLI output consume only current admitted direct or inferred posture. The former ordinary dynamic-recovery runtime is deleted and has zero ordinary reachability. |
 | `SEARCHOS-ANALYSTOS-OFFLINE-GATE` | PR #521 installs the reusable seven-scenario fictional SearchOS/AnalystOS ordinary-path gate. It proves direct closure, one searched-premise recovery, depth-two reconstruction, nested recovery with fresh whole-case reconciliation, root-query retention against a distractor, honest nonclosure, exact nested semantic-role artifact custody, atomic action bookkeeping, defensive proposal custody/replay, and exact action/observation sequence closure under the installed Fast 0 / Balanced 1 / Deep 2 serial searched-generation limits. |
 | `ANALYSTOS-EVALUATION-RESPONSIBILITY-SPLIT` | Model-origination validation now has separate owners for observation of the canonical ordinary SearchPlanner boundary, deterministic mechanical rules, provider-neutral teacher-free semantic judgment, experiment identity and calibrated attribution, non-overriding coordination, and passive sanitized reporting. The legacy evaluator retains only call-manifest, command-identity, authorization-validation, and zero-live planning compatibility; its combined execute, scoring, causal-classification, and reporting authority is retired. The ordinary product path and its prompt, schema, parser, validator, runtime projection, and initial acceptance behavior are unchanged. |
@@ -232,10 +233,10 @@ collapsing to positive.
 ## Current Ordinary Multi-Component Flow
 
 For a qualifying request, the ordinary entrypoint selects the bounded class,
-derives component work, and runs component Analyst and D-prime work under
-RunKernel-owned scheduler leases. The ordinary CLI product composition uses
-Scheduler V3; generic closed-default and no-need runs remain V2-compatible.
-RunKernel admits component state;
+derives component work, and runs Component Analyst cases under RunKernel-owned
+scheduler leases. The ordinary CLI product composition uses Scheduler V3;
+generic closed-default and no-need runs remain V2-compatible. RunKernel directly
+admits current component cases;
 Cross-Component Analyst proposes synthesis or one typed query-resolution
 proposal; synthesis D-prime validates exact relationships; and RunKernel admits
 canonical graph/synthesis state. An arbitration-selected searched-premise
@@ -304,8 +305,9 @@ evidence-custody, proposition-fingerprint, and complete literal-signature
 binding. Completed component S1 authority preserves the installed capability
 and version, result and handoff identities and digests, canonical component
 target, exact claim-material binding, canonical `result_unit` and precision,
-and terminal consumption by the applicable component D-prime. Generic D-prime
-admission alone remains nonauthority for arithmetic, conversion, aggregation,
+and terminal consumption by the current Component Analyst case and direct
+RunKernel component admission. Generic semantic admission alone remains
+nonauthority for arithmetic, conversion, aggregation,
 comparison, or same-value proposition reuse. Deterministic AuthorProse accepts
 valid bound direct-source and component S1 numeric claims and fails atomically
 on unsupported quantitative prose.
@@ -787,20 +789,20 @@ neutral established query-cleaning/token-Jaccard rule finds material
 equivalence; distinct model text remains unchanged.
 
 `searchos_semantic_evaluation_handoff_v1` is the only ordinary SearchOS
-semantic entry. It sends exact READ custody into the existing bounded component
-Analyst, component D-prime, and RunKernel admission receiver for N=1 through the
-accepted component envelope. Iterative and READ material is never appended to
-`all_passages` or consumed by a second semantic lane. Candidate context and
-custody alone remain non-support; Analyst proposes, D-prime validates, and
-RunKernel admits. A component-wide semantic handoff gate requires every relevant
+semantic entry. It sends exact READ custody into the direct Component Analyst
+case and RunKernel admission receiver for N=1 through the accepted component
+envelope. Iterative and READ material is never appended to `all_passages` or
+consumed by a second semantic lane. Candidate context and custody alone remain
+non-support; the Analyst case is current-bound and RunKernel admits. A
+component-wide semantic handoff gate requires every relevant
 material semantic obligation to be satisfied: stable or already resolved slots
 remain satisfied, an unresolved factual slot requires its own admitted binding,
 and pending or confirmation-required clarification blocks handoff. The handoff
 artifact preserves all semantic-obligation refs and per-slot effective views.
 
 `searchos_slice_a_readiness_v1` joins every slot to its judgment, candidate,
-custody, handoff, Analyst, D-prime, and RunKernel admission lineage. Every
-required slot must reach current semantic admission before the ordinary
+custody, handoff, exact current Component Analyst case, and RunKernel admission
+lineage. Every required slot must reach current semantic admission before the ordinary
 downstream path may continue. Otherwise RunKernel records
 `SEARCHOS_SLICE_A_REQUIRED_NEEDS_UNRESOLVED` and the existing safe blocked
 non-Author product terminal persists the exact unresolved reasons without
@@ -824,11 +826,11 @@ After the ordinary component receiver has run, RunKernel may derive
 `searchos_existing_gap_basis_v1` only for a current required SearchOS slot whose
 READ material was semantically handed off but whose exact accepted component
 and source obligation remain unsupported or uncovered. The basis binds the
-current SearchOS state, prior terminal slot digest, exact Analyst and component
-D-prime artifacts, current ComponentCoverage facts or an explicit canonical
-absence, and a compact EvidenceLedger snapshot. Optional, satisfied,
-nonterminal, ambiguous, stale, tampered, or role-unproven inputs fail before a
-lease exists.
+current SearchOS state, prior terminal slot digest, exact current Component
+Analyst case and RunKernel admission, current ComponentCoverage facts or an
+explicit canonical absence, and a compact EvidenceLedger snapshot. Optional,
+satisfied, nonterminal, ambiguous, stale, tampered, or role-unproven inputs
+fail before a lease exists.
 
 `searchos_materially_novel_recovery_purpose_v1` defines novelty as a new exact
 obligation-support assessment. Changed wording, prompt content, or physical
@@ -837,16 +839,16 @@ one existing-gap recovery cycle across the whole run in Fast, Balanced, and
 Deep. Admission leaves the prior slot byte-identical, appends one new
 cycle-bound slot, extends the cumulative SearchOS budget without resetting
 spent work, and grants one exact lease over existing SearchJudgment, QueryPlan,
-SEARCH, READ/custody, navigation, Component Analyst, component D-prime, and
-ComponentCoverage consumers. Replaying the same admitted purpose returns the
+SEARCH, READ/custody, navigation, Component Analyst, direct RunKernel admission,
+and ComponentCoverage consumers. Replaying the same admitted purpose returns the
 already-admitted cycle with `work_authorized=false` and no new model, search,
 read, semantic, Sufficiency, packet, or Author work. Conflicting or additional
 purposes fail closed.
 
 The same accepted component is reassessed through the existing Component
-Analyst input packet, exact unchanged Analyst system prompt and schema, the
-existing component D-prime packet, exact unchanged D-prime system prompt and
-schema, and normal RunKernel component admission. It cannot fall through the
+Analyst input packet, exact unchanged Analyst system prompt and schema, its
+current case output, and normal direct RunKernel component admission. It cannot
+fall through the
 retained Scrutineer-derived recovery path. Scrutineer may still execute its
 ordinary supervisory role elsewhere, but it supplies no input or authority to
 this Boundary A cycle. Boundary A does not itself create a component,
@@ -910,9 +912,8 @@ over the existing Component Analyst and Cross-Component Analyst semantic work
 plane. **AnalystOS** names that semantic work plane and the selected target
 topology owner in
 [AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md). It is not another
-kernel, controller, graph, or canonical-state owner. Installed runtime still
-executes separate component and synthesis D-prime ordinary model calls until
-convergence phases retire them.
+kernel, controller, graph, or canonical-state owner. Installed runtime directly
+admits current Component Analyst cases and retains the separate synthesis D-prime ordinary model call until convergence retires it.
 
 The gate proves direct closure, one searched-premise recovery, pure depth-two
 reconstruction, nested recovery followed by fresh whole-case reconciliation,
@@ -978,21 +979,23 @@ arm-blind semantic passes. Stochastic evidence remains capped at
 ### Real-model component proof
 
 Installed evaluator and validation infrastructure is not real-model component
-proof. Current real-model SearchPlanner behavior and current real-model
-Component/Cross-Component Analyst behavior remain unproved. Broker transport,
-authorization, orchestration, scenario construction, or stop attestation does
-not establish prompt quality, semantic reliability, causal effect, provider
-quality, or arbitrary-query behavior.
+proof. Current real-model SearchPlanner behavior remains unproved. Current
+real-model Component/Cross-Component Analyst behavior remains unproved. Broker
+transport, authorization, orchestration, scenario construction, or stop
+attestation does not establish prompt quality, semantic reliability, causal
+effect, provider quality, or arbitrary-query behavior.
 
 ### Ordinary supported-product proof
 
 The evaluator is an OPERATOR/VALIDATION surface, not ordinary supported-product
-consumption. A separate bounded Q1 ordinary-product run is recorded above; it
+consumption. Current ordinary-CLI live product behavior remains unproved. A
+separate bounded Q1 ordinary-product run is recorded above; it
 traversed the ordinary pipeline to a lawful SearchOS handoff, physical
 Component Analyst dispatch, a safe output-validation failure, and an honest
 blocked terminal, but not to Component Analyst semantic-artifact origination,
 semantic admission, or a supported cited answer. The evaluator itself does not
-establish broader live product behavior.
+establish broader live product behavior. That historical Q1 observation does
+not validate the later Component Analyst direct-admission runtime.
 
 ## Installed SearchOS One-Hop Breadcrumb Navigation
 
@@ -1100,6 +1103,7 @@ Fetch, Tavily site acquisition, replacement semantic role, or live validation.
 
 ## Not Proved
 
+- No live validation was performed.
 - One bounded Q1 ordinary-product run is recorded above; it does not establish
   broad live validation or repeatability.
 - Real-model factual InterpretationBinding selection accuracy, abstention
@@ -1111,7 +1115,7 @@ Fetch, Tavily site acquisition, replacement semantic role, or live validation.
   unproved.
 - Broader real-model Component Analyst quality remains unproved.
 - Real-model Cross-Component Analyst behavior remains unproved.
-- Real-model component D-prime behavior remains unproved.
+- Real-model Component Analyst case posture and direct RunKernel component admission remain unproved.
 - Real-model synthesis D-prime behavior remains unproved.
 - Real-model full Scrutineer behavior remains unproved.
 - Supported cited Q1 completion remains unproved.

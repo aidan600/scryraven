@@ -4,7 +4,7 @@ Proof class: offline_product_path_proof.
 Validation bucket: phase_focus.
 Surface guarded: fixed product composition, bounded request/catalog/parser,
 pure calculation adapter, claim alignment, S0 handoff authority, and ordinary
-component/synthesis consumption.
+component Analyst-resume/synthesis D-prime consumption.
 Runtime consumer: core.ordinary_multicomponent_synthesis_runtime.
 Expected cost: detailed phase owner; not ordinary fast_pr tax.
 Promotion posture: remain phase_focus unless a smaller durable sentinel is named.
@@ -31,16 +31,25 @@ import core.ordinary_multicomponent_synthesis_runtime as ordinary_runtime
 import core.pipeline_orchestrator as orchestrator
 import core.quantitative_specialist_product_activation as quantitative_product
 import core.specialist_source_bound_calculation_runtime as legacy_calculation
-from core.component_work_graph_v1 import cross_component_input_packet
+from core.component_work_graph_v1 import (
+    COMPONENT_WORK_GRAPH_V1_STAGE,
+    cross_component_input_packet,
+)
 from core.cost_accounting import CostAccumulator
-from core.multicomponent_component_admission import component_analyst_input_packet
+from core.multicomponent_component_admission import (
+    MULTICOMPONENT_COMPONENT_ADMISSION_STAGE,
+    component_analyst_input_packet,
+)
 from core.multicomponent_graph_scheduling import (
+    LEASE_COMPLETED,
     MULTICOMPONENT_SCHEDULER_STAGE,
     MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION,
     MULTICOMPONENT_SCHEDULER_V3_SCHEMA_VERSION,
     WORK_KIND_SPECIALIST_CAPABILITY,
 )
 from core.multicomponent_role_runtime import (
+    ROLE_COMPONENT_ANALYST,
+    ROLE_COMPONENT_ANALYST_RESUME,
     ROLE_COMPONENT_DPRIME,
     ROLE_CROSS_COMPONENT_ANALYST,
     ROLE_SCRUTINEER,
@@ -50,6 +59,7 @@ from core.multicomponent_role_runtime import (
 )
 from core.protocols import NullStatusWriter
 from core.quantitative_finalization_authority import (
+    QuantitativeFinalizationAuthorityError,
     specialist_quantitative_authority_ref_from_handoff,
 )
 from core.quantitative_specialist_product_activation import (
@@ -80,6 +90,12 @@ from core.quantitative_specialist_product_activation import (
     validate_quantitative_specialist_proposal_instance,
 )
 from core.run_config import RunDeps
+from core.run_kernel import ActionType
+from core.search_planner_runtime import (
+    SEARCH_PLANNER_MAX_ANSWER_COMPONENTS,
+    SearchPlannerRuntimeError,
+    SearchPlannerRuntimeSafeFailureCode,
+)
 from core.specialist_graph_runtime import (
     AVAILABILITY_BUDGET,
     AVAILABILITY_RESULT,
@@ -1192,8 +1208,9 @@ def test_pure_evaluator_is_shared_without_legacy_reducer_authority() -> None:
 def test_prompt_contracts_activate_quantitative_roles_but_not_scrutineer() -> None:
     prompts = ROLE_SYSTEM_PROMPTS
     component = prompts["component_analyst"]
+    component_resume = prompts[ROLE_COMPONENT_ANALYST_RESUME]
     cross = prompts["cross_component_analyst"]
-    component_dprime = prompts["component_dprime"]
+    legacy_component_dprime = prompts[ROLE_COMPONENT_DPRIME]
     synthesis_dprime = prompts["synthesis_dprime"]
     assert "component_evidence" in component
     assert "quantitative_specialist_proposal_contract" in component
@@ -1201,16 +1218,22 @@ def test_prompt_contracts_activate_quantitative_roles_but_not_scrutineer() -> No
     assert "supplied fixed capability and schema values exactly" in component
     assert "required only" in component and "optional only" in component
     assert "later cross-component synthesis" in component
+    assert "resuming one exact prior component case" in component_resume
+    assert "not automatic support" in component_resume
+    assert "Do not make a new Specialist proposal" in component_resume
     assert "component_01/component_02/..." in cross
     assert "one sibling specialist_need_proposal" in cross
     assert "synthesis_proposals only" not in cross
     assert "underlying current component evidence" in cross
-    assert "claim_alignment" in component_dprime
+    # Component D-prime is retained solely as a legacy-recovery prompt; this
+    # product path has no ordinary Component-D-prime execution.
+    assert "legacy-recovery component D-prime" in legacy_component_dprime
+    assert "claim_alignment" in legacy_component_dprime
     assert "claim_alignment" in synthesis_dprime
     assert "two-hop source lineage" in synthesis_dprime
     scrutineer = prompts[ROLE_SCRUTINEER]
     assert sha256(scrutineer.encode("utf-8")).hexdigest() == (
-        "fcc8ae953911a0f9147c3f91eae4e7dac49c9cfabd57e1b1524c1b8e8669a09c"  # pragma: allowlist secret
+        "2e0204270a4690e62c0d2f63379a918487a16c53e7806618b6d4b23cfcdfbb43"  # pragma: allowlist secret
     )
     assert "source_bound_quantitative_calculation" not in scrutineer
     assert "claim_alignment" not in scrutineer
@@ -1219,10 +1242,17 @@ def test_prompt_contracts_activate_quantitative_roles_but_not_scrutineer() -> No
     ).hexdigest() == (
         "bc36a9c8c63c00e33fe6a77fd6daaed8200f089593ff054d6a3fbf165be2aeb6"  # pragma: allowlist secret
     )
-    for prompt in (component, cross, component_dprime, synthesis_dprime):
+    for prompt in (
+        component,
+        cross,
+        legacy_component_dprime,
+        synthesis_dprime,
+    ):
         assert "write final" in prompt or "render" in prompt
         assert "authorize search" in prompt
         assert "admit your" in prompt or "admit" in prompt
+    assert "authorize search" not in component_resume
+    assert "route providers, search" in component_resume
 
 
 def _product_proposal(
@@ -1274,14 +1304,14 @@ def _rekey_specialist_handoff(
     identity["validator_consumption"] = VALIDATOR_PENDING
     identity.pop("validator_consumption_terminal", None)
     identity.pop("validator_validation_status", None)
-    identity.pop("validator_dprime_artifact_ref", None)
+    identity.pop("validator_artifact_ref", None)
     digest = specialist_digest(identity)
     current["handoff_id"] = f"specialist-handoff:{digest[:24]}"
     current["handoff_digest"] = digest
     return validate_specialist_need_handoff(current)
 
 
-def _quantitative_dprime_response(payload: Mapping[str, Any]) -> str:
+def _quantitative_synthesis_dprime_response(payload: Mapping[str, Any]) -> str:
     exact = _completed_exact_handoff(payload)
     return json.dumps(
         {
@@ -1438,6 +1468,7 @@ def _contract_driven_quantitative_proposal(
 
 class QuantitativeComponentNorthstarHarness(SpecialistNorthstarHarness):
     proposal_origin = "component"
+    fixture_preserves_clear_conflict_posture = True
     component_posture = "optional"
     also_synthesis_proposal = False
     later_synthesis_posture = "optional"
@@ -1454,6 +1485,16 @@ class QuantitativeComponentNorthstarHarness(SpecialistNorthstarHarness):
             "The remaining "
             "Northstar filing facts and route synthesis are unchanged."
         )
+        self.read_content_by_url = {
+            **dict(self.read_content_by_url or {}),
+            "https://northstar.example/rule-101": (
+                "The Northstar record reports a base amount of 1200 USD and a "
+                "supplemental amount of 300 USD."
+            ),
+            "https://northstar.example/rule-103": (
+                "The Northstar income bonus threshold is 60000 USD."
+            ),
+        }
 
     def _component_claim(self, question: str) -> str:
         if "base rebate" in question:
@@ -1627,13 +1668,6 @@ class QuantitativeComponentNorthstarHarness(SpecialistNorthstarHarness):
                 ),
             )
             return json.dumps(output)
-        if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_DPRIME]:
-            payload = json.loads(prompt)
-            nominated_claim = str(
-                dict(payload.get("nominated_claim") or {}).get("claim_text") or ""
-            )
-            if "derived combined" in nominated_claim:
-                return _quantitative_dprime_response(payload)
         return raw
 
 
@@ -1765,15 +1799,42 @@ def test_invalid_parsed_quantitative_proposal_never_becomes_specialist_work(
     )
     harness = QuantitativeComponentNorthstarHarness(tmp_path)
     harness.proposal_mutation = mutation
-    outcome, kernel, _captured, _deps = _execute_product_run(
-        harness=harness,
-        monkeypatch=monkeypatch,
-        run_id=f"quantitative-invalid-admission-{mutation}",
-    )
-    assert outcome.report != harness.raw_author_response
+    if mutation == "missing_posture":
+        outcome, kernel, captured, _deps = _execute_product_run(
+            harness=harness,
+            monkeypatch=monkeypatch,
+            run_id=f"quantitative-invalid-admission-{mutation}",
+        )
+        assert outcome.report != harness.raw_author_response
+        assert captured["author_handoff_called"] is False
+    else:
+        error, kernel, captured = _expect_quantitative_finalization_rejection(
+            harness=harness,
+            monkeypatch=monkeypatch,
+            run_id=f"quantitative-invalid-admission-{mutation}",
+        )
+        assert error.diagnostic["status"] == "rejected"
+        assert any(
+            item.get("reason_code") == "unauthorized_quantitative_proposition"
+            for item in error.diagnostic["reason_refs"]
+        )
+        assert captured["author_handoff_called"] is True
+        assert len(harness.author_prompts) == 1
+        if mutation == "target_mismatch":
+            component_admission = next(
+                item
+                for item in kernel.state.projections[
+                    "multicomponent_component_admission"
+                ]["component_admission_refs"]
+                if item["component_id"] == "component-1"
+            )
+            assert (
+                component_admission["component_analyst_case_ref"]["role"]
+                == ROLE_COMPONENT_ANALYST
+            )
     _assert_no_specialist_authority(
         kernel=kernel,
-        captured=_captured,
+        captured=captured,
         harness=harness,
     )
 
@@ -1792,11 +1853,17 @@ def test_optional_nested_input_ref_authority_is_rejected_without_retention_or_wo
     )
     harness = QuantitativeComponentNorthstarHarness(tmp_path)
     harness.proposal_mutation = "nested_input_ref_authority"
-    outcome, kernel, captured, _deps = _execute_product_run(
+    error, kernel, captured = _expect_quantitative_finalization_rejection(
         harness=harness,
         monkeypatch=monkeypatch,
         run_id="quantitative-optional-nested-authority-rejection",
     )
+    assert error.diagnostic["status"] == "rejected"
+    assert any(
+        item.get("reason_code") == "unauthorized_quantitative_proposition"
+        for item in error.diagnostic["reason_refs"]
+    )
+    assert captured["author_handoff_called"] is True
 
     plane = kernel.state.projections[SPECIALIST_WORK_PLANE_STAGE]
     scheduler_context = kernel.state.multicomponent_scheduler_context
@@ -1804,7 +1871,6 @@ def test_optional_nested_input_ref_authority_is_rejected_without_retention_or_wo
     rejection = plane["proposal_rejections"][0]
     assert rejection["schema_version"] == "specialist_proposal_candidate_rejection_v1"
     assert rejection["posture"] == "optional"
-    assert "1500 USD" not in outcome.report
     retained = json.dumps(
         {
             "specialist_plane": plane,
@@ -1952,6 +2018,7 @@ def test_optional_invalid_proposal_allows_only_independent_ordinary_completion(
 
 class QuantitativeSynthesisNorthstarHarness(SpecialistNorthstarHarness):
     proposal_origin = "synthesis"
+    fixture_preserves_clear_conflict_posture = True
     synthesis_target_key = "E"
 
     def __init__(self, tmp_path: Path) -> None:
@@ -1965,6 +2032,15 @@ class QuantitativeSynthesisNorthstarHarness(SpecialistNorthstarHarness):
             "1200 USD base amount is 58800 USD. The filing-route synthesis remains "
             "subject to the admitted paper and online rules."
         )
+        self.read_content_by_url = {
+            **dict(self.read_content_by_url or {}),
+            "https://northstar.example/rule-101": (
+                "The Northstar base rebate amount is 1200 USD."
+            ),
+            "https://northstar.example/rule-103": (
+                "The Northstar income bonus threshold is 60000 USD."
+            ),
+        }
 
     def _component_claim(self, question: str) -> str:
         if "base rebate" in question:
@@ -2108,7 +2184,7 @@ class QuantitativeSynthesisNorthstarHarness(SpecialistNorthstarHarness):
                 dict(payload.get("nominated_claim") or {}).get("claim_text") or ""
             )
             if "difference between" in nominated_claim:
-                return _quantitative_dprime_response(payload)
+                return _quantitative_synthesis_dprime_response(payload)
         return raw
 
 
@@ -2158,6 +2234,35 @@ def _execute_product_run(
         ),
     )
     setattr(harness, "_quantitative_test_capture", captured)
+    if getattr(harness, "fixture_preserves_clear_conflict_posture", False):
+        original_evidence_input = ordinary_runtime._evidence_input
+
+        def fixture_evidence_input(bindable: Any | None) -> dict[str, Any]:
+            evidence = original_evidence_input(bindable)
+            if not str(evidence.get("source_url") or "").startswith(
+                "https://northstar.example/"
+            ):
+                return evidence
+            # The controlled discovery fixture declares these sources
+            # uncontested. Its bounded READ fake retains text only, so restore
+            # that fixture-owned fact before the ordinary Analyst input is made.
+            custody = dict(evidence.get("candidate_custody_ref") or {})
+            return {
+                **evidence,
+                "conflict_posture": "none",
+                "contradictory": False,
+                "candidate_custody_ref": {
+                    **custody,
+                    "conflict_posture": "none",
+                    "contradictory": False,
+                },
+            }
+
+        monkeypatch.setattr(
+            ordinary_runtime,
+            "_evidence_input",
+            fixture_evidence_input,
+        )
     base_deps = harness.deps()
     deps = (
         compose_quantitative_specialist_product_deps(base_deps)
@@ -2176,6 +2281,22 @@ def _execute_product_run(
         CostAccumulator(),
     )
     return outcome, captured["semantic_run_kernel"], captured, deps
+
+
+def _expect_quantitative_finalization_rejection(
+    *,
+    harness: NorthstarHarness,
+    monkeypatch: pytest.MonkeyPatch,
+    run_id: str,
+) -> tuple[QuantitativeFinalizationAuthorityError, Any, dict[str, Any]]:
+    with pytest.raises(QuantitativeFinalizationAuthorityError) as raised:
+        _execute_product_run(
+            harness=harness,
+            monkeypatch=monkeypatch,
+            run_id=run_id,
+        )
+    captured = getattr(harness, "_quantitative_test_capture")
+    return raised.value, captured["semantic_run_kernel"], captured
 
 
 def _forbid_legacy_reducer(*_args: Any, **_kwargs: Any) -> Any:
@@ -2216,21 +2337,38 @@ def test_component_origin_product_path_and_paired_final_answer_delta(
     assert positive_result["bounded_result"]["claim_alignment"]["posture"] == (
         "exact_match"
     )
-    assert positive_result["validator_consumption"] == "consumed_by_component_dprime"
+    assert positive_result["validator_consumption"] == "consumed_by_component_analyst"
     consumed_handoff = positive_plane["need_handoffs"][0]
-    dprime_ref = dict(consumed_handoff["validator_dprime_artifact_ref"])
+    analyst_case_ref = dict(consumed_handoff["validator_artifact_ref"])
+    assert analyst_case_ref["role"] == ROLE_COMPONENT_ANALYST_RESUME
     specialist_authority = specialist_quantitative_authority_ref_from_handoff(
         consumed_handoff,
-        applicable_dprime_ref=dprime_ref,
+        applicable_analyst_case_ref=analyst_case_ref,
     )
     assert specialist_authority["canonical_unit"] == "USD"
     assert specialist_authority["normalized_numeric_value_text"] == "1500"
     assert specialist_authority["result_unit_contract_posture"] == (
         "canonical_result_unit"
     )
-    assert specialist_authority["applicable_dprime_consumption_ref"]["route"] == (
-        "component_dprime"
+    assert specialist_authority["applicable_validator_consumption_ref"]["route"] == (
+        "component_analyst"
     )
+    canonical_analyst_case_ref = specialist_authority["applicable_analyst_case_ref"]
+    assert canonical_analyst_case_ref["role"] == ROLE_COMPONENT_ANALYST_RESUME
+    assert canonical_analyst_case_ref["artifact_id"] == analyst_case_ref["artifact_id"]
+    assert canonical_analyst_case_ref["artifact_digest"] == analyst_case_ref[
+        "artifact_digest"
+    ]
+    assert specialist_authority["applicable_validator_ref"] == (
+        canonical_analyst_case_ref
+    )
+    assert (
+        specialist_authority["applicable_validator_consumption_ref"][
+            "validator_artifact_ref"
+        ]
+        == canonical_analyst_case_ref
+    )
+    assert "applicable_dprime_ref" not in specialist_authority
     final_packet = positive_captured["author_runtime_scope"]["final_answer_packet"]
     author_trace_ref = positive_captured["author_runtime_scope"][
         "final_answer_author_payload"
@@ -2270,7 +2408,7 @@ def test_component_origin_product_path_and_paired_final_answer_delta(
     legacy = _rekey_specialist_handoff(legacy)
     legacy_authority = specialist_quantitative_authority_ref_from_handoff(
         legacy,
-        applicable_dprime_ref=dprime_ref,
+        applicable_analyst_case_ref=analyst_case_ref,
     )
     assert legacy_authority["result_unit_contract_posture"] == (
         "explicit_legacy_unit_compatibility"
@@ -2281,7 +2419,7 @@ def test_component_origin_product_path_and_paired_final_answer_delta(
     agreement = _rekey_specialist_handoff(agreement)
     agreement_authority = specialist_quantitative_authority_ref_from_handoff(
         agreement,
-        applicable_dprime_ref=dprime_ref,
+        applicable_analyst_case_ref=analyst_case_ref,
     )
     assert agreement_authority["result_unit_contract_posture"] == (
         "canonical_result_unit_with_legacy_agreement"
@@ -2306,7 +2444,7 @@ def test_component_origin_product_path_and_paired_final_answer_delta(
     unconsumed["validator_consumption"] = VALIDATOR_PENDING
     unconsumed.pop("validator_consumption_terminal")
     unconsumed.pop("validator_validation_status")
-    unconsumed.pop("validator_dprime_artifact_ref")
+    unconsumed.pop("validator_artifact_ref")
     invalid_handoffs.append(_rekey_specialist_handoff(unconsumed))
     stale = deepcopy(consumed_handoff)
     stale["result"]["execution_posture"] = "stale"
@@ -2318,14 +2456,20 @@ def test_component_origin_product_path_and_paired_final_answer_delta(
     for invalid in invalid_handoffs:
         assert specialist_quantitative_authority_ref_from_handoff(
             invalid,
-            applicable_dprime_ref=dprime_ref,
+            applicable_analyst_case_ref=analyst_case_ref,
         ) == {}
-    dprime_packet = positive_harness.specialist_dprime_inputs[0]
-    assert "quantitative_specialist_proposal_contract" not in json.dumps(
-        dprime_packet
-    )
-    assert dprime_packet["nominated_claim"]["claim_text"] == (
+    resume_packet = positive_harness.specialist_analyst_resume_inputs[0]
+    assert "specialist_need_proposal" not in resume_packet
+    assert "specialist_need_proposal" not in resume_packet["prior_component_case"]
+    assert resume_packet["prior_component_case"]["claim_text"] == (
         "The supported derived combined Northstar amount is 1500 USD."
+    )
+    assert resume_packet["specialist_need_handoff"]["result"]["bounded_result"][
+        "claim_alignment"
+    ]["posture"] == "exact_match"
+    assert not any(
+        item["system_prompt"] == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_DPRIME]
+        for item in positive_harness.role_input_packets
     )
     component_role_packet = next(
         packet
@@ -2352,7 +2496,7 @@ def test_component_origin_product_path_and_paired_final_answer_delta(
     assert positive_scheduler["schema_version"] == MULTICOMPONENT_SCHEDULER_V3_SCHEMA_VERSION
     assert positive_scheduler["specialist_compatibility_pool"]["specialist_spent"] == 1
     assert positive_scheduler["specialist_compatibility_pool"]["specialist_remaining"] == 0
-    assert positive_scheduler["compatibility_envelope"]["total_units"] == 22
+    assert positive_scheduler["compatibility_envelope"]["total_units"] == 24
     assert positive_plane["provider_request_attempt_count"] == 0
     assert positive_plane["model_call_count"] == 0
     assert positive_plane["token_usage"] == positive_plane["model_cost"] == 0
@@ -2467,10 +2611,10 @@ def test_synthesis_origin_uses_same_product_capability_and_two_hop_handoff(
     consumed_handoff = plane["need_handoffs"][0]
     specialist_authority = specialist_quantitative_authority_ref_from_handoff(
         consumed_handoff,
-        applicable_dprime_ref=consumed_handoff["validator_dprime_artifact_ref"],
+        applicable_dprime_ref=consumed_handoff["validator_artifact_ref"],
     )
     assert specialist_authority["canonical_unit"] == "USD"
-    assert specialist_authority["applicable_dprime_consumption_ref"]["route"] == (
+    assert specialist_authority["applicable_validator_consumption_ref"]["route"] == (
         "synthesis_dprime"
     )
     final_packet = captured["author_runtime_scope"]["final_answer_packet"]
@@ -2502,7 +2646,7 @@ def test_synthesis_origin_uses_same_product_capability_and_two_hop_handoff(
     assert synthesis_manifest_entry["authority_kind"] == (
         "specialist_derived_numeric"
     )
-    assert synthesis_manifest_entry["applicable_dprime_consumption_ref"][
+    assert synthesis_manifest_entry["applicable_validator_consumption_ref"][
         "route"
     ] == "synthesis_dprime"
     assert all(
@@ -2570,44 +2714,149 @@ def test_product_enabled_no_need_preserves_answer_and_closed_path_parity(
     assert SPECIALIST_WORK_PLANE_STAGE not in closed_kernel.state.projections
 
 
-@pytest.mark.parametrize(
-    ("component_count", "query"),
-    ((1, ONE_COMPONENT_QUERY), (6, SIX_COMPONENT_QUERY)),
-)
-def test_product_composition_preserves_nonqualifying_and_single_component_reports(
+def _assert_n1_direct_admission_scheduler(
+    *,
+    kernel: Any,
+    harness: _TimingHarness,
+) -> dict[str, Any]:
+    scheduler = kernel.state.projections[MULTICOMPONENT_SCHEDULER_STAGE]
+    assert scheduler["status"] == "completed"
+    assert scheduler["schema_version"] in {
+        MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION,
+        MULTICOMPONENT_SCHEDULER_V3_SCHEMA_VERSION,
+    }
+    leases = list(scheduler["lease_history"])
+    roles = [dict(item.get("work") or {}).get("role") for item in leases]
+    work_kinds = [dict(item.get("work") or {}).get("work_kind") for item in leases]
+    forbidden_roles = {
+        ROLE_COMPONENT_DPRIME,
+        ROLE_CROSS_COMPONENT_ANALYST,
+        ROLE_SYNTHESIS_DPRIME,
+        ROLE_SCRUTINEER,
+    }
+    assert roles == [ROLE_COMPONENT_ANALYST]
+    assert WORK_KIND_SPECIALIST_CAPABILITY not in work_kinds
+    assert forbidden_roles.isdisjoint(roles)
+    assert all(item["status"] == LEASE_COMPLETED for item in leases)
+    assert scheduler["active_physical_lease_count"] == 0
+    assert scheduler["last_ready_work"] == []
+    envelope = dict(scheduler.get("compatibility_envelope") or {})
+    assert envelope.get("spent_units") == 1
+    if scheduler["schema_version"] == MULTICOMPONENT_SCHEDULER_V3_SCHEMA_VERSION:
+        specialist_pool = dict(scheduler.get("specialist_compatibility_pool") or {})
+        assert specialist_pool.get("specialist_spent") == 0
+        assert SPECIALIST_WORK_PLANE_STAGE not in kernel.state.projections or (
+            kernel.state.projections[SPECIALIST_WORK_PLANE_STAGE]["proposal_count"]
+            == kernel.state.projections[SPECIALIST_WORK_PLANE_STAGE]["result_artifact_count"]
+            == 0
+        )
+    else:
+        assert SPECIALIST_WORK_PLANE_STAGE not in kernel.state.projections
+
+    admission = kernel.state.projections[MULTICOMPONENT_COMPONENT_ADMISSION_STAGE]
+    admissions = list(admission["component_admission_refs"])
+    assert len(admissions) == 1
+    assert admissions[0]["admission_status"] in {"admitted", "admitted_with_caveats"}
+    assert not admissions[0].get("component_dprime_artifact_ref")
+
+    graph = kernel.state.projections[COMPONENT_WORK_GRAPH_V1_STAGE]
+    assert graph["dependency_posture"] == "single_component_direct_admission"
+    assert graph["synthesis_nodes"] == []
+    assert graph["synthesis_topological_order"] == []
+    assert graph["maximum_synthesis_depth"] == 0
+    physical = dict(graph.get("physical_call_accounting") or {})
+    logical = dict(graph.get("logical_accounting") or {})
+    assert physical.get("component_analyst_calls") == 1
+    assert physical.get("cross_component_analyst_calls", 0) == 0
+    assert physical.get("synthesis_dprime_calls", 0) == 0
+    assert logical.get("component_analyst_evaluations") == 1
+    assert logical.get("cross_component_analyst_evaluations", 0) == 0
+    assert logical.get("synthesis_dprime_evaluations", 0) == 0
+
+    forbidden_actions = {
+        ActionType.MULTICOMPONENT_COMPONENT_DPRIME_EXECUTE,
+        ActionType.MULTICOMPONENT_CROSS_ANALYST_EXECUTE,
+        ActionType.MULTICOMPONENT_SYNTHESIS_DPRIME_EXECUTE,
+    }
+    assert forbidden_actions.isdisjoint(
+        action.action_type for action in kernel.state.issued_actions.values()
+    )
+    prompts = {str(call.get("system_prompt") or "") for call in harness.model_calls}
+    assert all(ROLE_SYSTEM_PROMPTS[role] not in prompts for role in forbidden_roles)
+    return scheduler
+
+
+def test_product_composition_preserves_single_component_reports(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    component_count: int,
-    query: str,
 ) -> None:
     with monkeypatch.context() as product_patch:
         product_harness = _TimingHarness(
             tmp_path / "product",
-            query=query,
-            component_count=component_count,
+            query=ONE_COMPONENT_QUERY,
+            component_count=1,
         )
         product, product_kernel, _captured, _deps = _execute_product_run(
             harness=product_harness,
             monkeypatch=product_patch,
-            run_id=f"quantitative-nonqual-product-{component_count}",
+            run_id="quantitative-n1-product",
         )
     with monkeypatch.context() as closed_patch:
         closed_harness = _TimingHarness(
             tmp_path / "closed",
-            query=query,
-            component_count=component_count,
+            query=ONE_COMPONENT_QUERY,
+            component_count=1,
         )
         closed, closed_kernel, _captured, _deps = _execute_product_run(
             harness=closed_harness,
             monkeypatch=closed_patch,
-            run_id=f"quantitative-nonqual-closed-{component_count}",
+            run_id="quantitative-n1-closed",
             activate_product=False,
         )
     assert product.report == closed.report
-    assert MULTICOMPONENT_SCHEDULER_STAGE not in product_kernel.state.projections
-    assert MULTICOMPONENT_SCHEDULER_STAGE not in closed_kernel.state.projections
-    assert SPECIALIST_WORK_PLANE_STAGE not in product_kernel.state.projections
-    assert SPECIALIST_WORK_PLANE_STAGE not in closed_kernel.state.projections
+    product_scheduler = _assert_n1_direct_admission_scheduler(
+        kernel=product_kernel,
+        harness=product_harness,
+    )
+    closed_scheduler = _assert_n1_direct_admission_scheduler(
+        kernel=closed_kernel,
+        harness=closed_harness,
+    )
+    assert product_scheduler["schema_version"] == MULTICOMPONENT_SCHEDULER_V3_SCHEMA_VERSION
+    assert closed_scheduler["schema_version"] == MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION
+
+
+def test_product_composition_preserves_overlimit_cardinality_fail_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert SEARCH_PLANNER_MAX_ANSWER_COMPONENTS == 5
+
+    def _run(*, label: str, activate_product: bool) -> SearchPlannerRuntimeError:
+        with pytest.raises(
+            SearchPlannerRuntimeError,
+            match="five-component acceptance ceiling",
+        ) as raised:
+            _execute_product_run(
+                harness=_TimingHarness(
+                    tmp_path / label,
+                    query=SIX_COMPONENT_QUERY,
+                    component_count=6,
+                ),
+                monkeypatch=monkeypatch,
+                run_id=f"quantitative-overlimit-{label}",
+                activate_product=activate_product,
+            )
+        return raised.value
+
+    product_error = _run(label="product", activate_product=True)
+    closed_error = _run(label="closed", activate_product=False)
+    assert (
+        product_error.failure_code
+        is closed_error.failure_code
+        is SearchPlannerRuntimeSafeFailureCode.PROPOSAL_SHAPE_INVALID
+    )
+    assert SEARCH_PLANNER_MAX_ANSWER_COMPONENTS == 5
 
 
 def test_product_one_unit_component_priority_and_optional_exhaustion(
@@ -2639,9 +2888,10 @@ def test_product_one_unit_component_priority_and_optional_exhaustion(
     assert len(specialist_leases) == 1
     assert scheduler["specialist_compatibility_pool"]["specialist_spent"] == 1
     assert [item["validator_consumption"] for item in plane["need_handoffs"]] == [
-        "consumed_by_component_dprime",
+        "consumed_by_component_analyst",
         "consumed_by_synthesis_dprime",
     ]
+    assert harness.specialist_analyst_resume_inputs
     assert any(
         packet["specialist_need_handoff"]["availability_posture"]
         == AVAILABILITY_BUDGET
@@ -2679,7 +2929,7 @@ def test_later_required_synthesis_need_blocks_after_component_consumes_unit(
     )
 
 
-def test_required_noncomputed_product_result_blocks_before_component_dprime(
+def test_required_noncomputed_product_result_blocks_before_component_analyst_resume(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

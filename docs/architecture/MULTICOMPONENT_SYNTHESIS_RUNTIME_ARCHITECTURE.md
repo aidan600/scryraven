@@ -35,8 +35,8 @@ The installed routes remain factual and executable:
 
 ```text
 INSTALLED:
-Component Analyst
--> component D-prime
+Component Analyst case + self-audit
+-> deterministic current-authority validation/binding
 -> RunKernel component admission
 -> ComponentCoverage / graph work
 -> Cross-Component Analyst
@@ -45,10 +45,10 @@ Component Analyst
 -> RunKernel graph/synthesis admission
 ```
 
-Mandatory serial D-prime is not the selected AnalystOS target. Component and
-synthesis D-prime remain installed and currently executable until convergence
-phases retire the separate ordinary model calls. This document does not rewrite
-the installed route as already migrated.
+Component D-prime has no ordinary component consumer. The retained synthesis
+D-prime is not the selected AnalystOS target and remains installed only for
+genuine N>=2 synthesis until its convergence phase retires the separate ordinary
+model call.
 
 The installed query class is:
 
@@ -64,9 +64,9 @@ process typed component receiver with `allow_searchos_component_receiver=True`.
 That receiver accepts 1-5 components, including the N=1 Q1 SearchOS ->
 Component Analyst path. This separately licensed entry does not establish
 general arbitrary single-component qualification into
-`ordinary-bounded-multicomponent-factual-synthesis-v1`. Selected N=1 target
-posture folds Cross/synthesis/D-prime ceremony; installed runtime may still
-execute component D-prime on that path until convergence.
+`ordinary-bounded-multicomponent-factual-synthesis-v1`. The installed N=1
+receiver forms a current Component Analyst case and sends it directly to
+RunKernel; it does not execute Component D-prime.
 
 ## Installed Query-Centered Recovery And Inference
 
@@ -100,18 +100,17 @@ history, amendment, lease, cycle, graph, FAP, or Author work.
 
 Lane selection occurs before canonical semantic production. The direct and
 bounded multi-component lanes are not both run and compared afterward. The
-typed Component Analyst / D-prime machinery is also reachable through the
-separately licensed SearchOS same-process semantic-handoff receiver entry:
+direct Component Analyst case / RunKernel machinery is also reachable through
+the separately licensed SearchOS same-process semantic-handoff receiver entry:
 
 SearchOS same-process receiver entry:
 
 ```text
 lawful SearchOS semantic handoff
 + allow_searchos_component_receiver=True
--> typed Component Analyst receiver (1-5 components, including N=1)
--> component Analyst proposal
--> component D-prime validation
--> RunKernel component admission
+-> typed Component Analyst case receiver (1-5 components, including N=1)
+-> deterministic current-authority validation/binding
+-> direct RunKernel component admission
 ```
 
 This entry is not general single-component route qualification and does not
@@ -132,8 +131,8 @@ Qualifying bounded multi-component lane:
 
 ```text
 accepted explicit factual component structure and synthesis directive
--> component Analyst proposal
--> component D-prime validation
+-> Component Analyst case + self-audit
+-> deterministic current-authority validation/binding
 -> RunKernel component admission
 -> SemanticObservation / ComponentCoverage / ComponentWorkNode
 -> ComponentWorkGraph V1
@@ -177,7 +176,7 @@ authority.
 | --- | --- | --- |
 | Planner / semantic producer | Proposes query meaning, answer components, search/source requirements, and structural request relationships. | Admit claims, validate its own proposals, or manufacture evidence. |
 | Component Analyst | Uses the configured SmartModel role to propose what bounded custodied evidence supports for one component and may nominate an exact source-bound quantitative need. | Validate or admit its proposal, authorize the capability, dispatch recovery, or render. |
-| Component D-prime | Validates the nominated component proposal against exact evidence, component, scope, source-obligation, currentness, caveat, and calculator-alignment refs. | Act as first-pass Analyst, invent or calculate a claim, admit support, dispatch search, or render. |
+| Component D-prime | Retained only as a bounded compatibility contract; it has no ordinary component work producer or admission consumer. | Re-enter the ordinary component path, act as a second review authority, or admit support. |
 | Cross-Component Analyst | Proposes dependencies, contradictions, constraints, synthesis nodes, missing components, caveats, recovery needs, and exact cross-component quantitative needs. | Validate or admit its synthesis, authorize the capability or recovery, or render. |
 | Synthesis D-prime | Validates nominated synthesis against current admitted component, synthesis, edge, blocker, caveat, and two-hop calculator lineage refs. | Invent synthesis or calculate a substitute, act as Cross-Component Analyst, admit state, or render. |
 | Full Scrutineer | Adversarially challenges component, synthesis, edge, subgraph, or whole-case posture when triggered. | Replace first-pass analysis, manufacture a replacement case, admit state, or render. |
@@ -263,13 +262,12 @@ The shared semantic-call caps are:
 | Role | Cap |
 | --- | ---: |
 | Component Analyst | 5 |
-| Component D-prime | 5 |
 | Cross-Component Analyst | 3 |
 | Synthesis D-prime | 8 |
 | Scrutineer | 3 |
 
-These caps cover initial and authorized continuation work and sum to a 24-unit
-semantic-role envelope. They are installed runtime limits, not model-quality
+These active direct-path caps cover initial and authorized continuation work and sum to a 19-unit
+semantic-role envelope. A retained ComponentDprime compatibility cap has no ordinary work grant; these are not model-quality
 claims or permanent target budgets. Full Scrutineer is triggered by the
 installed policy, including Deep mode, contradiction, unresolved dependency,
 material caveat, high-stakes quantitative posture, layered synthesis, or a
@@ -287,8 +285,8 @@ The fixed ordinary CLI/UI product composition injects the S1 quantitative
 Specialist registry and execution policy and uses Scheduler V3. V3 preserves
 the same semantic ready-work owner and 24-unit semantic-role envelope while adding a separate
 zero-or-one deterministic Specialist pool.
-Specialist work is inserted after its bound role proposal and before the exact
-component or synthesis D-prime review. Generic closed-default and no-need runs
+Specialist work is inserted after its bound role proposal and before current
+Component Analyst case resume or exact synthesis D-prime review. Generic closed-default and no-need runs
 remain V2-compatible. Eligible component calculation work precedes a later
 synthesis calculation for the single unit.
 Predispatch Specialist input-reconstruction failure returns the exact
@@ -313,8 +311,8 @@ transient source material are reconstructed only for their scoped consumers and
 are not retained in canonical graph, scheduler, work, result, log, or trace
 projections. Deterministic
 Decimal arithmetic, units, precision, and exact claim alignment flow through
-the existing unified handoff; D-prime and RunKernel retain all validation and
-admission authority.
+the existing unified handoff; the current Component Analyst case, retained
+synthesis D-prime, and RunKernel retain their respective validation and admission authority.
 
 Cross input binding is reproofed unconditionally before initial graph
 construction and whole-graph resynthesis. The ordinary consumer may provide
@@ -342,11 +340,10 @@ before commitment. Dispatch spends the whole batch and publishes the complete
 ordered child-action set together. A precommit defect publishes nothing and
 returns all reservations; partial publication or refund is invalid.
 
-Only eligible independent initial component Analyst and component D-prime
-waves may overlap, at width 2 for canonical OpenAI/OpenRouter hosted providers.
-Local and unsupported/conservative providers use width 1. Cross-Component
-Analyst, synthesis D-prime, Scrutineer, recovery, selective recomputation, and
-all graph-bound work remain serial.
+Only eligible independent initial Component Analyst waves may overlap, at width
+2 for canonical OpenAI/OpenRouter hosted providers. Local and unsupported/
+conservative providers use width 1. Cross-Component Analyst, synthesis D-prime,
+Scrutineer, recovery, selective recomputation, and all graph-bound work remain serial.
 
 Workers perform transport and pure normalization only. They never mutate
 RunKernel, RunState, graph, EvidenceLedger, admission state, recovery state,
