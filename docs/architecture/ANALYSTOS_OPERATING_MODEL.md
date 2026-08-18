@@ -47,27 +47,49 @@ Current sequence belongs to [Current Roadmap](../roadmap/CURRENT_ROADMAP.md).
 The selected ordinary semantic loop is:
 
 ```text
-strong Component Analyst case + self-audit
--> deterministic RunKernel binding/admission
--> Specialist or SearchOS recovery when needed
--> Cross-Component Analyst only for genuine N>=2 synthesis
--> deterministic graph checks
--> mode/risk-triggered Scrutineer
--> at most one revision
+SearchOS lawful handoff
+-> Component Analyst case + self-audit
+-> deterministic current-authority validation/binding
+-> optional Specialist or SearchOS recovery when the case identifies a real need
+-> Analyst resumes/completes/revises the case
+-> RunKernel component admission
+-> Cross only for genuine N>=2 synthesis
+-> deterministic graph validation
+-> Scrutineer according to mode/risk policy
+-> at most one Analyst/Cross revision
+-> RunKernel admission/re-admission of exact current semantic/graph state
 -> Sufficiency -> FinalAnswerPacket -> Author
 ```
 
-Workers propose meaning. RunKernel alone authorizes, reduces, and admits.
-Sufficiency is the sole whole-run stopper. FinalAnswerPacket packages admitted
-material. Author renders prose only.
+Workers propose meaning. RunKernel alone authorizes, reduces, and admits canonical
+state. Sufficiency is the sole whole-run stopper. FinalAnswerPacket packages
+admitted material. Author renders prose only.
+
+## Self-Audit, Binding, And Admission
+
+Component Analyst and Cross-Component Analyst self-audit is part of semantic case
+construction, not a separate review authority. Analyst and Cross may build,
+challenge, and revise their own case posture as they author meaning. They may
+not canonically admit their own output.
+
+Deterministic current-authority validation and binding before recovery is
+code-owned current-authority work. It is not a separate D-prime model call and
+is not final component or graph admission. Incomplete-case binding prepares
+exact refs and lineage for RunKernel; only RunKernel performs component and
+graph admission or re-admission of exact current semantic/graph state.
+
+Recovery and Specialist work are optional and need-driven. When the case
+identifies a real missing premise or bounded deterministic need, existing
+SearchOS or Specialist authority executes and returns custody to Analyst for
+case resume, completion, or revision before admission proceeds.
 
 ## Selected Role Responsibilities
 
 | Role | Selected responsibility | Must not |
 | --- | --- | --- |
-| Component Analyst | Strong meaning-owning case builder with self-audit for one component. | Validate or admit its own proposal, authorize recovery or Specialist work, or render. |
+| Component Analyst | Strong meaning-owning case builder; self-audit is part of case construction, not a separate review authority. | Canonically admit its own output, authorize recovery or Specialist work, or render. |
 | Component D-prime | **Selected retirement target.** Installed ordinary model call only until convergence. | Remain the selected consumption path after AnalystOS convergence. |
-| Cross-Component Analyst | Retained for genuine N>=2 relationships; may produce 0..N synthesis proposals with self-audit. | Run for N=1, validate or admit its own synthesis, or render. |
+| Cross-Component Analyst | Retained for genuine N>=2 relationships; may produce 0..N synthesis proposals; self-audit is part of case construction. | Run for N=1, canonically admit its own synthesis, or render. |
 | Synthesis D-prime | **Selected retirement target.** Installed ordinary model call only until convergence. | Remain the selected validation path after AnalystOS convergence. |
 | Specialist | Deterministic contributor; result returns to Analyst for reanalysis. | Self-authorize support or bypass Analyst consumption. |
 | SearchOS recovery | Existing authority retrieves missing premises identified by Analyst. | Author inference, validate relationships, or admit graph state. |
@@ -93,9 +115,9 @@ the separate D-prime calls.
 
 For N=1 work, including the SearchOS semantic-handoff receiver path, the
 selected target has **no** Cross-Component Analyst, synthesis, or separate
-D-prime semantic ceremony. One strong Component Analyst case with self-audit
-feeds deterministic RunKernel component admission, then Sufficiency and
-downstream finalization when ready.
+D-prime semantic ceremony. One strong Component Analyst case with self-audit, code-owned current-authority
+binding, and RunKernel component admission when ready. No Cross-Component
+Analyst, synthesis, or separate D-prime semantic ceremony.
 
 The installed runtime may still route through component D-prime today. That is
 installed fact, not selected target architecture.
@@ -123,31 +145,22 @@ synthesis D-prime remains documented as installed-only consumption in
 [Specialist Graph Substrate](SPECIALIST_GRAPH_SUBSTRATE.md) until convergence
 lands.
 
-## Scrutineer Policy
+## Scrutineer And Mode Policy
 
 Scrutineer is the sole separate semantic reviewer in the selected target.
 
-| Mode | Selected Scrutineer posture |
+| Mode | Selected posture |
 | --- | --- |
-| Fast | None by default |
-| Balanced | Risk-triggered when policy requires |
-| Deep | Whole-case review required |
+| Fast | No separate Scrutineer. No iterative Analyst/recovery review campaign. Qualify, block, or escalate if more work is required. |
+| Balanced | Risk-triggered Scrutineer when policy requires. At most one Analyst/Cross revision. |
+| Deep | Whole-case Scrutineer required. At most one revision/adjudication cycle. |
 
-At most one Scrutineer revision cycle applies per admitted case posture unless
-a later explicit architecture decision changes that bound. Deterministic
-same-component multi-source gates remain supporting mechanical checks, not
-substitutes for the full Scrutineer role when policy triggers it.
-
-## Mode And Risk Triggers
-
-Fast, Balanced, and Deep share the same authority owners. They may differ in
-bounded recovery generation, semantic inference depth, effort, and expenditure.
-They do not differ in who may admit state or stop the run.
-
-Balanced and Deep risk triggers for Scrutineer include contradiction, unresolved
-dependency, material caveat, high-stakes quantitative posture, layered synthesis,
-or challenge-worthy self-audit posture. Fast skips full Scrutineer only when no
-trigger applies.
+Balanced risk triggers include contradiction, unresolved dependency, material
+caveat, high-stakes quantitative posture, layered synthesis, or
+challenge-worthy self-audit posture. Fast does not invoke Scrutineer under any
+trigger. Deterministic same-component multi-source gates remain supporting
+mechanical checks, not substitutes for Scrutineer when Balanced or Deep policy
+requires it.
 
 ## Forbidden Doctrines
 

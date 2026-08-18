@@ -36,6 +36,8 @@ PROVIDER_ROUTING = ARCH / "PROVIDER_CAPABILITY_AND_ACQUISITION_ROUTING.md"
 ACQUISITION_CONTROL = ARCH / "RUNKERNEL_POST_DISCOVERY_ACQUISITION_CONTROL.md"
 SEARCHOS = ARCH / "SEARCHOS_OPERATING_MODEL.md"
 ANALYSTOS = ARCH / "ANALYSTOS_OPERATING_MODEL.md"
+ANALYST_WORKBENCH = ARCH / "ANALYST_WORKBENCH_FULL_SLICE.md"
+CROSS_WORKBENCH = ARCH / "CROSS_COMPONENT_ANALYST_WORKBENCH.md"
 SEARCHOS_RECOVERY_DIRECTION = (
     ARCH / "SEARCHOS_POST_ANALYSIS_RECOVERY_AND_INFERENCE_DIRECTION.md"
 )
@@ -228,12 +230,15 @@ def test_analystos_target_owner_is_unique_routed_and_nonactivating() -> None:
         "Default-read: no",
         "INSTALLED:",
         "SELECTED TARGET:",
-        "strong Component Analyst case + self-audit",
+        "SearchOS lawful handoff",
+        "Component Analyst case + self-audit",
+        "deterministic current-authority validation/binding",
         "Cross-Component Analyst only for genuine N>=2 synthesis",
         "Scrutineer is the sole separate semantic reviewer",
         "Sufficiency is the sole whole-run stopper",
         "Component D-prime and synthesis D-prime ordinary model calls are selected for retirement",
         "Runtime still executes component D-prime and synthesis D-prime",
+        "Fast does not invoke Scrutineer under any trigger",
     ):
         assert phrase in normalized
 
@@ -242,6 +247,24 @@ def test_analystos_target_owner_is_unique_routed_and_nonactivating() -> None:
     assert "`canonical:analystos-operating-model`" in guidance
     for target in _links(ANALYSTOS):
         assert target.is_file(), target
+
+
+def test_workbench_doctrine_does_not_require_dprime_as_selected_target() -> None:
+    """CURRENT Workbench docs must not normatively require D-prime as selected path."""
+    forbidden_normative = (
+        "must hand proposal refs to synthesis D-prime",
+        "needs one proposal-only cross-component synthesis layer between per-component lanes and synthesis D-prime validation",
+        "synthesis D-prime validates synthesis support over component refs",
+        "D-prime validates only.",
+        "Existing D-prime authority remains the only downstream authority path",
+        "must hand proposal refs to synthesis D-prime and RunKernel",
+    )
+    for path in (ANALYST_WORKBENCH, CROSS_WORKBENCH):
+        collapsed = _collapsed(path).casefold()
+        for phrase in forbidden_normative:
+            assert phrase.casefold() not in collapsed, (path.name, phrase)
+        assert ANALYSTOS.name in _read(path)
+        assert "selected retirement" in collapsed or "selected target" in collapsed
 
 
 def test_searchos_target_owner_is_unique_routed_and_nonactivating() -> None:

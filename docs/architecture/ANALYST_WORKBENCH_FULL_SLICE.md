@@ -4,6 +4,12 @@ Status: canonical current Analyst Workbench runtime contract, promoted from the
 BUILD phase note for
 `CURRENT-SOURCE-RECORD-ANALYST-WORKBENCH-FULL-SLICE-SCAFFOLD-01`.
 
+Selected AnalystOS target topology and consumption policy belong to
+[AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md). This document
+records **installed** current-source Workbench behavior and historical
+adaptation notes. It does not define D-prime as the selected or future required
+consumption path.
+
 Mode: BUILD
 
 This document records current merged Workbench behavior for future Codex phases.
@@ -63,24 +69,27 @@ The Workbench does not:
 - open source display;
 - claim product correctness.
 
-### Future Cross-Component Adaptation Boundary
+### Cross-Component Adaptation Boundary (Historical Note)
 
-The future Cross-Component Analyst Workbench must inherit this proposal-only
-boundary. It may propose consistency, dependency, missing-component,
-contradiction, caveat, recovery, and synthesis refs over compact
-`ComponentWorkNode` and admitted synthesis-node outputs, including proposed
-semantic edges and first-class synthesis nodes. A real ordinary producer must
-be a dedicated configured-SmartModel role, not merely this Workbench contract.
-It must hand proposal refs to synthesis D-prime and RunKernel rather than
-validating, admitting, dispatching recovery, searching, packaging, or rendering
-by itself.
+Historical cross-component adaptation notes remain for provenance. Selected
+target: Cross-Component Analyst inherits this proposal-only boundary for genuine
+N>=2 synthesis; self-audit is part of case construction; separate synthesis
+D-prime is not the selected consumption path. See
+[AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md).
+
+A Cross-Component producer may propose consistency, dependency,
+missing-component, contradiction, caveat, recovery, and synthesis refs over
+compact `ComponentWorkNode` and admitted synthesis-node outputs, including
+proposed semantic edges and first-class synthesis nodes. It hands proposal refs
+to RunKernel rather than validating, admitting, dispatching recovery, searching,
+packaging, or rendering by itself.
 
 It must not become:
 
 - a parallel Analyst system beside this Workbench;
 - a ComponentWorkGraph executor or scheduler;
 - a retrieval dispatch path;
-- a D-prime substitute;
+- a separate review authority beside Scrutineer;
 - a Sufficiency/FAP/Author shortcut;
 - an Author glue layer over component finals.
 
@@ -201,10 +210,14 @@ If those identities diverge, the product must block before FAP, Author, or
 source display. The blocker is authoritative even when a provider result is
 official-looking, readable, or answer-like.
 
-### Relationship To D-prime, Scrutineer, Sufficiency, FAP, And Author
+### Relationship To D-prime, Scrutineer, Sufficiency, FAP, And Author (Installed Current-Source Lane)
 
-D-prime is the evidence-relative support judge. It is not the whole Analyst, and
-Workbench context does not substitute for D-prime model review, proposal
+**Installed** current-source single-fact runs still route Workbench dossier
+context through component D-prime model review before RunKernel admission.
+That is installed fact, not selected target architecture.
+
+In the installed lane, D-prime is the evidence-relative support judge for that
+path. Workbench context does not substitute for D-prime model review, proposal
 validation, RunKernel admission, or downstream answer-path consumption.
 
 Scrutineer challenge posture is separate. It must not be silently treated as an
@@ -215,9 +228,13 @@ Sufficiency decides answer readiness after the required evidence, support,
 coverage, and challenge/follow-up posture exists.
 
 FAP is the authority manifest / safe-claim packet. Author is constrained
-rendering from that packet. The Workbench does not substitute for D-prime,
-Scrutineer, Sufficiency, FAP, Author, citation eligibility, citation rendering,
-or source display.
+rendering from that packet. The Workbench does not substitute for Scrutineer,
+Sufficiency, FAP, Author, citation eligibility, citation rendering, or source
+display.
+
+**Selected target:** separate D-prime ordinary model calls are retired;
+Analyst self-audit and RunKernel admission replace D-prime as the selected
+consumption path per [AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md).
 
 ### Review Report Expectations
 
@@ -312,29 +329,31 @@ New machinery introduced:
   source-authority finality, product correctness, raw/private retention, answer
   prose creation, or RunKernel reduction.
 
-Old path treatment:
+Old path treatment (**installed** current-source lane):
 
 - The prior optional evidence-triage deferral is replaced by a product-consumed
   Workbench bundle after fetch/read.
-- Existing D-prime authority remains the only downstream authority path; the
-  Workbench dossier is context, not admission.
+- In the installed lane, component D-prime remains the downstream review path;
+  the Workbench dossier is context, not admission.
 - The local Workbench projection is marked `run_kernel_reduced: false`,
   `run_kernel_reduction_pending: true`, and
   `proposed_for_runkernel_reduction: true`.
 
 Why this is not reinventing an existing surface:
 
-- The Workbench does not create a separate answer path, citation renderer,
-  source-obligation authority, or D-prime substitute.
+- The Workbench does not create a separate answer path, citation renderer, or
+  source-obligation authority.
 - It packages bounded candidate diagnostics already produced by the ordinary
-  runtime into proposal-only records, then hands compact refs to the existing
-  D-prime path and review report.
+  runtime into proposal-only records, then hands compact refs to the installed
+  downstream review path and review report.
 
 ## Authority Boundary
 
 Workbench packets are proposal-only. They may classify candidate roles, propose
 analyst findings, propose a gap search, prepare a local Workbench reduction
-projection, and hand a D-prime dossier ref to the existing D-prime path.
+projection, and hand a dossier ref to the **installed** current-source review
+path. Selected target consumption is Analyst self-audit and RunKernel admission
+per [AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md).
 
 They must not:
 
