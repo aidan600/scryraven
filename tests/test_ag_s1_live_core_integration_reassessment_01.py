@@ -13,6 +13,7 @@ own licensed repairs; quantitative finalization containment is now passing.
 
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 
 import pytest
@@ -24,7 +25,11 @@ from core.final_answer_runtime_adapter import (
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
     ROLE_CROSS_COMPONENT_ANALYST,
+    ROLE_SYSTEM_PROMPTS,
+    MulticomponentRoleRuntimeError,
     _normalize_semantic_output,
+    _parse_role_output,
+    _specialist_need_candidate,
 )
 from core.quantitative_finalization_authority import (
     QuantitativeFinalizationAuthorityError,
@@ -43,7 +48,10 @@ from core.search_work_query_shape_runtime import (
     DeterministicSearchWorkRuntimeInput,
     build_deterministic_search_work_runtime_records,
 )
-from core.specialist_graph_runtime import bind_specialist_need_proposal
+from core.specialist_graph_runtime import (
+    SPECIALIST_NEED_SCHEMA_VERSION,
+    bind_specialist_need_proposal,
+)
 
 FIXED_QUERIES = {
     "A": """Using only NASA's official Earth and Mars facts pages, answer two separate components:
@@ -108,6 +116,7 @@ def test_fixed_campaign_query_should_select_typed_multicomponent_lane(
 
 def _valid_component_proposal() -> dict:
     return {
+        "schema_version": SPECIALIST_NEED_SCHEMA_VERSION,
         "local_need_id": "quantitative-need-one",
         "capability_requirement": QUANTITATIVE_CAPABILITY_REQUIREMENT,
         "candidate_capability_hint": QUANTITATIVE_CAPABILITY_ID,
@@ -144,7 +153,12 @@ def _valid_component_proposal() -> dict:
     }
 
 
-def test_exact_top_level_proposal_survives_normalization_and_binding() -> None:
+def test_exact_top_level_proposal_is_extracted_before_artifact_normalization_and_binding() -> None:
+    prompt = ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST]
+    assert "supported, supported_with_caveats, unsupported, or blocked" in prompt
+    assert "do not add other base fields" in prompt
+    assert "code-owned IDs, refs, revisions, digests" in prompt
+    assert "query_resolution_proposals is optional and proposal-only" in prompt
     output = {
         "claim_text": "The difference is 40 km.",
         "support_status": "supported",
@@ -153,14 +167,19 @@ def test_exact_top_level_proposal_survives_normalization_and_binding() -> None:
         "blockers": [],
         "specialist_need_proposal": _valid_component_proposal(),
     }
-    normalized = _normalize_semantic_output(ROLE_COMPONENT_ANALYST, output)
+    parsed = _parse_role_output(json.dumps(output), clean_json_response=None)
+    present, proposal = _specialist_need_candidate(parsed)
+    assert present is True
+    assert proposal is not None
+    normalized = _normalize_semantic_output(ROLE_COMPONENT_ANALYST, parsed)
+    assert "specialist_need_proposal" not in normalized
     bound = bind_specialist_need_proposal(
         run_id="offline-run",
         request_id="offline-request",
         origin_role=ROLE_COMPONENT_ANALYST,
         origin_action_ref={"action_id": "offline-action"},
         origin_artifact_ref={"artifact_id": "offline-artifact"},
-        proposal=normalized["specialist_need_proposal"],
+        proposal=proposal,
         canonical_target_ref={
             "target_kind": "component",
             "target_key": "component_01",
@@ -171,6 +190,37 @@ def test_exact_top_level_proposal_survives_normalization_and_binding() -> None:
         policy=build_quantitative_product_specialist_policy(),
     )
     assert bound["proposal_authority"] == "accepted"
+
+
+def test_component_analyst_rejects_invalid_support_status() -> None:
+    with pytest.raises(
+        MulticomponentRoleRuntimeError,
+        match="requires claim_text and valid support_status",
+    ):
+        _normalize_semantic_output(
+            ROLE_COMPONENT_ANALYST,
+            {
+                "claim_text": "The difference is 40 km.",
+                "support_status": "partially_supported",
+            },
+        )
+
+
+def test_component_analyst_rejects_authority_fields_outside_proposal_namespaces() -> None:
+    with pytest.raises(
+        MulticomponentRoleRuntimeError,
+        match="claimed repository authority or unsafe material",
+    ):
+        _parse_role_output(
+            json.dumps(
+                {
+                    "claim_text": "The difference is 40 km.",
+                    "support_status": "supported",
+                    "component_id": "component_01",
+                }
+            ),
+            clean_json_response=None,
+        )
 
 
 def test_nested_cross_proposal_is_absent_from_normalized_role_artifact() -> None:
