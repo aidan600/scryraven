@@ -1,11 +1,26 @@
 # Cross-Component Analyst Workbench
 
-Status: established proposal-only doctrine with installed Boundary B
-consumption. Installed bounded multi-component execution lives in
+Status: current supporting Workbench and provenance reference.
+Authority: none as selected-target architecture.
+Default-read: no
+
+This document records **INSTALLED** Boundary B consumption, durable
+proposal-only Workbench rules, and **HISTORICAL** V0 design/phase-planning
+material. Installed bounded multi-component execution lives in
 [MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md](MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md).
-Selected AnalystOS target topology and consumption policy belong to
+Selected AnalystOS target topology, including Cross consumption, belongs only to
 [AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md). This document does
-not define D-prime as the selected or future required consumption path.
+not define a second target architecture and does not define D-prime as the
+selected or future required consumption path.
+
+Durable current Workbench rules:
+
+- proposal-only / no self-admission;
+- no raw packet mega-prompt;
+- no direct retrieval dispatch;
+- no Author glue;
+- compact component refs;
+- RunKernel authority.
 
 Mode: REPAIR.
 
@@ -19,11 +34,11 @@ D-prime-as-Analyst, direct retrieval dispatch, FAP synthesis, and Author glue
 before the next Build checkpoint: `COMPONENTWORKGRAPH-V0-NOEXEC-CONTRACT-01`.
 
 That checkpoint and the subsequent V0 contract sequence are now merged. They
-remain bounded reusable contracts, not ordinary product consumption. Phase 1
+remain **HISTORICAL** bounded reusable contracts, not ordinary product
+consumption and not selected-target architecture. Phase 1
 `AG-MULTICOMPONENT-ORDINARY-END-TO-END-SYNTHESIS-01` now installs the separate
 ordinary V1 product path. SearchOS Boundary B now consumes its typed
-query-resolution proposals; the next roadmap checkpoint is the offline SearchOS
-integration gate.
+query-resolution proposals.
 
 ## Installed Boundary B Consumption
 
@@ -36,36 +51,31 @@ and confidence order. Exact replay identity remains bound to the originating
 artifact and recorded parent state.
 
 For a searched-premise winner, ContractAmendment v2 and RunKernel own contract
-mutation; SearchOS retrieves direct evidence for the premise; **installed:**
+mutation; SearchOS retrieves direct evidence for the premise; **INSTALLED:**
 component D-prime admits direct support; and Graph V1 schedules a fresh
 affected-only Cross-Component Analyst pass. Cross-Component Analyst then
-proposes the exact target-mapped relationship; **installed:** synthesis D-prime
-validates it; RunKernel admits it. **Selected target:** recovery and validation
-fold into Analyst/Cross self-audit per
-[AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md). SearchOS and
-Scrutineer do not author inference. The installed semantic ceilings are depth 1
-in Fast/Balanced and depth 2 in Deep.
-
-This document defines the smallest safe next architecture step from the current
-same-component multi-source, `ComponentWorkNode`-shaped lane toward future
-multi-component reasoning.
+proposes the exact target-mapped relationship; **INSTALLED:** synthesis D-prime
+validates it; RunKernel admits it. SearchOS and Scrutineer do not author
+inference. The installed semantic ceilings are depth 1 in Fast/Balanced and
+depth 2 in Deep. Selected recovery and Cross consumption belong only to
+[AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md).
 
 The original V0 doctrine in this document did not itself implement the
-Workbench. Ordinary V1 now consumes Cross-Component Analyst, ComponentWorkGraph,
-synthesis D-prime, graph admission, scheduling, bounded recovery/inference,
-FAP, Author, and multi-component answering through their current canonical
-owners. Live validation and arbitrary-query coverage remain nonproofs.
+Workbench. **INSTALLED** ordinary V1 now consumes Cross-Component Analyst,
+ComponentWorkGraph, synthesis D-prime, graph admission, scheduling, bounded
+recovery/inference, FAP, Author, and multi-component answering through their
+current canonical owners. Live validation and arbitrary-query coverage remain
+nonproofs.
 
-For the ordinary product target, the Workbench contract alone is not a
-producer. The product needs a real dedicated configured-SmartModel
-Cross-Component Analyst call for genuine N>=2 synthesis. That role may propose
-first-class synthesis nodes and semantic edges over admitted component/synthesis
-refs with self-audit in the selected target. It may not validate its own
-proposal, admit graph state, dispatch recovery, or render answer prose. **Installed:**
-a separate configured-SmartModel synthesis D-prime validates; full Scrutineer
-challenges when triggered; RunKernel alone admits or authorizes recovery.
-**Selected target:** synthesis D-prime ordinary model calls are retired per
-[AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md).
+The Workbench contract alone is not a producer. Ordinary N>=2 product work needs
+a real dedicated configured-SmartModel Cross-Component Analyst call. That role
+may propose first-class synthesis nodes and semantic edges over admitted
+component/synthesis refs. It may not validate its own proposal as a separate
+review authority, canonically admit graph state, dispatch recovery, or render
+answer prose. **INSTALLED:** a separate configured-SmartModel synthesis D-prime
+validates; full Scrutineer challenges when triggered; RunKernel alone admits or
+authorizes recovery. That installed D-prime consumer is not selected-target
+doctrine.
 
 ## Capability Inventory / Reuse-First Gate
 
@@ -79,9 +89,14 @@ challenges when triggered; RunKernel alone admits or authorizes recovery.
 | RunKernel / AnswerContract / contract mutation | `docs/architecture/RUN_CONTRACT_SEMANTIC_LOOP.md`; `core/run_kernel.py` | Root authority and typed contract mutation owner. | REUSE | Graph and synthesis admission must be RunKernel-owned. | Semantic-loop and RunKernel tests guard admission, reducer ownership, accepted/current contract mutation, and no worker-owned authority. |
 | SufficiencyReadiness / FAP / Author | `docs/architecture/FAP_AUTHOR_BOUNDARY.md`; `docs/architecture/RUN_CONTRACT_SEMANTIC_LOOP.md` | Downstream packaging/rendering only. | KEEP CLOSED | They must not synthesize or glue component outputs. | FAP and Author doctrine guard readiness consumption, constrained packaging, constrained prose, no evidence interpretation, and no product-correctness claim. |
 
-## 1. Architecture Verdict
+## 1. Historical Architecture Verdict
 
-Verdict:
+**HISTORICAL** phase verdict from
+`MULTICOMPONENT-CROSS-COMPONENT-ANALYST-DOCTRINE-01`. This is provenance, not a
+current selected-target Architecture Verdict and not a "smallest safe next
+architecture step."
+
+Historical verdict:
 
 ```text
 Cross-Component Analyst Workbench doctrine/docs first.
@@ -90,23 +105,20 @@ No two-node proof yet.
 No FAP / Author / source display yet.
 ```
 
-Why:
+Why that historical phase blocked fake graph authority:
 
-- The next architecture risk is not lack of graph code. It is the wrong graph
-  story: `component A final + component B final + component C final -> Author
-  glues`.
-- Current code already has a same-component, multi-source lane and a
+- The risk was not lack of graph code. It was the wrong graph story:
+  `component A final + component B final + component C final -> Author glues`.
+- Current code already had a same-component, multi-source lane and a
   `ComponentWorkNode` V0 projection over one component lane. Treating that as
   multi-component execution would launder a single-lane proof into graph
   authority.
-- Multi-component work needs one proposal-only cross-component synthesis layer
-  between per-component lanes and RunKernel graph admission. **Selected target:**
-  Cross self-audit replaces separate synthesis D-prime validation. See
-  [AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md).
-- The doctrine must preserve RunKernel ownership of authorization, admission,
+- Multi-component work needed one proposal-only cross-component synthesis layer
+  between per-component lanes and RunKernel graph admission.
+- The doctrine had to preserve RunKernel ownership of authorization, admission,
   reduction, contract mutation, and follow-up/recovery re-entry.
 
-The architecture must reject this path:
+The durable rejected path remains:
 
 ```text
 component A final
@@ -115,18 +127,9 @@ component A final
 -> Author glues
 ```
 
-The selected safe path is:
-
-```text
-per-component lanes produce compact ComponentWorkNode-shaped refs
--> Cross-Component Analyst proposes synthesis/dependency/gap posture with self-audit
--> deterministic graph validation
--> RunKernel admits, blocks, challenges, or authorizes bounded recovery
--> only later phases may open readiness, FAP, and Author
-```
-
-**Installed** ordinary execution may still route through synthesis D-prime until
-convergence. That is installed fact, not selected target architecture.
+Do not treat the historical V0 sequence, installed synthesis D-prime, or this
+old verdict as selected-target architecture. Selected Cross consumption is owned
+only by [AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md).
 
 ## 2. Layer Responsibilities (Installed Historical Table)
 
@@ -153,9 +156,9 @@ not the selected or future required validation path.
 ## 3. Retrieval And Recovery Loop (Historical Installed Posture)
 
 Recovery may originate from Workbench gaps, Analyst/Cross dependency gaps, or
-**installed** D-prime challenges. **Selected target:** recovery returns to
-Analyst for case resume per
-[AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md).
+**INSTALLED** D-prime challenges. Selected recovery return belongs only to
+[AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md); this loop is
+installed/historical posture, not a second target architecture.
 
 The loop posture is:
 
@@ -163,9 +166,8 @@ The loop posture is:
 2. Cross-component recovery proposals are allowed.
 3. Missing component proposals are allowed.
 4. Workbench and Analyst propose only.
-5. **Installed:** separate component or synthesis D-prime validation may still
-   execute. **Selected target:** self-audit and RunKernel admission replace
-   separate D-prime validation.
+5. **INSTALLED:** separate component or synthesis D-prime validation may still
+   execute. That installed consumer is not selected-target doctrine.
 6. RunKernel authorizes, admits, reduces, mutates contract state, and records
    terminal blocker posture.
 7. Analyst must not directly dispatch search.
@@ -219,15 +221,17 @@ It may produce:
 - missing-component proposal refs;
 - unresolved-dependency refs;
 - recovery proposal refs;
-- caveat/nonclaim refs;
-- synthesis D-prime dossier refs.
+- caveat/nonclaim refs.
+
+**INSTALLED** Workbench packets may still carry synthesis D-prime dossier refs.
+Those refs are installed/historical packet fields, not a requirement of the
+minimum viable future Cross artifact.
 
 It must not:
 
 - admit evidence;
 - claim correctness;
 - render final prose;
-- replace D-prime;
 - replace RunKernel;
 - collapse component refs into an untraceable summary;
 - launch search;
@@ -240,9 +244,9 @@ The Workbench extends the current Analyst Workbench posture by doctrine: it
 keeps proposal-only behavior, compact dossier refs, and no dispatch. It does not
 fork an alternate Analyst authority path.
 
-## 5. Installed D-prime At Two Levels Versus Selected Target
+## 5. Installed D-prime At Two Levels
 
-**Installed** ordinary product execution still uses two D-prime levels:
+**INSTALLED** ordinary product execution still uses two D-prime levels:
 
 ```text
 per-component evidence-relative support validation
@@ -254,22 +258,20 @@ and
 cross-component synthesis validation over component refs and dependency refs
 ```
 
-**Selected target:** useful work from both levels folds into Component Analyst
-and Cross-Component Analyst self-audit respectively. Separate component and
-synthesis D-prime ordinary model calls are retired per
-[AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md). Dual D-prime is not
-future architecture.
+That installed split is factual. It is not a future target path. Dual D-prime is
+not selected-target architecture. Selected Cross consumption is owned only by
+[AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md).
 
-Per-component D-prime asks whether bounded evidence supports a proposed claim
-inside one component/source-obligation lane.
+**INSTALLED** per-component D-prime asks whether bounded evidence supports a
+proposed claim inside one component/source-obligation lane.
 
-Synthesis D-prime asks whether component A plus component B support synthesis
-claim S without inventing evidence, dropping caveats, erasing blockers, or
-changing component scope. It validates the Workbench synthesis proposal against
-component refs, dependency refs, D-prime refs, caveats, contradiction posture,
-missing evidence, and RunKernel refs.
+**INSTALLED** synthesis D-prime asks whether component A plus component B
+support synthesis claim S without inventing evidence, dropping caveats, erasing
+blockers, or changing component scope. It validates the Workbench synthesis
+proposal against component refs, dependency refs, D-prime refs, caveats,
+contradiction posture, missing evidence, and RunKernel refs.
 
-Synthesis D-prime may produce:
+**INSTALLED** synthesis D-prime may produce:
 
 - supported/partially-supported/unsupported synthesis validation refs;
 - contradiction/challenge refs;
@@ -277,18 +279,20 @@ Synthesis D-prime may produce:
 - caveat-preservation refs;
 - follow-up-need refs for RunKernel consideration.
 
-Synthesis D-prime must not become the Cross-Component Analyst. It does not
-invent the synthesis claim, select missing components, rewrite component
-outputs, authorize search, admit support, reduce contract state, package FAP, or
-write Author prose.
+**INSTALLED** synthesis D-prime must not become the Cross-Component Analyst. It
+does not invent the synthesis claim, select missing components, rewrite
+component outputs, authorize search, admit support, reduce contract state,
+package FAP, or write Author prose.
 
-## 6. ComponentWorkGraph V0 No-Execution Shape
+## 6. Historical ComponentWorkGraph V0 No-Execution Shape
 
-Future `ComponentWorkGraph` V0 is a no-execution, no-scheduler, no-runtime-
-parallelism contract shape. It may carry typed refs, digests, statuses, counts,
-and closed-surface flags only.
+**HISTORICAL** `ComponentWorkGraph` V0 is a no-execution, no-scheduler,
+no-runtime-parallelism contract shape. It may carry typed refs, digests,
+statuses, counts, and closed-surface flags only. These V0 fields describe the
+merged historical contract, not required fields of a future selected-target
+graph.
 
-Minimum V0 fields:
+Minimum historical V0 fields:
 
 - graph id;
 - parent run id/ref;
@@ -302,7 +306,8 @@ Minimum V0 fields:
 - missing component proposal refs;
 - Cross-Component Analyst refs;
 - synthesis proposal refs;
-- D-prime synthesis validation refs;
+- D-prime synthesis validation refs (**HISTORICAL/INSTALLED** packet field, not
+  a selected-target graph requirement);
 - RunKernel admission refs;
 - graph status;
 - closed downstream flags;
@@ -347,7 +352,8 @@ outputs:
 - missing evidence;
 - unresolved blockers;
 - recovery history;
-- D-prime refs;
+- D-prime refs (**INSTALLED** compact-ref vocabulary, not a selected-target
+  required consumer);
 - RunKernel refs;
 - ComponentCoverage refs;
 - source-obligation/citation-handoff refs.
@@ -369,9 +375,9 @@ retrieval path, or unbounded context sink.
 ## 8. Historical V0 Phase Sequence
 
 This sequence is retained to explain the provenance and boundaries of the
-merged V0 contracts. It is not current next-step doctrine. The ordinary Phase 1
-path supersedes it for the supported class, and the recommended next phase is
-`AG-MULTICOMPONENT-DYNAMIC-GRAPH-RECOVERY-01`.
+merged V0 contracts. It is **HISTORICAL** and is not current next-step doctrine.
+The ordinary Phase 1 path superseded it for the supported class. Do not read
+the named V0 successors below as the current implementation gate.
 
 ### 1. MULTICOMPONENT-CROSS-COMPONENT-ANALYST-DOCTRINE-01
 

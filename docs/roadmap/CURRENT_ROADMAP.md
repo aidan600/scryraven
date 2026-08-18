@@ -537,6 +537,10 @@ merely to recreate the prior suppressed Q1 state.
 
 ### Installed versus selected target
 
+The maintainer-selected **Option C modified into a unified iterative loop** is
+installed through SearchOS Phases 1, 2, and 3. Ordinary planning completion is
+`AnswerContract -> QueryPlan`.
+
 Phases 1, 2, and 3 are installed. Ordinary planning completion is
 `AnswerContract -> QueryPlan`. Ordinary initial and iterative acquisition no
 longer executes `ScoutDisambiguation`, `PlannerRevision`, or the routine initial

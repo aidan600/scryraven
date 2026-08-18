@@ -129,6 +129,21 @@ relationships where N>=2. It may emit zero to many synthesis proposals. Useful
 cross-component semantic scrutiny folds into Cross self-audit; separate synthesis
 D-prime ordinary model calls are selected for retirement.
 
+The selected Cross target after genuine N>=2 entry is:
+
+```text
+Cross case + self-audit
+-> deterministic graph validation
+-> Scrutineer when mode/risk policy requires
+-> at most one Cross revision
+-> RunKernel admission/re-admission of exact current graph state
+-> Sufficiency -> FinalAnswerPacket -> Author
+```
+
+This document is the sole selected-target owner for that Cross flow. Supporting
+Workbench documents may record installed or historical contracts; they must not
+define a second target architecture or require a separate D-prime consumer.
+
 Deterministic graph checks and RunKernel admission remain mandatory regardless
 of semantic-role topology.
 
