@@ -75,15 +75,45 @@ approval. Follow `PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md`.
 
 ## Live-validation license
 
+Use only when a phase licenses live ScryRaven/proplex provider, model, search,
+fetch/read, retrieval, or ordinary-product execution. Follow the playbook
+local/live-validation rules. Maximum PRODUCT runs define experimental
+authority. Do not add a provider/model/search/fetch/read budget as a default
+license field.
+
+Hard model/search/read/embedding attempt ceilings, token ceilings, and dollar
+ceilings belong under additional numeric safety fields only when explicitly
+requested by the maintainer, the experiment tests a budget/resource
+constraint, material exposure risk warrants them, or the installed
+authorization mechanism mechanically requires numeric fields. When those
+fields are mechanically required, they are non-interfering safety-compilation
+fields covering the lawful product execution relevant to the observation, not
+an arbitrary micro-budget. When `max_run_usd` is mechanically required for
+current maintainer-directed local development and no other value is specified,
+use the standing $10 USD emergency per-run fuse; it is not expected spend or
+product policy.
+
+For a repeated tiny observation using an already-settled authorization
+posture, instruct the agent to bind/reuse that posture and execute, not to
+research or derive a new budget.
+
+Private-data / redaction boundary, raw-retention posture, and sanitized
+output path are separate required fields. Do not collapse privacy or
+raw-retention into the sanitized output path.
+
 ```text
-Exact query or query class:
-Maximum calls and provider/model/search/fetch/read budget:
-Exact command or ordinary entrypoint:
-Redaction and private-data boundary:
-Committed validation note, if applicable:
-Ignored local output-quality packet, if applicable:
-Decision this run will make:
+Exact PRODUCT/validation target:
+Maximum PRODUCT runs:
+Retry/replacement authority, if relevant:
+Expected cost/risk posture:
+Operator path:
+Command/harness:
+Private-data / redaction boundary:
+Raw-retention posture:
+Sanitized output path:
+Decision:
 Stop condition:
+Additional numeric safety fields, only when required:
 ```
 
 Absent this completed addendum, live validation remains disabled.

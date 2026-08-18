@@ -511,10 +511,13 @@ Live validation remains default-off.
 `live_component_proof` requires a licensed component harness, call cap,
 redaction plan, output packet path, and stop condition.
 
-`live_product_proof` requires a licensed ordinary product-path command, exact
-query or query class, run cap, provider/model/search/fetch/read budget,
-redaction plan, output packet path, decision the run will make, and stop
-condition.
+`live_product_proof` requires a licensed ordinary product-path command and the
+completed live-validation addendum. Do not treat private-data / redaction
+boundary, raw-retention posture, or sanitized output path as optional; those
+fields remain required by the addendum and are separate concerns. Hard
+provider/model/search/read/embedding attempt, token, and dollar ceilings are
+policy requirements only when that addendum requires them, not a default
+live-product budget.
 
 A live component proof is not a live product proof.
 

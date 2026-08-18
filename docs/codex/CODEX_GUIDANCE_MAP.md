@@ -163,9 +163,13 @@ and D-prime integration work to existing owners before adding machinery.
 ## Live Validation
 
 Live provider, model, search, fetch/read, retrieval, and product validation are
-disabled unless the phase completes the live-validation addendum with exact
-scope, call cap, budget, redaction boundary, artifact path, decision, and stop
-condition. Live-search-only proof is not live product proof.
+disabled unless the phase completes the live-validation addendum. Maximum
+PRODUCT runs define experimental authority for ordinary maintainer-directed
+product dogfood. Hard model/search/read/embedding attempt, token, and dollar
+ceilings are additional numeric safety fields only when the addendum and
+playbook require them, not a default license budget. Follow the playbook
+local/live-validation non-interference and reuse rules. Live-search-only proof
+is not live product proof.
 
 ## Conflict Routing
 

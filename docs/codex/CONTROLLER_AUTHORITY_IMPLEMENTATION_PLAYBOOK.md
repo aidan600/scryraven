@@ -369,24 +369,16 @@ shape changes, and new domain decision branches outside the licensed handoff.
 
 ## Live validation rules
 
-Live validation is disabled by default. A phase may run live validation only when
-its brief supplies all of the following:
+Live validation is disabled by default. A Controller-handoff phase may run
+live validation only when its brief completes the live-validation addendum in
+`PHASE_BRIEF_ADDENDA.md`. Follow the playbook local/live-validation rules:
+maximum PRODUCT runs define experimental authority, and hard
+provider/model/search/read/embedding attempt, token, and dollar ceilings are
+policy requirements only when that addendum requires them. Do not treat a
+provider/model/search/fetch/read budget as a default license field.
 
-1. **Exact query class.** The class of query or the exact query text to run.
-2. **Run cap.** Maximum number of ScryRaven/proplex runs.
-3. **Provider/search cap.** Maximum provider, model, and search calls or an
-   equivalent bounded command that enforces the cap.
-4. **Packet path.** The local ignored output-quality review packet path and, if
-   durable history is needed, the committed validation doc path.
-5. **Redaction plan.** Explicit exclusions for secrets, raw prompts, raw provider
-   payloads, DB rows, caches, full traces, private logs, and unrelated generated
-   output.
-6. **Stop condition.** The condition that ends validation, including budget
-   exhaustion, protected-surface uncertainty, or discovery that the requested
-   behavior requires a new phase.
-
-If any item is missing, do not run live validation. Treat the missing item as a
-stop condition and keep the phase offline.
+If the addendum is missing, do not run live validation. Treat the missing
+license as a stop condition and keep the phase offline.
 
 ## Phase design checklist
 

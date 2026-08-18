@@ -262,10 +262,44 @@ from review into implementation.
 
 ### Local/live validation phase
 
-Use a live validation phase only when live validation is explicitly scoped with a
-query class, run cap, provider/model/search/fetch/read budget, packet path,
-redaction plan, decision, and stop condition. Otherwise live ScryRaven/proplex
-provider, model, search, or retrieval calls remain disabled.
+Use a live validation phase only when live validation is explicitly licensed
+with the live-validation addendum in
+[Phase Brief Addenda](PHASE_BRIEF_ADDENDA.md). Otherwise live
+ScryRaven/proplex provider, model, search, fetch/read, retrieval, or
+ordinary-product calls remain disabled.
+
+For ordinary maintainer-directed PRODUCT dogfood:
+
+1. Maximum PRODUCT runs define experimental authority.
+2. Hard model/search/read/embedding attempt ceilings, token ceilings, and
+   dollar ceilings are policy requirements only when explicitly requested by
+   the maintainer, the experiment tests a budget/resource constraint, material
+   exposure risk warrants them, or the installed authorization mechanism
+   mechanically requires numeric fields.
+3. When numeric fields are mechanically required, they are non-interfering
+   safety-compilation fields. They must cover the lawful product execution
+   relevant to the observation rather than impose an arbitrary micro-budget.
+4. When `max_run_usd` is mechanically required for current
+   maintainer-directed local development and no other value is specified, use
+   the standing $10 USD emergency per-run fuse. It is not expected spend or
+   product policy.
+5. Product search/READ/model/embedding depth, token use, latency, and actual
+   cost are normally observation evidence.
+6. For repeated or replacement observations where route set, same-day pricing
+   facts, repository contract, and maintainer risk authority have not
+   materially changed, reuse the already-settled operator path, authorization
+   construction method, route-pricing fact set, privacy posture, and command
+   shape. Do not re-derive or re-audit them.
+7. Once the required narrow preflight passes, execute or return one concrete
+   mechanical blocker. Do not spend substantial time estimating caps,
+   deadlines, pricing, or reconstructing settled safety architecture before a
+   tiny product pulse.
+8. LLM-controlled commands that rely on the private `.env` use the repository
+   broker/doorman path.
+
+For a repeated tiny observation using an already-settled authorization
+posture, a phase brief should instruct the agent to bind/reuse that posture
+and execute, not ask it to research or derive a new budget.
 
 ## Product path requirement for Build and product-facing Repair
 
@@ -407,7 +441,7 @@ Use this stop packet when escalation is required:
 
 ```text
 STOP REASON:
-scope_break | surface_boundary_uncertainty | live_budget_request |
+scope_break | surface_boundary_uncertainty | unlicensed_live_validation |
 secret_or_generated_data_access_needed | destructive_git_needed |
 merge_or_destructive_git_needed | design_decision | tests_reveal_architecture_choice
 
