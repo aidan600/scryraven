@@ -112,8 +112,11 @@ The current loop is one authority flow, not a phase chronology:
     ordinary semantic lane.
 16. **Installed loop:** Requests qualifying for
     `ordinary-bounded-multicomponent-factual-synthesis-v1` enter the bounded
-    multi-component lane: component Analyst proposes, component D-prime
-    validates, and RunKernel admits component state into ComponentWorkGraph V1.
+    multi-component lane: Component Analyst forms one self-audited component
+    case, deterministic code binds its exact current inputs and evidence, and
+    RunKernel admits component state into ComponentWorkGraph V1. Component
+    D-prime has no ordinary component consumer; its retained compatibility
+    surface is limited to an explicit legacy SearchOS recovery corridor.
 17. **Installed loop:** Cross-Component Analyst proposes dependencies and
     synthesis; synthesis D-prime validates nominated synthesis; RunKernel admits
     canonical graph and synthesis state. **Selected target loop:** see

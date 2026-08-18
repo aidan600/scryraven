@@ -95,8 +95,10 @@ def _history_entries_exclude_raw_provider(
 def _analyst_json() -> str:
     return json.dumps(
         {
+            "case_posture": "supported",
             "claim_text": "A bounded claim.",
-            "support_status": "supported",
+            "evidence_analysis": "The bounded evidence directly supports the claim.",
+            "self_audit": "The claim stays within the bounded evidence.",
             "caveats": [],
             "nonclaims": [],
             "blockers": [],

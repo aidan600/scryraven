@@ -15,7 +15,6 @@ import core.pipeline_orchestrator as orchestrator
 from core.cost_accounting import CostAccumulator
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
-    ROLE_COMPONENT_DPRIME,
     ROLE_CROSS_COMPONENT_ANALYST,
     ROLE_SCRUTINEER,
     ROLE_SYNTHESIS_DPRIME,
@@ -260,18 +259,16 @@ class BoundaryBOrdinaryHarness(OfflineOrdinaryPipelineHarness):
                 )
                 return json.dumps(
                     {
+                        "case_posture": "supported",
                         "claim_text": claim,
-                        "support_status": "supported",
-                        "caveats": [],
-                        "nonclaims": [],
-                        "blockers": [],
-                    }
-                )
-            if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_DPRIME]:
-                return json.dumps(
-                    {
-                        "validation_status": "supported",
-                        "reasons": ["The exact dedicated material supports the premise."],
+                        "evidence_analysis": (
+                            "The exact dedicated source supports only this "
+                            "direct premise."
+                        ),
+                        "self_audit": (
+                            "The case does not extend beyond the supplied "
+                            "direct premise evidence."
+                        ),
                         "caveats": [],
                         "nonclaims": [],
                         "blockers": [],
@@ -1016,18 +1013,16 @@ class FastInferenceOrdinaryHarness(OfflineOrdinaryPipelineHarness):
                 component_id = str(payload["component_ref"]["component_id"])
                 return json.dumps(
                     {
+                        "case_posture": "supported",
                         "claim_text": (f"Direct {component_id} is established."),
-                        "support_status": "supported",
-                        "caveats": [],
-                        "nonclaims": [],
-                        "blockers": [],
-                    }
-                )
-            if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_DPRIME]:
-                return json.dumps(
-                    {
-                        "validation_status": "supported",
-                        "reasons": ["Exact direct support is current."],
+                        "evidence_analysis": (
+                            "The exact dedicated source supports only this "
+                            "direct premise."
+                        ),
+                        "self_audit": (
+                            "The case does not extend beyond the supplied "
+                            "direct premise evidence."
+                        ),
                         "caveats": [],
                         "nonclaims": [],
                         "blockers": [],

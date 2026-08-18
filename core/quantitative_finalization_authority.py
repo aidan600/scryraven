@@ -24,7 +24,7 @@ from core.quantitative_specialist_product_activation import (
 )
 
 QUANTITATIVE_FINALIZATION_AUTHORITY_MANIFEST_SCHEMA_VERSION = (
-    "quantitative_finalization_authority_manifest_v1"
+    "quantitative_finalization_authority_manifest_v2"
 )
 QUANTITATIVE_FINALIZATION_VALIDATION_SCHEMA_VERSION = (
     "quantitative_finalization_validation_v1"
@@ -318,8 +318,8 @@ _AUTHORIZED_CLAIM_FIELDS = frozenset(
         "canonical_unit",
         "precision_posture",
         "evidence_or_specialist_ref",
-        "applicable_dprime_ref",
-        "applicable_dprime_consumption_ref",
+        "applicable_validator_ref",
+        "applicable_validator_consumption_ref",
         "admitted_claim_ref",
         "fap_material_ref",
         "semantic_claim_fingerprint_or_existing_equivalent",
@@ -329,8 +329,8 @@ _AUTHORIZED_CLAIM_FIELDS = frozenset(
 _AUTHORIZED_CLAIM_REF_FIELDS = (
     "current_claim_ref",
     "evidence_or_specialist_ref",
-    "applicable_dprime_ref",
-    "applicable_dprime_consumption_ref",
+    "applicable_validator_ref",
+    "applicable_validator_consumption_ref",
     "admitted_claim_ref",
     "fap_material_ref",
 )
@@ -1057,12 +1057,14 @@ def _claim_ref_from_entry(entry: Mapping[str, Any], *, fallback_key: str) -> dic
 def specialist_quantitative_authority_ref_from_handoff(
     specialist_need_handoff: Mapping[str, Any] | None,
     *,
-    applicable_dprime_ref: Mapping[str, Any] | None,
+    applicable_analyst_case_ref: Mapping[str, Any] | None = None,
+    applicable_dprime_ref: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Project an exact completed Specialist/D-prime handoff without new authority."""
+    """Project an exact completed Specialist/validator handoff without new authority."""
 
     from core.specialist_graph_runtime import (
-        VALIDATOR_COMPONENT,
+        VALIDATOR_COMPONENT_ANALYST,
+        VALIDATOR_COMPONENT_DPRIME,
         VALIDATOR_SYNTHESIS,
         VALIDATOR_TERMINAL,
         SpecialistGraphRuntimeError,
@@ -1080,17 +1082,29 @@ def specialist_quantitative_authority_ref_from_handoff(
     bounded = _mapping(result.get("bounded_result"))
     alignment = _mapping(bounded.get("claim_alignment"))
     alignment_binding = _mapping(alignment.get("literal_binding_ref"))
+    analyst_case_ref = _safe_ref(applicable_analyst_case_ref)
     dprime_ref = _safe_ref(applicable_dprime_ref)
     target_kind = str(
         _mapping(handoff.get("canonical_target_ref")).get("target_kind") or ""
     )
-    expected_consumption = (
-        VALIDATOR_COMPONENT
-        if target_kind == "component"
-        else VALIDATOR_SYNTHESIS
-        if target_kind == "synthesis"
-        else ""
-    )
+    if target_kind == "component" and analyst_case_ref:
+        expected_consumption = VALIDATOR_COMPONENT_ANALYST
+        validator_ref = analyst_case_ref
+        validator_route = "component_analyst"
+        consumption_posture = "consumed_by_applicable_analyst_case"
+    elif target_kind == "component" and dprime_ref:
+        # Retained only for historical/out-of-scope component-D-prime records.
+        expected_consumption = VALIDATOR_COMPONENT_DPRIME
+        validator_ref = dprime_ref
+        validator_route = "component_dprime"
+        consumption_posture = "consumed_by_applicable_dprime"
+    elif target_kind == "synthesis" and dprime_ref:
+        expected_consumption = VALIDATOR_SYNTHESIS
+        validator_ref = dprime_ref
+        validator_route = "synthesis_dprime"
+        consumption_posture = "consumed_by_applicable_dprime"
+    else:
+        return {}
     canonical_result_unit = _normalized_result_unit(bounded.get("result_unit"))
     legacy_result_unit = _normalized_result_unit(bounded.get("unit"))
     if canonical_result_unit:
@@ -1107,6 +1121,10 @@ def specialist_quantitative_authority_ref_from_handoff(
         result_unit = legacy_result_unit
     else:
         return {}
+    handoff_validator_ref = _safe_ref(
+        handoff.get("validator_artifact_ref")
+        or handoff.get("validator_dprime_artifact_ref")
+    )
     if not (
         handoff.get("handoff_id")
         and handoff.get("handoff_digest")
@@ -1123,19 +1141,24 @@ def specialist_quantitative_authority_ref_from_handoff(
         and bounded.get("precision_posture")
         and alignment.get("posture") == "exact_match"
         and _digest_text_is_valid(alignment_binding.get("source_material_digest"))
-        and dprime_ref
-        and expected_consumption
+        and validator_ref
         and handoff.get("validator_consumption") == expected_consumption
         and handoff.get("validator_consumption_terminal") == VALIDATOR_TERMINAL
         and handoff.get("validator_validation_status")
         in {"supported", "supported_with_caveats"}
-        and _safe_ref(handoff.get("validator_dprime_artifact_ref"))
-        == dprime_ref
+        and handoff_validator_ref == validator_ref
         and _safe_ref(result_ref.get("canonical_target_ref"))
         == _safe_ref(handoff.get("canonical_target_ref"))
     ):
         return {}
-    return {
+    consumption_ref = {
+        "route": validator_route,
+        "handoff_id": handoff.get("handoff_id"),
+        "handoff_digest": handoff.get("handoff_digest"),
+        "validator_artifact_ref": validator_ref,
+        "consumption_posture": consumption_posture,
+    }
+    authority = {
         "specialist_result_ref": _safe_ref(result_ref),
         "specialist_handoff_ref": {
             "handoff_id": handoff.get("handoff_id"),
@@ -1149,20 +1172,14 @@ def specialist_quantitative_authority_ref_from_handoff(
         "claim_alignment_posture": "exact_match",
         "claim_alignment_ref_digest": _digest(alignment),
         "claim_material_digest": alignment_binding.get("source_material_digest"),
-        "applicable_dprime_ref": dprime_ref,
-        "applicable_dprime_consumption_ref": {
-            "route": (
-                "component_dprime"
-                if target_kind == "component"
-                else "synthesis_dprime"
-            ),
-            "handoff_id": handoff.get("handoff_id"),
-            "handoff_digest": handoff.get("handoff_digest"),
-            "dprime_artifact_ref": dprime_ref,
-            "consumption_posture": "consumed_by_applicable_dprime",
-        },
+        "applicable_validator_ref": validator_ref,
+        "applicable_validator_consumption_ref": consumption_ref,
     }
-
+    if analyst_case_ref:
+        return {**authority, "applicable_analyst_case_ref": analyst_case_ref}
+    # Synthesis-D-prime and historical component-D-prime records retain this
+    # compatibility alias outside the new ordinary component path.
+    return {**authority, "applicable_dprime_ref": dprime_ref}
 
 def _normalized_result_unit(value: Any) -> str:
     unit = _clean_text(value, limit=80)
@@ -1178,9 +1195,27 @@ def _specialist_ref_is_complete(specialist_ref: Mapping[str, Any]) -> bool:
     result_ref = _mapping(specialist_ref.get("specialist_result_ref"))
     handoff_ref = _mapping(specialist_ref.get("specialist_handoff_ref"))
     target_ref = _mapping(handoff_ref.get("canonical_target_ref"))
-    dprime_ref = _mapping(specialist_ref.get("applicable_dprime_ref"))
+    validator_ref = _mapping(
+        specialist_ref.get("applicable_validator_ref")
+        or specialist_ref.get("applicable_dprime_ref")
+    )
     consumption_ref = _mapping(
-        specialist_ref.get("applicable_dprime_consumption_ref")
+        specialist_ref.get("applicable_validator_consumption_ref")
+        or specialist_ref.get("applicable_dprime_consumption_ref")
+    )
+    target_kind = str(target_ref.get("target_kind") or "")
+    analyst_case_ref = _mapping(specialist_ref.get("applicable_analyst_case_ref"))
+    if target_kind == "component" and analyst_case_ref:
+        expected_route = "component_analyst"
+        expected_posture = "consumed_by_applicable_analyst_case"
+    elif target_kind in {"component", "synthesis"}:
+        expected_route = f"{target_kind}_dprime"
+        expected_posture = "consumed_by_applicable_dprime"
+    else:
+        return False
+    consumption_validator_ref = _mapping(
+        consumption_ref.get("validator_artifact_ref")
+        or consumption_ref.get("dprime_artifact_ref")
     )
     return bool(
         result_ref.get("result_id")
@@ -1192,7 +1227,6 @@ def _specialist_ref_is_complete(specialist_ref: Mapping[str, Any]) -> bool:
         and _mapping(result_ref.get("canonical_target_ref")) == target_ref
         and handoff_ref.get("handoff_id")
         and handoff_ref.get("handoff_digest")
-        and target_ref.get("target_kind") in {"component", "synthesis"}
         and specialist_ref.get("normalized_numeric_value_text") is not None
         and specialist_ref.get("canonical_unit")
         and specialist_ref.get("precision_posture")
@@ -1205,17 +1239,13 @@ def _specialist_ref_is_complete(specialist_ref: Mapping[str, Any]) -> bool:
         and specialist_ref.get("claim_alignment_posture") == "exact_match"
         and specialist_ref.get("claim_alignment_ref_digest")
         and _digest_text_is_valid(specialist_ref.get("claim_material_digest"))
-        and dprime_ref
-        and consumption_ref.get("route")
-        == f"{target_ref.get('target_kind')}_dprime"
+        and validator_ref
+        and consumption_ref.get("route") == expected_route
         and consumption_ref.get("handoff_id") == handoff_ref.get("handoff_id")
-        and consumption_ref.get("handoff_digest")
-        == handoff_ref.get("handoff_digest")
-        and consumption_ref.get("consumption_posture")
-        == "consumed_by_applicable_dprime"
-        and _mapping(consumption_ref.get("dprime_artifact_ref")) == dprime_ref
+        and consumption_ref.get("handoff_digest") == handoff_ref.get("handoff_digest")
+        and consumption_ref.get("consumption_posture") == expected_posture
+        and consumption_validator_ref == validator_ref
     )
-
 
 def _specialist_matches(
     literal: Mapping[str, Any], specialist_ref: Mapping[str, Any]
@@ -1257,14 +1287,17 @@ def _claim_sources(
     admitted_claims: list[dict[str, Any]] = []
     for index, raw in enumerate(direct_component_entries, start=1):
         entry = _mapping(raw)
-        dprime_ref = _safe_ref(entry.get("dprime_validation_ref"))
+        analyst_case_ref = _safe_ref(
+            entry.get("component_analyst_case_ref")
+            or entry.get("analyst_finding_ref")
+        )
         if not (
             entry.get("entry_kind") == "direct_component"
             and entry.get("admission_status") in {"admitted", "admitted_with_caveats"}
             and entry.get("current") is True
             and entry.get("stale") is False
             and _clean_text(entry.get("claim_text"), limit=2000)
-            and dprime_ref
+            and analyst_case_ref
         ):
             continue
         admitted_claims.append(
@@ -1272,9 +1305,9 @@ def _claim_sources(
                 "source_kind": "admitted_quantitative_claim",
                 "claim_text": _clean_text(entry.get("claim_text"), limit=2000),
                 "claim_ref": _claim_ref_from_entry(entry, fallback_key=f"direct-{index}"),
-                "claim_authority_posture": "current_admitted_component_dprime_supported",
-                "applicable_dprime_ref": dprime_ref,
-                "applicable_dprime_consumption_ref": dprime_ref,
+                "claim_authority_posture": "current_admitted_component_analyst_case_supported",
+                "applicable_validator_ref": analyst_case_ref,
+                "applicable_validator_consumption_ref": analyst_case_ref,
                 "evidence_or_specialist_ref": {
                     "semantic_observation_ref": _safe_ref(entry.get("semantic_observation_ref")),
                     "component_coverage_ref": _safe_ref(entry.get("component_coverage_ref")),
@@ -1284,6 +1317,7 @@ def _claim_sources(
                 "fap_material_ref": {"entry_kind": "direct_component", "entry_index": index},
             }
         )
+
     for index, raw in enumerate(admitted_synthesis_entries, start=1):
         entry = _mapping(raw)
         carried = _mapping(entry.get("carried_semantic_lineage"))
@@ -1305,8 +1339,8 @@ def _claim_sources(
                 "claim_text": _clean_text(entry.get("claim_text"), limit=2000),
                 "claim_ref": _claim_ref_from_entry(entry, fallback_key=f"synthesis-{index}"),
                 "claim_authority_posture": "current_admitted_synthesis_dprime_supported",
-                "applicable_dprime_ref": dprime_ref,
-                "applicable_dprime_consumption_ref": _safe_ref(entry.get("runkernel_admission_ref")) or dprime_ref,
+                "applicable_validator_ref": dprime_ref,
+                "applicable_validator_consumption_ref": _safe_ref(entry.get("runkernel_admission_ref")) or dprime_ref,
                 "evidence_or_specialist_ref": {
                     "input_node_refs": _safe_value(entry.get("input_node_refs") or []),
                     "runkernel_admission_ref": _safe_ref(entry.get("runkernel_admission_ref")),
@@ -1334,9 +1368,9 @@ def _claim_sources(
                     "component_id": entry.get("component_id"),
                     "claim_digest": _text_digest(claim_text),
                 },
-                "claim_authority_posture": "hardened_fap_current_admitted_dprime_supported",
-                "applicable_dprime_ref": observation_ref,
-                "applicable_dprime_consumption_ref": observation_ref,
+                "claim_authority_posture": "hardened_fap_current_admitted_component_case_supported",
+                "applicable_validator_ref": observation_ref,
+                "applicable_validator_consumption_ref": observation_ref,
                 "evidence_or_specialist_ref": {
                     "semantic_observation_ref": observation_ref,
                     "component_coverage_ref": _safe_ref(entry.get("component_coverage_ref")),
@@ -1371,8 +1405,8 @@ def _claim_sources(
                             "claim_digest": _text_digest(assertion),
                         },
                         "claim_authority_posture": "current_fap_authorized_source_bound_material",
-                        "applicable_dprime_ref": {},
-                        "applicable_dprime_consumption_ref": {},
+                        "applicable_validator_ref": {},
+                        "applicable_validator_consumption_ref": {},
                         "evidence_or_specialist_ref": {
                             "evidence_ref_id": material.get("evidence_ref_id"),
                             "packet_evidence_id": material.get("packet_evidence_id"),
@@ -1583,18 +1617,22 @@ def build_quantitative_finalization_authority_bundle(
         for literal_index, literal in enumerate(literals, start=1):
             authority_kind = str(claim.get("source_kind"))
             evidence_ref = _safe_ref(claim.get("evidence_or_specialist_ref"))
-            dprime_ref = _safe_ref(claim.get("applicable_dprime_ref"))
-            dprime_consumption_ref = _safe_ref(
-                claim.get("applicable_dprime_consumption_ref")
+            validator_ref = _safe_ref(claim.get("applicable_validator_ref"))
+            validator_consumption_ref = _safe_ref(
+                claim.get("applicable_validator_consumption_ref")
             )
             if specialist_claim_authorized:
                 authority_kind = "specialist_derived_numeric"
                 evidence_ref = _safe_ref(
                     specialist_ref.get("specialist_result_ref")
                 )
-                dprime_ref = _safe_ref(specialist_ref.get("applicable_dprime_ref"))
-                dprime_consumption_ref = _safe_ref(
-                    specialist_ref.get("applicable_dprime_consumption_ref")
+                validator_ref = _safe_ref(
+                    specialist_ref.get("applicable_validator_ref")
+                    or specialist_ref.get("applicable_dprime_ref")
+                )
+                validator_consumption_ref = _safe_ref(
+                    specialist_ref.get("applicable_validator_consumption_ref")
+                    or specialist_ref.get("applicable_dprime_consumption_ref")
                 )
             elif authority_kind == "admitted_quantitative_claim":
                 if source_binding is None:
@@ -1603,8 +1641,8 @@ def build_quantitative_finalization_authority_bundle(
                 evidence_ref = _safe_ref(
                     source_binding.get("evidence_or_specialist_ref")
                 )
-                dprime_ref = {}
-                dprime_consumption_ref = {}
+                validator_ref = {}
+                validator_consumption_ref = {}
             dedupe_key = (
                 fingerprint,
                 _literal_signature(literal),
@@ -1633,8 +1671,8 @@ def build_quantitative_finalization_authority_bundle(
                     "canonical_unit": literal.get("canonical_unit"),
                     "precision_posture": literal.get("precision_posture"),
                     "evidence_or_specialist_ref": evidence_ref,
-                    "applicable_dprime_ref": dprime_ref,
-                    "applicable_dprime_consumption_ref": dprime_consumption_ref,
+                    "applicable_validator_ref": validator_ref,
+                    "applicable_validator_consumption_ref": validator_consumption_ref,
                     "admitted_claim_ref": (
                         claim_ref
                         if authority_kind == "specialist_derived_numeric"
@@ -1741,13 +1779,13 @@ def _authorized_claim_row_is_valid(entry: Mapping[str, Any]) -> bool:
         return False
     if authority_kind == "direct_source_numeric":
         return not (
-            row["applicable_dprime_ref"]
-            or row["applicable_dprime_consumption_ref"]
+            row["applicable_validator_ref"]
+            or row["applicable_validator_consumption_ref"]
             or row["admitted_claim_ref"]
         )
     return bool(
-        row["applicable_dprime_ref"]
-        and row["applicable_dprime_consumption_ref"]
+        row["applicable_validator_ref"]
+        and row["applicable_validator_consumption_ref"]
         and row["admitted_claim_ref"]
     )
 

@@ -94,10 +94,14 @@ catalog. It may return at most one top-level sibling proposal beside
 `synthesis_proposals`, never nested inside a synthesis proposal.
 
 The contract is present only at the two proposal-producing ordinary role
-surfaces. Component D-prime receives the exact ordinary component input without
-it; synthesis D-prime, selective Cross-Component Analyst, Scrutineer, and
-nonqualifying paths do not receive it. Those exclusions preserve role and
-product boundaries rather than creating another proposal authority.
+surfaces. A bounded Component Analyst-resume continuation binds an exact
+Specialist result back to its originating Analyst case; it is not a third
+proposal surface. Component D-prime has no ordinary component input or
+consumer; its retained compatibility is limited to the explicit legacy SearchOS
+recovery corridor. Synthesis D-prime, selective Cross-Component Analyst,
+Scrutineer, and nonqualifying paths do not receive the contract. Those
+exclusions preserve role and product boundaries rather than creating another
+proposal authority.
 
 ## Exact Proposal Admission
 

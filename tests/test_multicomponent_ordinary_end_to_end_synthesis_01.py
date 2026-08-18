@@ -16,7 +16,6 @@ from core.component_work_graph_v1 import COMPONENT_WORK_GRAPH_V1_STAGE
 from core.cost_accounting import CostAccumulator
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
-    ROLE_COMPONENT_DPRIME,
     ROLE_CROSS_COMPONENT_ANALYST,
     ROLE_SCRUTINEER,
     ROLE_SYNTHESIS_DPRIME,
@@ -135,20 +134,17 @@ class NorthstarHarness(OfflineOrdinaryPipelineHarness):
                 claim = self._component_claim(question)
                 return json.dumps(
                     {
+                        "case_posture": "supported",
                         "claim_text": claim,
-                        "support_status": "supported",
+                        "evidence_analysis": (
+                            "The exact bounded component evidence supports this claim."
+                        ),
+                        "self_audit": (
+                            "The case does not extend beyond the supplied component evidence."
+                        ),
                         "caveats": [],
                         "nonclaims": [],
-                        "blockers": [],
-                    }
-                )
-            if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_DPRIME]:
-                return json.dumps(
-                    {
-                        "validation_status": "supported",
-                        "reasons": ["The nominated claim matches the exact evidence."],
-                        "caveats": [],
-                        "nonclaims": [],
+                        "contradictions": [],
                         "blockers": [],
                     }
                 )
@@ -362,7 +358,6 @@ def _assert_northstar_product_state(
 
     expected_role_counts = {
         ROLE_COMPONENT_ANALYST: 5,
-        ROLE_COMPONENT_DPRIME: 5,
         ROLE_CROSS_COMPONENT_ANALYST: 1,
         ROLE_SYNTHESIS_DPRIME: 2,
         ROLE_SCRUTINEER: 1,
@@ -370,14 +365,12 @@ def _assert_northstar_product_state(
     assert {role: _role_call_count(harness, role) for role in expected_role_counts} == expected_role_counts
     assert graph["logical_accounting"] == {
         "component_analyst_evaluations": 5,
-        "component_dprime_evaluations": 5,
         "cross_component_analyst_evaluations": 1,
         "synthesis_dprime_evaluations": 2,
         "scrutineer_evaluations": 1,
     }
     assert graph["physical_call_accounting"] == {
         "component_analyst_calls": 5,
-        "component_dprime_calls": 5,
         "cross_component_analyst_calls": 1,
         "synthesis_dprime_calls": 2,
         "scrutineer_calls": 1,
@@ -398,19 +391,15 @@ def _assert_northstar_product_state(
             if action.action_type is ActionType.MULTICOMPONENT_COMPONENT_ANALYST_EXECUTE
             and action.inputs.get("logical_evaluation_key") == component_id
         )
-        dprime_sequence = next(
-            action.sequence
-            for action in actions
-            if action.action_type is ActionType.MULTICOMPONENT_COMPONENT_DPRIME_EXECUTE
-            and action.inputs.get("logical_evaluation_key") == component_id
-        )
         admission_sequence = next(
             action.sequence
             for action in actions
             if action.action_type is ActionType.MULTICOMPONENT_COMPONENT_ADMISSION_REDUCE
             and action.inputs.get("component_id") == component_id
         )
-        assert analyst_sequence < dprime_sequence < admission_sequence < graph_structure_sequence
+        assert analyst_sequence < admission_sequence < graph_structure_sequence
+        assert component_node["component_analyst_case_ref"]["role"] == ROLE_COMPONENT_ANALYST
+        assert "dprime_validation_ref" not in component_node
     e_admission_sequence = next(
         action.sequence
         for action in actions
@@ -901,7 +890,6 @@ def test_component_admission_rejects_forged_role_artifacts_and_claim_drift() -> 
     )
     from core.multicomponent_role_runtime import (
         ROLE_COMPONENT_ANALYST,
-        ROLE_COMPONENT_DPRIME,
         safe_packet_digest,
     )
     from core.run_kernel import RunKernel
@@ -977,30 +965,17 @@ def test_component_admission_rejects_forged_role_artifacts_and_claim_drift() -> 
     analyst = _artifact(
         ROLE_COMPONENT_ANALYST,
         {
-            "claim_text": "Fact 1 is supported.",
+            "case_posture": "supported",
             "support_status": "supported",
+            "claim_text": "Fact 1 is supported.",
+            "evidence_analysis": "The exact bounded evidence supports Fact 1.",
+            "self_audit": "The case does not extend beyond Fact 1.",
             "caveats": [],
             "nonclaims": [],
+            "contradictions": [],
             "blockers": [],
         },
         analyst_input,
-    )
-    from core.multicomponent_component_admission import component_dprime_input_packet
-
-    dprime_input = component_dprime_input_packet(
-        analyst_artifact=analyst,
-        analyst_input_packet=analyst_input,
-    )
-    dprime = _artifact(
-        ROLE_COMPONENT_DPRIME,
-        {
-            "validation_status": "supported",
-            "reasons": ["Matches evidence."],
-            "caveats": [],
-            "nonclaims": [],
-            "blockers": [],
-        },
-        dprime_input,
     )
     observation = {
         "observation_id": "observation:1",
@@ -1023,7 +998,6 @@ def test_component_admission_rejects_forged_role_artifacts_and_claim_drift() -> 
             component_coverage_history=[],
             component_id=component_id,
             analyst_artifact=analyst,
-            dprime_artifact=dprime,
             analyst_input_packet=analyst_input,
             semantic_observation=observation,
             sanitized_content_references=[
@@ -1044,13 +1018,12 @@ def test_component_admission_rejects_forged_role_artifacts_and_claim_drift() -> 
     kernel.state.initial_answer_contract_projection = {"canonical_state": True}
     with pytest.raises(
         MulticomponentComponentAdmissionError,
-        match="completed RunKernel role artifacts",
+        match="exact completed RunKernel Analyst case",
     ):
         execute_multicomponent_component_admission(
             run_kernel=kernel,
             component_id=component_id,
             analyst_artifact=analyst,
-            dprime_artifact=dprime,
             analyst_input_packet=analyst_input,
             semantic_observation=None,
             sanitized_content_references=[],

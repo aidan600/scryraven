@@ -45,6 +45,7 @@ from core.multicomponent_graph_scheduling import (
 )
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
+    ROLE_COMPONENT_ANALYST_RESUME,
     ROLE_COMPONENT_DPRIME,
     ROLE_CROSS_COMPONENT_ANALYST,
     ROLE_SCRUTINEER,
@@ -53,6 +54,8 @@ from core.multicomponent_role_runtime import (
     SELECTIVE_CROSS_COMPONENT_SCHEMA,
     MulticomponentRoleRuntimeError,
     execute_multicomponent_role_call,
+    execute_prepared_multicomponent_transport,
+    prepare_multicomponent_transport_call,
     safe_packet_digest,
 )
 from core.protocols import NullStatusWriter
@@ -293,9 +296,30 @@ def test_01_ordinary_serial_product_success(ordinary_product) -> None:
     semantic_calls = [
         call for call in harness.model_calls if call.get("system_prompt") in ROLE_SYSTEM_PROMPTS.values()
     ]
+    assert ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_DPRIME] not in {
+        call["system_prompt"] for call in semantic_calls
+    }
+    assert not [
+        action
+        for action in kernel.state.issued_actions.values()
+        if action.action_type
+        is ActionType.MULTICOMPONENT_COMPONENT_DPRIME_EXECUTE
+    ]
     assert len(semantic_calls) == len(scheduler["lease_history"])
     assert all(lease["status"] == LEASE_COMPLETED for lease in scheduler["lease_history"])
     assert scheduler["active_physical_lease_count"] == 0
+
+
+
+def test_01a_ordinary_component_dprime_authorization_requires_recovery_cycle() -> None:
+    kernel, _packets_by_component = _scheduler_kernel()
+
+    with pytest.raises(RunKernelTransitionError, match="execution is retired"):
+        kernel.authorize_multicomponent_role_call(
+            role=ROLE_COMPONENT_DPRIME,
+            input_packet_digest="retired-component-dprime-input",
+            logical_evaluation_key="component-1@ordinary",
+        )
 
 
 def test_02_multiple_ready_items_are_serial_and_deterministic(ordinary_product) -> None:
@@ -306,23 +330,27 @@ def test_02_multiple_ready_items_are_serial_and_deterministic(ordinary_product) 
     )
     assert first_grant["ready_work_count"] == 5
     works = [lease["work"] for lease in scheduler["lease_history"]]
-    assert works[0]["role"] == ROLE_COMPONENT_ANALYST
-    assert works[1]["role"] == ROLE_COMPONENT_DPRIME
-    assert works[0]["component_id"] == works[1]["component_id"]
+    assert [work["role"] for work in works[:5]] == [ROLE_COMPONENT_ANALYST] * 5
+    assert works[5]["role"] == ROLE_CROSS_COMPONENT_ANALYST
     assert scheduler["maximum_active_physical_leases"] == 1
 
 
 def test_03_work_is_derived_only_after_exact_upstream_authority(ordinary_product) -> None:
     _outcome, kernel, _captured, _harness = ordinary_product
     leases = _scheduler(kernel)["lease_history"]
-    analyst_position: dict[str, int] = {}
-    for position, lease in enumerate(leases):
-        work = lease["work"]
-        if work["role"] == ROLE_COMPONENT_ANALYST:
-            analyst_position[str(work["component_id"])] = position
-        if work["role"] == ROLE_COMPONENT_DPRIME:
-            assert analyst_position[str(work["component_id"])] < position
-            assert any("analyst_artifact_digest" in ref for ref in work["prerequisite_refs"])
+    analyst_work = [
+        lease["work"]
+        for lease in leases
+        if lease["work"]["role"] == ROLE_COMPONENT_ANALYST
+    ]
+    assert len(analyst_work) == 5
+    assert not any(
+        lease["work"]["role"] == ROLE_COMPONENT_ANALYST_RESUME
+        for lease in leases
+    )
+    admission_refs = kernel.state.projections["multicomponent_component_admission"]["component_admission_refs"]
+    assert all(ref["component_analyst_case_ref"]["role"] == ROLE_COMPONENT_ANALYST for ref in admission_refs)
+    assert all("dprime_validation_ref" not in ref for ref in admission_refs)
     assert "scheduler_graph" not in _scheduler(kernel)
 
 
@@ -342,7 +370,7 @@ def test_05_full_product_path_lease_coverage(dynamic_product) -> None:
     assert outcome.report
     assert captured["author_handoff_called"] is True
     works = [lease["work"] for lease in _scheduler(kernel)["lease_history"]]
-    assert {work["role"] for work in works} == set(MULTICOMPONENT_ROLE_CALL_LIMITS)
+    assert {work["role"] for work in works} == set(MULTICOMPONENT_ROLE_CALL_LIMITS) - {ROLE_COMPONENT_ANALYST_RESUME}
     assert not any(work.get("recovery_authorization_ref") for work in works)
     assert not any(work.get("selective_closure_ref") for work in works)
     assert len(
@@ -404,7 +432,12 @@ def test_08_atomic_role_admission_and_lease_completion() -> None:
         lease_id=lease["lease_id"],
         **_role_kwargs(
             ask_model=lambda *_args, **_kwargs: json.dumps(
-                {"claim_text": "A bounded claim.", "support_status": "supported"}
+                {
+                    "case_posture": "supported",
+                    "claim_text": "A bounded claim.",
+                    "evidence_analysis": "The bounded evidence directly supports the claim.",
+                    "self_audit": "The claim stays within the bounded evidence.",
+                }
             )
         ),
     )
@@ -469,6 +502,136 @@ def test_10_invalid_role_output_is_spent_without_retry() -> None:
     assert _scheduler(kernel)["lease_history"][-1]["status"] == LEASE_FAILED
 
 
+def _prepared_component_analyst_worker_result(raw_output: dict[str, Any]):
+    kernel, packets = _scheduler_kernel()
+    batch = kernel.grant_next_multicomponent_work_batch()
+    leases = [
+        item
+        for item in _scheduler(kernel)["lease_history"]
+        if item.get("batch_id") == batch.get("batch_id")
+    ]
+    lease = leases[0]
+    packet = packets[str(lease["work"]["component_id"])]
+    actions = kernel.commit_multicomponent_batch_dispatch(
+        batch_id=str(batch.get("batch_id") or ""),
+        packet_digests=[safe_packet_digest(packet)]
+        + [
+            safe_packet_digest(packets[str(item["work"]["component_id"])])
+            for item in leases[1:]
+        ],
+    )
+    prepared = prepare_multicomponent_transport_call(
+        action=actions[0],
+        input_packet=packet,
+        strict_one_shot_transport=wrap_text_callable_as_strict_one_shot_transport(
+            lambda *_args, **_kwargs: json.dumps(raw_output),
+            canonical_provider="OpenAI",
+            model="gpt-5.4",
+        ),
+        clean_json_response=None,
+        provider="OpenAI",
+        model="gpt-5.4",
+        use_reasoning=False,
+    )
+    return kernel, actions[0], execute_prepared_multicomponent_transport(prepared)
+
+
+@pytest.mark.parametrize(
+    "raw_output",
+    [
+        {
+            "claim_text": "Legacy thin claim.",
+            "support_status": "supported",
+            "caveats": [],
+            "nonclaims": [],
+            "blockers": [],
+        },
+        {
+            "case_posture": "supported",
+            "claim_text": "Claim.",
+            "self_audit": "I checked for overreach.",
+            "caveats": [],
+            "nonclaims": [],
+            "contradictions": [],
+            "blockers": [],
+        },
+        {
+            "case_posture": "supported",
+            "claim_text": "Claim.",
+            "evidence_analysis": "The exact bounded evidence supports the claim.",
+            "caveats": [],
+            "nonclaims": [],
+            "contradictions": [],
+            "blockers": [],
+        },
+    ],
+    ids=("support_status_only", "missing_analysis", "missing_self_audit"),
+)
+def test_prepared_component_analyst_worker_rejects_thin_or_incomplete_case(
+    raw_output: dict[str, Any],
+) -> None:
+    kernel, action, result = _prepared_component_analyst_worker_result(raw_output)
+    assert result.failure_kind == "output_validation_failure"
+    assert result.normalized_semantic_output is None
+    assert result.role == ROLE_COMPONENT_ANALYST
+    projection = kernel.state.projections.get(action.stage) or {}
+    assert projection.get("semantic_artifact_admitted") is not True
+
+
+def test_prepared_component_analyst_worker_accepts_modern_supporting_case() -> None:
+    _kernel, _action, result = _prepared_component_analyst_worker_result(
+        {
+            "case_posture": "supported",
+            "claim_text": "A bounded claim.",
+            "evidence_analysis": "The bounded evidence directly supports the claim.",
+            "self_audit": "The claim stays within the bounded evidence.",
+            "caveats": [],
+            "nonclaims": [],
+            "contradictions": [],
+            "blockers": [],
+        }
+    )
+    assert result.failure_kind is None
+    assert result.normalized_semantic_output is not None
+    assert result.normalized_semantic_output["case_posture"] == "supported"
+    assert result.normalized_semantic_output["support_status"] == "supported"
+    assert "_runtime_legacy_fixture_compatibility" not in (
+        result.normalized_semantic_output
+    )
+
+
+def test_scheduler_direct_component_analyst_call_rejects_support_status_only() -> None:
+    kernel, packets = _scheduler_kernel()
+    lease = kernel.grant_next_multicomponent_work_lease()
+    work = lease["work"]
+    with pytest.raises(
+        MulticomponentRoleRuntimeError,
+        match="requires a valid case_posture",
+    ):
+        execute_multicomponent_role_call(
+            run_kernel=kernel,
+            role=work["role"],
+            input_packet=packets[str(work["component_id"])],
+            logical_evaluation_key=work["logical_evaluation_key"],
+            lease_id=lease["lease_id"],
+            **_role_kwargs(
+                ask_model=lambda *_args, **_kwargs: json.dumps(
+                    {
+                        "claim_text": "Legacy thin claim.",
+                        "support_status": "supported",
+                        "caveats": [],
+                        "nonclaims": [],
+                        "blockers": [],
+                    }
+                )
+            ),
+        )
+    assert _scheduler(kernel)["lease_history"][-1]["status"] == LEASE_FAILED
+    assert kernel.state.projections[
+        f"multicomponent_role:{ROLE_COMPONENT_ANALYST}:{work['logical_evaluation_key']}"
+    ]["semantic_artifact_admitted"] is False
+
+
 def test_11_predispatch_cancellation_returns_exactly_once() -> None:
     kernel, _packets = _scheduler_kernel()
     lease = kernel.grant_next_multicomponent_work_lease()
@@ -491,7 +654,12 @@ def test_12_postdispatch_staleness_rejects_result_and_keeps_spend() -> None:
         changed = dict(kernel.state.initial_answer_contract)
         changed["accepted_contract_digest"] = "changed-after-dispatch"
         kernel.state.initial_answer_contract = changed
-        return json.dumps({"claim_text": "Late claim.", "support_status": "supported"})
+        return json.dumps({
+            "case_posture": "supported",
+            "claim_text": "Late claim.",
+            "evidence_analysis": "The bounded evidence directly supports the claim.",
+            "self_audit": "The claim stays within the bounded evidence.",
+        })
 
     with pytest.raises(Exception, match="stale"):
         execute_multicomponent_role_call(
@@ -511,7 +679,7 @@ def test_13_wrong_and_caller_authored_bindings_are_rejected() -> None:
     lease = kernel.grant_next_multicomponent_work_lease()
     work = lease["work"]
     wrongs = (
-        {"role": ROLE_COMPONENT_DPRIME},
+        {"role": ROLE_COMPONENT_ANALYST_RESUME},
         {"logical_evaluation_key": "forged-key"},
         {"input_packet_digest": "forged-digest"},
         {"output_schema_variant": SELECTIVE_CROSS_COMPONENT_SCHEMA},
@@ -579,16 +747,16 @@ def test_15_early_exhaustion_returns_safe_blocked_runoutcome(tmp_path: Path) -> 
 
 
 def test_16_late_exhaustion_preserves_progress_and_blocks_author(tmp_path: Path) -> None:
-    outcome, kernel, captured, harness = _run_product(tmp_path, total=11)
+    outcome, kernel, captured, harness = _run_product(tmp_path, total=8)
     scheduler = _scheduler(kernel)
     assert scheduler["status"] == "blocked_exhausted"
-    assert scheduler["compatibility_envelope"]["spent_units"] == 11
-    assert scheduler["lease_history"][-1]["work"]["role"] == ROLE_SYNTHESIS_DPRIME
+    assert scheduler["compatibility_envelope"]["spent_units"] == 8
+    assert scheduler["lease_history"][-1]["work"]["role"] == ROLE_SCRUTINEER
     assert scheduler["lease_history"][-1]["status"] == LEASE_DENIED_EXHAUSTED
     semantic_calls = [
         call for call in harness.model_calls if call.get("system_prompt") in ROLE_SYSTEM_PROMPTS.values()
     ]
-    assert len(semantic_calls) == 11
+    assert len(semantic_calls) == 8
     assert captured["author_handoff_called"] is False
     assert outcome.failure_card["blocked_fap"] is True
 
@@ -602,7 +770,7 @@ def test_17_deterministic_transitions_consume_no_semantic_units(ordinary_product
         if action.action_type
         in {
             ActionType.MULTICOMPONENT_COMPONENT_ANALYST_EXECUTE,
-            ActionType.MULTICOMPONENT_COMPONENT_DPRIME_EXECUTE,
+            ActionType.MULTICOMPONENT_COMPONENT_ANALYST_RESUME_EXECUTE,
             ActionType.MULTICOMPONENT_CROSS_ANALYST_EXECUTE,
             ActionType.MULTICOMPONENT_SYNTHESIS_DPRIME_EXECUTE,
             ActionType.MULTICOMPONENT_SCRUTINEER_EXECUTE,

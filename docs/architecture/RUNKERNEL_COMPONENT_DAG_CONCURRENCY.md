@@ -96,10 +96,10 @@ Scheduler V3 is the same RunKernel scheduler with a separate deterministic
 Specialist compatibility pool. The fixed ordinary CLI/UI product composition
 injects the S1 quantitative registry and policy; generic closed-default and
 no-need runs remain V2-compatible. Specialist work is always serial, maximum
-one in flight, nonrecursive, and excluded from semantic role caps, provider
-transport accounting, and the 22-unit compatibility envelope. Canonical ready-
-work ordering gives an eligible component calculation priority over a later
-synthesis calculation for the one-unit pool.
+one in flight, nonrecursive, and excluded from the active direct-path semantic
+role caps, provider transport accounting, and the 17-unit active envelope.
+Canonical ready-work ordering gives an eligible component calculation priority
+over a later synthesis calculation for the one-unit pool.
 
 The quantitative model-visible proposal contract and source catalogs remain
 transient role/adapter inputs. RunKernel binds the accepted proposal and exact
@@ -122,19 +122,18 @@ input packet digest, role, logical evaluation key, graph/contract revision, and
 the relevant recovery or selective-closure lineage. A lease cannot be rebound
 to different work or a new authority revision.
 
-The shared compatibility envelope is derived from the installed role caps:
+The active direct-path envelope is derived from the ordinary role caps:
 
 | Role | Unit cap |
 | --- | ---: |
 | Component Analyst | 5 |
-| Component D-prime | 5 |
 | Cross-Component Analyst | 2 |
 | Synthesis D-prime | 8 |
 | Scrutineer | 2 |
 
-The parent total is the sum of that one mapping; callers cannot author a second
-total. Grant moves units from remaining to reserved. Dispatch moves reserved
-units to permanently spent. Completion does not change allocation.
+The 17-unit active parent total is the sum of that mapping; callers cannot author
+a second total. A retained ComponentDprime compatibility cap grants no ordinary
+work. Grant moves units from remaining to reserved; dispatch moves them to spent.
 
 Predispatch cancellation may return an exact granted reservation once. For a
 V2 batch, cancellation returns the full still-granted batch atomically; partial
@@ -188,11 +187,10 @@ The canonical provider normalizer derives only these execution classes:
 | Local OpenAI-compatible | `local_openai_compatible` | 1 |
 | Unknown or unsupported | `conservative_unknown` | 1 |
 
-Width 2 applies only to eligible independent initial component Analyst and
-initial component D-prime waves. Local and unknown/conservative execution use
-width 1. Cross-Component Analyst, synthesis D-prime, Scrutineer, recovery,
-selective Cross-Component Analyst, affected synthesis validation, and all
-graph-bound work remain serial.
+Width 2 applies only to eligible independent initial Component Analyst waves.
+Local and unknown/conservative execution use width 1. Cross-Component Analyst,
+synthesis D-prime, Scrutineer, recovery, selective Cross-Component Analyst,
+affected synthesis validation, and all graph-bound work remain serial.
 
 The width-2 hosted posture is a compatibility cap, not measured provider
 capacity, adaptive rate-limit policy, user-configurable concurrency, or routing

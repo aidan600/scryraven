@@ -590,7 +590,7 @@ def build_searchos_existing_gap_basis(
     obligation_id = _token(slot_ref.get("source_obligation_id"), "source_obligation_id")
     admissions = _matching_admissions(component_admission_projection, component_id)
     if not admissions:
-        raise SearchOSExistingGapRecoveryError("existing-gap basis requires completed Component Analyst and D-prime")
+        raise SearchOSExistingGapRecoveryError("existing-gap basis requires completed Component Analyst case and RunKernel admission")
     latest_admission = admissions[-1]
     latest_status = str(latest_admission.get("admission_status") or "")
     answer_contract_ref = _mapping(canonical.get("answer_contract_ref"))
@@ -615,8 +615,9 @@ def build_searchos_existing_gap_basis(
         == answer_contract_ref.get("contract_version")
         and latest_admission.get("accepted_contract_digest")
         == answer_contract_ref.get("answer_contract_digest")
-        and _mapping(latest_admission.get("analyst_finding_ref"))
-        and _mapping(latest_admission.get("dprime_validation_ref"))
+        and _mapping(latest_admission.get("component_analyst_case_ref"))
+        and str(_mapping(latest_admission.get("component_analyst_case_ref")).get("role") or "")
+        in {"component_analyst", "component_analyst_resume"}
     ):
         raise SearchOSExistingGapRecoveryError("existing-gap basis lacks exact same-component role provenance")
     coverage_records = _coverage_records_for_component(
@@ -762,8 +763,7 @@ def build_searchos_existing_gap_basis(
         "requirement_posture": slot["requirement_posture"],
         "gap_kind": gap_kind,
         "component_admission_ref": _compact_ref(latest_admission),
-        "component_analyst_proposal_ref": deepcopy(latest_admission["analyst_finding_ref"]),
-        "component_dprime_validation_ref": deepcopy(latest_admission["dprime_validation_ref"]),
+        "component_analyst_case_ref": deepcopy(latest_admission["component_analyst_case_ref"]),
         "coverage_basis": coverage_basis,
         "exact_satisfied_requirement_ids": (
             exact_requirement_ids
@@ -822,6 +822,10 @@ def validate_searchos_existing_gap_basis(
         or not _mapping(safe.get("component_ref"))
         or not _mapping(safe.get("source_obligation_ref"))
         or not _mapping(safe.get("prior_attempt_history_ref"))
+        or not _mapping(safe.get("component_admission_ref"))
+        or not _mapping(safe.get("component_analyst_case_ref"))
+        or str(_mapping(safe.get("component_analyst_case_ref")).get("role") or "")
+        not in {"component_analyst", "component_analyst_resume"}
         or safe.get("requirement_posture")
         != SearchOSRequirementPosture.REQUIRED.value
         or safe.get("gap_kind") not in _GAP_KINDS
@@ -1042,7 +1046,6 @@ def admit_searchos_existing_gap_recovery_cycle(
             "READ",
             "SearchOSNavigation",
             "ComponentAnalyst",
-            "ComponentDprime",
             "ComponentCoverage",
         ],
         "scrutineer_input_authorized": False,
@@ -1722,7 +1725,6 @@ def ensure_searchos_whole_run_recovery_lease(
             "EvidenceLedger",
             "ComponentAnalyst",
             "CrossComponentAnalyst",
-            "ComponentDprime",
             "ComponentCoverage",
         ],
         "search_planner_rerun_authorized": False,

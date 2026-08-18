@@ -155,13 +155,17 @@ def _valid_component_proposal() -> dict:
 
 def test_exact_top_level_proposal_is_extracted_before_artifact_normalization_and_binding() -> None:
     prompt = ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST]
-    assert "supported, supported_with_caveats, unsupported, or blocked" in prompt
-    assert "do not add other base fields" in prompt
+    assert "case_posture must be exactly supported" in prompt
+    assert "Do not return legacy support_status" in prompt
     assert "code-owned IDs, refs, revisions, digests" in prompt
     assert "query_resolution_proposals is optional and proposal-only" in prompt
     output = {
+        "case_posture": "supported",
         "claim_text": "The difference is 40 km.",
-        "support_status": "supported",
+        "evidence_analysis": (
+            "The exact supplied source literals support only this difference."
+        ),
+        "self_audit": "The case does not extend beyond the supplied literals.",
         "caveats": [],
         "nonclaims": [],
         "blockers": [],
@@ -195,7 +199,7 @@ def test_exact_top_level_proposal_is_extracted_before_artifact_normalization_and
 def test_component_analyst_rejects_invalid_support_status() -> None:
     with pytest.raises(
         MulticomponentRoleRuntimeError,
-        match="requires claim_text and valid support_status",
+        match="requires a valid case_posture",
     ):
         _normalize_semantic_output(
             ROLE_COMPONENT_ANALYST,

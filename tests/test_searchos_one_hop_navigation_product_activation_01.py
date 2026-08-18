@@ -23,7 +23,6 @@ import pytest
 from core.acquisition_adapters import AcquisitionTransports
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
-    ROLE_COMPONENT_DPRIME,
     ROLE_SYSTEM_PROMPTS,
     safe_packet_digest,
 )
@@ -185,7 +184,6 @@ def _install_navigation_model(
     monkeypatch: pytest.MonkeyPatch,
     *,
     analyst_status: str = "supported",
-    dprime_status: str = "supported",
     replay_qualification: bool = False,
 ) -> dict[str, Any]:
     from core import ordinary_multicomponent_synthesis_runtime as multicomponent
@@ -320,26 +318,30 @@ def _install_navigation_model(
         if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST]:
             self._record_model_call(system_prompt, kwargs)
             assert LINKED_FACT in prompt
-            return json.dumps(
-                {
-                    "claim_text": f"Alpha's official requirement is that its launch color is {LINKED_FACT}.",
-                    "support_status": analyst_status,
-                    "caveats": [],
-                    "nonclaims": [],
-                    "blockers": [] if analyst_status == "supported" else ["unsupported fixture"],
-                }
-            )
-        if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_DPRIME]:
-            self._record_model_call(system_prompt, kwargs)
-            return json.dumps(
-                {
-                    "validation_status": dprime_status,
-                    "reasons": ["Offline component D-prime fixture."],
-                    "caveats": [],
-                    "nonclaims": [],
-                    "blockers": [] if dprime_status == "supported" else ["unsupported fixture"],
-                }
-            )
+            payload = {
+                "case_posture": analyst_status,
+                "claim_text": (
+                    "Alpha's official requirement is that its launch color "
+                    f"is {LINKED_FACT}."
+                ),
+                "caveats": [],
+                "nonclaims": [],
+                "blockers": (
+                    []
+                    if analyst_status == "supported"
+                    else ["unsupported fixture"]
+                ),
+            }
+            if analyst_status in {"supported", "supported_with_caveats"}:
+                payload["evidence_analysis"] = (
+                    "The exact official linked fact supports only the stated "
+                    "launch-color requirement."
+                )
+                payload["self_audit"] = (
+                    "The case does not extend beyond the supplied official "
+                    "linked fact."
+                )
+            return json.dumps(payload)
         return original(self, prompt, system_prompt, **kwargs)
 
     def capture_receiver(run_kernel: RunKernel, *args: Any, **kwargs: Any) -> Any:
@@ -374,7 +376,7 @@ def _install_navigation_model(
         return original_content_builder(*args, **kwargs)
 
     if replay_qualification:
-        original_qualifier = multicomponent._qualify_searchos_read_material_after_component_dprime
+        original_qualifier = multicomponent._qualify_searchos_read_material_after_component_analyst_case
 
         def replay_qualifier(*args: Any, **kwargs: Any) -> Any:
             run_kernel = kwargs["run_kernel"]
@@ -388,21 +390,21 @@ def _install_navigation_model(
 
         monkeypatch.setattr(
             multicomponent,
-            "_qualify_searchos_read_material_after_component_dprime",
+            "_qualify_searchos_read_material_after_component_analyst_case",
             replay_qualifier,
         )
     else:
-        original_qualifier = multicomponent._qualify_searchos_read_material_after_component_dprime
+        original_qualifier = multicomponent._qualify_searchos_read_material_after_component_analyst_case
 
         def capture_qualifier(*args: Any, **kwargs: Any) -> Any:
             capture["qualification_kernel"] = kwargs["run_kernel"]
             capture["qualification_bindable"] = kwargs["bindable"]
-            capture["qualification_dprime"] = deepcopy(kwargs["dprime_artifact"])
+            capture["qualification_analyst_case"] = deepcopy(kwargs["analyst_artifact"])
             return original_qualifier(*args, **kwargs)
 
         monkeypatch.setattr(
             multicomponent,
-            "_qualify_searchos_read_material_after_component_dprime",
+            "_qualify_searchos_read_material_after_component_analyst_case",
             capture_qualifier,
         )
 
@@ -503,7 +505,7 @@ def _run(
 def _inject_qualification_source_facts(monkeypatch: pytest.MonkeyPatch, **facts: Any) -> None:
     from core import ordinary_multicomponent_synthesis_runtime as multicomponent
 
-    original = multicomponent._qualify_searchos_read_material_after_component_dprime
+    original = multicomponent._qualify_searchos_read_material_after_component_analyst_case
 
     def inject(*args: Any, **kwargs: Any) -> Any:
         bindable = kwargs["bindable"]
@@ -528,7 +530,7 @@ def _inject_qualification_source_facts(monkeypatch: pytest.MonkeyPatch, **facts:
 
     monkeypatch.setattr(
         multicomponent,
-        "_qualify_searchos_read_material_after_component_dprime",
+        "_qualify_searchos_read_material_after_component_analyst_case",
         inject,
     )
 
@@ -673,7 +675,7 @@ def test_one_hop_navigation_reaches_component_and_final_answer(tmp_path: Path, m
     assert qualification_basis["read_custody_ref"] == (material_lineage["read_custody_ref"])
     assert qualification_basis["slot_ref"] == material_lineage["slot_ref"]
     assert qualification_basis["semantic_handoff_ref"] == (material_lineage["semantic_handoff_ref"])
-    assert len(qualification_basis["component_dprime_artifact_digest"]) == 64
+    assert len(qualification_basis["component_analyst_case_digest"]) == 64
     assert "url" not in json.dumps(qualification_basis, sort_keys=True).casefold()
     [pre_content_ledger] = runtime_capture["ledger_before_content"]
     pre_content_observations, pre_content_custody = _qualification_records(pre_content_ledger)
@@ -683,7 +685,7 @@ def test_one_hop_navigation_reaches_component_and_final_answer(tmp_path: Path, m
             "candidate_id": canonical_candidate_id,
             "record_kind": "fact",
             "disposition": "accepted",
-            "source": "searchos_component_dprime_material_qualification",
+            "source": "searchos_component_analyst_case_material_qualification",
             "requirement_id": qualification_basis["requirement_id"],
             "observation_id": qualification_id,
         }
@@ -697,7 +699,7 @@ def test_one_hop_navigation_reaches_component_and_final_answer(tmp_path: Path, m
         {
             "requirement_id": qualification_basis["requirement_id"],
             "candidate_id": canonical_candidate_id,
-            "link_reason": "exact_searchos_read_custody_component_dprime_supported",
+            "link_reason": "exact_searchos_read_custody_component_analyst_case_supported",
             "link_status": "accepted",
         }
     ]
@@ -974,7 +976,7 @@ def test_ordinary_official_current_source_strength_remains_compatible(
     observations, custody = _qualification_records(ledger)
 
     assert len(observations) == len(custody) == 1
-    assert runtime_capture["qualification_dprime"]["semantic_output"]["validation_status"] == "supported"
+    assert runtime_capture["qualification_analyst_case"]["semantic_output"]["case_posture"] == "supported"
     assert len(runtime_capture["qualification_authorizations"]) == 1
     candidate_id = custody[0]["candidate_id"]
     candidate = next(item for item in ledger["candidate_records"] if item["candidate_id"] == candidate_id)
@@ -989,19 +991,16 @@ def test_ordinary_official_current_source_strength_remains_compatible(
 
 
 @pytest.mark.parametrize(
-    ("analyst_status", "dprime_status"),
-    [("unsupported", "supported"), ("supported", "unsupported")],
+    "analyst_status", ["unsupported"],
 )
 def test_component_role_rejection_uses_searchos_recovery_not_old_lane(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     analyst_status: str,
-    dprime_status: str,
 ) -> None:
     runtime_capture = _install_navigation_model(
         monkeypatch,
         analyst_status=analyst_status,
-        dprime_status=dprime_status,
     )
     outcome, harness = _run(tmp_path, monkeypatch)
     kernel = harness.run_kernel
@@ -1225,17 +1224,17 @@ def test_one_physical_candidate_has_component_bound_qualification_reuse(
         evidence_ref_id=first_bindable.evidence_ref_id,
         candidate_record=deepcopy(first_bindable.candidate_record),
     )
-    dprime_two = deepcopy(runtime_capture["qualification_dprime"])
-    dprime_two["artifact_digest"] = safe_packet_digest(
-        {"component_id": "component-2", "source": dprime_two["artifact_digest"]}
+    analyst_case_two = deepcopy(runtime_capture["qualification_analyst_case"])
+    analyst_case_two["artifact_digest"] = safe_packet_digest(
+        {"component_id": "component-2", "source": analyst_case_two["artifact_digest"]}
     )
 
     assert (
-        multicomponent._qualify_searchos_read_material_after_component_dprime(
+        multicomponent._qualify_searchos_read_material_after_component_analyst_case(
             run_kernel=kernel,
             component_ref=component_two,
             bindable=bindable_two,
-            dprime_artifact=dprime_two,
+            analyst_artifact=analyst_case_two,
         )
         == first_bindable.evidence_ref_id
     )

@@ -12,6 +12,7 @@ from core.acquisition_adapters import AcquisitionTransports
 from core.cost_accounting import CostAccumulator
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
+    ROLE_COMPONENT_ANALYST_RESUME,
     ROLE_COMPONENT_DPRIME,
     ROLE_CROSS_COMPONENT_ANALYST,
     ROLE_SCRUTINEER,
@@ -660,13 +661,28 @@ class OfflineOrdinaryPipelineHarness:
                 "HANDOFF_UNRESOLVED",
                 reason="offline_no_candidates",
             )
-        if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST]:
+        if system_prompt in {
+            ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST],
+            ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST_RESUME],
+        }:
             payload = json.loads(prompt)
-            question = str(dict(payload.get("component_ref") or {}).get("user_facing_question") or self.core_topic)
+            prior_case = dict(payload.get("prior_component_case") or {})
+            prior_claim = str(prior_case.get("claim_text") or "").strip()
+            question = str(
+                dict(payload.get("component_ref") or {}).get("user_facing_question") or self.core_topic
+            )
             return json.dumps(
                 {
-                    "claim_text": "Offline supported finding for " + question,
-                    "support_status": "supported",
+                    "claim_text": prior_claim or "Offline supported finding for " + question,
+                    "case_posture": "supported",
+                    "evidence_analysis": (
+                        "The exact bounded READ material supplied for this "
+                        "component supports the stated offline finding."
+                    ),
+                    "self_audit": (
+                        "The finding is limited to the supplied component "
+                        "evidence and does not establish unstated facts."
+                    ),
                     "caveats": [],
                     "nonclaims": [],
                     "blockers": [],

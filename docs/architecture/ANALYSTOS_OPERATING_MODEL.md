@@ -3,28 +3,29 @@
 Status: current
 Authority: canonical:analystos-operating-model
 Default-read: no
-Applies-to: AnalystOS target topology, semantic-role responsibilities, mode policy, recovery return flow, N=1 folding, synthesis posture, and D-prime retirement direction
+Applies-to: AnalystOS direct Component Analyst admission, semantic-role responsibilities, mode policy, recovery return flow, N=1 folding, synthesis posture, and retained synthesis D-prime retirement direction
 Does-not-authorize: implementation, live calls, runtime removal claims, or activation of planned capabilities
 Verified-against-runtime: 540141acaaaf041bda303edd62211dd6a11958bc
 Update-trigger: maintainer changes selected AnalystOS target topology, role responsibilities, mode policy, or retirement sequencing
 
 ## Installed Versus Selected Target
 
-**INSTALLED:** The ordinary bounded multi-component path still executes separate
-component D-prime and synthesis D-prime ordinary model calls between Analyst
-proposal and RunKernel admission. That installed topology is factual and
-executable today.
+**INSTALLED:** The ordinary component path forms a current Component Analyst
+case, passes deterministic current-authority binding, and receives direct
+RunKernel component admission. Component D-prime has no ordinary component
+consumer. Genuine N>=2 synthesis still executes a separate synthesis D-prime
+ordinary model call before RunKernel graph/synthesis admission.
 
-**SELECTED TARGET:** Component D-prime and synthesis D-prime ordinary model calls
-are selected for retirement. Useful semantic work folds into Component Analyst
-self-audit and Cross-Component Analyst self-audit respectively. This document
-owns the selected target; it does not claim runtime removal until convergence
-phases land.
+**SELECTED TARGET:** The direct component fold is installed. The synthesis
+D-prime ordinary model call is selected for retirement. Useful semantic work
+folds into Component Analyst self-audit and Cross-Component Analyst self-audit
+respectively. This document owns the selected target; it does not claim the
+remaining synthesis runtime removal until its convergence phase lands.
 
-Do not treat installed D-prime lanes as permanent architecture. Do not document
-a compatibility adapter into D-prime as the selected target, conditional
-D-prime on every support-like claim, or current Scrutineer limitations as proof
-that D-prime must remain.
+Do not treat the retained synthesis D-prime lane as permanent architecture. Do
+not document a compatibility adapter into retired Component D-prime as the
+selected component path, conditional D-prime on every support-like claim, or
+current Scrutineer limitations as proof that synthesis D-prime must remain.
 
 ## Product Boundary
 
@@ -88,7 +89,7 @@ case resume, completion, or revision before admission proceeds.
 | Role | Selected responsibility | Must not |
 | --- | --- | --- |
 | Component Analyst | Strong meaning-owning case builder; self-audit is part of case construction, not a separate review authority. | Canonically admit its own output, authorize recovery or Specialist work, or render. |
-| Component D-prime | **Selected retirement target.** Installed ordinary model call only until convergence. | Remain the selected consumption path after AnalystOS convergence. |
+| Component D-prime | **Retired from ordinary component consumption.** It may remain only as a bounded compatibility contract with no ordinary work producer. | Re-enter the ordinary component path or become a second component review authority. |
 | Cross-Component Analyst | Retained for genuine N>=2 relationships; may produce 0..N synthesis proposals; self-audit is part of case construction. | Run for N=1, canonically admit its own synthesis, or render. |
 | Synthesis D-prime | **Selected retirement target.** Installed ordinary model call only until convergence. | Remain the selected validation path after AnalystOS convergence. |
 | Specialist | Deterministic contributor; result returns to Analyst for reanalysis. | Self-authorize support or bypass Analyst consumption. |
@@ -107,20 +108,17 @@ Scrutineer attacks the case when policy requires.
 RunKernel admits mechanics.
 ```
 
-Installed mnemonic for the current executable path remains documented in
-[D-prime Architecture](DPRIME_ARCHITECTURE.md) until runtime convergence removes
-the separate D-prime calls.
+The retained synthesis D-prime mnemonic and bounded compatibility contract remain
+documented in [D-prime Architecture](DPRIME_ARCHITECTURE.md) until synthesis
+runtime convergence removes the remaining ordinary model call.
 
 ## N=1 Folding
 
 For N=1 work, including the SearchOS semantic-handoff receiver path, the
-selected target has **no** Cross-Component Analyst, synthesis, or separate
-D-prime semantic ceremony. One strong Component Analyst case with self-audit, code-owned current-authority
-binding, and RunKernel component admission when ready. No Cross-Component
-Analyst, synthesis, or separate D-prime semantic ceremony.
-
-The installed runtime may still route through component D-prime today. That is
-installed fact, not selected target architecture.
+installed and selected topology has **no** Cross-Component Analyst, synthesis,
+or Component D-prime semantic ceremony. One strong Component Analyst case with
+self-audit, code-owned current-authority binding, and direct RunKernel component
+admission when ready is the complete ordinary N=1 path.
 
 ## Cross-Component Synthesis
 
@@ -194,26 +192,25 @@ The selected target explicitly rejects:
 
 Runtime convergence should:
 
-1. complete the direct component-path replacement and Q1 ordinary-product
+1. preserve the direct component-path replacement through its Q1 ordinary-product
    boundary;
-2. fold component D-prime useful work into Component Analyst self-audit;
-3. fold synthesis D-prime useful work into Cross-Component Analyst self-audit;
-4. route Specialist and recovery results to Analyst reanalysis;
-5. retain Cross-Component Analyst only for genuine N>=2 synthesis;
-6. keep Scrutineer as the sole separate semantic reviewer under the mode policy
+2. fold retained synthesis D-prime useful work into Cross-Component Analyst self-audit;
+3. route Specialist and recovery results to Analyst reanalysis;
+4. retain Cross-Component Analyst only for genuine N>=2 synthesis;
+5. keep Scrutineer as the sole separate semantic reviewer under the mode policy
    above;
-7. leave RunKernel, Sufficiency, FAP, and Author boundaries unchanged.
+6. leave RunKernel, Sufficiency, FAP, and Author boundaries unchanged.
 
-[D-prime Architecture](DPRIME_ARCHITECTURE.md) remains the installed role-contract
-owner until ordinary model calls are retired. Do not claim removal before code
-changes land.
+[D-prime Architecture](DPRIME_ARCHITECTURE.md) remains the retained synthesis
+role-contract owner and component compatibility reference. Do not claim synthesis
+removal before its code changes land.
 
 ## Nonproofs
 
-- Runtime still executes component D-prime and synthesis D-prime on the installed
-  bounded multi-component path.
-- No live validation of Analyst self-audit, folded topology, or retirement was
-  performed by this doctrine repair.
+- Runtime directly admits Component Analyst cases and retains synthesis D-prime
+  on the installed bounded multi-component path.
+- No live validation of Component Analyst case posture, direct admission, or
+  future synthesis retirement was performed by this doctrine repair.
 - Real-model Component Analyst output-validation behavior on the current Q1 path
   remains the immediate product frontier.
 - Offline SearchOS/AnalystOS gate evidence does not prove real-model origination

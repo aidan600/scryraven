@@ -12,7 +12,7 @@ from core.component_work_node import (
 )
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
-    ROLE_COMPONENT_DPRIME,
+    ROLE_COMPONENT_ANALYST_RESUME,
     ROLE_CROSS_COMPONENT_ANALYST,
     ROLE_SCRUTINEER,
     ROLE_SYNTHESIS_DPRIME,
@@ -66,28 +66,26 @@ _READY_STATUSES = frozenset({GRAPH_STATUS_READY, GRAPH_STATUS_READY_WITH_CAVEATS
 _SUPPORT_VALIDATIONS = frozenset({"supported", "supported_with_caveats"})
 _LOGICAL_ACCOUNTING_KEYS = (
     "component_analyst_evaluations",
-    "component_dprime_evaluations",
     "cross_component_analyst_evaluations",
     "synthesis_dprime_evaluations",
     "scrutineer_evaluations",
 )
 _PHYSICAL_ACCOUNTING_KEYS = (
     "component_analyst_calls",
-    "component_dprime_calls",
     "cross_component_analyst_calls",
     "synthesis_dprime_calls",
     "scrutineer_calls",
 )
 _ROLE_LOGICAL_ACCOUNTING_KEY = {
     ROLE_COMPONENT_ANALYST: "component_analyst_evaluations",
-    ROLE_COMPONENT_DPRIME: "component_dprime_evaluations",
+    ROLE_COMPONENT_ANALYST_RESUME: "component_analyst_evaluations",
     ROLE_CROSS_COMPONENT_ANALYST: "cross_component_analyst_evaluations",
     ROLE_SYNTHESIS_DPRIME: "synthesis_dprime_evaluations",
     ROLE_SCRUTINEER: "scrutineer_evaluations",
 }
 _ROLE_PHYSICAL_ACCOUNTING_KEY = {
     ROLE_COMPONENT_ANALYST: "component_analyst_calls",
-    ROLE_COMPONENT_DPRIME: "component_dprime_calls",
+    ROLE_COMPONENT_ANALYST_RESUME: "component_analyst_calls",
     ROLE_CROSS_COMPONENT_ANALYST: "cross_component_analyst_calls",
     ROLE_SYNTHESIS_DPRIME: "synthesis_dprime_calls",
     ROLE_SCRUTINEER: "scrutineer_calls",
@@ -1837,10 +1835,10 @@ def component_work_graph_v1_from_single_component_admission(
 ) -> dict[str, Any]:
     """Build the N=1 receiver graph from its admitted component.
 
-    N=1 still traverses Component Analyst, component D-prime, and RunKernel
-    component admission.  It has no cross-component relationship to invent and
-    therefore terminates as one direct-output component node rather than
-    manufacturing a Cross-Component Analyst or synthesis-node call.
+    N=1 traverses Component Analyst (or its exact Specialist resume) and
+    deterministic RunKernel component admission. It has no cross-component
+    relationship to invent and therefore terminates as one direct-output
+    component node rather than manufacturing a Cross-Component Analyst or synthesis-node call.
     """
 
     component = validate_component_work_node_v1(component_node)
@@ -3447,7 +3445,7 @@ def derive_multicomponent_role_call_accounting(
         action_counts = {key: 0 for key in _PHYSICAL_ACCOUNTING_KEYS}
         role_by_action_type = {
             "multicomponent_component_analyst_execute": "component_analyst_calls",
-            "multicomponent_component_dprime_execute": "component_dprime_calls",
+            "multicomponent_component_analyst_resume_execute": "component_analyst_calls",
             "multicomponent_cross_analyst_execute": "cross_component_analyst_calls",
             "multicomponent_synthesis_dprime_execute": "synthesis_dprime_calls",
             "multicomponent_scrutineer_execute": "scrutineer_calls",

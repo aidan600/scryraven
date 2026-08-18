@@ -117,7 +117,11 @@ def build_multicomponent_graph_consumption(
             and graph.get("graph_output_suppressed") is not True
         )
         claim = _mapping(node.get("admitted_claim_ref"))
-        if admitted and current and graph_eligible and claim.get("claim_text"):
+        analyst_case_ref = _mapping(
+            node.get("component_analyst_case_ref")
+            or node.get("analyst_finding_ref")
+        )
+        if admitted and current and graph_eligible and claim.get("claim_text") and analyst_case_ref:
             direct_entries.append(
                 {
                     "entry_kind": "direct_component",
@@ -139,9 +143,10 @@ def build_multicomponent_graph_consumption(
                     "semantic_observation_ref": _mapping(
                         node.get("semantic_observation_ref")
                     ),
-                    "dprime_validation_ref": _mapping(
-                        node.get("dprime_validation_ref")
-                    ),
+                    "component_analyst_case_ref": analyst_case_ref,
+                    # Compatibility alias; direct component authority is the
+                    # exact completed Analyst case.
+                    "analyst_finding_ref": dict(analyst_case_ref),
                     "specialist_quantitative_authority_ref": _mapping(
                         node.get("specialist_quantitative_authority_ref")
                     ),

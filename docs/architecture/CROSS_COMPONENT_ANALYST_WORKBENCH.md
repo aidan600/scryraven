@@ -52,9 +52,10 @@ artifact and recorded parent state.
 
 For a searched-premise winner, ContractAmendment v2 and RunKernel own contract
 mutation; SearchOS retrieves direct evidence for the premise; **INSTALLED:**
-component D-prime validates direct support; RunKernel admits the exact current
-support state; and Graph V1 schedules a fresh affected-only Cross-Component
-Analyst pass. Cross-Component Analyst then proposes the exact target-mapped
+Component Analyst forms the self-audited direct-support case and RunKernel
+admits the exact current support state directly; and Graph V1 schedules a
+fresh affected-only Cross-Component Analyst pass. Cross-Component Analyst then
+proposes the exact target-mapped
 relationship; **INSTALLED:** synthesis D-prime validates it; RunKernel admits
 the exact current graph/synthesis state. SearchOS and Scrutineer do not author
 inference. The installed semantic ceilings are depth 1 in Fast/Balanced and
@@ -84,7 +85,7 @@ doctrine.
 | --- | --- | --- | --- | --- | --- |
 | ComponentWorkNode V0 | `core/component_work_node.py`; `tests/test_component_work_node_01.py` | Current product-path projection / typed review contract over one component lane. | REUSE | It already preserves per-component refs and explicitly rejects graph/scheduler/budget/FAP/Author/correctness claims. | `tests/test_component_work_node_01.py` guards single-component shape, false closed-downstream flags, raw/private false posture, and no multi-component claims. |
 | Per-component Analyst Workbench | `docs/architecture/ANALYST_WORKBENCH_FULL_SLICE.md`; `core/analyst_workbench_runtime.py`; `core/current_source_analyst_finding_proposal.py` | Proposal-only product-consumed Workbench for current-source single-fact lane. | ADAPT BY DOCTRINE | Cross-component Workbench must extend proposal-only posture, not create a second Analyst system. | Workbench runtime and report checks preserve proposal-only candidate roles, gaps, D-prime dossier refs, and no search dispatch. |
-| Per-component D-prime validation | `docs/architecture/DPRIME_ARCHITECTURE.md`; `core/dprime_analyst_finding_support_validation.py` | **Installed** bounded evidence-relative support validation; non-authority until RunKernel admission. | REUSE AS INSTALLED ONLY | Selected target retires separate D-prime; see [AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md). | D-prime tests and docs guard evidence-relative validation, RunKernel admission, and no support laundering. |
+| Component D-prime compatibility | `docs/architecture/DPRIME_ARCHITECTURE.md`; `core/multicomponent_role_runtime.py` | Retained only for the explicit legacy SearchOS recovery corridor; it has no ordinary component producer or consumer. | RETAIN AS COMPATIBILITY ONLY | The installed ordinary component path is Component Analyst self-audit followed by direct RunKernel admission; see [AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md). | RunKernel and Slice-A tests guard direct admission and reject ordinary Component-D-prime execution. |
 | Same-component multi-source posture | `core/dprime_multi_source_analyst_scrutiny_runtime.py`; `tests/test_dprime_multi_source_analyst_and_scrutiny_01.py` | One component, one source-obligation lane only; rejects cross-component misuse. | REUSE AS NEGATIVE BOUNDARY | Do not mistake multi-source for multi-component. | Multi-source guards require one answer component and one source-obligation lane and reject multi-component synthesis claims. |
 | Follow-up / recovery re-entry | `core/runkernel_followup_search_reentry_ordinary_search_runtime.py`; `tests/test_runkernel_followup_search_reentry_using_ordinary_search_01.py` | RunKernel-owned ordinary search re-entry for one D-prime follow-up need. | REUSE / GENERALIZE BY DOCTRINE ONLY | Future cross-component recovery requests must enter RunKernel authorization and ordinary search, not a new retrieval path. | Follow-up re-entry guards D-prime need as non-dispatch, RunKernel authorization, ordinary search reuse, and no live/provider calls in offline proof. |
 | RunKernel / AnswerContract / contract mutation | `docs/architecture/RUN_CONTRACT_SEMANTIC_LOOP.md`; `core/run_kernel.py` | Root authority and typed contract mutation owner. | REUSE | Graph and synthesis admission must be RunKernel-owned. | Semantic-loop and RunKernel tests guard admission, reducer ownership, accepted/current contract mutation, and no worker-owned authority. |
@@ -146,7 +147,7 @@ not the selected or future required validation path.
 | ComponentWorkGraph | V0 no-execution graph may carry proposed/admitted refs only. | No independent validation. | No. | No. | No. It may carry recovery request refs produced elsewhere and admitted by RunKernel. | Must not schedule, dispatch search, run nodes, create budget leases, execute parallelism, synthesize, or feed Author directly. |
 | ComponentWorkNode | No. It projects one component lane. | It may validate its own typed ref shape only. | No. | No. | No. | Must not merge components, collapse source-obligation lanes, create graph/scheduler/budget/FAP/Author/source-display/citation/product-correctness claims, or treat candidate/fetch-read refs as support. |
 | Per-component Analyst Workbench | Yes, proposal-only findings, candidate roles, gaps, and dossier refs for one component lane. | No authority validation. | No. | No. | It may propose gaps/recovery needs only. | Must not dispatch search, admit evidence, satisfy source obligations, decide Sufficiency, create FAP/Author output, or claim correctness. |
-| Per-component D-prime validation (**installed**) | It may emit support, challenge, abstention, or follow-up-need refs from evidence-relative review. | Yes, evidence-relative support validation for one component/source-obligation lane. | No. RunKernel admits. | No. | It may emit a need/challenge only. | Must not become Analyst, authorize search, dispatch retrieval, admit support, create coverage/readiness/FAP/Author, or aggregate across components. |
+| Per-component D-prime compatibility (**no ordinary consumer**) | Retained only as a bounded compatibility contract. Ordinary component meaning is the Component Analyst case plus deterministic RunKernel admission. | No ordinary component validation. | No. RunKernel admits. | No. | No ordinary recovery request. | Must not re-enter the ordinary component path, become a second review authority, authorize search, or admit support. |
 | Cross-Component Analyst Workbench | Yes, proposal-only synthesis claims, consistency/dependency findings, missing-component proposals, contradiction posture, and recovery proposal refs. | Self-audit only as part of case construction in selected target. | No. | No. | It may propose cross-component recovery or missing-component needs only. | Must not admit evidence, canonically validate its own synthesis, replace RunKernel, collapse component refs into an untraceable summary, launch search, create a second Analyst system, or feed Author directly. |
 | Synthesis D-prime validation (**installed; selected retirement**) | It may emit validation/challenge/follow-up-need refs about a proposed synthesis claim. | Yes, cross-component synthesis validation over component refs and dependency refs when installed. | No. RunKernel admits. | No. | It may emit a need/challenge only. | Must not become Cross-Component Analyst, invent evidence, drop caveats, resolve dependencies by itself, dispatch search, or package final prose. |
 | SufficiencyReadiness | No synthesis proposal. | Yes, readiness reduction after admitted refs exist, under RunKernel ownership. | No evidence or synthesis admission. | No. | It may preserve follow-up-required or blocked posture only. | Must not synthesize component outputs, dispatch search, create FAP, render prose, or claim product correctness. |
@@ -167,8 +168,9 @@ The loop posture is:
 2. Cross-component recovery proposals are allowed.
 3. Missing component proposals are allowed.
 4. Workbench and Analyst propose only.
-5. **INSTALLED:** separate component or synthesis D-prime validation may still
-   execute. That installed consumer is not selected-target doctrine.
+5. **INSTALLED:** synthesis D-prime validation may still execute for genuine
+   N>=2 work. Ordinary component D-prime has no consumer. That remaining
+   synthesis consumer is not selected-target doctrine.
 6. RunKernel authorizes, admits, reduces, mutates contract state, and records
    terminal blocker posture.
 7. Analyst must not directly dispatch search.
@@ -245,32 +247,25 @@ The Workbench extends the current Analyst Workbench posture by doctrine: it
 keeps proposal-only behavior, compact dossier refs, and no dispatch. It does not
 fork an alternate Analyst authority path.
 
-## 5. Installed D-prime At Two Levels
+## 5. Installed Synthesis D-prime And Retired Ordinary Component D-prime
 
-**INSTALLED** ordinary product execution still uses two D-prime levels:
+**INSTALLED** ordinary product execution no longer uses a separate per-component
+D-prime consumer. Component meaning is the current Component Analyst case plus
+deterministic RunKernel admission.
 
-```text
-per-component evidence-relative support validation
-```
-
-and
-
-```text
-cross-component synthesis validation over component refs and dependency refs
-```
-
-That installed split is factual. It is not a future target path. Dual D-prime is
-not selected-target architecture. Selected Cross consumption is owned only by
+**INSTALLED** synthesis D-prime still performs cross-component synthesis
+validation over component refs and dependency refs. Dual ordinary D-prime is
+not installed-target architecture. Selected Cross consumption is owned only by
 [AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md).
 
-**INSTALLED** per-component D-prime asks whether bounded evidence supports a
-proposed claim inside one component/source-obligation lane.
+**COMPATIBILITY** per-component D-prime may remain as a bounded contract with no
+ordinary work producer. It is not the ordinary evidence-relative support path.
 
 **INSTALLED** synthesis D-prime asks whether component A plus component B
 support synthesis claim S without inventing evidence, dropping caveats, erasing
 blockers, or changing component scope. It validates the Workbench synthesis
-proposal against component refs, dependency refs, D-prime refs, caveats,
-contradiction posture, missing evidence, and RunKernel refs.
+proposal against component refs, dependency refs, caveats, contradiction
+posture, missing evidence, and RunKernel refs.
 
 **INSTALLED** synthesis D-prime may produce:
 

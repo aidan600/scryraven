@@ -61,10 +61,14 @@ def _component_analyst_artifact(action) -> dict:
             "observation_type": action.expected_observation_type.value,
         },
         "semantic_output": {
-            "claim_text": "Bounded fixture claim.",
+            "case_posture": "supported",
             "support_status": "supported",
+            "claim_text": "Bounded fixture claim.",
+            "evidence_analysis": "The bounded fixture evidence supports the claim.",
+            "self_audit": "The case does not extend beyond its fixture evidence.",
             "caveats": [],
             "nonclaims": [],
+            "contradictions": [],
             "blockers": [],
         },
         "raw_prompt_retained": False,
@@ -219,8 +223,10 @@ def test_failed_role_observation_reduction_closes_current_action(
             **_role_kwargs(
                 ask_model=lambda *_args, **_kwargs: json.dumps(
                     {
+                        "case_posture": "supported",
                         "claim_text": "A bounded claim.",
-                        "support_status": "supported",
+                        "evidence_analysis": "The bounded evidence directly supports the claim.",
+                        "self_audit": "The claim stays within the bounded evidence.",
                     }
                 )
             ),

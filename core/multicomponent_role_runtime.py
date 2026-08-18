@@ -25,6 +25,7 @@ from core.cap_enforcement import RunCapExceeded
 SUPPORTED_QUERY_CLASS = "ordinary-bounded-multicomponent-factual-synthesis-v1"
 
 ROLE_COMPONENT_ANALYST = "component_analyst"
+ROLE_COMPONENT_ANALYST_RESUME = "component_analyst_resume"
 ROLE_COMPONENT_DPRIME = "component_dprime"
 ROLE_CROSS_COMPONENT_ANALYST = "cross_component_analyst"
 ROLE_SYNTHESIS_DPRIME = "synthesis_dprime"
@@ -45,15 +46,19 @@ ROLE_SYSTEM_PROMPTS = {
         "You are ScryRaven's component Analyst. Use only the supplied bounded "
         "component evidence, quantitative_source_catalog, and "
         "quantitative_specialist_proposal_contract. Return one top-level JSON "
-        "object containing only claim_text, support_status, caveats, nonclaims, "
-        "and blockers, plus the optional query_resolution_proposals and "
-        "specialist_need_proposal namespaces. support_status must use exactly "
-        "one canonical value: supported, supported_with_caveats, unsupported, "
-        "or blocked. Use JSON arrays of strings for caveats, nonclaims, and "
-        "blockers; do not add other base fields. Outside the two optional "
-        "proposal namespaces, never return code-owned IDs, refs, revisions, "
-        "digests, URLs, field paths, runtime bindings, authority claims, or "
-        "raw/private material; code binds mechanics deterministically. "
+        "object with case_posture; lawful claim_text when any; evidence_analysis or warrant; "
+        "caveats, nonclaims, contradictions, uncertainty, confidence, "
+        "missing_evidentiary_premise, unresolved_need, calculation_need, blockers, "
+        "and self_audit, plus optional query_resolution_proposals and "
+        "specialist_need_proposal namespaces. case_posture must be exactly supported, "
+        "supported_with_caveats, unsupported, blocked, unresolved, missing_premise, "
+        "or bounded_calculation_needed. Do not return legacy support_status; it is "
+        "offline-fixture compatibility only. Explain what evidence establishes and, "
+        "when material, what it does not establish; self_audit must check overreach. "
+        "Use arrays of strings for caveats, nonclaims, contradictions, and blockers. "
+        "Outside optional proposal namespaces, never return code-owned IDs, refs, "
+        "revisions, digests, URLs, field paths, runtime bindings, authority claims, "
+        "or raw/private material; code binds mechanics deterministically. "
         "query_resolution_proposals is optional and proposal-only: include it "
         "only when every candidate is complete and uses exact immutable refs "
         "present in the supplied input; otherwise omit it. "
@@ -67,15 +72,33 @@ ROLE_SYSTEM_PROMPTS = {
         "source_numeric_literal text, and omit the proposal when the contract "
         "cannot be satisfied. Include "
         "the proposed derived literal in claim_text, but it has no authority until "
-        "exact calculator claim_alignment and D-prime validation. Use required only "
+        "exact calculator claim_alignment and this case's bounded self-audit. Use required only "
         "when the claim cannot be validated without it; use optional only for "
         "nonessential precision or explanation. Do not consume the one Specialist "
         "unit for arithmetic that belongs only to later cross-component synthesis. "
         "Propose only; do not validate, admit, synthesize across components, "
         "authorize search, dispatch research, or write final answer prose."
     ),
+    ROLE_COMPONENT_ANALYST_RESUME: (
+        "You are ScryRaven's component Analyst resuming one exact prior "
+        "component case after a bounded Specialist handoff. Use only the "
+        "supplied prior case, exact component/evidence input, and handoff. "
+        "Return the same robust case schema: case_posture; lawful claim_text "
+        "when any; evidence_analysis or warrant; caveats, nonclaims, "
+        "contradictions, uncertainty, confidence, missing_evidentiary_premise, "
+        "unresolved_need, calculation_need, blockers, and self_audit. "
+        "case_posture must be exactly supported, supported_with_caveats, "
+        "unsupported, blocked, unresolved, missing_premise, or "
+        "bounded_calculation_needed. The supplied handoff is not automatic "
+        "support: reassess its exact bounded result and state what it does not "
+        "establish where material. self_audit must check overreach. Do not "
+        "return legacy support_status; it is offline-fixture compatibility only. "
+        "Do not make a new Specialist proposal, admit anything, create runtime "
+        "IDs, refs, revisions, digests, or bindings, route providers, search, "
+        "or write final answer prose."
+    ),
     ROLE_COMPONENT_DPRIME: (
-        "You are ScryRaven's component D-prime. Validate only the nominated "
+        "You are ScryRaven's legacy-recovery component D-prime. Validate only the nominated "
         "component Analyst claim against its exact bounded evidence and scope. "
         "When specialist_need_handoff is present, a completed quantitative result "
         "supports the nominated claim only when its exact calculated value, "
@@ -138,8 +161,33 @@ ROLE_SYSTEM_PROMPTS = {
     ),
 }
 
+COMPONENT_ANALYST_CASE_POSTURES = frozenset(
+    {
+        "supported",
+        "supported_with_caveats",
+        "unsupported",
+        "blocked",
+        "unresolved",
+        "missing_premise",
+        "bounded_calculation_needed",
+    }
+)
+COMPONENT_ANALYST_SUPPORTING_CASE_POSTURES = frozenset(
+    {"supported", "supported_with_caveats"}
+)
+_LEGACY_SUPPORT_STATUS_BY_COMPONENT_ANALYST_CASE_POSTURE = {
+    "supported": "supported",
+    "supported_with_caveats": "supported_with_caveats",
+    "unsupported": "unsupported",
+    "blocked": "blocked",
+    "unresolved": "blocked",
+    "missing_premise": "blocked",
+    "bounded_calculation_needed": "blocked",
+}
+
 _ROLE_STATUSES = {
-    ROLE_COMPONENT_ANALYST: {"supported", "supported_with_caveats", "unsupported", "blocked"},
+    ROLE_COMPONENT_ANALYST: COMPONENT_ANALYST_CASE_POSTURES,
+    ROLE_COMPONENT_ANALYST_RESUME: COMPONENT_ANALYST_CASE_POSTURES,
     ROLE_COMPONENT_DPRIME: {"supported", "supported_with_caveats", "unsupported", "challenged", "blocked"},
     ROLE_SYNTHESIS_DPRIME: {"supported", "supported_with_caveats", "unsupported", "challenged", "blocked", "ambiguous"},
     ROLE_SCRUTINEER: {"passed", "passed_with_caveats", "challenged", "blocked"},
@@ -168,6 +216,7 @@ _FORBIDDEN_AUTHORITY_KEYS = frozenset(
         "final_answer_packet",
         "fap_authority",
         "author_authority",
+        "_runtime_legacy_fixture_compatibility",
     }
 )
 _FORBIDDEN_MATERIAL_KEYS = frozenset(
@@ -433,6 +482,93 @@ def _with_query_resolution_candidates(
     return {**normalized, "query_resolution_proposals": proposals}
 
 
+def _normalize_component_analyst_case(
+    payload: Mapping[str, Any], *, resume: bool
+) -> dict[str, Any]:
+    declared_posture = _normalize_key(payload.get("case_posture"))
+    if not declared_posture:
+        raise MulticomponentRoleRuntimeError(
+            "component Analyst output requires a valid case_posture"
+        )
+    if declared_posture not in COMPONENT_ANALYST_CASE_POSTURES:
+        raise MulticomponentRoleRuntimeError(
+            "component Analyst case_posture is invalid"
+        )
+    declared_status = _normalize_key(payload.get("support_status"))
+    expected_support_status = (
+        _LEGACY_SUPPORT_STATUS_BY_COMPONENT_ANALYST_CASE_POSTURE[declared_posture]
+    )
+    if declared_status and declared_status != expected_support_status:
+        raise MulticomponentRoleRuntimeError(
+            "component Analyst support_status disagrees with case_posture"
+        )
+    case_posture = declared_posture
+
+    claim_text = _clean_text(payload.get("claim_text"), limit=1000)
+    evidence_analysis = _clean_text(payload.get("evidence_analysis"), limit=1600)
+    warrant = _clean_text(payload.get("warrant"), limit=1600)
+    self_audit = _clean_text(
+        payload.get("self_audit") or payload.get("overreach_check"), limit=1200
+    )
+
+    if case_posture in COMPONENT_ANALYST_SUPPORTING_CASE_POSTURES:
+        if not claim_text:
+            raise MulticomponentRoleRuntimeError(
+                "supporting component Analyst case requires claim_text"
+            )
+        if not (evidence_analysis or warrant):
+            raise MulticomponentRoleRuntimeError(
+                "supporting component Analyst case requires evidence_analysis or warrant"
+            )
+        if not self_audit:
+            raise MulticomponentRoleRuntimeError(
+                "supporting component Analyst case requires self_audit"
+            )
+
+    contradictions = list(
+        dict.fromkeys(
+            [
+                *_text_list(payload.get("contradictions")),
+                *_text_list(payload.get("material_alternatives")),
+            ]
+        )
+    )
+    normalized: dict[str, Any] = {
+        "case_posture": case_posture,
+        # Code-derived compatibility alias for out-of-scope consumers.
+        # Model-authored support_status never substitutes for case_posture.
+        "support_status": expected_support_status,
+        "caveats": _text_list(payload.get("caveats")),
+        "nonclaims": _text_list(payload.get("nonclaims")),
+        "contradictions": contradictions,
+        "blockers": _text_list(payload.get("blockers")),
+    }
+    semantic_text_fields = (
+        ("claim_text", claim_text),
+        ("evidence_analysis", evidence_analysis),
+        ("warrant", warrant),
+        ("uncertainty", _clean_text(payload.get("uncertainty"), limit=800)),
+        ("confidence", _clean_text(payload.get("confidence"), limit=160)),
+        (
+            "missing_evidentiary_premise",
+            _clean_text(payload.get("missing_evidentiary_premise"), limit=1000),
+        ),
+        ("unresolved_need", _clean_text(payload.get("unresolved_need"), limit=1000)),
+        ("calculation_need", _clean_text(payload.get("calculation_need"), limit=1000)),
+        ("self_audit", self_audit),
+    )
+    for key, value in semantic_text_fields:
+        if value:
+            normalized[key] = value
+    if resume and "specialist_need_proposal" in payload:
+        raise MulticomponentRoleRuntimeError(
+            "component Analyst resume cannot propose another Specialist need"
+        )
+    return _with_specialist_need(
+        _with_query_resolution_candidates(normalized, payload), payload
+    )
+
+
 def _normalize_semantic_output(
     role: str,
     output: Mapping[str, Any],
@@ -440,25 +576,10 @@ def _normalize_semantic_output(
     output_schema_variant: str | None = None,
 ) -> dict[str, Any]:
     payload = _safe_mapping(output)
-    if role == ROLE_COMPONENT_ANALYST:
-        claim_text = _clean_text(payload.get("claim_text"), limit=1000)
-        status = _normalize_key(payload.get("support_status"))
-        if not claim_text or status not in _ROLE_STATUSES[role]:
-            raise MulticomponentRoleRuntimeError(
-                "component Analyst output requires claim_text and valid support_status"
-            )
-        return _with_specialist_need(
-            _with_query_resolution_candidates(
-                {
-                    "claim_text": claim_text,
-                    "support_status": status,
-                    "caveats": _text_list(payload.get("caveats")),
-                    "nonclaims": _text_list(payload.get("nonclaims")),
-                    "blockers": _text_list(payload.get("blockers")),
-                },
-                payload,
-            ),
+    if role in {ROLE_COMPONENT_ANALYST, ROLE_COMPONENT_ANALYST_RESUME}:
+        return _normalize_component_analyst_case(
             payload,
+            resume=role == ROLE_COMPONENT_ANALYST_RESUME,
         )
     if role in {ROLE_COMPONENT_DPRIME, ROLE_SYNTHESIS_DPRIME}:
         if _clean_text(payload.get("claim_text")) or _clean_text(
@@ -838,6 +959,13 @@ def execute_prepared_multicomponent_transport(
                 transport_result.output_text,
                 clean_json_response=prepared.clean_json_response,
             )
+            if (
+                prepared.role == ROLE_COMPONENT_ANALYST_RESUME
+                and "specialist_need_proposal" in parsed_output
+            ):
+                raise MulticomponentRoleRuntimeError(
+                    "component Analyst resume cannot propose another Specialist need"
+                )
             specialist_candidate_present, specialist_candidate = (
                 _specialist_need_candidate(parsed_output)
             )
@@ -1422,11 +1550,14 @@ def safe_packet_digest(value: Mapping[str, Any]) -> str:
 
 __all__ = [
     "ROLE_COMPONENT_ANALYST",
+    "ROLE_COMPONENT_ANALYST_RESUME",
     "ROLE_COMPONENT_DPRIME",
     "ROLE_CROSS_COMPONENT_ANALYST",
     "ROLE_SCRUTINEER",
     "ROLE_SYNTHESIS_DPRIME",
     "ROLE_SYSTEM_PROMPTS",
+    "COMPONENT_ANALYST_CASE_POSTURES",
+    "COMPONENT_ANALYST_SUPPORTING_CASE_POSTURES",
     "SELECTIVE_CROSS_COMPONENT_ANALYST_SYSTEM_PROMPT",
     "SELECTIVE_CROSS_COMPONENT_SCHEMA",
     "SUPPORTED_QUERY_CLASS",

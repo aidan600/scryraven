@@ -3198,7 +3198,7 @@ def build_searchos_semantic_outcomes_by_slot(
     searchos_semantic_material: Sequence[Mapping[str, Any]],
     component_admission_projection: Mapping[str, Any],
 ) -> dict[str, dict[str, Any]]:
-    """Bind each slot to the exact installed component semantic chain."""
+    """Bind each slot to the exact direct Component Analyst admission chain."""
 
     handoffs = {
         str(dict(item.get("slot_ref") or {}).get("slot_id") or ""): dict(item)
@@ -3227,6 +3227,7 @@ def build_searchos_semantic_outcomes_by_slot(
 
     outcomes: dict[str, dict[str, Any]] = {}
     slots_by_id = dict(searchos_state.get("slots_by_id") or {})
+    answer_contract_ref = dict(searchos_state.get("answer_contract_ref") or {})
     for slot_id in searchos_state.get("active_slot_ids") or ():
         slot = dict(slots_by_id.get(slot_id) or {})
         slot_ref = dict(slot.get("slot_ref") or {})
@@ -3295,10 +3296,22 @@ def build_searchos_semantic_outcomes_by_slot(
             slot=slot,
         ) and _coverage_ref_matches_contract_and_candidates(
             coverage_ref=coverage_ref,
-            answer_contract_ref=dict(
-                searchos_state.get("answer_contract_ref") or {}
-            ),
+            answer_contract_ref=answer_contract_ref,
             consumed_candidate_ids=consumed_evidence_ids,
+        )
+        analyst_case_ref = dict(admission.get("component_analyst_case_ref") or {})
+        analyst_case_role = str(analyst_case_ref.get("role") or "")
+        exact_current_admission = bool(
+            admission.get("canonical_state") is True
+            and admission.get("current") is True
+            and admission.get("stale") is False
+            and analyst_case_ref
+            and analyst_case_role in {"component_analyst", "component_analyst_resume"}
+            and admission.get("case_posture") in {"supported", "supported_with_caveats"}
+            and admission.get("accepted_contract_version")
+            == answer_contract_ref.get("contract_version")
+            and admission.get("accepted_contract_digest")
+            == answer_contract_ref.get("answer_contract_digest")
         )
         recovery_evidence_ref = next(
             (
@@ -3315,6 +3328,7 @@ def build_searchos_semantic_outcomes_by_slot(
             in {"admitted", "admitted_with_caveats"}
             and material_consumed
             and handoff
+            and exact_current_admission
             and exact_coverage_chain
         )
         outcomes[str(slot_id)] = {
@@ -3326,17 +3340,21 @@ def build_searchos_semantic_outcomes_by_slot(
                 if handoff
                 else {}
             ),
-            "component_analyst_proposal_ref": (
-                dict(admission.get("analyst_finding_ref") or {}) if material_consumed else {}
+            "component_analyst_case_ref": (
+                deepcopy(analyst_case_ref)
+                if material_consumed and exact_current_admission
+                else {}
             ),
-            "component_analyst_proposal_status": ("proposed" if material_consumed else "not_proposed"),
-            "component_dprime_validation_ref": (
-                dict(admission.get("dprime_validation_ref") or {}) if material_consumed else {}
-            ),
-            "component_dprime_validation_status": ("accepted" if admitted else "not_accepted"),
             "semantic_admission_outcome_ref": (
                 {
                     "action_id": admission.get("action_id"),
+                    "canonical_state": admission.get("canonical_state") is True,
+                    "current": admission.get("current") is True,
+                    "stale": admission.get("stale") is True,
+                    "case_posture": admission.get("case_posture"),
+                    "accepted_contract_version": admission.get("accepted_contract_version"),
+                    "accepted_contract_digest": admission.get("accepted_contract_digest"),
+                    "component_analyst_case_ref": deepcopy(analyst_case_ref),
                     "component_id": admission.get("component_id"),
                     "component_revision": admission.get("component_revision"),
                     "component_digest": admission.get("component_digest"),
@@ -3380,6 +3398,12 @@ def _ordinary_admission_matches_slot(
     component_ref = dict(slot.get("component_ref") or {})
     return bool(
         not dict(admission.get("searchos_recovery_cycle_ref") or {})
+        and admission.get("canonical_state") is True
+        and admission.get("current") is True
+        and admission.get("stale") is False
+        and dict(admission.get("component_analyst_case_ref") or {})
+        and str(dict(admission.get("component_analyst_case_ref") or {}).get("role") or "")
+        in {"component_analyst", "component_analyst_resume"}
         and admission.get("component_id") == component_ref.get("component_id")
         and admission.get("component_revision")
         == component_ref.get("component_revision")
@@ -3495,6 +3519,12 @@ def _recovery_admission_matches_slot(
     return bool(
         admission.get("admission_status")
         in {"admitted", "admitted_with_caveats"}
+        and admission.get("canonical_state") is True
+        and admission.get("current") is True
+        and admission.get("stale") is False
+        and dict(admission.get("component_analyst_case_ref") or {})
+        and str(dict(admission.get("component_analyst_case_ref") or {}).get("role") or "")
+        in {"component_analyst", "component_analyst_resume"}
         and (
             admission.get("same_component_reassessment") is True
             or admission.get("derived_component_recovery") is True
@@ -4023,18 +4053,23 @@ def _project_slot_summary(
         outcome=outcome,
     )
     handoff_present = bool(recorded_handoff_ref)
-    dprime_ref = _mapping_or_empty(
-        outcome.get("component_dprime_validation_ref")
-        or record.get("component_dprime_validation_ref")
+    component_case_ref = _mapping_or_empty(
+        outcome.get("component_analyst_case_ref")
+        or record.get("component_analyst_case_ref")
+    )
+    admission_case_ref = _mapping_or_empty(
+        admission_ref.get("component_analyst_case_ref")
+    )
+    component_case_present = bool(
+        component_case_ref.get("role") in {"component_analyst", "component_analyst_resume"}
+        and admission_case_ref.get("role") in {"component_analyst", "component_analyst_resume"}
+        and component_case_ref == admission_case_ref
     )
     final_posture = _allowlisted_slot_posture(record.get("latest_judgment_posture"))
     judgment_event_count, judgment_failure_count = _slot_judgment_counts(record)
     admission_status = str(outcome.get("semantic_admission_status") or "not_admitted")
     if admission_status not in {"admitted", "not_admitted", "admitted_with_caveats"}:
         admission_status = "not_admitted"
-    analyst_status = str(outcome.get("component_analyst_proposal_status") or "not_proposed")
-    if analyst_status not in {"proposed", "not_proposed"}:
-        analyst_status = "not_proposed"
     coverage_satisfied = bool(
         admission_status in {"admitted", "admitted_with_caveats"}
         and (
@@ -4072,8 +4107,10 @@ def _project_slot_summary(
         "handoff_material_consumed": bool(
             outcome.get("searchos_handoff_material_consumed") is True
         ),
-        "component_analyst_proposal_status": analyst_status,
-        "component_dprime_validation_present": bool(dprime_ref),
+        "component_analyst_case_present": component_case_present,
+        "component_dprime_validation_present": False,
+        "component_dprime_model_call_required": False,
+        "component_dprime_model_call_executed": False,
         "semantic_admission_status": (
             "admitted" if admission_status in {"admitted", "admitted_with_caveats"} else admission_status
         ),
@@ -4415,8 +4452,10 @@ def build_bounded_searchos_n1_causal_projection(
                     "read_custody_observed": False,
                     "semantic_handoff_present": False,
                     "handoff_material_consumed": False,
-                    "component_analyst_proposal_status": "not_proposed",
+                    "component_analyst_case_present": False,
                     "component_dprime_validation_present": False,
+                    "component_dprime_model_call_required": False,
+                    "component_dprime_model_call_executed": False,
                     "semantic_admission_status": "not_admitted",
                     "component_coverage_satisfied": False,
                 }
@@ -4566,7 +4605,7 @@ def build_bounded_searchos_n1_causal_projection(
     receiver_selected = bool(
         receiver_failure is not None
         or any(
-            item.get("component_analyst_proposal_status") == "proposed"
+            item.get("component_analyst_case_present") is True
             or item.get("semantic_admission_status") == "admitted"
             or item.get("semantic_handoff_present") is True
             for item in all_slot_summaries

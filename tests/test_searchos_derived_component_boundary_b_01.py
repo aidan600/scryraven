@@ -378,8 +378,8 @@ def test_analyst_owns_resolution_candidates_and_scrutineer_authorship_is_retired
     normalized = _normalize_semantic_output(
         ROLE_COMPONENT_ANALYST,
         {
+            "case_posture": "blocked",
             "claim_text": "The current evidence does not establish premise C.",
-            "support_status": "blocked",
             "caveats": [],
             "nonclaims": [],
             "blockers": ["Missing direct premise support."],

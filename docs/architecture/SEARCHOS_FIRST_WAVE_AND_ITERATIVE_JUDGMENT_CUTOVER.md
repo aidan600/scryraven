@@ -343,8 +343,8 @@ envelope:
 
 ```text
 SearchOS semantic handoff
--> bounded component Analyst proposal
--> component D-prime validation
+-> self-audited Component Analyst case
+-> deterministic exact-current binding
 -> RunKernel component semantic admission
 ```
 
