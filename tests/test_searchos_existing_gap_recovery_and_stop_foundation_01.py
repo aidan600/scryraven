@@ -641,8 +641,8 @@ def _install_initially_unsupported_component(
                 self._record_model_call(system_prompt, kwargs)
                 return json.dumps(
                     {
+                        "case_posture": "unsupported",
                         "claim_text": ("The current bounded material does not yet support this component."),
-                        "support_status": "unsupported",
                         "caveats": [],
                         "nonclaims": ["No component conclusion is admitted."],
                         "blockers": ["exact_obligation_support_missing"],
@@ -652,8 +652,16 @@ def _install_initially_unsupported_component(
                 self._record_model_call(system_prompt, kwargs)
                 return json.dumps(
                     {
+                        "case_posture": "supported",
                         "claim_text": recovered_claim,
-                        "support_status": "supported",
+                        "evidence_analysis": (
+                            "The recovered exact bounded material now supports "
+                            "the stated component finding."
+                        ),
+                        "self_audit": (
+                            "The recovered case does not extend beyond the "
+                            "supplied component evidence."
+                        ),
                         "caveats": [],
                         "nonclaims": [],
                         "blockers": [],

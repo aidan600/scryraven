@@ -35,6 +35,7 @@ from core.multicomponent_role_runtime import (
     ROLE_SCRUTINEER,
     ROLE_SYNTHESIS_DPRIME,
     MulticomponentRoleRuntimeError,
+    _normalize_semantic_output,
     execute_multicomponent_role_call,
     safe_packet_digest,
 )
@@ -1018,8 +1019,10 @@ def test_role_transport_rejects_authority_claims_before_reduction() -> None:
             strict_one_shot_transport=wrap_text_callable_as_strict_one_shot_transport(
                 lambda *_args, **_kwargs: json.dumps(
                     {
+                        "case_posture": "supported",
                         "claim_text": "The evidence supports the component.",
-                        "support_status": "supported",
+                        "evidence_analysis": "The exact bounded evidence supports the component.",
+                        "self_audit": "The case does not extend beyond the supplied evidence.",
                         "caveats": [],
                         "nonclaims": [],
                         "blockers": [],
@@ -1104,6 +1107,157 @@ def test_component_analyst_resume_cannot_reopen_specialist_need() -> None:
         )
 
     assert kernel.state.reduced_action_ids == set()
+
+
+_THIN_SUPPORT_STATUS_ONLY_ANALYST_OUTPUT = {
+    "claim_text": "Legacy thin claim.",
+    "support_status": "supported",
+    "caveats": [],
+    "nonclaims": [],
+    "blockers": [],
+}
+_SUPPORTING_CASE_MISSING_ANALYSIS = {
+    "case_posture": "supported",
+    "claim_text": "Claim.",
+    "self_audit": "I checked for overreach.",
+    "caveats": [],
+    "nonclaims": [],
+    "contradictions": [],
+    "blockers": [],
+}
+_SUPPORTING_CASE_MISSING_SELF_AUDIT = {
+    "case_posture": "supported",
+    "claim_text": "Claim.",
+    "evidence_analysis": "The exact bounded evidence supports the claim.",
+    "caveats": [],
+    "nonclaims": [],
+    "contradictions": [],
+    "blockers": [],
+}
+_MODERN_SUPPORTING_ANALYST_CASE = {
+    "case_posture": "supported",
+    "claim_text": "A bounded claim.",
+    "evidence_analysis": "The bounded evidence directly supports the claim.",
+    "self_audit": "The claim stays within the bounded evidence.",
+    "caveats": [],
+    "nonclaims": [],
+    "contradictions": [],
+    "blockers": [],
+}
+
+
+@pytest.mark.parametrize(
+    "role",
+    [ROLE_COMPONENT_ANALYST, ROLE_COMPONENT_ANALYST_RESUME],
+)
+@pytest.mark.parametrize(
+    ("payload", "match"),
+    [
+        (
+            _THIN_SUPPORT_STATUS_ONLY_ANALYST_OUTPUT,
+            "requires a valid case_posture",
+        ),
+        (
+            _SUPPORTING_CASE_MISSING_ANALYSIS,
+            "requires evidence_analysis or warrant",
+        ),
+        (
+            _SUPPORTING_CASE_MISSING_SELF_AUDIT,
+            "requires self_audit",
+        ),
+    ],
+)
+def test_component_analyst_raw_output_rejects_thin_or_incomplete_case(
+    role: str,
+    payload: dict,
+    match: str,
+) -> None:
+    with pytest.raises(MulticomponentRoleRuntimeError, match=match):
+        _normalize_semantic_output(role, payload)
+
+    kernel = RunKernel.start(run_id=RUN_ID, request_id=REQUEST_ID)
+    with pytest.raises(MulticomponentRoleRuntimeError, match=match):
+        execute_multicomponent_role_call(
+            run_kernel=kernel,
+            role=role,
+            input_packet={"component_ref": {"component_id": "component:1"}},
+            strict_one_shot_transport=wrap_text_callable_as_strict_one_shot_transport(
+                lambda *_args, **_kwargs: json.dumps(payload),
+                canonical_provider="OpenAI",
+                model="gpt-5.4",
+            ),
+            clean_json_response=None,
+            provider="OpenAI",
+            model="gpt-5.4",
+            use_reasoning=False,
+            logical_evaluation_key="component:1",
+        )
+    assert kernel.state.reduced_action_ids == set()
+    assert kernel.state.observations == []
+    role_stage = next(
+        (
+            stage
+            for stage, projection in kernel.state.projections.items()
+            if str(stage).startswith(f"multicomponent_role:{role}:")
+        ),
+        None,
+    )
+    if role_stage is not None:
+        assert kernel.state.projections[role_stage].get(
+            "semantic_artifact_admitted"
+        ) is not True
+
+
+def test_runtime_legacy_fixture_marker_cannot_waive_case_posture() -> None:
+    marked = {
+        **_THIN_SUPPORT_STATUS_ONLY_ANALYST_OUTPUT,
+        "_runtime_legacy_fixture_compatibility": True,
+    }
+    with pytest.raises(
+        MulticomponentRoleRuntimeError,
+        match="requires a valid case_posture",
+    ):
+        _normalize_semantic_output(ROLE_COMPONENT_ANALYST, marked)
+    with pytest.raises(
+        MulticomponentRoleRuntimeError,
+        match="claimed repository authority or unsafe material",
+    ):
+        execute_multicomponent_role_call(
+            run_kernel=RunKernel.start(run_id=RUN_ID, request_id=REQUEST_ID),
+            role=ROLE_COMPONENT_ANALYST,
+            input_packet={"component_ref": {"component_id": "component:1"}},
+            strict_one_shot_transport=wrap_text_callable_as_strict_one_shot_transport(
+                lambda *_args, **_kwargs: json.dumps(marked),
+                canonical_provider="OpenAI",
+                model="gpt-5.4",
+            ),
+            clean_json_response=None,
+            provider="OpenAI",
+            model="gpt-5.4",
+            use_reasoning=False,
+            logical_evaluation_key="component:1",
+        )
+
+
+def test_component_analyst_modern_case_emits_code_derived_support_status() -> None:
+    for role in (ROLE_COMPONENT_ANALYST, ROLE_COMPONENT_ANALYST_RESUME):
+        normalized = _normalize_semantic_output(role, _MODERN_SUPPORTING_ANALYST_CASE)
+        assert normalized["case_posture"] == "supported"
+        assert normalized["support_status"] == "supported"
+        assert normalized["evidence_analysis"]
+        assert normalized["self_audit"]
+        assert "_runtime_legacy_fixture_compatibility" not in normalized
+
+
+def test_component_analyst_resume_rejects_support_status_only_raw_output() -> None:
+    with pytest.raises(
+        MulticomponentRoleRuntimeError,
+        match="requires a valid case_posture",
+    ):
+        _normalize_semantic_output(
+            ROLE_COMPONENT_ANALYST_RESUME,
+            _THIN_SUPPORT_STATUS_ONLY_ANALYST_OUTPUT,
+        )
 
 
 def test_synthesis_validation_rejects_unadmitted_upstream_synthesis() -> None:

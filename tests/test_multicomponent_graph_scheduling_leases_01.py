@@ -54,6 +54,8 @@ from core.multicomponent_role_runtime import (
     SELECTIVE_CROSS_COMPONENT_SCHEMA,
     MulticomponentRoleRuntimeError,
     execute_multicomponent_role_call,
+    execute_prepared_multicomponent_transport,
+    prepare_multicomponent_transport_call,
     safe_packet_digest,
 )
 from core.protocols import NullStatusWriter
@@ -498,6 +500,136 @@ def test_10_invalid_role_output_is_spent_without_retry() -> None:
         )
     assert calls["count"] == 1
     assert _scheduler(kernel)["lease_history"][-1]["status"] == LEASE_FAILED
+
+
+def _prepared_component_analyst_worker_result(raw_output: dict[str, Any]):
+    kernel, packets = _scheduler_kernel()
+    batch = kernel.grant_next_multicomponent_work_batch()
+    leases = [
+        item
+        for item in _scheduler(kernel)["lease_history"]
+        if item.get("batch_id") == batch.get("batch_id")
+    ]
+    lease = leases[0]
+    packet = packets[str(lease["work"]["component_id"])]
+    actions = kernel.commit_multicomponent_batch_dispatch(
+        batch_id=str(batch.get("batch_id") or ""),
+        packet_digests=[safe_packet_digest(packet)]
+        + [
+            safe_packet_digest(packets[str(item["work"]["component_id"])])
+            for item in leases[1:]
+        ],
+    )
+    prepared = prepare_multicomponent_transport_call(
+        action=actions[0],
+        input_packet=packet,
+        strict_one_shot_transport=wrap_text_callable_as_strict_one_shot_transport(
+            lambda *_args, **_kwargs: json.dumps(raw_output),
+            canonical_provider="OpenAI",
+            model="gpt-5.4",
+        ),
+        clean_json_response=None,
+        provider="OpenAI",
+        model="gpt-5.4",
+        use_reasoning=False,
+    )
+    return kernel, actions[0], execute_prepared_multicomponent_transport(prepared)
+
+
+@pytest.mark.parametrize(
+    "raw_output",
+    [
+        {
+            "claim_text": "Legacy thin claim.",
+            "support_status": "supported",
+            "caveats": [],
+            "nonclaims": [],
+            "blockers": [],
+        },
+        {
+            "case_posture": "supported",
+            "claim_text": "Claim.",
+            "self_audit": "I checked for overreach.",
+            "caveats": [],
+            "nonclaims": [],
+            "contradictions": [],
+            "blockers": [],
+        },
+        {
+            "case_posture": "supported",
+            "claim_text": "Claim.",
+            "evidence_analysis": "The exact bounded evidence supports the claim.",
+            "caveats": [],
+            "nonclaims": [],
+            "contradictions": [],
+            "blockers": [],
+        },
+    ],
+    ids=("support_status_only", "missing_analysis", "missing_self_audit"),
+)
+def test_prepared_component_analyst_worker_rejects_thin_or_incomplete_case(
+    raw_output: dict[str, Any],
+) -> None:
+    kernel, action, result = _prepared_component_analyst_worker_result(raw_output)
+    assert result.failure_kind == "output_validation_failure"
+    assert result.normalized_semantic_output is None
+    assert result.role == ROLE_COMPONENT_ANALYST
+    projection = kernel.state.projections.get(action.stage) or {}
+    assert projection.get("semantic_artifact_admitted") is not True
+
+
+def test_prepared_component_analyst_worker_accepts_modern_supporting_case() -> None:
+    _kernel, _action, result = _prepared_component_analyst_worker_result(
+        {
+            "case_posture": "supported",
+            "claim_text": "A bounded claim.",
+            "evidence_analysis": "The bounded evidence directly supports the claim.",
+            "self_audit": "The claim stays within the bounded evidence.",
+            "caveats": [],
+            "nonclaims": [],
+            "contradictions": [],
+            "blockers": [],
+        }
+    )
+    assert result.failure_kind is None
+    assert result.normalized_semantic_output is not None
+    assert result.normalized_semantic_output["case_posture"] == "supported"
+    assert result.normalized_semantic_output["support_status"] == "supported"
+    assert "_runtime_legacy_fixture_compatibility" not in (
+        result.normalized_semantic_output
+    )
+
+
+def test_scheduler_direct_component_analyst_call_rejects_support_status_only() -> None:
+    kernel, packets = _scheduler_kernel()
+    lease = kernel.grant_next_multicomponent_work_lease()
+    work = lease["work"]
+    with pytest.raises(
+        MulticomponentRoleRuntimeError,
+        match="requires a valid case_posture",
+    ):
+        execute_multicomponent_role_call(
+            run_kernel=kernel,
+            role=work["role"],
+            input_packet=packets[str(work["component_id"])],
+            logical_evaluation_key=work["logical_evaluation_key"],
+            lease_id=lease["lease_id"],
+            **_role_kwargs(
+                ask_model=lambda *_args, **_kwargs: json.dumps(
+                    {
+                        "claim_text": "Legacy thin claim.",
+                        "support_status": "supported",
+                        "caveats": [],
+                        "nonclaims": [],
+                        "blockers": [],
+                    }
+                )
+            ),
+        )
+    assert _scheduler(kernel)["lease_history"][-1]["status"] == LEASE_FAILED
+    assert kernel.state.projections[
+        f"multicomponent_role:{ROLE_COMPONENT_ANALYST}:{work['logical_evaluation_key']}"
+    ]["semantic_artifact_admitted"] is False
 
 
 def test_11_predispatch_cancellation_returns_exactly_once() -> None:

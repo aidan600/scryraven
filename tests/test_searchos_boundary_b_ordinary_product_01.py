@@ -259,8 +259,16 @@ class BoundaryBOrdinaryHarness(OfflineOrdinaryPipelineHarness):
                 )
                 return json.dumps(
                     {
+                        "case_posture": "supported",
                         "claim_text": claim,
-                        "support_status": "supported",
+                        "evidence_analysis": (
+                            "The exact dedicated source supports only this "
+                            "direct premise."
+                        ),
+                        "self_audit": (
+                            "The case does not extend beyond the supplied "
+                            "direct premise evidence."
+                        ),
                         "caveats": [],
                         "nonclaims": [],
                         "blockers": [],
@@ -1005,8 +1013,16 @@ class FastInferenceOrdinaryHarness(OfflineOrdinaryPipelineHarness):
                 component_id = str(payload["component_ref"]["component_id"])
                 return json.dumps(
                     {
+                        "case_posture": "supported",
                         "claim_text": (f"Direct {component_id} is established."),
-                        "support_status": "supported",
+                        "evidence_analysis": (
+                            "The exact dedicated source supports only this "
+                            "direct premise."
+                        ),
+                        "self_audit": (
+                            "The case does not extend beyond the supplied "
+                            "direct premise evidence."
+                        ),
                         "caveats": [],
                         "nonclaims": [],
                         "blockers": [],

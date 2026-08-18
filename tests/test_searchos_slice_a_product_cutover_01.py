@@ -1475,6 +1475,101 @@ def test_bounded_searchos_n1_projects_current_component_analyst_failure(
         expected_request_id=outcome.session_id,
     ) is None
 
+
+def test_bounded_searchos_n1_rejects_legacy_thin_component_analyst_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from dataclasses import replace
+
+    from core.multicomponent_graph_scheduling import (
+        MULTICOMPONENT_SCHEDULER_STAGE,
+        project_current_component_analyst_failure,
+    )
+
+    _establish_official_current_qualification_truth(monkeypatch)
+    harness_sink: list[Any] = []
+
+    def thin_analyst_transport(prompt: str, system_prompt: str, **kwargs: Any) -> Any:
+        harness = harness_sink[0]
+        base = harness.strict_one_shot_smart_model_transport(
+            prompt,
+            system_prompt,
+            **kwargs,
+        )
+        if system_prompt != ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST]:
+            return base
+        return replace(
+            base,
+            output_text=json.dumps(
+                {
+                    "claim_text": "Legacy thin claim.",
+                    "support_status": "supported",
+                    "caveats": [],
+                    "nonclaims": [],
+                    "blockers": [],
+                }
+            ),
+        )
+
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        mode="Balanced",
+        query="What is Alpha's current official operating rule?",
+        core_topic="Alpha current official operating rule",
+        primary_entity="Alpha",
+        researcher_queries=["Alpha current official operating rule"],
+        deps_overrides={
+            "strict_one_shot_smart_model_transport": thin_analyst_transport,
+        },
+        harness_sink=harness_sink,
+    )
+
+    searchos_trace = dict(outcome.execution_trace["searchos_slice_a"])
+    assert searchos_trace["component_analyst_failure"] == {
+        "role": ROLE_COMPONENT_ANALYST,
+        "failure_kind": "output_validation_failure",
+        "settlement_posture": "failed_spent",
+    }
+    projection = build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=searchos_trace,
+        expected_run_id=outcome.run_id,
+        expected_request_id=outcome.session_id,
+    )
+    assert projection is not None
+    assert projection["component_analyst_failure"] == {
+        "role": ROLE_COMPONENT_ANALYST,
+        "failure_kind": "output_validation_failure",
+        "settlement_posture": "failed_spent",
+    }
+    slot = _required_causal_slot(projection)
+    assert slot["component_analyst_case_present"] is False
+    assert slot["semantic_admission_status"] != "admitted"
+    assert slot["component_coverage_satisfied"] is False
+    assert slot["component_dprime_validation_present"] is False
+    assert slot["component_dprime_model_call_required"] is False
+    assert slot["component_dprime_model_call_executed"] is False
+    assert "multicomponent_component_admission" not in (
+        harness.run_kernel.state.projections
+    )
+    assert not any(
+        prompt == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_DPRIME]
+        for prompt in harness.model_system_prompts
+    )
+    assert not any(
+        prompt == ROLE_SYSTEM_PROMPTS[ROLE_CROSS_COMPONENT_ANALYST]
+        for prompt in harness.model_system_prompts
+    )
+    scheduler = harness.run_kernel.state.projections[MULTICOMPONENT_SCHEDULER_STAGE]
+    assert project_current_component_analyst_failure(
+        state=scheduler,
+        expected_run_id=outcome.run_id,
+        expected_request_id=outcome.session_id,
+    ) == projection["component_analyst_failure"]
+    assert scheduler["failed_required_work_ref"]["role"] == ROLE_COMPONENT_ANALYST
+
+
 def test_bounded_searchos_n1_causal_projection_privacy_allowlist() -> None:
     sentinels = (
         "fictional-raw-query-text-sentinel",

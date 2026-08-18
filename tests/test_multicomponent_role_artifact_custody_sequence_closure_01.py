@@ -223,8 +223,10 @@ def test_failed_role_observation_reduction_closes_current_action(
             **_role_kwargs(
                 ask_model=lambda *_args, **_kwargs: json.dumps(
                     {
+                        "case_posture": "supported",
                         "claim_text": "A bounded claim.",
-                        "support_status": "supported",
+                        "evidence_analysis": "The bounded evidence directly supports the claim.",
+                        "self_audit": "The claim stays within the bounded evidence.",
                     }
                 )
             ),

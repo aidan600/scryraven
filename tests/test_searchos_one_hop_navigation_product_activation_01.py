@@ -318,15 +318,30 @@ def _install_navigation_model(
         if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST]:
             self._record_model_call(system_prompt, kwargs)
             assert LINKED_FACT in prompt
-            return json.dumps(
-                {
-                    "claim_text": f"Alpha's official requirement is that its launch color is {LINKED_FACT}.",
-                    "support_status": analyst_status,
-                    "caveats": [],
-                    "nonclaims": [],
-                    "blockers": [] if analyst_status == "supported" else ["unsupported fixture"],
-                }
-            )
+            payload = {
+                "case_posture": analyst_status,
+                "claim_text": (
+                    "Alpha's official requirement is that its launch color "
+                    f"is {LINKED_FACT}."
+                ),
+                "caveats": [],
+                "nonclaims": [],
+                "blockers": (
+                    []
+                    if analyst_status == "supported"
+                    else ["unsupported fixture"]
+                ),
+            }
+            if analyst_status in {"supported", "supported_with_caveats"}:
+                payload["evidence_analysis"] = (
+                    "The exact official linked fact supports only the stated "
+                    "launch-color requirement."
+                )
+                payload["self_audit"] = (
+                    "The case does not extend beyond the supplied official "
+                    "linked fact."
+                )
+            return json.dumps(payload)
         return original(self, prompt, system_prompt, **kwargs)
 
     def capture_receiver(run_kernel: RunKernel, *args: Any, **kwargs: Any) -> Any:

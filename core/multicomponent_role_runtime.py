@@ -175,9 +175,6 @@ COMPONENT_ANALYST_CASE_POSTURES = frozenset(
 COMPONENT_ANALYST_SUPPORTING_CASE_POSTURES = frozenset(
     {"supported", "supported_with_caveats"}
 )
-_COMPONENT_ANALYST_LEGACY_SUPPORT_STATUSES = frozenset(
-    {"supported", "supported_with_caveats", "unsupported", "blocked"}
-)
 _LEGACY_SUPPORT_STATUS_BY_COMPONENT_ANALYST_CASE_POSTURE = {
     "supported": "supported",
     "supported_with_caveats": "supported_with_caveats",
@@ -489,33 +486,23 @@ def _normalize_component_analyst_case(
     payload: Mapping[str, Any], *, resume: bool
 ) -> dict[str, Any]:
     declared_posture = _normalize_key(payload.get("case_posture"))
-    legacy_status = _normalize_key(payload.get("support_status"))
-    if declared_posture:
-        if declared_posture not in COMPONENT_ANALYST_CASE_POSTURES:
-            raise MulticomponentRoleRuntimeError(
-                "component Analyst case_posture is invalid"
-            )
-        expected_legacy_status = (
-            _LEGACY_SUPPORT_STATUS_BY_COMPONENT_ANALYST_CASE_POSTURE[
-                declared_posture
-            ]
+    if not declared_posture:
+        raise MulticomponentRoleRuntimeError(
+            "component Analyst output requires a valid case_posture"
         )
-        if legacy_status and (
-            legacy_status not in _COMPONENT_ANALYST_LEGACY_SUPPORT_STATUSES
-            or legacy_status != expected_legacy_status
-        ):
-            raise MulticomponentRoleRuntimeError(
-                "component Analyst support_status disagrees with case_posture"
-            )
-        case_posture = declared_posture
-        legacy_fixture = False
-    else:
-        if legacy_status not in _COMPONENT_ANALYST_LEGACY_SUPPORT_STATUSES:
-            raise MulticomponentRoleRuntimeError(
-                "component Analyst output requires a valid case_posture"
-            )
-        case_posture = legacy_status
-        legacy_fixture = True
+    if declared_posture not in COMPONENT_ANALYST_CASE_POSTURES:
+        raise MulticomponentRoleRuntimeError(
+            "component Analyst case_posture is invalid"
+        )
+    declared_status = _normalize_key(payload.get("support_status"))
+    expected_support_status = (
+        _LEGACY_SUPPORT_STATUS_BY_COMPONENT_ANALYST_CASE_POSTURE[declared_posture]
+    )
+    if declared_status and declared_status != expected_support_status:
+        raise MulticomponentRoleRuntimeError(
+            "component Analyst support_status disagrees with case_posture"
+        )
+    case_posture = declared_posture
 
     claim_text = _clean_text(payload.get("claim_text"), limit=1000)
     evidence_analysis = _clean_text(payload.get("evidence_analysis"), limit=1600)
@@ -523,25 +510,17 @@ def _normalize_component_analyst_case(
     self_audit = _clean_text(
         payload.get("self_audit") or payload.get("overreach_check"), limit=1200
     )
-    # A normalized legacy fixture retains only the compatibility alias.  Recognize
-    # that stable shape on validation without relaxing the modern case contract.
-    legacy_fixture_marker = payload.get("_runtime_legacy_fixture_compatibility")
-    if legacy_fixture_marker not in {None, True}:
-        raise MulticomponentRoleRuntimeError(
-            "component Analyst legacy fixture marker is invalid"
-        )
-    legacy_fixture = legacy_fixture or legacy_fixture_marker is True
 
     if case_posture in COMPONENT_ANALYST_SUPPORTING_CASE_POSTURES:
         if not claim_text:
             raise MulticomponentRoleRuntimeError(
                 "supporting component Analyst case requires claim_text"
             )
-        if not legacy_fixture and not (evidence_analysis or warrant):
+        if not (evidence_analysis or warrant):
             raise MulticomponentRoleRuntimeError(
                 "supporting component Analyst case requires evidence_analysis or warrant"
             )
-        if not legacy_fixture and not self_audit:
+        if not self_audit:
             raise MulticomponentRoleRuntimeError(
                 "supporting component Analyst case requires self_audit"
             )
@@ -556,19 +535,14 @@ def _normalize_component_analyst_case(
     )
     normalized: dict[str, Any] = {
         "case_posture": case_posture,
-        # Compatibility alias for offline fixtures and out-of-scope consumers.
-        "support_status": (
-            _LEGACY_SUPPORT_STATUS_BY_COMPONENT_ANALYST_CASE_POSTURE[
-                case_posture
-            ]
-        ),
+        # Code-derived compatibility alias for out-of-scope consumers.
+        # Model-authored support_status never substitutes for case_posture.
+        "support_status": expected_support_status,
         "caveats": _text_list(payload.get("caveats")),
         "nonclaims": _text_list(payload.get("nonclaims")),
         "contradictions": contradictions,
         "blockers": _text_list(payload.get("blockers")),
     }
-    if legacy_fixture:
-        normalized["_runtime_legacy_fixture_compatibility"] = True
     semantic_text_fields = (
         ("claim_text", claim_text),
         ("evidence_analysis", evidence_analysis),

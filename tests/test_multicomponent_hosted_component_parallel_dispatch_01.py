@@ -974,7 +974,18 @@ def test_postdispatch_authority_change_rejects_late_batch_results_as_stale() -> 
             input_packet=packet,
             strict_one_shot_transport=wrap_text_callable_as_strict_one_shot_transport(
                 lambda *_args, **_kwargs: (
-                    '{"claim_text":"Late bounded claim","support_status":"supported"}'
+                    json.dumps(
+                        {
+                            "case_posture": "supported",
+                            "claim_text": "Late bounded claim",
+                            "evidence_analysis": (
+                                "The bounded evidence directly supports the claim."
+                            ),
+                            "self_audit": (
+                                "The claim stays within the bounded evidence."
+                            ),
+                        }
+                    )
                 ),
                 canonical_provider="OpenAI",
                 model="gpt-5.4",
