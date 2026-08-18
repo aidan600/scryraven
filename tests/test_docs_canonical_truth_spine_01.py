@@ -59,6 +59,9 @@ _REQUIRE_SEPARATE_DPRIME_CONSUMER = re.compile(
 _CURRENT_ARCHITECTURE_VERDICT_HEADING = re.compile(
     r"(?im)^#{1,6}\s+(?:\d+\.\s+)?architecture\s+verdict\s*$"
 )
+_DPRIME_AUTHORITY_LAUNDERING = re.compile(
+    r"(?i)d-prime\s+(?:admits|answer\s+authority|support/admission)"
+)
 _SKIP_WORKBENCH_SECTION = re.compile(
     r"(?i)historical|installed|v0 phase|capability inventory|non-proofs|nonproofs"
 )
@@ -316,6 +319,8 @@ def test_workbench_doctrine_does_not_require_dprime_as_selected_target() -> None
         assert require is None, (path.name, require.group(0) if require else None)
         assert _CURRENT_ARCHITECTURE_VERDICT_HEADING.search(current_voice) is None, path.name
         assert "smallest safe next architecture" not in current_fold
+        launder = _DPRIME_AUTHORITY_LAUNDERING.search(collapsed)
+        assert launder is None, (path.name, launder.group(0) if launder else None)
 
 
 def test_searchos_target_owner_is_unique_routed_and_nonactivating() -> None:

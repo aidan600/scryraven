@@ -17,11 +17,13 @@ It does not license runtime changes, live validation, provider/model/search/
 fetch/read calls, new answer paths, Scrutineer implementation, source-challenge
 recovery, FAP/Author wording changes, or product correctness claims.
 
-Future cross-component doctrine lives in
-[CROSS_COMPONENT_ANALYST_WORKBENCH.md](CROSS_COMPONENT_ANALYST_WORKBENCH.md).
-That doctrine adapts the same proposal-only Workbench posture for synthesis over
-compact component refs; it does not create a second Analyst authority path or
-open graph execution.
+[CROSS_COMPONENT_ANALYST_WORKBENCH.md](CROSS_COMPONENT_ANALYST_WORKBENCH.md) is
+supporting installed/provenance Workbench material. Selected future Cross
+topology is owned by
+[AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md). The Cross Workbench
+file adapts the same proposal-only Workbench posture for synthesis over compact
+component refs; it does not create a second Analyst authority path, a second
+target architecture, or open graph execution.
 
 The canonical durable direction is
 [MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md](MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md)
@@ -148,7 +150,7 @@ admit evidence or prove answer correctness.
 | --- | --- | --- | --- | --- |
 | `not_required` | A strict-support candidate was proposed and contextual risks are preserved for downstream review. | No, not by itself. | No. | Does not mean D-prime support, source-obligation satisfaction, citation eligibility, Sufficiency, FAP, Author, source display, or PASS already happened. |
 | `strict_support_missing` | No strict answer-support candidate was identified, or contextual material is insufficient for the answer claim. | Yes, through the current-source answer blocker when unresolved. | Yes, through the existing licensed current-source follow-up path. | Does not mean provider/search/fetch/read occurred, and does not prove that contextual material is true, false, current, or citable. |
-| `unreadable_high_value_candidate` | An official-looking or high-value candidate needs readable strict support before it can feed D-prime answer authority. | Yes, through the current-source read-support blocker when unresolved. | Yes, through the existing licensed current-source follow-up path. | Does not infer the unreadable source content, citation eligibility, source-obligation satisfaction, or PDF/table read support. |
+| `unreadable_high_value_candidate` | An official-looking or high-value candidate needs readable strict support before installed D-prime semantic review and RunKernel admission. | Yes, through the current-source read-support blocker when unresolved. | Yes, through the existing licensed current-source follow-up path. | Does not infer the unreadable source content, citation eligibility, source-obligation satisfaction, or PDF/table read support. |
 | `overclaim_risk` | Contextual or qualifier material could support a narrower claim but risks overstating the answer without stricter support. | It can contribute to a blocker when strict support is missing or downstream review refuses the claim. | Only through an explicitly licensed recovery/follow-up path. | Does not by itself prove contradiction, support, challenge resolution, or answer readiness. |
 
 ### Follow-Up License Behavior
@@ -187,7 +189,8 @@ an official-looking source alone is not product PASS.
 
 Product PASS requires the existing downstream answer path to consume:
 
-- D-prime support/admission;
+- installed D-prime support review;
+- RunKernel admission of the exact current support state;
 - admitted `SemanticObservation`;
 - `ComponentCoverage`;
 - `SufficiencyReadiness`;

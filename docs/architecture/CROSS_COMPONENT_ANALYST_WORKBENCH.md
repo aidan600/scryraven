@@ -52,10 +52,11 @@ artifact and recorded parent state.
 
 For a searched-premise winner, ContractAmendment v2 and RunKernel own contract
 mutation; SearchOS retrieves direct evidence for the premise; **INSTALLED:**
-component D-prime admits direct support; and Graph V1 schedules a fresh
-affected-only Cross-Component Analyst pass. Cross-Component Analyst then
-proposes the exact target-mapped relationship; **INSTALLED:** synthesis D-prime
-validates it; RunKernel admits it. SearchOS and Scrutineer do not author
+component D-prime validates direct support; RunKernel admits the exact current
+support state; and Graph V1 schedules a fresh affected-only Cross-Component
+Analyst pass. Cross-Component Analyst then proposes the exact target-mapped
+relationship; **INSTALLED:** synthesis D-prime validates it; RunKernel admits
+the exact current graph/synthesis state. SearchOS and Scrutineer do not author
 inference. The installed semantic ceilings are depth 1 in Fast/Balanced and
 depth 2 in Deep. Selected recovery and Cross consumption belong only to
 [AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md).
