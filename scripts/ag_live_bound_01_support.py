@@ -8,6 +8,10 @@ from pathlib import Path
 from typing import Any
 
 from core.cap_enforcement import RunCapPolicy
+from core.multicomponent_component_admission import (
+    component_analyst_input_binding_mismatch_from_exception,
+    project_component_analyst_input_binding_mismatch_v1,
+)
 from core.validation_observability import (
     build_subject_budget_summary,
     build_validation_observability,
@@ -632,6 +636,13 @@ def build_failure_observability(
     }
     if blocked_fap_summary:
         observability["blocked_fap_summary"] = blocked_fap_summary
+    mismatch_diagnostic = component_analyst_input_binding_mismatch_from_exception(
+        exc
+    )
+    if mismatch_diagnostic:
+        observability["component_analyst_input_binding_mismatch_v1"] = (
+            mismatch_diagnostic
+        )
     return observability
 
 
@@ -955,6 +966,17 @@ def build_live_failure_packet(
         sanitized_projection_summaries["blocked_fap_summary"] = dict(
             blocked_fap_summary
         )
+    mismatch_diagnostic = (
+        project_component_analyst_input_binding_mismatch_v1(
+            failure_observability.get("component_analyst_input_binding_mismatch_v1")
+        )
+        if failure_observability is not None
+        else {}
+    )
+    if mismatch_diagnostic:
+        sanitized_projection_summaries[
+            "component_analyst_input_binding_mismatch_v1"
+        ] = mismatch_diagnostic
     packet = {
         **_live_packet_base(context, cap_policy=cap_policy),
         "success_classification": classification,

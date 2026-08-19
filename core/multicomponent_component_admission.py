@@ -31,10 +31,59 @@ MULTICOMPONENT_COMPONENT_ADMISSION_STAGE = "multicomponent_component_admission"
 MULTICOMPONENT_COMPONENT_ADMISSION_OWNER = (
     "RunKernel.MulticomponentComponentAdmission"
 )
+COMPONENT_ANALYST_INPUT_BINDING_MISMATCH_SCHEMA_VERSION = (
+    "component_analyst_input_binding_mismatch_v1"
+)
+COMPONENT_ANALYST_EXACT_INPUT_BINDING_MISMATCH = (
+    "component Analyst exact input binding mismatch"
+)
+_MULTICOMPONENT_SCHEDULER_PROJECTION = "multicomponent_graph_scheduler"
+_MISMATCH_CLASS_VALUES = frozenset(
+    {
+        "CONTRACT_AUTHORITY_CHANGED",
+        "PACKET_RECONSTRUCTION_NON_IDEMPOTENT",
+        "SUPPLIED_PACKET_CHANGED",
+        "ARTIFACT_DIGEST_CHANGED",
+        "OTHER",
+    }
+)
+_FIRST_DIVERGENT_SECTION_VALUES = frozenset(
+    {
+        "run_binding",
+        "component_ref",
+        "component_evidence",
+        "quantitative_source_catalog",
+        "quantitative_specialist_proposal_contract",
+        "other",
+        "unknown",
+    }
+)
+_ACCEPTED_AUTHORITY_SOURCE_VALUES = frozenset(
+    {"current", "initial_fallback", "unknown"}
+)
+_KNOWN_PACKET_SECTIONS = (
+    "run_binding",
+    "component_ref",
+    "component_evidence",
+    "quantitative_source_catalog",
+    "quantitative_specialist_proposal_contract",
+)
 
 
 class MulticomponentComponentAdmissionError(ValueError):
     """Raised before canonical mutation when component admission is invalid."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        component_analyst_input_binding_mismatch_v1: Mapping[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        projected = project_component_analyst_input_binding_mismatch_v1(
+            component_analyst_input_binding_mismatch_v1
+        )
+        self.component_analyst_input_binding_mismatch_v1 = projected or None
 
 
 def _safe_mapping(value: Any) -> dict[str, Any]:
@@ -46,6 +95,373 @@ def _clean_text(value: Any, *, limit: int = 1000) -> str | None:
         return None
     text = " ".join(str(value).strip().split())
     return text[:limit] if text else None
+
+
+def _closed_bool(value: Any) -> bool | None:
+    return value if isinstance(value, bool) else None
+
+
+def _closed_count(value: Any) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    if value < 0:
+        return None
+    return value
+
+
+def _packet_section_digest(packet: Mapping[str, Any], section: str) -> str:
+    value = packet.get(section) if isinstance(packet, Mapping) else None
+    if isinstance(value, Mapping):
+        return safe_packet_digest(value)
+    return safe_packet_digest(
+        {
+            "section_presence": "non_mapping",
+            "present": value is not None,
+            "value_type": type(value).__name__ if value is not None else "missing",
+        }
+    )
+
+
+def project_component_analyst_input_binding_mismatch_v1(
+    value: Any,
+) -> dict[str, Any]:
+    """Return only the closed, privacy-safe mismatch projection."""
+
+    raw = _safe_mapping(value)
+    schema_version = _clean_text(raw.get("schema_version"), limit=80)
+    mismatch_class = _clean_text(raw.get("mismatch_class"), limit=80)
+    first_divergent_section = _clean_text(
+        raw.get("first_divergent_section"), limit=80
+    )
+    accepted_authority_source = _clean_text(
+        raw.get("accepted_authority_source"), limit=40
+    )
+    if (
+        schema_version != COMPONENT_ANALYST_INPUT_BINDING_MISMATCH_SCHEMA_VERSION
+        or mismatch_class not in _MISMATCH_CLASS_VALUES
+        or first_divergent_section not in _FIRST_DIVERGENT_SECTION_VALUES
+        or accepted_authority_source not in _ACCEPTED_AUTHORITY_SOURCE_VALUES
+    ):
+        return {}
+
+    def digest_field(key: str) -> str | None:
+        return _clean_text(raw.get(key), limit=128)
+
+    def token_field(key: str, *, limit: int = 200) -> str | None:
+        return _clean_text(raw.get(key), limit=limit)
+
+    projected: dict[str, Any] = {
+        "schema_version": schema_version,
+        "mismatch_class": mismatch_class,
+        "first_divergent_section": first_divergent_section,
+        "artifact_input_packet_digest": digest_field(
+            "artifact_input_packet_digest"
+        ),
+        "supplied_packet_digest": digest_field("supplied_packet_digest"),
+        "reconstructed_packet_digest": digest_field("reconstructed_packet_digest"),
+        "supplied_digest_equals_artifact": _closed_bool(
+            raw.get("supplied_digest_equals_artifact")
+        ),
+        "supplied_digest_equals_reconstructed": _closed_bool(
+            raw.get("supplied_digest_equals_reconstructed")
+        ),
+        "artifact_digest_equals_reconstructed": _closed_bool(
+            raw.get("artifact_digest_equals_reconstructed")
+        ),
+        "initial_contract_present": _closed_bool(raw.get("initial_contract_present")),
+        "initial_contract_version": token_field("initial_contract_version"),
+        "initial_contract_digest": digest_field("initial_contract_digest"),
+        "current_contract_present": _closed_bool(raw.get("current_contract_present")),
+        "current_contract_version": token_field("current_contract_version"),
+        "current_contract_digest": digest_field("current_contract_digest"),
+        "accepted_authority_source": accepted_authority_source,
+        "accepted_component_id": token_field("accepted_component_id"),
+        "accepted_component_revision": token_field("accepted_component_revision"),
+        "accepted_component_digest": digest_field("accepted_component_digest"),
+        "packet_contract_version": token_field("packet_contract_version"),
+        "packet_contract_digest": digest_field("packet_contract_digest"),
+        "packet_component_revision": token_field("packet_component_revision"),
+        "packet_component_digest": digest_field("packet_component_digest"),
+        "run_binding_matches_accepted_contract": _closed_bool(
+            raw.get("run_binding_matches_accepted_contract")
+        ),
+        "component_ref_matches_accepted_component": _closed_bool(
+            raw.get("component_ref_matches_accepted_component")
+        ),
+        "component_count": _closed_count(raw.get("component_count")),
+        "independent_dispatch_digest_present": _closed_bool(
+            raw.get("independent_dispatch_digest_present")
+        ),
+        "independent_dispatch_input_digest": digest_field(
+            "independent_dispatch_input_digest"
+        ),
+        "supplied_digest_equals_dispatch": _closed_bool(
+            raw.get("supplied_digest_equals_dispatch")
+        ),
+        "artifact_digest_equals_dispatch": _closed_bool(
+            raw.get("artifact_digest_equals_dispatch")
+        ),
+    }
+    for section in _KNOWN_PACKET_SECTIONS:
+        projected[f"{section}_supplied_digest"] = digest_field(
+            f"{section}_supplied_digest"
+        )
+        projected[f"{section}_reconstructed_digest"] = digest_field(
+            f"{section}_reconstructed_digest"
+        )
+        projected[f"{section}_equal"] = _closed_bool(raw.get(f"{section}_equal"))
+    return projected
+
+
+def component_analyst_input_binding_mismatch_from_exception(
+    exc: BaseException,
+) -> dict[str, Any]:
+    """Extract the owner-authored mismatch projection from one exception chain."""
+
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        projected = project_component_analyst_input_binding_mismatch_v1(
+            getattr(current, "component_analyst_input_binding_mismatch_v1", None)
+        )
+        if projected:
+            return projected
+        current = current.__cause__ or current.__context__
+    return {}
+
+
+def contract_authority_facts_from_run_kernel(run_kernel: Any) -> dict[str, Any]:
+    """Project existing current/initial contract presence without new retention."""
+
+    state = getattr(run_kernel, "state", None)
+    current_raw = getattr(state, "current_answer_contract", None)
+    initial_raw = getattr(state, "initial_answer_contract", None)
+    current_present = isinstance(current_raw, Mapping) and bool(current_raw)
+    initial_present = isinstance(initial_raw, Mapping) and bool(initial_raw)
+    current = _safe_mapping(current_raw) if current_present else {}
+    initial = _safe_mapping(initial_raw) if initial_present else {}
+    if current_present:
+        source = "current"
+    elif initial_present:
+        source = "initial_fallback"
+    else:
+        source = "unknown"
+    return {
+        "initial_contract_present": initial_present,
+        "initial_contract_version": _clean_text(
+            initial.get("accepted_contract_version"), limit=200
+        ),
+        "initial_contract_digest": _clean_text(
+            initial.get("accepted_contract_digest"), limit=128
+        ),
+        "current_contract_present": current_present,
+        "current_contract_version": _clean_text(
+            current.get("accepted_contract_version"), limit=200
+        ),
+        "current_contract_digest": _clean_text(
+            current.get("accepted_contract_digest"), limit=128
+        ),
+        "accepted_authority_source": source,
+    }
+
+
+def independent_component_analyst_dispatch_input_digest(
+    run_kernel: Any,
+    *,
+    evaluation_key: str,
+) -> str | None:
+    """Return the unique existing scheduler/lease digest for this evaluation."""
+
+    state = getattr(run_kernel, "state", None)
+    projections = getattr(state, "projections", None)
+    if not isinstance(projections, Mapping):
+        return None
+    scheduler = _safe_mapping(projections.get(_MULTICOMPONENT_SCHEDULER_PROJECTION))
+    found: set[str] = set()
+    for raw_lease in scheduler.get("lease_history") or ():
+        lease = _safe_mapping(raw_lease)
+        work = _safe_mapping(lease.get("work"))
+        if work.get("role") != ROLE_COMPONENT_ANALYST:
+            continue
+        if str(work.get("logical_evaluation_key") or "") != evaluation_key:
+            continue
+        digest = _clean_text(work.get("input_packet_digest"), limit=128)
+        if digest:
+            found.add(digest)
+    if len(found) != 1:
+        return None
+    return next(iter(found))
+
+
+def build_component_analyst_input_binding_mismatch_v1(
+    *,
+    analyst: Mapping[str, Any],
+    supplied_input: Mapping[str, Any],
+    reconstructed_input: Mapping[str, Any],
+    accepted_contract: Mapping[str, Any],
+    accepted_component: Mapping[str, Any],
+    independent_dispatch_input_digest: str | None = None,
+    contract_authority_facts: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build the closed structural mismatch projection. Digest-only."""
+
+    supplied = _safe_mapping(supplied_input)
+    reconstructed = _safe_mapping(reconstructed_input)
+    accepted = _safe_mapping(accepted_contract)
+    component = _safe_mapping(accepted_component)
+    facts = _safe_mapping(contract_authority_facts)
+    artifact_digest = _clean_text(analyst.get("input_packet_digest"), limit=128)
+    supplied_digest = safe_packet_digest(supplied)
+    reconstructed_digest = safe_packet_digest(reconstructed)
+    dispatch_digest = _clean_text(independent_dispatch_input_digest, limit=128)
+    dispatch_present = dispatch_digest is not None
+    packet_binding = _safe_mapping(supplied.get("run_binding"))
+    packet_ref = _safe_mapping(supplied.get("component_ref"))
+    packet_contract_version = _clean_text(
+        packet_binding.get("accepted_contract_version"), limit=200
+    )
+    packet_contract_digest = _clean_text(
+        packet_binding.get("accepted_contract_digest"), limit=128
+    )
+    accepted_contract_version = _clean_text(
+        accepted.get("accepted_contract_version"), limit=200
+    )
+    accepted_contract_digest = _clean_text(
+        accepted.get("accepted_contract_digest"), limit=128
+    )
+    packet_component_id = _clean_text(packet_ref.get("component_id"), limit=200)
+    packet_component_revision = _clean_text(
+        packet_ref.get("component_revision"), limit=200
+    )
+    packet_component_digest = _clean_text(packet_ref.get("component_digest"), limit=128)
+    accepted_component_id = _clean_text(component.get("component_id"), limit=200)
+    accepted_component_revision = _clean_text(
+        component.get("component_revision"), limit=200
+    )
+    accepted_component_digest = _clean_text(
+        component.get("component_digest"), limit=128
+    )
+    contract_authority_changed = (
+        packet_contract_version is not None
+        and packet_contract_digest is not None
+        and accepted_contract_version is not None
+        and accepted_contract_digest is not None
+        and (
+            packet_contract_version != accepted_contract_version
+            or packet_contract_digest != accepted_contract_digest
+        )
+    )
+    run_binding_matches_accepted_contract = (
+        packet_contract_version is not None
+        and packet_contract_digest is not None
+        and packet_contract_version == accepted_contract_version
+        and packet_contract_digest == accepted_contract_digest
+    )
+    component_ref_matches_accepted_component = (
+        packet_component_id is not None
+        and packet_component_id == accepted_component_id
+        and packet_component_revision == accepted_component_revision
+        and packet_component_digest == accepted_component_digest
+    )
+    supplied_equals_artifact = (
+        artifact_digest is not None and supplied_digest == artifact_digest
+    )
+    supplied_equals_reconstructed = supplied_digest == reconstructed_digest
+    artifact_equals_reconstructed = (
+        artifact_digest is not None and artifact_digest == reconstructed_digest
+    )
+    supplied_equals_dispatch = dispatch_present and supplied_digest == dispatch_digest
+    artifact_equals_dispatch = (
+        dispatch_present and artifact_digest == dispatch_digest
+    )
+    section_fields: dict[str, Any] = {}
+    first_divergent_section = None
+    for section in _KNOWN_PACKET_SECTIONS:
+        supplied_section_digest = _packet_section_digest(supplied, section)
+        reconstructed_section_digest = _packet_section_digest(reconstructed, section)
+        equal = supplied_section_digest == reconstructed_section_digest
+        section_fields[f"{section}_supplied_digest"] = supplied_section_digest
+        section_fields[f"{section}_reconstructed_digest"] = reconstructed_section_digest
+        section_fields[f"{section}_equal"] = equal
+        if first_divergent_section is None and not equal:
+            first_divergent_section = section
+    if first_divergent_section is None:
+        first_divergent_section = (
+            "other" if not supplied_equals_reconstructed else "unknown"
+        )
+    authority_source = facts.get("accepted_authority_source")
+    if authority_source not in _ACCEPTED_AUTHORITY_SOURCE_VALUES:
+        authority_source = "unknown"
+    if contract_authority_changed:
+        mismatch_class = "CONTRACT_AUTHORITY_CHANGED"
+    elif (
+        supplied_equals_artifact
+        and not supplied_equals_reconstructed
+        and (not dispatch_present or supplied_equals_dispatch)
+    ):
+        mismatch_class = "PACKET_RECONSTRUCTION_NON_IDEMPOTENT"
+    elif dispatch_present and not supplied_equals_dispatch:
+        mismatch_class = "SUPPLIED_PACKET_CHANGED"
+    elif dispatch_present and not artifact_equals_dispatch:
+        mismatch_class = "ARTIFACT_DIGEST_CHANGED"
+    else:
+        mismatch_class = "OTHER"
+    component_refs = [
+        item
+        for item in accepted.get("accepted_answer_component_refs") or ()
+        if isinstance(item, Mapping)
+    ]
+    initial_present = facts.get("initial_contract_present")
+    current_present = facts.get("current_contract_present")
+    raw = {
+        "schema_version": COMPONENT_ANALYST_INPUT_BINDING_MISMATCH_SCHEMA_VERSION,
+        "mismatch_class": mismatch_class,
+        "first_divergent_section": first_divergent_section,
+        "artifact_input_packet_digest": artifact_digest,
+        "supplied_packet_digest": supplied_digest,
+        "reconstructed_packet_digest": reconstructed_digest,
+        "supplied_digest_equals_artifact": supplied_equals_artifact,
+        "supplied_digest_equals_reconstructed": supplied_equals_reconstructed,
+        "artifact_digest_equals_reconstructed": artifact_equals_reconstructed,
+        "initial_contract_present": initial_present is True,
+        "initial_contract_version": _clean_text(
+            facts.get("initial_contract_version"), limit=200
+        ),
+        "initial_contract_digest": _clean_text(
+            facts.get("initial_contract_digest"), limit=128
+        ),
+        "current_contract_present": current_present is True,
+        "current_contract_version": _clean_text(
+            facts.get("current_contract_version"), limit=200
+        ),
+        "current_contract_digest": _clean_text(
+            facts.get("current_contract_digest"), limit=128
+        ),
+        "accepted_authority_source": authority_source,
+        "accepted_component_id": accepted_component_id,
+        "accepted_component_revision": accepted_component_revision,
+        "accepted_component_digest": accepted_component_digest,
+        "packet_contract_version": packet_contract_version,
+        "packet_contract_digest": packet_contract_digest,
+        "packet_component_revision": packet_component_revision,
+        "packet_component_digest": packet_component_digest,
+        "run_binding_matches_accepted_contract": run_binding_matches_accepted_contract,
+        "component_ref_matches_accepted_component": (
+            component_ref_matches_accepted_component
+        ),
+        "component_count": len(component_refs),
+        "independent_dispatch_digest_present": dispatch_present,
+        "independent_dispatch_input_digest": dispatch_digest,
+        "supplied_digest_equals_dispatch": (
+            supplied_equals_dispatch if dispatch_present else None
+        ),
+        "artifact_digest_equals_dispatch": (
+            artifact_equals_dispatch if dispatch_present else None
+        ),
+        **section_fields,
+    }
+    return project_component_analyst_input_binding_mismatch_v1(raw)
 
 
 def _accepted_component(
@@ -295,6 +711,8 @@ def _exact_component_analyst_input_for_admission(
     component: Mapping[str, Any],
     evaluation_key: str,
     specialist_need_handoff: Mapping[str, Any] | None,
+    independent_dispatch_input_digest: str | None = None,
+    contract_authority_facts: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Validate the exact initial or bounded-resume Analyst input."""
 
@@ -322,7 +740,20 @@ def _exact_component_analyst_input_for_admission(
             expected_base_input
         ):
             raise MulticomponentComponentAdmissionError(
-                "component Analyst exact input binding mismatch"
+                COMPONENT_ANALYST_EXACT_INPUT_BINDING_MISMATCH,
+                component_analyst_input_binding_mismatch_v1=(
+                    build_component_analyst_input_binding_mismatch_v1(
+                        analyst=analyst,
+                        supplied_input=supplied_input,
+                        reconstructed_input=expected_base_input,
+                        accepted_contract=accepted_contract,
+                        accepted_component=component,
+                        independent_dispatch_input_digest=(
+                            independent_dispatch_input_digest
+                        ),
+                        contract_authority_facts=contract_authority_facts,
+                    )
+                ),
             )
         return expected_base_input
 
@@ -407,6 +838,8 @@ def stage_multicomponent_component_admission(
     allow_searchos_semantic_requirement_historical_gap_exception: bool = False,
     logical_evaluation_key: str | None = None,
     searchos_recovery_cycle_ref: Mapping[str, Any] | None = None,
+    independent_dispatch_input_digest: str | None = None,
+    contract_authority_facts: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Validate and stage one Analyst case for RunKernel-owned admission."""
 
@@ -442,6 +875,8 @@ def stage_multicomponent_component_admission(
         component=component,
         evaluation_key=evaluation_key,
         specialist_need_handoff=specialist_need_handoff,
+        independent_dispatch_input_digest=independent_dispatch_input_digest,
+        contract_authority_facts=contract_authority_facts,
     )
     evidence_input = _safe_mapping(
         exact_component_input.get("component_evidence")
@@ -824,6 +1259,17 @@ def execute_multicomponent_component_admission(
         ),
         logical_evaluation_key=evaluation_key,
         searchos_recovery_cycle_ref=searchos_recovery_cycle_ref,
+        independent_dispatch_input_digest=(
+            independent_component_analyst_dispatch_input_digest(
+                run_kernel,
+                evaluation_key=evaluation_key,
+            )
+            if analyst_role == ROLE_COMPONENT_ANALYST
+            else None
+        ),
+        contract_authority_facts=contract_authority_facts_from_run_kernel(
+            run_kernel
+        ),
     )
     component_ref = staged["component_admission_ref"]
     prior = _safe_mapping(
@@ -908,12 +1354,19 @@ def execute_multicomponent_component_admission(
 
 
 __all__ = [
+    "COMPONENT_ANALYST_EXACT_INPUT_BINDING_MISMATCH",
+    "COMPONENT_ANALYST_INPUT_BINDING_MISMATCH_SCHEMA_VERSION",
     "MULTICOMPONENT_COMPONENT_ADMISSION_OWNER",
     "MULTICOMPONENT_COMPONENT_ADMISSION_STAGE",
     "MulticomponentComponentAdmissionError",
+    "build_component_analyst_input_binding_mismatch_v1",
+    "component_analyst_input_binding_mismatch_from_exception",
     "component_analyst_input_packet",
     "component_analyst_resume_input_packet",
     "component_dprime_input_packet",
+    "contract_authority_facts_from_run_kernel",
     "execute_multicomponent_component_admission",
+    "independent_component_analyst_dispatch_input_digest",
+    "project_component_analyst_input_binding_mismatch_v1",
     "stage_multicomponent_component_admission",
 ]
