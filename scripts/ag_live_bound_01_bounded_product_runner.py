@@ -641,19 +641,19 @@ def _pipeline_error_type() -> type[Exception]:
 
 
 def _caps_from_args(args: argparse.Namespace) -> dict[str, int]:
-    return {
-        "max_scryraven_runs": args.max_scryraven_runs,
-        "max_search_dispatches": args.max_search_dispatches,
-        "max_fetch_read_operations": args.max_fetch_read_operations,
-        "max_author_model_calls": args.max_author_model_calls,
-        "max_smart_search_judgment_model_calls": (
-            args.max_smart_search_judgment_model_calls
-        ),
-        "max_independent_manual_source_checks": (
-            args.max_independent_manual_source_checks
-        ),
-        "max_retries": args.max_retries,
-    }
+    caps = {"max_scryraven_runs": args.max_scryraven_runs}
+    for field_name in (
+        "max_search_dispatches",
+        "max_fetch_read_operations",
+        "max_author_model_calls",
+        "max_smart_search_judgment_model_calls",
+        "max_independent_manual_source_checks",
+        "max_retries",
+    ):
+        value = getattr(args, field_name)
+        if value is not None:
+            caps[field_name] = value
+    return caps
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -705,43 +705,43 @@ def _parser() -> argparse.ArgumentParser:
         "--max-scryraven-runs",
         type=int,
         default=1,
-        help="Planned cap: ScryRaven runs (must remain 1).",
+        help="Experimental authority: maximum PRODUCT runs (must remain 1).",
     )
     parser.add_argument(
         "--max-search-dispatches",
         type=int,
-        default=2,
-        help="Planned cap: search dispatches (must remain 2).",
+        default=None,
+        help="Optional resource-experiment cap: search dispatches.",
     )
     parser.add_argument(
         "--max-fetch-read-operations",
         type=int,
-        default=3,
-        help="Planned cap: fetch/read operations (must remain 3).",
+        default=None,
+        help="Optional resource-experiment cap: fetch/read operations.",
     )
     parser.add_argument(
         "--max-author-model-calls",
         type=int,
-        default=1,
-        help="Planned cap: Author model calls (must remain 1).",
+        default=None,
+        help="Optional resource-experiment cap: Author model calls.",
     )
     parser.add_argument(
         "--max-smart-search-judgment-model-calls",
         type=int,
-        default=0,
-        help="Planned cap: smart SearchJudgment model calls (must remain 0).",
+        default=None,
+        help="Optional resource-experiment cap: SearchJudgment model calls.",
     )
     parser.add_argument(
         "--max-independent-manual-source-checks",
         type=int,
-        default=1,
-        help="Planned cap: independent manual source checks (must remain 1).",
+        default=None,
+        help="Optional resource-experiment cap: independent manual source checks.",
     )
     parser.add_argument(
         "--max-retries",
         type=int,
         default=0,
-        help="Planned cap: retries (must remain 0).",
+        help="Retry authority for this PRODUCT observation; default is none.",
     )
     parser.add_argument(
         "--approved-backup-query",

@@ -140,7 +140,10 @@ def test_dry_run_writes_sanitized_packet(tmp_path: Path) -> None:
         "expected_packet_criteria"
     ]
     assert packet["packet_marker"] == "LOCAL/UNTRACKED — DO NOT COMMIT"
-    assert packet["caps_requested"]["max_search_dispatches"] == 2
+    assert packet["caps_requested"] == {
+        "max_scryraven_runs": 1,
+        "max_retries": 0,
+    }
     assert packet["caps_observed"]["enforcement"] == "not_executed"
     assert packet["cap_enforcement_product_path"] == {
         "policy_surface": "RunConfig.cap_policy",
@@ -426,8 +429,22 @@ def test_confirm_live_constructs_cap_policy_and_calls_run_pipeline_once(
 
     assert result == 0
     assert run_pipeline.call_count == 1
-    assert captured_config["config"].cap_policy.max_search_dispatches == 2
-    assert captured_config["config"].cap_policy.max_fetch_read_operations == 3
+    default_policy = _load_support().AgLiveBoundCaps().to_run_cap_policy()
+    assert captured_config["config"].cap_policy.max_search_dispatches == (
+        default_policy.max_search_dispatches
+    )
+    assert captured_config["config"].cap_policy.max_fetch_read_operations == (
+        default_policy.max_fetch_read_operations
+    )
+    assert captured_config["config"].cap_policy.max_author_model_calls == (
+        default_policy.max_author_model_calls
+    )
+    assert captured_config[
+        "config"
+    ].cap_policy.max_smart_search_judgment_model_calls == (
+        default_policy.max_smart_search_judgment_model_calls
+    )
+    assert captured_config["config"].cap_policy.max_retries == 0
     assert attempted_execution_log.exists() is False
     assert attempted_kb_log.exists() is False
     captured = capsys.readouterr()
@@ -532,7 +549,16 @@ def test_confirm_live_cap_overflow_writes_sanitized_failure_packet(
         config.cap_policy.mark_search_dispatch()
 
     with patch("core.pipeline_orchestrator.run_pipeline", side_effect=fake_run_pipeline) as run_pipeline:
-        result = runner.main([*VALID_ARGS, "--output", output, "--confirm-live-product-run"])
+        result = runner.main(
+            [
+                *VALID_ARGS,
+                "--output",
+                output,
+                "--max-search-dispatches",
+                "2",
+                "--confirm-live-product-run",
+            ]
+        )
 
     assert result == 2
     assert run_pipeline.call_count == 1
@@ -951,20 +977,32 @@ def test_caps_serialized_and_validated(capsys: pytest.CaptureFixture[str]) -> No
     result = runner.main([*VALID_ARGS, "--output", output])
     assert result == 0
     packet = json.loads((ROOT / output).read_text(encoding="utf-8"))
-    assert packet["caps_requested"]["max_retries"] == 0
+    assert packet["caps_requested"] == {
+        "max_scryraven_runs": 1,
+        "max_retries": 0,
+    }
 
-    bad_caps_result = runner.main(
+    explicit_resource_cap_result = runner.main(
         [
             *VALID_ARGS,
             "--output",
-            _gitignored_output_path("ag_live_bound_01_bad_caps.json"),
+            _gitignored_output_path("ag_live_bound_01_explicit_cap.json"),
             "--max-search-dispatches",
             "3",
         ]
     )
-    captured = capsys.readouterr()
-    assert bad_caps_result == 2
-    assert "caps must match" in captured.err
+    capsys.readouterr()
+    assert explicit_resource_cap_result == 0
+    explicit_packet = json.loads(
+        (
+            ROOT / _gitignored_output_path("ag_live_bound_01_explicit_cap.json")
+        ).read_text(encoding="utf-8")
+    )
+    assert explicit_packet["caps_requested"] == {
+        "max_scryraven_runs": 1,
+        "max_search_dispatches": 3,
+        "max_retries": 0,
+    }
 
 
 def test_cap_overflow_fails_closed_with_fake_wrappers() -> None:
