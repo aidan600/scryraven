@@ -883,6 +883,7 @@ def initialize_searchos_clarification_only(
         "read_custody_is_only_support_proposal_eligible_material": True,
         "provider_calls_attempted": 0,
         "provider_calls_completed": 0,
+        _SEMANTIC_HANDOFF_AUTHORIZATION_ATTEMPTED_SLOT_IDS_KEY: [],
         "searchos_recovery_executed": False,
     }
     return SearchOSSliceAProductResult(
@@ -1264,6 +1265,15 @@ def _execute_searchos_slice_a_iterative_judgment(
     )
     prior_handoff_count = len(semantic_handoffs)
     provider_calls = [0, 0]
+    authorization_attempted_slot_ids: list[str] = []
+    if prior_result is not None:
+        authorization_attempted_slot_ids = list(
+            _closed_attempted_slot_ids(
+                dict(prior_result.projection).get(
+                    _SEMANTIC_HANDOFF_AUTHORIZATION_ATTEMPTED_SLOT_IDS_KEY
+                )
+            )
+        )
 
     while True:
         state = run_kernel.state.searchos_state
@@ -1715,7 +1725,12 @@ def _execute_searchos_slice_a_iterative_judgment(
                 # clarification posture. No provider, query, or prose action is
                 # licensed here.
                 continue
-            elif decision_action is (SearchOSJudgmentAction.HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION):
+            elif (
+                decision_action
+                is SearchOSJudgmentAction.HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION
+            ):
+                if slot_id not in authorization_attempted_slot_ids:
+                    authorization_attempted_slot_ids.append(slot_id)
                 handoff_action = run_kernel.authorize_searchos_semantic_handoff(
                     slot_id=slot_id,
                     judgment_decision_ref=decision,
@@ -1834,6 +1849,9 @@ def _execute_searchos_slice_a_iterative_judgment(
         "ag92b_full_search_judgment_invoked": False,
         "provider_calls_attempted": provider_calls[0],
         "provider_calls_completed": provider_calls[1],
+        _SEMANTIC_HANDOFF_AUTHORIZATION_ATTEMPTED_SLOT_IDS_KEY: list(
+            dict.fromkeys(authorization_attempted_slot_ids)
+        ),
         "recovery_cycle_admission_ref": deepcopy(
             dict(recovery_cycle_ref or {})
         ),
@@ -3769,6 +3787,13 @@ _SAFE_SLOT_POSTURES = frozenset(
         "stale_or_invalid",
     }
 )
+_CANONICAL_SLOT_POSTURES = frozenset(item.value for item in SearchOSSlotPosture)
+_SAFE_SEARCHJUDGMENT_ACTIONS = frozenset(item.value for item in SearchOSJudgmentAction)
+_UNKNOWN_CLOSED_TOKEN = "unknown"
+_NONE_CLOSED_TOKEN = "none"
+_SEMANTIC_HANDOFF_AUTHORIZATION_ATTEMPTED_SLOT_IDS_KEY = (
+    "semantic_handoff_authorization_attempted_slot_ids"
+)
 
 _SAFE_RECEIVER_FAILURE_CLASSES = frozenset(
     {
@@ -3879,6 +3904,100 @@ def _allowlisted_slot_posture(value: Any) -> str:
     if token in _SAFE_SLOT_POSTURES:
         return token
     return "stale_or_invalid"
+
+
+def _canonical_slot_posture(value: Any) -> str:
+    token = str(value or "").strip()
+    if token in _CANONICAL_SLOT_POSTURES:
+        return token
+    return _UNKNOWN_CLOSED_TOKEN
+
+
+def _action_history_items(record: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    history_value = record.get("action_history")
+    if not isinstance(history_value, Sequence) or isinstance(history_value, (str, bytes)):
+        return []
+    return [item for item in history_value if isinstance(item, Mapping)]
+
+
+def _last_searchjudgment_action(record: Mapping[str, Any]) -> str:
+    for item in reversed(_action_history_items(record)):
+        action = item.get("action")
+        if not isinstance(action, str):
+            continue
+        token = action.strip()
+        if not token:
+            continue
+        if token in _SAFE_SEARCHJUDGMENT_ACTIONS:
+            return token
+        return _UNKNOWN_CLOSED_TOKEN
+    return _NONE_CLOSED_TOKEN
+
+
+def _semantic_handoff_sealed(
+    *,
+    record: Mapping[str, Any],
+    outcome: Mapping[str, Any],
+) -> bool:
+    return bool(
+        _compact_semantic_handoff_ref(record.get("semantic_handoff_ref"))
+        or _compact_semantic_handoff_ref(
+            record.get("recorded_searchos_semantic_handoff_ref")
+        )
+        or _compact_semantic_handoff_ref(outcome.get("semantic_handoff_ref"))
+    )
+
+
+def _stale_or_invalid_transition_observed(
+    *,
+    record: Mapping[str, Any],
+    canonical_posture: str,
+) -> bool:
+    if canonical_posture == SearchOSSlotPosture.STALE_OR_INVALID.value:
+        return True
+    return any(
+        item.get("event") == SearchOSSlotPosture.STALE_OR_INVALID.value
+        for item in _action_history_items(record)
+    )
+
+
+def _closed_attempted_slot_ids(value: Any) -> frozenset[str]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return frozenset()
+    tokens: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            return frozenset()
+        token = item.strip()
+        if not token:
+            return frozenset()
+        tokens.append(token)
+    return frozenset(tokens)
+
+
+def _terminal_cause_fields(
+    *,
+    record: Mapping[str, Any],
+    outcome: Mapping[str, Any],
+    canonical_posture: str,
+    last_searchjudgment_action: str,
+    handoff_authorization_attempted: bool,
+) -> dict[str, Any]:
+    sealed = _semantic_handoff_sealed(record=record, outcome=outcome)
+    return {
+        "canonical_slot_posture": canonical_posture,
+        "last_searchjudgment_action": last_searchjudgment_action,
+        "semantic_handoff_authorization_attempted": bool(
+            handoff_authorization_attempted or sealed
+        ),
+        "semantic_handoff_sealed": sealed,
+        "stale_or_invalid_transition_observed": (
+            _stale_or_invalid_transition_observed(
+                record=record,
+                canonical_posture=canonical_posture,
+            )
+        ),
+    }
 
 
 def _project_safe_failure_class(*, posture: str, reason: Any) -> str:
@@ -4044,6 +4163,7 @@ def _project_slot_summary(
     record: Mapping[str, Any],
     outcome: Mapping[str, Any],
     required: bool,
+    handoff_authorization_attempted_slot_ids: frozenset[str],
 ) -> dict[str, Any]:
     slot_ref = _mapping_or_empty(record.get("slot_ref"))
     admission_ref = _mapping_or_empty(outcome.get("semantic_admission_outcome_ref"))
@@ -4065,7 +4185,11 @@ def _project_slot_summary(
         and admission_case_ref.get("role") in {"component_analyst", "component_analyst_resume"}
         and component_case_ref == admission_case_ref
     )
-    final_posture = _allowlisted_slot_posture(record.get("latest_judgment_posture"))
+    raw_posture = record.get("latest_judgment_posture")
+    canonical_posture = _canonical_slot_posture(raw_posture)
+    final_posture = _allowlisted_slot_posture(raw_posture)
+    slot_id = str(slot_ref.get("slot_id") or "").strip()
+    last_searchjudgment_action = _last_searchjudgment_action(record)
     judgment_event_count, judgment_failure_count = _slot_judgment_counts(record)
     admission_status = str(outcome.get("semantic_admission_status") or "not_admitted")
     if admission_status not in {"admitted", "not_admitted", "admitted_with_caveats"}:
@@ -4091,6 +4215,13 @@ def _project_slot_summary(
         "required": required,
         "support_kind": _allowlisted_support_kind(record.get("support_kind")),
         "final_posture": final_posture,
+        **_terminal_cause_fields(
+            record=record,
+            outcome=outcome,
+            canonical_posture=canonical_posture,
+            last_searchjudgment_action=last_searchjudgment_action,
+            handoff_authorization_attempted=slot_id in handoff_authorization_attempted_slot_ids,
+        ),
         "safe_failure_class": safe_failure_class,
         "safe_transport_exception_class": _project_safe_transport_exception_class(
             posture=final_posture,
@@ -4444,6 +4575,11 @@ def build_bounded_searchos_n1_causal_projection(
                 {
                     "required": True,
                     "final_posture": "clarification_required",
+                    "canonical_slot_posture": "clarification_required",
+                    "last_searchjudgment_action": _NONE_CLOSED_TOKEN,
+                    "semantic_handoff_authorization_attempted": False,
+                    "semantic_handoff_sealed": False,
+                    "stale_or_invalid_transition_observed": False,
                     "safe_failure_class": "none",
                     "safe_transport_exception_class": "none",
                     "safe_model_output_invalid_subtype": "none",
@@ -4483,6 +4619,11 @@ def build_bounded_searchos_n1_causal_projection(
     ]
     declared_required_slot_count = _nonnegative_int_or_none(
         readiness.get("required_slot_count")
+    )
+    handoff_authorization_attempted_slot_ids = _closed_attempted_slot_ids(
+        searchos_slice_a_projection.get(
+            _SEMANTIC_HANDOFF_AUTHORIZATION_ATTEMPTED_SLOT_IDS_KEY
+        )
     )
     if not readiness or not slot_records:
         return {
@@ -4534,6 +4675,9 @@ def build_bounded_searchos_n1_causal_projection(
                 record=record,
                 outcome=outcome,
                 required=True,
+                handoff_authorization_attempted_slot_ids=(
+                    handoff_authorization_attempted_slot_ids
+                ),
             )
         )
     optional_slots: list[dict[str, Any]] = []
@@ -4547,6 +4691,9 @@ def build_bounded_searchos_n1_causal_projection(
                 record=record,
                 outcome=outcome,
                 required=False,
+                handoff_authorization_attempted_slot_ids=(
+                    handoff_authorization_attempted_slot_ids
+                ),
             )
         )
     all_slot_summaries = slots + optional_slots

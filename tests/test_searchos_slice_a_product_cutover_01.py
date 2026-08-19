@@ -19,6 +19,7 @@ from typing import Any
 import pytest
 
 import core.pipeline_orchestrator as pipeline_orchestrator
+import proplex.__main__ as compatibility_cli
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
     ROLE_COMPONENT_DPRIME,
@@ -30,6 +31,7 @@ from core.multicomponent_role_runtime import (
 from core.prompts import DEFAULT_SYSTEM
 from core.run_kernel import ActionType, RunKernel
 from core.searchos_iterative_judgment_runtime import (
+    SEARCHOS_SEMANTIC_HANDOFF_SCHEMA_VERSION,
     SEARCHOS_SLICE_A_REQUIRED_NEEDS_UNRESOLVED,
 )
 from core.searchos_slice_a_product_runtime import (
@@ -1157,6 +1159,22 @@ def test_bounded_searchos_n1_causal_projection_successful_path(
     assert slot["read_custody_observed"] is True
     assert slot["support_kind"] == "official_current"
     assert slot["final_posture"] == "semantically_handed_off"
+    assert slot["canonical_slot_posture"] == "semantically_handed_off"
+    assert slot["last_searchjudgment_action"] == (
+        "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION"
+    )
+    assert slot["semantic_handoff_authorization_attempted"] is True
+    assert slot["semantic_handoff_sealed"] is True
+    assert slot["stale_or_invalid_transition_observed"] is False
+    searchos = dict(outcome.execution_trace["searchos_slice_a"])
+    attempted_ids = searchos["semantic_handoff_authorization_attempted_slot_ids"]
+    assert isinstance(attempted_ids, list)
+    assert attempted_ids
+    assert set(attempted_ids) <= set(searchos["slot_postures"])
+    assert "semantic_handoff_authorization_attempted_slot_ids" not in json.dumps(
+        projection,
+        sort_keys=True,
+    )
     assert slot["safe_failure_class"] == "none"
     assert slot["safe_transport_exception_class"] == "none"
     assert slot["safe_model_output_invalid_subtype"] == "none"
@@ -1294,9 +1312,13 @@ def test_bounded_searchos_n1_causal_projection_judgment_failure_path(
     assert projection is not None
     slot = _required_causal_slot(projection)
     assert slot["final_posture"] == expected_posture
+    assert slot["canonical_slot_posture"] == expected_posture
     assert slot["safe_failure_class"] == expected_failure_class
     assert slot["safe_transport_exception_class"] == "none"
     assert slot["safe_model_output_invalid_subtype"] == expected_subtype
+    assert slot["semantic_handoff_sealed"] is False
+    if expected_posture == "stale_or_invalid":
+        assert slot["stale_or_invalid_transition_observed"] is True
     assert slot["semantic_handoff_present"] is False
     assert slot["semantic_admission_status"] != "admitted"
     assert slot["component_coverage_satisfied"] is False
@@ -1635,6 +1657,7 @@ def test_bounded_searchos_n1_causal_projection_privacy_allowlist() -> None:
                         {
                             "event": "judgment_failed",
                             "reason": sentinels[4],
+                            "action": sentinels[0],
                         }
                     ],
                     "custody_refs": [
@@ -1642,6 +1665,7 @@ def test_bounded_searchos_n1_causal_projection_privacy_allowlist() -> None:
                             "read_custody_material_id": "custody-1",
                             "normalized_url": sentinels[1],
                             "read_content": sentinels[3],
+                            "candidate_context": sentinels[2],
                         }
                     ],
                     "semantic_handoff_ref": {},
@@ -1655,6 +1679,8 @@ def test_bounded_searchos_n1_causal_projection_privacy_allowlist() -> None:
             "provider_payload": sentinels[5],
             "embedding": sentinels[7],
         },
+        "semantic_handoff_authorization_attempted_slot_ids": [sentinels[0]],
+        "candidate_context": {"text": sentinels[2], "url": sentinels[1]},
     }
     projection = build_bounded_searchos_n1_causal_projection(
         searchos_slice_a_projection=fixture,
@@ -1673,9 +1699,13 @@ def test_bounded_searchos_n1_causal_projection_privacy_allowlist() -> None:
     assert slot["safe_transport_exception_class"] == "other_safe"
     assert slot["safe_model_output_invalid_subtype"] == "none"
     assert slot["read_custody_observed"] is False
+    assert slot["last_searchjudgment_action"] == "unknown"
+    assert slot["semantic_handoff_authorization_attempted"] is False
+    assert slot["semantic_handoff_sealed"] is False
     assert "custody_refs" not in slot
     assert "action_history" not in slot
     assert "latest_judgment_reason" not in slot
+    assert "semantic_handoff_authorization_attempted_slot_ids" not in serialized
     assert "normalized_url" not in serialized
     assert "private_raw" not in serialized
 
@@ -1827,6 +1857,11 @@ def test_bounded_clarification_projection_requires_closed_zero_evidence() -> Non
     assert len(projection["slots"]) == projection["required_slot_count"]
     [required_slot] = projection["slots"]
     assert required_slot["final_posture"] == "clarification_required"
+    assert required_slot["canonical_slot_posture"] == "clarification_required"
+    assert required_slot["last_searchjudgment_action"] == "none"
+    assert required_slot["semantic_handoff_authorization_attempted"] is False
+    assert required_slot["semantic_handoff_sealed"] is False
+    assert required_slot["stale_or_invalid_transition_observed"] is False
     assert required_slot["safe_transport_exception_class"] == "none"
     assert required_slot["read_custody_observed"] is False
     assert private_candidate not in json.dumps(projection, sort_keys=True)
@@ -1913,6 +1948,66 @@ def _transport_cause_fixture(*, reason: str, posture: str = "judgment_failed") -
             ],
         },
     }
+
+
+_TERMINAL_CAUSE_HANDOFF_DIGEST = "cd" * 32
+_TERMINAL_CAUSE_HANDOFF_REF = {
+    "semantic_handoff_id": (
+        "searchos-semantic-handoff:" + _TERMINAL_CAUSE_HANDOFF_DIGEST[:24]
+    ),
+    "semantic_handoff_digest": _TERMINAL_CAUSE_HANDOFF_DIGEST,
+}
+_HANDOFF_CURRENT_MATERIAL_ACTION = (
+    "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION"
+)
+_TERMINAL_CAUSE_PRIVATE_CANARY = (
+    "TERMINAL_CAUSE_PRIVATE_CANARY_MUST_NOT_SERIALIZE"
+)
+_ATTEMPTED_SLOT_IDS_KEY = "semantic_handoff_authorization_attempted_slot_ids"
+
+
+def _terminal_cause_slice_a_fixture(
+    *,
+    posture: str,
+    action_history: list[dict[str, Any]],
+    reason: str = "none",
+    attempted_slot_ids: list[str] | None = None,
+    compact_handoff: bool = False,
+    recorded_handoff: bool = False,
+    extra_projection: dict[str, Any] | None = None,
+    extra_record: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    fixture = _transport_cause_fixture(reason=reason, posture=posture)
+    record = fixture["readiness_projection"]["slot_records"][0]
+    record["action_history"] = action_history
+    if extra_record:
+        record.update(extra_record)
+    if compact_handoff:
+        record["semantic_handoff_ref"] = dict(_TERMINAL_CAUSE_HANDOFF_REF)
+        fixture["semantic_outcomes_by_slot"]["slot-1"]["semantic_handoff_ref"] = dict(
+            _TERMINAL_CAUSE_HANDOFF_REF
+        )
+    if recorded_handoff:
+        record["recorded_searchos_semantic_handoff_ref"] = {
+            **_TERMINAL_CAUSE_HANDOFF_REF,
+            "slot_ref": dict(record["slot_ref"]),
+            "schema_version": SEARCHOS_SEMANTIC_HANDOFF_SCHEMA_VERSION,
+        }
+    if attempted_slot_ids is not None:
+        fixture[_ATTEMPTED_SLOT_IDS_KEY] = list(attempted_slot_ids)
+    if extra_projection:
+        fixture.update(extra_projection)
+    return fixture
+
+
+def _required_terminal_cause(projection: dict[str, Any]) -> dict[str, Any]:
+    slot = _required_causal_slot(projection)
+    serialized = json.dumps(projection, sort_keys=True)
+    assert _ATTEMPTED_SLOT_IDS_KEY not in serialized
+    assert "action_history" not in slot
+    assert "latest_judgment_reason" not in slot
+    assert "custody_refs" not in slot
+    return slot
 
 
 @pytest.mark.parametrize(
@@ -2284,6 +2379,11 @@ def test_bounded_searchos_n1_causal_projection_transport_field_parity(
         "component_dprime_model_call_executed",
         "semantic_admission_status",
         "component_coverage_satisfied",
+        "canonical_slot_posture",
+        "last_searchjudgment_action",
+        "semantic_handoff_authorization_attempted",
+        "semantic_handoff_sealed",
+        "stale_or_invalid_transition_observed",
     }
 
 
@@ -2320,3 +2420,238 @@ def test_bounded_searchos_n1_causal_projection_ordinary_output_parity(
     searchos = dict(outcome.execution_trace["searchos_slice_a"])
     assert "readiness_projection" in searchos
     assert "semantic_outcomes_by_slot" in searchos
+
+
+def test_bounded_searchos_n1_causal_projection_no_handoff_action() -> None:
+    projection = build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=_terminal_cause_slice_a_fixture(
+            posture="awaiting_read",
+            action_history=[
+                {
+                    "action": "REQUEST_READ_PAGE",
+                    "reason": _TERMINAL_CAUSE_PRIVATE_CANARY,
+                }
+            ],
+            extra_record={
+                "custody_refs": [
+                    {
+                        "read_content": _TERMINAL_CAUSE_PRIVATE_CANARY,
+                        "candidate_context": _TERMINAL_CAUSE_PRIVATE_CANARY,
+                    }
+                ]
+            },
+        ),
+    )
+    assert projection is not None
+    slot = _required_terminal_cause(projection)
+    assert slot["canonical_slot_posture"] == "awaiting_read"
+    assert slot["final_posture"] == "awaiting_read"
+    assert slot["last_searchjudgment_action"] == "REQUEST_READ_PAGE"
+    assert slot["semantic_handoff_authorization_attempted"] is False
+    assert slot["semantic_handoff_sealed"] is False
+    assert slot["stale_or_invalid_transition_observed"] is False
+    assert _TERMINAL_CAUSE_PRIVATE_CANARY not in json.dumps(projection, sort_keys=True)
+
+
+def test_bounded_searchos_n1_causal_projection_handoff_selected_and_sealed() -> None:
+    projection = build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=_terminal_cause_slice_a_fixture(
+            posture="semantically_handed_off",
+            action_history=[
+                {"action": "REQUEST_READ_PAGE"},
+                {"action": _HANDOFF_CURRENT_MATERIAL_ACTION},
+            ],
+            attempted_slot_ids=["slot-1"],
+            compact_handoff=True,
+            recorded_handoff=True,
+        ),
+    )
+    assert projection is not None
+    slot = _required_terminal_cause(projection)
+    assert slot["canonical_slot_posture"] == "semantically_handed_off"
+    assert slot["final_posture"] == "semantically_handed_off"
+    assert slot["last_searchjudgment_action"] == _HANDOFF_CURRENT_MATERIAL_ACTION
+    assert slot["semantic_handoff_authorization_attempted"] is True
+    assert slot["semantic_handoff_sealed"] is True
+    assert slot["stale_or_invalid_transition_observed"] is False
+    assert slot["semantic_handoff_present"] is True
+
+
+def test_bounded_searchos_n1_causal_projection_handoff_selected_authorization_not_reached() -> None:
+    projection = build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=_terminal_cause_slice_a_fixture(
+            posture="ready_for_semantic_evaluation",
+            action_history=[{"action": _HANDOFF_CURRENT_MATERIAL_ACTION}],
+        ),
+    )
+    assert projection is not None
+    slot = _required_terminal_cause(projection)
+    assert slot["last_searchjudgment_action"] == _HANDOFF_CURRENT_MATERIAL_ACTION
+    assert slot["semantic_handoff_authorization_attempted"] is False
+    assert slot["semantic_handoff_sealed"] is False
+    assert slot["stale_or_invalid_transition_observed"] is False
+    assert slot["semantic_handoff_present"] is False
+
+
+def test_bounded_searchos_n1_causal_projection_handoff_authorization_attempted_not_sealed() -> None:
+    projection = build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=_terminal_cause_slice_a_fixture(
+            posture="ready_for_semantic_evaluation",
+            action_history=[{"action": _HANDOFF_CURRENT_MATERIAL_ACTION}],
+            attempted_slot_ids=["slot-1"],
+        ),
+    )
+    assert projection is not None
+    slot = _required_terminal_cause(projection)
+    assert slot["last_searchjudgment_action"] == _HANDOFF_CURRENT_MATERIAL_ACTION
+    assert slot["semantic_handoff_authorization_attempted"] is True
+    assert slot["semantic_handoff_sealed"] is False
+    assert slot["semantic_handoff_present"] is False
+    assert slot["stale_or_invalid_transition_observed"] is False
+
+
+def test_bounded_searchos_n1_causal_projection_true_stale_or_invalid() -> None:
+    projection = build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=_terminal_cause_slice_a_fixture(
+            posture="stale_or_invalid",
+            action_history=[
+                {"action": "REQUEST_READ_PAGE"},
+                {"event": "stale_or_invalid"},
+            ],
+            reason="followup_discover_failed:fixture",
+        ),
+    )
+    assert projection is not None
+    slot = _required_terminal_cause(projection)
+    assert slot["canonical_slot_posture"] == "stale_or_invalid"
+    assert slot["final_posture"] == "stale_or_invalid"
+    assert slot["last_searchjudgment_action"] == "REQUEST_READ_PAGE"
+    assert slot["semantic_handoff_authorization_attempted"] is False
+    assert slot["semantic_handoff_sealed"] is False
+    assert slot["stale_or_invalid_transition_observed"] is True
+    assert slot["semantic_handoff_present"] is False
+    assert slot["safe_failure_class"] == "stale_or_invalid"
+
+
+def test_bounded_searchos_n1_causal_projection_handoff_sealed_then_invalidated() -> None:
+    projection = build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=_terminal_cause_slice_a_fixture(
+            posture="stale_or_invalid",
+            action_history=[
+                {"action": _HANDOFF_CURRENT_MATERIAL_ACTION},
+                {"event": "stale_or_invalid"},
+            ],
+            attempted_slot_ids=["slot-1"],
+            compact_handoff=True,
+        ),
+    )
+    assert projection is not None
+    slot = _required_terminal_cause(projection)
+    assert slot["canonical_slot_posture"] == "stale_or_invalid"
+    assert slot["final_posture"] == "stale_or_invalid"
+    assert slot["last_searchjudgment_action"] == _HANDOFF_CURRENT_MATERIAL_ACTION
+    assert slot["semantic_handoff_authorization_attempted"] is True
+    assert slot["semantic_handoff_sealed"] is True
+    assert slot["stale_or_invalid_transition_observed"] is True
+    assert slot["semantic_handoff_present"] is False
+
+
+@pytest.mark.parametrize(
+    "canonical_posture",
+    ("clarification_required", "awaiting_interpretation_binding"),
+)
+def test_bounded_searchos_n1_causal_projection_pre_collapse_alias(
+    canonical_posture: str,
+) -> None:
+    projection = build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=_terminal_cause_slice_a_fixture(
+            posture=canonical_posture,
+            action_history=[
+                {
+                    "action": (
+                        "REQUIRE_CLARIFICATION"
+                        if canonical_posture == "clarification_required"
+                        else "PROPOSE_INTERPRETATION_BINDING"
+                    )
+                }
+            ],
+        ),
+    )
+    assert projection is not None
+    slot = _required_terminal_cause(projection)
+    assert slot["canonical_slot_posture"] == canonical_posture
+    assert slot["final_posture"] == "stale_or_invalid"
+    assert slot["stale_or_invalid_transition_observed"] is False
+    assert slot["semantic_handoff_sealed"] is False
+    assert slot["semantic_handoff_authorization_attempted"] is False
+
+
+def test_bounded_searchos_n1_causal_projection_terminal_cause_privacy_canary() -> None:
+    projection = build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=_terminal_cause_slice_a_fixture(
+            posture="judgment_failed",
+            reason=_TERMINAL_CAUSE_PRIVATE_CANARY,
+            action_history=[
+                {
+                    "action": _TERMINAL_CAUSE_PRIVATE_CANARY,
+                    "reason": _TERMINAL_CAUSE_PRIVATE_CANARY,
+                    "event": "judgment_failed",
+                }
+            ],
+            attempted_slot_ids=[_TERMINAL_CAUSE_PRIVATE_CANARY],
+            extra_record={
+                "latest_judgment_reason": _TERMINAL_CAUSE_PRIVATE_CANARY,
+                "custody_refs": [
+                    {
+                        "read_content": _TERMINAL_CAUSE_PRIVATE_CANARY,
+                        "normalized_url": "https://fixture.invalid/private-canary",
+                        "candidate_context": _TERMINAL_CAUSE_PRIVATE_CANARY,
+                    }
+                ],
+            },
+            extra_projection={
+                "private_raw": {
+                    "query": _TERMINAL_CAUSE_PRIVATE_CANARY,
+                    "prompt": _TERMINAL_CAUSE_PRIVATE_CANARY,
+                    "provider_payload": _TERMINAL_CAUSE_PRIVATE_CANARY,
+                    "model_response": _TERMINAL_CAUSE_PRIVATE_CANARY,
+                },
+                "candidate_context": {"text": _TERMINAL_CAUSE_PRIVATE_CANARY},
+            },
+        ),
+    )
+    assert projection is not None
+    slot = _required_terminal_cause(projection)
+    serialized = json.dumps(projection, sort_keys=True)
+    assert _TERMINAL_CAUSE_PRIVATE_CANARY not in serialized
+    assert "https://fixture.invalid/private-canary" not in serialized
+    assert slot["last_searchjudgment_action"] == "unknown"
+    assert slot["semantic_handoff_authorization_attempted"] is False
+    assert slot["semantic_handoff_sealed"] is False
+
+
+def test_bounded_searchos_n1_causal_projection_cli_aglive_canonical_parity() -> None:
+    fixture = _terminal_cause_slice_a_fixture(
+        posture="semantically_handed_off",
+        action_history=[{"action": _HANDOFF_CURRENT_MATERIAL_ACTION}],
+        attempted_slot_ids=["slot-1"],
+        compact_handoff=True,
+        recorded_handoff=True,
+    )
+    kwargs = {
+        "searchos_slice_a_projection": fixture,
+        "enabled": True,
+        "expected_run_id": "run-parity",
+        "expected_request_id": "request-parity",
+    }
+    direct = build_bounded_searchos_n1_causal_projection(**kwargs)
+    cli = compatibility_cli.build_bounded_searchos_n1_causal_projection(**kwargs)
+    assert compatibility_cli.build_bounded_searchos_n1_causal_projection is (
+        build_bounded_searchos_n1_causal_projection
+    )
+    assert direct is not None
+    assert cli == direct
+    slot = _required_terminal_cause(direct)
+    assert slot["last_searchjudgment_action"] == _HANDOFF_CURRENT_MATERIAL_ACTION
+    assert slot["semantic_handoff_sealed"] is True
+    assert slot["semantic_handoff_authorization_attempted"] is True
