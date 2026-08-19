@@ -88,6 +88,17 @@ KNOWN_SECTIONS = (
     "quantitative_source_catalog",
     "quantitative_specialist_proposal_contract",
 )
+_DIGEST_A = "a" * 64
+_DIGEST_B = "b" * 64
+_DIGEST_COMPONENT = "c" * 64
+_DIGEST_CURRENT = "d" * 64
+_VALID_SHA256_DIGEST = "0123456789abcdef" * 4
+_UPPER_SHA256_DIGEST = "ABCDEF0123456789" * 4
+_DIGEST_FIELD_CANARIES = (
+    "CANARY_PRIVATE_DIGEST_VALUE",
+    "CANARY_PRIVATE_SUPPLIED_VALUE",
+    "CANARY_PRIVATE_SECTION_VALUE",
+)
 
 
 def _ensure_scripts_package() -> None:
@@ -160,7 +171,7 @@ def _component_ref() -> dict[str, Any]:
     return {
         "component_id": "component:1",
         "component_revision": "1",
-        "component_digest": "component-digest-1",
+        "component_digest": _DIGEST_COMPONENT,
         "user_facing_label": "Fact 1",
         "user_facing_question": CANARY_QUERY,
         "mandatory_caveats": [CANARY_CAVEAT],
@@ -171,7 +182,7 @@ def _component_ref() -> dict[str, Any]:
 def _accepted_contract(
     *,
     version: str = "0.1-passive",
-    digest: str = "accepted-digest",
+    digest: str = _DIGEST_B,
     component_ref: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
@@ -329,15 +340,36 @@ def _assert_no_canaries(value: Any) -> None:
         assert canary not in rendered
 
 
+def _assert_closed_sha256(value: Any) -> None:
+    assert isinstance(value, str)
+    assert len(value) == 64
+    assert value == value.lower()
+    assert all(char in "0123456789abcdef" for char in value)
+
+
 def _assert_digest_only(diagnostic: Mapping[str, Any]) -> None:
     _assert_no_canaries(diagnostic)
     assert diagnostic["schema_version"] == (
         COMPONENT_ANALYST_INPUT_BINDING_MISMATCH_SCHEMA_VERSION
     )
     for section in KNOWN_SECTIONS:
-        assert diagnostic[f"{section}_supplied_digest"]
-        assert diagnostic[f"{section}_reconstructed_digest"]
+        _assert_closed_sha256(diagnostic[f"{section}_supplied_digest"])
+        _assert_closed_sha256(diagnostic[f"{section}_reconstructed_digest"])
         assert isinstance(diagnostic[f"{section}_equal"], bool)
+    for key in (
+        "artifact_input_packet_digest",
+        "supplied_packet_digest",
+        "reconstructed_packet_digest",
+        "initial_contract_digest",
+        "current_contract_digest",
+        "accepted_component_digest",
+        "packet_contract_digest",
+        "packet_component_digest",
+        "independent_dispatch_input_digest",
+    ):
+        value = diagnostic.get(key)
+        if value is not None:
+            _assert_closed_sha256(value)
     rendered = json.dumps(diagnostic, sort_keys=True)
     assert "bounded_text" not in rendered
     assert "claim_text" not in rendered
@@ -432,7 +464,7 @@ def test_mismatch_carries_closed_versioned_diagnostic() -> None:
 def test_first_divergent_section_from_accepted_run_binding_change() -> None:
     initial = _accepted_contract()
     packet = _packet(initial)
-    current = _accepted_contract(version="0.2-current", digest="current-digest")
+    current = _accepted_contract(version="0.2-current", digest=_DIGEST_CURRENT)
     diagnostic = _diagnostic_from(
         accepted=current,
         analyst_input=packet,
@@ -639,9 +671,32 @@ def test_independent_dispatch_digest_can_prove_artifact_digest_changed() -> None
     assert diagnostic["supplied_digest_equals_reconstructed"] is True
     assert diagnostic["supplied_digest_equals_dispatch"] is True
     assert diagnostic["artifact_digest_equals_dispatch"] is False
+    _assert_digest_only(diagnostic)
 
 
-def test_reconstruction_non_idempotent_when_supplied_stays_bound() -> None:
+def test_dispatch_digest_precedes_run_binding_authority_claim() -> None:
+    accepted = _accepted_contract()
+    original = _packet(accepted)
+    supplied = deepcopy(original)
+    supplied["run_binding"] = {
+        **deepcopy(original["run_binding"]),
+        "accepted_contract_version": "0.1-claim-a",
+        "accepted_contract_digest": _DIGEST_A,
+    }
+    diagnostic = _diagnostic_from(
+        accepted=accepted,
+        analyst_input=supplied,
+        artifact=_artifact(supplied),
+        independent_dispatch_input_digest=safe_packet_digest(original),
+    )
+    assert diagnostic["mismatch_class"] == "SUPPLIED_PACKET_CHANGED"
+    assert diagnostic["first_divergent_section"] == "run_binding"
+    assert diagnostic["supplied_digest_equals_dispatch"] is False
+    assert diagnostic["run_binding_matches_accepted_contract"] is False
+    _assert_digest_only(diagnostic)
+
+
+def test_component_ref_difference_is_other_not_reconstruction() -> None:
     accepted_ref = _component_ref()
     packet_ref = {**accepted_ref, "user_facing_label": "packet-only-label"}
     accepted = _accepted_contract(component_ref=accepted_ref)
@@ -651,16 +706,42 @@ def test_reconstruction_non_idempotent_when_supplied_stays_bound() -> None:
         analyst_input=supplied,
         artifact=_artifact(supplied),
     )
-    assert diagnostic["mismatch_class"] == "PACKET_RECONSTRUCTION_NON_IDEMPOTENT"
     assert diagnostic["first_divergent_section"] == "component_ref"
+    assert diagnostic["mismatch_class"] == "OTHER"
     assert diagnostic["supplied_digest_equals_artifact"] is True
     assert diagnostic["run_binding_matches_accepted_contract"] is True
+    assert diagnostic["component_ref_equal"] is False
+    _assert_digest_only(diagnostic)
+
+
+def test_true_reconstruction_non_idempotent_for_derived_catalog() -> None:
+    original = _packet()
+    supplied = deepcopy(original)
+    supplied["quantitative_source_catalog"] = {
+        **deepcopy(original["quantitative_source_catalog"]),
+        "catalog_kind": "tampered",
+    }
+    supplied_digest = safe_packet_digest(supplied)
+    diagnostic = _diagnostic_from(
+        analyst_input=supplied,
+        artifact=_artifact(supplied),
+        independent_dispatch_input_digest=supplied_digest,
+    )
+    assert diagnostic["mismatch_class"] == "PACKET_RECONSTRUCTION_NON_IDEMPOTENT"
+    assert diagnostic["first_divergent_section"] == "quantitative_source_catalog"
+    assert diagnostic["supplied_digest_equals_artifact"] is True
+    assert diagnostic["supplied_digest_equals_dispatch"] is True
+    assert diagnostic["run_binding_equal"] is True
+    assert diagnostic["component_ref_equal"] is True
+    assert diagnostic["component_evidence_equal"] is True
+    assert diagnostic["quantitative_source_catalog_equal"] is False
+    _assert_digest_only(diagnostic)
 
 
 def test_contract_authority_changed_is_mechanically_proven() -> None:
     initial = _accepted_contract()
     packet = _packet(initial)
-    current = _accepted_contract(version="0.2-current", digest="current-digest")
+    current = _accepted_contract(version="0.2-current", digest=_DIGEST_CURRENT)
     diagnostic = _diagnostic_from(
         accepted=current,
         analyst_input=packet,
@@ -668,10 +749,10 @@ def test_contract_authority_changed_is_mechanically_proven() -> None:
         contract_authority_facts={
             "initial_contract_present": True,
             "initial_contract_version": "0.1-passive",
-            "initial_contract_digest": "accepted-digest",
+            "initial_contract_digest": _DIGEST_B,
             "current_contract_present": True,
             "current_contract_version": "0.2-current",
-            "current_contract_digest": "current-digest",
+            "current_contract_digest": _DIGEST_CURRENT,
             "accepted_authority_source": "current",
         },
     )
@@ -680,6 +761,7 @@ def test_contract_authority_changed_is_mechanically_proven() -> None:
     assert diagnostic["run_binding_matches_accepted_contract"] is False
     assert diagnostic["current_contract_present"] is True
     assert diagnostic["accepted_authority_source"] == "current"
+    _assert_digest_only(diagnostic)
 
 
 def test_initial_and_current_authority_facts_are_truthful_without_policy_change() -> None:
@@ -695,7 +777,7 @@ def test_initial_and_current_authority_facts_are_truthful_without_policy_change(
         contract_authority_facts={
             "initial_contract_present": True,
             "initial_contract_version": "0.1-passive",
-            "initial_contract_digest": "accepted-digest",
+            "initial_contract_digest": _DIGEST_B,
             "current_contract_present": False,
             "accepted_authority_source": "initial_fallback",
         },
@@ -704,7 +786,7 @@ def test_initial_and_current_authority_facts_are_truthful_without_policy_change(
     assert initial_only["current_contract_present"] is False
     assert initial_only["accepted_authority_source"] == "initial_fallback"
     assert initial_only["initial_contract_version"] == "0.1-passive"
-    assert initial_only["initial_contract_digest"] == "accepted-digest"
+    assert initial_only["initial_contract_digest"] == _DIGEST_B
     assert initial_only["mismatch_class"] == "OTHER"
 
     current_present = _diagnostic_from(
@@ -713,15 +795,16 @@ def test_initial_and_current_authority_facts_are_truthful_without_policy_change(
         contract_authority_facts={
             "initial_contract_present": True,
             "initial_contract_version": "0.1-passive",
-            "initial_contract_digest": "accepted-digest",
+            "initial_contract_digest": _DIGEST_B,
             "current_contract_present": True,
             "current_contract_version": "0.2-current",
-            "current_contract_digest": "current-digest",
+            "current_contract_digest": _DIGEST_CURRENT,
             "accepted_authority_source": "current",
         },
     )
     assert current_present["current_contract_present"] is True
     assert current_present["current_contract_version"] == "0.2-current"
+    assert current_present["current_contract_digest"] == _DIGEST_CURRENT
     assert current_present["accepted_authority_source"] == "current"
     assert current_present["mismatch_class"] == "OTHER"
     kernel = SimpleNamespace(
@@ -866,3 +949,96 @@ def test_project_rejects_generic_exception_payloads() -> None:
     assert project_component_analyst_input_binding_mismatch_v1(
         {"mismatch_class": "SUPPLIED_PACKET_CHANGED"}
     ) == {}
+
+
+def _schema_valid_mismatch_payload(**digest_overrides: str) -> dict[str, Any]:
+    payload = {
+        "schema_version": COMPONENT_ANALYST_INPUT_BINDING_MISMATCH_SCHEMA_VERSION,
+        "mismatch_class": "OTHER",
+        "first_divergent_section": "unknown",
+        "accepted_authority_source": "unknown",
+        "artifact_input_packet_digest": _VALID_SHA256_DIGEST,
+        "supplied_packet_digest": _VALID_SHA256_DIGEST,
+        "reconstructed_packet_digest": _VALID_SHA256_DIGEST,
+        "run_binding_supplied_digest": _VALID_SHA256_DIGEST,
+        "run_binding_reconstructed_digest": _VALID_SHA256_DIGEST,
+        "run_binding_equal": True,
+    }
+    payload.update(digest_overrides)
+    return payload
+
+
+def test_allowlisted_digest_fields_reject_private_and_malformed_values(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    private_payload = _schema_valid_mismatch_payload(
+        artifact_input_packet_digest="CANARY_PRIVATE_DIGEST_VALUE",
+        supplied_packet_digest="CANARY_PRIVATE_SUPPLIED_VALUE",
+        run_binding_supplied_digest="CANARY_PRIVATE_SECTION_VALUE",
+        reconstructed_packet_digest="not-hex",
+        packet_contract_digest="",
+        accepted_component_digest="abc",
+        independent_dispatch_input_digest="g" * 64,
+        quantitative_source_catalog_supplied_digest=_VALID_SHA256_DIGEST + "aa",
+    )
+    projected = project_component_analyst_input_binding_mismatch_v1(private_payload)
+    assert projected["mismatch_class"] == "OTHER"
+    assert projected["artifact_input_packet_digest"] is None
+    assert projected["supplied_packet_digest"] is None
+    assert projected["run_binding_supplied_digest"] is None
+    assert projected["reconstructed_packet_digest"] is None
+    assert projected["packet_contract_digest"] is None
+    assert projected["accepted_component_digest"] is None
+    assert projected["independent_dispatch_input_digest"] is None
+    assert projected["quantitative_source_catalog_supplied_digest"] is None
+    for canary in _DIGEST_FIELD_CANARIES:
+        assert canary not in json.dumps(projected, sort_keys=True)
+
+    valid = project_component_analyst_input_binding_mismatch_v1(
+        _schema_valid_mismatch_payload(
+            artifact_input_packet_digest=_VALID_SHA256_DIGEST,
+            supplied_packet_digest=_UPPER_SHA256_DIGEST,
+        )
+    )
+    assert valid["artifact_input_packet_digest"] == _VALID_SHA256_DIGEST
+    assert valid["supplied_packet_digest"] == _UPPER_SHA256_DIGEST.lower()
+
+    runner = _load_runner()
+    support = _load_support()
+    output = "output/ca_admission_mismatch_obs_01_digest_canary.json"
+    _stub_live_runner_without_env(runner, monkeypatch)
+    exc = MulticomponentComponentAdmissionError(
+        COMPONENT_ANALYST_EXACT_INPUT_BINDING_MISMATCH,
+        component_analyst_input_binding_mismatch_v1=private_payload,
+    )
+    assert exc.component_analyst_input_binding_mismatch_v1 is not None
+    for canary in _DIGEST_FIELD_CANARIES:
+        assert canary not in json.dumps(
+            exc.component_analyst_input_binding_mismatch_v1, sort_keys=True
+        )
+
+    def fail_run_pipeline(
+        _config: Any,
+        _deps: Any,
+        _status: Any,
+        _accumulator: Any,
+    ) -> Any:
+        raise exc
+
+    with patch(
+        "core.pipeline_orchestrator.run_pipeline",
+        side_effect=fail_run_pipeline,
+    ):
+        result = runner.main(
+            [*VALID_ARGS, "--output", output, "--confirm-live-product-run"]
+        )
+
+    assert result == 2
+    capsys.readouterr()
+    packet = json.loads((ROOT / output).read_text(encoding="utf-8"))
+    (ROOT / output).unlink(missing_ok=True)
+    rendered = json.dumps(packet, sort_keys=True)
+    for canary in _DIGEST_FIELD_CANARIES:
+        assert canary not in rendered
+    support.reject_forbidden_packet(packet)

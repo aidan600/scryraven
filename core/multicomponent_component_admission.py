@@ -109,6 +109,21 @@ def _closed_count(value: Any) -> int | None:
     return value
 
 
+_SHA256_HEX_LENGTH = 64
+_SHA256_HEX_CHARS = frozenset("0123456789abcdef")
+
+
+def _closed_sha256_digest(value: Any) -> str | None:
+    """Return a SHA-256 hex digest, or None if the value is not closed."""
+
+    if not isinstance(value, str) or len(value) != _SHA256_HEX_LENGTH:
+        return None
+    normalized = value.lower()
+    if any(char not in _SHA256_HEX_CHARS for char in normalized):
+        return None
+    return normalized
+
+
 def _packet_section_digest(packet: Mapping[str, Any], section: str) -> str:
     value = packet.get(section) if isinstance(packet, Mapping) else None
     if isinstance(value, Mapping):
@@ -145,7 +160,7 @@ def project_component_analyst_input_binding_mismatch_v1(
         return {}
 
     def digest_field(key: str) -> str | None:
-        return _clean_text(raw.get(key), limit=128)
+        return _closed_sha256_digest(raw.get(key))
 
     def token_field(key: str, *, limit: int = 200) -> str | None:
         return _clean_text(raw.get(key), limit=limit)
@@ -252,15 +267,15 @@ def contract_authority_facts_from_run_kernel(run_kernel: Any) -> dict[str, Any]:
         "initial_contract_version": _clean_text(
             initial.get("accepted_contract_version"), limit=200
         ),
-        "initial_contract_digest": _clean_text(
-            initial.get("accepted_contract_digest"), limit=128
+        "initial_contract_digest": _closed_sha256_digest(
+            initial.get("accepted_contract_digest")
         ),
         "current_contract_present": current_present,
         "current_contract_version": _clean_text(
             current.get("accepted_contract_version"), limit=200
         ),
-        "current_contract_digest": _clean_text(
-            current.get("accepted_contract_digest"), limit=128
+        "current_contract_digest": _closed_sha256_digest(
+            current.get("accepted_contract_digest")
         ),
         "accepted_authority_source": source,
     }
@@ -286,7 +301,7 @@ def independent_component_analyst_dispatch_input_digest(
             continue
         if str(work.get("logical_evaluation_key") or "") != evaluation_key:
             continue
-        digest = _clean_text(work.get("input_packet_digest"), limit=128)
+        digest = _closed_sha256_digest(work.get("input_packet_digest"))
         if digest:
             found.add(digest)
     if len(found) != 1:
@@ -311,10 +326,10 @@ def build_component_analyst_input_binding_mismatch_v1(
     accepted = _safe_mapping(accepted_contract)
     component = _safe_mapping(accepted_component)
     facts = _safe_mapping(contract_authority_facts)
-    artifact_digest = _clean_text(analyst.get("input_packet_digest"), limit=128)
+    artifact_digest = _closed_sha256_digest(analyst.get("input_packet_digest"))
     supplied_digest = safe_packet_digest(supplied)
     reconstructed_digest = safe_packet_digest(reconstructed)
-    dispatch_digest = _clean_text(independent_dispatch_input_digest, limit=128)
+    dispatch_digest = _closed_sha256_digest(independent_dispatch_input_digest)
     dispatch_present = dispatch_digest is not None
     packet_binding = _safe_mapping(supplied.get("run_binding"))
     packet_ref = _safe_mapping(supplied.get("component_ref"))
@@ -393,16 +408,22 @@ def build_component_analyst_input_binding_mismatch_v1(
     authority_source = facts.get("accepted_authority_source")
     if authority_source not in _ACCEPTED_AUTHORITY_SOURCE_VALUES:
         authority_source = "unknown"
-    if contract_authority_changed:
-        mismatch_class = "CONTRACT_AUTHORITY_CHANGED"
-    elif (
+    reconstruction_non_idempotent = (
         supplied_equals_artifact
-        and not supplied_equals_reconstructed
         and (not dispatch_present or supplied_equals_dispatch)
-    ):
-        mismatch_class = "PACKET_RECONSTRUCTION_NON_IDEMPOTENT"
-    elif dispatch_present and not supplied_equals_dispatch:
+        and run_binding_matches_accepted_contract
+        and component_ref_matches_accepted_component
+        and section_fields["run_binding_equal"] is True
+        and section_fields["component_ref_equal"] is True
+        and section_fields["component_evidence_equal"] is True
+        and not supplied_equals_reconstructed
+    )
+    if dispatch_present and not supplied_equals_dispatch:
         mismatch_class = "SUPPLIED_PACKET_CHANGED"
+    elif reconstruction_non_idempotent:
+        mismatch_class = "PACKET_RECONSTRUCTION_NON_IDEMPOTENT"
+    elif contract_authority_changed:
+        mismatch_class = "CONTRACT_AUTHORITY_CHANGED"
     elif dispatch_present and not artifact_equals_dispatch:
         mismatch_class = "ARTIFACT_DIGEST_CHANGED"
     else:
@@ -428,24 +449,30 @@ def build_component_analyst_input_binding_mismatch_v1(
         "initial_contract_version": _clean_text(
             facts.get("initial_contract_version"), limit=200
         ),
-        "initial_contract_digest": _clean_text(
-            facts.get("initial_contract_digest"), limit=128
+        "initial_contract_digest": _closed_sha256_digest(
+            facts.get("initial_contract_digest")
         ),
         "current_contract_present": current_present is True,
         "current_contract_version": _clean_text(
             facts.get("current_contract_version"), limit=200
         ),
-        "current_contract_digest": _clean_text(
-            facts.get("current_contract_digest"), limit=128
+        "current_contract_digest": _closed_sha256_digest(
+            facts.get("current_contract_digest")
         ),
         "accepted_authority_source": authority_source,
         "accepted_component_id": accepted_component_id,
         "accepted_component_revision": accepted_component_revision,
-        "accepted_component_digest": accepted_component_digest,
+        "accepted_component_digest": _closed_sha256_digest(
+            component.get("component_digest")
+        ),
         "packet_contract_version": packet_contract_version,
-        "packet_contract_digest": packet_contract_digest,
+        "packet_contract_digest": _closed_sha256_digest(
+            packet_binding.get("accepted_contract_digest")
+        ),
         "packet_component_revision": packet_component_revision,
-        "packet_component_digest": packet_component_digest,
+        "packet_component_digest": _closed_sha256_digest(
+            packet_ref.get("component_digest")
+        ),
         "run_binding_matches_accepted_contract": run_binding_matches_accepted_contract,
         "component_ref_matches_accepted_component": (
             component_ref_matches_accepted_component
