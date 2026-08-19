@@ -145,6 +145,48 @@ class MulticomponentGraphSchedulingError(ValueError):
     """Raised when scheduler identity, authority, or arithmetic is invalid."""
 
 
+def validate_current_component_analyst_input_packets(
+    *,
+    run_id: str,
+    request_id: str,
+    accepted_contract: Mapping[str, Any],
+    component_refs: Sequence[Mapping[str, Any]],
+    packets: Mapping[str, Mapping[str, Any]],
+) -> None:
+    """Require every retained Analyst packet to be reconstructed from current authority."""
+
+    from core.multicomponent_component_admission import (
+        component_analyst_input_packet,
+    )
+
+    expected_ids = {
+        str(item.get("component_id") or "")
+        for item in component_refs
+        if item.get("component_id")
+    }
+    if set(str(key) for key in packets) != expected_ids:
+        raise MulticomponentGraphSchedulingError(
+            "scheduler component Analyst packet set is not current authority"
+        )
+    for component_ref in component_refs:
+        component_id = str(component_ref.get("component_id") or "")
+        packet = _mapping(packets.get(component_id))
+        expected = component_analyst_input_packet(
+            run_id=run_id,
+            request_id=request_id,
+            accepted_contract=accepted_contract,
+            component_ref=component_ref,
+            evidence_input=_mapping(packet.get("component_evidence")),
+        )
+        if (
+            packet != expected
+            or safe_packet_digest(packet) != safe_packet_digest(expected)
+        ):
+            raise MulticomponentGraphSchedulingError(
+                "scheduler component Analyst packet is stale against current authority"
+            )
+
+
 def derive_multicomponent_compatibility_envelope() -> int:
     """Return the internal compatibility envelope derived from shared caps."""
 
@@ -1340,6 +1382,13 @@ def derive_ready_work(state: Any, *, allow_active_lease: bool = False) -> list[d
         for item in all_component_refs
         if "direct" in list(item.get("allowed_support_kinds") or ("direct",))
     ]
+    validate_current_component_analyst_input_packets(
+        run_id=state.run_id,
+        request_id=state.request_id,
+        accepted_contract=contract,
+        component_refs=component_refs,
+        packets=packets,
+    )
     admissions = _component_admissions(state)
     specialist_state = _mapping(
         state.projections.get("specialist_work_plane")

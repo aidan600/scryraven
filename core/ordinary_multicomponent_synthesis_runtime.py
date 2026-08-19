@@ -113,6 +113,16 @@ def _safe_mapping(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
 
 
+def _canonical_accepted_contract_snapshot(run_kernel: Any) -> dict[str, Any]:
+    """Snapshot the contract that governs the next ordinary semantic action."""
+
+    accepted = (
+        run_kernel.state.current_answer_contract
+        or run_kernel.state.initial_answer_contract
+    )
+    return deepcopy(dict(accepted)) if isinstance(accepted, Mapping) else {}
+
+
 def _component_requires_direct_work(
     component_ref: Mapping[str, Any],
 ) -> bool:
@@ -3389,8 +3399,13 @@ def _execute_selected_lane(
     runtime_scope: Mapping[str, Any],
     requested_synthesis_directive: str,
     allow_searchos_component_receiver: bool = False,
+    accepted_contract: Mapping[str, Any] | None = None,
 ) -> None:
-    accepted = run_kernel.state.initial_answer_contract
+    accepted = (
+        deepcopy(dict(accepted_contract))
+        if accepted_contract is not None
+        else _canonical_accepted_contract_snapshot(run_kernel)
+    )
     if not _selected_multicomponent_contract(
         accepted,
         allow_searchos_component_receiver=(allow_searchos_component_receiver),
@@ -3662,8 +3677,8 @@ def execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
     scheduler_state = _safe_mapping(run_kernel.state.projections.get("multicomponent_graph_scheduler"))
     if str(scheduler_state.get("status") or "").startswith("blocked_"):
         return OrdinaryMulticomponentResult(status=OrdinaryMulticomponentStatus.ALREADY_COMPLETED)
-    if run_kernel.state.initial_answer_contract:
-        accepted = run_kernel.state.initial_answer_contract
+    accepted = _canonical_accepted_contract_snapshot(run_kernel)
+    if accepted:
         metadata = _safe_mapping(accepted.get("question_meaning_metadata"))
         if _selected_multicomponent_contract(
             accepted,
@@ -3687,6 +3702,7 @@ def execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
                     runtime_scope=runtime_scope,
                     requested_synthesis_directive=requested_synthesis_directive,
                     allow_searchos_component_receiver=(allow_searchos_component_receiver),
+                    accepted_contract=accepted,
                 )
             except _ScheduledSemanticWorkBlocked as exc:
                 # The ordinary bounded lane keeps canonical blockage as FAP
@@ -3709,7 +3725,9 @@ def ordinary_multicomponent_path_completed(run_kernel: Any) -> bool:
 
 
 def ordinary_multicomponent_path_selected(run_kernel: Any) -> bool:
-    return _selected_multicomponent_contract(run_kernel.state.initial_answer_contract)
+    return _selected_multicomponent_contract(
+        _canonical_accepted_contract_snapshot(run_kernel)
+    )
 
 
 __all__ = [

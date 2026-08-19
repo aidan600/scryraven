@@ -4208,6 +4208,7 @@ class RunKernel:
         from core.multicomponent_graph_scheduling import (
             MULTICOMPONENT_SCHEDULER_STAGE,
             derive_multicomponent_transport_profile,
+            validate_current_component_analyst_input_packets,
         )
         from core.multicomponent_role_runtime import safe_packet_digest
         from core.specialist_graph_runtime import (
@@ -4272,6 +4273,16 @@ class RunKernel:
                 raise RunKernelTransitionError(
                     "scheduler component packet is not current canonical input"
                 )
+        try:
+            validate_current_component_analyst_input_packets(
+                run_id=self.state.run_id,
+                request_id=self.state.request_id,
+                accepted_contract=contract,
+                component_refs=component_refs,
+                packets=packets,
+            )
+        except Exception as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
         directive = _clean_text(requested_synthesis_directive, limit=360)
         metadata = _safe_mapping(contract.get("question_meaning_metadata"))
         searchos_slots = _safe_mapping(
