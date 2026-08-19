@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import importlib.util
 import json
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Any
@@ -15,6 +17,15 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from core.searchos_iterative_judgment_runtime import (  # noqa: E402
+    SEARCHOS_OWNER,
+    SEARCHOS_SEMANTIC_HANDOFF_SCHEMA_VERSION,
+    SEARCHOS_SLICE_A_READINESS_SCHEMA_VERSION,
+)
+from core.searchos_slice_a_product_runtime import (  # noqa: E402
+    SEARCHOS_SLICE_A_TRACE_KEY,
+    build_bounded_searchos_n1_causal_projection,
+)
 from core.validation_profiles import (  # noqa: E402
     AG_LIVE_MULTI_COMPONENT,
     MULTI_COMPONENT_DOCS_DOMAINS,
@@ -1189,3 +1200,349 @@ def test_runner_ast_has_no_top_level_run_pipeline_import() -> None:
     assert "run_pipeline" not in imported_from
     assert "dotenv" not in imported_names
     assert all("pipeline_orchestrator" not in name for name in imported_from)
+
+
+_N1_PRIVATE_CANARY = "AG_LIVE_N1_CAUSAL_PRIVATE_CANARY_MUST_NOT_SERIALIZE"
+_N1_HANDOFF_DIGEST = "ab" * 32
+_N1_TARGET_FACTS = (
+    "semantic_handoff_present",
+    "handoff_material_consumed",
+    "component_analyst_case_present",
+    "component_dprime_model_call_required",
+    "component_dprime_model_call_executed",
+    "semantic_admission_status",
+    "component_coverage_satisfied",
+)
+
+
+def _json_digest(value: Any) -> str:
+    encoded = json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    )
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _n1_handoff_ref() -> dict[str, str]:
+    return {
+        "semantic_handoff_id": f"searchos-semantic-handoff:{_N1_HANDOFF_DIGEST[:24]}",
+        "semantic_handoff_digest": _N1_HANDOFF_DIGEST,
+    }
+
+
+def _n1_searchos_slice_a(
+    *,
+    run_id: str,
+    request_id: str,
+) -> dict[str, Any]:
+    handoff = _n1_handoff_ref()
+    slot_ref = {
+        "slot_id": "slot-1",
+        "slot_digest": "slot-digest-1",
+        "component_id": "component-1",
+        "source_obligation_id": "obligation-1",
+    }
+    analyst_case = {"role": "component_analyst"}
+    slot_record = {
+        "slot_ref": slot_ref,
+        "requirement_posture": "required",
+        "support_kind": "official_current",
+        "latest_judgment_posture": "semantically_handed_off",
+        "latest_judgment_reason": "none",
+        "judgment_call_count": 1,
+        "action_history": [
+            {"event": "judgment_decided", "reason": _N1_PRIVATE_CANARY}
+        ],
+        "custody_refs": [
+            {
+                "read_custody_material_id": "custody-1",
+                "normalized_url": "https://fixture.invalid/private-canary",
+                "read_content": _N1_PRIVATE_CANARY,
+            }
+        ],
+        "semantic_handoff_ref": handoff,
+        "recorded_searchos_semantic_handoff_ref": {
+            **handoff,
+            "slot_ref": slot_ref,
+            "schema_version": SEARCHOS_SEMANTIC_HANDOFF_SCHEMA_VERSION,
+        },
+        "slice_a_ready": True,
+        "component_analyst_case_ref": analyst_case,
+    }
+    readiness_core = {
+        "schema_version": SEARCHOS_SLICE_A_READINESS_SCHEMA_VERSION,
+        "owner": SEARCHOS_OWNER,
+        "canonical_state": True,
+        "run_id": run_id,
+        "request_id": request_id,
+        "required_slot_count": 1,
+        "optional_slot_count": 0,
+        "all_required_slots_slice_a_ready": True,
+        "slot_records": [slot_record],
+    }
+    digest = _json_digest(readiness_core)
+    readiness = {
+        **readiness_core,
+        "readiness_projection_digest": digest,
+        "readiness_projection_id": f"searchos-readiness:{digest[:24]}",
+        "replay_identity": f"searchos-readiness:{digest}",
+    }
+    return {
+        "schema_version": "searchos_slice_a_product_runtime_v1",
+        "owner": SEARCHOS_OWNER,
+        "slot_postures": {"slot-1": "semantically_handed_off"},
+        "semantic_outcomes_by_slot": {
+            "slot-1": {
+                "semantic_handoff_ref": handoff,
+                "component_analyst_case_ref": analyst_case,
+                "semantic_admission_outcome_ref": {
+                    "component_analyst_case_ref": analyst_case,
+                    "component_coverage_ref": {"coverage_state": "satisfied"},
+                },
+                "semantic_admission_status": "admitted",
+                "searchos_handoff_material_consumed": True,
+            }
+        },
+        "readiness_projection": readiness,
+        "readiness_projection_ref": {
+            "readiness_projection_id": readiness["readiness_projection_id"],
+            "readiness_projection_digest": digest,
+        },
+        "private_raw": {
+            "query": _N1_PRIVATE_CANARY,
+            "prompt": _N1_PRIVATE_CANARY,
+            "provider_payload": _N1_PRIVATE_CANARY,
+            "model_response": _N1_PRIVATE_CANARY,
+        },
+    }
+
+
+def _q1_like_blocked_outcome(
+    *,
+    run_id: str = "q1-like-run",
+    session_id: str = "q1-like-session",
+) -> SimpleNamespace:
+    searchos = _n1_searchos_slice_a(run_id=run_id, request_id=session_id)
+    return SimpleNamespace(
+        run_id=run_id,
+        session_id=session_id,
+        terminal_status="blocked",
+        report="Final answer blocked before Author.",
+        top_passages=[
+            {
+                "source_id": 1,
+                "url": "https://docs.python.org/3/library/math.html#math.isclose",
+                "text": _N1_PRIVATE_CANARY,
+            }
+        ],
+        seen_urls=["https://docs.python.org/3/library/math.html#math.isclose"],
+        execution_trace={
+            SEARCHOS_SLICE_A_TRACE_KEY: searchos,
+            "final_answer_source_ids_used": [],
+            "evidence_sufficient": False,
+            "synth_was_insufficient": True,
+            "synth_sufficient_first_pass": False,
+            "answer_class": "blocked_final_answer",
+            "response_displayable": False,
+            "author_system_prompt_key": None,
+            "failure_card": {"show": True, "reason": "blocked_final_answer_packet"},
+            "blocked_fap_terminal": {
+                "blocked_fap": True,
+                "author_called": False,
+                "exported_terminal_posture": "blocked",
+            },
+            "final_answer_packet": {
+                "canonical_state": True,
+                "trace_mode": "run_kernel_final_answer_packet_projection",
+                "readiness_status": "blocked",
+                "author_payload_status": "author_input_deferred",
+                "citation_eligible_source_ids": [],
+                "sufficiency_decision": "partial_answer_authorized",
+                "semantic_evidence_authority_manifest": {
+                    "semantic_packet_evidence_binding_available": False,
+                    "semantic_packet_evidence_binding_count": 0,
+                    "content_refs_available": False,
+                    "coverage_refs_available": True,
+                },
+                "semantic_content_coverage_ref": {
+                    "component_ref_count": 1,
+                    "coverage_record_ref_count": 1,
+                    "semantic_observation_ref_count": 0,
+                    "sanitized_content_ref_count": 0,
+                },
+            },
+        },
+    )
+
+
+def _direct_n1_projection(outcome: Any) -> dict[str, Any] | None:
+    trace = dict(getattr(outcome, "execution_trace", {}) or {})
+    return build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=dict(trace.get(SEARCHOS_SLICE_A_TRACE_KEY) or {}),
+        enabled=True,
+        expected_run_id=str(getattr(outcome, "run_id", "") or ""),
+        expected_request_id=str(getattr(outcome, "session_id", "") or ""),
+    )
+
+
+def _assert_target_facts(projection: Mapping[str, Any]) -> None:
+    assert projection["projection_status"] == "available"
+    assert projection["required_slot_count"] == 1
+    assert len(projection["slots"]) == 1
+    slot = dict(projection["slots"][0])
+    for key in _N1_TARGET_FACTS:
+        assert key in slot
+    assert slot["semantic_handoff_present"] is True
+    assert slot["handoff_material_consumed"] is True
+    assert slot["component_analyst_case_present"] is True
+    assert slot["component_dprime_model_call_required"] is False
+    assert slot["component_dprime_model_call_executed"] is False
+    assert slot["semantic_admission_status"] == "admitted"
+    assert slot["component_coverage_satisfied"] is True
+
+
+def test_q1_like_blocked_fap_success_packet_reuses_canonical_n1_projection(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _load_runner()
+    support = _load_support()
+    output = _gitignored_output_path("ag_live_bound_01_q1_like_blocked_fap.json")
+    _stub_live_runner_without_env(runner, monkeypatch)
+    outcome = _q1_like_blocked_outcome()
+    expected = _direct_n1_projection(outcome)
+    assert expected is not None
+
+    def fake_run_pipeline(
+        config: Any,
+        _deps: Any,
+        _status: Any,
+        _accumulator: Any,
+    ) -> Any:
+        config.cap_policy.mark_search_dispatch()
+        config.cap_policy.mark_search_dispatch()
+        return outcome
+
+    with patch(
+        "core.pipeline_orchestrator.run_pipeline",
+        side_effect=fake_run_pipeline,
+    ) as run_pipeline:
+        result = runner.main(
+            [*VALID_ARGS, "--output", output, "--confirm-live-product-run"]
+        )
+
+    assert result == 0
+    assert run_pipeline.call_count == 1
+    capsys.readouterr()
+
+    packet = json.loads((ROOT / output).read_text(encoding="utf-8"))
+    summaries = packet["sanitized_projection_summaries"]
+    assert packet["success_classification"] == "success"
+    assert packet["run_pipeline_call_count"] == 1
+    assert summaries["searchos_n1_causal_projection"] == expected
+    _assert_target_facts(summaries["searchos_n1_causal_projection"])
+    assert summaries["searchos_n1_causal_projection"].get("searchos_exit") == (
+        "SEMANTIC_HANDOFF"
+    )
+    assert summaries["author_posture"]["failure_card_show"] is True
+    assert summaries["author_posture"]["final_answer_readiness_status"] == "blocked"
+    assert summaries["component_binding"]["semantic_packet_evidence_binding_count"] == 0
+    assert summaries["component_coverage"]["component_ref_count"] == 1
+    assert summaries["final_answer_packet"]["readiness_status"] == "blocked"
+    assert summaries["sufficiency"]["sufficiency_decision"] == (
+        "partial_answer_authorized"
+    )
+    assert packet["retention_posture"]["only_runner_artifact_written"] is True
+    assert packet["no_retention"]["full_raw_traces_retained"] is False
+    rendered = json.dumps(packet, sort_keys=True)
+    assert _N1_PRIVATE_CANARY not in rendered
+    assert "https://fixture.invalid/private-canary" not in rendered
+    assert '"execution_trace":' not in rendered
+    support.reject_forbidden_packet(packet)
+
+
+def test_ag_live_n1_causal_projection_omitted_when_builder_returns_none() -> None:
+    support = _load_support()
+    context = support.build_preflight_context(
+        root=ROOT,
+        query=PRIMARY_QUERY,
+        mode="Balanced",
+        include_domains=["docs.python.org"],
+        output_path=ROOT / "output" / "ag_live_bound_01_n1_omitted.json",
+        caps=support.AgLiveBoundCaps(),
+        run_id="ag-live-n1-omitted-test",
+        confirm_live_product_run=True,
+        approved_backup_query=False,
+    )
+    outcome = _q1_like_blocked_outcome()
+    with patch.object(
+        support,
+        "build_bounded_searchos_n1_causal_projection",
+        return_value=None,
+    ):
+        packet = support.build_live_success_packet(
+            context,
+            outcome=outcome,
+            cap_policy=context.caps.to_run_cap_policy(),
+        )
+    assert "searchos_n1_causal_projection" not in packet["sanitized_projection_summaries"]
+    support.reject_forbidden_packet(packet)
+
+
+def test_ag_live_n1_causal_projection_identity_fail_closed() -> None:
+    support = _load_support()
+    context = support.build_preflight_context(
+        root=ROOT,
+        query=PRIMARY_QUERY,
+        mode="Balanced",
+        include_domains=["docs.python.org"],
+        output_path=ROOT / "output" / "ag_live_bound_01_n1_identity.json",
+        caps=support.AgLiveBoundCaps(),
+        run_id="ag-live-packet-run-id",
+        confirm_live_product_run=True,
+        approved_backup_query=False,
+    )
+    matching = _q1_like_blocked_outcome(
+        run_id="pipeline-run-id",
+        session_id="pipeline-session-id",
+    )
+    mismatched = SimpleNamespace(
+        run_id="stale-run-id",
+        session_id="stale-session-id",
+        terminal_status="blocked",
+        report=matching.report,
+        top_passages=matching.top_passages,
+        seen_urls=matching.seen_urls,
+        execution_trace=matching.execution_trace,
+    )
+    matching_direct = _direct_n1_projection(matching)
+    mismatched_direct = _direct_n1_projection(mismatched)
+    assert matching_direct is not None
+    assert mismatched_direct is not None
+    assert matching_direct.get("searchos_exit") == "SEMANTIC_HANDOFF"
+    assert mismatched_direct.get("searchos_exit") != "SEMANTIC_HANDOFF"
+
+    matching_packet = support.build_live_success_packet(
+        context,
+        outcome=matching,
+        cap_policy=context.caps.to_run_cap_policy(),
+    )
+    mismatched_packet = support.build_live_success_packet(
+        context,
+        outcome=mismatched,
+        cap_policy=context.caps.to_run_cap_policy(),
+    )
+    matching_observed = matching_packet["sanitized_projection_summaries"][
+        "searchos_n1_causal_projection"
+    ]
+    mismatched_observed = mismatched_packet["sanitized_projection_summaries"][
+        "searchos_n1_causal_projection"
+    ]
+    assert matching_observed == matching_direct
+    assert mismatched_observed == mismatched_direct
+    assert mismatched_observed != matching_direct
+    assert mismatched_observed.get("searchos_exit") != "SEMANTIC_HANDOFF"
+    support.reject_forbidden_packet(matching_packet)
+    support.reject_forbidden_packet(mismatched_packet)

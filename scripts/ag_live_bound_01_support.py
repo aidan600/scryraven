@@ -12,6 +12,10 @@ from core.multicomponent_component_admission import (
     component_analyst_input_binding_mismatch_from_exception,
     project_component_analyst_input_binding_mismatch_v1,
 )
+from core.searchos_slice_a_product_runtime import (
+    SEARCHOS_SLICE_A_TRACE_KEY,
+    build_bounded_searchos_n1_causal_projection,
+)
 from core.validation_observability import (
     build_subject_budget_summary,
     build_validation_observability,
@@ -880,6 +884,19 @@ def build_live_success_packet(
     if not cited_urls:
         cited_urls = extract_cited_urls_from_text(final_answer_text)
     profile = get_validation_profile(context.profile_name)
+    sanitized_projection_summaries = _sanitized_projection_summaries(trace)
+    causal_projection = build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=dict(
+            trace.get(SEARCHOS_SLICE_A_TRACE_KEY) or {}
+        ),
+        enabled=True,
+        expected_run_id=str(getattr(outcome, "run_id", "") or ""),
+        expected_request_id=str(getattr(outcome, "session_id", "") or ""),
+    )
+    if causal_projection is not None:
+        sanitized_projection_summaries["searchos_n1_causal_projection"] = (
+            causal_projection
+        )
     packet = {
         **_live_packet_base(context, cap_policy=cap_policy),
         "success_classification": LIVE_PACKET_SUCCESS,
@@ -889,7 +906,7 @@ def build_live_success_packet(
         "cited_source_ids": cited_source_ids,
         "cited_urls": cited_urls,
         "source_ids_available": bool(cited_source_ids),
-        "sanitized_projection_summaries": _sanitized_projection_summaries(trace),
+        "sanitized_projection_summaries": sanitized_projection_summaries,
         "validation_observability": build_validation_observability(
             validation_profile=profile,
             preflight_context=context,
