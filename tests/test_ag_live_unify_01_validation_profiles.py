@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from core.cap_enforcement import RunCapPolicy
 from core.validation_profiles import (
     AG_LIVE_DISAMBIG,
     AG_LIVE_MULTI_COMPONENT,
@@ -64,6 +65,25 @@ def test_ag_live_smoke_maps_to_direct_human_runner_behavior() -> None:
     assert profile.required_mode == support.REQUIRED_MODE
     assert tuple(profile.required_include_domains) == (support.REQUIRED_DOMAIN,)
     assert profile.cap_policy.as_requested_dict() == support.PLANNED_CAPS
+    assert profile.cap_policy.as_requested_dict() == {"max_scryraven_runs": 1}
+    assert profile.cap_policy.max_search_dispatches is None
+    assert profile.cap_policy.max_fetch_read_operations is None
+    assert profile.cap_policy.max_author_model_calls is None
+    assert profile.cap_policy.max_smart_search_judgment_model_calls is None
+    compatibility_policy = profile.cap_policy.to_run_cap_policy()
+    default_policy = RunCapPolicy()
+    assert compatibility_policy.max_search_dispatches == (
+        default_policy.max_search_dispatches
+    )
+    assert compatibility_policy.max_fetch_read_operations == (
+        default_policy.max_fetch_read_operations
+    )
+    assert compatibility_policy.max_author_model_calls == (
+        default_policy.max_author_model_calls
+    )
+    assert compatibility_policy.max_smart_search_judgment_model_calls == (
+        default_policy.max_smart_search_judgment_model_calls
+    )
     assert profile.current_evidence.startswith("Succeeded once")
 
 

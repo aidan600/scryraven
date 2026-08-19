@@ -112,38 +112,43 @@ class ValidationCapPolicySpec:
     """Serializable cap-policy spec owned by product validation profiles."""
 
     max_scryraven_runs: int
-    max_search_dispatches: int
-    max_fetch_read_operations: int
-    max_author_model_calls: int
-    max_smart_search_judgment_model_calls: int
-    max_independent_manual_source_checks: int
-    max_retries: int
+    max_search_dispatches: int | None = None
+    max_fetch_read_operations: int | None = None
+    max_author_model_calls: int | None = None
+    max_smart_search_judgment_model_calls: int | None = None
+    max_independent_manual_source_checks: int | None = None
+    max_retries: int | None = None
 
     def as_requested_dict(self) -> dict[str, int]:
-        return {
+        values: dict[str, int] = {
             "max_scryraven_runs": self.max_scryraven_runs,
-            "max_search_dispatches": self.max_search_dispatches,
-            "max_fetch_read_operations": self.max_fetch_read_operations,
-            "max_author_model_calls": self.max_author_model_calls,
-            "max_smart_search_judgment_model_calls": (
-                self.max_smart_search_judgment_model_calls
-            ),
-            "max_independent_manual_source_checks": (
-                self.max_independent_manual_source_checks
-            ),
-            "max_retries": self.max_retries,
         }
+        for field_name in (
+            "max_search_dispatches",
+            "max_fetch_read_operations",
+            "max_author_model_calls",
+            "max_smart_search_judgment_model_calls",
+            "max_independent_manual_source_checks",
+            "max_retries",
+        ):
+            value = getattr(self, field_name)
+            if value is not None:
+                values[field_name] = value
+        return values
 
     def to_run_cap_policy(self) -> RunCapPolicy:
-        return RunCapPolicy(
-            max_search_dispatches=self.max_search_dispatches,
-            max_fetch_read_operations=self.max_fetch_read_operations,
-            max_author_model_calls=self.max_author_model_calls,
-            max_smart_search_judgment_model_calls=(
-                self.max_smart_search_judgment_model_calls
-            ),
-            max_retries=self.max_retries,
-        )
+        logical_overrides: dict[str, int] = {}
+        for field_name in (
+            "max_search_dispatches",
+            "max_fetch_read_operations",
+            "max_author_model_calls",
+            "max_smart_search_judgment_model_calls",
+            "max_retries",
+        ):
+            value = getattr(self, field_name)
+            if value is not None:
+                logical_overrides[field_name] = value
+        return RunCapPolicy(**logical_overrides)
 
 
 @dataclass(frozen=True, slots=True)
@@ -391,15 +396,11 @@ class ValidationProfile:
         }
 
 
-BOUND_CAP_POLICY = ValidationCapPolicySpec(
-    max_scryraven_runs=1,
-    max_search_dispatches=2,
-    max_fetch_read_operations=3,
-    max_author_model_calls=1,
-    max_smart_search_judgment_model_calls=0,
-    max_independent_manual_source_checks=1,
-    max_retries=0,
-)
+# Ordinary dogfood owns only the experimental PRODUCT-run authority. Logical
+# role counts remain observations unless an experiment explicitly requests a
+# cap; omitted fields intentionally flow through RunCapPolicy compatibility
+# defaults rather than becoming phase-local product policy.
+ORDINARY_DOGFOOD_CAP_POLICY = ValidationCapPolicySpec(max_scryraven_runs=1)
 
 AG_LIVE_S1_PER_RUN_CAP_POLICY = ValidationCapPolicySpec(
     max_scryraven_runs=1,
@@ -516,7 +517,7 @@ VALIDATION_PROFILES: dict[str, ValidationProfile] = {
         backup_query=AG_LIVE_BOUND_BACKUP_QUERY,
         required_mode=BALANCED_MODE,
         required_include_domains=(PYTHON_DOCS_DOMAIN,),
-        cap_policy=BOUND_CAP_POLICY,
+        cap_policy=ORDINARY_DOGFOOD_CAP_POLICY,
         expected_packet_criteria=(
             "run_pipeline_call_count == 1 on live success",
             "planned_live_dispatch is true only after preflight passes",
@@ -538,7 +539,7 @@ VALIDATION_PROFILES: dict[str, ValidationProfile] = {
         backup_query=AG_LIVE_BOUND_BACKUP_QUERY,
         required_mode=BALANCED_MODE,
         required_include_domains=(PYTHON_DOCS_DOMAIN,),
-        cap_policy=BOUND_CAP_POLICY,
+        cap_policy=ORDINARY_DOGFOOD_CAP_POLICY,
         expected_packet_criteria=(
             "historical expectation only",
             "not selectable by the direct runner or broker",
@@ -566,7 +567,7 @@ VALIDATION_PROFILES: dict[str, ValidationProfile] = {
         backup_query=AG_LIVE_MULTI_COMPONENT_BACKUP_QUERY,
         required_mode=BALANCED_MODE,
         required_include_domains=MULTI_COMPONENT_DOCS_DOMAINS,
-        cap_policy=BOUND_CAP_POLICY,
+        cap_policy=ORDINARY_DOGFOOD_CAP_POLICY,
         expected_packet_criteria=(
             "detected initial independent subjects/components are visible",
             "selected initial subjects/components are capped at up to five",
@@ -593,7 +594,7 @@ VALIDATION_PROFILES: dict[str, ValidationProfile] = {
         backup_query=None,
         required_mode=BALANCED_MODE,
         required_include_domains=(),
-        cap_policy=BOUND_CAP_POLICY,
+        cap_policy=ORDINARY_DOGFOOD_CAP_POLICY,
         expected_packet_criteria=(
             "disambiguation/search work plan visible in sanitized packet or trace summary",
             "no provider bake-off",

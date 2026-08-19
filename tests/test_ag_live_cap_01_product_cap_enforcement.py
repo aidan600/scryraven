@@ -46,6 +46,49 @@ def test_default_run_config_has_no_cap_policy() -> None:
     assert RunConfig(query="hello").cap_policy is None
 
 
+def test_ordinary_dogfood_policy_allows_q1_like_search_judgment_work(
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts.ag_live_bound_01_support import AgLiveBoundCaps
+
+    scrub_offline_runtime(monkeypatch)
+    caps = AgLiveBoundCaps()
+    assert caps.max_smart_search_judgment_model_calls is None
+    cap_policy = caps.to_run_cap_policy()
+    harness = _harness(tmp_path)
+
+    _captured, outcome = run_offline_ordinary_pipeline(
+        harness,
+        monkeypatch,
+        current_date="2026-06-25",
+        session_id="session-ordinary-q1",
+        run_id="run-ordinary-q1",
+        capture_stages=(),
+        cap_policy=cap_policy,
+        smart_search_judgment_model=True,
+        provider_availability={"tavily": True},
+    )
+
+    assert harness.read_assessment_calls
+    assert cap_policy.smart_search_judgment_model_calls >= 1
+    assert outcome.report
+
+
+def test_explicit_search_judgment_cap_still_fails_closed() -> None:
+    from scripts.ag_live_bound_01_support import AgLiveBoundCaps
+
+    cap_policy = AgLiveBoundCaps(
+        max_smart_search_judgment_model_calls=0
+    ).to_run_cap_policy()
+
+    with pytest.raises(
+        RunCapExceeded,
+        match="smart_search_judgment_model_calls cap exceeded",
+    ):
+        cap_policy.mark_smart_search_judgment_model_call()
+
+
 def test_retired_utilization_retry_branch_does_not_claim_active_cap_evidence(
     tmp_path: Any,
     monkeypatch: pytest.MonkeyPatch,

@@ -213,65 +213,76 @@ class AgLiveBoundPacketError(ValueError):
 @dataclass(frozen=True, slots=True)
 class AgLiveBoundCaps:
     max_scryraven_runs: int = 1
-    max_search_dispatches: int = 2
-    max_fetch_read_operations: int = 3
-    max_author_model_calls: int = 1
-    max_smart_search_judgment_model_calls: int = 0
-    max_independent_manual_source_checks: int = 1
-    max_retries: int = 0
+    # None means this ordinary runner records the observation without adding a
+    # logical role cap. Explicit resource experiments may supply an integer.
+    max_search_dispatches: int | None = None
+    max_fetch_read_operations: int | None = None
+    max_author_model_calls: int | None = None
+    max_smart_search_judgment_model_calls: int | None = None
+    max_independent_manual_source_checks: int | None = None
+    max_retries: int | None = None
 
     def as_requested_dict(self) -> dict[str, int]:
-        return {
+        values: dict[str, int] = {
             "max_scryraven_runs": self.max_scryraven_runs,
-            "max_search_dispatches": self.max_search_dispatches,
-            "max_fetch_read_operations": self.max_fetch_read_operations,
-            "max_author_model_calls": self.max_author_model_calls,
-            "max_smart_search_judgment_model_calls": (
-                self.max_smart_search_judgment_model_calls
-            ),
-            "max_independent_manual_source_checks": (
-                self.max_independent_manual_source_checks
-            ),
-            "max_retries": self.max_retries,
         }
+        for field_name in (
+            "max_search_dispatches",
+            "max_fetch_read_operations",
+            "max_author_model_calls",
+            "max_smart_search_judgment_model_calls",
+            "max_independent_manual_source_checks",
+            "max_retries",
+        ):
+            value = getattr(self, field_name)
+            if value is not None:
+                values[field_name] = value
+        return values
 
     def to_run_cap_policy(self) -> RunCapPolicy:
-        return RunCapPolicy(
-            max_search_dispatches=self.max_search_dispatches,
-            max_fetch_read_operations=self.max_fetch_read_operations,
-            max_author_model_calls=self.max_author_model_calls,
-            max_smart_search_judgment_model_calls=(
-                self.max_smart_search_judgment_model_calls
-            ),
-            max_retries=self.max_retries,
-        )
+        logical_overrides: dict[str, int] = {}
+        for field_name in (
+            "max_search_dispatches",
+            "max_fetch_read_operations",
+            "max_author_model_calls",
+            "max_smart_search_judgment_model_calls",
+            "max_retries",
+        ):
+            value = getattr(self, field_name)
+            if value is not None:
+                logical_overrides[field_name] = value
+        return RunCapPolicy(**logical_overrides)
 
     @classmethod
     def from_requested(cls, requested: Mapping[str, int]) -> AgLiveBoundCaps:
+        def optional_int(field_name: str) -> int | None:
+            value = requested.get(field_name)
+            return int(value) if value is not None else None
+
         return cls(
             max_scryraven_runs=int(requested["max_scryraven_runs"]),
-            max_search_dispatches=int(requested["max_search_dispatches"]),
-            max_fetch_read_operations=int(requested["max_fetch_read_operations"]),
-            max_author_model_calls=int(requested["max_author_model_calls"]),
-            max_smart_search_judgment_model_calls=int(
-                requested["max_smart_search_judgment_model_calls"]
+            max_search_dispatches=optional_int("max_search_dispatches"),
+            max_fetch_read_operations=optional_int("max_fetch_read_operations"),
+            max_author_model_calls=optional_int("max_author_model_calls"),
+            max_smart_search_judgment_model_calls=optional_int(
+                "max_smart_search_judgment_model_calls"
             ),
-            max_independent_manual_source_checks=int(
-                requested["max_independent_manual_source_checks"]
+            max_independent_manual_source_checks=optional_int(
+                "max_independent_manual_source_checks"
             ),
-            max_retries=int(requested["max_retries"]),
+            max_retries=optional_int("max_retries"),
         )
 
 
 @dataclass
 class CappedDispatchCounter:
     name: str
-    max_calls: int
+    max_calls: int | None
     count: int = 0
 
     def mark(self, *, amount: int = 1) -> None:
         self.count += amount
-        if self.count > self.max_calls:
+        if self.max_calls is not None and self.count > self.max_calls:
             raise RuntimeError(f"{self.name} budget exceeded")
 
 
@@ -396,6 +407,30 @@ def validate_caps_requested(
 ) -> AgLiveBoundCaps:
     profile = get_validation_profile(profile_name)
     planned_caps = profile.cap_policy.as_requested_dict()
+    known_caps = {
+        "max_scryraven_runs",
+        "max_search_dispatches",
+        "max_fetch_read_operations",
+        "max_author_model_calls",
+        "max_smart_search_judgment_model_calls",
+        "max_independent_manual_source_checks",
+        "max_retries",
+    }
+    unknown = sorted(set(requested).difference(known_caps))
+    if unknown:
+        raise AgLiveBoundPreflightError(
+            f"refusing run: unknown cap fields: {', '.join(unknown)}"
+        )
+    invalid = [
+        key
+        for key, value in requested.items()
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0
+    ]
+    if invalid:
+        raise AgLiveBoundPreflightError(
+            f"refusing run: cap fields must be non-negative integers: "
+            f"{', '.join(sorted(invalid))}"
+        )
     missing = [key for key in planned_caps if key not in requested]
     if missing:
         raise AgLiveBoundPreflightError(
