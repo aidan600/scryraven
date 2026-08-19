@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+import proplex.__main__ as compatibility_cli  # noqa: E402
 from core.searchos_iterative_judgment_runtime import (  # noqa: E402
     SEARCHOS_OWNER,
     SEARCHOS_SEMANTIC_HANDOFF_SCHEMA_VERSION,
@@ -1212,6 +1213,11 @@ _N1_TARGET_FACTS = (
     "component_dprime_model_call_executed",
     "semantic_admission_status",
     "component_coverage_satisfied",
+    "canonical_slot_posture",
+    "last_searchjudgment_action",
+    "semantic_handoff_authorization_attempted",
+    "semantic_handoff_sealed",
+    "stale_or_invalid_transition_observed",
 )
 
 
@@ -1250,16 +1256,25 @@ def _n1_searchos_slice_a(
         "requirement_posture": "required",
         "support_kind": "official_current",
         "latest_judgment_posture": "semantically_handed_off",
-        "latest_judgment_reason": "none",
+        "latest_judgment_reason": _N1_PRIVATE_CANARY,
         "judgment_call_count": 1,
         "action_history": [
-            {"event": "judgment_decided", "reason": _N1_PRIVATE_CANARY}
+            {
+                "event": "judgment_decided",
+                "action": _N1_PRIVATE_CANARY,
+                "reason": _N1_PRIVATE_CANARY,
+            },
+            {
+                "action": "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION",
+                "reason": _N1_PRIVATE_CANARY,
+            },
         ],
         "custody_refs": [
             {
                 "read_custody_material_id": "custody-1",
                 "normalized_url": "https://fixture.invalid/private-canary",
                 "read_content": _N1_PRIVATE_CANARY,
+                "candidate_context": _N1_PRIVATE_CANARY,
             }
         ],
         "semantic_handoff_ref": handoff,
@@ -1310,6 +1325,8 @@ def _n1_searchos_slice_a(
             "readiness_projection_id": readiness["readiness_projection_id"],
             "readiness_projection_digest": digest,
         },
+        "semantic_handoff_authorization_attempted_slot_ids": ["slot-1"],
+        "candidate_context": {"text": _N1_PRIVATE_CANARY},
         "private_raw": {
             "query": _N1_PRIVATE_CANARY,
             "prompt": _N1_PRIVATE_CANARY,
@@ -1401,6 +1418,16 @@ def _assert_target_facts(projection: Mapping[str, Any]) -> None:
     assert slot["component_dprime_model_call_executed"] is False
     assert slot["semantic_admission_status"] == "admitted"
     assert slot["component_coverage_satisfied"] is True
+    assert slot["canonical_slot_posture"] == "semantically_handed_off"
+    assert slot["last_searchjudgment_action"] == (
+        "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION"
+    )
+    assert slot["semantic_handoff_authorization_attempted"] is True
+    assert slot["semantic_handoff_sealed"] is True
+    assert slot["stale_or_invalid_transition_observed"] is False
+    assert "semantic_handoff_authorization_attempted_slot_ids" not in slot
+    assert "action_history" not in slot
+    assert "latest_judgment_reason" not in slot
 
 
 def test_q1_like_blocked_fap_success_packet_reuses_canonical_n1_projection(
@@ -1443,6 +1470,21 @@ def test_q1_like_blocked_fap_success_packet_reuses_canonical_n1_projection(
     assert packet["run_pipeline_call_count"] == 1
     assert summaries["searchos_n1_causal_projection"] == expected
     _assert_target_facts(summaries["searchos_n1_causal_projection"])
+    cli_projection = compatibility_cli.build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=dict(
+            dict(getattr(outcome, "execution_trace", {}) or {}).get(
+                SEARCHOS_SLICE_A_TRACE_KEY
+            )
+            or {}
+        ),
+        enabled=True,
+        expected_run_id=str(outcome.run_id or ""),
+        expected_request_id=str(outcome.session_id or ""),
+    )
+    assert cli_projection == expected
+    assert support.build_bounded_searchos_n1_causal_projection is (
+        build_bounded_searchos_n1_causal_projection
+    )
     assert summaries["searchos_n1_causal_projection"].get("searchos_exit") == (
         "SEMANTIC_HANDOFF"
     )

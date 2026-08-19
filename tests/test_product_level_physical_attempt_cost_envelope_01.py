@@ -69,6 +69,10 @@ from core.run_cap_authorization import (
 )
 from core.run_config import RunConfig, RunDeps
 from core.run_kernel import ObservationType
+from core.searchos_slice_a_product_runtime import (
+    SEARCHOS_SLICE_A_TRACE_KEY,
+    build_bounded_searchos_n1_causal_projection,
+)
 from core.strict_one_shot_model_transport import (
     build_strict_one_shot_smart_model_transport,
 )
@@ -1641,7 +1645,25 @@ def test_ordinary_pipeline_executes_bounded_isclose_with_explicit_policy(
     assert projection["projection_status"] == "available"
     assert int(projection["required_slot_count"]) >= 1
     assert len(projection["slots"]) == int(projection["required_slot_count"])
+    direct = build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=dict(
+            dict(getattr(outcome, "execution_trace", {}) or {}).get(
+                SEARCHOS_SLICE_A_TRACE_KEY
+            )
+            or {}
+        ),
+        enabled=True,
+        expected_run_id=str(outcome.run_id or ""),
+        expected_request_id=str(outcome.session_id or ""),
+    )
+    assert success["searchos_n1_causal_projection"] == direct
     for slot in projection["slots"]:
+        assert slot["canonical_slot_posture"]
+        assert slot["last_searchjudgment_action"]
+        assert slot["semantic_handoff_authorization_attempted"] in {True, False}
+        assert slot["semantic_handoff_sealed"] in {True, False}
+        assert slot["stale_or_invalid_transition_observed"] in {True, False}
+        assert "semantic_handoff_authorization_attempted_slot_ids" not in slot
         assert "safe_transport_exception_class" in slot
         assert slot["safe_transport_exception_class"] in {
             "none",
@@ -2305,6 +2327,11 @@ def test_public_bounded_cli_clarification_only_has_zero_search_and_read_attempts
     assert len(projection["slots"]) == projection["required_slot_count"]
     [clarification_slot] = projection["slots"]
     assert clarification_slot["final_posture"] == "clarification_required"
+    assert clarification_slot["canonical_slot_posture"] == "clarification_required"
+    assert clarification_slot["last_searchjudgment_action"] == "none"
+    assert clarification_slot["semantic_handoff_authorization_attempted"] is False
+    assert clarification_slot["semantic_handoff_sealed"] is False
+    assert clarification_slot["stale_or_invalid_transition_observed"] is False
     assert clarification_slot["safe_transport_exception_class"] == "none"
     assert clarification_slot["read_custody_observed"] is False
 
