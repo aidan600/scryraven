@@ -740,8 +740,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--max-retries",
         type=int,
-        default=None,
-        help="Optional resource-experiment cap: retries.",
+        default=0,
+        help="Retry authority for this PRODUCT observation; default is none.",
     )
     parser.add_argument(
         "--approved-backup-query",

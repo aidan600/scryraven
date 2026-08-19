@@ -55,7 +55,9 @@ def test_ordinary_dogfood_policy_allows_q1_like_search_judgment_work(
     scrub_offline_runtime(monkeypatch)
     caps = AgLiveBoundCaps()
     assert caps.max_smart_search_judgment_model_calls is None
+    assert caps.max_retries == 0
     cap_policy = caps.to_run_cap_policy()
+    assert cap_policy.max_retries == 0
     harness = _harness(tmp_path)
 
     _captured, outcome = run_offline_ordinary_pipeline(
@@ -87,6 +89,28 @@ def test_explicit_search_judgment_cap_still_fails_closed() -> None:
         match="smart_search_judgment_model_calls cap exceeded",
     ):
         cap_policy.mark_smart_search_judgment_model_call()
+
+
+def test_ordinary_dogfood_retry_authority_fails_closed() -> None:
+    from scripts.ag_live_bound_01_support import AgLiveBoundCaps
+
+    cap_policy = AgLiveBoundCaps().to_run_cap_policy()
+
+    with pytest.raises(RunCapExceeded, match="retries cap exceeded"):
+        cap_policy.mark_retry()
+
+
+def test_explicit_retry_resource_cap_remains_available() -> None:
+    from scripts.ag_live_bound_01_support import AgLiveBoundCaps
+
+    caps = AgLiveBoundCaps(max_retries=2)
+    assert caps.as_requested_dict()["max_retries"] == 2
+    cap_policy = caps.to_run_cap_policy()
+
+    cap_policy.mark_retry()
+    cap_policy.mark_retry()
+    with pytest.raises(RunCapExceeded, match="retries cap exceeded"):
+        cap_policy.mark_retry()
 
 
 def test_retired_utilization_retry_branch_does_not_claim_active_cap_evidence(

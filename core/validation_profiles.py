@@ -400,7 +400,10 @@ class ValidationProfile:
 # role counts remain observations unless an experiment explicitly requests a
 # cap; omitted fields intentionally flow through RunCapPolicy compatibility
 # defaults rather than becoming phase-local product policy.
-ORDINARY_DOGFOOD_CAP_POLICY = ValidationCapPolicySpec(max_scryraven_runs=1)
+ORDINARY_DOGFOOD_CAP_POLICY = ValidationCapPolicySpec(
+    max_scryraven_runs=1,
+    max_retries=0,
+)
 
 AG_LIVE_S1_PER_RUN_CAP_POLICY = ValidationCapPolicySpec(
     max_scryraven_runs=1,

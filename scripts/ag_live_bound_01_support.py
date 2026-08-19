@@ -220,7 +220,10 @@ class AgLiveBoundCaps:
     max_author_model_calls: int | None = None
     max_smart_search_judgment_model_calls: int | None = None
     max_independent_manual_source_checks: int | None = None
-    max_retries: int | None = None
+    # Retry/replacement authority is separate from role observations. Ordinary
+    # dogfood explicitly authorizes no retry unless a resource experiment says
+    # otherwise.
+    max_retries: int = 0
 
     def as_requested_dict(self) -> dict[str, int]:
         values: dict[str, int] = {
@@ -270,7 +273,11 @@ class AgLiveBoundCaps:
             max_independent_manual_source_checks=optional_int(
                 "max_independent_manual_source_checks"
             ),
-            max_retries=optional_int("max_retries"),
+            max_retries=(
+                int(requested["max_retries"])
+                if "max_retries" in requested
+                else 0
+            ),
         )
 
 
