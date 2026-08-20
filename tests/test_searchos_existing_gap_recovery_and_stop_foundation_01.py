@@ -1197,12 +1197,23 @@ def test_recovery_judgment_output_rejected_reaches_sufficiency_blocked_fap(
     assert not kernel.state.semantic_observation_admission_history
 
 
+@pytest.mark.parametrize(
+    ("error_type", "message"),
+    [
+        (RuntimeError, "unexpected recovery programming error"),
+        (KeyError, "unexpected recovery state key"),
+        (TypeError, "unexpected recovery type error"),
+    ],
+    ids=("runtime-error", "key-error", "unrelated-type-error"),
+)
 def test_unexpected_recovery_cycle_exception_is_not_blocked_terminal(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    error_type: type[Exception],
+    message: str,
 ) -> None:
     def boom(**_kwargs: Any) -> Any:
-        raise RuntimeError("unexpected recovery programming error")
+        raise error_type(message)
 
     monkeypatch.setattr(
         pipeline_orchestrator,
@@ -1213,10 +1224,7 @@ def test_unexpected_recovery_cycle_exception_is_not_blocked_terminal(
         monkeypatch,
         remain_unsupported=True,
     )
-    with pytest.raises(
-        RuntimeError,
-        match="unexpected recovery programming error",
-    ):
+    with pytest.raises(error_type):
         run_post_retirement_ordinary_pipeline(
             tmp_path,
             monkeypatch,
