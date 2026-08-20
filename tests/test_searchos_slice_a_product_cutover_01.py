@@ -956,6 +956,49 @@ def test_judgment_failure_is_typed_closed_without_read_or_fallback(
     assert harness.full_search_judgment_inputs == []
 
 
+def test_first_wave_recoverable_post_read_rejection_can_still_handoff(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        mode="Balanced",
+        query="What is Alpha's current official operating rule?",
+        core_topic="Alpha current official operating rule",
+        primary_entity="Alpha",
+        researcher_queries=["Alpha current official operating rule"],
+        read_assessment_decision="OMIT_POST_READ_ASSESSMENTS_ONCE",
+        raw_author_response=(
+            "Alpha's current official operating rule is supported. "
+            "[[1]](https://alpha.example/report-1)"
+        ),
+    )
+
+    state = harness.run_kernel.state.searchos_state
+    events = [
+        item.get("event")
+        for slot in state["slots_by_id"].values()
+        for item in slot.get("action_history") or ()
+        if isinstance(item, dict)
+    ]
+    assert "judgment_output_rejected" in events
+    assert any(
+        slot.get("posture") == "semantically_handed_off"
+        for slot in state["slots_by_id"].values()
+    )
+    assert all(
+        item.get("stale") is False
+        for slot in state["slots_by_id"].values()
+        for item in slot.get("custody_refs") or ()
+        if isinstance(item, dict)
+    )
+    readiness = outcome.execution_trace["searchos_slice_a"][
+        "readiness_projection"
+    ]
+    assert readiness["all_required_slots_slice_a_ready"] is True
+
+
 def test_exact_model_followup_is_appended_and_dispatched_through_query_plan(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

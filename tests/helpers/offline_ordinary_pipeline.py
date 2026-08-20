@@ -244,6 +244,7 @@ class OfflineOrdinaryPipelineHarness:
                     "recovery_cycle_id": dict(
                         authorized.get("slot_ref") or {}
                     ).get("recovery_cycle_id"),
+                    "custody_count": len(custody_refs),
                     "binding_ids": [
                         dict(item.get("candidate_use_option_ref") or {}).get("candidate_use_option_id")
                         for item in options
@@ -538,7 +539,10 @@ class OfflineOrdinaryPipelineHarness:
             )
             if (
                 self.read_assessment_decision
-                == "RECOVERY_FOLLOWUP_THEN_READ"
+                in {
+                    "RECOVERY_FOLLOWUP_THEN_READ",
+                    "RECOVERY_FOLLOWUP_THEN_OMIT_POST_READ_ASSESSMENTS",
+                }
                 and dict(authorized.get("slot_ref") or {}).get(
                     "recovery_cycle_id"
                 )
@@ -617,6 +621,41 @@ class OfflineOrdinaryPipelineHarness:
                 and bool(useful_materials)
             )
             if (
+                self.read_assessment_decision
+                == "RECOVERY_FOLLOWUP_THEN_OMIT_POST_READ_ASSESSMENTS"
+                and dict(authorized.get("slot_ref") or {}).get(
+                    "recovery_cycle_id"
+                )
+                and custody_refs
+            ):
+                return json.dumps(
+                    {
+                        **common,
+                        "action": "HANDOFF_UNRESOLVED",
+                        "reason": "offline_omit_post_read_assessments",
+                    }
+                )
+            if (
+                self.read_assessment_decision == "OMIT_POST_READ_ASSESSMENTS_ONCE"
+                and custody_refs
+                and not dict(authorized.get("slot_ref") or {}).get(
+                    "recovery_cycle_id"
+                )
+            ):
+                prior_post_read = sum(
+                    1
+                    for item in self.read_assessment_calls[:-1]
+                    if int(item.get("custody_count") or 0) > 0
+                )
+                if prior_post_read == 0:
+                    return json.dumps(
+                        {
+                            **common,
+                            "action": "HANDOFF_UNRESOLVED",
+                            "reason": "offline_omit_post_read_assessments_once",
+                        }
+                    )
+            if (
                 custody_refs
                 and useful_read
                 and (
@@ -644,6 +683,7 @@ class OfflineOrdinaryPipelineHarness:
                     in {
                         "FOLLOWUP_THEN_READ",
                         "RECOVERY_FOLLOWUP_THEN_READ",
+                        "RECOVERY_FOLLOWUP_THEN_OMIT_POST_READ_ASSESSMENTS",
                     }
                     and len(self.read_assessment_calls) > 1
                     else options[0]

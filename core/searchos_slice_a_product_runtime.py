@@ -52,6 +52,7 @@ from core.searchos_iterative_judgment_runtime import (
     build_searchos_revision_1_candidate_state_v1,
     candidate_use_option_ref,
     is_searchos_followup_acquisition_failure_reason,
+    is_searchos_recoverable_judgment_output_failure_reason,
     searchos_revision_1_candidate_state_ref,
     validate_searchos_append_only_lineage,
     validate_searchos_judgment_model_output,
@@ -1275,6 +1276,7 @@ def _execute_searchos_slice_a_iterative_judgment(
                 )
             )
         )
+    stop_recovery_after_output_rejection = False
 
     while True:
         state = run_kernel.state.searchos_state
@@ -1411,6 +1413,20 @@ def _execute_searchos_slice_a_iterative_judgment(
                         slot_id=slot_id,
                         reason=failure_reason,
                     )
+                    continue
+                if (
+                    recovery_cycle_ref is not None
+                    and is_searchos_recoverable_judgment_output_failure_reason(
+                        failure_reason
+                    )
+                ):
+                    # Expected recovery rejection is already recorded as
+                    # judgment_output_rejected with current READ preserved.
+                    # Stop this recovery loop so the cycle can terminalize
+                    # through existing recovery / Sufficiency / FAP. Do not
+                    # auto-handoff, and do not retry into uncaught control.
+                    stop_recovery_after_output_rejection = True
+                    break
                 continue
             run_kernel.reduce(
                 Observation.from_action(
@@ -1746,6 +1762,9 @@ def _execute_searchos_slice_a_iterative_judgment(
                     )
                 )
                 semantic_handoffs.append(deepcopy(handoff_action.inputs["semantic_handoff"]))
+
+        if stop_recovery_after_output_rejection:
+            break
 
     new_semantic_material = _semantic_passages(
         semantic_handoffs=semantic_handoffs[prior_handoff_count:],
