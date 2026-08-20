@@ -4367,6 +4367,111 @@ class RunKernel:
         )
         return deepcopy(self.state.projections[MULTICOMPONENT_SCHEDULER_STAGE])
 
+    def install_multicomponent_graph_reproof_packet_context(
+        self,
+        *,
+        component_analyst_input_packets: Mapping[str, Mapping[str, Any]],
+        requested_synthesis_directive: str,
+        configured_provider: str = "OpenAI",
+        requested_mode: str = "Balanced",
+        allow_single_component_direct_admission: bool = True,
+    ) -> dict[str, Any]:
+        """Install Analyst packets for Graph V1 wrap without scheduler drive.
+
+        This bag is the structure reducer's reproof carrier. It must not
+        initialize, lease, or drive the multi-component scheduler.
+        """
+
+        from core.multicomponent_graph_scheduling import (
+            MULTICOMPONENT_SCHEDULER_STAGE,
+            derive_multicomponent_transport_profile,
+        )
+
+        if self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE):
+            raise RunKernelTransitionError(
+                "graph reproof packet context cannot install beside an active scheduler"
+            )
+        contract = _safe_mapping(
+            self.state.current_answer_contract or self.state.initial_answer_contract
+        )
+        all_component_refs = [
+            _safe_mapping(item)
+            for item in contract.get("accepted_answer_component_refs") or ()
+        ]
+        component_refs = [
+            item
+            for item in all_component_refs
+            if "direct" in list(item.get("allowed_support_kinds") or ("direct",))
+        ]
+        component_by_id = {
+            str(item.get("component_id") or ""): item for item in component_refs
+        }
+        packets = {
+            str(key): _safe_mapping(value)
+            for key, value in component_analyst_input_packets.items()
+        }
+        if not component_by_id or set(packets) != set(component_by_id):
+            raise RunKernelTransitionError(
+                "graph reproof packet context requires one exact packet per accepted component"
+            )
+        ledger_candidate_ids = {
+            str(_safe_mapping(item).get("candidate_id") or "")
+            for item in self.state.evidence_ledger.to_projection().to_dict().get(
+                "candidate_records", ()
+            )
+            if _safe_mapping(item).get("candidate_id")
+        }
+        for component_id, packet in packets.items():
+            binding = _safe_mapping(packet.get("run_binding"))
+            packet_component = _safe_mapping(packet.get("component_ref"))
+            evidence = _safe_mapping(packet.get("component_evidence"))
+            custody = _safe_mapping(evidence.get("candidate_custody_ref"))
+            accepted_component = component_by_id[component_id]
+            if (
+                binding.get("run_id") != self.state.run_id
+                or binding.get("request_id") != self.state.request_id
+                or binding.get("accepted_contract_version")
+                != contract.get("accepted_contract_version")
+                or binding.get("accepted_contract_digest")
+                != contract.get("accepted_contract_digest")
+                or packet_component.get("component_id") != component_id
+                or packet_component.get("component_revision")
+                != accepted_component.get("component_revision")
+                or packet_component.get("component_digest")
+                != accepted_component.get("component_digest")
+                or evidence.get("evidence_status") != "available"
+                or evidence.get("evidence_ref_id") not in ledger_candidate_ids
+                or custody.get("candidate_id") != evidence.get("evidence_ref_id")
+            ):
+                raise RunKernelTransitionError(
+                    "graph reproof component packet is not current canonical input"
+                )
+        directive = _clean_text(requested_synthesis_directive, limit=360)
+        if not directive:
+            raise RunKernelTransitionError(
+                "graph reproof packet context requires a synthesis directive"
+            )
+        self.state.multicomponent_scheduler_context = {
+            "requested_synthesis_directive": directive,
+            "component_analyst_input_packets": deepcopy(packets),
+            "recovery_bindings": {},
+            "configured_provider_class": derive_multicomponent_transport_profile(
+                configured_provider
+            )["configured_provider_class"],
+            "specialist_scheduler_enabled": False,
+            "specialist_registry_projection": {},
+            "specialist_execution_policy_projection": {},
+            "single_component_direct_admission": bool(
+                allow_single_component_direct_admission
+                and len(component_refs) == 1
+                and len(all_component_refs) == 1
+                and directive == "single_component_direct_admission"
+            ),
+            "requested_mode": (_clean_text(requested_mode, limit=40) or "Balanced"),
+            "scheduler_initialized": False,
+        }
+        return deepcopy(self.state.multicomponent_scheduler_context)
+
     def grant_next_multicomponent_work_lease(self) -> dict[str, Any]:
         """Rederive readiness and grant or canonically deny its first item."""
 
@@ -8562,6 +8667,23 @@ class RunKernel:
 
         try:
             self.state.searchos_state = mark_searchos_slot_stale_or_invalid(
+                self.state.searchos_state,
+                slot_id=slot_id,
+                reason=reason,
+            )
+        except ValueError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        self.state.projections[SEARCHOS_JUDGMENT_STAGE] = deepcopy(self.state.searchos_state)
+
+    def record_searchos_followup_acquisition_failed(
+        self, *, slot_id: str, reason: str
+    ) -> None:
+        from core.searchos_iterative_judgment_runtime import (
+            record_searchos_followup_acquisition_failed,
+        )
+
+        try:
+            self.state.searchos_state = record_searchos_followup_acquisition_failed(
                 self.state.searchos_state,
                 slot_id=slot_id,
                 reason=reason,
@@ -21499,20 +21621,20 @@ class RunKernel:
                 )
             )
             if observation.status is RunStageStatus.FAILED:
-                if not scheduler_active and not searchos_recovery_active:
+                if (
+                    not scheduler_active
+                    and not searchos_recovery_active
+                    and observation.payload.get("lease_settlement")
+                ):
                     raise RunKernelTransitionError(
                         "unscheduled semantic role failure cannot claim "
                         "lease settlement"
                     )
-                settlement = (
-                    str(
+                if scheduler_active:
+                    settlement = str(
                         observation.payload.get("lease_settlement")
                         or LEASE_FAILED
                     )
-                    if scheduler_active
-                    else "searchos_recovery_failed"
-                )
-                if scheduler_active:
                     if settlement not in {LEASE_FAILED, LEASE_STALE}:
                         raise RunKernelTransitionError(
                             "semantic role failure settlement is invalid"
@@ -21560,13 +21682,16 @@ class RunKernel:
                         },
                         settlement=settlement,
                     )
+                    failure_owner = "RunKernel.MulticomponentGraphScheduler"
+                elif searchos_recovery_active:
+                    settlement = "searchos_recovery_failed"
+                    failure_owner = "RunKernel.SearchOSRecovery"
+                else:
+                    settlement = LEASE_FAILED
+                    failure_owner = "RunKernel.UnscheduledSemanticRole"
                 self.state.projections[action.stage] = {
                     "schema_version": "multicomponent_semantic_role_failure_v1",
-                    "owner": (
-                        "RunKernel.MulticomponentGraphScheduler"
-                        if scheduler_active
-                        else "RunKernel.SearchOSRecovery"
-                    ),
+                    "owner": failure_owner,
                     "canonical_state": True,
                     "role": action.inputs.get("role"),
                     "logical_evaluation_key": action.inputs.get(

@@ -51,6 +51,7 @@ from core.searchos_iterative_judgment_runtime import (
     build_searchos_read_custody_material_ref,
     build_searchos_revision_1_candidate_state_v1,
     candidate_use_option_ref,
+    is_searchos_followup_acquisition_failure_reason,
     searchos_revision_1_candidate_state_ref,
     validate_searchos_append_only_lineage,
     validate_searchos_judgment_model_output,
@@ -1599,7 +1600,7 @@ def _execute_searchos_slice_a_iterative_judgment(
                         )
                     )
                 except Exception as exc:
-                    run_kernel.mark_searchos_slot_stale_or_invalid(
+                    run_kernel.record_searchos_followup_acquisition_failed(
                         slot_id=slot_id,
                         reason=(
                             "followup_query_admission_rejected:"
@@ -1687,7 +1688,7 @@ def _execute_searchos_slice_a_iterative_judgment(
                 for binding in wave_bindings:
                     binding_iteration_refs[binding.binding_id] = iteration_ref
                 if wave.get("followup_failure_reason"):
-                    run_kernel.mark_searchos_slot_stale_or_invalid(
+                    run_kernel.record_searchos_followup_acquisition_failed(
                         slot_id=slot_id,
                         reason=(
                             "followup_discover_failed:"
@@ -4011,6 +4012,10 @@ def _project_safe_failure_class(*, posture: str, reason: Any) -> str:
         "awaiting_navigation_execution",
     }:
         return "none"
+    if is_searchos_followup_acquisition_failure_reason(reason):
+        # Acquisition failure is not lineage stale. The live state model now
+        # restores active_unjudged; this branch only covers leftover projections.
+        return "none" if posture != "stale_or_invalid" else "other_safe"
     if posture == "budget_exhausted":
         return "budget_exhausted"
     if posture == "unresolved_handoff":

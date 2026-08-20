@@ -1367,15 +1367,21 @@ def execute_multicomponent_role_call(
     except RunCapExceeded:
         raise
     except Exception as exc:
-        if scheduler_active or recovery_active:
-            failure_kind = (
-                "model_transport_failure"
-                if not isinstance(exc, MulticomponentRoleRuntimeError)
-                else "invalid_role_output"
-            )
+        unscheduled_ordinary = not scheduler_active and not recovery_active
+        if scheduler_active or recovery_active or unscheduled_ordinary:
             if str(exc) == "provider_identity_mismatch":
                 failure_kind = "provider_identity_mismatch"
             elif str(exc) == "model_transport_failure":
+                failure_kind = "model_transport_failure"
+            elif scheduler_active or recovery_active:
+                failure_kind = (
+                    "model_transport_failure"
+                    if not isinstance(exc, MulticomponentRoleRuntimeError)
+                    else "invalid_role_output"
+                )
+            elif isinstance(exc, (MulticomponentRoleRuntimeError, json.JSONDecodeError)):
+                failure_kind = "output_validation_failure"
+            else:
                 failure_kind = "model_transport_failure"
             run_kernel.reduce(
                 Observation.from_action(
@@ -1455,7 +1461,8 @@ def execute_multicomponent_role_call(
             expected_role=normalized_role,
         )
     except Exception:
-        if scheduler_active or recovery_active:
+        unscheduled_ordinary = not scheduler_active and not recovery_active
+        if scheduler_active or recovery_active or unscheduled_ordinary:
             run_kernel.reduce(
                 Observation.from_action(
                     action,

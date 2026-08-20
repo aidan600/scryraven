@@ -1418,6 +1418,77 @@ def mark_searchos_slot_stale_or_invalid(state: Mapping[str, Any], *, slot_id: st
     return _refresh_state(candidate)
 
 
+FOLLOWUP_ACQUISITION_FAILURE_REASON_PREFIXES = (
+    "followup_acquisition_failed",
+    "followup_discover_failed",
+    "followup_query_admission_rejected",
+)
+
+
+def is_searchos_followup_acquisition_failure_reason(reason: Any) -> bool:
+    """True when a slot reason names follow-up acquisition failure, not lineage stale."""
+
+    text = str(reason or "").strip().casefold()
+    if not text:
+        return False
+    return any(
+        text == prefix or text.startswith(prefix + ":") or text.startswith(prefix + "_")
+        for prefix in FOLLOWUP_ACQUISITION_FAILURE_REASON_PREFIXES
+    )
+
+
+def record_searchos_followup_acquisition_failed(
+    state: Mapping[str, Any], *, slot_id: str, reason: str
+) -> dict[str, Any]:
+    """Keep the slot in the participating loop after follow-up DISCOVER failed.
+
+    Follow-up acquisition failure is not lineage/stale collapse. Current READ
+    custody stays byte-for-byte current so the next SearchJudgment can still
+    author HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION or an honest
+    HANDOFF_UNRESOLVED. This helper does not auto-handoff.
+    """
+
+    candidate = _validated_state_copy(state)
+    slots = _mutable_mapping(candidate["slots_by_id"])
+    token = _token(slot_id, "slot_id")
+    if token not in slots:
+        raise SearchOSRuntimeError("follow-up acquisition failure references inactive slot")
+    slot = deepcopy(slots[token])
+    current_posture = slot.get("posture")
+    if current_posture not in {
+        SearchOSSlotPosture.AWAITING_FOLLOWUP_DISCOVER.value,
+        SearchOSSlotPosture.ACTIVE_UNJUDGED.value,
+    }:
+        raise SearchOSRuntimeError(
+            "follow-up acquisition failure does not follow an authorized follow-up"
+        )
+    custody_before = deepcopy(list(slot.get("custody_refs") or ()))
+    if any(_mapping(item).get("stale") is True for item in custody_before):
+        raise SearchOSRuntimeError(
+            "follow-up acquisition failure cannot taint current READ custody"
+        )
+    slot.pop("pending_discovery_job_class", None)
+    slot["posture"] = SearchOSSlotPosture.ACTIVE_UNJUDGED.value
+    bounded = _bounded_reason(reason)
+    if not is_searchos_followup_acquisition_failure_reason(bounded):
+        bounded = _bounded_reason("followup_acquisition_failed:" + bounded)
+    slot["latest_reason"] = bounded
+    slot["action_history"].append(
+        {
+            "event": "followup_acquisition_failed",
+            "reason": bounded,
+            "satisfaction_claimed": False,
+            "support_admitted": False,
+            "auto_handoff": False,
+        }
+    )
+    if deepcopy(list(slot.get("custody_refs") or ())) != custody_before:
+        raise SearchOSRuntimeError("follow-up acquisition failure mutated READ custody")
+    slots[token] = _refresh_slot(slot)
+    candidate["slots_by_id"] = slots
+    return _refresh_state(candidate)
+
+
 def record_searchos_iteration_candidate_set(
     state: Mapping[str, Any], *, candidate_set: Mapping[str, Any]
 ) -> dict[str, Any]:
@@ -5445,6 +5516,8 @@ __all__ = [
     "mark_searchos_slot_budget_exhausted",
     "mark_searchos_slot_stale_or_invalid",
     "mark_searchos_slot_unresolved",
+    "is_searchos_followup_acquisition_failure_reason",
+    "record_searchos_followup_acquisition_failed",
     "record_searchos_candidate_window",
     "record_searchos_judgment_failure",
     "record_searchos_iteration_candidate_set",

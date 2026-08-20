@@ -3084,29 +3084,74 @@ def scheduler_trace_projection(state: Mapping[str, Any]) -> dict[str, Any]:
     return validate_scheduler_state(state)
 
 
+_UNSCHEDULED_ANALYST_OBSERVATION_TYPES = frozenset(
+    {
+        "multicomponent_component_analyst_completed",
+        "multicomponent_component_analyst_resume_completed",
+    }
+)
+
+
+def _observation_mapping(raw: Any) -> dict[str, Any]:
+    if hasattr(raw, "to_dict") and callable(raw.to_dict):
+        return _mapping(raw.to_dict())
+    return _mapping(raw)
+
+
+def _safe_failure_kind(value: Any) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    normalized = value.strip()
+    if normalized not in MULTICOMPONENT_SAFE_FAILURE_KINDS:
+        return "other_safe"
+    return normalized
+
+
 def project_current_component_analyst_failure(
     *,
     state: Mapping[str, Any] | None,
     expected_run_id: str | None,
     expected_request_id: str | None,
+    observations: Sequence[Any] | None = None,
+    kernel_request_id: str | None = None,
 ) -> dict[str, str] | None:
     """Project safe facts for the exact failed initial or final Component Analyst case.
 
-    The scheduler owns the failed-required-work reference and its lease
-    settlement.  Match those references against exactly one terminal role
-    lease before returning the small role/failure/posture fragment consumed by
-    the SearchOS causal projection.  Work IDs and digests are used for
+    Scheduled work still matches the failed-required-work lease. Unscheduled
+    first-pass N1 matches exactly one failed Component Analyst observation
+    without inventing a scheduler. Work IDs and digests are used for
     currentness here but are intentionally not returned.
     """
 
     run_id = str(expected_run_id or "").strip()
     request_id = str(expected_request_id or "").strip()
-    if not run_id or not request_id or not isinstance(state, Mapping):
+    if not run_id or not request_id:
         return None
-    try:
-        scheduler = validate_scheduler_state(_mapping(state))
-    except (TypeError, ValueError):
-        return None
+    if isinstance(state, Mapping) and state:
+        try:
+            scheduler = validate_scheduler_state(_mapping(state))
+        except (TypeError, ValueError):
+            scheduler = None
+        else:
+            return _project_scheduled_component_analyst_failure(
+                scheduler,
+                run_id=run_id,
+                request_id=request_id,
+            )
+    return _project_unscheduled_component_analyst_failure(
+        observations=observations,
+        run_id=run_id,
+        request_id=request_id,
+        kernel_request_id=kernel_request_id,
+    )
+
+
+def _project_scheduled_component_analyst_failure(
+    scheduler: Mapping[str, Any],
+    *,
+    run_id: str,
+    request_id: str,
+) -> dict[str, str] | None:
     if scheduler.get("run_id") != run_id or scheduler.get("request_id") != request_id:
         return None
     if scheduler.get("status") != "blocked_required_work_failed":
@@ -3145,17 +3190,51 @@ def project_current_component_analyst_failure(
         matches.append(lease)
     if len(matches) != 1:
         return None
-
-    failure_kind = matches[0].get("settlement_reason")
-    if not isinstance(failure_kind, str) or not failure_kind.strip():
+    normalized_failure_kind = _safe_failure_kind(matches[0].get("settlement_reason"))
+    if normalized_failure_kind is None:
         return None
-    normalized_failure_kind = failure_kind.strip()
-    if normalized_failure_kind not in MULTICOMPONENT_SAFE_FAILURE_KINDS:
-        normalized_failure_kind = "other_safe"
     return {
         "role": ROLE_COMPONENT_ANALYST,
         "failure_kind": normalized_failure_kind,
         "settlement_posture": str(settlement),
+    }
+
+
+def _project_unscheduled_component_analyst_failure(
+    *,
+    observations: Sequence[Any] | None,
+    run_id: str,
+    request_id: str,
+    kernel_request_id: str | None,
+) -> dict[str, str] | None:
+    actual_request_id = str(kernel_request_id or "").strip()
+    if actual_request_id != request_id:
+        return None
+    matches: list[dict[str, Any]] = []
+    for raw in observations or ():
+        observation = _observation_mapping(raw)
+        payload = _mapping(observation.get("payload"))
+        if (
+            observation.get("run_id") != run_id
+            or observation.get("observation_type")
+            not in _UNSCHEDULED_ANALYST_OBSERVATION_TYPES
+            or observation.get("status") != "failed"
+        ):
+            continue
+        if _safe_failure_kind(payload.get("failure_kind")) is None:
+            continue
+        matches.append(observation)
+    if len(matches) != 1:
+        return None
+    normalized_failure_kind = _safe_failure_kind(
+        _mapping(matches[0].get("payload")).get("failure_kind")
+    )
+    if normalized_failure_kind is None:
+        return None
+    return {
+        "role": ROLE_COMPONENT_ANALYST,
+        "failure_kind": normalized_failure_kind,
+        "settlement_posture": LEASE_FAILED,
     }
 __all__ = [
     "EXECUTOR_REGISTERED_DETERMINISTIC",

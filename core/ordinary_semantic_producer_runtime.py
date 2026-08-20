@@ -985,7 +985,12 @@ def _exact_owned_source_requirement_ids_for_candidate(
         ):
             continue
         exact_ids.append(requirement_id)
-    return tuple(exact_ids)
+    preferred = tuple(
+        requirement_id
+        for requirement_id in exact_ids
+        if requirement_id.startswith("searchos_semantic_requirement:")
+    )
+    return preferred or tuple(exact_ids)
 
 
 def _source_requirements_by_id(

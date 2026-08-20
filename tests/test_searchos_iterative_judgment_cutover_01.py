@@ -46,6 +46,7 @@ from core.searchos_iterative_judgment_runtime import (
     mark_searchos_slot_stale_or_invalid,
     mark_searchos_slot_unresolved,
     record_searchos_candidate_window,
+    record_searchos_followup_acquisition_failed,
     record_searchos_iteration_candidate_set,
     record_searchos_judgment_failure,
     record_searchos_read_custody_material,
@@ -179,7 +180,7 @@ def _candidate(
 
 
 def _post_read_judgment_request() -> tuple[
-    dict[str, object], dict[str, object], dict[str, object]
+    dict[str, object], dict[str, object], dict[str, object], dict[str, object]
 ]:
     state = _state()
     slot_ref = state["slots_by_id"]["slot-1"]["slot_ref"]
@@ -264,7 +265,7 @@ def _post_read_judgment_request() -> tuple[
         candidate_window=window,
         read_custody_refs=[custody],
     )
-    return request, custody, candidate_use_option_ref(options[1])
+    return state, request, custody, candidate_use_option_ref(options[1])
 
 
 def _model_read_custody_assessment(
@@ -1397,7 +1398,7 @@ def test_semantic_handoff_is_not_legal_before_required_binding() -> None:
     ],
 )
 def test_strict_validator_accepts_each_exact_post_read_action(action: str) -> None:
-    request, custody, remaining_option = _post_read_judgment_request()
+    state, request, custody, remaining_option = _post_read_judgment_request()
     output = {
         "schema_version": "searchos_judgment_decision_v1",
         "action": action,
@@ -1457,7 +1458,7 @@ def test_strict_validator_rejects_invalid_post_read_assessments(
     invalid_assessment: str,
     message: str,
 ) -> None:
-    request, custody, _ = _post_read_judgment_request()
+    _state, request, custody, _ = _post_read_judgment_request()
     assessment = _model_read_custody_assessment(
         custody,
         reason_code="active_need_not_met",
@@ -1502,7 +1503,7 @@ def test_strict_validator_rejects_invalid_post_read_assessments(
 
 
 def test_strict_validator_rejects_assessment_on_exact_semantic_handoff() -> None:
-    request, custody, _ = _post_read_judgment_request()
+    _state, request, custody, _ = _post_read_judgment_request()
     with pytest.raises(
         SearchOSRuntimeError,
         match="semantic handoff requires exact READ custody refs",
@@ -2254,3 +2255,94 @@ def test_runkernel_owns_judgment_readiness_block_and_downstream_guard() -> None:
             inputs={},
             expected_observation_type=ObservationType.AUTHOR_OUTPUT_OBSERVED,
         )
+
+
+def test_followup_acquisition_failure_restores_active_unjudged_without_stale_custody() -> None:
+    state, request, custody, remaining_option = _post_read_judgment_request()
+    del remaining_option
+    followup = validate_searchos_judgment_model_output(
+        request=request,
+        model_output={
+            "schema_version": "searchos_judgment_decision_v1",
+            "action": "PROPOSE_FOLLOWUP_QUERY",
+            "followup_query": "Alpha exact post-READ follow-up query",
+            "discovery_job_class": request["allowed_followup_job_classes"][0],
+            "reason": "need one more official page",
+            "read_custody_assessments": [
+                _model_read_custody_assessment(
+                    custody,
+                    reason_code="active_need_not_met",
+                )
+            ],
+        },
+    )
+    state = reduce_searchos_judgment_decision(state, decision=followup)
+    custody_before = deepcopy(state["slots_by_id"]["slot-1"]["custody_refs"])
+    assert state["slots_by_id"]["slot-1"]["posture"] == "awaiting_followup_discover"
+    assert all(item.get("stale") is False for item in custody_before)
+
+    restored = record_searchos_followup_acquisition_failed(
+        state,
+        slot_id="slot-1",
+        reason="followup_discover_failed:provider_route_blocked",
+    )
+    slot = restored["slots_by_id"]["slot-1"]
+    assert slot["posture"] == "active_unjudged"
+    assert slot["latest_reason"].startswith("followup_discover_failed:")
+    assert slot["custody_refs"] == custody_before
+    assert all(item.get("stale") is False for item in slot["custody_refs"])
+    assert slot["action_history"][-1]["event"] == "followup_acquisition_failed"
+    assert slot["action_history"][-1]["auto_handoff"] is False
+    assert slot["action_history"][-1]["support_admitted"] is False
+    assert slot["posture"] != "semantically_handed_off"
+
+    restored, round_ref = begin_searchos_judgment_round(
+        restored,
+        slot_ids=["slot-1"],
+    )
+    restored, charge = charge_searchos_judgment_call(
+        restored,
+        reservation_ref=round_ref,
+        slot_id="slot-1",
+    )
+    assert charge
+    assert restored["slots_by_id"]["slot-1"]["posture"] == "active_unjudged"
+
+
+def test_followup_acquisition_failure_cannot_restore_true_stale_slot() -> None:
+    state, _request, custody, _remaining = _post_read_judgment_request()
+    stale = mark_searchos_slot_stale_or_invalid(
+        state,
+        slot_id="slot-1",
+        reason="candidate_packet_stale:fixture",
+    )
+    with pytest.raises(
+        SearchOSRuntimeError,
+        match="does not follow an authorized follow-up",
+    ):
+        record_searchos_followup_acquisition_failed(
+            stale,
+            slot_id="slot-1",
+            reason="followup_query_admission_rejected:ValueError",
+        )
+    slot = stale["slots_by_id"]["slot-1"]
+    assert slot["posture"] == "stale_or_invalid"
+    assert slot["latest_reason"] == "candidate_packet_stale:fixture"
+    assert slot["custody_refs"][0]["read_custody_material_id"] == (
+        custody["read_custody_material_id"]
+    )
+
+
+def test_true_stale_mark_still_fails_closed_after_followup_repair() -> None:
+    state, _request, custody, _remaining = _post_read_judgment_request()
+    stale = mark_searchos_slot_stale_or_invalid(
+        state,
+        slot_id="slot-1",
+        reason="candidate_packet_stale:fixture",
+    )
+    slot = stale["slots_by_id"]["slot-1"]
+    assert slot["posture"] == "stale_or_invalid"
+    assert slot["latest_reason"] == "candidate_packet_stale:fixture"
+    assert slot["custody_refs"][0]["read_custody_material_id"] == (
+        custody["read_custody_material_id"]
+    )

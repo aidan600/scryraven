@@ -26,7 +26,6 @@ from core.multicomponent_role_runtime import (
     ROLE_CROSS_COMPONENT_ANALYST,
     ROLE_SYNTHESIS_DPRIME,
     ROLE_SYSTEM_PROMPTS,
-    safe_packet_digest,
 )
 from core.prompts import DEFAULT_SYSTEM
 from core.run_kernel import ActionType, RunKernel
@@ -1084,7 +1083,9 @@ def test_bounded_searchos_n1_causal_projection_successful_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     scheduler_initializations: list[dict[str, Any]] = []
+    packet_contexts: list[dict[str, Any]] = []
     original_scheduler_initialize = RunKernel.initialize_multicomponent_graph_scheduler
+    original_packet_install = RunKernel.install_multicomponent_graph_reproof_packet_context
 
     def capture_scheduler_initialization(self: Any, **kwargs: Any) -> Any:
         result = original_scheduler_initialize(self, **kwargs)
@@ -1099,10 +1100,31 @@ def test_bounded_searchos_n1_causal_projection_successful_path(
         )
         return result
 
+    def capture_packet_install(self: Any, **kwargs: Any) -> Any:
+        result = original_packet_install(self, **kwargs)
+        packet_contexts.append(
+            {
+                "packets": {
+                    str(key): dict(value)
+                    for key, value in kwargs["component_analyst_input_packets"].items()
+                },
+                "directive": kwargs["requested_synthesis_directive"],
+                "scheduler_stage": self.state.projections.get(
+                    "multicomponent_graph_scheduler"
+                ),
+            }
+        )
+        return result
+
     monkeypatch.setattr(
         RunKernel,
         "initialize_multicomponent_graph_scheduler",
         capture_scheduler_initialization,
+    )
+    monkeypatch.setattr(
+        RunKernel,
+        "install_multicomponent_graph_reproof_packet_context",
+        capture_packet_install,
     )
     _establish_official_current_qualification_truth(monkeypatch)
     outcome, harness = run_post_retirement_ordinary_pipeline(
@@ -1119,8 +1141,11 @@ def test_bounded_searchos_n1_causal_projection_successful_path(
         ),
     )
 
-    assert len(scheduler_initializations) == 1
-    initialization = scheduler_initializations[0]
+    assert len(scheduler_initializations) == 0
+    assert len(packet_contexts) == 1
+    initialization = packet_contexts[0]
+    assert initialization["directive"] == "single_component_direct_admission"
+    assert initialization["scheduler_stage"] is None
     assert len(initialization["packets"]) == 1
     [analyst_packet] = initialization["packets"].values()
     assert analyst_packet["supported_query_class"] == (
@@ -1137,10 +1162,11 @@ def test_bounded_searchos_n1_causal_projection_successful_path(
     assert evidence["evidence_status"] == "available"
     assert evidence["evidence_ref_id"]
     assert custody["candidate_id"] == evidence["evidence_ref_id"]
-    ready_work = list(initialization["ready_work"])
-    assert ready_work
-    assert ready_work[0]["role"] == ROLE_COMPONENT_ANALYST
-    assert ready_work[0]["input_packet_digest"] == safe_packet_digest(analyst_packet)
+    assert harness.run_kernel.state.projections.get("multicomponent_graph_scheduler") is None
+    graph = dict(harness.run_kernel.state.projections["multicomponent_component_work_graph_v1"])
+    assert graph["dependency_posture"] == "single_component_direct_admission"
+    assert graph["graph_status"] == "ready"
+    assert ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST] in harness.model_system_prompts
 
     projection = build_bounded_searchos_n1_causal_projection(
         searchos_slice_a_projection=dict(outcome.execution_trace["searchos_slice_a"]),
@@ -1203,7 +1229,7 @@ def test_searchos_receiver_block_cannot_report_completed_or_originate_analyst(
 
     monkeypatch.setattr(
         multicomponent,
-        "_drive_run_kernel_selected_semantic_work",
+        "_execute_first_pass_n1_component_analyst",
         block_before_analyst_dispatch,
     )
     outcome, harness = run_post_retirement_ordinary_pipeline(
@@ -1396,7 +1422,6 @@ def test_bounded_searchos_n1_projects_current_component_analyst_failure(
     failure_mode: str,
     expected_failure_kind: str,
 ) -> None:
-    from copy import deepcopy
     from dataclasses import replace
 
     from core.multicomponent_graph_scheduling import (
@@ -1469,32 +1494,55 @@ def test_bounded_searchos_n1_projects_current_component_analyst_failure(
         for prompt in harness.model_system_prompts
     )
 
-    scheduler = harness.run_kernel.state.projections[MULTICOMPONENT_SCHEDULER_STAGE]
+    scheduler = harness.run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
+    assert scheduler is None
+    kernel = harness.run_kernel
     assert project_current_component_analyst_failure(
         state=scheduler,
         expected_run_id=outcome.run_id,
         expected_request_id=outcome.session_id,
+        observations=kernel.state.observations,
+        kernel_request_id=kernel.state.request_id,
     ) == projection["component_analyst_failure"]
     assert project_current_component_analyst_failure(
         state=scheduler,
         expected_run_id="stale-run",
         expected_request_id=outcome.session_id,
+        observations=kernel.state.observations,
+        kernel_request_id=kernel.state.request_id,
     ) is None
 
-    wrong_role = deepcopy(scheduler)
-    wrong_role["failed_required_work_ref"]["role"] = ROLE_COMPONENT_DPRIME
+    wrong_role = [
+        item.to_dict() if hasattr(item, "to_dict") else dict(item)
+        for item in kernel.state.observations
+    ]
+    for item in wrong_role:
+        if item.get("observation_type") in {
+            "multicomponent_component_analyst_completed",
+            "multicomponent_component_analyst_resume_completed",
+        }:
+            item["observation_type"] = "multicomponent_component_dprime_completed"
     assert project_current_component_analyst_failure(
-        state=wrong_role,
+        state=scheduler,
         expected_run_id=outcome.run_id,
         expected_request_id=outcome.session_id,
+        observations=wrong_role,
+        kernel_request_id=kernel.state.request_id,
     ) is None
 
-    unrelated_work = deepcopy(scheduler)
-    unrelated_work["failed_required_work_ref"]["work_id"] = "unrelated-work"
+    unrelated_work = [
+        item.to_dict() if hasattr(item, "to_dict") else dict(item)
+        for item in kernel.state.observations
+    ]
+    for item in unrelated_work:
+        if item.get("status") == "failed":
+            item["run_id"] = "unrelated-run"
     assert project_current_component_analyst_failure(
-        state=unrelated_work,
+        state=scheduler,
         expected_run_id=outcome.run_id,
         expected_request_id=outcome.session_id,
+        observations=unrelated_work,
+        kernel_request_id=kernel.state.request_id,
     ) is None
 
 
@@ -1583,13 +1631,23 @@ def test_bounded_searchos_n1_rejects_legacy_thin_component_analyst_output(
         prompt == ROLE_SYSTEM_PROMPTS[ROLE_CROSS_COMPONENT_ANALYST]
         for prompt in harness.model_system_prompts
     )
-    scheduler = harness.run_kernel.state.projections[MULTICOMPONENT_SCHEDULER_STAGE]
+    scheduler = harness.run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
+    assert scheduler is None
+    kernel = harness.run_kernel
     assert project_current_component_analyst_failure(
         state=scheduler,
         expected_run_id=outcome.run_id,
         expected_request_id=outcome.session_id,
+        observations=kernel.state.observations,
+        kernel_request_id=kernel.state.request_id,
     ) == projection["component_analyst_failure"]
-    assert scheduler["failed_required_work_ref"]["role"] == ROLE_COMPONENT_ANALYST
+    assert kernel.state.projections[
+        next(
+            stage
+            for stage in kernel.state.projections
+            if str(stage).startswith("multicomponent_role:component_analyst:")
+        )
+    ]["role"] == ROLE_COMPONENT_ANALYST
 
 
 def test_bounded_searchos_n1_causal_projection_privacy_allowlist() -> None:
@@ -2518,7 +2576,7 @@ def test_bounded_searchos_n1_causal_projection_true_stale_or_invalid() -> None:
                 {"action": "REQUEST_READ_PAGE"},
                 {"event": "stale_or_invalid"},
             ],
-            reason="followup_discover_failed:fixture",
+            reason="candidate_packet_stale:fixture",
         ),
     )
     assert projection is not None
@@ -2531,6 +2589,33 @@ def test_bounded_searchos_n1_causal_projection_true_stale_or_invalid() -> None:
     assert slot["stale_or_invalid_transition_observed"] is True
     assert slot["semantic_handoff_present"] is False
     assert slot["safe_failure_class"] == "stale_or_invalid"
+
+
+def test_bounded_searchos_n1_causal_projection_followup_acquisition_failure_stays_unjudged() -> None:
+    projection = build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=_terminal_cause_slice_a_fixture(
+            posture="active_unjudged",
+            action_history=[
+                {"action": "PROPOSE_FOLLOWUP_QUERY"},
+                {
+                    "event": "followup_acquisition_failed",
+                    "auto_handoff": False,
+                    "support_admitted": False,
+                },
+            ],
+            reason="followup_discover_failed:provider_route_blocked",
+        ),
+    )
+    assert projection is not None
+    slot = _required_terminal_cause(projection)
+    assert slot["canonical_slot_posture"] == "active_unjudged"
+    assert slot["final_posture"] == "active_unjudged"
+    assert slot["last_searchjudgment_action"] == "PROPOSE_FOLLOWUP_QUERY"
+    assert slot["semantic_handoff_authorization_attempted"] is False
+    assert slot["semantic_handoff_sealed"] is False
+    assert slot["stale_or_invalid_transition_observed"] is False
+    assert slot["semantic_handoff_present"] is False
+    assert slot["safe_failure_class"] == "none"
 
 
 def test_bounded_searchos_n1_causal_projection_handoff_sealed_then_invalidated() -> None:
