@@ -1354,6 +1354,87 @@ def record_searchos_judgment_failure(
     return _refresh_state(candidate)
 
 
+_RECOVERABLE_JUDGMENT_OUTPUT_FAILURE_PREFIX = "model_output_invalid:"
+_RECOVERABLE_JUDGMENT_OUTPUT_FAILURE_DETAILS = (
+    "post-read_action_requires_exact_read_insufficient_assessments",
+)
+
+
+def is_searchos_recoverable_judgment_output_failure_reason(reason: Any) -> bool:
+    """True for the post-READ assessment miss, not stale or pre-READ malformed output."""
+
+    text = str(reason or "").strip().casefold()
+    if not text.startswith(_RECOVERABLE_JUDGMENT_OUTPUT_FAILURE_PREFIX):
+        return False
+    detail = text[len(_RECOVERABLE_JUDGMENT_OUTPUT_FAILURE_PREFIX) :]
+    return detail in _RECOVERABLE_JUDGMENT_OUTPUT_FAILURE_DETAILS
+
+
+def record_searchos_recoverable_judgment_output_rejected(
+    state: Mapping[str, Any], *, charge_ref: Mapping[str, Any], reason: str
+) -> dict[str, Any]:
+    """Spend a malformed SearchJudgment call without collapsing current READ.
+
+    Invalid post-READ assessments and other non-stale model-output misses are
+    not lineage collapse. Current READ custody stays current so a later
+    SearchJudgment can still author HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION
+    or an honest HANDOFF_UNRESOLVED. This helper does not auto-handoff.
+    """
+
+    candidate = _validated_state_copy(state)
+    supplied_charge = _required_ref(charge_ref, "charge_ref")
+    charge_id = _token(supplied_charge.get("charge_id"), "charge_id")
+    budget = _mutable_mapping(candidate["budget"])
+    charge = next(
+        (item for item in budget["charge_history"] if item.get("charge_id") == charge_id),
+        None,
+    )
+    if not charge:
+        raise SearchOSRuntimeError("recoverable judgment rejection charge is stale")
+    if _compact_ref(supplied_charge) != _compact_ref(charge):
+        raise SearchOSRuntimeError("recoverable judgment rejection charge was altered")
+    bounded = _bounded_reason(reason)
+    if not is_searchos_recoverable_judgment_output_failure_reason(bounded):
+        raise SearchOSRuntimeError(
+            "judgment output rejection is not a recoverable model-output miss"
+        )
+    slot_id = _token(charge.get("slot_id"), "slot_id")
+    slots = _mutable_mapping(candidate["slots_by_id"])
+    slot = deepcopy(slots[slot_id])
+    current_posture = slot.get("posture")
+    if current_posture not in {
+        SearchOSSlotPosture.ACTIVE_UNJUDGED.value,
+        SearchOSSlotPosture.JUDGMENT_FAILED.value,
+    }:
+        raise SearchOSRuntimeError(
+            "recoverable judgment rejection does not follow an authorized judgment"
+        )
+    custody_before = deepcopy(list(slot.get("custody_refs") or ()))
+    if any(_mapping(item).get("stale") is True for item in custody_before):
+        raise SearchOSRuntimeError(
+            "recoverable judgment rejection cannot taint current READ custody"
+        )
+    slot["posture"] = SearchOSSlotPosture.ACTIVE_UNJUDGED.value
+    slot["latest_reason"] = bounded
+    slot["action_history"].append(
+        {
+            "event": "judgment_output_rejected",
+            "charge_ref": _compact_ref(charge),
+            "reason": bounded,
+            "deterministic_semantic_fallback_invoked": False,
+            "auto_handoff": False,
+            "support_admitted": False,
+        }
+    )
+    if deepcopy(list(slot.get("custody_refs") or ())) != custody_before:
+        raise SearchOSRuntimeError("recoverable judgment rejection mutated READ custody")
+    slots[slot_id] = _refresh_slot(slot)
+    budget["failed_logical_judgment_calls"] = int(budget["failed_logical_judgment_calls"]) + 1
+    candidate["slots_by_id"] = slots
+    candidate["budget"] = budget
+    return _refresh_state(candidate)
+
+
 def mark_searchos_slot_budget_exhausted(state: Mapping[str, Any], *, slot_id: str, reason: str) -> dict[str, Any]:
     candidate = _validated_state_copy(state)
     slots = _mutable_mapping(candidate["slots_by_id"])
@@ -5517,9 +5598,11 @@ __all__ = [
     "mark_searchos_slot_stale_or_invalid",
     "mark_searchos_slot_unresolved",
     "is_searchos_followup_acquisition_failure_reason",
+    "is_searchos_recoverable_judgment_output_failure_reason",
     "record_searchos_followup_acquisition_failed",
     "record_searchos_candidate_window",
     "record_searchos_judgment_failure",
+    "record_searchos_recoverable_judgment_output_rejected",
     "record_searchos_iteration_candidate_set",
     "record_searchos_interpretation_binding",
     "record_searchos_read_custody_material",

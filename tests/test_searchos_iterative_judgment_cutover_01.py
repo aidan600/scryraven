@@ -42,6 +42,7 @@ from core.searchos_iterative_judgment_runtime import (
     build_searchos_slice_a_readiness_v1,
     candidate_use_option_ref,
     charge_searchos_judgment_call,
+    is_searchos_recoverable_judgment_output_failure_reason,
     mark_searchos_slot_budget_exhausted,
     mark_searchos_slot_stale_or_invalid,
     mark_searchos_slot_unresolved,
@@ -51,6 +52,7 @@ from core.searchos_iterative_judgment_runtime import (
     record_searchos_judgment_failure,
     record_searchos_read_custody_material,
     record_searchos_readiness_projection,
+    record_searchos_recoverable_judgment_output_rejected,
     record_searchos_semantic_handoff,
     reduce_searchos_judgment_decision,
     return_searchos_pre_call_reservation,
@@ -2343,6 +2345,82 @@ def test_true_stale_mark_still_fails_closed_after_followup_repair() -> None:
     slot = stale["slots_by_id"]["slot-1"]
     assert slot["posture"] == "stale_or_invalid"
     assert slot["latest_reason"] == "candidate_packet_stale:fixture"
+    assert slot["custody_refs"][0]["read_custody_material_id"] == (
+        custody["read_custody_material_id"]
+    )
+
+
+def test_post_read_incomplete_assessment_is_recoverable_model_output() -> None:
+    assert is_searchos_recoverable_judgment_output_failure_reason(
+        "model_output_invalid:"
+        "post-read_action_requires_exact_read_insufficient_assessments"
+    )
+    assert not is_searchos_recoverable_judgment_output_failure_reason(
+        "model_unavailable"
+    )
+    assert not is_searchos_recoverable_judgment_output_failure_reason(
+        "model_output_invalid:judgment_nomination_is_stale"
+    )
+    assert not is_searchos_recoverable_judgment_output_failure_reason(
+        "model_output_invalid:judgment_output_contains_unsupported_fields"
+    )
+
+
+def test_recoverable_judgment_output_rejection_preserves_current_read_custody() -> None:
+    state, _request, custody, _remaining = _post_read_judgment_request()
+    del custody
+    state, round_ref = begin_searchos_judgment_round(state, slot_ids=["slot-1"])
+    state, charge = charge_searchos_judgment_call(
+        state,
+        reservation_ref=round_ref,
+        slot_id="slot-1",
+    )
+    custody_before = deepcopy(state["slots_by_id"]["slot-1"]["custody_refs"])
+    restored = record_searchos_recoverable_judgment_output_rejected(
+        state,
+        charge_ref=charge,
+        reason=(
+            "model_output_invalid:"
+            "post-read_action_requires_exact_read_insufficient_assessments"
+        ),
+    )
+    slot = restored["slots_by_id"]["slot-1"]
+    assert slot["posture"] == "active_unjudged"
+    assert slot["custody_refs"] == custody_before
+    assert all(item.get("stale") is False for item in slot["custody_refs"])
+    assert slot["action_history"][-1]["event"] == "judgment_output_rejected"
+    assert slot["action_history"][-1]["auto_handoff"] is False
+    assert slot["action_history"][-1]["support_admitted"] is False
+    assert slot["posture"] != "semantically_handed_off"
+
+
+def test_recoverable_judgment_output_rejection_cannot_restore_true_stale_slot() -> None:
+    state, _request, custody, _remaining = _post_read_judgment_request()
+    state, round_ref = begin_searchos_judgment_round(state, slot_ids=["slot-1"])
+    state, charge = charge_searchos_judgment_call(
+        state,
+        reservation_ref=round_ref,
+        slot_id="slot-1",
+    )
+    stale = mark_searchos_slot_stale_or_invalid(
+        state,
+        slot_id="slot-1",
+        reason="candidate_packet_stale:fixture",
+    )
+    with pytest.raises(
+        SearchOSRuntimeError,
+        match="does not follow an authorized judgment",
+    ):
+        record_searchos_recoverable_judgment_output_rejected(
+            stale,
+            charge_ref=charge,
+            reason=(
+                "model_output_invalid:"
+                "post-read_action_requires_exact_read_insufficient_assessments"
+            ),
+        )
+    slot = stale["slots_by_id"]["slot-1"]
+    assert slot["posture"] == "stale_or_invalid"
     assert slot["custody_refs"][0]["read_custody_material_id"] == (
         custody["read_custody_material_id"]
     )

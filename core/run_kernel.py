@@ -16644,7 +16644,9 @@ class RunKernel:
             )
         elif action.action_type is ActionType.SEARCHOS_JUDGMENT_DECIDE:
             from core.searchos_iterative_judgment_runtime import (
+                is_searchos_recoverable_judgment_output_failure_reason,
                 record_searchos_judgment_failure,
+                record_searchos_recoverable_judgment_output_rejected,
                 reduce_searchos_judgment_decision,
                 validate_searchos_judgment_model_output,
             )
@@ -16660,13 +16662,28 @@ class RunKernel:
                     failure_reason = _clean_text(
                         observation.payload.get("failure_reason"), limit=240
                     ) or "model_judgment_failed"
-                    self.state.searchos_state = record_searchos_judgment_failure(
-                        self.state.searchos_state,
-                        charge_ref=charge_ref,
-                        reason=failure_reason,
-                    )
+                    if is_searchos_recoverable_judgment_output_failure_reason(
+                        failure_reason
+                    ):
+                        self.state.searchos_state = (
+                            record_searchos_recoverable_judgment_output_rejected(
+                                self.state.searchos_state,
+                                charge_ref=charge_ref,
+                                reason=failure_reason,
+                            )
+                        )
+                        projection_schema = (
+                            "searchos_judgment_output_rejected_v1"
+                        )
+                    else:
+                        self.state.searchos_state = record_searchos_judgment_failure(
+                            self.state.searchos_state,
+                            charge_ref=charge_ref,
+                            reason=failure_reason,
+                        )
+                        projection_schema = "searchos_judgment_failure_v1"
                     projection = {
-                        "schema_version": "searchos_judgment_failure_v1",
+                        "schema_version": projection_schema,
                         "owner": "RunKernel.SearchOSIterativeJudgment",
                         "judgment_request_ref": {
                             "judgment_request_id": request.get(
