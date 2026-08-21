@@ -1,32 +1,25 @@
-# Cursor Local Windows Phase Execution Rule
+# Optional Cursor Local Windows Worktree Rule
 
-Status: Canonical owner for disposable Cursor local Windows phase execution.
+Status: Opt-in safety owner for an explicitly licensed dedicated Cursor worktree.
 
-This rule owns phase topology, workspace visibility, repository-edit boundaries,
-command approvals, Windows-safe editing, external artifacts, and deterministic
-phase close. It does not authorize live calls, private-data access, or product
-changes.
+The ordinary ScryRaven workspace is `C:\Users\aidan\ScryRaven`: clean current
+`main` followed by one feature branch in the same checkout. This rule applies
+only when a phase brief or maintainer explicitly licenses a dedicated worktree.
+It does not create such a license or authorize live calls, private-data access,
+product changes, publication, or branch deletion.
 
-## Phase topology and visibility
+## Worktree location and visibility
 
-Use a short filesystem slug and this sibling layout:
+The explicit phase license must name the dedicated worktree path. Do not infer
+or invent a canonical parent or directory layout. The path must be outside the
+ordinary checkout and outside every path excluded by `.cursorignore`. Open the
+worktree as the Cursor project root and confirm direct editor tools can read it.
 
-```text
-%USERPROFILE%\sr-phases\<short-phase-slug>\
-  worktree\
-  cache\
-  tmp\
-  evidence\
-  final\
-```
-
-Set `PhaseRoot` to the slug directory and derive the absolute `Worktree`,
-`Cache`, `Tmp`, `Evidence`, and `Final` paths from `PhaseRoot`, never from
-`Worktree`. The worktree must be outside the main repository and outside every
-path excluded by `.cursorignore`. Open `Worktree` as the Cursor project root and
-confirm direct editor tools can read it. Cache, temporary files, evidence, final
-packets, and product outputs belong in the sibling paths, never in the Git
-worktree.
+Generated artifacts do not belong in the Git worktree. Use the repository's
+existing output controls and external cache and temporary paths. If the phase
+also licenses evidence or final packets, place them in its explicitly named
+external locations. Do not create directory ceremony that the phase does not
+need.
 
 ## Editing and command boundaries
 
@@ -36,7 +29,7 @@ PowerShell, Python, Shell, or another command as a replacement repository
 editor. Avoid text-mode whole-file rewrites that could alter Windows line
 endings. Prefer small direct patches that preserve the existing line endings.
 
-Keep inspection, editing, validation, commit, publication, and cleanup as
+Keep inspection, editing, validation, commit, and publication as
 separate operations and commands. Commands must be single-purpose. Before an
 unavoidable command approval, provide this short human-readable envelope:
 
@@ -57,37 +50,29 @@ bounded command that needs it.
 
 ## External validation and product output
 
-Configure tools so all generated artifacts remain outside `Worktree`. A
-representative Python validation posture is:
+Configure tools so all generated artifacts remain outside the worktree. With
+explicit external cache and temporary paths, a representative Python validation
+posture is:
 
 ```powershell
 $env:PYTHONDONTWRITEBYTECODE = '1'
-$env:RUFF_CACHE_DIR = Join-Path $Cache 'ruff'
+$env:RUFF_CACHE_DIR = Join-Path $ExternalCache 'ruff'
 
 py -m pytest -q <focused-tests> `
   -p no:cacheprovider `
-  --basetemp (Join-Path $Tmp 'pytest')
+  --basetemp (Join-Path $ExternalTmp 'pytest')
 ```
 
 Product or evaluation commands must use an existing supported output control
-pointing beneath `Evidence` or `Final`. A command that would default to
-`Worktree\output` must not run until redirected. Do not invent a new product
-environment variable to redirect it.
+pointing to the explicitly licensed external location. A command that would
+default to the worktree's `output` directory must not run until redirected. Do
+not invent a new product environment variable to redirect it.
 
-## Deterministic phase close
+## Phase close
 
-After the phase PR merges, use the repository-owned merged-phase cleanup command
-rather than reconstructing an ad-hoc PowerShell cleanup sequence. See
-[Post-merge local phase cleanup](ARCHITECTURE_GROOVE_PLAYBOOK.md#post-merge-local-phase-cleanup)
-and [Windows Sandbox Publication Rule](CODEX_LOCAL_WINDOWS_SANDBOX_PUBLICATION_RULE.md).
-
-Pre-cleanup operator checklist remains:
-
-1. Finish or stop all phase commands.
-2. Record the expected Git status and final commit.
-3. Re-root Cursor and terminal working directories away from `Worktree`.
-4. Confirm the exact reviewed head, phase branch, and phase root before invoking
-   `scripts/cleanup_merged_phase.ps1`.
-5. Troubleshoot only from the helper's safe blocker output. Do not improvise with
-   force removal, long-path deletion, process killing, reset, clean, `-D`, or
-   `worktree remove --force`.
+This exception defines no automatic close or cleanup operation. After merge,
+follow the ordinary post-merge safety posture in the
+[Windows Sandbox Publication Rule](CODEX_LOCAL_WINDOWS_SANDBOX_PUBLICATION_RULE.md).
+Any worktree removal or branch deletion requires separate, explicit maintainer
+authorization. Never improvise with force removal, process killing, reset,
+clean, `-D`, or `worktree remove --force`.

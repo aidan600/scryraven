@@ -180,41 +180,60 @@ def test_guidance_map_stays_a_compact_resolvable_router() -> None:
         assert (GUIDANCE.parent / target).resolve().is_file(), target
 
 
-def test_cursor_windows_phase_execution_contract_is_routed_and_bounded() -> None:
+def test_ordinary_checkout_is_default_and_worktrees_are_opt_in() -> None:
     assert CURSOR_PHASE.is_file()
-    canonical = _collapsed(CURSOR_PHASE).casefold()
-    guidance = _read(GUIDANCE)
+    root = _collapsed(AGENTS).casefold()
+    playbook = _collapsed(PLAYBOOK).casefold()
+    publication = _collapsed(PUBLICATION).casefold()
+    worktree_rule = _collapsed(CURSOR_PHASE).casefold()
+    guidance = _collapsed(GUIDANCE).casefold()
     hygiene = _collapsed(COMMAND_HYGIENE).casefold()
     addenda = _collapsed(ADDENDA).casefold()
 
-    owner_name = "CURSOR_LOCAL_WINDOWS_PHASE_EXECUTION_RULE.md"
-    assert owner_name in guidance
-    assert (GUIDANCE.parent / owner_name).resolve().is_file()
-    assert owner_name.casefold() in hygiene
-    assert "local cursor windows workspace" in addenda
-    assert owner_name.casefold() in addenda
-    for field in (
-        "phase root:",
-        "worktree:",
-        "cache:",
-        "tmp:",
-        "evidence:",
-        "final:",
-        "cursor root is readable and not ignored: yes",
+    ordinary_owners = " ".join((root, playbook, publication, hygiene))
+    for requirement in (
+        r"c:\users\aidan\scryraven",
+        "clean current `main`",
+        "one feature branch",
+        "same checkout",
     ):
-        assert field in addenda
+        assert requirement in ordinary_owners
 
     for requirement in (
+        "opt-in",
+        "explicitly licensed",
         "outside every path excluded by `.cursorignore`",
-        "cache`, `tmp`, `evidence`, and `final` paths from `phaseroot`",
         "direct editor or patch tools for every repository edit",
         "do not use powershell, python, shell, or another command as a replacement repository editor",
-        "inspection, editing, validation, commit, publication, and cleanup",
-        "all generated artifacts remain outside `worktree`",
-        "remove the clean worktree without force",
-        "on a lock, path, or cleanup failure, stop and report",
+        "no automatic close or cleanup operation",
+        "worktree removal or branch deletion requires separate, explicit maintainer authorization",
     ):
-        assert requirement in canonical
+        assert requirement in worktree_rule
+
+    assert "explicit dedicated cursor worktree exception" in addenda
+    assert "explicitly opts into a dedicated worktree" in addenda
+    assert "does not fill out this addendum" in addenda
+    assert "optional cursor local windows worktree rule" in guidance
+    assert "optional cursor local windows worktree rule" in hygiene
+
+    retired_helper_stem = "_".join(("cleanup", "merged", "phase"))
+    retired_helper_names = tuple(f"{retired_helper_stem}.{suffix}" for suffix in ("py", "ps1"))
+    active_owners = "\n".join(
+        _read(path)
+        for path in (AGENTS, PLAYBOOK, PUBLICATION, GUIDANCE, CURSOR_PHASE, ADDENDA, COMMAND_HYGIENE)
+    ).casefold()
+    for retired_name in retired_helper_names:
+        assert retired_name not in active_owners
+        assert not (ROOT / "scripts" / retired_name).exists()
+    assert "sr-phases" not in active_owners
+
+    for safety in (
+        "do not merge, rebase, force-push, delete branches",
+        "generated, private, and transient data",
+        "explicit phase authorization",
+        "live calls",
+    ):
+        assert safety in " ".join((root, publication, hygiene))
 
     cursorignore_bytes = CURSORIGNORE.read_bytes()
 
@@ -386,19 +405,19 @@ def test_execution_surfaces_are_command_level_and_bound_product_claims() -> None
     assert "Claim forbidden:" in proof
 
 
-def test_revised_roadmap_has_one_unified_searchos_rebaseline_gate() -> None:
-    roadmap = _read(ROADMAP)
+def test_roadmap_has_one_current_decision_gate() -> None:
+    roadmap = _collapsed(ROADMAP)
 
     assert "Completed Proof: Post-Retirement Product Topology" in roadmap
     assert "Completed Repair: Validation and Execution-Surface Ergonomics Closure" in roadmap
-    assert roadmap.count("## Active Decision Gate: Unified SearchOS Front-Half Rebaseline") == 1
+    assert roadmap.count("## Active Decision Gate:") == 1
+    assert "## Active Decision Gate: ANALYSTOS COMPONENT-PATH REPLACEMENT" in roadmap
     assert roadmap.count("## Active Next:") == 0
-    assert "Option C modified into a unified iterative loop" in roadmap
-    assert "Phase 1 - Sparse uncertainty-aware planning" in roadmap
-    assert "Phase 2 - Unified iterative acquisition" in roadmap
-    assert "Phase 3 - Carrier consolidation + product proof" in roadmap
-    assert "smallest owning repair" in roadmap
-    assert "another product pulse" in roadmap
+    assert "The current implementation phase is direct component-path replacement" in roadmap
+    assert "This gate does not reopen topology selection" in roadmap
+    assert "lawful SearchOS N=1 handoff" in roadmap
+    assert "strong Component Analyst case/self-audit" in roadmap
+    assert "direct RunKernel component admission" in roadmap
 
 
 def test_product_evidence_harness_and_testing_rules_are_durable() -> None:
