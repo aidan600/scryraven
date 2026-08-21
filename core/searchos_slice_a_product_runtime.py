@@ -1607,6 +1607,16 @@ def _execute_searchos_slice_a_iterative_judgment(
                         navigation_result["fetch_read_content_packet"]
                     )
             elif decision_action is SearchOSJudgmentAction.PROPOSE_FOLLOWUP_QUERY:
+                # The reducer can terminalize a repeated PROPOSE decision at
+                # the follow-up nomination budget boundary.  The projection
+                # still carries the model action, but that terminal state no
+                # longer owns follow-up acquisition authority.  Do not let
+                # the stale action enter QueryPlan/discover/candidate-set
+                # orchestration after the exact AWAITING posture is gone.
+                if run_kernel.state.searchos_state["slots_by_id"][slot_id][
+                    "posture"
+                ] != SearchOSSlotPosture.AWAITING_FOLLOWUP_DISCOVER.value:
+                    continue
                 if execute_followup_discover is None:
                     run_kernel.mark_searchos_slot_unresolved(
                         slot_id=slot_id,

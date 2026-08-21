@@ -41,6 +41,7 @@ from core.searchos_slice_a_product_runtime import (
 )
 from tests.helpers.offline_ordinary_pipeline import (
     OfflineOrdinaryPipelineHarness,
+    PostRetirementOrdinaryPipelineHarness,
     run_post_retirement_ordinary_pipeline,
 )
 
@@ -1211,6 +1212,112 @@ def test_failed_followup_wave_restores_searchos_without_candidate_admission(
         event.get("event") == "followup_acquisition_failed"
         for event in slot["action_history"]
     )
+    assert not any(
+        event.get("event") == "iteration_candidate_set_admitted"
+        for event in slot["action_history"]
+    )
+
+
+def test_repeated_followup_nomination_budget_does_not_reenter_discover(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    initial_rows = [
+        {
+            "title": "Alpha initial directional candidate",
+            "url": "https://alpha.example/initial",
+            "text": "Initial directional context does not answer the current rule.",
+        }
+    ]
+    original_model = PostRetirementOrdinaryPipelineHarness.ask_model
+    judgment_calls = 0
+
+    def repeatedly_propose_followup(
+        harness: PostRetirementOrdinaryPipelineHarness,
+        prompt: str,
+        system_prompt: str,
+        **kwargs: Any,
+    ) -> str:
+        nonlocal judgment_calls
+        if not system_prompt.startswith(SEARCHOS_JUDGMENT_SYSTEM_PROMPT):
+            return original_model(harness, prompt, system_prompt, **kwargs)
+        judgment_calls += 1
+        original = original_model(harness, prompt, system_prompt, **kwargs)
+        if judgment_calls == 1:
+            return original
+        payload = json.loads(prompt)
+        authorized = dict(payload.get("authorized_request") or {})
+        contract = dict(payload.get("decision_contract") or {})
+        return json.dumps(
+            {
+                "schema_version": contract["decision_schema_version"],
+                "action": "PROPOSE_FOLLOWUP_QUERY",
+                "followup_query": "Alpha repeated follow-up query",
+                "discovery_job_class": (
+                    list(authorized["allowed_followup_job_classes"])[0]
+                ),
+                "reason": "offline repeated follow-up nomination",
+            }
+        )
+
+    monkeypatch.setattr(
+        PostRetirementOrdinaryPipelineHarness,
+        "ask_model",
+        repeatedly_propose_followup,
+    )
+    original_dispatch = pipeline_orchestrator.execute_main_retrieval_pass_from_scope
+    dispatch_calls = 0
+
+    def fail_every_followup_dispatch(
+        scope: dict[str, Any],
+        *,
+        retrieval_pass_records: list[dict[str, Any]],
+    ) -> Any:
+        nonlocal dispatch_calls
+        dispatch_calls += 1
+        if dispatch_calls >= 2:
+            raise RuntimeError("offline repeated follow-up acquisition failure")
+        return original_dispatch(
+            scope,
+            retrieval_pass_records=retrieval_pass_records,
+        )
+
+    monkeypatch.setattr(
+        pipeline_orchestrator,
+        "execute_main_retrieval_pass_from_scope",
+        fail_every_followup_dispatch,
+    )
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        # Fast intentionally has one follow-up nomination per slot.  After
+        # the first acquisition failure the next stale PROPOSE projection
+        # must terminalize at the reducer budget boundary and never re-enter
+        # QueryPlan/discover scheduling.
+        mode="Fast",
+        query="What is Alpha's current official operating rule?",
+        core_topic="Alpha current official operating rule",
+        primary_entity="Alpha",
+        researcher_queries=["Alpha current official operating rule"],
+        read_assessment_decision="FOLLOWUP_THEN_READ",
+        evidence_rows=initial_rows,
+        followup_evidence_rows=[],
+    )
+
+    assert judgment_calls >= 2
+    assert dispatch_calls == 2
+    assert harness.searchos_product_result is not None
+    assert harness.searchos_product_result.iteration_candidate_sets == ()
+    searchos = dict(outcome.execution_trace["searchos_slice_a"])
+    assert searchos["iteration_candidate_set_refs"] == []
+    slot = next(
+        iter(harness.run_kernel.state.searchos_state["slots_by_id"].values())
+    )
+    assert slot["posture"] == "budget_exhausted"
+    assert sum(
+        event.get("event") == "followup_acquisition_failed"
+        for event in slot["action_history"]
+    ) == 1
     assert not any(
         event.get("event") == "iteration_candidate_set_admitted"
         for event in slot["action_history"]
