@@ -46,6 +46,7 @@ REQUIRED_MODE = _DEFAULT_PROFILE.required_mode
 REQUIRED_DOMAIN = _DEFAULT_PROFILE.required_include_domains[0]
 
 LIVE_PACKET_SUCCESS = "success"
+LIVE_PACKET_BLOCKED_FAP = "blocked_final_answer_packet"
 LIVE_PACKET_CAP_OVERFLOW = "cap_overflow"
 LIVE_PACKET_PIPELINE_FAILURE = "pipeline_failure"
 LIVE_PACKET_PRECHECK_FAILURE = "precheck_failure"
@@ -378,6 +379,8 @@ class PreflightContext:
     caps: AgLiveBoundCaps
     run_id: str
     confirm_live_product_run: bool
+    output_path_gitignored: bool = True
+    output_path_external_confined: bool = False
 
 
 def resolve_repo_root(start: Path) -> Path:
@@ -402,13 +405,35 @@ def is_gitignored(root: Path, path: Path) -> bool:
     return result.returncode == 0
 
 
-def is_allowed_output_path(root: Path, path: Path) -> bool:
+def is_allowed_output_path(
+    root: Path,
+    path: Path,
+    *,
+    external_output_root: Path | None = None,
+) -> bool:
     output_dir = (root / "output").resolve()
     try:
         path.relative_to(output_dir)
     except ValueError:
+        pass
+    else:
+        return is_gitignored(root, path)
+    if external_output_root is None:
         return False
-    return is_gitignored(root, path)
+    external_root = external_output_root.resolve()
+    if not external_root.is_dir():
+        return False
+    try:
+        external_root.relative_to(root.resolve())
+    except ValueError:
+        pass
+    else:
+        return False
+    try:
+        path.relative_to(external_root)
+    except ValueError:
+        return False
+    return path != external_root and path.parent.is_dir()
 
 
 def parse_domains(raw: str) -> list[str]:
@@ -540,6 +565,7 @@ def build_preflight_context(
     confirm_live_product_run: bool,
     approved_backup_query: bool,
     requested_query_id: str | None = None,
+    external_output_root: Path | None = None,
 ) -> PreflightContext:
     profile = get_validation_profile(profile_name)
     query_lock = validate_query_lock(
@@ -550,10 +576,20 @@ def build_preflight_context(
     )
     validate_mode(mode, profile_name=profile.name)
     validate_domain_allowlist(include_domains, profile_name=profile.name)
-    if not is_allowed_output_path(root, output_path):
+    output_path_gitignored = is_allowed_output_path(root, output_path)
+    output_path_external_confined = (
+        external_output_root is not None
+        and is_allowed_output_path(
+            root,
+            output_path,
+            external_output_root=external_output_root,
+        )
+        and not output_path_gitignored
+    )
+    if not (output_path_gitignored or output_path_external_confined):
         raise AgLiveBoundPreflightError(
             "refusing run: output path must be under ignored repo output/ and "
-            "gitignored"
+            "gitignored, or confined under the explicit external output root"
         )
     return PreflightContext(
         root=root,
@@ -563,6 +599,8 @@ def build_preflight_context(
         mode=mode,
         include_domains=include_domains,
         output_path=output_path,
+        output_path_gitignored=output_path_gitignored,
+        output_path_external_confined=output_path_external_confined,
         caps=caps,
         run_id=run_id or str(uuid.uuid4()),
         confirm_live_product_run=confirm_live_product_run,
@@ -687,6 +725,12 @@ def _blocked_fap_summary_from_exception(exc: BaseException) -> dict[str, Any]:
         metadata = getattr(exc, "safe_metadata", None)
         if isinstance(metadata, Mapping):
             raw = metadata.get("blocked_fap_summary")
+    return _blocked_fap_summary_from_raw(raw)
+
+
+def _blocked_fap_summary_from_raw(raw: Any) -> dict[str, Any]:
+    """Project a bounded blocked-FAP summary without retaining raw trace data."""
+
     if not isinstance(raw, Mapping) or raw.get("blocked_fap") is not True:
         return {}
     summary: dict[str, Any] = {}
@@ -714,6 +758,44 @@ def _blocked_fap_summary_from_exception(exc: BaseException) -> dict[str, Any]:
             if text is not None:
                 summary[key] = text
     return summary if summary.get("blocked_fap") is True else {}
+
+
+def _blocked_fap_summary_from_trace(
+    trace: Mapping[str, Any],
+) -> dict[str, Any]:
+    terminal = _mapping_or_empty(trace.get("blocked_fap_terminal"))
+    summary = _blocked_fap_summary_from_raw(terminal.get("blocked_fap_summary"))
+    if summary:
+        return summary
+
+    # The terminal trace is authoritative when present. The final-answer
+    # packet projection is a safe fallback for fixture/compatibility outcomes
+    # that predate the terminal trace fragment.
+    packet = _mapping_or_empty(trace.get("final_answer_packet"))
+    readiness_status = _safe_summary_text(packet.get("readiness_status"))
+    author_payload_status = _safe_summary_text(packet.get("author_payload_status"))
+    if readiness_status != "blocked" and author_payload_status not in {
+        "author_input_deferred",
+        "blocked",
+    }:
+        return {}
+    summary = {
+        "schema_version": "blocked_final_answer_packet_safe_summary_v1",
+        "blocked_fap": True,
+        "status": "blocked",
+        "readiness_status": readiness_status or "blocked",
+        "readiness_reasons": _safe_summary_text_list(
+            packet.get("readiness_reasons")
+        ),
+        "author_input_deferred": author_payload_status == "author_input_deferred",
+        "blocked_before_author_input": True,
+        "final_answer_allowed": False,
+        "final_answer_posture": "blocked",
+        "sufficiency_decision": _safe_summary_text(
+            packet.get("sufficiency_decision")
+        ),
+    }
+    return _blocked_fap_summary_from_raw(summary)
 
 
 def _component_blocked_summary_from_raw(value: Any) -> dict[str, Any]:
@@ -857,7 +939,8 @@ def build_dry_run_packet(context: PreflightContext) -> dict[str, Any]:
         "preflight": {
             "query_lock": context.query_lock,
             "output_path_safe": True,
-            "output_path_gitignored": True,
+            "output_path_gitignored": context.output_path_gitignored,
+            "output_path_external_confined": context.output_path_external_confined,
             "domain_allowlist_present": True,
             "caps_valid": True,
             "live_path_armed": False,
@@ -897,9 +980,46 @@ def build_live_success_packet(
         sanitized_projection_summaries["searchos_n1_causal_projection"] = (
             causal_projection
         )
+    blocked_fap = _outcome_has_blocked_fap(outcome, trace)
+    blocked_fap_summary = (
+        _blocked_fap_summary_from_trace(trace) if blocked_fap else {}
+    )
+    if blocked_fap_summary:
+        sanitized_projection_summaries["blocked_fap_summary"] = (
+            dict(blocked_fap_summary)
+        )
+    if causal_projection is not None:
+        sanitized_projection_summaries["n1_closure_observability"] = (
+            _n1_closure_observability(
+                causal_projection=causal_projection,
+                searchos_slice_a_projection=(
+                    _mapping_or_empty(trace.get(SEARCHOS_SLICE_A_TRACE_KEY))
+                ),
+                trace=trace,
+                cap_policy=cap_policy,
+                blocked_fap=blocked_fap,
+                cited_source_ids=([] if blocked_fap else cited_source_ids),
+            )
+        )
+    if blocked_fap:
+        # A blocked terminal is still a normal pipeline outcome, but it is not
+        # product success and must not be presented as a supported answer.
+        cited_source_ids = []
+        cited_urls = []
+    failure_summary = None
+    if blocked_fap:
+        failure_summary = {
+            "reason": "blocked_final_answer_packet",
+            "classification": LIVE_PACKET_BLOCKED_FAP,
+            "blocked_fap": True,
+        }
+        if blocked_fap_summary:
+            failure_summary["blocked_fap_summary"] = dict(blocked_fap_summary)
     packet = {
         **_live_packet_base(context, cap_policy=cap_policy),
-        "success_classification": LIVE_PACKET_SUCCESS,
+        "success_classification": (
+            LIVE_PACKET_BLOCKED_FAP if blocked_fap else LIVE_PACKET_SUCCESS
+        ),
         "planned_live_dispatch": True,
         "run_pipeline_call_count": 1,
         "final_answer_text": final_answer_text,
@@ -914,7 +1034,7 @@ def build_live_success_packet(
             outcome=outcome,
             cap_policy=cap_policy,
         ),
-        "failure_summary": None,
+        "failure_summary": failure_summary,
         "live_only": {
             "ordinary_product_path": True,
             "runtime_consumer": "run_pipeline",
@@ -923,6 +1043,22 @@ def build_live_success_packet(
     }
     reject_forbidden_packet(packet)
     return packet
+
+
+def _outcome_has_blocked_fap(
+    outcome: Any,
+    trace: Mapping[str, Any],
+) -> bool:
+    terminal_status = str(getattr(outcome, "terminal_status", "") or "").strip().casefold()
+    if terminal_status == "blocked":
+        return True
+    terminal = _mapping_or_empty(trace.get("blocked_fap_terminal"))
+    if terminal.get("blocked_fap") is True:
+        return True
+    packet = _mapping_or_empty(trace.get("final_answer_packet"))
+    return packet.get("readiness_status") == "blocked" or packet.get(
+        "author_payload_status"
+    ) in {"author_input_deferred", "blocked"}
 
 
 def build_live_failure_packet(
@@ -1038,6 +1174,8 @@ def caps_observed_from_policy(policy: RunCapPolicy) -> dict[str, Any]:
         "retries": observed["retries"],
         "enforcement": observed["enforcement"],
         "facts": list(policy.facts),
+        "furthest_product_stage": policy.furthest_product_stage,
+        "product_failure_stage": policy.product_failure_stage,
     }
 
 
@@ -1051,6 +1189,8 @@ def write_packet(path: Path, packet: Mapping[str, Any]) -> None:
 
 
 def _relative_output_path(context: PreflightContext) -> str:
+    if context.output_path_external_confined:
+        return f"external_sanitized_packet/{context.output_path.name}"
     try:
         return str(context.output_path.relative_to(context.root))
     except ValueError:
@@ -1094,7 +1234,8 @@ def _live_packet_base(
         "preflight": {
             "query_lock": context.query_lock,
             "output_path_safe": True,
-            "output_path_gitignored": True,
+            "output_path_gitignored": context.output_path_gitignored,
+            "output_path_external_confined": context.output_path_external_confined,
             "domain_allowlist_present": True,
             "caps_valid": True,
             "live_path_armed": True,
@@ -1147,6 +1288,101 @@ def _sanitized_projection_summaries(trace: Mapping[str, Any]) -> dict[str, Any]:
         "sufficiency": _sufficiency_summary(trace, packet),
         "final_answer_packet": _final_answer_packet_summary(packet),
         "author_posture": _author_posture_summary(trace, packet),
+    }
+
+
+def _n1_closure_observability(
+    *,
+    causal_projection: Mapping[str, Any],
+    searchos_slice_a_projection: Mapping[str, Any],
+    trace: Mapping[str, Any],
+    cap_policy: RunCapPolicy,
+    blocked_fap: bool,
+    cited_source_ids: Sequence[str],
+) -> dict[str, Any]:
+    """Return the allowlisted N=1 frontier facts for a live packet."""
+
+    slots = [
+        item
+        for item in causal_projection.get("slots") or ()
+        if isinstance(item, Mapping)
+    ]
+    required_slots = [item for item in slots if item.get("required") is True]
+    handoff_count = sum(
+        item.get("semantic_handoff_present") is True for item in required_slots
+    )
+    unresolved_count = sum(
+        item.get("final_posture") == "unresolved_handoff"
+        for item in required_slots
+    )
+    component_projection = _mapping_or_empty(
+        searchos_slice_a_projection.get("n1_closure_observability")
+    )
+    analyst_calls = _safe_summary_int(
+        component_projection.get("component_analyst_calls")
+    )
+    if analyst_calls is None or analyst_calls < 0:
+        analyst_calls = 0
+    component_coverage = _safe_summary_text(
+        component_projection.get("component_coverage")
+    )
+    if component_coverage not in {"supported", "unsupported", "not_reached"}:
+        component_coverage = "not_reached"
+    caps = caps_observed_from_policy(cap_policy)
+    return {
+        "SEARCHOS_COMPLETE_HANDOFF": (
+            "YES"
+            if required_slots
+            and handoff_count == len(required_slots)
+            else "NO"
+        ),
+        "SEARCHOS_SEMANTIC_HANDOFF_COUNT": handoff_count,
+        "SEARCHOS_UNRESOLVED_REQUIRED_SLOT_COUNT": unresolved_count,
+        "COMPONENT_ANALYST_INVOKED": "YES" if analyst_calls > 0 else "NO",
+        "COMPONENT_ANALYST_CALLS": analyst_calls,
+        "COMPONENT_ANALYST_ARTIFACT_PRODUCED": (
+            "YES"
+            if component_projection.get("component_analyst_artifact_produced")
+            is True
+            else "NO"
+        ),
+        "COMPONENT_ADMISSION": (
+            "YES"
+            if component_projection.get("component_admission") is True
+            else "NO"
+        ),
+        "COMPONENT_COVERAGE": component_coverage,
+        "AUTHOR_INVOKED": (
+            "YES" if int(cap_policy.author_model_calls or 0) > 0 else "NO"
+        ),
+        "SUFFICIENCY": _safe_summary_text(
+            _mapping_or_empty(trace.get("final_answer_packet")).get(
+                "sufficiency_decision"
+            )
+        )
+        or "UNKNOWN",
+        "FAP": "blocked" if blocked_fap else "available",
+        "SUPPORTED_CITED_ANSWER": (
+            "YES" if not blocked_fap and bool(cited_source_ids) else "NO"
+        ),
+        "FIRST_PRODUCT_FAILURE_BOUNDARY": (
+            _safe_summary_text(caps.get("product_failure_stage")) or "none"
+        ),
+        "FURTHEST_STAGE_REACHED": (
+            _safe_summary_text(caps.get("furthest_product_stage")) or "unknown"
+        ),
+        "N1_COMPONENT_COUNT": _safe_summary_int(
+            component_projection.get("component_count")
+        )
+        or 0,
+        "N1_SEMANTIC_OBLIGATION_COUNT": _safe_summary_int(
+            component_projection.get("semantic_slot_count")
+        )
+        or 0,
+        "N1_SOURCE_OBLIGATION_COUNT": _safe_summary_int(
+            component_projection.get("source_obligation_count")
+        )
+        or 0,
     }
 
 

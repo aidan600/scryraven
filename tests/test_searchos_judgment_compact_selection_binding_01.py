@@ -364,6 +364,53 @@ def test_compact_navigation_id_binds_exact_current_ref() -> None:
     assert "navigation_candidate_id" not in reduced["slots_by_id"]["slot-1"]
 
 
+@pytest.mark.parametrize(
+    "invalid_navigation_id",
+    (
+        "searchos-navigation-candidate:prior-window",
+        "searchos-navigation-candidate:foreign-slot",
+    ),
+)
+def test_stale_or_wrong_slot_navigation_nomination_fails_closed(
+    invalid_navigation_id: str,
+) -> None:
+    state, _, _store = _admit("[child](/child)")
+    state, candidate_window = _record_empty_candidate_window(state)
+    state, reservation = begin_searchos_judgment_round(state, slot_ids=["slot-1"])
+    state, charge = charge_searchos_judgment_call(
+        state,
+        reservation_ref=reservation,
+        slot_id="slot-1",
+    )
+    navigation_window = project_navigation_window(state, slot_id="slot-1")
+    custody = state["slots_by_id"]["slot-1"]["custody_refs"][0]
+    request = build_searchos_navigation_judgment_request_v1(
+        state=state,
+        slot_id="slot-1",
+        charge_ref=charge,
+        candidate_window=candidate_window,
+        navigation_window=navigation_window,
+        read_custody_refs=[custody],
+    )
+
+    with pytest.raises(
+        SearchOSRuntimeError,
+        match="outside current navigation window",
+    ):
+        validate_searchos_judgment_model_output(
+            request=request,
+            model_output={
+                "schema_version": "searchos_navigation_judgment_decision_v1",
+                "action": SearchOSJudgmentAction.REQUEST_NAVIGATE_BREADCRUMB.value,
+                "navigation_candidate_id": invalid_navigation_id,
+                "reason": "stale or foreign navigation identity must fail closed",
+                "read_custody_assessments": [
+                    _model_read_custody_assessment(custody)
+                ],
+            },
+        )
+
+
 def test_duplicate_authorized_navigation_ids_fail_closed() -> None:
     state, _, _store = _admit("[child](/child)")
     state, candidate_window = _record_empty_candidate_window(state)

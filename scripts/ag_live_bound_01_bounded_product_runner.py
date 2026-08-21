@@ -64,6 +64,11 @@ def main(argv: list[str] | None = None) -> int:
             confirm_live_product_run=args.confirm_live_product_run,
             approved_backup_query=args.approved_backup_query,
             requested_query_id=args.query_id,
+            external_output_root=(
+                Path(args.external_output_root).resolve()
+                if args.external_output_root
+                else None
+            ),
         )
     except AgLiveBoundPreflightError as exc:
         print(str(exc), file=sys.stderr)
@@ -699,6 +704,14 @@ def _parser() -> argparse.ArgumentParser:
         "--output",
         default=DEFAULT_OUTPUT,
         help=f"Sanitized packet output path (default: {DEFAULT_OUTPUT}).",
+    )
+    parser.add_argument(
+        "--external-output-root",
+        default=None,
+        help=(
+            "Optional existing external directory that explicitly confines the "
+            "sanitized packet output; the default remains ignored repo output/."
+        ),
     )
     parser.add_argument("--run-id", help="Optional run id (UUID generated if omitted).")
     parser.add_argument(

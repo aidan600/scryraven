@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import pytest
 
@@ -29,6 +29,7 @@ from core.multicomponent_role_runtime import (
 )
 from core.prompts import DEFAULT_SYSTEM
 from core.run_kernel import ActionType, RunKernel
+from core.search_planner_runtime import DeterministicSearchPlannerAdapter
 from core.searchos_iterative_judgment_runtime import (
     SEARCHOS_SEMANTIC_HANDOFF_SCHEMA_VERSION,
     SEARCHOS_SLICE_A_REQUIRED_NEEDS_UNRESOLVED,
@@ -41,6 +42,7 @@ from core.searchos_slice_a_product_runtime import (
 )
 from tests.helpers.offline_ordinary_pipeline import (
     OfflineOrdinaryPipelineHarness,
+    PostRetirementOrdinaryPipelineHarness,
     run_post_retirement_ordinary_pipeline,
 )
 
@@ -1151,6 +1153,178 @@ def test_exact_model_followup_is_appended_and_dispatched_through_query_plan(
     )
 
 
+def test_failed_followup_wave_restores_searchos_without_candidate_admission(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    initial_rows = [
+        {
+            "title": "Alpha initial directional candidate",
+            "url": "https://alpha.example/initial",
+            "text": "Initial directional context does not answer the current rule.",
+        }
+    ]
+    original_dispatch = pipeline_orchestrator.execute_main_retrieval_pass_from_scope
+    dispatch_calls = 0
+
+    def fail_followup_dispatch(
+        scope: dict[str, Any],
+        *,
+        retrieval_pass_records: list[dict[str, Any]],
+    ) -> Any:
+        nonlocal dispatch_calls
+        dispatch_calls += 1
+        if dispatch_calls == 2:
+            raise RuntimeError("offline follow-up acquisition failure")
+        return original_dispatch(
+            scope,
+            retrieval_pass_records=retrieval_pass_records,
+        )
+
+    monkeypatch.setattr(
+        pipeline_orchestrator,
+        "execute_main_retrieval_pass_from_scope",
+        fail_followup_dispatch,
+    )
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        mode="Balanced",
+        query="What is Alpha's current official operating rule?",
+        core_topic="Alpha current official operating rule",
+        primary_entity="Alpha",
+        researcher_queries=["Alpha current official operating rule"],
+        read_assessment_decision="FOLLOWUP_THEN_READ",
+        evidence_rows=initial_rows,
+        followup_evidence_rows=[],
+    )
+
+    assert dispatch_calls == 2
+    assert len(harness.search_calls) == 1
+    assert harness.searchos_product_result is not None
+    assert harness.searchos_product_result.iteration_candidate_sets == ()
+    searchos = dict(outcome.execution_trace["searchos_slice_a"])
+    assert searchos["iteration_candidate_set_refs"] == []
+    slot = next(
+        iter(harness.run_kernel.state.searchos_state["slots_by_id"].values())
+    )
+    assert slot["posture"] == "semantically_handed_off"
+    assert any(
+        event.get("event") == "followup_acquisition_failed"
+        for event in slot["action_history"]
+    )
+    assert not any(
+        event.get("event") == "iteration_candidate_set_admitted"
+        for event in slot["action_history"]
+    )
+
+
+def test_repeated_followup_nomination_budget_does_not_reenter_discover(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    initial_rows = [
+        {
+            "title": "Alpha initial directional candidate",
+            "url": "https://alpha.example/initial",
+            "text": "Initial directional context does not answer the current rule.",
+        }
+    ]
+    original_model = PostRetirementOrdinaryPipelineHarness.ask_model
+    judgment_calls = 0
+
+    def repeatedly_propose_followup(
+        harness: PostRetirementOrdinaryPipelineHarness,
+        prompt: str,
+        system_prompt: str,
+        **kwargs: Any,
+    ) -> str:
+        nonlocal judgment_calls
+        if not system_prompt.startswith(SEARCHOS_JUDGMENT_SYSTEM_PROMPT):
+            return original_model(harness, prompt, system_prompt, **kwargs)
+        judgment_calls += 1
+        original = original_model(harness, prompt, system_prompt, **kwargs)
+        if judgment_calls == 1:
+            return original
+        payload = json.loads(prompt)
+        authorized = dict(payload.get("authorized_request") or {})
+        contract = dict(payload.get("decision_contract") or {})
+        return json.dumps(
+            {
+                "schema_version": contract["decision_schema_version"],
+                "action": "PROPOSE_FOLLOWUP_QUERY",
+                "followup_query": "Alpha repeated follow-up query",
+                "discovery_job_class": (
+                    list(authorized["allowed_followup_job_classes"])[0]
+                ),
+                "reason": "offline repeated follow-up nomination",
+            }
+        )
+
+    monkeypatch.setattr(
+        PostRetirementOrdinaryPipelineHarness,
+        "ask_model",
+        repeatedly_propose_followup,
+    )
+    original_dispatch = pipeline_orchestrator.execute_main_retrieval_pass_from_scope
+    dispatch_calls = 0
+
+    def fail_every_followup_dispatch(
+        scope: dict[str, Any],
+        *,
+        retrieval_pass_records: list[dict[str, Any]],
+    ) -> Any:
+        nonlocal dispatch_calls
+        dispatch_calls += 1
+        if dispatch_calls >= 2:
+            raise RuntimeError("offline repeated follow-up acquisition failure")
+        return original_dispatch(
+            scope,
+            retrieval_pass_records=retrieval_pass_records,
+        )
+
+    monkeypatch.setattr(
+        pipeline_orchestrator,
+        "execute_main_retrieval_pass_from_scope",
+        fail_every_followup_dispatch,
+    )
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        # Fast intentionally has one follow-up nomination per slot.  After
+        # the first acquisition failure the next stale PROPOSE projection
+        # must terminalize at the reducer budget boundary and never re-enter
+        # QueryPlan/discover scheduling.
+        mode="Fast",
+        query="What is Alpha's current official operating rule?",
+        core_topic="Alpha current official operating rule",
+        primary_entity="Alpha",
+        researcher_queries=["Alpha current official operating rule"],
+        read_assessment_decision="FOLLOWUP_THEN_READ",
+        evidence_rows=initial_rows,
+        followup_evidence_rows=[],
+    )
+
+    assert judgment_calls >= 2
+    assert dispatch_calls == 2
+    assert harness.searchos_product_result is not None
+    assert harness.searchos_product_result.iteration_candidate_sets == ()
+    searchos = dict(outcome.execution_trace["searchos_slice_a"])
+    assert searchos["iteration_candidate_set_refs"] == []
+    slot = next(
+        iter(harness.run_kernel.state.searchos_state["slots_by_id"].values())
+    )
+    assert slot["posture"] == "budget_exhausted"
+    assert sum(
+        event.get("event") == "followup_acquisition_failed"
+        for event in slot["action_history"]
+    ) == 1
+    assert not any(
+        event.get("event") == "iteration_candidate_set_admitted"
+        for event in slot["action_history"]
+    )
+
+
 def test_two_components_use_one_shared_n_component_receiver(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1416,6 +1590,149 @@ def test_searchos_receiver_block_cannot_report_completed_or_originate_analyst(
     assert not any(
         prompt == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST]
         for prompt in harness.model_system_prompts
+    )
+
+
+def test_n1_plural_semantic_slots_share_one_current_read_and_one_analyst(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One component may carry plural obligations without physical slot fan-out."""
+
+    original_produce = DeterministicSearchPlannerAdapter.produce
+
+    def produce(self: Any, planner_input: Mapping[str, Any]) -> Mapping[str, Any]:
+        result = json.loads(json.dumps(original_produce(self, planner_input)))
+        component = dict(result["answer_components"][0])
+        component.update(
+            {
+                "semantic_slot_ids": ["slot:rel_tol", "slot:abs_tol"],
+                "source_obligation_candidate_ids": ["obligation:official_current"],
+                "user_facing_question": (
+                    "What are the defaults for rel_tol and abs_tol in math.isclose()?"
+                ),
+            }
+        )
+        result["semantic_slots"] = [
+            {
+                "slot_id": "slot:rel_tol",
+                "slot_kind": "parameter",
+                "status": "explicit",
+                "selected_value": "rel_tol",
+                "materiality": "material",
+            },
+            {
+                "slot_id": "slot:abs_tol",
+                "slot_kind": "parameter",
+                "status": "explicit",
+                "selected_value": "abs_tol",
+                "materiality": "material",
+            },
+        ]
+        result["answer_components"] = [component]
+        result["source_obligation_candidates"] = [
+            {
+                "candidate_id": "obligation:official_current",
+                "obligation_kind": "official_current",
+                "component_candidate_ids": [component["component_id"]],
+                "strictness": "required",
+            }
+        ]
+        requirement = dict(result["component_search_requirements"][0])
+        requirement["source_obligation_candidate_ids"] = [
+            "obligation:official_current"
+        ]
+        requirement_metadata = dict(requirement.get("metadata") or {})
+        strategies = [
+            dict(item)
+            for item in requirement_metadata.get("query_strategy_candidates") or ()
+        ]
+        for strategy in strategies:
+            strategy["source_obligation_candidate_ids"] = [
+                "obligation:official_current"
+            ]
+        requirement_metadata["query_strategy_candidates"] = strategies
+        requirement["metadata"] = requirement_metadata
+        result["component_search_requirements"] = [requirement]
+        return result
+
+    monkeypatch.setattr(DeterministicSearchPlannerAdapter, "produce", produce)
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        mode="Balanced",
+        query=(
+            "According to the official Python 3 documentation, what are the "
+            "default values for rel_tol and abs_tol in math.isclose()?"
+        ),
+        core_topic="Python math.isclose rel_tol abs_tol defaults",
+        primary_entity="Python math.isclose",
+        researcher_queries=["Python math.isclose rel_tol abs_tol defaults"],
+        evidence_rows=[
+            {
+                "title": "math.isclose documentation",
+                "url": "https://docs.python.org/3/library/math.html",
+                "text": (
+                    "math.isclose(a, b, *, rel_tol=1e-09, abs_tol=0.0) "
+                    "determines whether two values are close."
+                ),
+                "credibility": 4,
+                "source_tier": "official",
+                "source_class": "primary_source_documents",
+                "currentness_signal": "current",
+                "readable_status": "readable",
+                "disposition": "accepted",
+            }
+        ],
+        read_content_by_url={
+            "https://docs.python.org/3/library/math.html": (
+                "math.isclose(a, b, *, rel_tol=1e-09, abs_tol=0.0) "
+                "determines whether two values are close."
+            )
+        },
+    )
+
+    contract = harness.run_kernel.state.initial_answer_contract
+    components = contract["accepted_answer_component_refs"]
+    assert len(components) == 1
+    assert len(components[0]["semantic_slot_ids"]) == 2
+    assert len(contract["accepted_source_obligation_refs"]) == 1
+    assert len(harness.run_kernel.state.searchos_state["active_slot_ids"]) == 1
+    assert len(harness.read_transport_calls) == 1
+    assert len(harness.run_kernel.state.semantic_observation_admission_history) == 1
+    admissions = harness.run_kernel.state.projections[
+        "multicomponent_component_admission"
+    ]
+    assert admissions["physical_component_analyst_calls"] == 1
+    assert admissions["admitted_component_count"] == 1
+    graph = harness.run_kernel.state.projections[
+        "multicomponent_component_work_graph_v1"
+    ]
+    assert graph["dependency_posture"] == "single_component_direct_admission"
+    assert graph["physical_call_accounting"]["component_analyst_calls"] == 1
+    assert graph["physical_call_accounting"]["cross_component_analyst_calls"] == 0
+    assert graph["physical_call_accounting"]["synthesis_dprime_calls"] == 0
+    assert graph["physical_call_accounting"]["scrutineer_calls"] == 0
+    assert harness.run_kernel.state.projections.get("multicomponent_graph_scheduler") is None
+    searchos = outcome.execution_trace["searchos_slice_a"]
+    assert searchos["readiness_projection"]["all_required_slots_slice_a_ready"] is True
+    assert searchos["n1_closure_observability"] == {
+        "component_count": 1,
+        "semantic_slot_count": 2,
+        "source_obligation_count": 1,
+        "component_analyst_calls": 1,
+        "component_analyst_artifact_produced": True,
+        "component_admission": True,
+        "component_coverage": "supported",
+    }
+    assert ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST] in harness.model_system_prompts
+    assert all(
+        ROLE_SYSTEM_PROMPTS[role] not in harness.model_system_prompts
+        for role in (
+            ROLE_COMPONENT_DPRIME,
+            ROLE_CROSS_COMPONENT_ANALYST,
+            ROLE_SYNTHESIS_DPRIME,
+        )
     )
 
 @pytest.mark.parametrize(

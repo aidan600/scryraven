@@ -23,17 +23,22 @@ def _write_env(path: Path, text: str = "NORMAL=value\nAPI_KEY=fake-secret-value\
 def _arguments(
     *,
     repo_root: Path,
-    env_file: Path,
+    env_file: Path | None = None,
+    repo_env: bool = False,
     stdout: Path,
     stderr: Path,
     timeout: float = 10,
     replace_output: bool = False,
 ) -> list[str]:
+    if repo_env == (env_file is not None):
+        raise AssertionError("choose exactly one environment source")
+    environment_source = (
+        ["--repo-env"] if repo_env else ["--env-file", str(env_file)]
+    )
     args = [
         "--repo-root",
         str(repo_root),
-        "--env-file",
-        str(env_file),
+        *environment_source,
         "--stdout",
         str(stdout),
         "--stderr",
@@ -49,7 +54,8 @@ def _arguments(
 def _run(
     *,
     repo_root: Path,
-    env_file: Path,
+    env_file: Path | None = None,
+    repo_env: bool = False,
     stdout: Path,
     stderr: Path,
     command: list[str],
@@ -61,6 +67,7 @@ def _run(
             *_arguments(
                 repo_root=repo_root,
                 env_file=env_file,
+                repo_env=repo_env,
                 stdout=stdout,
                 stderr=stderr,
                 timeout=timeout,
@@ -119,6 +126,87 @@ def test_parent_stats_but_does_not_open_or_parse_environment_file(
     assert observed["kwargs"]["stderr"] is subprocess.DEVNULL  # type: ignore[index]
 
 
+def test_repo_env_uses_normalized_repo_root_dotenv_without_parent_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    output_root = tmp_path / "external"
+    output_root.mkdir()
+    env_file = repo_root / ".env"
+    _write_env(env_file, "not dotenv syntax\n")
+    observed: dict[str, object] = {}
+
+    def forbidden_read(*_args: object, **_kwargs: object) -> str:
+        raise AssertionError("public parent must not read the env file")
+
+    def fake_run(argv: list[str], **kwargs: object) -> SimpleNamespace:
+        env = kwargs.get("env")
+        observed["argv"] = list(argv)
+        observed["kwargs"] = {
+            **kwargs,
+            "env": dict(env) if isinstance(env, dict) else env,
+        }
+        return SimpleNamespace(returncode=0)
+
+    normalized_root = repo_root.resolve()
+    assert (
+        doorman.repository_environment_file_path(normalized_root)
+        == normalized_root / ".env"
+    )
+    canonical_path = doorman.repository_environment_file_path(normalized_root)
+    assert canonical_path.parent == normalized_root
+    assert canonical_path.name == ".env"
+    monkeypatch.setattr(Path, "read_text", forbidden_read)
+    monkeypatch.setattr(doorman.subprocess, "run", fake_run)
+    assert (
+        _run(
+            repo_root=repo_root,
+            repo_env=True,
+            stdout=output_root / "stdout.txt",
+            stderr=output_root / "stderr.txt",
+            command=[sys.executable, "-c", "raise SystemExit(0)"],
+        )
+        == 0
+    )
+    child_argv = observed["argv"]
+    assert isinstance(child_argv, list)
+    assert "--env-file" not in child_argv
+    assert "--repo-env" not in child_argv
+    child_env = observed["kwargs"]["env"]  # type: ignore[index]
+    assert isinstance(child_env, dict)
+    assert child_env[doorman.PRIVATE_ENV_FILE_PATH_ENV_VAR] == str(env_file.resolve())
+
+
+def test_repo_env_and_env_file_are_mutually_exclusive(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    env_file = _write_env(tmp_path / "private.env")
+    output_root = tmp_path / "external"
+    output_root.mkdir()
+    with pytest.raises(SystemExit) as exc_info:
+        doorman.main(
+            [
+                "--repo-root",
+                str(repo_root),
+                "--env-file",
+                str(env_file),
+                "--repo-env",
+                "--stdout",
+                str(output_root / "stdout.txt"),
+                "--stderr",
+                str(output_root / "stderr.txt"),
+                "--timeout-seconds",
+                "1",
+                "--",
+                sys.executable,
+                "-c",
+                "pass",
+            ]
+        )
+    assert exc_info.value.code == 2
+
+
 def test_private_mode_requires_nonce(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
@@ -135,12 +223,15 @@ def test_private_mode_requires_nonce(tmp_path: Path, monkeypatch: pytest.MonkeyP
     ]) == doorman.CONFIGURATION_EXIT_CODE
 
 
-def test_target_receives_env_literal_argv_cwd_and_redacted_output(tmp_path: Path) -> None:
+@pytest.mark.parametrize("repo_env", [False, True])
+def test_target_receives_env_literal_argv_cwd_and_redacted_output(
+    tmp_path: Path, repo_env: bool
+) -> None:
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
     output_root = tmp_path / "external"
     output_root.mkdir()
-    env_file = _write_env(tmp_path / "private.env")
+    env_file = _write_env(repo_root / ".env" if repo_env else tmp_path / "private.env")
     stdout = output_root / "stdout.txt"
     stderr = output_root / "stderr.txt"
     literal_argv = ["space value", "&|<>^%", "punctuation;()[]{}"]
@@ -157,7 +248,8 @@ def test_target_receives_env_literal_argv_cwd_and_redacted_output(tmp_path: Path
     ]
     assert _run(
         repo_root=repo_root,
-        env_file=env_file,
+        env_file=None if repo_env else env_file,
+        repo_env=repo_env,
         stdout=stdout,
         stderr=stderr,
         command=command,

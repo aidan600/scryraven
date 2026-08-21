@@ -1183,6 +1183,73 @@ def test_is_allowed_output_path_requires_gitignore() -> None:
     assert support.is_allowed_output_path(ROOT, ROOT / "README.md") is False
 
 
+def test_explicit_external_output_root_confines_sanitized_packet(
+    tmp_path: Path,
+) -> None:
+    support = _load_support()
+    external_root = tmp_path / "sanitized-product-run"
+    external_root.mkdir()
+    output_path = external_root / "run-01.sanitized.json"
+
+    context = support.build_preflight_context(
+        root=ROOT,
+        query=PRIMARY_QUERY,
+        mode="Balanced",
+        include_domains=["docs.python.org"],
+        output_path=output_path,
+        caps=support.AgLiveBoundCaps(),
+        run_id="external-output-fixture",
+        confirm_live_product_run=True,
+        approved_backup_query=False,
+        external_output_root=external_root,
+    )
+    packet = support.build_dry_run_packet(context)
+
+    assert context.output_path == output_path.resolve()
+    assert packet["preflight"]["output_path_safe"] is True
+    assert packet["preflight"]["output_path_gitignored"] is False
+    assert packet["preflight"]["output_path_external_confined"] is True
+    assert packet["output_path"] == "external_sanitized_packet/run-01.sanitized.json"
+    retention = support.suppressed_ordinary_retention_posture(context)
+    assert retention["sanitized_packet_path"] == (
+        "external_sanitized_packet/run-01.sanitized.json"
+    )
+    assert "C:\\Users" not in json.dumps(packet, sort_keys=True)
+    assert (
+        support.is_allowed_output_path(
+            ROOT,
+            ROOT / "README.md",
+            external_output_root=external_root,
+        )
+        is False
+    )
+
+
+def test_logical_cap_policy_projects_closed_product_stage() -> None:
+    support = _load_support()
+    from core.cap_enforcement import RunCapPolicy
+
+    policy = RunCapPolicy()
+    policy.note_product_stage("component_coverage_not_ready")
+    observed = support.caps_observed_from_policy(policy)
+
+    assert observed["furthest_product_stage"] == "component_coverage_not_ready"
+    assert observed["product_failure_stage"] is None
+
+
+def test_cap_policy_preserves_first_product_failure_boundary() -> None:
+    from core.cap_enforcement import RunCapPolicy
+
+    policy = RunCapPolicy()
+    policy.note_product_stage("searchos_component_receiver_failed")
+    policy.note_product_failure_stage("searchos_component_receiver_failed")
+    policy.note_product_stage("final_answer_packet_blocked")
+    policy.note_product_failure_stage("final_answer_packet_blocked")
+
+    assert policy.furthest_product_stage == "final_answer_packet_blocked"
+    assert policy.product_failure_stage == "searchos_component_receiver_failed"
+
+
 def test_runner_ast_has_no_top_level_run_pipeline_import() -> None:
     tree = ast.parse(RUNNER_PATH.read_text(encoding="utf-8"))
     imported_names = {
@@ -1325,6 +1392,15 @@ def _n1_searchos_slice_a(
             "readiness_projection_id": readiness["readiness_projection_id"],
             "readiness_projection_digest": digest,
         },
+        "n1_closure_observability": {
+            "component_count": 1,
+            "semantic_slot_count": 2,
+            "source_obligation_count": 1,
+            "component_analyst_calls": 1,
+            "component_analyst_artifact_produced": True,
+            "component_admission": True,
+            "component_coverage": "supported",
+        },
         "semantic_handoff_authorization_attempted_slot_ids": ["slot-1"],
         "candidate_context": {"text": _N1_PRIVATE_CANARY},
         "private_raw": {
@@ -1430,7 +1506,7 @@ def _assert_target_facts(projection: Mapping[str, Any]) -> None:
     assert "latest_judgment_reason" not in slot
 
 
-def test_q1_like_blocked_fap_success_packet_reuses_canonical_n1_projection(
+def test_q1_like_blocked_fap_packet_reuses_canonical_n1_projection(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1466,10 +1542,33 @@ def test_q1_like_blocked_fap_success_packet_reuses_canonical_n1_projection(
 
     packet = json.loads((ROOT / output).read_text(encoding="utf-8"))
     summaries = packet["sanitized_projection_summaries"]
-    assert packet["success_classification"] == "success"
+    assert packet["success_classification"] == support.LIVE_PACKET_BLOCKED_FAP
+    assert packet["failure_summary"]["classification"] == (
+        support.LIVE_PACKET_BLOCKED_FAP
+    )
+    assert packet["failure_summary"]["blocked_fap"] is True
     assert packet["run_pipeline_call_count"] == 1
     assert summaries["searchos_n1_causal_projection"] == expected
     _assert_target_facts(summaries["searchos_n1_causal_projection"])
+    assert summaries["n1_closure_observability"] == {
+        "AUTHOR_INVOKED": "NO",
+        "COMPONENT_ADMISSION": "YES",
+        "COMPONENT_ANALYST_ARTIFACT_PRODUCED": "YES",
+        "COMPONENT_ANALYST_CALLS": 1,
+        "COMPONENT_ANALYST_INVOKED": "YES",
+        "COMPONENT_COVERAGE": "supported",
+        "FIRST_PRODUCT_FAILURE_BOUNDARY": "none",
+        "FAP": "blocked",
+        "FURTHEST_STAGE_REACHED": "configuration",
+        "N1_COMPONENT_COUNT": 1,
+        "N1_SEMANTIC_OBLIGATION_COUNT": 2,
+        "N1_SOURCE_OBLIGATION_COUNT": 1,
+        "SEARCHOS_COMPLETE_HANDOFF": "YES",
+        "SEARCHOS_SEMANTIC_HANDOFF_COUNT": 1,
+        "SEARCHOS_UNRESOLVED_REQUIRED_SLOT_COUNT": 0,
+        "SUFFICIENCY": "partial_answer_authorized",
+        "SUPPORTED_CITED_ANSWER": "NO",
+    }
     cli_projection = compatibility_cli.build_bounded_searchos_n1_causal_projection(
         searchos_slice_a_projection=dict(
             dict(getattr(outcome, "execution_trace", {}) or {}).get(

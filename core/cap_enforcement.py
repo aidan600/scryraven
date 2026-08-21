@@ -358,6 +358,7 @@ class RunCapPolicy:
         self._deadline_monotonic: float | None = None
         self._closed_monotonic: float | None = None
         self._furthest_product_stage: str | None = None
+        self._product_failure_stage: str | None = None
         self._logical_sequence = 0
         self._ordinals: dict[str, int] = {}
         self._records: dict[str, _AttemptRecord] = {}
@@ -381,6 +382,20 @@ class RunCapPolicy:
     @property
     def persistence_suppressed(self) -> bool:
         return bool(self.envelope and self.envelope.suppress_persistence)
+
+    @property
+    def furthest_product_stage(self) -> str:
+        """Return the latest privacy-safe product stage observed by this policy."""
+
+        with self._lock:
+            return self._furthest_product_stage or "configuration"
+
+    @property
+    def product_failure_stage(self) -> str | None:
+        """Return the first sanitized product boundary that failed, if any."""
+
+        with self._lock:
+            return self._product_failure_stage
 
     def resolve_route_pricing(
         self,
@@ -425,11 +440,17 @@ class RunCapPolicy:
     def note_product_stage(self, stage: str) -> None:
         """Record the latest sanitized product stage reached by this run."""
 
-        if not self.bounded:
-            return
         safe_stage = _safe_identity(stage, prefix="stage")
         with self._lock:
             self._furthest_product_stage = safe_stage
+
+    def note_product_failure_stage(self, stage: str) -> None:
+        """Preserve the first sanitized product failure boundary observed."""
+
+        safe_stage = _safe_identity(stage, prefix="stage")
+        with self._lock:
+            if self._product_failure_stage is None:
+                self._product_failure_stage = safe_stage
 
     def remaining_seconds(self) -> float:
         if not self.bounded:
@@ -577,6 +598,7 @@ class RunCapPolicy:
                 "smart_search_judgment_model_calls": (self.smart_search_judgment_model_calls),
                 "retries": self.retries,
                 "enforcement": enforcement,
+                "product_failure_stage": self._product_failure_stage,
             }
 
     def physical_snapshot(self) -> dict[str, Any]:
@@ -646,6 +668,7 @@ class RunCapPolicy:
                 "run_id": self._run_id,
                 "request_id": self._request_id,
                 "furthest_product_stage": self._furthest_product_stage or "configuration",
+                "product_failure_stage": self._product_failure_stage,
                 "logical_calls": logical_call_count,
                 "logical_calls_by_family": {
                     family.value: len(logical_ids_by_family[family]) for family in ExternalCallFamily

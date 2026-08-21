@@ -270,6 +270,76 @@ def _post_read_judgment_request() -> tuple[
     return state, request, custody, candidate_use_option_ref(options[1])
 
 
+def _followup_candidate_admission_fixture() -> tuple[
+    dict[str, object], dict[str, object]
+]:
+    state = _state()
+    slot_ref = state["slots_by_id"]["slot-1"]["slot_ref"]
+    options = build_candidate_use_options_v1(
+        [_candidate(slot_ref=slot_ref, ordinal=1)]
+    )
+    window = build_candidate_use_window_v1(
+        slot_ref=slot_ref,
+        ordered_options=options,
+        window_ordinal=1,
+        policy_snapshot=state["policy_snapshot"],
+    )
+    state = record_searchos_candidate_window(state, window=window)
+    state, round_ref = begin_searchos_judgment_round(
+        state,
+        slot_ids=["slot-1"],
+    )
+    state, charge = charge_searchos_judgment_call(
+        state,
+        reservation_ref=round_ref,
+        slot_id="slot-1",
+    )
+    request = build_searchos_judgment_request_v1(
+        state=state,
+        slot_id="slot-1",
+        charge_ref=charge,
+        candidate_window=window,
+        read_custody_refs=[],
+    )
+    decision = validate_searchos_judgment_model_output(
+        request=request,
+        model_output={
+            "schema_version": "searchos_judgment_decision_v1",
+            "action": "PROPOSE_FOLLOWUP_QUERY",
+            "followup_query": "Alpha exact follow-up query",
+            "discovery_job_class": request["allowed_followup_job_classes"][0],
+            "reason": "the first wave needs one exact continuation",
+        },
+    )
+    state = reduce_searchos_judgment_decision(state, decision=decision)
+    slot = state["slots_by_id"]["slot-1"]
+    query_plan_item_ref = {
+        **_ref("query_plan_item", "followup"),
+        "discovery_job_class": request["allowed_followup_job_classes"][0],
+    }
+    candidate_set = build_searchos_iteration_candidate_set_v1(
+        run_id="run-1",
+        request_id="request-1",
+        iteration=2,
+        parent_candidate_state_ref=slot["current_candidate_state_ref"],
+        slot_ref=slot["slot_ref"],
+        query_plan_item_ref=query_plan_item_ref,
+        provider_plan_ref=_ref("provider_plan", "followup"),
+        route_refs=[_ref("route", "followup")],
+        retrieval_action_refs=[_ref("retrieval_action", "followup")],
+        ordered_provider_result_occurrence_refs=[
+            _ref("source_result", "followup")
+        ],
+        identity_set_delta_ref=_ref("identity_set_delta", "followup"),
+        selected_candidate_refs=[_ref("candidate", "followup")],
+        bounded_candidate_material_refs=[_ref("material", "followup")],
+        selection_facts={"selected": 1},
+        overflow_facts={"overflow": 0},
+        zero_useful_result=False,
+    )
+    return state, candidate_set
+
+
 def _model_read_custody_assessment(
     custody: dict[str, object],
     *,
@@ -2310,6 +2380,56 @@ def test_followup_acquisition_failure_restores_active_unjudged_without_stale_cus
     assert charge
     assert restored["slots_by_id"]["slot-1"]["posture"] == "active_unjudged"
 
+
+def test_lawful_followup_candidate_admission_consumes_authority_once() -> None:
+    state, candidate_set = _followup_candidate_admission_fixture()
+
+    admitted = record_searchos_iteration_candidate_set(
+        state,
+        candidate_set=candidate_set,
+    )
+    slot = admitted["slots_by_id"]["slot-1"]
+    assert slot["posture"] == "active_unjudged"
+    assert len(admitted["iteration_candidate_set_refs"]) == 1
+    assert slot["current_candidate_state_ref"] == (
+        admitted["iteration_candidate_set_refs"][0]
+    )
+
+    with pytest.raises(
+        SearchOSRuntimeError,
+        match="slot-local parent became stale",
+    ):
+        record_searchos_iteration_candidate_set(
+            admitted,
+            candidate_set=candidate_set,
+        )
+    assert len(admitted["iteration_candidate_set_refs"]) == 1
+
+
+def test_failed_followup_cannot_admit_a_later_candidate_set() -> None:
+    state, candidate_set = _followup_candidate_admission_fixture()
+    custody_before = deepcopy(
+        state["slots_by_id"]["slot-1"].get("custody_refs") or []
+    )
+
+    restored = record_searchos_followup_acquisition_failed(
+        state,
+        slot_id="slot-1",
+        reason="followup_discover_failed:provider_route_blocked",
+    )
+    slot = restored["slots_by_id"]["slot-1"]
+    assert slot["posture"] == "active_unjudged"
+    assert slot["custody_refs"] == custody_before
+    assert restored["iteration_candidate_set_refs"] == []
+
+    with pytest.raises(
+        SearchOSRuntimeError,
+        match="does not follow an authorized follow-up",
+    ):
+        record_searchos_iteration_candidate_set(
+            restored,
+            candidate_set=candidate_set,
+        )
 
 def test_followup_acquisition_failure_cannot_restore_true_stale_slot() -> None:
     state, _request, custody, _remaining = _post_read_judgment_request()
