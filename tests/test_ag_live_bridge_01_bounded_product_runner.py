@@ -1219,6 +1219,17 @@ def test_explicit_external_output_root_confines_sanitized_packet(
     )
 
 
+def test_logical_cap_policy_projects_closed_product_stage() -> None:
+    support = _load_support()
+    from core.cap_enforcement import RunCapPolicy
+
+    policy = RunCapPolicy()
+    policy.note_product_stage("component_coverage_not_ready")
+    observed = support.caps_observed_from_policy(policy)
+
+    assert observed["furthest_product_stage"] == "component_coverage_not_ready"
+
+
 def test_runner_ast_has_no_top_level_run_pipeline_import() -> None:
     tree = ast.parse(RUNNER_PATH.read_text(encoding="utf-8"))
     imported_names = {

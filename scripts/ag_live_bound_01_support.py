@@ -1076,6 +1076,7 @@ def caps_observed_from_policy(policy: RunCapPolicy) -> dict[str, Any]:
         "retries": observed["retries"],
         "enforcement": observed["enforcement"],
         "facts": list(policy.facts),
+        "furthest_product_stage": policy.furthest_product_stage,
     }
 
 

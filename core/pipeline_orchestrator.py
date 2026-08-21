@@ -3774,7 +3774,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     allow_searchos_component_receiver=True,
                 )
                 searchos_component_receiver_completed = True
-                if cap_policy is not None and cap_policy.bounded:
+                if cap_policy is not None:
                     cap_policy.note_product_stage(
                         "searchos_component_receiver_complete"
                     )
@@ -3841,7 +3841,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             ),
         )
         searchos_slice_a_projection["semantic_outcomes_by_slot"] = semantic_outcomes_by_slot
-        if cap_policy is not None and cap_policy.bounded:
+        if cap_policy is not None:
             required_outcomes = [
                 semantic_outcomes_by_slot.get(str(slot_id), {})
                 for slot_id in run_kernel.state.searchos_state.get(
@@ -4935,7 +4935,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         measure_context_stage=_measure_context_stage,
     )
     sufficiency_judgment_projection = sufficiency_handoff.projection
-    if cap_policy is not None and cap_policy.bounded:
+    if cap_policy is not None:
         cap_policy.note_product_stage("sufficiency_complete")
 
     component_gap_recovery_handoff = None
@@ -5033,7 +5033,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         locals(),
         default_system=DEFAULT_SYSTEM,
     )
-    if cap_policy is not None and cap_policy.bounded:
+    if cap_policy is not None:
         cap_policy.note_product_stage(
             "final_answer_packet_blocked"
             if final_answer_packet_handoff.author_input_blocked
@@ -5101,7 +5101,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             api_key=or_api_key,
             stream_display=config.author_stream_display,
         )
-        if cap_policy is not None and cap_policy.bounded:
+        if cap_policy is not None:
             cap_policy.note_product_stage("author_complete")
         report = author_execution_handoff.report
         author_seconds = author_execution_handoff.author_seconds
@@ -5335,7 +5335,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     )
     evidence_ledger_projection = post_final_source_class_projection.evidence_ledger_projection
     # Post-Author citation assembly is delegated; helper calls assemble_final_answer_citation_runtime_from_scope(...).
-    if cap_policy is not None and cap_policy.bounded:
+    if cap_policy is not None:
         cap_policy.note_product_stage("final_answer_packaging")
     post_author_trace_packaging = build_post_author_trace_packaging_from_scope(
         locals(),
@@ -5493,7 +5493,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         else "completed"
     )
     outcome = build_run_outcome_from_scope(locals())
-    if cap_policy is not None and cap_policy.bounded:
+    if cap_policy is not None:
         cap_policy.note_product_stage(
             f"run_outcome_{outcome.terminal_status}"
         )

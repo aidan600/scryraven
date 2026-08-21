@@ -468,7 +468,7 @@ def _note_bounded_product_stage(
     """Advance the existing closed bounded-run stage projection when active."""
 
     cap_policy = runtime_scope.get("cap_policy")
-    if cap_policy is not None and getattr(cap_policy, "bounded", False):
+    if cap_policy is not None:
         cap_policy.note_product_stage(stage)
 
 

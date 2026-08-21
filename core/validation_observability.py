@@ -932,6 +932,10 @@ def _caps_observed(
             "retries": _optional_int(observed.get("retries")) or 0,
             "enforcement": _safe_text(observed.get("enforcement")) or "active",
             "facts": _string_list(getattr(cap_policy, "facts", None)),
+            "furthest_product_stage": (
+                _safe_text(getattr(cap_policy, "furthest_product_stage", None))
+                or "configuration"
+            ),
         }
         if getattr(cap_policy, "bounded", False) and hasattr(
             cap_policy,

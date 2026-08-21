@@ -382,6 +382,13 @@ class RunCapPolicy:
     def persistence_suppressed(self) -> bool:
         return bool(self.envelope and self.envelope.suppress_persistence)
 
+    @property
+    def furthest_product_stage(self) -> str:
+        """Return the latest privacy-safe product stage observed by this policy."""
+
+        with self._lock:
+            return self._furthest_product_stage or "configuration"
+
     def resolve_route_pricing(
         self,
         family: ExternalCallFamily | str,
@@ -425,8 +432,6 @@ class RunCapPolicy:
     def note_product_stage(self, stage: str) -> None:
         """Record the latest sanitized product stage reached by this run."""
 
-        if not self.bounded:
-            return
         safe_stage = _safe_identity(stage, prefix="stage")
         with self._lock:
             self._furthest_product_stage = safe_stage
