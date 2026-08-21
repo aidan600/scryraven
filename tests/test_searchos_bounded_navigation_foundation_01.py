@@ -855,6 +855,26 @@ def test_navigation_judgment_is_exact_ref_only_and_pending_is_zero_charge() -> N
     assert after["pending_navigation_candidate_ref"] == navigation_window[0]["navigation_candidate_ref"]
 
 
+def test_navigation_window_hides_options_without_current_parent_custody() -> None:
+    state, _, _ = _admit("[child](/child)")
+    slot = deepcopy(state["slots_by_id"]["slot-1"])
+    slot["custody_refs"] = []
+    state["slots_by_id"]["slot-1"] = slot
+    state = _refresh_state(state)
+
+    assert project_navigation_window(state, slot_id="slot-1") == []
+
+
+def test_navigation_window_hides_options_after_slot_leaves_active_judgment() -> None:
+    state, _, _ = _admit("[child](/child)")
+    slot = deepcopy(state["slots_by_id"]["slot-1"])
+    slot["posture"] = SearchOSSlotPosture.STALE_OR_INVALID.value
+    state["slots_by_id"]["slot-1"] = slot
+    state = _refresh_state(state)
+
+    assert project_navigation_window(state, slot_id="slot-1") == []
+
+
 def test_ipv6_label_is_private_across_navigation_foundation_surfaces() -> None:
     literal = "2001:db8::1"
     parent_url = "https://[2001:db8::1]/root"

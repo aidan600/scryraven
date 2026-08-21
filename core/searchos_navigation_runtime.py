@@ -1417,17 +1417,34 @@ def _reduce_navigation_failure(
 def project_navigation_window(state: Mapping[str, Any], *, slot_id: str) -> list[dict[str, Any]]:
     """Project the current deterministic selectable prefix without persisting it."""
 
-    from core.searchos_iterative_judgment_runtime import validate_searchos_state
+    from core.searchos_iterative_judgment_runtime import (
+        SearchOSSlotPosture,
+        validate_searchos_state,
+    )
 
     canonical = validate_searchos_state(state)
     if _mapping(canonical.get("policy_snapshot")).get("navigation_runtime_open") is not True:
         return []
+    slot = _mapping(_mapping(canonical.get("slots_by_id")).get(slot_id))
+    if slot.get("posture") != SearchOSSlotPosture.ACTIVE_UNJUDGED.value:
+        return []
+    current_parent_refs = {
+        tuple(sorted(_compact_ref(item, "parent_read_custody_ref").items()))
+        for item in slot.get("custody_refs") or ()
+        if _mapping(item).get("stale") is not True
+    }
     navigation = _mapping(canonical.get("navigation"))
-    options = [
-        NavigationOption.from_dict(item)
-        for item in _mapping(navigation.get("options_by_id")).values()
-        if _mapping(item).get("slot_id") == slot_id and _mapping(item).get("disposition") == NAVIGATION_SELECTABLE
-    ]
+    options: list[NavigationOption] = []
+    for raw_option in _mapping(navigation.get("options_by_id")).values():
+        if (
+            _mapping(raw_option).get("slot_id") != slot_id
+            or _mapping(raw_option).get("disposition") != NAVIGATION_SELECTABLE
+        ):
+            continue
+        option = NavigationOption.from_dict(raw_option)
+        if tuple(sorted(option.parent_read_custody_ref.items())) not in current_parent_refs:
+            continue
+        options.append(option)
     options.sort(key=lambda item: item.admission_ordinal)
     limit = min(
         NAVIGATION_WINDOW_LIMIT,
