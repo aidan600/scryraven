@@ -461,6 +461,17 @@ def _component_analyst_case_supports_admission(analyst_artifact: Mapping[str, An
     return _component_analyst_case_posture(analyst_artifact) in {"supported", "supported_with_caveats"}
 
 
+def _note_bounded_product_stage(
+    runtime_scope: Mapping[str, Any],
+    stage: str,
+) -> None:
+    """Advance the existing closed bounded-run stage projection when active."""
+
+    cap_policy = runtime_scope.get("cap_policy")
+    if cap_policy is not None and getattr(cap_policy, "bounded", False):
+        cap_policy.note_product_stage(stage)
+
+
 def _semantic_material(
     *,
     run_kernel: Any,
@@ -3438,6 +3449,10 @@ def _execute_first_pass_n1_component_analyst(
         raise _ScheduledSemanticWorkBlocked(
             "first-pass N1 Component Analyst did not complete"
         ) from exc
+    _note_bounded_product_stage(
+        runtime_scope,
+        "component_analyst_artifact_ready",
+    )
     _record_analyst_query_resolution_candidates(
         run_kernel=run_kernel,
         artifact=analyst_artifact,
@@ -3448,6 +3463,14 @@ def _execute_first_pass_n1_component_analyst(
         bindable=bindable,
         analyst_artifact=analyst_artifact,
         query=query,
+    )
+    _note_bounded_product_stage(
+        runtime_scope,
+        (
+            "component_semantic_material_ready"
+            if observation is not None and coverage is not None
+            else "component_analyst_case_not_supporting"
+        ),
     )
     execute_multicomponent_component_admission(
         run_kernel=run_kernel,
@@ -3464,6 +3487,10 @@ def _execute_first_pass_n1_component_analyst(
             and _safe_mapping(getattr(bindable, "passage", None)).get("_provider")
             == "searchos_read_custody"
         ),
+    )
+    _note_bounded_product_stage(
+        runtime_scope,
+        "component_admission_complete",
     )
     run_kernel.install_multicomponent_graph_reproof_packet_context(
         component_analyst_input_packets=component_analyst_input_packets,
@@ -3527,6 +3554,10 @@ def _execute_first_pass_n1_component_analyst(
             "query": query,
         },
         complete_scheduler=False,
+    )
+    _note_bounded_product_stage(
+        runtime_scope,
+        "component_graph_ready",
     )
 
 

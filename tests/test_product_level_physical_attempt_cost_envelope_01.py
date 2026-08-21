@@ -1712,6 +1712,71 @@ def test_ordinary_pipeline_executes_bounded_isclose_with_explicit_policy(
         assert sentinel not in serialized
 
 
+def test_bounded_n1_admission_failure_projects_the_last_closed_downstream_stage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A post-Analyst admission error must not look like a retrieval stop."""
+
+    from core import ordinary_multicomponent_synthesis_runtime as multicomponent
+    from core.multicomponent_component_admission import (
+        MulticomponentComponentAdmissionError,
+    )
+
+    harness, policy, config, deps = _bounded_isclose_runtime(
+        tmp_path,
+        monkeypatch,
+    )
+    single_component_query = (
+        "What is Python's current official math.isclose tolerance rule?"
+    )
+    harness.query = single_component_query
+    config = replace(config, query=single_component_query)
+    projected_stages: list[str] = []
+    original_note_stage = multicomponent._note_bounded_product_stage
+
+    def capture_stage(runtime_scope: Any, stage: str) -> None:
+        projected_stages.append(stage)
+        original_note_stage(runtime_scope, stage)
+
+    monkeypatch.setattr(
+        multicomponent,
+        "_note_bounded_product_stage",
+        capture_stage,
+    )
+
+    def fail_admission(**_kwargs: Any) -> dict[str, Any]:
+        raise MulticomponentComponentAdmissionError(
+            "fixture closed component admission failure"
+        )
+
+    monkeypatch.setattr(
+        multicomponent,
+        "execute_multicomponent_component_admission",
+        fail_admission,
+    )
+
+    with pytest.raises(
+        MulticomponentComponentAdmissionError,
+        match="fixture closed component admission failure",
+    ):
+        orchestrator.run_pipeline(
+            config,
+            deps,
+            NullStatusWriter(),
+            CostAccumulator(),
+        )
+
+    assert harness.forbidden_live_calls == []
+    assert projected_stages[-2:] == [
+        "component_analyst_artifact_ready",
+        "component_semantic_material_ready",
+    ]
+    assert policy.physical_snapshot()["furthest_product_stage"] == (
+        "component_semantic_material_ready"
+    )
+
+
 @pytest.mark.parametrize(
     ("failure_boundary", "expected_stage"),
     [

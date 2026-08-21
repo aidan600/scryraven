@@ -3774,6 +3774,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     allow_searchos_component_receiver=True,
                 )
                 searchos_component_receiver_completed = True
+                if cap_policy is not None and cap_policy.bounded:
+                    cap_policy.note_product_stage(
+                        "searchos_component_receiver_complete"
+                    )
             except OrdinaryMulticomponentRuntimeError as exc:
                 searchos_component_receiver_failure_reason = (
                     "searchos_component_receiver_failure"
@@ -3837,6 +3841,23 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             ),
         )
         searchos_slice_a_projection["semantic_outcomes_by_slot"] = semantic_outcomes_by_slot
+        if cap_policy is not None and cap_policy.bounded:
+            required_outcomes = [
+                semantic_outcomes_by_slot.get(str(slot_id), {})
+                for slot_id in run_kernel.state.searchos_state.get(
+                    "required_slot_ids"
+                )
+                or ()
+            ]
+            cap_policy.note_product_stage(
+                "component_coverage_ready"
+                if required_outcomes
+                and all(
+                    outcome.get("semantic_admission_status") == "admitted"
+                    for outcome in required_outcomes
+                )
+                else "component_coverage_not_ready"
+            )
         readiness_action = run_kernel.authorize_searchos_slice_a_readiness(
             semantic_outcomes_by_slot=semantic_outcomes_by_slot
         )
@@ -4914,6 +4935,8 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         measure_context_stage=_measure_context_stage,
     )
     sufficiency_judgment_projection = sufficiency_handoff.projection
+    if cap_policy is not None and cap_policy.bounded:
+        cap_policy.note_product_stage("sufficiency_complete")
 
     component_gap_recovery_handoff = None
     component_gap_recovery_result = None
@@ -5010,6 +5033,12 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         locals(),
         default_system=DEFAULT_SYSTEM,
     )
+    if cap_policy is not None and cap_policy.bounded:
+        cap_policy.note_product_stage(
+            "final_answer_packet_blocked"
+            if final_answer_packet_handoff.author_input_blocked
+            else "final_answer_packet_ready"
+        )
     final_answer_packet_action = final_answer_packet_handoff.action
     final_answer_packet = final_answer_packet_handoff.packet
     blocked_fap_summary: dict[str, Any] | None = None
@@ -5072,6 +5101,8 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             api_key=or_api_key,
             stream_display=config.author_stream_display,
         )
+        if cap_policy is not None and cap_policy.bounded:
+            cap_policy.note_product_stage("author_complete")
         report = author_execution_handoff.report
         author_seconds = author_execution_handoff.author_seconds
         synthesis_seconds = author_execution_handoff.synthesis_seconds  # noqa: F841
