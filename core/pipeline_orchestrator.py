@@ -316,6 +316,9 @@ from core.searchos_existing_gap_recovery_runtime import (
     build_searchos_existing_gap_basis,
     build_searchos_materially_novel_recovery_purpose,
 )
+from core.searchos_iterative_judgment_runtime import (
+    is_searchos_followup_acquisition_failure_reason,
+)
 from core.searchos_slice_a_product_runtime import (
     SEARCHOS_SLICE_A_TRACE_KEY,
     build_searchos_semantic_outcomes_by_slot,
@@ -3800,12 +3803,24 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         )
     searched_premise_recovery_admission: dict[str, Any] = {}
     if searchos_slice_a_active and searchos_component_receiver_completed:
-        searched_premise_recovery_admission = dict(
-            authorize_searched_premise_recovery_from_analyst_proposals(
-                run_kernel=run_kernel,
-                requested_mode=strategy,
-            )
+        pending_premise = resolve_next_searched_premise_recovery_posture(
+            run_kernel=run_kernel,
         )
+        if pending_premise.get("lawful_selected_recovery_work_remains") is True:
+            searched_premise_recovery_admission = dict(
+                authorize_searched_premise_recovery_from_analyst_proposals(
+                    run_kernel=run_kernel,
+                    requested_mode=strategy,
+                )
+            )
+        else:
+            searched_premise_recovery_admission = {
+                "status": str(
+                    pending_premise.get("status")
+                    or "no_current_pending_searched_premise"
+                ),
+                "work_authorized": False,
+            }
     if searchos_slice_a_active:
         if searchos_slice_a_result is None:
             raise PipelineError(
@@ -4226,13 +4241,20 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                             recovery_slot.get("latest_reason")
                             or "recovery_cycle_produced_no_semantic_handoff"
                         )
-                        recovery_failure_interpretation = {
-                            "judgment_failed": ("provider_or_acquisition_blocker"),
-                            "stale_or_invalid": ("structural_or_validation_blocker"),
-                        }.get(
-                            str(recovery_slot.get("posture") or ""),
-                            "lawful_recovery_exhaustion",
-                        )
+                        if is_searchos_followup_acquisition_failure_reason(
+                            recovery_failure_reason
+                        ):
+                            recovery_failure_interpretation = (
+                                "provider_or_acquisition_blocker"
+                            )
+                        else:
+                            recovery_failure_interpretation = {
+                                "judgment_failed": ("provider_or_acquisition_blocker"),
+                                "stale_or_invalid": ("structural_or_validation_blocker"),
+                            }.get(
+                                str(recovery_slot.get("posture") or ""),
+                                "lawful_recovery_exhaustion",
+                            )
                     recovery_slot = dict(
                         dict(
                             run_kernel.state.searchos_state.get(
@@ -4459,21 +4481,35 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     or ""
                 )
                 if posture in {"judgment_failed", "stale_or_invalid"}:
+                    reason_code = (
+                        unresolved_mapping.get("reason")
+                        or posture
+                    )
+                    followup_acquisition = (
+                        is_searchos_followup_acquisition_failure_reason(
+                            reason_code
+                        )
+                    )
+                    blocker_class = (
+                        "provider_or_acquisition_failure"
+                        if followup_acquisition
+                        else "validation_failure"
+                    )
+                    interpretation = (
+                        "provider_or_acquisition_blocker"
+                        if followup_acquisition
+                        else "structural_or_validation_blocker"
+                    )
                     blocker_key = (
                         unresolved_slot_id,
-                        "validation_failure",
+                        blocker_class,
                     )
                     if blocker_key not in represented_blocker_keys:
                         subordinate_blocker_facts.append(
                             {
-                                "blocker_class": "validation_failure",
-                                "interpretation": (
-                                    "structural_or_validation_blocker"
-                                ),
-                                "reason_code": (
-                                    unresolved_mapping.get("reason")
-                                    or posture
-                                ),
+                                "blocker_class": blocker_class,
+                                "interpretation": interpretation,
+                                "reason_code": reason_code,
                                 "slot_id": unresolved_slot_id,
                             }
                         )
@@ -5327,6 +5363,8 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             state=run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE),
             expected_run_id=run_kernel.state.run_id,
             expected_request_id=run_kernel.state.request_id,
+            observations=run_kernel.state.observations,
+            kernel_request_id=run_kernel.state.request_id,
         )
         if component_analyst_failure is not None:
             searchos_slice_a_projection["component_analyst_failure"] = (

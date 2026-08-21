@@ -51,6 +51,8 @@ from core.searchos_iterative_judgment_runtime import (
     build_searchos_read_custody_material_ref,
     build_searchos_revision_1_candidate_state_v1,
     candidate_use_option_ref,
+    is_searchos_followup_acquisition_failure_reason,
+    is_searchos_recoverable_judgment_output_failure_reason,
     searchos_revision_1_candidate_state_ref,
     validate_searchos_append_only_lineage,
     validate_searchos_judgment_model_output,
@@ -79,6 +81,11 @@ support an answer. read_custody_materials contain the bounded readable content
 that must be judged against active_need; only this material may be handed to
 semantic evaluation. Do not treat custody-ref presence alone as readiness.
 decision_contract is the normative output contract.
+Completed candidate option tokens are withheld from model-visible READ-custody
+lineage. Every model-visible candidate_use_option_id belongs to the current
+authorized_request.candidate_use_options. interpretation_binding_contract may
+repeat those current basis refs, and candidate_directional_contexts may repeat
+them only as directional context.
 
 Return exactly one JSON object matching searchos_judgment_decision_v1. Always
 include schema_version, action, and a nonempty bounded reason. Do not author
@@ -90,6 +97,11 @@ authorized_request.legal_actions:
   authorized_request.candidate_use_options[*].candidate_use_option_ref.candidate_use_option_id
   and emits that compact candidate_use_option_id. The runtime binds the exact
   current candidate_use_option_ref, including nested lineage_snapshot_ref.
+  Copy the complete current token character-for-character, including its
+  searchos-option: prefix and full suffix. Never substitute a normalized_url,
+  candidate_id, title, snippet, list position, shortened token, altered token,
+  or token remembered from an earlier decision. If no exact current token can
+  be copied, choose another currently legal action instead of REQUEST_READ_PAGE.
   Do not copy the whole option object or reconstruct lineage, URL, digest, or
   slot fields from candidate_directional_contexts.
 - PROPOSE_FOLLOWUP_QUERY authors new bounded followup_query text from
@@ -142,6 +154,11 @@ but cannot support an answer. read_custody_materials contain the bounded
 readable content that must be judged against active_need; only this material
 may be handed to semantic evaluation. Do not treat custody-ref presence alone
 as readiness. decision_contract is the normative output contract.
+Completed candidate option tokens are withheld from model-visible READ-custody
+lineage. Every model-visible candidate_use_option_id belongs to the current
+authorized_request.candidate_use_options. interpretation_binding_contract may
+repeat those current basis refs, and candidate_directional_contexts may repeat
+them only as directional context.
 
 Return exactly one JSON object matching
 searchos_navigation_judgment_decision_v1. Always include schema_version,
@@ -154,6 +171,11 @@ authorized_request.legal_actions:
   authorized_request.candidate_use_options[*].candidate_use_option_ref.candidate_use_option_id
   and emits that compact candidate_use_option_id. The runtime binds the exact
   current candidate_use_option_ref, including nested lineage_snapshot_ref.
+  Copy the complete current token character-for-character, including its
+  searchos-option: prefix and full suffix. Never substitute a normalized_url,
+  candidate_id, title, snippet, list position, shortened token, altered token,
+  or token remembered from an earlier decision. If no exact current token can
+  be copied, choose another currently legal action instead of REQUEST_READ_PAGE.
   Do not copy the whole option object or reconstruct lineage, URL, digest, or
   slot fields from candidate_directional_contexts.
 - PROPOSE_FOLLOWUP_QUERY authors new bounded followup_query text from
@@ -1274,6 +1296,7 @@ def _execute_searchos_slice_a_iterative_judgment(
                 )
             )
         )
+    stop_recovery_after_output_rejection = False
 
     while True:
         state = run_kernel.state.searchos_state
@@ -1367,7 +1390,6 @@ def _execute_searchos_slice_a_iterative_judgment(
                     authorized_request=request,
                     slot_id=slot_id,
                     options=options,
-                    window=window,
                     bindings=bindings,
                     binding_candidate_states=binding_candidate_states,
                     binding_iteration_refs=binding_iteration_refs,
@@ -1410,6 +1432,20 @@ def _execute_searchos_slice_a_iterative_judgment(
                         slot_id=slot_id,
                         reason=failure_reason,
                     )
+                    continue
+                if (
+                    recovery_cycle_ref is not None
+                    and is_searchos_recoverable_judgment_output_failure_reason(
+                        failure_reason
+                    )
+                ):
+                    # Expected recovery rejection is already recorded as
+                    # judgment_output_rejected with current READ preserved.
+                    # Stop this recovery loop so the cycle can terminalize
+                    # through existing recovery / Sufficiency / FAP. Do not
+                    # auto-handoff, and do not retry into uncaught control.
+                    stop_recovery_after_output_rejection = True
+                    break
                 continue
             run_kernel.reduce(
                 Observation.from_action(
@@ -1599,7 +1635,7 @@ def _execute_searchos_slice_a_iterative_judgment(
                         )
                     )
                 except Exception as exc:
-                    run_kernel.mark_searchos_slot_stale_or_invalid(
+                    run_kernel.record_searchos_followup_acquisition_failed(
                         slot_id=slot_id,
                         reason=(
                             "followup_query_admission_rejected:"
@@ -1687,7 +1723,7 @@ def _execute_searchos_slice_a_iterative_judgment(
                 for binding in wave_bindings:
                     binding_iteration_refs[binding.binding_id] = iteration_ref
                 if wave.get("followup_failure_reason"):
-                    run_kernel.mark_searchos_slot_stale_or_invalid(
+                    run_kernel.record_searchos_followup_acquisition_failed(
                         slot_id=slot_id,
                         reason=(
                             "followup_discover_failed:"
@@ -1745,6 +1781,9 @@ def _execute_searchos_slice_a_iterative_judgment(
                     )
                 )
                 semantic_handoffs.append(deepcopy(handoff_action.inputs["semantic_handoff"]))
+
+        if stop_recovery_after_output_rejection:
+            break
 
     new_semantic_material = _semantic_passages(
         semantic_handoffs=semantic_handoffs[prior_handoff_count:],
@@ -2442,7 +2481,6 @@ def _build_searchos_judgment_model_input(
     authorized_request: Mapping[str, Any],
     slot_id: str,
     options: Sequence[Mapping[str, Any]],
-    window: Mapping[str, Any],
     bindings: Sequence[SelectedCandidateMaterialNeedBindingV1],
     binding_candidate_states: Mapping[str, Mapping[str, Any]],
     binding_iteration_refs: Mapping[str, Mapping[str, Any]],
@@ -2479,7 +2517,7 @@ def _build_searchos_judgment_model_input(
                 "snippet": _bounded_judgment_text(row.get("snippet"), 600),
             }
     directional_contexts: list[dict[str, Any]] = []
-    for visible in window.get("model_visible_candidate_use_options") or ():
+    for visible in request.get("candidate_use_options") or ():
         visible_mapping = dict(visible) if isinstance(visible, Mapping) else {}
         option_ref = dict(visible_mapping.get("candidate_use_option_ref") or {})
         option_id = str(option_ref.get("candidate_use_option_id") or "")
@@ -2499,21 +2537,26 @@ def _build_searchos_judgment_model_input(
                 "support_proposal_eligible": False,
             }
         )
-    read_materials = _build_read_custody_judgment_materials(
+    exact_read_materials = _build_read_custody_judgment_materials(
         searchos_state=run_kernel.state.searchos_state,
         slot=slot,
         current_options=current_options,
         packet_by_custody_id=packet_by_custody_id,
     )
-    if [item["read_custody_ref"] for item in read_materials] != list(
+    if [item["read_custody_ref"] for item in exact_read_materials] != list(
         request.get("read_custody_refs") or ()
     ):
         raise SearchOSRuntimeError(
             "transient READ material does not match authorized custody order"
         )
+    model_request = _project_searchos_judgment_request_for_model(request)
+    read_materials = [
+        _project_read_custody_judgment_material_for_model(item)
+        for item in exact_read_materials
+    ]
     core = {
         "schema_version": SEARCHOS_JUDGMENT_MODEL_INPUT_SCHEMA_VERSION,
-        "authorized_request": request,
+        "authorized_request": model_request,
         "active_need": active_need,
         "candidate_directional_contexts": directional_contexts,
         "read_custody_materials": read_materials,
@@ -2524,7 +2567,82 @@ def _build_searchos_judgment_model_input(
         "bounded_transient_input": True,
         "durable_retention_allowed": False,
     }
+    authorized_candidate_ids = {
+        str(
+            dict(item.get("candidate_use_option_ref") or {}).get(
+                "candidate_use_option_id"
+            )
+            or ""
+        )
+        for item in model_request.get("candidate_use_options") or ()
+        if isinstance(item, Mapping)
+    }
+    if not _model_visible_candidate_option_ids(core) <= authorized_candidate_ids:
+        raise SearchOSRuntimeError(
+            "model-visible candidate token falls outside current authorized options"
+        )
     return {**core, "model_input_digest": _digest(core)}
+
+
+def _project_searchos_judgment_request_for_model(
+    request: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Withhold completed candidate tokens while preserving compact custody IDs."""
+
+    projected = deepcopy(dict(request))
+    projected["read_custody_refs"] = [
+        _project_read_custody_ref_for_model(item)
+        for item in request.get("read_custody_refs") or ()
+        if isinstance(item, Mapping)
+    ]
+    binding_contract = dict(projected.get("interpretation_binding_contract") or {})
+    binding_contract["read_basis_refs"] = [
+        _project_read_custody_ref_for_model(item)
+        for item in binding_contract.get("read_basis_refs") or ()
+        if isinstance(item, Mapping)
+    ]
+    projected["interpretation_binding_contract"] = binding_contract
+    return projected
+
+
+def _project_read_custody_ref_for_model(
+    custody_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    projected = deepcopy(dict(custody_ref))
+    projected.pop("candidate_use_option_ref", None)
+    return projected
+
+
+def _project_read_custody_judgment_material_for_model(
+    material: Mapping[str, Any],
+) -> dict[str, Any]:
+    projected = deepcopy(dict(material))
+    read_custody_ref = projected.get("read_custody_ref")
+    if isinstance(read_custody_ref, Mapping):
+        projected["read_custody_ref"] = _project_read_custody_ref_for_model(
+            read_custody_ref
+        )
+    projected.pop("stable_candidate_use_option_ref", None)
+    projected.pop("current_candidate_lineage_snapshot_ref", None)
+    return projected
+
+
+def _model_visible_candidate_option_ids(value: Any) -> set[str]:
+    if isinstance(value, Mapping):
+        tokens = {
+            str(item)
+            for key, item in value.items()
+            if key == "candidate_use_option_id" and isinstance(item, str)
+        }
+        for item in value.values():
+            tokens.update(_model_visible_candidate_option_ids(item))
+        return tokens
+    if isinstance(value, (list, tuple)):
+        tokens: set[str] = set()
+        for item in value:
+            tokens.update(_model_visible_candidate_option_ids(item))
+        return tokens
+    return set()
 
 
 def _build_active_need_projection(
@@ -4011,6 +4129,10 @@ def _project_safe_failure_class(*, posture: str, reason: Any) -> str:
         "awaiting_navigation_execution",
     }:
         return "none"
+    if is_searchos_followup_acquisition_failure_reason(reason):
+        # Acquisition failure is not lineage stale. The live state model now
+        # restores active_unjudged; this branch only covers leftover projections.
+        return "none" if posture != "stale_or_invalid" else "other_safe"
     if posture == "budget_exhausted":
         return "budget_exhausted"
     if posture == "unresolved_handoff":

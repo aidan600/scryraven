@@ -55,6 +55,9 @@ from core.multicomponent_component_admission import (
     component_analyst_resume_input_packet,
     execute_multicomponent_component_admission,
 )
+from core.multicomponent_graph_scheduling import (
+    canonical_multicomponent_contract_ref,
+)
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
     ROLE_COMPONENT_ANALYST_RESUME,
@@ -252,17 +255,7 @@ def _clean_text(value: Any, *, limit: int = 1000) -> str | None:
 
 
 def _accepted_contract_ref(accepted: Mapping[str, Any]) -> dict[str, Any]:
-    return {
-        "owner": accepted.get("owner"),
-        "canonical_state": accepted.get("canonical_state") is True,
-        "run_id": accepted.get("run_id"),
-        "request_id": accepted.get("request_id"),
-        "accepted_contract_version": accepted.get("accepted_contract_version"),
-        "accepted_contract_digest": accepted.get("accepted_contract_digest"),
-        "parent_question_meaning_record_id": accepted.get("parent_question_meaning_record_id"),
-        "parent_question_meaning_record_digest": accepted.get("parent_question_meaning_record_digest"),
-        "accepted_answer_component_count": accepted.get("accepted_answer_component_count"),
-    }
+    return canonical_multicomponent_contract_ref(accepted)
 
 
 def _role_runtime_kwargs(runtime_scope: Mapping[str, Any]) -> dict[str, Any]:
@@ -1541,7 +1534,12 @@ def _admit_scheduler_validated_synthesis(run_kernel: Any) -> dict[str, Any]:
     return graph
 
 
-def _finalize_scheduler_graph(*, run_kernel: Any, drive_context: Mapping[str, Any]) -> None:
+def _finalize_scheduler_graph(
+    *,
+    run_kernel: Any,
+    drive_context: Mapping[str, Any],
+    complete_scheduler: bool = True,
+) -> None:
     graph = _admit_scheduler_validated_synthesis(run_kernel)
     logical, physical = derive_multicomponent_role_call_accounting(
         run_kernel.state.projections,
@@ -1562,7 +1560,8 @@ def _finalize_scheduler_graph(*, run_kernel: Any, drive_context: Mapping[str, An
         graph_candidate=finalize_component_work_graph_v1(graph),
     )
     del final_graph
-    run_kernel.complete_multicomponent_graph_scheduler()
+    if complete_scheduler:
+        run_kernel.complete_multicomponent_graph_scheduler()
 
 
 def _record_analyst_query_resolution_candidates(
@@ -3383,6 +3382,154 @@ def _drive_run_kernel_selected_semantic_work(
             raise
 
 
+def _execute_first_pass_n1_component_analyst(
+    *,
+    run_kernel: Any,
+    runtime_scope: Mapping[str, Any],
+    requested_synthesis_directive: str,
+    selected_bindables: Mapping[str, Any],
+    component_analyst_input_packets: Mapping[str, Mapping[str, Any]],
+    component_refs: Sequence[Mapping[str, Any]],
+    query: str,
+) -> None:
+    """Ordinary first-pass N1: unscheduled Analyst, then Graph V1 wrap.
+
+    Bypasses scheduler initialize/lease/drive. Records query-resolution
+    proposals so Boundary B can still arm. Installs the Analyst packet bag
+    for wrap reproof without creating a scheduler.
+    """
+
+    from core.component_work_graph_v1 import (
+        component_work_graph_v1_from_single_component_admission,
+    )
+    from core.multicomponent_component_admission import (
+        MULTICOMPONENT_COMPONENT_ADMISSION_STAGE,
+    )
+    from core.multicomponent_graph_scheduling import MULTICOMPONENT_SCHEDULER_STAGE
+
+    if run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE):
+        raise OrdinaryMulticomponentRuntimeError(
+            "first-pass N1 Analyst cannot run beside an initialized scheduler"
+        )
+    if len(component_refs) != 1:
+        raise OrdinaryMulticomponentRuntimeError(
+            "first-pass N1 Analyst requires exactly one accepted component"
+        )
+    component_ref = _safe_mapping(component_refs[0])
+    component_id = str(component_ref.get("component_id") or "")
+    analyst_input = _safe_mapping(component_analyst_input_packets.get(component_id))
+    bindable = selected_bindables.get(component_id)
+    if not component_id or not analyst_input:
+        raise OrdinaryMulticomponentRuntimeError(
+            "first-pass N1 Analyst lost its exact component packet"
+        )
+    role_kwargs = _role_runtime_kwargs(runtime_scope)
+    try:
+        analyst_artifact = _execute_multicomponent_role_transport(
+            run_kernel=run_kernel,
+            role=ROLE_COMPONENT_ANALYST,
+            input_packet=analyst_input,
+            logical_evaluation_key=component_id,
+            **role_kwargs,
+        )
+    except RunCapExceeded:
+        raise
+    except Exception as exc:
+        raise _ScheduledSemanticWorkBlocked(
+            "first-pass N1 Component Analyst did not complete"
+        ) from exc
+    _record_analyst_query_resolution_candidates(
+        run_kernel=run_kernel,
+        artifact=analyst_artifact,
+    )
+    observation, content_refs, coverage = _semantic_material(
+        run_kernel=run_kernel,
+        component_ref=component_ref,
+        bindable=bindable,
+        analyst_artifact=analyst_artifact,
+        query=query,
+    )
+    execute_multicomponent_component_admission(
+        run_kernel=run_kernel,
+        component_id=component_id,
+        analyst_artifact=analyst_artifact,
+        analyst_input_packet=analyst_input,
+        semantic_observation=observation,
+        sanitized_content_references=content_refs,
+        component_coverage_record=coverage,
+        logical_evaluation_key=component_id,
+        allow_searchos_semantic_requirement_historical_gap_exception=(
+            _safe_mapping(getattr(bindable, "passage", None)).get("material_authority")
+            == "read_custody_material"
+            and _safe_mapping(getattr(bindable, "passage", None)).get("_provider")
+            == "searchos_read_custody"
+        ),
+    )
+    run_kernel.install_multicomponent_graph_reproof_packet_context(
+        component_analyst_input_packets=component_analyst_input_packets,
+        requested_synthesis_directive=requested_synthesis_directive,
+        configured_provider=str(runtime_scope.get("smart_provider") or ""),
+        requested_mode=str(runtime_scope.get("mode") or runtime_scope.get("strategy") or "Balanced"),
+        allow_single_component_direct_admission=True,
+    )
+    accepted = run_kernel.state.current_answer_contract or run_kernel.state.initial_answer_contract
+    admissions = [
+        _safe_mapping(item)
+        for item in _safe_mapping(
+            run_kernel.state.projections.get(MULTICOMPONENT_COMPONENT_ADMISSION_STAGE)
+        ).get("component_admission_refs")
+        or ()
+        if isinstance(item, Mapping)
+    ]
+    if len(admissions) != 1:
+        raise OrdinaryMulticomponentRuntimeError("N=1 receiver lacks its canonical component admission")
+    if admissions[0].get("admission_status") not in {
+        "admitted",
+        "admitted_with_caveats",
+    }:
+        raise _ScheduledSemanticWorkBlocked(
+            "N=1 existing component completed analysis without admitted support"
+        )
+    component_node = component_work_node_v1_from_admitted_component(
+        run_id=run_kernel.state.run_id,
+        request_id=run_kernel.state.request_id,
+        accepted_component_ref=component_ref,
+        component_admission_ref=admissions[0],
+    )
+    single_graph = component_work_graph_v1_from_single_component_admission(
+        run_id=run_kernel.state.run_id,
+        request_id=run_kernel.state.request_id,
+        accepted_contract_ref={
+            "owner": accepted.get("owner"),
+            "canonical_state": accepted.get("canonical_state"),
+            "run_id": run_kernel.state.run_id,
+            "request_id": run_kernel.state.request_id,
+            "accepted_contract_version": accepted.get("accepted_contract_version"),
+            "accepted_contract_digest": accepted.get("accepted_contract_digest"),
+        },
+        requested_synthesis_directive=requested_synthesis_directive,
+        component_node=component_node,
+    )
+    reduce_component_work_graph_v1(
+        run_kernel=run_kernel,
+        operation="structure",
+        graph_candidate=single_graph,
+    )
+    _finalize_scheduler_graph(
+        run_kernel=run_kernel,
+        drive_context={
+            "runtime_scope": runtime_scope,
+            "selected_bindables": dict(selected_bindables),
+            "component_analyst_input_packets": {
+                str(key): _safe_mapping(value)
+                for key, value in component_analyst_input_packets.items()
+            },
+            "query": query,
+        },
+        complete_scheduler=False,
+    )
+
+
 def _execute_selected_lane(
     *,
     run_kernel: Any,
@@ -3489,6 +3636,20 @@ def _execute_selected_lane(
         )
         for component_ref in component_refs
     }
+    if single_component_direct_admission:
+        try:
+            _execute_first_pass_n1_component_analyst(
+                run_kernel=run_kernel,
+                runtime_scope=runtime_scope,
+                requested_synthesis_directive=requested_synthesis_directive,
+                selected_bindables=selected,
+                component_analyst_input_packets=analyst_inputs,
+                component_refs=component_refs,
+                query=query,
+            )
+        finally:
+            run_kernel.release_multicomponent_scheduler_transient_context()
+        return
     run_kernel.initialize_multicomponent_graph_scheduler(
         component_analyst_input_packets=analyst_inputs,
         requested_synthesis_directive=requested_synthesis_directive,

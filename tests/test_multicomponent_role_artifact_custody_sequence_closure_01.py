@@ -11,7 +11,10 @@ from core.analyst_query_resolution_proposal import (
     ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY,
     selected_proposals_for_role_artifact,
 )
-from core.multicomponent_graph_scheduling import LEASE_FAILED
+from core.multicomponent_graph_scheduling import (
+    LEASE_FAILED,
+    canonical_multicomponent_contract_ref,
+)
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
     ROLE_CROSS_COMPONENT_ANALYST,
@@ -183,6 +186,97 @@ def test_invalid_role_artifact_reduction_is_atomic_and_blocks_n_plus_one() -> No
             )
         )
     assert later.action_id not in kernel.state.reduced_action_ids
+
+
+def test_unscheduled_n1_analyst_proposal_keeps_exact_current_lineage() -> None:
+    kernel = RunKernel.start(
+        run_id="unscheduled-n1-lineage-run",
+        request_id="unscheduled-n1-lineage-request",
+    )
+    target_ref = {
+        "component_id": "target_E",
+        "component_revision": "1",
+        "component_digest": "target-e-digest",
+        "user_facing_label": "Target E",
+        "user_facing_question": "What establishes target E?",
+        "mandatory_caveats": [],
+        "prohibited_upgrades": [],
+    }
+    contract = {
+        "owner": "RunKernel.AnswerContract",
+        "canonical_state": True,
+        "run_id": kernel.state.run_id,
+        "request_id": kernel.state.request_id,
+        "accepted_contract_version": "1",
+        "accepted_contract_digest": "a" * 64,
+        "parent_question_meaning_record_id": "qmr:n1-lineage",
+        "parent_question_meaning_record_digest": "b" * 64,
+        "accepted_answer_component_count": 1,
+        "accepted_answer_component_refs": [target_ref],
+    }
+    kernel.state.initial_answer_contract = deepcopy(contract)
+    kernel.state.initial_answer_contract_projection = {"canonical_state": True}
+    candidate = {
+        "classification": "searched_premise",
+        "local_proposal_key": "recover_C",
+        "local_target_key": "target_E",
+        "normalized_premise_identity": "alder premise c",
+        "answer_target_refs": [target_ref],
+        "parent_component_refs": [target_ref],
+        "current_dependency_component_refs": [],
+        "premise_semantics": "Premise C is required to evaluate target E.",
+        "user_facing_label": "Recovered premise C",
+        "user_facing_question": "Which filing condition establishes premise C?",
+        "acceptance_criteria": ["Verify the signed filing condition."],
+        "requirement_posture": "required",
+        "materiality": "material",
+        "partial_answer_policy": "qualify_visible_gap",
+        "mandatory_caveats": ["Premise C remains source bounded."],
+        "source_obligation_specification": {
+            "candidate_id": "obligation:component:C",
+            "obligation_kind": "authoritative_direct_support",
+            "strictness": "required",
+        },
+        "necessity_rationale": "Target E cannot be fulfilled without C.",
+        "why_current_premises_insufficient": "Current evidence does not establish C.",
+        "searchability_material_need_posture": "material_and_searchable",
+        "recovery_generation": {"parent_ref": "generation:0", "depth": 1},
+        "assumptions": [],
+        "caveats": [],
+        "prohibited_upgrades": ["Do not infer C from search direction."],
+    }
+    artifact = execute_multicomponent_role_call(
+        run_kernel=kernel,
+        role=ROLE_COMPONENT_ANALYST,
+        input_packet={"fixture": "unscheduled-n1-current-lineage"},
+        logical_evaluation_key="target_E",
+        **_role_kwargs(
+            ask_model=lambda *_args, **_kwargs: json.dumps(
+                {
+                    "case_posture": "supported",
+                    "claim_text": "Target E remains contingent on premise C.",
+                    "evidence_analysis": "The bounded input exposes the missing premise.",
+                    "self_audit": "No unsupported conclusion is asserted.",
+                    "query_resolution_proposals": [candidate],
+                }
+            )
+        ),
+    )
+
+    assert artifact["accepted_contract_ref"] == (
+        canonical_multicomponent_contract_ref(contract)
+    )
+    assert artifact["graph_ref"] == {}
+    registry = record_analyst_query_resolution_candidates(
+        run_kernel=kernel,
+        artifact=artifact,
+    )
+    proposal = registry["proposals"][0]
+    assert proposal["parent_contract_ref"] == artifact["accepted_contract_ref"]
+    assert proposal["parent_graph_explicitly_absent"] is True
+    assert registry["proposal_lifecycle"][proposal["proposal_id"]]["status"] == (
+        "pending"
+    )
 
 
 def test_failed_role_observation_reduction_closes_current_action(

@@ -1110,6 +1110,133 @@ def test_product_existing_gap_recovers_through_same_component_roles(
     assert "could not produce a supported answer" not in outcome.report
 
 
+def test_recovery_judgment_output_rejected_reaches_sufficiency_blocked_fap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sufficiency_inputs = _capture_sufficiency_inputs(monkeypatch)
+    _install_initially_unsupported_component(
+        monkeypatch,
+        remain_unsupported=True,
+    )
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        mode="Balanced",
+        query=(
+            "What do Alpha's current API docs say about the Raven endpoint?"
+        ),
+        core_topic="Alpha current API documentation",
+        primary_entity="Alpha",
+        researcher_queries=["Alpha current API documentation"],
+        evidence_rows=_initial_incomplete_canonical_rows(),
+        followup_evidence_rows=_recovered_canonical_rows(),
+        read_assessment_decision=(
+            "RECOVERY_FOLLOWUP_THEN_OMIT_POST_READ_ASSESSMENTS"
+        ),
+        read_content_by_url={
+            "https://docs.alpha.example/api": (
+                "Alpha's canonical API documentation lists the endpoint, "
+                "but omits its current response name."
+            ),
+            "https://docs.alpha.example/api/raven": (
+                "Alpha's current canonical API response name is Raven."
+            ),
+            "https://example.test/alpha-api-overview": (
+                "A secondary overview confirms that Alpha publishes an API, "
+                "without stating the current canonical response name."
+            ),
+        },
+    )
+
+    kernel = harness.run_kernel
+    assert kernel is not None
+    terminal = _generalized_recovery_terminal(kernel)
+    recovery_cycle = _cycle_admission_for_terminal(
+        kernel.state.searchos_state,
+        terminal,
+    )
+    recovery_slot = kernel.state.searchos_state["slots_by_id"][
+        recovery_cycle["recovery_slot_ref"]["slot_id"]
+    ]
+    rejection_events = [
+        item
+        for item in recovery_slot.get("action_history") or ()
+        if isinstance(item, Mapping)
+        and item.get("event") == "judgment_output_rejected"
+    ]
+    assert rejection_events
+    assert rejection_events[-1]["auto_handoff"] is False
+    assert rejection_events[-1]["support_admitted"] is False
+    assert recovery_slot["custody_refs"]
+    assert all(
+        item.get("stale") is False for item in recovery_slot["custody_refs"]
+    )
+    assert all(
+        item.get("support_admitted") is False
+        for item in recovery_slot["custody_refs"]
+    )
+    assert recovery_slot["posture"] != "semantically_handed_off"
+    assert terminal["terminal_status"] == "exhausted_insufficient"
+    assert terminal["terminal_interpretation"] == "lawful_recovery_exhaustion"
+    assert "pipeline_failure" not in json.dumps(
+        outcome.execution_trace.get("blocked_fap_terminal") or {},
+        sort_keys=True,
+    )
+    blocked = dict(outcome.execution_trace["blocked_fap_terminal"])
+    assert blocked["author_called"] is False
+    assert not harness.author_prompts
+    sufficiency = kernel.state.sufficiency_judgment_projection
+    assert sufficiency["final_answer_allowed"] is False
+    consumption = sufficiency[
+        "searchos_existing_gap_recovery_terminal_consumption"
+    ]
+    assert consumption["terminal_status"] == "exhausted_insufficient"
+    assert consumption["settled_interpretation"] == "lawful_recovery_exhaustion"
+    assert sufficiency_inputs
+    assert not kernel.state.semantic_observation_admission_history
+
+
+@pytest.mark.parametrize(
+    ("error_type", "message"),
+    [
+        (RuntimeError, "unexpected recovery programming error"),
+        (KeyError, "unexpected recovery state key"),
+        (TypeError, "unexpected recovery type error"),
+    ],
+    ids=("runtime-error", "key-error", "unrelated-type-error"),
+)
+def test_unexpected_recovery_cycle_exception_is_not_blocked_terminal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    error_type: type[Exception],
+    message: str,
+) -> None:
+    def boom(**_kwargs: Any) -> Any:
+        raise error_type(message)
+
+    monkeypatch.setattr(
+        pipeline_orchestrator,
+        "execute_searchos_recovery_cycle",
+        boom,
+    )
+    _install_initially_unsupported_component(
+        monkeypatch,
+        remain_unsupported=True,
+    )
+    with pytest.raises(error_type):
+        run_post_retirement_ordinary_pipeline(
+            tmp_path,
+            monkeypatch,
+            mode="Balanced",
+            query="What is Alpha's current official operating rule?",
+            core_topic="Alpha current official operating rule",
+            primary_entity="Alpha",
+            researcher_queries=["Alpha current official operating rule"],
+            evidence_rows=_official_evidence_rows(),
+        )
+
+
 def test_direct_component_recovery_credits_only_its_exact_obligation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

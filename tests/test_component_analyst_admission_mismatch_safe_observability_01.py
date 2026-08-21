@@ -834,10 +834,10 @@ def test_searchos_n1_success_path_keeps_identical_a_g_digest(
     )
 
     scheduler_packets: list[dict[str, Any]] = []
-    original_scheduler_initialize = RunKernel.initialize_multicomponent_graph_scheduler
+    original_packet_install = RunKernel.install_multicomponent_graph_reproof_packet_context
 
-    def capture_scheduler_initialization(self: Any, **kwargs: Any) -> Any:
-        result = original_scheduler_initialize(self, **kwargs)
+    def capture_packet_install(self: Any, **kwargs: Any) -> Any:
+        result = original_packet_install(self, **kwargs)
         packets = {
             str(key): dict(value)
             for key, value in kwargs["component_analyst_input_packets"].items()
@@ -847,8 +847,8 @@ def test_searchos_n1_success_path_keeps_identical_a_g_digest(
 
     monkeypatch.setattr(
         RunKernel,
-        "initialize_multicomponent_graph_scheduler",
-        capture_scheduler_initialization,
+        "install_multicomponent_graph_reproof_packet_context",
+        capture_packet_install,
     )
     captured: dict[str, Any] = {}
     original_execute = multicomponent.execute_multicomponent_component_admission
@@ -906,17 +906,10 @@ def test_searchos_n1_success_path_keeps_identical_a_g_digest(
     assert safe_packet_digest(supplied) == digest
     assert safe_packet_digest(reconstructed) == digest
     assert artifact["input_packet_digest"] == digest
-    scheduler = harness.run_kernel.state.projections[MULTICOMPONENT_SCHEDULER_STAGE]
-    analyst_leases = [
-        dict(item)
-        for item in scheduler.get("lease_history") or ()
-        if dict(dict(item).get("work") or {}).get("role") == ROLE_COMPONENT_ANALYST
-    ]
-    assert analyst_leases
-    assert all(
-        dict(item.get("work") or {}).get("input_packet_digest") == digest
-        for item in analyst_leases
-    )
+    assert MULTICOMPONENT_SCHEDULER_STAGE not in harness.run_kernel.state.projections
+    released = harness.run_kernel.state.multicomponent_scheduler_context
+    assert released.get("transient_context_released") is True
+    assert released.get("component_input_packet_digests")
     rendered = json.dumps(outcome.execution_trace, sort_keys=True, default=str)
     assert "component_analyst_input_binding_mismatch_v1" not in rendered
     from core.searchos_slice_a_product_runtime import (
