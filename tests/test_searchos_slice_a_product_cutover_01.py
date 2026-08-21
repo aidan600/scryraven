@@ -1151,6 +1151,72 @@ def test_exact_model_followup_is_appended_and_dispatched_through_query_plan(
     )
 
 
+def test_failed_followup_wave_restores_searchos_without_candidate_admission(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    initial_rows = [
+        {
+            "title": "Alpha initial directional candidate",
+            "url": "https://alpha.example/initial",
+            "text": "Initial directional context does not answer the current rule.",
+        }
+    ]
+    original_dispatch = pipeline_orchestrator.execute_main_retrieval_pass_from_scope
+    dispatch_calls = 0
+
+    def fail_followup_dispatch(
+        scope: dict[str, Any],
+        *,
+        retrieval_pass_records: list[dict[str, Any]],
+    ) -> Any:
+        nonlocal dispatch_calls
+        dispatch_calls += 1
+        if dispatch_calls == 2:
+            raise RuntimeError("offline follow-up acquisition failure")
+        return original_dispatch(
+            scope,
+            retrieval_pass_records=retrieval_pass_records,
+        )
+
+    monkeypatch.setattr(
+        pipeline_orchestrator,
+        "execute_main_retrieval_pass_from_scope",
+        fail_followup_dispatch,
+    )
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        mode="Balanced",
+        query="What is Alpha's current official operating rule?",
+        core_topic="Alpha current official operating rule",
+        primary_entity="Alpha",
+        researcher_queries=["Alpha current official operating rule"],
+        read_assessment_decision="FOLLOWUP_THEN_READ",
+        evidence_rows=initial_rows,
+        followup_evidence_rows=[],
+    )
+
+    assert dispatch_calls == 2
+    assert len(harness.search_calls) == 1
+    assert harness.searchos_product_result is not None
+    assert harness.searchos_product_result.iteration_candidate_sets == ()
+    searchos = dict(outcome.execution_trace["searchos_slice_a"])
+    assert searchos["iteration_candidate_set_refs"] == []
+    slot = next(
+        iter(harness.run_kernel.state.searchos_state["slots_by_id"].values())
+    )
+    assert slot["posture"] == "semantically_handed_off"
+    assert any(
+        event.get("event") == "followup_acquisition_failed"
+        for event in slot["action_history"]
+    )
+    assert not any(
+        event.get("event") == "iteration_candidate_set_admitted"
+        for event in slot["action_history"]
+    )
+
+
 def test_two_components_use_one_shared_n_component_receiver(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

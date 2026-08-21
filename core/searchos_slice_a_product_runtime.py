@@ -1664,6 +1664,27 @@ def _execute_searchos_slice_a_iterative_judgment(
                     identity_refs=delta_identities,
                 )
                 identity_deltas_by_digest[str(delta_ref["identity_set_delta_digest"])] = delta_identities
+
+                # A failed follow-up acquisition is not a zero-useful-result
+                # candidate wave.  The callback may have consumed the
+                # provider/retrieval authority and returned a bounded failure
+                # reason, but it did not produce an authorized candidate set.
+                # Restore the slot before constructing or reducing any
+                # candidate-set action so the validator continues to require
+                # the exact AWAITING_FOLLOWUP_DISCOVER posture for admission.
+                wave_failure_reason = str(
+                    wave.get("followup_failure_reason") or ""
+                ).strip()
+                if wave_failure_reason:
+                    run_kernel.record_searchos_followup_acquisition_failed(
+                        slot_id=slot_id,
+                        reason=(
+                            "followup_discover_failed:"
+                            + wave_failure_reason
+                        )[:240],
+                    )
+                    continue
+
                 wave_packet = dict(wave.get("candidate_packet") or {})
                 if wave_packet:
                     wave_packet_ref = search_result_candidate_packet_ref_from_packet(wave_packet)
@@ -1722,14 +1743,6 @@ def _execute_searchos_slice_a_iterative_judgment(
                     binding_candidate_states[binding.binding_id] = iteration_ref
                 for binding in wave_bindings:
                     binding_iteration_refs[binding.binding_id] = iteration_ref
-                if wave.get("followup_failure_reason"):
-                    run_kernel.record_searchos_followup_acquisition_failed(
-                        slot_id=slot_id,
-                        reason=(
-                            "followup_discover_failed:"
-                            + str(wave["followup_failure_reason"])
-                        )[:240],
-                    )
             elif (
                 decision_action
                 is SearchOSJudgmentAction.PROPOSE_INTERPRETATION_BINDING
