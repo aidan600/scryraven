@@ -61,6 +61,9 @@ def test_returned_blocked_fap_is_not_a_completed_bounded_answer(
     assert harness.author_prompts == []
     assert harness.forbidden_live_calls == []
     assert policy.physical_snapshot()["furthest_product_stage"] == "run_outcome_blocked"
+    assert policy.physical_snapshot()["product_failure_stage"] == (
+        "searchos_component_receiver_failed"
+    )
 
     payload = compatibility_cli._bounded_success_payload(
         entrypoint=entrypoint,
@@ -72,6 +75,9 @@ def test_returned_blocked_fap_is_not_a_completed_bounded_answer(
     assert payload["status"] == "blocked"
     assert payload["terminal_status"] == "blocked"
     assert payload["furthest_product_stage"] == "run_outcome_blocked"
+    assert payload["physical_envelope"]["product_failure_stage"] == (
+        "searchos_component_receiver_failed"
+    )
     assert payload["answer"] == ""
     assert payload["answer_present"] is False
     assert payload["citation_count"] == 0

@@ -46,6 +46,7 @@ REQUIRED_MODE = _DEFAULT_PROFILE.required_mode
 REQUIRED_DOMAIN = _DEFAULT_PROFILE.required_include_domains[0]
 
 LIVE_PACKET_SUCCESS = "success"
+LIVE_PACKET_BLOCKED_FAP = "blocked_final_answer_packet"
 LIVE_PACKET_CAP_OVERFLOW = "cap_overflow"
 LIVE_PACKET_PIPELINE_FAILURE = "pipeline_failure"
 LIVE_PACKET_PRECHECK_FAILURE = "precheck_failure"
@@ -724,6 +725,12 @@ def _blocked_fap_summary_from_exception(exc: BaseException) -> dict[str, Any]:
         metadata = getattr(exc, "safe_metadata", None)
         if isinstance(metadata, Mapping):
             raw = metadata.get("blocked_fap_summary")
+    return _blocked_fap_summary_from_raw(raw)
+
+
+def _blocked_fap_summary_from_raw(raw: Any) -> dict[str, Any]:
+    """Project a bounded blocked-FAP summary without retaining raw trace data."""
+
     if not isinstance(raw, Mapping) or raw.get("blocked_fap") is not True:
         return {}
     summary: dict[str, Any] = {}
@@ -751,6 +758,44 @@ def _blocked_fap_summary_from_exception(exc: BaseException) -> dict[str, Any]:
             if text is not None:
                 summary[key] = text
     return summary if summary.get("blocked_fap") is True else {}
+
+
+def _blocked_fap_summary_from_trace(
+    trace: Mapping[str, Any],
+) -> dict[str, Any]:
+    terminal = _mapping_or_empty(trace.get("blocked_fap_terminal"))
+    summary = _blocked_fap_summary_from_raw(terminal.get("blocked_fap_summary"))
+    if summary:
+        return summary
+
+    # The terminal trace is authoritative when present. The final-answer
+    # packet projection is a safe fallback for fixture/compatibility outcomes
+    # that predate the terminal trace fragment.
+    packet = _mapping_or_empty(trace.get("final_answer_packet"))
+    readiness_status = _safe_summary_text(packet.get("readiness_status"))
+    author_payload_status = _safe_summary_text(packet.get("author_payload_status"))
+    if readiness_status != "blocked" and author_payload_status not in {
+        "author_input_deferred",
+        "blocked",
+    }:
+        return {}
+    summary = {
+        "schema_version": "blocked_final_answer_packet_safe_summary_v1",
+        "blocked_fap": True,
+        "status": "blocked",
+        "readiness_status": readiness_status or "blocked",
+        "readiness_reasons": _safe_summary_text_list(
+            packet.get("readiness_reasons")
+        ),
+        "author_input_deferred": author_payload_status == "author_input_deferred",
+        "blocked_before_author_input": True,
+        "final_answer_allowed": False,
+        "final_answer_posture": "blocked",
+        "sufficiency_decision": _safe_summary_text(
+            packet.get("sufficiency_decision")
+        ),
+    }
+    return _blocked_fap_summary_from_raw(summary)
 
 
 def _component_blocked_summary_from_raw(value: Any) -> dict[str, Any]:
@@ -935,9 +980,33 @@ def build_live_success_packet(
         sanitized_projection_summaries["searchos_n1_causal_projection"] = (
             causal_projection
         )
+    blocked_fap = _outcome_has_blocked_fap(outcome, trace)
+    blocked_fap_summary = (
+        _blocked_fap_summary_from_trace(trace) if blocked_fap else {}
+    )
+    if blocked_fap_summary:
+        sanitized_projection_summaries["blocked_fap_summary"] = (
+            dict(blocked_fap_summary)
+        )
+    if blocked_fap:
+        # A blocked terminal is still a normal pipeline outcome, but it is not
+        # product success and must not be presented as a supported answer.
+        cited_source_ids = []
+        cited_urls = []
+    failure_summary = None
+    if blocked_fap:
+        failure_summary = {
+            "reason": "blocked_final_answer_packet",
+            "classification": LIVE_PACKET_BLOCKED_FAP,
+            "blocked_fap": True,
+        }
+        if blocked_fap_summary:
+            failure_summary["blocked_fap_summary"] = dict(blocked_fap_summary)
     packet = {
         **_live_packet_base(context, cap_policy=cap_policy),
-        "success_classification": LIVE_PACKET_SUCCESS,
+        "success_classification": (
+            LIVE_PACKET_BLOCKED_FAP if blocked_fap else LIVE_PACKET_SUCCESS
+        ),
         "planned_live_dispatch": True,
         "run_pipeline_call_count": 1,
         "final_answer_text": final_answer_text,
@@ -952,7 +1021,7 @@ def build_live_success_packet(
             outcome=outcome,
             cap_policy=cap_policy,
         ),
-        "failure_summary": None,
+        "failure_summary": failure_summary,
         "live_only": {
             "ordinary_product_path": True,
             "runtime_consumer": "run_pipeline",
@@ -961,6 +1030,22 @@ def build_live_success_packet(
     }
     reject_forbidden_packet(packet)
     return packet
+
+
+def _outcome_has_blocked_fap(
+    outcome: Any,
+    trace: Mapping[str, Any],
+) -> bool:
+    terminal_status = str(getattr(outcome, "terminal_status", "") or "").strip().casefold()
+    if terminal_status == "blocked":
+        return True
+    terminal = _mapping_or_empty(trace.get("blocked_fap_terminal"))
+    if terminal.get("blocked_fap") is True:
+        return True
+    packet = _mapping_or_empty(trace.get("final_answer_packet"))
+    return packet.get("readiness_status") == "blocked" or packet.get(
+        "author_payload_status"
+    ) in {"author_input_deferred", "blocked"}
 
 
 def build_live_failure_packet(
@@ -1077,6 +1162,7 @@ def caps_observed_from_policy(policy: RunCapPolicy) -> dict[str, Any]:
         "enforcement": observed["enforcement"],
         "facts": list(policy.facts),
         "furthest_product_stage": policy.furthest_product_stage,
+        "product_failure_stage": policy.product_failure_stage,
     }
 
 
@@ -1090,6 +1176,8 @@ def write_packet(path: Path, packet: Mapping[str, Any]) -> None:
 
 
 def _relative_output_path(context: PreflightContext) -> str:
+    if context.output_path_external_confined:
+        return f"external_sanitized_packet/{context.output_path.name}"
     try:
         return str(context.output_path.relative_to(context.root))
     except ValueError:

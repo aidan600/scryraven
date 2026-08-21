@@ -936,6 +936,9 @@ def _caps_observed(
                 _safe_text(getattr(cap_policy, "furthest_product_stage", None))
                 or "configuration"
             ),
+            "product_failure_stage": _safe_text(
+                getattr(cap_policy, "product_failure_stage", None)
+            ),
         }
         if getattr(cap_policy, "bounded", False) and hasattr(
             cap_policy,
@@ -956,6 +959,9 @@ def _caps_observed(
         "retries": _optional_int(cap_trace.get("retries")) or 0,
         "enforcement": _safe_text(cap_trace.get("enforcement")) or "active",
         "facts": _string_list(cap_trace.get("facts")),
+        "product_failure_stage": _safe_text(
+            cap_trace.get("product_failure_stage")
+        ),
     }
     physical = _mapping(cap_trace.get("physical"))
     if physical:

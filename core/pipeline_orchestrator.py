@@ -3782,6 +3782,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 searchos_component_receiver_failure_reason = (
                     "searchos_component_receiver_failure"
                 )
+                if cap_policy is not None:
+                    cap_policy.note_product_failure_stage(
+                        "searchos_component_receiver_failed"
+                    )
                 searchos_slice_a_projection["component_receiver_failure"] = (
                     type(exc).__name__
                 )
@@ -3849,15 +3853,19 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 )
                 or ()
             ]
+            component_coverage_ready = bool(required_outcomes) and all(
+                outcome.get("semantic_admission_status") == "admitted"
+                for outcome in required_outcomes
+            )
             cap_policy.note_product_stage(
                 "component_coverage_ready"
-                if required_outcomes
-                and all(
-                    outcome.get("semantic_admission_status") == "admitted"
-                    for outcome in required_outcomes
-                )
+                if component_coverage_ready
                 else "component_coverage_not_ready"
             )
+            if not component_coverage_ready:
+                cap_policy.note_product_failure_stage(
+                    "component_coverage_not_ready"
+                )
         readiness_action = run_kernel.authorize_searchos_slice_a_readiness(
             semantic_outcomes_by_slot=semantic_outcomes_by_slot
         )
@@ -5039,6 +5047,8 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             if final_answer_packet_handoff.author_input_blocked
             else "final_answer_packet_ready"
         )
+        if final_answer_packet_handoff.author_input_blocked:
+            cap_policy.note_product_failure_stage("final_answer_packet_blocked")
     final_answer_packet_action = final_answer_packet_handoff.action
     final_answer_packet = final_answer_packet_handoff.packet
     blocked_fap_summary: dict[str, Any] | None = None

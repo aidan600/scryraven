@@ -1209,6 +1209,12 @@ def test_explicit_external_output_root_confines_sanitized_packet(
     assert packet["preflight"]["output_path_safe"] is True
     assert packet["preflight"]["output_path_gitignored"] is False
     assert packet["preflight"]["output_path_external_confined"] is True
+    assert packet["output_path"] == "external_sanitized_packet/run-01.sanitized.json"
+    retention = support.suppressed_ordinary_retention_posture(context)
+    assert retention["sanitized_packet_path"] == (
+        "external_sanitized_packet/run-01.sanitized.json"
+    )
+    assert "C:\\Users" not in json.dumps(packet, sort_keys=True)
     assert (
         support.is_allowed_output_path(
             ROOT,
@@ -1228,6 +1234,20 @@ def test_logical_cap_policy_projects_closed_product_stage() -> None:
     observed = support.caps_observed_from_policy(policy)
 
     assert observed["furthest_product_stage"] == "component_coverage_not_ready"
+    assert observed["product_failure_stage"] is None
+
+
+def test_cap_policy_preserves_first_product_failure_boundary() -> None:
+    from core.cap_enforcement import RunCapPolicy
+
+    policy = RunCapPolicy()
+    policy.note_product_stage("searchos_component_receiver_failed")
+    policy.note_product_failure_stage("searchos_component_receiver_failed")
+    policy.note_product_stage("final_answer_packet_blocked")
+    policy.note_product_failure_stage("final_answer_packet_blocked")
+
+    assert policy.furthest_product_stage == "final_answer_packet_blocked"
+    assert policy.product_failure_stage == "searchos_component_receiver_failed"
 
 
 def test_runner_ast_has_no_top_level_run_pipeline_import() -> None:
@@ -1477,7 +1497,7 @@ def _assert_target_facts(projection: Mapping[str, Any]) -> None:
     assert "latest_judgment_reason" not in slot
 
 
-def test_q1_like_blocked_fap_success_packet_reuses_canonical_n1_projection(
+def test_q1_like_blocked_fap_packet_reuses_canonical_n1_projection(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1513,7 +1533,11 @@ def test_q1_like_blocked_fap_success_packet_reuses_canonical_n1_projection(
 
     packet = json.loads((ROOT / output).read_text(encoding="utf-8"))
     summaries = packet["sanitized_projection_summaries"]
-    assert packet["success_classification"] == "success"
+    assert packet["success_classification"] == support.LIVE_PACKET_BLOCKED_FAP
+    assert packet["failure_summary"]["classification"] == (
+        support.LIVE_PACKET_BLOCKED_FAP
+    )
+    assert packet["failure_summary"]["blocked_fap"] is True
     assert packet["run_pipeline_call_count"] == 1
     assert summaries["searchos_n1_causal_projection"] == expected
     _assert_target_facts(summaries["searchos_n1_causal_projection"])
