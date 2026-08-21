@@ -1183,6 +1183,42 @@ def test_is_allowed_output_path_requires_gitignore() -> None:
     assert support.is_allowed_output_path(ROOT, ROOT / "README.md") is False
 
 
+def test_explicit_external_output_root_confines_sanitized_packet(
+    tmp_path: Path,
+) -> None:
+    support = _load_support()
+    external_root = tmp_path / "sanitized-product-run"
+    external_root.mkdir()
+    output_path = external_root / "run-01.sanitized.json"
+
+    context = support.build_preflight_context(
+        root=ROOT,
+        query=PRIMARY_QUERY,
+        mode="Balanced",
+        include_domains=["docs.python.org"],
+        output_path=output_path,
+        caps=support.AgLiveBoundCaps(),
+        run_id="external-output-fixture",
+        confirm_live_product_run=True,
+        approved_backup_query=False,
+        external_output_root=external_root,
+    )
+    packet = support.build_dry_run_packet(context)
+
+    assert context.output_path == output_path.resolve()
+    assert packet["preflight"]["output_path_safe"] is True
+    assert packet["preflight"]["output_path_gitignored"] is False
+    assert packet["preflight"]["output_path_external_confined"] is True
+    assert (
+        support.is_allowed_output_path(
+            ROOT,
+            ROOT / "README.md",
+            external_output_root=external_root,
+        )
+        is False
+    )
+
+
 def test_runner_ast_has_no_top_level_run_pipeline_import() -> None:
     tree = ast.parse(RUNNER_PATH.read_text(encoding="utf-8"))
     imported_names = {

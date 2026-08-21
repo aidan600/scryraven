@@ -378,6 +378,8 @@ class PreflightContext:
     caps: AgLiveBoundCaps
     run_id: str
     confirm_live_product_run: bool
+    output_path_gitignored: bool = True
+    output_path_external_confined: bool = False
 
 
 def resolve_repo_root(start: Path) -> Path:
@@ -402,13 +404,35 @@ def is_gitignored(root: Path, path: Path) -> bool:
     return result.returncode == 0
 
 
-def is_allowed_output_path(root: Path, path: Path) -> bool:
+def is_allowed_output_path(
+    root: Path,
+    path: Path,
+    *,
+    external_output_root: Path | None = None,
+) -> bool:
     output_dir = (root / "output").resolve()
     try:
         path.relative_to(output_dir)
     except ValueError:
+        pass
+    else:
+        return is_gitignored(root, path)
+    if external_output_root is None:
         return False
-    return is_gitignored(root, path)
+    external_root = external_output_root.resolve()
+    if not external_root.is_dir():
+        return False
+    try:
+        external_root.relative_to(root.resolve())
+    except ValueError:
+        pass
+    else:
+        return False
+    try:
+        path.relative_to(external_root)
+    except ValueError:
+        return False
+    return path != external_root and path.parent.is_dir()
 
 
 def parse_domains(raw: str) -> list[str]:
@@ -540,6 +564,7 @@ def build_preflight_context(
     confirm_live_product_run: bool,
     approved_backup_query: bool,
     requested_query_id: str | None = None,
+    external_output_root: Path | None = None,
 ) -> PreflightContext:
     profile = get_validation_profile(profile_name)
     query_lock = validate_query_lock(
@@ -550,10 +575,20 @@ def build_preflight_context(
     )
     validate_mode(mode, profile_name=profile.name)
     validate_domain_allowlist(include_domains, profile_name=profile.name)
-    if not is_allowed_output_path(root, output_path):
+    output_path_gitignored = is_allowed_output_path(root, output_path)
+    output_path_external_confined = (
+        external_output_root is not None
+        and is_allowed_output_path(
+            root,
+            output_path,
+            external_output_root=external_output_root,
+        )
+        and not output_path_gitignored
+    )
+    if not (output_path_gitignored or output_path_external_confined):
         raise AgLiveBoundPreflightError(
             "refusing run: output path must be under ignored repo output/ and "
-            "gitignored"
+            "gitignored, or confined under the explicit external output root"
         )
     return PreflightContext(
         root=root,
@@ -563,6 +598,8 @@ def build_preflight_context(
         mode=mode,
         include_domains=include_domains,
         output_path=output_path,
+        output_path_gitignored=output_path_gitignored,
+        output_path_external_confined=output_path_external_confined,
         caps=caps,
         run_id=run_id or str(uuid.uuid4()),
         confirm_live_product_run=confirm_live_product_run,
@@ -857,7 +894,8 @@ def build_dry_run_packet(context: PreflightContext) -> dict[str, Any]:
         "preflight": {
             "query_lock": context.query_lock,
             "output_path_safe": True,
-            "output_path_gitignored": True,
+            "output_path_gitignored": context.output_path_gitignored,
+            "output_path_external_confined": context.output_path_external_confined,
             "domain_allowlist_present": True,
             "caps_valid": True,
             "live_path_armed": False,
@@ -1094,7 +1132,8 @@ def _live_packet_base(
         "preflight": {
             "query_lock": context.query_lock,
             "output_path_safe": True,
-            "output_path_gitignored": True,
+            "output_path_gitignored": context.output_path_gitignored,
+            "output_path_external_confined": context.output_path_external_confined,
             "domain_allowlist_present": True,
             "caps_valid": True,
             "live_path_armed": True,
