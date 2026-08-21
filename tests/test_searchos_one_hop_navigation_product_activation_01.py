@@ -835,6 +835,14 @@ def test_one_hop_navigation_reaches_component_and_final_answer(tmp_path: Path, m
         ) in normalized_prompt
         assert "emits that compact candidate_use_option_id" in normalized_prompt
         assert (
+            "Copy the complete current token character-for-character, including its "
+            "searchos-option: prefix and full suffix"
+        ) in normalized_prompt
+        assert (
+            "If no exact current token can be copied, choose another currently legal "
+            "action instead of REQUEST_READ_PAGE"
+        ) in normalized_prompt
+        assert (
             "After READ custody exists, REQUEST_READ_PAGE, "
             "PROPOSE_FOLLOWUP_QUERY, REQUIRE_CLARIFICATION, "
             "HANDOFF_UNRESOLVED, and REQUEST_NAVIGATE_BREADCRUMB must "

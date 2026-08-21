@@ -130,6 +130,17 @@ def test_production_judgment_prompt_states_the_strict_validator_contract() -> No
         "Compact selection means emit only the current authorized identity token",
         "REQUEST_READ_PAGE selects exactly one current authorized_request.candidate_use_options[*].candidate_use_option_ref.candidate_use_option_id",
         "emits that compact candidate_use_option_id",
+        "Copy the complete current token character-for-character",
+        "including its searchos-option: prefix and full suffix",
+        (
+            "Never substitute a normalized_url, candidate_id, title, snippet, list "
+            "position, shortened token, altered token, or token remembered from an "
+            "earlier decision"
+        ),
+        (
+            "If no exact current token can be copied, choose another currently "
+            "legal action instead of REQUEST_READ_PAGE"
+        ),
         "Do not copy the whole option object",
         "do not copy the whole custody object",
     )

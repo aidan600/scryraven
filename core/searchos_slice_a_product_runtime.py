@@ -92,6 +92,11 @@ authorized_request.legal_actions:
   authorized_request.candidate_use_options[*].candidate_use_option_ref.candidate_use_option_id
   and emits that compact candidate_use_option_id. The runtime binds the exact
   current candidate_use_option_ref, including nested lineage_snapshot_ref.
+  Copy the complete current token character-for-character, including its
+  searchos-option: prefix and full suffix. Never substitute a normalized_url,
+  candidate_id, title, snippet, list position, shortened token, altered token,
+  or token remembered from an earlier decision. If no exact current token can
+  be copied, choose another currently legal action instead of REQUEST_READ_PAGE.
   Do not copy the whole option object or reconstruct lineage, URL, digest, or
   slot fields from candidate_directional_contexts.
 - PROPOSE_FOLLOWUP_QUERY authors new bounded followup_query text from
@@ -156,6 +161,11 @@ authorized_request.legal_actions:
   authorized_request.candidate_use_options[*].candidate_use_option_ref.candidate_use_option_id
   and emits that compact candidate_use_option_id. The runtime binds the exact
   current candidate_use_option_ref, including nested lineage_snapshot_ref.
+  Copy the complete current token character-for-character, including its
+  searchos-option: prefix and full suffix. Never substitute a normalized_url,
+  candidate_id, title, snippet, list position, shortened token, altered token,
+  or token remembered from an earlier decision. If no exact current token can
+  be copied, choose another currently legal action instead of REQUEST_READ_PAGE.
   Do not copy the whole option object or reconstruct lineage, URL, digest, or
   slot fields from candidate_directional_contexts.
 - PROPOSE_FOLLOWUP_QUERY authors new bounded followup_query text from
