@@ -222,7 +222,7 @@ def test_handoff_rejects_duplicate_foreign_and_omitted_custody_ids() -> None:
 
 
 def test_duplicate_authorized_custody_ids_fail_closed() -> None:
-    request, first, _ = _post_read_judgment_request()
+    _state, request, first, _ = _post_read_judgment_request()
     colliding = deepcopy(first)
     colliding["normalized_url"] = "https://example.com/collapsed-custody"
     request["read_custody_refs"] = [first, colliding]
@@ -298,7 +298,7 @@ def test_compact_interpretation_ids_bind_exact_slot_and_basis_refs() -> None:
 
 
 def test_post_read_assessment_compact_id_still_binds_exact_custody() -> None:
-    request, custody, remaining = _post_read_judgment_request()
+    _state, request, custody, remaining = _post_read_judgment_request()
     decision = validate_searchos_judgment_model_output(
         request=request,
         model_output={
