@@ -637,7 +637,43 @@ def test_readable_insufficient_read_remains_iterative_and_is_not_retained(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from core import searchos_slice_a_product_runtime as searchos_runtime
+
     _establish_official_current_qualification_truth(monkeypatch)
+    original_model_input_builder = (
+        searchos_runtime._build_searchos_judgment_model_input
+    )
+    post_read_token_sets: list[tuple[list[str], list[str]]] = []
+
+    def capture_model_input(**kwargs: Any) -> dict[str, Any]:
+        model_input = original_model_input_builder(**kwargs)
+        if model_input["read_custody_materials"]:
+            authorized_ids = [
+                str(
+                    dict(item.get("candidate_use_option_ref") or {}).get(
+                        "candidate_use_option_id"
+                    )
+                    or ""
+                )
+                for item in model_input["authorized_request"]["candidate_use_options"]
+            ]
+            directional_ids = [
+                str(
+                    dict(item.get("candidate_use_option_ref") or {}).get(
+                        "candidate_use_option_id"
+                    )
+                    or ""
+                )
+                for item in model_input["candidate_directional_contexts"]
+            ]
+            post_read_token_sets.append((authorized_ids, directional_ids))
+        return model_input
+
+    monkeypatch.setattr(
+        searchos_runtime,
+        "_build_searchos_judgment_model_input",
+        capture_model_input,
+    )
     first_url = "https://alpha.example/insufficient"
     second_url = "https://alpha.example/useful"
     transient_sentinel = "TRANSIENT_READ_JUDGMENT_SENTINEL_513"
@@ -692,6 +728,11 @@ def test_readable_insufficient_read_remains_iterative_and_is_not_retained(
         if item["disposition"] == "read_insufficient"
     )
     assert harness.read_transport_calls == [first_url, second_url]
+    assert post_read_token_sets
+    assert all(
+        directional_ids == authorized_ids
+        for authorized_ids, directional_ids in post_read_token_sets
+    )
     assert any(
         item["bounded_read_character_count"] > 0
         for item in harness.read_assessment_calls

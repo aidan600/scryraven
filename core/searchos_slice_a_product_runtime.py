@@ -1380,7 +1380,6 @@ def _execute_searchos_slice_a_iterative_judgment(
                     authorized_request=request,
                     slot_id=slot_id,
                     options=options,
-                    window=window,
                     bindings=bindings,
                     binding_candidate_states=binding_candidate_states,
                     binding_iteration_refs=binding_iteration_refs,
@@ -2472,7 +2471,6 @@ def _build_searchos_judgment_model_input(
     authorized_request: Mapping[str, Any],
     slot_id: str,
     options: Sequence[Mapping[str, Any]],
-    window: Mapping[str, Any],
     bindings: Sequence[SelectedCandidateMaterialNeedBindingV1],
     binding_candidate_states: Mapping[str, Mapping[str, Any]],
     binding_iteration_refs: Mapping[str, Mapping[str, Any]],
@@ -2509,7 +2507,7 @@ def _build_searchos_judgment_model_input(
                 "snippet": _bounded_judgment_text(row.get("snippet"), 600),
             }
     directional_contexts: list[dict[str, Any]] = []
-    for visible in window.get("model_visible_candidate_use_options") or ():
+    for visible in request.get("candidate_use_options") or ():
         visible_mapping = dict(visible) if isinstance(visible, Mapping) else {}
         option_ref = dict(visible_mapping.get("candidate_use_option_ref") or {})
         option_id = str(option_ref.get("candidate_use_option_id") or "")
