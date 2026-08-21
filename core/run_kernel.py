@@ -5949,6 +5949,8 @@ class RunKernel:
             LEASE_GRANTED,
             MULTICOMPONENT_ROLE_CALL_LIMITS,
             MULTICOMPONENT_SCHEDULER_STAGE,
+            canonical_multicomponent_contract_ref,
+            canonical_multicomponent_graph_ref,
             validate_scheduler_state,
         )
         from core.multicomponent_role_runtime import ROLE_SYSTEM_PROMPTS
@@ -6081,6 +6083,7 @@ class RunKernel:
             }
         scheduler_active = False
         scheduler: dict[str, Any] = {}
+        ordinary_analyst_lineage_inputs: dict[str, Any] = {}
         if scheduler_raw:
             scheduler = validate_scheduler_state(scheduler_raw)
             scheduler_active = scheduler.get("status") == "active"
@@ -6148,6 +6151,27 @@ class RunKernel:
             raise RunKernelTransitionError(
                 "caller-authored lease lineage is forbidden without scheduler state"
             )
+        elif (
+            not recovery_inputs
+            and role_name in {"component_analyst", "component_analyst_resume"}
+        ):
+            from core.component_work_graph_v1 import COMPONENT_WORK_GRAPH_V1_STAGE
+
+            current_contract = (
+                self.state.current_answer_contract
+                or self.state.initial_answer_contract
+            )
+            if current_contract:
+                ordinary_analyst_lineage_inputs = {
+                    "accepted_contract_ref": canonical_multicomponent_contract_ref(
+                        current_contract
+                    ),
+                    "graph_ref": canonical_multicomponent_graph_ref(
+                        _safe_mapping(
+                            self.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE)
+                        )
+                    ),
+                }
         return self.authorize(
             stage=f"multicomponent_role:{role_name}:{evaluation_key}",
             action_type=action_type,
@@ -6162,6 +6186,7 @@ class RunKernel:
                 "specialist_handoff_digest": handoff_digest,
                 **recovery_inputs,
                 **lease_inputs,
+                **ordinary_analyst_lineage_inputs,
             },
             expected_observation_type=observation_type,
         )

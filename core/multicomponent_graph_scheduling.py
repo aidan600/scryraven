@@ -237,6 +237,22 @@ def _graph_ref(graph: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def canonical_multicomponent_contract_ref(
+    contract: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Project the existing exact contract lineage used by scheduled work."""
+
+    return _contract_ref(contract)
+
+
+def canonical_multicomponent_graph_ref(
+    graph: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Project the existing exact graph lineage used by scheduled work."""
+
+    return _graph_ref(graph)
+
+
 def _node_ref(node: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "node_id": node.get("node_id"),
@@ -3271,6 +3287,8 @@ __all__ = [
     "block_required_specialist_proposal",
     "cancel_batch",
     "cancel_lease",
+    "canonical_multicomponent_contract_ref",
+    "canonical_multicomponent_graph_ref",
     "classify_work_parallelism",
     "complete_scheduler",
     "derive_multicomponent_compatibility_envelope",

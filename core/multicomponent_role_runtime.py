@@ -1443,6 +1443,17 @@ def execute_multicomponent_role_call(
             "output_schema_variant",
         ):
             artifact_core[key] = _json_safe(action.inputs.get(key))
+    elif (
+        normalized_role in {ROLE_COMPONENT_ANALYST, ROLE_COMPONENT_ANALYST_RESUME}
+        and not recovery_active
+        and _safe_mapping(action.inputs.get("accepted_contract_ref"))
+    ):
+        artifact_core["accepted_contract_ref"] = _json_safe(
+            action.inputs.get("accepted_contract_ref")
+        )
+        artifact_core["graph_ref"] = _json_safe(
+            action.inputs.get("graph_ref")
+        )
     elif normalized_role == ROLE_CROSS_COMPONENT_ANALYST:
         artifact_core["accepted_contract_ref"] = _json_safe(
             safe_input.get("accepted_contract_ref")

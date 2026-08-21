@@ -82,8 +82,10 @@ that must be judged against active_need; only this material may be handed to
 semantic evaluation. Do not treat custody-ref presence alone as readiness.
 decision_contract is the normative output contract.
 Completed candidate option tokens are withheld from model-visible READ-custody
-lineage. Only authorized_request.candidate_use_options and its matching
-candidate_directional_contexts contain candidate_use_option_id values.
+lineage. Every model-visible candidate_use_option_id belongs to the current
+authorized_request.candidate_use_options. interpretation_binding_contract may
+repeat those current basis refs, and candidate_directional_contexts may repeat
+them only as directional context.
 
 Return exactly one JSON object matching searchos_judgment_decision_v1. Always
 include schema_version, action, and a nonempty bounded reason. Do not author
@@ -152,6 +154,11 @@ but cannot support an answer. read_custody_materials contain the bounded
 readable content that must be judged against active_need; only this material
 may be handed to semantic evaluation. Do not treat custody-ref presence alone
 as readiness. decision_contract is the normative output contract.
+Completed candidate option tokens are withheld from model-visible READ-custody
+lineage. Every model-visible candidate_use_option_id belongs to the current
+authorized_request.candidate_use_options. interpretation_binding_contract may
+repeat those current basis refs, and candidate_directional_contexts may repeat
+them only as directional context.
 
 Return exactly one JSON object matching
 searchos_navigation_judgment_decision_v1. Always include schema_version,

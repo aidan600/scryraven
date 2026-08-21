@@ -133,7 +133,8 @@ def test_production_judgment_prompt_states_the_strict_validator_contract() -> No
         "Copy the complete current token character-for-character",
         "including its searchos-option: prefix and full suffix",
         "Completed candidate option tokens are withheld from model-visible READ-custody lineage",
-        "Only authorized_request.candidate_use_options",
+        "Every model-visible candidate_use_option_id belongs to the current authorized_request.candidate_use_options",
+        "interpretation_binding_contract may repeat those current basis refs",
         (
             "Never substitute a normalized_url, candidate_id, title, snippet, list "
             "position, shortened token, altered token, or token remembered from an "

@@ -555,7 +555,7 @@ def test_navigation_request_authority_preserves_ordinary_contract() -> None:
     ordinary = build_searchos_judgment_decision_contract_v1()
     navigation = build_searchos_judgment_decision_contract_v1(navigation_enabled=True)
     assert hashlib.sha256(SEARCHOS_JUDGMENT_SYSTEM_PROMPT.encode()).hexdigest() == (
-        "445aad3e375da451dde9140fed3f8cb8de6f0a369438036ceb4d4e2a80da8cd3"  # pragma: allowlist secret
+        "3fe123a734ad3378d4f2efbdc51e7454d0486b0679be524253dd76479176d33c"  # pragma: allowlist secret
     )
     assert ordinary["decision_contract_digest"] == (
         "76f7c802467c5b998e958e6b07e75fee1ba18dd37335f1512d365223d066d6b6"  # pragma: allowlist secret
@@ -834,6 +834,13 @@ def test_one_hop_navigation_reaches_component_and_final_answer(tmp_path: Path, m
             "authorized_request.candidate_use_options[*].candidate_use_option_ref.candidate_use_option_id"
         ) in normalized_prompt
         assert "emits that compact candidate_use_option_id" in normalized_prompt
+        assert (
+            "Every model-visible candidate_use_option_id belongs to the current "
+            "authorized_request.candidate_use_options"
+        ) in normalized_prompt
+        assert (
+            "interpretation_binding_contract may repeat those current basis refs"
+        ) in normalized_prompt
         assert (
             "Copy the complete current token character-for-character, including its "
             "searchos-option: prefix and full suffix"

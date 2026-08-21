@@ -55,6 +55,9 @@ from core.multicomponent_component_admission import (
     component_analyst_resume_input_packet,
     execute_multicomponent_component_admission,
 )
+from core.multicomponent_graph_scheduling import (
+    canonical_multicomponent_contract_ref,
+)
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
     ROLE_COMPONENT_ANALYST_RESUME,
@@ -252,17 +255,7 @@ def _clean_text(value: Any, *, limit: int = 1000) -> str | None:
 
 
 def _accepted_contract_ref(accepted: Mapping[str, Any]) -> dict[str, Any]:
-    return {
-        "owner": accepted.get("owner"),
-        "canonical_state": accepted.get("canonical_state") is True,
-        "run_id": accepted.get("run_id"),
-        "request_id": accepted.get("request_id"),
-        "accepted_contract_version": accepted.get("accepted_contract_version"),
-        "accepted_contract_digest": accepted.get("accepted_contract_digest"),
-        "parent_question_meaning_record_id": accepted.get("parent_question_meaning_record_id"),
-        "parent_question_meaning_record_digest": accepted.get("parent_question_meaning_record_digest"),
-        "accepted_answer_component_count": accepted.get("accepted_answer_component_count"),
-    }
+    return canonical_multicomponent_contract_ref(accepted)
 
 
 def _role_runtime_kwargs(runtime_scope: Mapping[str, Any]) -> dict[str, Any]:
