@@ -142,6 +142,15 @@ secret-safe local execution, `.env` custody, or LLM-controlled live/component
 execution, first understand the general operator doorman boundary from
 [Brokered Command Session Operator Flow](../operator/BROKERED_COMMAND_SESSION_OPERATOR_FLOW.md).
 
+For an authorized credentialed command, Codex must construct the complete exact
+broker-plus-target argv with `--repo-env`, perform no unprivileged `.env`
+discovery or preflight, and request one exact command-level escalation through
+the normal permission UI. After approval, Codex executes the command and
+consumes only sanitized output. The maintainer approves in Codex; they do not
+run the broker manually or paste its result back into the session. The legacy
+`--env-file` form remains for existing operator callers, not as the canonical
+Codex workflow.
+
 | Concern | Read first |
 | --- | --- |
 | General operator doorman / credentialed command session | [Brokered Command Session Operator Flow](../operator/BROKERED_COMMAND_SESSION_OPERATOR_FLOW.md) |

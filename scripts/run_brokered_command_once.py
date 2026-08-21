@@ -59,7 +59,11 @@ def main(argv: list[str] | None = None) -> int:
 def _parent_main(option_argv: Sequence[str], target_argv: list[str]) -> int:
     args = _parent_parser().parse_args(option_argv)
     repo_root = normalize_repository_root(args.repo_root)
-    env_file_path = normalize_environment_file_path(args.env_file)
+    env_file_path = normalize_environment_file_path(
+        repository_environment_file_path(repo_root)
+        if args.repo_env
+        else args.env_file
+    )
     stdout_path, stderr_path = validate_output_paths(
         repo_root=repo_root,
         stdout=args.stdout,
@@ -206,7 +210,16 @@ def _normalize_captured_text(raw: bytes | None) -> str:
 
 def _parent_parser() -> argparse.ArgumentParser:
     parser = _common_parser()
-    parser.add_argument("--env-file", required=True)
+    environment_sources = parser.add_mutually_exclusive_group(required=True)
+    environment_sources.add_argument(
+        "--env-file",
+        help="Legacy explicit private environment-file path.",
+    )
+    environment_sources.add_argument(
+        "--repo-env",
+        action="store_true",
+        help="Use the normalized repository root's .env file.",
+    )
     return parser
 
 
@@ -248,6 +261,12 @@ def normalize_environment_file_path(path: str | Path) -> Path:
     if not resolved.is_file():
         raise BrokeredCommandError("environment_file_unavailable")
     return resolved
+
+
+def repository_environment_file_path(repo_root: Path) -> Path:
+    """Return the canonical repository-local environment-file path."""
+
+    return repo_root / ".env"
 
 
 def validate_output_paths(

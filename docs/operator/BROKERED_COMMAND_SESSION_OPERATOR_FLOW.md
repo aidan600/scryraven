@@ -96,15 +96,29 @@ tracked loopback broker.
 ## Bounded Whole-Product Launch Warning
 
 When an LLM-controlled bounded ScryRaven command depends on credentials stored
-in the normal private `.env`, launch it through:
+in the repository's private `.env`, launch it through the canonical repository
+environment mode:
 
 ```powershell
 py scripts\run_brokered_command_once.py `
-  --env-file <PRIVATE-ENV-FILE> `
+  --repo-root <REPO-ROOT> `
+  --repo-env `
   ... `
   -- `
   python -m scryraven ...
 ```
+
+`--repo-env` means the normalized repository root's `.env`, resolved inside the
+approved operator-context doorman process. The legacy `--env-file <PRIVATE-ENV-FILE>`
+form remains available for existing operator callers, but the Codex workflow
+must use `--repo-env` and must not discover, stat, or pass an environment-file
+path from the controlling Workspace Write process.
+
+For an authorized credentialed command, Codex prepares the complete exact
+broker-plus-target argv, requests one exact command-level escalation, and then
+executes that command after the user approves it in the normal permission UI.
+The user should approve the command in Codex; they should not be asked to open
+PowerShell, run the broker manually, or paste its result back into the session.
 
 Do not directly invoke:
 
@@ -126,7 +140,8 @@ policy.
 ```text
 operator
   -> public parent
-       stats --env-file without opening or parsing it
+       resolves/stats the canonical repo-root/.env (or legacy --env-file)
+       without opening or parsing it
        validates absolute external output paths
        launches one private child with shell=False
   -> private child environment
@@ -149,12 +164,13 @@ until exact-value redaction completes.
 
 ## Public Command Shape
 
-Use a private local environment-file path. Do not paste its contents.
+The canonical Codex/operator shape uses the repository-local `.env`; do not
+paste its contents or supply its path from an unprivileged preflight.
 
 ```powershell
 py scripts\run_brokered_command_once.py `
   --repo-root <REPO-ROOT> `
-  --env-file <PRIVATE-ENV-FILE> `
+  --repo-env `
   --stdout <ABSOLUTE-EXTERNAL-STDOUT> `
   --stderr <ABSOLUTE-EXTERNAL-STDERR> `
   --timeout-seconds <SECONDS> `
@@ -162,6 +178,10 @@ py scripts\run_brokered_command_once.py `
   -- `
   <exact> <argv> <tokens>...
 ```
+
+The backwards-compatible operator-only alternative is the same shape with
+`--env-file <PRIVATE-ENV-FILE>` in place of `--repo-env`. Exactly one of those
+two environment sources is required.
 
 Rules:
 
@@ -176,10 +196,11 @@ Rules:
 
 ## Credential Custody
 
-The parent normalizes and stats `--env-file` but never opens or parses it. The
-path crosses the parent/child boundary only through the private child
-environment variable `SCRYRAVEN_DOORMAN_ENV_FILE_PATH`. A one-session nonce is
-supplied only through `SCRYRAVEN_DOORMAN_NONCE`.
+The parent resolves and stats the canonical normalized-repository `.env` (or
+the legacy `--env-file` path) but never opens or parses it. The path crosses the
+parent/child boundary only through the private child environment variable
+`SCRYRAVEN_DOORMAN_ENV_FILE_PATH`. A one-session nonce is supplied only through
+`SCRYRAVEN_DOORMAN_NONCE`.
 
 The private child alone parses simple dotenv assignments and constructs the
 target environment. Private launcher variables are removed before the target
@@ -193,7 +214,7 @@ deliberately malicious target.
 
 Stop without launching the target when:
 
-- the repository root or environment file is unavailable;
+- the repository root or selected environment file is unavailable;
 - the target argv separator or argv is missing;
 - an output path is relative, inside the repository, identical for stdout and
   stderr, or would overwrite without `--replace-output`;
