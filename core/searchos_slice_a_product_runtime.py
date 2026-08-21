@@ -81,6 +81,9 @@ support an answer. read_custody_materials contain the bounded readable content
 that must be judged against active_need; only this material may be handed to
 semantic evaluation. Do not treat custody-ref presence alone as readiness.
 decision_contract is the normative output contract.
+Completed candidate option tokens are withheld from model-visible READ-custody
+lineage. Only authorized_request.candidate_use_options and its matching
+candidate_directional_contexts contain candidate_use_option_id values.
 
 Return exactly one JSON object matching searchos_judgment_decision_v1. Always
 include schema_version, action, and a nonempty bounded reason. Do not author
@@ -2527,21 +2530,26 @@ def _build_searchos_judgment_model_input(
                 "support_proposal_eligible": False,
             }
         )
-    read_materials = _build_read_custody_judgment_materials(
+    exact_read_materials = _build_read_custody_judgment_materials(
         searchos_state=run_kernel.state.searchos_state,
         slot=slot,
         current_options=current_options,
         packet_by_custody_id=packet_by_custody_id,
     )
-    if [item["read_custody_ref"] for item in read_materials] != list(
+    if [item["read_custody_ref"] for item in exact_read_materials] != list(
         request.get("read_custody_refs") or ()
     ):
         raise SearchOSRuntimeError(
             "transient READ material does not match authorized custody order"
         )
+    model_request = _project_searchos_judgment_request_for_model(request)
+    read_materials = [
+        _project_read_custody_judgment_material_for_model(item)
+        for item in exact_read_materials
+    ]
     core = {
         "schema_version": SEARCHOS_JUDGMENT_MODEL_INPUT_SCHEMA_VERSION,
-        "authorized_request": request,
+        "authorized_request": model_request,
         "active_need": active_need,
         "candidate_directional_contexts": directional_contexts,
         "read_custody_materials": read_materials,
@@ -2552,7 +2560,82 @@ def _build_searchos_judgment_model_input(
         "bounded_transient_input": True,
         "durable_retention_allowed": False,
     }
+    authorized_candidate_ids = {
+        str(
+            dict(item.get("candidate_use_option_ref") or {}).get(
+                "candidate_use_option_id"
+            )
+            or ""
+        )
+        for item in model_request.get("candidate_use_options") or ()
+        if isinstance(item, Mapping)
+    }
+    if not _model_visible_candidate_option_ids(core) <= authorized_candidate_ids:
+        raise SearchOSRuntimeError(
+            "model-visible candidate token falls outside current authorized options"
+        )
     return {**core, "model_input_digest": _digest(core)}
+
+
+def _project_searchos_judgment_request_for_model(
+    request: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Withhold completed candidate tokens while preserving compact custody IDs."""
+
+    projected = deepcopy(dict(request))
+    projected["read_custody_refs"] = [
+        _project_read_custody_ref_for_model(item)
+        for item in request.get("read_custody_refs") or ()
+        if isinstance(item, Mapping)
+    ]
+    binding_contract = dict(projected.get("interpretation_binding_contract") or {})
+    binding_contract["read_basis_refs"] = [
+        _project_read_custody_ref_for_model(item)
+        for item in binding_contract.get("read_basis_refs") or ()
+        if isinstance(item, Mapping)
+    ]
+    projected["interpretation_binding_contract"] = binding_contract
+    return projected
+
+
+def _project_read_custody_ref_for_model(
+    custody_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    projected = deepcopy(dict(custody_ref))
+    projected.pop("candidate_use_option_ref", None)
+    return projected
+
+
+def _project_read_custody_judgment_material_for_model(
+    material: Mapping[str, Any],
+) -> dict[str, Any]:
+    projected = deepcopy(dict(material))
+    read_custody_ref = projected.get("read_custody_ref")
+    if isinstance(read_custody_ref, Mapping):
+        projected["read_custody_ref"] = _project_read_custody_ref_for_model(
+            read_custody_ref
+        )
+    projected.pop("stable_candidate_use_option_ref", None)
+    projected.pop("current_candidate_lineage_snapshot_ref", None)
+    return projected
+
+
+def _model_visible_candidate_option_ids(value: Any) -> set[str]:
+    if isinstance(value, Mapping):
+        tokens = {
+            str(item)
+            for key, item in value.items()
+            if key == "candidate_use_option_id" and isinstance(item, str)
+        }
+        for item in value.values():
+            tokens.update(_model_visible_candidate_option_ids(item))
+        return tokens
+    if isinstance(value, (list, tuple)):
+        tokens: set[str] = set()
+        for item in value:
+            tokens.update(_model_visible_candidate_option_ids(item))
+        return tokens
+    return set()
 
 
 def _build_active_need_projection(

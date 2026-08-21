@@ -132,6 +132,8 @@ def test_production_judgment_prompt_states_the_strict_validator_contract() -> No
         "emits that compact candidate_use_option_id",
         "Copy the complete current token character-for-character",
         "including its searchos-option: prefix and full suffix",
+        "Completed candidate option tokens are withheld from model-visible READ-custody lineage",
+        "Only authorized_request.candidate_use_options",
         (
             "Never substitute a normalized_url, candidate_id, title, snippet, list "
             "position, shortened token, altered token, or token remembered from an "
@@ -644,6 +646,24 @@ def test_readable_insufficient_read_remains_iterative_and_is_not_retained(
         searchos_runtime._build_searchos_judgment_model_input
     )
     post_read_token_sets: list[tuple[list[str], list[str]]] = []
+    model_visible_candidate_token_sets: list[tuple[set[str], set[str]]] = []
+
+    def collect_candidate_tokens(value: Any) -> set[str]:
+        if isinstance(value, dict):
+            tokens = {
+                str(item)
+                for key, item in value.items()
+                if key == "candidate_use_option_id" and isinstance(item, str)
+            }
+            for item in value.values():
+                tokens.update(collect_candidate_tokens(item))
+            return tokens
+        if isinstance(value, (list, tuple)):
+            tokens: set[str] = set()
+            for item in value:
+                tokens.update(collect_candidate_tokens(item))
+            return tokens
+        return set()
 
     def capture_model_input(**kwargs: Any) -> dict[str, Any]:
         model_input = original_model_input_builder(**kwargs)
@@ -667,6 +687,9 @@ def test_readable_insufficient_read_remains_iterative_and_is_not_retained(
                 for item in model_input["candidate_directional_contexts"]
             ]
             post_read_token_sets.append((authorized_ids, directional_ids))
+            model_visible_candidate_token_sets.append(
+                (set(authorized_ids), collect_candidate_tokens(model_input))
+            )
         return model_input
 
     monkeypatch.setattr(
@@ -732,6 +755,11 @@ def test_readable_insufficient_read_remains_iterative_and_is_not_retained(
     assert all(
         directional_ids == authorized_ids
         for authorized_ids, directional_ids in post_read_token_sets
+    )
+    assert model_visible_candidate_token_sets
+    assert all(
+        visible_ids == authorized_ids
+        for authorized_ids, visible_ids in model_visible_candidate_token_sets
     )
     assert any(
         item["bounded_read_character_count"] > 0
