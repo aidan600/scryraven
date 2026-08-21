@@ -988,6 +988,19 @@ def build_live_success_packet(
         sanitized_projection_summaries["blocked_fap_summary"] = (
             dict(blocked_fap_summary)
         )
+    if causal_projection is not None:
+        sanitized_projection_summaries["n1_closure_observability"] = (
+            _n1_closure_observability(
+                causal_projection=causal_projection,
+                searchos_slice_a_projection=(
+                    _mapping_or_empty(trace.get(SEARCHOS_SLICE_A_TRACE_KEY))
+                ),
+                trace=trace,
+                cap_policy=cap_policy,
+                blocked_fap=blocked_fap,
+                cited_source_ids=([] if blocked_fap else cited_source_ids),
+            )
+        )
     if blocked_fap:
         # A blocked terminal is still a normal pipeline outcome, but it is not
         # product success and must not be presented as a supported answer.
@@ -1275,6 +1288,101 @@ def _sanitized_projection_summaries(trace: Mapping[str, Any]) -> dict[str, Any]:
         "sufficiency": _sufficiency_summary(trace, packet),
         "final_answer_packet": _final_answer_packet_summary(packet),
         "author_posture": _author_posture_summary(trace, packet),
+    }
+
+
+def _n1_closure_observability(
+    *,
+    causal_projection: Mapping[str, Any],
+    searchos_slice_a_projection: Mapping[str, Any],
+    trace: Mapping[str, Any],
+    cap_policy: RunCapPolicy,
+    blocked_fap: bool,
+    cited_source_ids: Sequence[str],
+) -> dict[str, Any]:
+    """Return the allowlisted N=1 frontier facts for a live packet."""
+
+    slots = [
+        item
+        for item in causal_projection.get("slots") or ()
+        if isinstance(item, Mapping)
+    ]
+    required_slots = [item for item in slots if item.get("required") is True]
+    handoff_count = sum(
+        item.get("semantic_handoff_present") is True for item in required_slots
+    )
+    unresolved_count = sum(
+        item.get("final_posture") == "unresolved_handoff"
+        for item in required_slots
+    )
+    component_projection = _mapping_or_empty(
+        searchos_slice_a_projection.get("n1_closure_observability")
+    )
+    analyst_calls = _safe_summary_int(
+        component_projection.get("component_analyst_calls")
+    )
+    if analyst_calls is None or analyst_calls < 0:
+        analyst_calls = 0
+    component_coverage = _safe_summary_text(
+        component_projection.get("component_coverage")
+    )
+    if component_coverage not in {"supported", "unsupported", "not_reached"}:
+        component_coverage = "not_reached"
+    caps = caps_observed_from_policy(cap_policy)
+    return {
+        "SEARCHOS_COMPLETE_HANDOFF": (
+            "YES"
+            if required_slots
+            and handoff_count == len(required_slots)
+            else "NO"
+        ),
+        "SEARCHOS_SEMANTIC_HANDOFF_COUNT": handoff_count,
+        "SEARCHOS_UNRESOLVED_REQUIRED_SLOT_COUNT": unresolved_count,
+        "COMPONENT_ANALYST_INVOKED": "YES" if analyst_calls > 0 else "NO",
+        "COMPONENT_ANALYST_CALLS": analyst_calls,
+        "COMPONENT_ANALYST_ARTIFACT_PRODUCED": (
+            "YES"
+            if component_projection.get("component_analyst_artifact_produced")
+            is True
+            else "NO"
+        ),
+        "COMPONENT_ADMISSION": (
+            "YES"
+            if component_projection.get("component_admission") is True
+            else "NO"
+        ),
+        "COMPONENT_COVERAGE": component_coverage,
+        "AUTHOR_INVOKED": (
+            "YES" if int(cap_policy.author_model_calls or 0) > 0 else "NO"
+        ),
+        "SUFFICIENCY": _safe_summary_text(
+            _mapping_or_empty(trace.get("final_answer_packet")).get(
+                "sufficiency_decision"
+            )
+        )
+        or "UNKNOWN",
+        "FAP": "blocked" if blocked_fap else "available",
+        "SUPPORTED_CITED_ANSWER": (
+            "YES" if not blocked_fap and bool(cited_source_ids) else "NO"
+        ),
+        "FIRST_PRODUCT_FAILURE_BOUNDARY": (
+            _safe_summary_text(caps.get("product_failure_stage")) or "none"
+        ),
+        "FURTHEST_STAGE_REACHED": (
+            _safe_summary_text(caps.get("furthest_product_stage")) or "unknown"
+        ),
+        "N1_COMPONENT_COUNT": _safe_summary_int(
+            component_projection.get("component_count")
+        )
+        or 0,
+        "N1_SEMANTIC_OBLIGATION_COUNT": _safe_summary_int(
+            component_projection.get("semantic_slot_count")
+        )
+        or 0,
+        "N1_SOURCE_OBLIGATION_COUNT": _safe_summary_int(
+            component_projection.get("source_obligation_count")
+        )
+        or 0,
     }
 
 

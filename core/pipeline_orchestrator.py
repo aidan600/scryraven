@@ -5413,6 +5413,106 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             )
         else:
             searchos_slice_a_projection.pop("component_analyst_failure", None)
+        # Keep the N=1 downstream frontier observable without exposing role
+        # prompts, model output, or evidence material.  The bounded runner
+        # promotes these allowlisted counters into its sanitized packet.
+        accepted_contract = dict(
+            run_kernel.state.current_answer_contract
+            or run_kernel.state.initial_answer_contract
+            or {}
+        )
+        accepted_components = [
+            dict(item)
+            for item in accepted_contract.get("accepted_answer_component_refs") or ()
+            if isinstance(item, Mapping)
+        ]
+        component_admission = dict(
+            run_kernel.state.projections.get("multicomponent_component_admission")
+            or {}
+        )
+        admission_refs = [
+            dict(item)
+            for item in component_admission.get("component_admission_refs") or ()
+            if isinstance(item, Mapping)
+        ]
+        analyst_calls = max(
+            0,
+            int(
+                component_admission.get("physical_component_analyst_calls")
+                or component_admission.get("logical_component_analyst_evaluations")
+                or 0
+            ),
+        )
+        if not analyst_calls:
+            analyst_calls = sum(
+                max(
+                    0,
+                    int(
+                        item.get("physical_component_analyst_calls")
+                        or item.get("logical_component_analyst_evaluations")
+                        or 0
+                    ),
+                )
+                for item in admission_refs
+            )
+        component_coverage_refs = [
+            dict(item.get("component_coverage_ref") or {})
+            for item in admission_refs
+            if isinstance(item.get("component_coverage_ref"), Mapping)
+        ]
+        searchos_slice_a_projection["n1_closure_observability"] = {
+            "component_count": len(accepted_components),
+            "semantic_slot_count": sum(
+                len(
+                    set(
+                        str(slot_id)
+                        for slot_id in item.get("semantic_slot_ids") or ()
+                        if str(slot_id).strip()
+                    )
+                )
+                for item in accepted_components
+            ),
+            "source_obligation_count": sum(
+                len(
+                    set(
+                        str(obligation_id)
+                        for obligation_id in (
+                            item.get("source_obligation_candidate_ids")
+                            or item.get("source_obligation_candidate_refs")
+                            or ()
+                        )
+                        if str(obligation_id).strip()
+                    )
+                )
+                for item in accepted_components
+            ),
+            "component_analyst_calls": analyst_calls,
+            "component_analyst_artifact_produced": any(
+                bool(
+                    item.get("analyst_finding_ref")
+                    or item.get("component_analyst_case_ref")
+                )
+                for item in admission_refs
+            ),
+            "component_admission": any(
+                item.get("admission_status")
+                in {"admitted", "admitted_with_caveats"}
+                for item in admission_refs
+            ),
+            "component_coverage": (
+                "supported"
+                if any(
+                    item.get("coverage_state") == "satisfied"
+                    for item in component_coverage_refs
+                )
+                else (
+                    "unsupported"
+                    if admission_refs
+                    or analyst_calls
+                    else "not_reached"
+                )
+            ),
+        }
     if searchos_slice_a_projection:
         execution_trace[SEARCHOS_SLICE_A_TRACE_KEY] = dict(searchos_slice_a_projection)
     if final_answer_packet_handoff.author_input_blocked:

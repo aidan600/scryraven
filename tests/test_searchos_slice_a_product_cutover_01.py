@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import pytest
 
@@ -29,6 +29,7 @@ from core.multicomponent_role_runtime import (
 )
 from core.prompts import DEFAULT_SYSTEM
 from core.run_kernel import ActionType, RunKernel
+from core.search_planner_runtime import DeterministicSearchPlannerAdapter
 from core.searchos_iterative_judgment_runtime import (
     SEARCHOS_SEMANTIC_HANDOFF_SCHEMA_VERSION,
     SEARCHOS_SLICE_A_REQUIRED_NEEDS_UNRESOLVED,
@@ -1589,6 +1590,149 @@ def test_searchos_receiver_block_cannot_report_completed_or_originate_analyst(
     assert not any(
         prompt == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST]
         for prompt in harness.model_system_prompts
+    )
+
+
+def test_n1_plural_semantic_slots_share_one_current_read_and_one_analyst(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One component may carry plural obligations without physical slot fan-out."""
+
+    original_produce = DeterministicSearchPlannerAdapter.produce
+
+    def produce(self: Any, planner_input: Mapping[str, Any]) -> Mapping[str, Any]:
+        result = json.loads(json.dumps(original_produce(self, planner_input)))
+        component = dict(result["answer_components"][0])
+        component.update(
+            {
+                "semantic_slot_ids": ["slot:rel_tol", "slot:abs_tol"],
+                "source_obligation_candidate_ids": ["obligation:official_current"],
+                "user_facing_question": (
+                    "What are the defaults for rel_tol and abs_tol in math.isclose()?"
+                ),
+            }
+        )
+        result["semantic_slots"] = [
+            {
+                "slot_id": "slot:rel_tol",
+                "slot_kind": "parameter",
+                "status": "explicit",
+                "selected_value": "rel_tol",
+                "materiality": "material",
+            },
+            {
+                "slot_id": "slot:abs_tol",
+                "slot_kind": "parameter",
+                "status": "explicit",
+                "selected_value": "abs_tol",
+                "materiality": "material",
+            },
+        ]
+        result["answer_components"] = [component]
+        result["source_obligation_candidates"] = [
+            {
+                "candidate_id": "obligation:official_current",
+                "obligation_kind": "official_current",
+                "component_candidate_ids": [component["component_id"]],
+                "strictness": "required",
+            }
+        ]
+        requirement = dict(result["component_search_requirements"][0])
+        requirement["source_obligation_candidate_ids"] = [
+            "obligation:official_current"
+        ]
+        requirement_metadata = dict(requirement.get("metadata") or {})
+        strategies = [
+            dict(item)
+            for item in requirement_metadata.get("query_strategy_candidates") or ()
+        ]
+        for strategy in strategies:
+            strategy["source_obligation_candidate_ids"] = [
+                "obligation:official_current"
+            ]
+        requirement_metadata["query_strategy_candidates"] = strategies
+        requirement["metadata"] = requirement_metadata
+        result["component_search_requirements"] = [requirement]
+        return result
+
+    monkeypatch.setattr(DeterministicSearchPlannerAdapter, "produce", produce)
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        mode="Balanced",
+        query=(
+            "According to the official Python 3 documentation, what are the "
+            "default values for rel_tol and abs_tol in math.isclose()?"
+        ),
+        core_topic="Python math.isclose rel_tol abs_tol defaults",
+        primary_entity="Python math.isclose",
+        researcher_queries=["Python math.isclose rel_tol abs_tol defaults"],
+        evidence_rows=[
+            {
+                "title": "math.isclose documentation",
+                "url": "https://docs.python.org/3/library/math.html",
+                "text": (
+                    "math.isclose(a, b, *, rel_tol=1e-09, abs_tol=0.0) "
+                    "determines whether two values are close."
+                ),
+                "credibility": 4,
+                "source_tier": "official",
+                "source_class": "primary_source_documents",
+                "currentness_signal": "current",
+                "readable_status": "readable",
+                "disposition": "accepted",
+            }
+        ],
+        read_content_by_url={
+            "https://docs.python.org/3/library/math.html": (
+                "math.isclose(a, b, *, rel_tol=1e-09, abs_tol=0.0) "
+                "determines whether two values are close."
+            )
+        },
+    )
+
+    contract = harness.run_kernel.state.initial_answer_contract
+    components = contract["accepted_answer_component_refs"]
+    assert len(components) == 1
+    assert len(components[0]["semantic_slot_ids"]) == 2
+    assert len(contract["accepted_source_obligation_refs"]) == 1
+    assert len(harness.run_kernel.state.searchos_state["active_slot_ids"]) == 1
+    assert len(harness.read_transport_calls) == 1
+    assert len(harness.run_kernel.state.semantic_observation_admission_history) == 1
+    admissions = harness.run_kernel.state.projections[
+        "multicomponent_component_admission"
+    ]
+    assert admissions["physical_component_analyst_calls"] == 1
+    assert admissions["admitted_component_count"] == 1
+    graph = harness.run_kernel.state.projections[
+        "multicomponent_component_work_graph_v1"
+    ]
+    assert graph["dependency_posture"] == "single_component_direct_admission"
+    assert graph["physical_call_accounting"]["component_analyst_calls"] == 1
+    assert graph["physical_call_accounting"]["cross_component_analyst_calls"] == 0
+    assert graph["physical_call_accounting"]["synthesis_dprime_calls"] == 0
+    assert graph["physical_call_accounting"]["scrutineer_calls"] == 0
+    assert harness.run_kernel.state.projections.get("multicomponent_graph_scheduler") is None
+    searchos = outcome.execution_trace["searchos_slice_a"]
+    assert searchos["readiness_projection"]["all_required_slots_slice_a_ready"] is True
+    assert searchos["n1_closure_observability"] == {
+        "component_count": 1,
+        "semantic_slot_count": 2,
+        "source_obligation_count": 1,
+        "component_analyst_calls": 1,
+        "component_analyst_artifact_produced": True,
+        "component_admission": True,
+        "component_coverage": "supported",
+    }
+    assert ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST] in harness.model_system_prompts
+    assert all(
+        ROLE_SYSTEM_PROMPTS[role] not in harness.model_system_prompts
+        for role in (
+            ROLE_COMPONENT_DPRIME,
+            ROLE_CROSS_COMPONENT_ANALYST,
+            ROLE_SYNTHESIS_DPRIME,
+        )
     )
 
 @pytest.mark.parametrize(

@@ -1392,6 +1392,15 @@ def _n1_searchos_slice_a(
             "readiness_projection_id": readiness["readiness_projection_id"],
             "readiness_projection_digest": digest,
         },
+        "n1_closure_observability": {
+            "component_count": 1,
+            "semantic_slot_count": 2,
+            "source_obligation_count": 1,
+            "component_analyst_calls": 1,
+            "component_analyst_artifact_produced": True,
+            "component_admission": True,
+            "component_coverage": "supported",
+        },
         "semantic_handoff_authorization_attempted_slot_ids": ["slot-1"],
         "candidate_context": {"text": _N1_PRIVATE_CANARY},
         "private_raw": {
@@ -1541,6 +1550,25 @@ def test_q1_like_blocked_fap_packet_reuses_canonical_n1_projection(
     assert packet["run_pipeline_call_count"] == 1
     assert summaries["searchos_n1_causal_projection"] == expected
     _assert_target_facts(summaries["searchos_n1_causal_projection"])
+    assert summaries["n1_closure_observability"] == {
+        "AUTHOR_INVOKED": "NO",
+        "COMPONENT_ADMISSION": "YES",
+        "COMPONENT_ANALYST_ARTIFACT_PRODUCED": "YES",
+        "COMPONENT_ANALYST_CALLS": 1,
+        "COMPONENT_ANALYST_INVOKED": "YES",
+        "COMPONENT_COVERAGE": "supported",
+        "FIRST_PRODUCT_FAILURE_BOUNDARY": "none",
+        "FAP": "blocked",
+        "FURTHEST_STAGE_REACHED": "configuration",
+        "N1_COMPONENT_COUNT": 1,
+        "N1_SEMANTIC_OBLIGATION_COUNT": 2,
+        "N1_SOURCE_OBLIGATION_COUNT": 1,
+        "SEARCHOS_COMPLETE_HANDOFF": "YES",
+        "SEARCHOS_SEMANTIC_HANDOFF_COUNT": 1,
+        "SEARCHOS_UNRESOLVED_REQUIRED_SLOT_COUNT": 0,
+        "SUFFICIENCY": "partial_answer_authorized",
+        "SUPPORTED_CITED_ANSWER": "NO",
+    }
     cli_projection = compatibility_cli.build_bounded_searchos_n1_causal_projection(
         searchos_slice_a_projection=dict(
             dict(getattr(outcome, "execution_trace", {}) or {}).get(
