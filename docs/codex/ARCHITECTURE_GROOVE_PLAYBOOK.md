@@ -60,8 +60,8 @@ still cannot demonstrate the claimed behavior.
 Default workflow:
 
 ```text
-1. Start from updated main.
-2. Create/use a phase branch.
+1. In C:\Users\aidan\ScryRaven, verify clean current main and update it safely.
+2. Create/use one feature branch in that same ordinary checkout.
 3. Inspect and plan the bounded implementation.
 4. Implement with narrow continuation checks while one causal cluster converges.
 5. At a coherent checkpoint, run phase-focus and immediate-owner proof.
@@ -73,26 +73,21 @@ Default workflow:
 11. Return one final phase bundle immediately; Strategy/Review owns later inspection.
 ```
 
-## Post-merge local phase cleanup
+The ordinary path creates no phase-root directory and no dedicated worktree.
+A phase may use a dedicated worktree only when its brief explicitly opts into
+the [optional worktree rule](CURSOR_LOCAL_WINDOWS_PHASE_EXECUTION_RULE.md).
+Simplifying the Git workspace does not relax the requirement to keep generated,
+private, and transient artifacts outside the repository through existing
+output, cache, and temporary-data controls.
 
-Use the repository-owned merged-phase cleanup command after an approved PR is
-merged. Do not reconstruct post-merge worktree/branch/phase-root cleanup as an
-ad-hoc PowerShell sequence. Supply the exact reviewed phase head, phase branch,
-and phase root. The helper is merge-gated, non-destructive, state-aware,
-resumable, idempotent, and prints its result. Troubleshoot only from its safe
-blocker output.
+## Post-merge ordinary checkout posture
 
-Canonical Windows operator invocation:
-
-```powershell
-& 'C:\Users\aidan\ScryRaven\scripts\cleanup_merged_phase.ps1' `
-  -ReviewedHead '<exact-reviewed-head>' `
-  -PhaseBranch '<phase-branch>' `
-  -PhaseRoot 'C:\Users\aidan\sr-phases\<phase>'
-```
-
-Owners: `scripts/cleanup_merged_phase.py`, `scripts/cleanup_merged_phase.ps1`,
-and [Windows Sandbox Publication Rule](CODEX_LOCAL_WINDOWS_SANDBOX_PUBLICATION_RULE.md).
+Do not invent a cleanup procedure. After external review and merge, first
+confirm the reviewed PR/head is merged and that no uncommitted work would be
+discarded. When authorized, switch the ordinary checkout to `main`, update it
+through the normal safe fast-forward path, and verify clean `main` plus its
+`origin/main` relationship. Local or remote branch deletion is a separate,
+explicit maintainer action, not an automatic phase-close requirement.
 
 Final-candidate local validation is completed in step 7. Normal exact-head PR CI
 is a merge gate, not a handoff gate, unless a phase explicitly states a stronger

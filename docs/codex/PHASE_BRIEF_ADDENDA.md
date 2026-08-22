@@ -5,20 +5,21 @@ Status: Conditional fields for the compact phase brief.
 Use only the addenda triggered by the phase. Do not copy empty sections into a
 brief. Standing procedure remains in the root contract and playbook.
 
-## Local Cursor Windows workspace
+## Explicit dedicated Cursor worktree exception
 
-Use only when a phase uses a disposable local Cursor Windows worktree. Follow
-the [Cursor Local Windows Phase Execution Rule](CURSOR_LOCAL_WINDOWS_PHASE_EXECUTION_RULE.md)
-rather than duplicating its procedure.
+The ordinary phase uses one feature branch in `C:\Users\aidan\ScryRaven` and
+does not fill out this addendum. Use it only when the phase or maintainer
+explicitly opts into a dedicated worktree. Follow the
+[Optional Cursor Local Windows Worktree Rule](CURSOR_LOCAL_WINDOWS_PHASE_EXECUTION_RULE.md)
+rather than duplicating its safety procedure or inventing a canonical layout.
 
 ```text
-Local workspace:
-- Phase root:
-- Worktree:
-- Cache:
-- Tmp:
-- Evidence:
-- Final:
+Dedicated worktree exception:
+- Explicit license:
+- Worktree path:
+- External cache path (when needed):
+- External temporary path (when needed):
+- Existing product/evidence output control (when needed):
 - Cursor root is readable and not ignored: YES
 ```
 

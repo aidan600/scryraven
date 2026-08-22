@@ -42,7 +42,15 @@ silently escalate it.
 
 ## Operating Rule
 
-Use the workspace sandbox for implementation, tests, inspection, and file edits.
+The ordinary local implementation workspace is `C:\Users\aidan\ScryRaven`.
+Start from clean current `main`, update it by the normal safe path, and create
+one feature branch in that same checkout. Use the workspace sandbox for
+implementation, tests, inspection, and file edits. A dedicated worktree is an
+explicitly licensed exception, not the default.
+
+No ordinary phase root or dedicated worktree is required. Generated, private,
+and transient data must still remain outside the repository through the
+existing appropriate output, cache, and temporary-data controls.
 
 Git metadata and publication commands should use exact approved commands or
 whatever the current UI auto-review safely permits. Phase-end push and draft-PR
@@ -75,33 +83,15 @@ Do not merge, rebase, force-push, delete branches, destructively clean, mutate
 publication path fails, report the exact failure rather than attempting
 authentication, ACL, SSH, OAuth, or sandbox repair.
 
-## Post-merge local phase cleanup
+## Post-merge ordinary checkout posture
 
-After an approved phase PR merges, use the repository-owned cleanup command.
-Do not reconstruct Git/worktree/filesystem cleanup as an ad-hoc PowerShell
-block unless the canonical helper itself reports an unsupported state.
+Do not invent a cleanup script or lifecycle procedure. Confirm the exact
+reviewed PR/head is merged and that no uncommitted work would be discarded.
+When authorized, switch the ordinary checkout to `main`, update it through the
+normal safe fast-forward path, and verify a clean `main` and its `origin/main`
+relationship.
 
-```powershell
-& 'C:\Users\aidan\ScryRaven\scripts\cleanup_merged_phase.ps1' `
-  -ReviewedHead '<exact-reviewed-head>' `
-  -PhaseBranch '<phase-branch>' `
-  -PhaseRoot 'C:\Users\aidan\sr-phases\<phase>'
-```
-
-The helper owns merge-gated, state-aware, resumable cleanup of one explicit
-merged phase. It prints a complete result to the console and best-effort copies
-that same text to the clipboard. Clipboard failure is nonfatal.
-
-Hard stops enforced by the helper:
-
-```text
-no --force
-no -D
-no reset
-no rebase
-no blind git clean
-no ad-hoc replacement cleanup block unless the canonical helper itself reports an unsupported state
-```
-
-Python engine: `scripts/cleanup_merged_phase.py`.
-PowerShell wrapper: `scripts/cleanup_merged_phase.ps1`.
+Local or remote branch deletion remains a separate, explicit maintainer action.
+It is not automatic phase cleanup. The standing prohibitions on merge, rebase,
+force-push, destructive clean, reset, and unauthorized branch deletion remain
+in force.

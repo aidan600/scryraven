@@ -5,15 +5,16 @@ alwaysApply: true
 
 # ScryRaven Cursor command hygiene
 
-For disposable local Windows phase worktrees, follow the canonical
-[Cursor Local Windows Phase Execution Rule](../../docs/codex/CURSOR_LOCAL_WINDOWS_PHASE_EXECUTION_RULE.md).
-Never place or open a phase worktree beneath an output, cache, or other path
-excluded by `.cursorignore`.
+The ordinary local workspace is `C:\Users\aidan\ScryRaven`: start from clean
+current `main` and create one feature branch in that same checkout. Do not
+create an ordinary phase root or dedicated worktree. When a phase explicitly
+licenses a dedicated worktree, follow the
+[Optional Cursor Local Windows Worktree Rule](../../docs/codex/CURSOR_LOCAL_WINDOWS_PHASE_EXECUTION_RULE.md).
 
 Use direct editor or patch tools for repository changes. If they cannot access
-the worktree, stop rather than using PowerShell, Python, or Shell as a fallback
+the checkout, stop rather than using PowerShell, Python, or Shell as a fallback
 editor. Preserve existing line endings and avoid text-mode whole-file rewrites.
-Keep inspection, editing, validation, commit, publication, and cleanup separate.
+Keep inspection, editing, validation, commit, and publication separate.
 
 Use Windows PowerShell-native commands.
 

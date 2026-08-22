@@ -137,10 +137,14 @@ implementation phase.
 The canonical Windows sandbox and GitHub publication compatibility contract is
 `docs/codex/CODEX_LOCAL_WINDOWS_SANDBOX_PUBLICATION_RULE.md`.
 
-Post-merge local phase cleanup is owned by `scripts/cleanup_merged_phase.py`,
-`scripts/cleanup_merged_phase.ps1`, and
-`docs/codex/CODEX_LOCAL_WINDOWS_SANDBOX_PUBLICATION_RULE.md`. Do not reconstruct
-merged-phase worktree/branch/phase-root cleanup as an ad-hoc PowerShell sequence.
+The ordinary local implementation path uses the clean current `main` branch in
+`C:\Users\aidan\ScryRaven`, creates one feature branch in that same checkout,
+and, when authorized after external merge review, returns the checkout to
+updated clean `main`.
+Dedicated worktrees are opt-in exceptions that require explicit phase license.
+Generated, private, and transient data must still use the existing external
+output and temporary-data controls. Branch deletion is never automatic and
+requires explicit maintainer authorization.
 
 ## Guidance routes
 
