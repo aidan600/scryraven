@@ -3858,9 +3858,6 @@ def _semantic_passages(
                         "title": reference.get("content_title") or "Read source",
                         "text": reference.get("bounded_text") or "",
                         "bounded_text_digest": reference.get("excerpt_digest"),
-                        "bounded_text_selection": deepcopy(
-                            reference.get("bounded_text_selection") or {}
-                        ),
                         "score": 1.0,
                         "credibility": 3,
                         "_provider": "searchos_read_custody",

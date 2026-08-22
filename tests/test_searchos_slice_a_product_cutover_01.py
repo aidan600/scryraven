@@ -1773,15 +1773,14 @@ def test_n1_plural_semantic_slots_share_one_current_read_and_one_analyst(
     assert bounded_digest == safe_packet_digest(
         {"bounded_text": semantic_material["text"]}
     )
-    assert semantic_material["bounded_text_selection"][
-        "bounded_text_digest"
-    ] == bounded_digest
     post_read_call = next(
         item
         for item in reversed(harness.read_assessment_calls)
         if item["bounded_read_digests"]
     )
     assert post_read_call["bounded_read_digests"] == [bounded_digest]
+    [bounded_selection] = post_read_call["bounded_read_selections"]
+    assert bounded_selection["bounded_text_digest"] == bounded_digest
     [semantic_handoff] = harness.searchos_product_result.semantic_handoffs
     [handoff_custody] = semantic_handoff["read_custody_material_refs"]
     assert handoff_custody["bounded_text_digest"] == bounded_digest
