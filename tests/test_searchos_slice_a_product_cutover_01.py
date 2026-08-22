@@ -26,6 +26,7 @@ from core.multicomponent_role_runtime import (
     ROLE_CROSS_COMPONENT_ANALYST,
     ROLE_SYNTHESIS_DPRIME,
     ROLE_SYSTEM_PROMPTS,
+    safe_packet_digest,
 )
 from core.prompts import DEFAULT_SYSTEM
 from core.run_kernel import ActionType, RunKernel
@@ -1593,12 +1594,9 @@ def test_searchos_receiver_block_cannot_report_completed_or_originate_analyst(
     )
 
 
-def test_n1_plural_semantic_slots_share_one_current_read_and_one_analyst(
-    tmp_path: Path,
+def _install_q1_plural_planner_contract(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """One component may carry plural obligations without physical slot fan-out."""
-
     original_produce = DeterministicSearchPlannerAdapter.produce
 
     def produce(self: Any, planner_input: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -1657,6 +1655,75 @@ def test_n1_plural_semantic_slots_share_one_current_read_and_one_analyst(
         return result
 
     monkeypatch.setattr(DeterministicSearchPlannerAdapter, "produce", produce)
+
+
+def test_n1_plural_semantic_slots_share_one_current_read_and_one_analyst(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One component may carry plural obligations without physical slot fan-out."""
+
+    unrelated_prefix = " ".join(
+        [
+            "Earlier documentation section with background numeric examples 2024 and 42."
+        ]
+        * 70
+    )
+    answer_bearing_section = (
+        "math.isclose(a, b, *, rel_tol=1e-09, abs_tol=0.0) "
+        "determines whether two values are close."
+    )
+    long_read_text = (
+        f"{unrelated_prefix} {answer_bearing_section} "
+        + "Later documentation notes. " * 40
+    )
+    packet_contexts: list[dict[str, Any]] = []
+    admission_payloads: list[dict[str, Any]] = []
+
+    original_packet_install = (
+        RunKernel.install_multicomponent_graph_reproof_packet_context
+    )
+
+    def capture_packet_install(self: Any, **kwargs: Any) -> Any:
+        packet_contexts.append(
+            {
+                str(key): dict(value)
+                for key, value in kwargs[
+                    "component_analyst_input_packets"
+                ].items()
+            }
+        )
+        return original_packet_install(self, **kwargs)
+
+    from core import ordinary_multicomponent_synthesis_runtime as multicomponent
+
+    original_component_admission = (
+        multicomponent.execute_multicomponent_component_admission
+    )
+
+    def capture_component_admission(**kwargs: Any) -> Any:
+        admission_payloads.append(
+            {
+                "semantic_observation": kwargs.get("semantic_observation"),
+                "sanitized_content_references": list(
+                    kwargs.get("sanitized_content_references") or ()
+                ),
+            }
+        )
+        return original_component_admission(**kwargs)
+
+    monkeypatch.setattr(
+        RunKernel,
+        "install_multicomponent_graph_reproof_packet_context",
+        capture_packet_install,
+    )
+    monkeypatch.setattr(
+        multicomponent,
+        "execute_multicomponent_component_admission",
+        capture_component_admission,
+    )
+
+    _install_q1_plural_planner_contract(monkeypatch)
     outcome, harness = run_post_retirement_ordinary_pipeline(
         tmp_path,
         monkeypatch,
@@ -1668,6 +1735,10 @@ def test_n1_plural_semantic_slots_share_one_current_read_and_one_analyst(
         core_topic="Python math.isclose rel_tol abs_tol defaults",
         primary_entity="Python math.isclose",
         researcher_queries=["Python math.isclose rel_tol abs_tol defaults"],
+        raw_author_response=(
+            "The official documentation supports the stated defaults. "
+            "[[1]](https://docs.python.org/3/library/math.html)"
+        ),
         evidence_rows=[
             {
                 "title": "math.isclose documentation",
@@ -1685,10 +1756,7 @@ def test_n1_plural_semantic_slots_share_one_current_read_and_one_analyst(
             }
         ],
         read_content_by_url={
-            "https://docs.python.org/3/library/math.html": (
-                "math.isclose(a, b, *, rel_tol=1e-09, abs_tol=0.0) "
-                "determines whether two values are close."
-            )
+            "https://docs.python.org/3/library/math.html": long_read_text
         },
     )
 
@@ -1699,6 +1767,36 @@ def test_n1_plural_semantic_slots_share_one_current_read_and_one_analyst(
     assert len(contract["accepted_source_obligation_refs"]) == 1
     assert len(harness.run_kernel.state.searchos_state["active_slot_ids"]) == 1
     assert len(harness.read_transport_calls) == 1
+    [semantic_material] = harness.searchos_semantic_material_before_pipeline_consumption
+    assert answer_bearing_section in semantic_material["text"]
+    bounded_digest = semantic_material["bounded_text_digest"]
+    assert bounded_digest == safe_packet_digest(
+        {"bounded_text": semantic_material["text"]}
+    )
+    assert semantic_material["bounded_text_selection"][
+        "bounded_text_digest"
+    ] == bounded_digest
+    post_read_call = next(
+        item
+        for item in reversed(harness.read_assessment_calls)
+        if item["bounded_read_digests"]
+    )
+    assert post_read_call["bounded_read_digests"] == [bounded_digest]
+    [semantic_handoff] = harness.searchos_product_result.semantic_handoffs
+    [handoff_custody] = semantic_handoff["read_custody_material_refs"]
+    assert handoff_custody["bounded_text_digest"] == bounded_digest
+    [analyst_packets] = packet_contexts
+    [analyst_packet] = analyst_packets.values()
+    assert analyst_packet["component_evidence"][
+        "bounded_text_digest"
+    ] == bounded_digest
+    [admission_payload] = admission_payloads
+    [content_ref] = admission_payload["sanitized_content_references"]
+    assert content_ref["bounded_text"] == semantic_material["text"]
+    assert content_ref["metadata"]["bounded_text_digest"] == bounded_digest
+    assert admission_payload["semantic_observation"]["content_refs"] == [
+        content_ref["content_ref_id"]
+    ]
     assert len(harness.run_kernel.state.semantic_observation_admission_history) == 1
     admissions = harness.run_kernel.state.projections[
         "multicomponent_component_admission"
@@ -1724,7 +1822,20 @@ def test_n1_plural_semantic_slots_share_one_current_read_and_one_analyst(
         "component_analyst_artifact_produced": True,
         "component_admission": True,
         "component_coverage": "supported",
+        "bounded_read_selection_count": 1,
+        "bounded_read_full_anchor_match_count": 0,
+        "bounded_read_partial_anchor_match_count": 1,
+        "bounded_read_digest_bound_count": 1,
     }
+    assert harness.run_kernel.state.sufficiency_judgment_history[-1][
+        "final_answer_allowed"
+    ] is True
+    assert "final_answer_packet" in outcome.execution_trace
+    assert harness.author_prompts
+    assert outcome.report == (
+        "The official documentation supports the stated defaults. "
+        "[[1]](https://docs.python.org/3/library/math.html)"
+    )
     assert ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST] in harness.model_system_prompts
     assert all(
         ROLE_SYSTEM_PROMPTS[role] not in harness.model_system_prompts
@@ -1734,6 +1845,91 @@ def test_n1_plural_semantic_slots_share_one_current_read_and_one_analyst(
             ROLE_SYNTHESIS_DPRIME,
         )
     )
+
+
+def test_n1_partial_anchor_read_does_not_launder_semantic_support(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A topical window without both requested defaults stays unsupported."""
+
+    _install_q1_plural_planner_contract(monkeypatch)
+    long_read_text = " ".join(
+        ["Earlier documentation background with numeric examples 2024 and 42."] * 70
+        + [
+            (
+                "math.isclose is discussed with rel_tol as a configurable tolerance. "
+                "The required information is absent from this section."
+            )
+        ]
+        + ["Later documentation background notes."] * 40
+    )
+
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        mode="Balanced",
+        query=(
+            "According to the official Python 3 documentation, what are the "
+            "default values for rel_tol and abs_tol in math.isclose()?"
+        ),
+        core_topic="Python math.isclose rel_tol abs_tol defaults",
+        primary_entity="Python math.isclose",
+        researcher_queries=["Python math.isclose rel_tol abs_tol defaults"],
+        evidence_rows=[
+            {
+                "title": "math.isclose documentation",
+                "url": "https://docs.python.org/3/library/math.html",
+                "text": "math.isclose reference documentation.",
+                "credibility": 4,
+                "source_tier": "official",
+                "source_class": "primary_source_documents",
+                "currentness_signal": "current",
+                "readable_status": "readable",
+                "disposition": "accepted",
+            }
+        ],
+        read_content_by_url={
+            "https://docs.python.org/3/library/math.html": long_read_text
+        },
+    )
+
+    post_read_call = next(
+        item
+        for item in reversed(harness.read_assessment_calls)
+        if item["bounded_read_selections"]
+    )
+    [selection] = post_read_call["bounded_read_selections"]
+    assert selection["matched_anchor_count"] < selection["required_anchor_count"]
+    assert selection["missing_anchors"]
+    assert selection["not_semantic_support"] is True
+    assert selection["not_source_obligation_satisfied"] is True
+    n1_observability = outcome.execution_trace["searchos_slice_a"][
+        "n1_closure_observability"
+    ]
+    assert n1_observability["bounded_read_selection_count"] == 1
+    assert n1_observability["bounded_read_full_anchor_match_count"] == 0
+    assert n1_observability["bounded_read_partial_anchor_match_count"] == 1
+    assert n1_observability["bounded_read_digest_bound_count"] == 1
+    assert harness.searchos_product_result.semantic_handoffs == ()
+    assert harness.run_kernel.state.semantic_observation_admission_history == []
+    assert (
+        harness.run_kernel.state.projections.get(
+            "multicomponent_component_admission"
+        )
+        is None
+    )
+    assert ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST] not in (
+        harness.model_system_prompts
+    )
+    assert outcome.execution_trace["blocked_fap_terminal"]["author_called"] is False
+    assert (
+        harness.run_kernel.state.sufficiency_judgment_history[-1][
+            "final_answer_allowed"
+        ]
+        is False
+    )
+
 
 @pytest.mark.parametrize(
     ("decision", "expected_posture", "expected_failure_class", "expected_subtype"),

@@ -377,6 +377,17 @@ def _evidence_input(bindable: Any | None) -> dict[str, Any]:
         }
     passage = bindable.passage
     candidate = _safe_mapping(bindable.candidate_record)
+    bounded_text = _clean_text(passage.get("text"), limit=6000)
+    bounded_text_digest = _clean_text(
+        passage.get("bounded_text_digest"),
+        limit=128,
+    )
+    if bounded_text_digest and bounded_text_digest != safe_packet_digest(
+        {"bounded_text": bounded_text}
+    ):
+        raise OrdinaryMulticomponentRuntimeError(
+            "component Analyst evidence bounded-text digest mismatch"
+        )
     source_class = _structured_evidence_fact(
         candidate=candidate,
         passage=passage,
@@ -431,7 +442,8 @@ def _evidence_input(bindable: Any | None) -> dict[str, Any]:
         "evidence_ref_id": bindable.evidence_ref_id,
         "source_title": _clean_text(passage.get("title"), limit=240),
         "source_url": _clean_text(passage.get("url"), limit=500),
-        "bounded_text": _clean_text(passage.get("text"), limit=6000),
+        "bounded_text": bounded_text,
+        "bounded_text_digest": bounded_text_digest,
         "currentness": currentness,
         "source_class": source_class,
         "source_tier": source_tier,

@@ -1383,6 +1383,22 @@ def _n1_closure_observability(
             component_projection.get("source_obligation_count")
         )
         or 0,
+        "BOUNDED_READ_SELECTION_COUNT": _safe_summary_int(
+            component_projection.get("bounded_read_selection_count")
+        )
+        or 0,
+        "BOUNDED_READ_FULL_ANCHOR_MATCH_COUNT": _safe_summary_int(
+            component_projection.get("bounded_read_full_anchor_match_count")
+        )
+        or 0,
+        "BOUNDED_READ_PARTIAL_ANCHOR_MATCH_COUNT": _safe_summary_int(
+            component_projection.get("bounded_read_partial_anchor_match_count")
+        )
+        or 0,
+        "BOUNDED_READ_DIGEST_BOUND_COUNT": _safe_summary_int(
+            component_projection.get("bounded_read_digest_bound_count")
+        )
+        or 0,
     }
 
 

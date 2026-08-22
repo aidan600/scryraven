@@ -28,6 +28,7 @@ from hashlib import sha256
 from typing import Any, Mapping, Sequence
 
 from core.semantic_observation_foundation import (
+    MAX_BOUNDED_TEXT_CHARS,
     SanitizedContentReference,
     SemanticObservation,
     validate_content_references,
@@ -181,7 +182,13 @@ def _json_safe(value: Any, *, depth: int = 0) -> Any:
             clean_key = _clean_token(key, limit=120)
             if not clean_key or _is_sensitive_key(clean_key):
                 continue
-            out[clean_key] = _json_safe(value[key], depth=depth + 1)
+            if clean_key == "bounded_text":
+                out[clean_key] = _clean_text(
+                    value[key],
+                    limit=MAX_BOUNDED_TEXT_CHARS,
+                )
+            else:
+                out[clean_key] = _json_safe(value[key], depth=depth + 1)
         return out
     if isinstance(value, tuple | list | set | frozenset):
         items = list(value)

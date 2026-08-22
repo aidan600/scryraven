@@ -11,6 +11,7 @@ citation, sufficiency, answer, or author authority.
 from __future__ import annotations
 
 import json
+import re
 from copy import deepcopy
 from dataclasses import dataclass
 from hashlib import sha256
@@ -91,6 +92,39 @@ SEARCH_JUDGMENT_READ_PRODUCER_SURFACE = (
 SEARCH_JUDGMENT_READ_SLOT_BUDGET_EXCEEDED = (
     "search_judgment_read_assessment_slot_budget_exceeded"
 )
+
+_BOUNDED_SELECTION_GUIDANCE_STOP_WORDS = frozenset(
+    {
+        "according",
+        "answer",
+        "current",
+        "default",
+        "defaults",
+        "documentation",
+        "does",
+        "find",
+        "from",
+        "have",
+        "official",
+        "please",
+        "requested",
+        "source",
+        "support",
+        "that",
+        "their",
+        "these",
+        "this",
+        "using",
+        "value",
+        "values",
+        "what",
+        "when",
+        "where",
+        "which",
+        "with",
+    }
+)
+_BOUNDED_SELECTION_GUIDANCE_MAX_ANCHORS = 12
 
 SEARCH_JUDGMENT_READ_SYSTEM_PROMPT = """You are the subordinate SearchJudgment READ assessor.
 Decide only whether the active source-obligation slot needs one full-page READ
@@ -1832,9 +1866,17 @@ def _execute_one_acquisition_to_custody(
         custody_result.custody_authorization.ref()
     )
     artifact = execution.artifacts[0]
+    selection_anchors, expected_value_token_kinds = (
+        _bounded_selection_guidance_from_current_need(
+            run_kernel=run_kernel,
+            binding=binding,
+        )
+    )
     material = _sanitized_material_from_artifact(
         artifact=artifact,
         binding=binding,
+        required_or_preferred_anchors=selection_anchors,
+        expected_value_token_kinds=expected_value_token_kinds,
     )
     packet = validate_fetch_read_content_packet(
         build_fetch_read_content_packet_from_candidate_packet(
@@ -1966,9 +2008,17 @@ def execute_searchos_candidate_read_to_custody(
 
 
 def _sanitized_material_from_artifact(
-    *, artifact: AcquisitionArtifact, binding: SelectedCandidateMaterialNeedBindingV1
+    *,
+    artifact: AcquisitionArtifact,
+    binding: SelectedCandidateMaterialNeedBindingV1,
+    required_or_preferred_anchors: Sequence[Any] = (),
+    expected_value_token_kinds: Sequence[str] = (),
 ) -> dict[str, Any]:
-    selection = select_bounded_answer_bearing_text(artifact.retained_text or "")
+    selection = select_bounded_answer_bearing_text(
+        artifact.retained_text or "",
+        required_or_preferred_anchors=required_or_preferred_anchors,
+        expected_value_token_kinds=expected_value_token_kinds,
+    )
     return _without_none(
         {
             "candidate_id": binding.candidate_ref.get("candidate_id"),
@@ -1997,6 +2047,87 @@ def _sanitized_material_from_artifact(
             "source_obligation_satisfied": False,
         }
     )
+
+
+def _bounded_selection_guidance_from_current_need(
+    *,
+    run_kernel: RunKernel,
+    binding: SelectedCandidateMaterialNeedBindingV1,
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Project accepted semantic need into non-authoritative selector hints."""
+
+    contract = _mapping(
+        run_kernel.state.current_answer_contract
+        or run_kernel.state.initial_answer_contract
+    )
+    component_id = str(binding.component_ref.get("component_id") or "")
+    accepted_component = next(
+        (
+            _mapping(item)
+            for item in _sequence(contract.get("accepted_answer_component_refs"))
+            if _mapping(item).get("component_id") == component_id
+        ),
+        {},
+    )
+    if not accepted_component or _component_ref(accepted_component) != _mapping(
+        binding.component_ref
+    ):
+        raise SearchJudgmentReadAssessmentError(
+            "bounded_selection_guidance_component_stale"
+        )
+
+    requirement = _mapping(binding.search_requirement_ref)
+    need_texts = [
+        accepted_component.get("user_facing_question"),
+        accepted_component.get("user_facing_label"),
+        requirement.get("requirement_summary"),
+        *list(_sequence(accepted_component.get("acceptance_criteria"))),
+    ]
+    anchors = _selection_anchor_groups_from_need_texts(need_texts)
+
+    expected_value_kinds: list[str] = []
+    for owner in (requirement, _mapping(requirement.get("metadata"))):
+        for value in _sequence(owner.get("expected_value_token_kinds")):
+            token = str(value or "").strip()
+            if token and token not in expected_value_kinds:
+                expected_value_kinds.append(token)
+    return anchors, tuple(expected_value_kinds)
+
+
+def _selection_anchor_groups_from_need_texts(
+    values: Sequence[Any],
+) -> tuple[str, ...]:
+    """Derive bounded lexical navigation hints without claiming support."""
+
+    texts = [" ".join(str(value or "").split()) for value in values]
+    texts = [text for text in texts if text]
+    anchors: list[str] = []
+
+    def add(value: str) -> None:
+        token = value.strip(" `\"'()[]{}.,;:?!")
+        folded = token.casefold()
+        if (
+            token
+            and folded not in {item.casefold() for item in anchors}
+            and len(anchors) < _BOUNDED_SELECTION_GUIDANCE_MAX_ANCHORS
+        ):
+            anchors.append(token)
+
+    for text in texts:
+        for match in re.finditer(
+            r"(?<!\w)[A-Za-z][A-Za-z0-9]*(?:[._/-][A-Za-z0-9_]+)+(?!\w)",
+            text,
+        ):
+            add(match.group(0))
+    for text in texts:
+        for match in re.finditer(r"[`\"']([^`\"']{2,80})[`\"']", text):
+            add(match.group(1))
+    for text in texts:
+        for match in re.finditer(r"(?<!\w)[A-Za-z][A-Za-z0-9_]{3,}(?!\w)", text):
+            token = match.group(0)
+            if token.casefold() not in _BOUNDED_SELECTION_GUIDANCE_STOP_WORDS:
+                add(token)
+    return tuple(anchors)
 
 
 def _assessment_prompt(
@@ -2365,6 +2496,20 @@ def _canonical_custody_record(
     )
     if not record:
         raise SearchJudgmentReadAssessmentError("ledger_custody_record_missing")
+    reference = next(
+        (
+            _mapping(value)
+            for value in _sequence(packet.get("reference_records"))
+            if _mapping(value).get("candidate_id")
+            == binding.candidate_ref.get("candidate_id")
+        ),
+        {},
+    )
+    bounded_text_digest = str(reference.get("excerpt_digest") or "")
+    if not bounded_text_digest:
+        raise SearchJudgmentReadAssessmentError(
+            "bounded_text_digest_missing_from_custody_packet"
+        )
     ledger_candidate_id = (
         str(binding.candidate_ref.get("candidate_id") or "")
         .casefold()
@@ -2402,6 +2547,7 @@ def _canonical_custody_record(
         },
         "terminal_receipt_ref": _json_clone(terminal_receipt_ref),
         "custody_authorization_ref": _json_clone(custody_authorization_ref),
+        "bounded_text_digest": bounded_text_digest,
         "bounded_content_present": record.get("bounded_content_present") is True,
         "semantic_support_created": False,
         "source_obligation_satisfied": False,

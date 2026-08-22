@@ -3167,6 +3167,12 @@ def _build_read_custody_judgment_materials(
             {"bounded_text": bounded_text}
         ):
             raise SearchOSRuntimeError("READ custody bounded-text digest mismatch")
+        if custody.get("bounded_text_digest") != reference.get(
+            "excerpt_digest"
+        ):
+            raise SearchOSRuntimeError(
+                "READ custody bounded-text lineage mismatch"
+            )
         materials.append(
             {
                 "schema_version": "searchos_read_custody_judgment_material_v1",
@@ -3193,6 +3199,9 @@ def _build_read_custody_judgment_materials(
                 ),
                 "bounded_text": bounded_text,
                 "bounded_text_digest": reference["excerpt_digest"],
+                "bounded_text_selection": deepcopy(
+                    reference.get("bounded_text_selection") or {}
+                ),
                 "bounded_character_count": bounded_count,
                 "readability_posture": "readable",
                 "completeness_posture": "unknown",
@@ -3824,7 +3833,11 @@ def _semantic_passages(
                         key: packet_ref.get(key) for key in ("packet_id", "packet_digest")},
                     "read_custody_ref": {
                         key: custody.get(key) for key in
-                        ("read_custody_material_id", "read_custody_material_digest")},
+                        (
+                            "read_custody_material_id",
+                            "read_custody_material_digest",
+                            "bounded_text_digest",
+                        )},
                     "semantic_handoff_ref": {
                         key: handoff.get(key) for key in
                         ("semantic_handoff_id", "semantic_handoff_digest")},
@@ -3844,6 +3857,10 @@ def _semantic_passages(
                         "url": url,
                         "title": reference.get("content_title") or "Read source",
                         "text": reference.get("bounded_text") or "",
+                        "bounded_text_digest": reference.get("excerpt_digest"),
+                        "bounded_text_selection": deepcopy(
+                            reference.get("bounded_text_selection") or {}
+                        ),
                         "score": 1.0,
                         "credibility": 3,
                         "_provider": "searchos_read_custody",

@@ -201,6 +201,7 @@ def _selected_navigation() -> tuple[
             "custody_authorization_ref": _ref(
                 "custody_authorization", "parent"
             ),
+            "bounded_text_digest": "a" * 64,
             "bounded_content_present": True,
         },
         same_normalized_url_reused=False,

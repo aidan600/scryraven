@@ -1552,6 +1552,10 @@ def test_q1_like_blocked_fap_packet_reuses_canonical_n1_projection(
     _assert_target_facts(summaries["searchos_n1_causal_projection"])
     assert summaries["n1_closure_observability"] == {
         "AUTHOR_INVOKED": "NO",
+        "BOUNDED_READ_DIGEST_BOUND_COUNT": 0,
+        "BOUNDED_READ_FULL_ANCHOR_MATCH_COUNT": 0,
+        "BOUNDED_READ_PARTIAL_ANCHOR_MATCH_COUNT": 0,
+        "BOUNDED_READ_SELECTION_COUNT": 0,
         "COMPONENT_ADMISSION": "YES",
         "COMPONENT_ANALYST_ARTIFACT_PRODUCED": "YES",
         "COMPONENT_ANALYST_CALLS": 1,
