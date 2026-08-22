@@ -5,7 +5,7 @@ Authority: canonical:current-installed-state
 Default-read: yes
 Applies-to: current ordinary product implementation and explicit nonproofs
 Does-not-authorize: live calls, arbitrary-query claims, roadmap execution, or closed-surface changes
-Runtime-audit-through: 5db9ae8e14ba3858ddd1c84abea8440357a53675
+Runtime-audit-through: 184f5f85b0d8bab26d510c39191db6ba0027e66b
 Update-trigger: merged change to installed product behavior, supported boundaries, evidence classification, or explicit nonproofs
 
 ## Purpose And Source-Of-Truth Rule
@@ -37,14 +37,15 @@ PR #541 merged on 2026-08-06 at
 `c742da77d4daa02d7cf5012ddc32da2b8cb5bc39`. Physical attempt/cost envelope
 enforcement is installed merged product state, and the public CLI requires one
 complete explicit per-run `--bounded-run-authorization` file to activate it.
-`public-cli-v1` remains removed; no reusable mode profiles exist. One bounded
-Q1 ordinary-product run at the current repository baseline is recorded below.
-It reached a lawful SearchOS semantic handoff, selected the Component Analyst
-receiver, and physically dispatched the Component Analyst. The PR #579 safe
-Component Analyst failure projection is live-proven in that observation: the
-dispatch reached an output-validation failure before a semantic artifact was
-produced. No supported cited answer resulted; this is bounded evidence, not
-broad live-validation proof.
+`public-cli-v1` remains removed; no reusable mode profiles exist. Two bounded
+Q1 ordinary-product runs on the answer-bearing READ repair branch are recorded
+below. The first crossed the repaired SearchOS handoff and stopped safely at
+Component Analyst output validation. After the existing role prompt was made
+explicitly typed, the second crossed Component Analyst support, deterministic
+admission, ComponentCoverage, Sufficiency, and FinalAnswerPacket readiness and
+invoked Author. Author's quantitative-finalization guard then rejected the
+generated prose, so no supported cited answer resulted. This is bounded
+evidence, not broad live-validation proof.
 
 
 That downstream synthesis-class boundary does not limit initial semantic
@@ -88,66 +89,100 @@ live-validation license is widened.
 
 ## Bounded Q1 Ordinary-Product Evidence
 
-The latest accepted bounded Q1 ordinary-product observation is current
+The two bounded Q1 ordinary-product observations for
+`N1-ANSWER-BEARING-ANALYST-SUPPORT-AND-GOLDEN-LANE-CONVERGENCE-01` are current
 evidence, not a general reliability claim.
 
 ```text
-Run ID:  90c035c6-8f53-438e-96e6-0a6e63895221
-Cost:    $0.066166
-Calls:   10 logical / 10 physical
-         model=6
-         embedding=2
-         search=1
-         read=1
+Run 1 ID: 2276bba3-7f11-4f26-9fdc-61dd1070c1a3
+Run 2 ID: dc186ce3-c09c-404e-bf97-ab9298f36370
+Each:     PRODUCT runs=1, retries=0, search=1, read=1,
+          smart SearchJudgment calls=2
 ```
 
-Observed ordinary product path and safe projection:
+Run 1 safe projection:
 
 ```text
-searchos_exit = SEMANTIC_HANDOFF
-semantic_handoff_present = true
-
-component_receiver_selected          = true
-component_analyst_physical_dispatch  = true
-component_analyst_case_present         = false
+bounded_read_selection_count          = 1
+bounded_read_digest_bound_count       = 1
+searchos_exit                         = SEMANTIC_HANDOFF
+semantic_handoff_present              = true
+component_receiver_selected           = true
+component_analyst_case_present        = false
 component_analyst_failure:
   role = component_analyst
   failure_kind = output_validation_failure
   settlement_posture = failed_spent
-component_analyst_semantic_artifact_produced = false
-handoff_material_consumed = false
-semantic_admission_status = not_admitted
-component_dprime_reached = false
 ```
 
-This observation live-proves lawful SearchOS handoff, receiver selection, real
-Component Analyst physical dispatch, and the PR #579 safe failure projection.
-The Component Analyst semantic artifact was not produced, so the handoff was
-not consumed and semantic admission did not occur. Component D-prime was not
-reached and remains untested on the current live Q1 path.
+Run 1 live-proved that accepted current semantic need now guides the existing
+single-contiguous-window selector, that the selected bounded text is
+digest-bound in custody, and that SearchJudgment seals the semantic handoff.
+It stopped safely at the Component Analyst output-validation boundary.
 
-Final product state:
+After the bounded Component Analyst prompt repair, Run 2 reached:
 
 ```text
-status         = blocked
-answer_present = false
-citation_count = 0
-Author invoked = NO
+furthest_product_stage = final_answer_packet_ready
+Author model calls      = 1
+final failure type      = QuantitativeFinalizationAuthorityError
+safe failure reasons    = unsupported_quantitative_surface,
+                          unauthorized_quantitative_proposition
 ```
 
-No answer, citations, or Author result was produced. The durable classification
-is:
+`final_answer_packet_ready` and an authorized Author call are downstream of the
+installed Component Analyst artifact, exact deterministic admission,
+ComponentCoverage, and Sufficiency gates; the second observation therefore
+live-proves that Q1 crossed that corridor. It does not prove successful Author
+finalization. The generated answer was rejected before a successful RunOutcome,
+and the sanitized packet retained no final answer or citations.
+
+The durable defect-chain classification is:
 
 ```text
-COMPONENT_ANALYST_OUTPUT_VALIDATION_FAILURE_OBSERVED
+FIRST_PROVEN_CATEGORY = A
+ADDITIONAL_IN_CORRIDOR_DEFECTS = C, B
+FINAL_REMAINING_CATEGORY = NONE
+NEXT_UNRESOLVED_OWNER =
+  quantitative finalization authority / Author quantitative prose finalization
 ```
 
-The earlier bounded SearchOS pulse (`45f3319b-9b43-4dcc-ba81-2d1d12f40a77`,
-repo SHA `605b51b4c4216a64baf2bbf9d769aa39b1d50473`) remains historical
-provenance only; its `SEARCHOS_COMPLETE_FOR_Q1 ONLY` conclusion is not the
-current frontier. The latest observation does not generalize to all Q1
-repetitions, Q2-Q6, arbitrary queries, broad SearchOS reliability, acquisition
-completeness, or product correctness.
+The additional Category C defect was deterministic admission's generic safe
+mapping truncating an allowed 2,000-character bounded excerpt to 800 characters,
+which broke its declared content digest; exact bounded-text handling now
+preserves the installed limit and fails closed on digest disagreement. The
+Category B repair changed only the existing Component Analyst role contract,
+not role topology or admission authority.
+
+The A/B/C/D Analyst-corridor taxonomy is exhausted. Run 2 proved the accepted
+Component Analyst case, deterministic admission, ComponentCoverage, Sufficiency,
+FinalAnswerPacket readiness, and Author invocation before
+`QuantitativeFinalizationAuthorityError` stopped candidate prose. Its safe reason
+codes, `unsupported_quantitative_surface` and
+`unauthorized_quantitative_proposition`, identify where validation stopped; they
+do not identify which actor inside that downstream owner is defective. This phase
+does not prove that the READ material was unsupported, that FAP omitted lawful
+numeric authority, that Author invented unsupported propositions, or that
+quantitative finalization rejected otherwise lawful source-explicit authority.
+
+The next unresolved frontier is:
+
+```text
+admitted source-explicit numeric authority
+-> FinalAnswerPacket quantitative authority
+-> Author prose
+-> quantitative-finalization validation
+```
+
+A later phase must distinguish authority packaging, Author prose outside its
+supplied authority, recognition of otherwise lawful source-explicit authority,
+or another directly evidenced cause within that exact downstream corridor.
+
+The earlier accepted Q1 run (`90c035c6-8f53-438e-96e6-0a6e63895221`) and
+bounded SearchOS pulse (`45f3319b-9b43-4dcc-ba81-2d1d12f40a77`) remain
+historical provenance only. The two current observations do not generalize to
+all Q1 repetitions, Q2-Q6, arbitrary queries, broad SearchOS reliability,
+acquisition completeness, or product correctness.
 
 ### Frozen-handoff observation
 
@@ -167,15 +202,16 @@ is the product blocker. Replay infrastructure is not the next product phase.
 The immediate product frontier is:
 
 ```text
-Component Analyst dispatch
--> Component Analyst output-validation / semantic-artifact boundary
+FinalAnswerPacket ready
+-> Author prose
+-> quantitative-finalization authority validation
 ```
 
-The latest Q1 observation live-proved the SearchOS handoff, receiver selection,
-physical Component Analyst dispatch, and safe failure projection. It stopped at
-the output-validation / semantic-artifact boundary without producing a
-semantic artifact, consuming handoff material, or admitting semantics.
-Component D-prime remains untested on the current live Q1 path.
+The latest Q1 observation crossed the answer-bearing SearchOS handoff,
+Component Analyst artifact, deterministic admission, ComponentCoverage,
+Sufficiency, and FAP gates and invoked Author. It stopped at the deterministic
+quantitative-finalization guard. The N=1 direct-admission topology correctly did
+not require a Component D-prime call.
 
 ## Operator Doorman Boundary
 
@@ -979,23 +1015,24 @@ arm-blind semantic passes. Stochastic evidence remains capped at
 ### Real-model component proof
 
 Installed evaluator and validation infrastructure is not real-model component
-proof. Current real-model SearchPlanner behavior remains unproved. Current
-real-model Component/Cross-Component Analyst behavior remains unproved. Broker
-transport, authorization, orchestration, scenario construction, or stop
-attestation does not establish prompt quality, semantic reliability, causal
-effect, provider quality, or arbitrary-query behavior.
+proof by itself. The bounded Q1 observations above now prove one real-model
+Component Analyst artifact/admission corridor through FAP readiness, but
+repeatability, broader Component Analyst quality, Cross-Component Analyst
+behavior, and general SearchPlanner quality remain unproved. Broker transport,
+authorization, orchestration, scenario construction, or stop attestation does
+not establish arbitrary-query semantic reliability, provider quality, or broad
+causal effect.
 
 ### Ordinary supported-product proof
 
 The evaluator is an OPERATOR/VALIDATION surface, not ordinary supported-product
-consumption. Current ordinary-CLI live product behavior remains unproved. A
-separate bounded Q1 ordinary-product run is recorded above; it
-traversed the ordinary pipeline to a lawful SearchOS handoff, physical
-Component Analyst dispatch, a safe output-validation failure, and an honest
-blocked terminal, but not to Component Analyst semantic-artifact origination,
-semantic admission, or a supported cited answer. The evaluator itself does not
-establish broader live product behavior. That historical Q1 observation does
-not validate the later Component Analyst direct-admission runtime.
+consumption. The separate bounded Q1 ordinary-product observations above
+traversed the ordinary pipeline through a lawful SearchOS handoff and, on the
+second execution, Component Analyst semantic-artifact origination, direct
+admission, Coverage, Sufficiency, FAP readiness, and Author invocation. They did
+not reach successful quantitative finalization or a supported cited answer.
+The evaluator itself does not establish broader live product behavior, and the
+Q1 observations do not establish repeatability or arbitrary-query support.
 
 ## Installed SearchOS One-Hop Breadcrumb Navigation
 
@@ -1103,22 +1140,21 @@ Fetch, Tavily site acquisition, replacement semantic role, or live validation.
 
 ## Not Proved
 
-- No live validation was performed.
-- One bounded Q1 ordinary-product run is recorded above; it does not establish
+- Two bounded Q1 ordinary-product runs are recorded above; they do not establish
   broad live validation or repeatability.
 - Real-model factual InterpretationBinding selection accuracy, abstention
   quality, and false-binding rate remain unproved.
 - Real-model user-clarification quality and arbitrary-query job escalation
   quality remain unproved.
 - Broader real-model SearchPlanner behavior and quality remain unproved.
-- Real-model Component Analyst semantic-artifact origination for Q1 remains
-  unproved.
 - Broader real-model Component Analyst quality remains unproved.
 - Real-model Cross-Component Analyst behavior remains unproved.
-- Real-model Component Analyst case posture and direct RunKernel component admission remain unproved.
+- Real-model Component Analyst case posture and direct RunKernel component
+  admission beyond the bounded Q1 observation remain unproved.
 - Real-model synthesis D-prime behavior remains unproved.
 - Real-model full Scrutineer behavior remains unproved.
 - Supported cited Q1 completion remains unproved.
+- Successful Author quantitative finalization for Q1 remains unproved.
 - Broad SearchOS or general-query reliability remains unproved.
 - The offline SearchOS/AnalystOS gate does not prove that a real SearchPlanner
   or Component/Cross-Component Analyst reliably originates its required

@@ -124,7 +124,7 @@ QUERY_CONVERGENCE_RUNTIME_SHA = "2d346a73251f28a1187fb2958028db51117bf0c0"  # pr
 READ_SOURCE_CUSTODY_RUNTIME_SHA = "39573c29bc2394e798e507fc795d70197da20f10"  # pragma: allowlist secret
 SEARCHOS_SLICE_A_RUNTIME_SHA = MULTISLOT_SEARCHOS_RUNTIME_SHA
 SEARCHOS_RECOVERY_RUNTIME_SHA = "540141acaaaf041bda303edd62211dd6a11958bc"  # pragma: allowlist secret
-CURRENT_STATE_RUNTIME_SHA = MULTISLOT_SEARCHOS_RUNTIME_SHA
+CURRENT_STATE_RUNTIME_SHA = "184f5f85b0d8bab26d510c39191db6ba0027e66b"  # pragma: allowlist secret
 HISTORICAL_SEARCH_EXECUTOR_RECORD = (
     "Historical merge-stable SearchExecutor record: PR #330 / "
     "AG-SEARCH-EXECUTOR-HANDOFF-01; handoff consumes current_answer_contract "
@@ -521,19 +521,23 @@ def test_hardened_quantitative_component_boundary_is_current_and_narrow() -> Non
             "packages component entries only",
             "does not project synthesis entries",
             "does not install a hardened synthesis sidecar",
-            "No live validation was performed.",
             "No acquisition-completeness repair was performed.",
             "No hardened synthesis path was activated.",
         ):
             assert phrase in text
 
+    assert "No live validation was performed." in containment
+    assert (
+        "Two bounded Q1 ordinary-product runs are recorded above; they do not "
+        "establish broad live validation or repeatability."
+    ) in current
     assert "No provider or model changed." in containment
     assert "terminal consumption by the applicable Component Analyst case" in containment
     assert "terminal consumption by the current Component Analyst case and direct RunKernel component admission" in current
     assert "Generic D-prime admission alone remains nonauthority" in containment
     assert "Generic semantic admission alone remains nonauthority" in current
 
-    assert "Current real-model SearchPlanner behavior remains unproved." in current
+    assert "Broader real-model SearchPlanner behavior and quality remain unproved." in current
     assert "`SEARCHPLANNER-BOUNDARY-INTEGRITY`" in current
 
     assert "No route-qualification repair was performed." in containment
@@ -1192,8 +1196,8 @@ def test_searchos_phase3_gate_and_searchplanner_record_are_exclusive() -> None:
     for phrase in (
         "The installed result is organized by durable capability, not PR chronology",
         "Installed evaluator and validation infrastructure is not real-model component proof",
-        "Current real-model SearchPlanner behavior remains unproved",
-        "Current ordinary-CLI live product behavior remains unproved",
+        "general SearchPlanner quality remain unproved",
+        "Q1 observations do not establish repeatability or arbitrary-query support",
         "OPERATOR/VALIDATION surface",
     ):
         assert phrase in current
@@ -1215,7 +1219,11 @@ def test_semantic_scout_and_provider_synthesis_retirement_is_current_and_narrow(
         "generic acquisition continues to reject `sourcedAnswer`",
         "Scrutineer-authorized `deep/searchResults` remediation, remains unchanged",
         "This repair installed no provider-capability routing",
-        "No live validation was performed",
+        (
+            "This repair installed no provider-capability routing, provider "
+            "ordering, Linkup Fetch, Tavily site acquisition, replacement semantic "
+            "role, or live validation."
+        ),
     ):
         assert phrase in current
 

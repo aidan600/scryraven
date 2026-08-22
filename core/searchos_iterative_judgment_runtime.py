@@ -1781,6 +1781,10 @@ def build_searchos_read_custody_material_ref(
             custody.get("custody_authorization_ref"),
             "custody_authorization_ref",
         ),
+        "bounded_text_digest": _digest_token(
+            custody.get("bounded_text_digest"),
+            "bounded_text_digest",
+        ),
         "material_authority": SearchOSMaterialAuthority.READ_CUSTODY_MATERIAL.value,
         "readable": custody.get("bounded_content_present") is True,
         "bounded_retention": True,

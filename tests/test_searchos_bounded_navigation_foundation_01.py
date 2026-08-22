@@ -186,6 +186,7 @@ def _state_with_parent(
             "evidence_ledger_candidate_id": "ledger-candidate:parent",
             "terminal_receipt_ref": _ref("terminal_receipt", "parent"),
             "custody_authorization_ref": _ref("custody_authorization", "parent"),
+            "bounded_text_digest": "a" * 64,
             "bounded_content_present": True,
         },
         same_normalized_url_reused=False,

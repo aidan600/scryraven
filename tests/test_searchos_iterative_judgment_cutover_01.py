@@ -243,6 +243,7 @@ def _post_read_judgment_request() -> tuple[
             "custody_authorization_ref": _ref(
                 "custody_authorization", "post-read"
             ),
+            "bounded_text_digest": "a" * 64,
             "bounded_content_present": True,
         },
         same_normalized_url_reused=False,
@@ -438,6 +439,7 @@ def _post_read_two_custody_judgment_request() -> tuple[
                 "custody_authorization_ref": _ref(
                     "custody_authorization", f"post-read-{ordinal}"
                 ),
+                "bounded_text_digest": "a" * 64,
                 "bounded_content_present": True,
             },
             same_normalized_url_reused=False,
@@ -1674,6 +1676,7 @@ def test_read_custody_is_the_only_semantic_entry_and_required_block_is_safe() ->
             "evidence_ledger_candidate_id": "candidate:one",
             "terminal_receipt_ref": _ref("terminal_receipt", "one"),
             "custody_authorization_ref": _ref("custody_authorization", "one"),
+            "bounded_text_digest": "a" * 64,
             "bounded_content_present": True,
         },
         same_normalized_url_reused=False,

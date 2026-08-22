@@ -706,6 +706,14 @@ def build_sanitized_content_reference_from_passage(
     bounded_text = _clean_text(passage.get("text"), limit=MAX_BOUNDED_TEXT_CHARS)
     if not bounded_text:
         raise ValueError("sanitized content reference requires bounded passage text")
+    metadata: dict[str, Any] = {
+        "phase": "AG-SEM-11",
+        "ordinary_semantic_producer": True,
+    }
+    if passage.get("bounded_text_digest"):
+        metadata["bounded_text_digest"] = passage.get(
+            "bounded_text_digest"
+        )
     return SanitizedContentReference(
         content_ref_id=content_ref_id,
         evidence_ref_id=evidence_ref_id,
@@ -729,7 +737,7 @@ def build_sanitized_content_reference_from_passage(
         extraction_method="ordinary_semantic_producer_final_top_evidence",
         worker_kind="bounded_passage_projection",
         currentness=_clean_token(passage.get("currentness_signal") or passage.get("currentness")),
-        metadata={"phase": "AG-SEM-11", "ordinary_semantic_producer": True},
+        metadata=metadata,
     ).require_valid()
 
 

@@ -270,6 +270,14 @@ class OfflineOrdinaryPipelineHarness:
                         int(dict(item).get("bounded_character_count") or len(str(dict(item).get("bounded_text") or "")))
                         for item in read_materials
                     ),
+                    "bounded_read_digests": [
+                        str(dict(item).get("bounded_text_digest") or "")
+                        for item in read_materials
+                    ],
+                    "bounded_read_selections": [
+                        dict(item).get("bounded_text_selection") or {}
+                        for item in read_materials
+                    ],
                     "decision_contract_schema_version": decision_contract.get(
                         "schema_version"
                     ),

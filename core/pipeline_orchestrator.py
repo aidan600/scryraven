@@ -5460,6 +5460,27 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             for item in admission_refs
             if isinstance(item.get("component_coverage_ref"), Mapping)
         ]
+        bounded_read_selections = [
+            {
+                **dict(reference.get("bounded_text_selection") or {}),
+                "_excerpt_digest_matches": (
+                    dict(reference.get("bounded_text_selection") or {}).get(
+                        "bounded_text_digest"
+                    )
+                    == reference.get("excerpt_digest")
+                ),
+            }
+            for custody_outcome in (
+                searchos_slice_a_result.reusable_read_custody_by_url or {}
+            ).values()
+            if isinstance(custody_outcome, Mapping)
+            for reference in dict(
+                custody_outcome.get("fetch_read_content_packet") or {}
+            ).get("reference_records")
+            or ()
+            if isinstance(reference, Mapping)
+            and isinstance(reference.get("bounded_text_selection"), Mapping)
+        ]
         searchos_slice_a_projection["n1_closure_observability"] = {
             "component_count": len(accepted_components),
             "semantic_slot_count": sum(
@@ -5511,6 +5532,22 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     or analyst_calls
                     else "not_reached"
                 )
+            ),
+            "bounded_read_selection_count": len(bounded_read_selections),
+            "bounded_read_full_anchor_match_count": sum(
+                int(item.get("matched_anchor_count") or 0)
+                == int(item.get("required_anchor_count") or 0)
+                and int(item.get("required_anchor_count") or 0) > 0
+                for item in bounded_read_selections
+            ),
+            "bounded_read_partial_anchor_match_count": sum(
+                int(item.get("matched_anchor_count") or 0)
+                < int(item.get("required_anchor_count") or 0)
+                for item in bounded_read_selections
+            ),
+            "bounded_read_digest_bound_count": sum(
+                item.get("_excerpt_digest_matches") is True
+                for item in bounded_read_selections
             ),
         }
     if searchos_slice_a_projection:

@@ -361,7 +361,12 @@ def select_bounded_answer_bearing_text(
             strategy=strategy,
         )
 
-    best: tuple[tuple[int, int, int, int, int, int], int, int, tuple[_AnchorMatch, ...]] | None = None
+    best: tuple[
+        tuple[int, int, int, int, int, int, int, int],
+        int,
+        int,
+        tuple[_AnchorMatch, ...],
+    ] | None = None
     for start in _candidate_window_starts(
         matches,
         text=collapsed,
@@ -378,12 +383,24 @@ def select_bounded_answer_bearing_text(
         matched_value_kind_count = len(
             set(_value_token_kind_counts(collapsed[start:end])) & set(value_token_kinds)
         )
+        trailing_anchor_context = (
+            end - max(match.end for match in window_matches)
+            if window_matches
+            else 0
+        )
+        leading_anchor_context = (
+            min(match.start for match in window_matches) - start
+            if window_matches
+            else 0
+        )
         score = (
             full_match,
             matched_group_count,
             matched_value_kind_count,
-            occurrence_count,
+            min(leading_anchor_context, trailing_anchor_context),
+            trailing_anchor_context,
             -anchor_span,
+            occurrence_count,
             -start,
         )
         candidate = (score, start, end, window_matches)

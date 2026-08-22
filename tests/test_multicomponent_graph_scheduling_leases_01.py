@@ -600,6 +600,15 @@ def test_prepared_component_analyst_worker_accepts_modern_supporting_case() -> N
     )
 
 
+def test_component_analyst_prompt_requires_minimal_typed_json_and_omission() -> None:
+    prompt = ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST]
+    assert "minimal schema" in prompt
+    assert "self_audit as a string" in prompt
+    assert "arrays of strings" in prompt
+    assert "do not return them as null, empty objects" in prompt
+    assert "literal already explicit in the bounded evidence" in prompt
+
+
 def test_scheduler_direct_component_analyst_call_rejects_support_status_only() -> None:
     kernel, packets = _scheduler_kernel()
     lease = kernel.grant_next_multicomponent_work_lease()
