@@ -142,7 +142,9 @@ The durable defect-chain classification is:
 ```text
 FIRST_PROVEN_CATEGORY = A
 ADDITIONAL_IN_CORRIDOR_DEFECTS = C, B
-FINAL_REMAINING_CATEGORY = D
+FINAL_REMAINING_CATEGORY = NONE
+NEXT_UNRESOLVED_OWNER =
+  quantitative finalization authority / Author quantitative prose finalization
 ```
 
 The additional Category C defect was deterministic admission's generic safe
@@ -151,6 +153,30 @@ which broke its declared content digest; exact bounded-text handling now
 preserves the installed limit and fails closed on digest disagreement. The
 Category B repair changed only the existing Component Analyst role contract,
 not role topology or admission authority.
+
+The A/B/C/D Analyst-corridor taxonomy is exhausted. Run 2 proved the accepted
+Component Analyst case, deterministic admission, ComponentCoverage, Sufficiency,
+FinalAnswerPacket readiness, and Author invocation before
+`QuantitativeFinalizationAuthorityError` stopped candidate prose. Its safe reason
+codes, `unsupported_quantitative_surface` and
+`unauthorized_quantitative_proposition`, identify where validation stopped; they
+do not identify which actor inside that downstream owner is defective. This phase
+does not prove that the READ material was unsupported, that FAP omitted lawful
+numeric authority, that Author invented unsupported propositions, or that
+quantitative finalization rejected otherwise lawful source-explicit authority.
+
+The next unresolved frontier is:
+
+```text
+admitted source-explicit numeric authority
+-> FinalAnswerPacket quantitative authority
+-> Author prose
+-> quantitative-finalization validation
+```
+
+A later phase must distinguish authority packaging, Author prose outside its
+supplied authority, recognition of otherwise lawful source-explicit authority,
+or another directly evidenced cause within that exact downstream corridor.
 
 The earlier accepted Q1 run (`90c035c6-8f53-438e-96e6-0a6e63895221`) and
 bounded SearchOS pulse (`45f3319b-9b43-4dcc-ba81-2d1d12f40a77`) remain
