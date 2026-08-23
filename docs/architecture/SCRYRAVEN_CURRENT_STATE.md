@@ -229,6 +229,21 @@ stdout/stderr, raw prompts and responses, READ bodies, private logs, caches,
 database rows, traces, secrets, and `.env` contents were not inspected, and no
 retry was made.
 
+The post-runner-repair Q1 confirmation attempt authorized at head
+`ec4b438127432cd56a31f0b86a2b700c612d5caa` on 2026-08-23 used the same exact
+official-Python query, `profile=AG-LIVE-SMOKE`, `mode=Balanced`, and
+`include_domains=docs.python.org` through
+`scripts/run_brokered_command_once.py`. The command was invoked exactly once
+with `max_scryraven_runs=1` and `max_retries=0`, with no undeclared
+role-specific caps, backup query, alternate provider/model/route, or manual
+source check. The brokered command returned exit code `1`, and the sanctioned
+terminal packet was absent. This records only
+`brokered_target_exit_1_without_sanitized_packet`; it does not prove a
+PRODUCT, FAP, citation, or Author result, and it does not prove the dynamic
+cause of the missing packet. No retry was made, and no broker stdout/stderr,
+raw prompts or responses, READ bodies, private logs, caches, database rows,
+traces, secrets, or `.env` contents were inspected.
+
 The installed final boundary is now:
 
 ```text
