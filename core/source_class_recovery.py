@@ -857,6 +857,43 @@ def _canonical_documentation_signal(
     return bool(documentation_signal and technical_signal and (canonical_tier or canonical_text or docs_surface))
 
 
+def canonical_documentation_source_class(
+    *,
+    url: Any,
+    title: Any = "",
+    snippet: Any = "",
+    source_tier: Any = "",
+) -> str | None:
+    """Derive a strong documentation class from bounded source-fit facts.
+
+    This is a pure classification helper.  It does not grant evidence,
+    citation, or answer authority; those remain downstream custody and
+    EvidenceLedger decisions.  An explicit weak tier is never upgraded, and
+    the source must independently look like canonical technical documentation.
+    """
+
+    tier = _compact_text(source_tier, limit=80).casefold()
+    if tier not in {"official", "primary"}:
+        return None
+    source = {
+        "url": _compact_text(url, limit=500),
+        "title": _compact_text(title, limit=240),
+        "snippet": _compact_text(snippet, limit=_MAX_EVIDENCE_CLASS_TEXT),
+        "source_tier": tier,
+    }
+    text = _evidence_classification_text(source)
+    domain = _source_domain_from_url(source["url"])
+    if _canonical_documentation_signal(
+        source=source,
+        text=text,
+        domain=domain,
+        tier=tier,
+        secondary_signal=False,
+    ):
+        return "primary_source_documents"
+    return None
+
+
 def _append_unique(values: list[str], value: str) -> None:
     if value and value not in values:
         values.append(value)
