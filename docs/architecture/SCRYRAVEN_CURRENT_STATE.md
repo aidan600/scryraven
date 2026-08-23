@@ -266,6 +266,34 @@ record. No retry was made, and no broker stdout/stderr, raw prompts or
 responses, READ bodies, private logs, caches, database rows, traces, secrets,
 or `.env` contents were inspected.
 
+The first bounded-convergence Q1 attempt after the project-interpreter and
+bootstrap repair, at head `027eac70`, used the same exact query,
+`profile=AG-LIVE-SMOKE`, `mode=Balanced`, and
+`include_domains=docs.python.org` through
+`run_brokered_command_once.py` -> `--repo-env` -> `--target-current-python` ->
+the target bootstrap -> the bounded PRODUCT runner. It was invoked once with
+`max_scryraven_runs=1` and `max_retries=0`, with no undeclared role-specific
+caps, backup query, alternate provider/model/route, or manual source check.
+The sanctioned `broker_status_v1` receipt reports
+`status=target_completed`, `target_launch_succeeded=true`,
+`target_exit_code=0`, and `timed_out=false`. The normal sanitized PRODUCT
+packet proves `run_pipeline_call_count=1`, one search dispatch, one READ,
+two SmartSearchJudgment calls, one Component Analyst call, admission, and
+`Coverage=supported`; it classifies the terminal result as
+`blocked_final_answer_packet` with `FAP=blocked`, one missing source
+obligation, one satisfied source obligation, zero citation-eligible source
+IDs, zero Author calls, and `RunOutcome=blocked`. The sanctioned N1 packet
+also records a sealed SearchOS semantic handoff and no unresolved required
+slot. This proves the repaired bootstrap/runner boundary reaches ordinary
+PRODUCT execution, but it does not identify the missing obligation or prove
+that the live semantic/FAP block is a transport defect. The exact offline Q1
+golden lane still projects its real outcome to a normal cited success packet.
+No retry or second convergence attempt was made: a further fix would require
+changing protected semantic/FAP/sufficiency behavior or inspecting prohibited
+raw model/provider material. The bounded convergence therefore stops at an
+architecture-review frontier, with supported cited Q1 completion still
+unproved in live product evidence.
+
 The installed final boundary is now:
 
 ```text
