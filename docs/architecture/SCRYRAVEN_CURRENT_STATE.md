@@ -244,6 +244,28 @@ cause of the missing packet. No retry was made, and no broker stdout/stderr,
 raw prompts or responses, READ bodies, private logs, caches, database rows,
 traces, secrets, or `.env` contents were inspected.
 
+The fresh credentialed Q1 confirmation attempt authorized at head
+`ba5cf0cce08c549ee11c5f105629b3aa9a202918` on 2026-08-23 used the required
+`run_brokered_command_once.py` -> `--target-current-python` ->
+`ag_live_bound_01_target_bootstrap.py` -> bounded runner path with the exact
+official-Python query, `profile=AG-LIVE-SMOKE`, `mode=Balanced`, and
+`include_domains=docs.python.org`. The command was invoked exactly once with
+`max_scryraven_runs=1` and `max_retries=0`, with no undeclared role-specific
+caps, backup query, alternate provider/model/route, or manual source check.
+The sanctioned `broker_status_v1` receipt reports
+`status=target_completed`, `target_launch_attempted=true`,
+`target_launch_succeeded=true`, `target_exit_code=2`, and `timed_out=false`.
+The sanctioned bootstrap packet reports
+`classification=runner_bootstrap_failure`, `safe_phase=runner_import`,
+`safe_error_type=ModuleNotFoundError`, `runner_exit_code=null`, and
+`product_result_available=false`. Therefore this is a mechanical bootstrap
+failure at runner import; no PRODUCT, FAP, citation, or Author result is
+available or inferred. The packet does not expose the missing module identity,
+so the exact dynamic import cause is not established by this sanctioned
+record. No retry was made, and no broker stdout/stderr, raw prompts or
+responses, READ bodies, private logs, caches, database rows, traces, secrets,
+or `.env` contents were inspected.
+
 The installed final boundary is now:
 
 ```text
