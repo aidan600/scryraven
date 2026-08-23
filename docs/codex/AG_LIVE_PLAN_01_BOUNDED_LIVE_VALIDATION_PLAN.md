@@ -148,7 +148,12 @@ The historical product-run bridge should add a repo-visible runner or broker job
 default and can prove its argument/cap/redaction behavior offline before any
 live use. It should not change normal CLI or Streamlit behavior.
 
-Future bridge command shape:
+Historical bridge command shape (non-executable; retained only to document the
+older cap experiment):
+
+The command below is obsolete. It must not be copied or run: the current
+`AG-LIVE-SMOKE` profile does not declare these logical role caps, including the
+historical zero-valued SmartSearchJudgment cap.
 
 ```powershell
 py scripts\ag_live_bound_01_bounded_product_runner.py `
@@ -163,6 +168,20 @@ py scripts\ag_live_bound_01_bounded_product_runner.py `
   --max-author-model-calls 1 `
   --max-smart-search-judgment-model-calls 0 `
   --max-independent-manual-source-checks 1 `
+  --max-retries 0 `
+  --confirm-live-product-run
+```
+
+Current `AG-LIVE-SMOKE` command shape:
+
+```powershell
+py scripts\ag_live_bound_01_bounded_product_runner.py `
+  --profile AG-LIVE-SMOKE `
+  --query "According to the official Python 3 documentation, what are the default values for rel_tol and abs_tol in math.isclose()?" `
+  --mode Balanced `
+  --include-domains docs.python.org `
+  --output output\ag_live_bound_01_packet.json `
+  --max-scryraven-runs 1 `
   --max-retries 0 `
   --confirm-live-product-run
 ```

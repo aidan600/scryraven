@@ -29,6 +29,7 @@ from core.searchos_slice_a_product_runtime import (  # noqa: E402
 )
 from core.validation_profiles import (  # noqa: E402
     AG_LIVE_MULTI_COMPONENT,
+    AG_LIVE_S1_PRODUCT_CONVERGENCE,
     MULTI_COMPONENT_DOCS_DOMAINS,
     get_validation_profile,
 )
@@ -368,6 +369,7 @@ def test_confirm_live_constructs_cap_policy_and_calls_run_pipeline_once(
         assert config.cap_policy is not None
         assert orchestrator.DB_ENABLED is False
         config.cap_policy.mark_search_dispatch()
+        config.cap_policy.mark_smart_search_judgment_model_call()
         orchestrator.log_run_started(
             run_id="would-log",
             session_id="would-log-session",
@@ -468,6 +470,7 @@ def test_confirm_live_constructs_cap_policy_and_calls_run_pipeline_once(
     assert packet["success_classification"] == "success"
     assert packet["run_pipeline_call_count"] == 1
     assert packet["caps_observed"]["search_dispatches"] == 1
+    assert packet["caps_observed"]["smart_search_judgment_model_calls"] == 1
     assert packet["final_answer_text"].startswith("The defaults are")
     assert packet["cited_source_ids"] == ["1"]
     assert packet["cited_urls"] == [
@@ -551,6 +554,21 @@ def test_confirm_live_cap_overflow_writes_sanitized_failure_packet(
 ) -> None:
     runner = _load_runner()
     output = _gitignored_output_path("ag_live_bound_01_confirm_cap_overflow.json")
+    profile = get_validation_profile(AG_LIVE_S1_PRODUCT_CONVERGENCE)
+    profile_args = [
+        "--profile",
+        profile.name,
+        "--query",
+        profile.fixed_queries[0][1],
+        "--mode",
+        profile.required_mode,
+        "--include-domains",
+        ",".join(profile.required_include_domains),
+        "--output",
+        output,
+    ]
+    for field_name, value in profile.cap_policy.as_requested_dict().items():
+        profile_args.extend([f"--{field_name.replace('_', '-')}", str(value)])
 
     monkeypatch.setattr(runner, "_load_live_environment", lambda: None)
     monkeypatch.setattr(runner, "_validate_live_model_keys", lambda: None)
@@ -559,15 +577,13 @@ def test_confirm_live_cap_overflow_writes_sanitized_failure_packet(
         config.cap_policy.mark_search_dispatch()
         config.cap_policy.mark_search_dispatch()
         config.cap_policy.mark_search_dispatch()
+        config.cap_policy.mark_search_dispatch()
+        config.cap_policy.mark_search_dispatch()
 
     with patch("core.pipeline_orchestrator.run_pipeline", side_effect=fake_run_pipeline) as run_pipeline:
         result = runner.main(
             [
-                *VALID_ARGS,
-                "--output",
-                output,
-                "--max-search-dispatches",
-                "2",
+                *profile_args,
                 "--confirm-live-product-run",
             ]
         )
@@ -579,7 +595,7 @@ def test_confirm_live_cap_overflow_writes_sanitized_failure_packet(
     packet = json.loads((ROOT / output).read_text(encoding="utf-8"))
     assert packet["success_classification"] == "cap_overflow"
     assert packet["run_pipeline_call_count"] == 1
-    assert packet["caps_observed"]["search_dispatches"] == 2
+    assert packet["caps_observed"]["search_dispatches"] == 4
     assert packet["failure_summary"]["reason"] == "search_dispatches cap exceeded"
     assert packet["failure_summary"]["classification"] == "cap_overflow"
     assert packet["failure_summary"]["safe_phase"] == "run_pipeline"
@@ -1003,18 +1019,48 @@ def test_caps_serialized_and_validated(capsys: pytest.CaptureFixture[str]) -> No
             "3",
         ]
     )
-    capsys.readouterr()
-    assert explicit_resource_cap_result == 0
-    explicit_packet = json.loads(
-        (
-            ROOT / _gitignored_output_path("ag_live_bound_01_explicit_cap.json")
-        ).read_text(encoding="utf-8")
+    captured = capsys.readouterr()
+    assert explicit_resource_cap_result == 2
+    assert "not declared by selected profile" in captured.err
+    assert not (
+        ROOT / _gitignored_output_path("ag_live_bound_01_explicit_cap.json")
+    ).exists()
+
+
+@pytest.mark.parametrize("requested_smart_cap", [0, 2])
+def test_off_profile_smart_judgment_cap_fails_before_product_execution(
+    requested_smart_cap: int,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    runner = _load_runner()
+    output = _gitignored_output_path(
+        f"ag_live_bound_01_smart_cap_{requested_smart_cap}.json"
     )
-    assert explicit_packet["caps_requested"] == {
-        "max_scryraven_runs": 1,
-        "max_search_dispatches": 3,
-        "max_retries": 0,
-    }
+
+    with (
+        patch.object(runner, "_load_live_environment") as load_environment,
+        patch.object(runner, "_build_live_run_deps") as build_live_deps,
+        patch("core.pipeline_orchestrator.run_pipeline") as run_pipeline,
+    ):
+        result = runner.main(
+            [
+                *VALID_ARGS,
+                "--output",
+                output,
+                "--max-smart-search-judgment-model-calls",
+                str(requested_smart_cap),
+                "--confirm-live-product-run",
+            ]
+        )
+
+    assert result == 2
+    assert load_environment.call_count == 0
+    assert build_live_deps.call_count == 0
+    assert run_pipeline.call_count == 0
+    captured = capsys.readouterr()
+    assert "not declared by selected profile" in captured.err
+    assert "max_smart_search_judgment_model_calls" in captured.err
+    assert not (ROOT / output).exists()
 
 
 def test_cap_overflow_fails_closed_with_fake_wrappers() -> None:

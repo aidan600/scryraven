@@ -223,7 +223,8 @@ class AgLiveBoundPacketError(ValueError):
 class AgLiveBoundCaps:
     max_scryraven_runs: int = 1
     # None means this ordinary runner records the observation without adding a
-    # logical role cap. Explicit resource experiments may supply an integer.
+    # logical role cap. A selected profile must explicitly declare any integer
+    # override before the runner can populate it.
     max_search_dispatches: int | None = None
     max_fetch_read_operations: int | None = None
     max_author_model_calls: int | None = None
@@ -470,6 +471,12 @@ def validate_caps_requested(
         raise AgLiveBoundPreflightError(
             f"refusing run: cap fields must be non-negative integers: "
             f"{', '.join(sorted(invalid))}"
+        )
+    undeclared = sorted(set(requested).difference(planned_caps))
+    if undeclared:
+        raise AgLiveBoundPreflightError(
+            f"refusing run: cap fields not declared by selected profile "
+            f"{profile.name}: {', '.join(undeclared)}"
         )
     missing = [key for key in planned_caps if key not in requested]
     if missing:

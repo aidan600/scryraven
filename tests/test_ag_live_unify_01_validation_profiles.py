@@ -92,6 +92,47 @@ def test_ag_live_smoke_maps_to_direct_human_runner_behavior() -> None:
     assert profile.current_evidence.startswith("Succeeded once")
 
 
+def test_cap_requests_match_selected_profile_authority_exactly() -> None:
+    smoke = get_validation_profile(AG_LIVE_SMOKE)
+    smoke_caps = smoke.cap_policy.as_requested_dict()
+    assert support.validate_caps_requested(
+        smoke_caps,
+        profile_name=AG_LIVE_SMOKE,
+    ).as_requested_dict() == smoke_caps
+
+    with pytest.raises(
+        support.AgLiveBoundPreflightError,
+        match="not declared by selected profile",
+    ):
+        support.validate_caps_requested(
+            {
+                **smoke_caps,
+                "max_smart_search_judgment_model_calls": 2,
+            },
+            profile_name=AG_LIVE_SMOKE,
+        )
+
+    convergence = get_validation_profile(AG_LIVE_S1_PRODUCT_CONVERGENCE)
+    convergence_caps = convergence.cap_policy.as_requested_dict()
+    accepted = support.validate_caps_requested(
+        convergence_caps,
+        profile_name=AG_LIVE_S1_PRODUCT_CONVERGENCE,
+    )
+    assert accepted.as_requested_dict() == convergence_caps
+    assert accepted.to_run_cap_policy().max_search_dispatches == (
+        convergence.cap_policy.max_search_dispatches
+    )
+    assert accepted.to_run_cap_policy().max_fetch_read_operations == (
+        convergence.cap_policy.max_fetch_read_operations
+    )
+    assert accepted.to_run_cap_policy().max_author_model_calls == (
+        convergence.cap_policy.max_author_model_calls
+    )
+    assert accepted.to_run_cap_policy().max_smart_search_judgment_model_calls == (
+        convergence.cap_policy.max_smart_search_judgment_model_calls
+    )
+
+
 def test_future_profiles_and_retired_source_custody_are_not_live_proof() -> None:
     assert get_validation_profile(AG_LIVE_S1_PRODUCT_CONVERGENCE).live_status == "not_run"
     assert get_validation_profile(AG_LIVE_MULTI_COMPONENT).live_status == "not_run"
