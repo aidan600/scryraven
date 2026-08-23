@@ -124,6 +124,67 @@ def _stub_live_runner_without_env(
     monkeypatch.setattr(runner, "_build_live_run_config", fake_run_config)
 
 
+def _run_repaired_q1_offline_outcome(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[Any, Any, Any]:
+    """Run the repaired provider-like Q1 lane and return its real outcome."""
+
+    from core import quantitative_finalization_authority as quantitative_evaluator
+    from scripts import ag_live_bound_01_support as support
+    from tests.helpers.offline_ordinary_pipeline import (
+        run_post_retirement_ordinary_pipeline,
+    )
+    from tests.test_searchos_slice_a_product_cutover_01 import (
+        _install_q1_plural_planner_contract,
+    )
+
+    _install_q1_plural_planner_contract(monkeypatch)
+    monkeypatch.setattr(
+        quantitative_evaluator,
+        "validate_author_output_quantitative_authority",
+        lambda *_args, **_kwargs: None,
+    )
+    answer_bearing_section = (
+        "math.isclose(a, b, *, rel_tol=1e-09, abs_tol=0.0) "
+        "determines whether two values are close."
+    )
+    long_read_text = (
+        "Earlier documentation section with background numeric examples 2024 and 42. "
+        * 70
+    ) + answer_bearing_section + (" Later documentation notes. " * 40)
+    cap_policy = support.AgLiveBoundCaps().to_run_cap_policy()
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        mode="Balanced",
+        query=PRIMARY_QUERY,
+        core_topic="Python math.isclose rel_tol abs_tol defaults",
+        primary_entity="Python math.isclose",
+        researcher_queries=["Python math.isclose rel_tol abs_tol defaults"],
+        raw_author_response=(
+            "For math.isclose(), the default rel_tol value is 1e-09 and the "
+            "default abs_tol value is 0.0. "
+            "[[1]](https://docs.python.org/3/library/math.html)"
+        ),
+        inject_default_source_qualification=False,
+        evidence_rows=[
+            {
+                "title": "math.isclose documentation",
+                "url": "https://docs.python.org/3/library/math.html",
+                "text": answer_bearing_section,
+                "credibility": 4,
+                "source_tier": "unknown",
+            }
+        ],
+        read_content_by_url={
+            "https://docs.python.org/3/library/math.html": long_read_text
+        },
+        cap_policy=cap_policy,
+    )
+    return outcome, harness, cap_policy
+
+
 @pytest.fixture(autouse=True)
 def _cleanup_output_packets() -> Any:
     yield
@@ -334,6 +395,194 @@ def test_run_pipeline_sensitive_value_error_message_is_redacted(
     assert "sk-secret" not in rendered
 
 
+def _minimal_success_outcome() -> SimpleNamespace:
+    return SimpleNamespace(
+        run_id="offline-success-run",
+        session_id="offline-success-session",
+        terminal_status="completed",
+        report="safe offline result",
+        top_passages=[],
+        seen_urls=[],
+        execution_trace={},
+    )
+
+
+def test_post_run_success_projection_failure_writes_minimal_fallback_packet(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _load_runner()
+    support = _load_support()
+    output = _gitignored_output_path("ag_live_bound_01_projection_failure.json")
+    _stub_live_runner_without_env(runner, monkeypatch)
+
+    def fail_projection(*_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError("raw_prompt provider_payload")
+
+    monkeypatch.setattr(runner, "build_live_success_packet", fail_projection)
+
+    with patch(
+        "core.pipeline_orchestrator.run_pipeline",
+        return_value=_minimal_success_outcome(),
+    ) as run_pipeline:
+        result = runner.main(
+            [*VALID_ARGS, "--output", output, "--confirm-live-product-run"]
+        )
+
+    assert result == 2
+    assert run_pipeline.call_count == 1
+    capsys.readouterr()
+    packet = json.loads((ROOT / output).read_text(encoding="utf-8"))
+    assert packet["success_classification"] == support.LIVE_PACKET_RESULT_PROJECTION_FAILURE
+    assert packet["terminal_packet_fallback"] is True
+    assert packet["failure_summary"]["safe_phase"] == "post_run_result_projection"
+    assert packet["failure_summary"]["safe_error_type"] == "RuntimeError"
+    assert packet["failure_summary"]["safe_error_message"] is None
+    rendered = json.dumps(packet, sort_keys=True)
+    assert "raw_prompt provider_payload" not in rendered
+    assert "Traceback" not in rendered
+    assert '"execution_trace":' not in rendered
+    support.reject_forbidden_packet(packet)
+
+
+def test_post_run_enrichment_failure_writes_minimal_fallback_packet(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _load_runner()
+    support = _load_support()
+    output = _gitignored_output_path("ag_live_bound_01_enrichment_failure.json")
+    _stub_live_runner_without_env(runner, monkeypatch)
+
+    def fail_enrichment(*_args: Any, **_kwargs: Any) -> Any:
+        raise ValueError("model_response and READ body")
+
+    monkeypatch.setattr(runner, "_enrich_campaign_packet", fail_enrichment)
+
+    with patch(
+        "core.pipeline_orchestrator.run_pipeline",
+        return_value=_minimal_success_outcome(),
+    ) as run_pipeline:
+        result = runner.main(
+            [*VALID_ARGS, "--output", output, "--confirm-live-product-run"]
+        )
+
+    assert result == 2
+    assert run_pipeline.call_count == 1
+    capsys.readouterr()
+    packet = json.loads((ROOT / output).read_text(encoding="utf-8"))
+    assert packet["success_classification"] == support.LIVE_PACKET_RESULT_PROJECTION_FAILURE
+    assert packet["terminal_packet_fallback"] is True
+    assert packet["failure_summary"]["safe_phase"] == "post_run_result_projection"
+    assert packet["failure_summary"]["safe_error_type"] == "ValueError"
+    rendered = json.dumps(packet, sort_keys=True)
+    assert "model_response and READ body" not in rendered
+    assert "Traceback" not in rendered
+    support.reject_forbidden_packet(packet)
+
+
+def test_normal_failure_packet_builder_failure_uses_minimal_fallback(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _load_runner()
+    support = _load_support()
+    output = _gitignored_output_path("ag_live_bound_01_failure_builder_failure.json")
+    _stub_live_runner_without_env(runner, monkeypatch)
+    pipeline_error_type = runner._pipeline_error_type()
+
+    def fail_failure_builder(*_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError("failure packet builder detail")
+
+    monkeypatch.setattr(runner, "build_live_failure_packet", fail_failure_builder)
+
+    with patch(
+        "core.pipeline_orchestrator.run_pipeline",
+        side_effect=pipeline_error_type("safe pipeline failure"),
+    ) as run_pipeline:
+        result = runner.main(
+            [*VALID_ARGS, "--output", output, "--confirm-live-product-run"]
+        )
+
+    assert result == 2
+    assert run_pipeline.call_count == 1
+    capsys.readouterr()
+    packet = json.loads((ROOT / output).read_text(encoding="utf-8"))
+    assert packet["success_classification"] == support.LIVE_PACKET_PIPELINE_FAILURE
+    assert packet["terminal_packet_fallback"] is True
+    assert packet["failure_summary"]["safe_phase"] == "terminal_packet_fallback"
+    assert packet["failure_summary"]["safe_error_type"] == "RuntimeError"
+    assert "failure packet builder detail" not in json.dumps(packet, sort_keys=True)
+    support.reject_forbidden_packet(packet)
+
+
+def test_primary_packet_validation_failure_writes_one_fallback_packet(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _load_runner()
+    support = _load_support()
+    output = _gitignored_output_path("ag_live_bound_01_packet_validation_failure.json")
+    _stub_live_runner_without_env(runner, monkeypatch)
+    original_write_packet = runner.write_packet
+    write_calls = 0
+
+    def fail_primary_write(path: Path, packet: Mapping[str, Any]) -> None:
+        nonlocal write_calls
+        write_calls += 1
+        if write_calls == 1:
+            raise support.AgLiveBoundPacketError("raw validation detail")
+        original_write_packet(path, packet)
+
+    monkeypatch.setattr(runner, "write_packet", fail_primary_write)
+
+    with patch(
+        "core.pipeline_orchestrator.run_pipeline",
+        return_value=_minimal_success_outcome(),
+    ) as run_pipeline:
+        result = runner.main(
+            [*VALID_ARGS, "--output", output, "--confirm-live-product-run"]
+        )
+
+    assert result == 2
+    assert run_pipeline.call_count == 1
+    assert write_calls == 2
+    capsys.readouterr()
+    packet = json.loads((ROOT / output).read_text(encoding="utf-8"))
+    assert packet["success_classification"] == support.LIVE_PACKET_RESULT_PROJECTION_FAILURE
+    assert packet["terminal_packet_fallback"] is True
+    assert packet["failure_summary"]["safe_phase"] == "packet_write"
+    assert packet["failure_summary"]["safe_error_type"] == "AgLiveBoundPacketError"
+    assert "raw validation detail" not in json.dumps(packet, sort_keys=True)
+    support.reject_forbidden_packet(packet)
+
+
+def test_genuine_packet_write_failure_returns_distinct_exit_without_packet(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _load_runner()
+    output = _gitignored_output_path("ag_live_bound_01_packet_write_failure.json")
+    _stub_live_runner_without_env(runner, monkeypatch)
+
+    def fail_write(*_args: Any, **_kwargs: Any) -> Any:
+        raise OSError("read-only filesystem")
+
+    monkeypatch.setattr(runner, "write_packet", fail_write)
+
+    with patch(
+        "core.pipeline_orchestrator.run_pipeline",
+        return_value=_minimal_success_outcome(),
+    ):
+        result = runner.main(
+            [*VALID_ARGS, "--output", output, "--confirm-live-product-run"]
+        )
+
+    assert result == runner.PACKET_WRITE_FAILURE_EXIT_CODE
+    capsys.readouterr()
+    assert (ROOT / output).exists() is False
+
+
 def test_confirm_live_constructs_cap_policy_and_calls_run_pipeline_once(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
@@ -519,6 +768,63 @@ def test_confirm_live_constructs_cap_policy_and_calls_run_pipeline_once(
     assert '"provider_payload":' not in rendered_packet
     assert '"model_response":' not in rendered_packet
     assert '"execution_trace":' not in rendered_packet
+
+
+def test_repaired_q1_outcome_projects_through_normal_success_packet(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The real repaired Q1 outcome must pass the live success projection."""
+
+    runner = _load_runner()
+    support = _load_support()
+    outcome, harness, cap_policy = _run_repaired_q1_offline_outcome(
+        tmp_path,
+        monkeypatch,
+    )
+    assert outcome.terminal_status == "completed"
+    assert harness.author_prompts and len(harness.author_prompts) == 1
+
+    context = support.build_preflight_context(
+        root=ROOT,
+        profile_name="AG-LIVE-SMOKE",
+        query=PRIMARY_QUERY,
+        mode="Balanced",
+        include_domains=["docs.python.org"],
+        output_path=tmp_path / "q1-live-success.sanitized.json",
+        external_output_root=tmp_path,
+        caps=support.AgLiveBoundCaps(),
+        run_id=str(getattr(outcome, "run_id", "q1-offline-run") or "q1-offline-run"),
+        confirm_live_product_run=True,
+        approved_backup_query=False,
+    )
+
+    packet = support.build_live_success_packet(
+        context,
+        outcome=outcome,
+        cap_policy=cap_policy,
+    )
+    packet = runner._enrich_campaign_packet(
+        packet,
+        context=context,
+        deps=None,
+        outcome=outcome,
+        campaign_guard=None,
+        attempt=None,
+    )
+    support.write_packet(context.output_path, packet)
+    packet = json.loads(context.output_path.read_text(encoding="utf-8"))
+
+    assert packet["success_classification"] == support.LIVE_PACKET_SUCCESS
+    assert packet["final_answer_text"].startswith("For math.isclose()")
+    assert packet["cited_source_ids"] == ["1"]
+    assert packet["cited_urls"] == ["https://docs.python.org/3/library/math.html"]
+    assert packet["sanitized_projection_summaries"]["final_answer_packet"][
+        "readiness_status"
+    ] == "author_ready"
+    assert packet["validation_observability"]["raw_private_material_serialized"] is False
+    assert '"execution_trace":' not in json.dumps(packet, sort_keys=True)
+    support.reject_forbidden_packet(packet)
 
 
 def test_source_custody_profile_is_not_executable() -> None:
