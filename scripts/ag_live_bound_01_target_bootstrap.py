@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any, Sequence
@@ -17,6 +18,10 @@ BOOTSTRAP_SCHEMA_VERSION = "ag_live_bound_bootstrap_v1"
 BOOTSTRAP_FAILURE_EXIT_CODE = 2
 PACKET_WRITE_FAILURE_EXIT_CODE = 3
 REPO_ROOT = Path(__file__).resolve().parents[1]
+MAX_SAFE_MISSING_MODULE_LENGTH = 160
+_SAFE_MODULE_NAME_PATTERN = re.compile(
+    r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*\Z"
+)
 
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -40,6 +45,7 @@ def main(argv: list[str] | None = None) -> int:
             classification="runner_bootstrap_failure",
             safe_phase="runner_import",
             safe_error_type=_safe_error_type(exc),
+            missing_module=_safe_missing_module(exc),
             runner_exit_code=None,
             fallback_exit_code=BOOTSTRAP_FAILURE_EXIT_CODE,
         )
@@ -52,6 +58,7 @@ def main(argv: list[str] | None = None) -> int:
             classification="runner_bootstrap_failure",
             safe_phase="runner_entrypoint",
             safe_error_type=_safe_error_type(exc),
+            missing_module=_safe_missing_module(exc),
             runner_exit_code=None,
             fallback_exit_code=BOOTSTRAP_FAILURE_EXIT_CODE,
         )
@@ -63,6 +70,7 @@ def main(argv: list[str] | None = None) -> int:
         classification="runner_exited_without_packet",
         safe_phase="runner_return",
         safe_error_type=None,
+        missing_module=None,
         runner_exit_code=runner_exit_code,
         fallback_exit_code=runner_exit_code,
     )
@@ -74,6 +82,7 @@ def _emit_fallback(
     classification: str,
     safe_phase: str,
     safe_error_type: str | None,
+    missing_module: str | None,
     runner_exit_code: int | None,
     fallback_exit_code: int,
 ) -> int:
@@ -84,6 +93,8 @@ def _emit_fallback(
         "classification": classification,
         "safe_phase": safe_phase,
         "safe_error_type": safe_error_type,
+        "missing_module": missing_module,
+        "interpreter_origin": _interpreter_origin(),
         "runner_exit_code": runner_exit_code,
         "product_result_available": False,
         "raw_private_material_retained": False,
@@ -160,6 +171,30 @@ def _is_relative_to(path: Path, parent: Path) -> bool:
 def _safe_error_type(exc: BaseException) -> str:
     name = type(exc).__name__
     return name if name.isidentifier() else "Exception"
+
+
+def _safe_missing_module(exc: BaseException) -> str | None:
+    if not isinstance(exc, ModuleNotFoundError):
+        return None
+    name = exc.name
+    if (
+        not isinstance(name, str)
+        or len(name) > MAX_SAFE_MISSING_MODULE_LENGTH
+        or _SAFE_MODULE_NAME_PATTERN.fullmatch(name) is None
+    ):
+        return None
+    return name
+
+
+def _interpreter_origin() -> str:
+    executable = sys.executable
+    if not executable:
+        return "non_repo_venv_or_global"
+    try:
+        Path(executable).resolve().relative_to((REPO_ROOT / ".venv").resolve())
+    except (OSError, RuntimeError, ValueError):
+        return "non_repo_venv_or_global"
+    return "repo_venv"
 
 
 def _normalize_exit_code(value: Any) -> int:

@@ -100,7 +100,7 @@ in the repository's private `.env`, launch it through the canonical repository
 environment mode:
 
 ```powershell
-py scripts\run_brokered_command_once.py `
+.\.venv\Scripts\python.exe scripts\run_brokered_command_once.py `
   --repo-root <REPO-ROOT> `
   --repo-env `
   --status <ABSOLUTE-EXTERNAL-STATUS> `
@@ -114,6 +114,15 @@ approved operator-context doorman process. The legacy `--env-file <PRIVATE-ENV-F
 form remains available for existing operator callers, but the Codex workflow
 must use `--repo-env` and must not discover, stat, or pass an environment-file
 path from the controlling Workspace Write process.
+
+For ScryRaven repository commands, the broker itself must be launched with the
+repository virtual-environment interpreter:
+`.\.venv\Scripts\python.exe`. Before a credentialed run, if that executable
+is absent or cannot be launched, stop with a mechanical interpreter/setup
+failure; do not fall back to `py`, a global `python`, or dependency
+installation. `--target-current-python` then makes the private target inherit
+the interpreter running the broker. Therefore the broker's interpreter, not
+the target flag alone, determines whether project dependencies are available.
 
 For an authorized credentialed command, Codex prepares the complete exact
 broker-plus-target argv, requests one exact command-level escalation, and then
@@ -131,7 +140,7 @@ The bounded AG-LIVE target uses the stdlib-only bootstrap so interpreter or
 runner import failures can produce a minimal structural terminal packet:
 
 ```powershell
-py scripts\run_brokered_command_once.py `
+.\.venv\Scripts\python.exe scripts\run_brokered_command_once.py `
   --repo-root <REPO-ROOT> `
   --repo-env `
   --stdout <ABSOLUTE-EXTERNAL-STDOUT> `
@@ -148,6 +157,14 @@ py scripts\run_brokered_command_once.py `
   --output <ABSOLUTE-SANCTIONED-PACKET> `
   --external-output-root <ABSOLUTE-EXTERNAL-PACKET-DIR>
 ```
+
+When the bootstrap cannot import or enter the bounded runner, its fallback
+packet may include only the safe exception class, a bounded dotted
+`missing_module` identifier for `ModuleNotFoundError` (otherwise `null`), and
+the enum `interpreter_origin` (`repo_venv` or
+`non_repo_venv_or_global`). It never includes exception text, paths,
+tracebacks, `sys.path`, environment values, prompts, provider material, or
+READ content.
 
 Do not directly invoke:
 
@@ -199,7 +216,7 @@ The canonical Codex/operator shape uses the repository-local `.env`; do not
 paste its contents or supply its path from an unprivileged preflight.
 
 ```powershell
-py scripts\run_brokered_command_once.py `
+.\.venv\Scripts\python.exe scripts\run_brokered_command_once.py `
   --repo-root <REPO-ROOT> `
   --repo-env `
   --stdout <ABSOLUTE-EXTERNAL-STDOUT> `

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -14,6 +15,7 @@ from scripts import run_brokered_command_once as doorman
 
 ROOT = Path(__file__).resolve().parents[1]
 BOOTSTRAP = ROOT / "scripts" / "ag_live_bound_01_target_bootstrap.py"
+DOORMAN = ROOT / "scripts" / "run_brokered_command_once.py"
 Q1_QUERY = (
     "According to the official Python 3 documentation, what are the default "
     "values for rel_tol and abs_tol in math.isclose()?"
@@ -58,6 +60,10 @@ def _run_broker(
 
 def _status(path: Path) -> dict[str, object]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _project_python() -> Path:
+    return ROOT / ".venv" / "Scripts" / "python.exe"
 
 
 def test_target_launch_oserror_has_controlled_status_and_safe_outputs(
@@ -215,6 +221,77 @@ def test_broker_bootstrap_q1_dry_run_is_end_to_end_and_non_live(
     assert packet["validation_profile"]["name"] == "AG-LIVE-SMOKE"
 
 
+def test_project_python_broker_bootstrap_q1_dry_run_is_end_to_end(
+    tmp_path: Path,
+) -> None:
+    project_python = _project_python()
+    if not project_python.exists():
+        pytest.skip("repository .venv interpreter is not installed")
+
+    external_root = tmp_path / "external"
+    external_root.mkdir()
+    env_file = _write_synthetic_env(tmp_path / "synthetic.env")
+    status_path = external_root / "broker.status.json"
+    packet_path = external_root / "product.sanitized.json"
+    stdout_path = external_root / "broker.stdout.txt"
+    stderr_path = external_root / "broker.stderr.txt"
+    command = [
+        str(project_python),
+        str(DOORMAN),
+        "--repo-root",
+        str(ROOT),
+        "--env-file",
+        str(env_file),
+        "--stdout",
+        str(stdout_path),
+        "--stderr",
+        str(stderr_path),
+        "--status",
+        str(status_path),
+        "--timeout-seconds",
+        "30",
+        "--target-current-python",
+        "--",
+        str(BOOTSTRAP),
+        "--profile",
+        "AG-LIVE-SMOKE",
+        "--query",
+        Q1_QUERY,
+        "--mode",
+        "Balanced",
+        "--include-domains",
+        "docs.python.org",
+        "--output",
+        str(packet_path),
+        "--external-output-root",
+        str(external_root),
+        "--max-scryraven-runs",
+        "1",
+        "--max-retries",
+        "0",
+    ]
+
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=str(ROOT),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except OSError:
+        pytest.skip("repository .venv interpreter could not be launched")
+
+    assert completed.returncode == 0
+    assert _status(status_path)["status"] == "target_completed"
+    packet = json.loads(packet_path.read_text(encoding="utf-8"))
+    assert packet["dry_run"] is True
+    assert packet["confirm_live_product_run"] is False
+    assert packet["planned_live_dispatch"] is False
+    assert packet["validation_profile"]["name"] == "AG-LIVE-SMOKE"
+
+
 def test_private_child_configuration_failure_has_safe_status(
     tmp_path: Path,
 ) -> None:
@@ -254,7 +331,9 @@ def test_bootstrap_import_failure_writes_minimal_packet(
     monkeypatch.setattr(
         bootstrap.importlib,
         "import_module",
-        lambda _name: (_ for _ in ()).throw(ModuleNotFoundError("not serialized")),
+        lambda _name: (_ for _ in ()).throw(
+            ModuleNotFoundError("not serialized", name="missing_dependency")
+        ),
     )
 
     result = bootstrap.main(
@@ -267,15 +346,71 @@ def test_bootstrap_import_failure_writes_minimal_packet(
     )
 
     assert result == bootstrap.BOOTSTRAP_FAILURE_EXIT_CODE
-    assert json.loads(packet_path.read_text(encoding="utf-8")) == {
+    packet = json.loads(packet_path.read_text(encoding="utf-8"))
+    assert packet == {
         "schema_version": bootstrap.BOOTSTRAP_SCHEMA_VERSION,
         "classification": "runner_bootstrap_failure",
         "safe_phase": "runner_import",
         "safe_error_type": "ModuleNotFoundError",
+        "missing_module": "missing_dependency",
+        "interpreter_origin": packet["interpreter_origin"],
         "runner_exit_code": None,
         "product_result_available": False,
         "raw_private_material_retained": False,
     }
+    assert packet["interpreter_origin"] in {
+        "repo_venv",
+        "non_repo_venv_or_global",
+    }
+    packet_text = packet_path.read_text(encoding="utf-8")
+    assert "not serialized" not in packet_text
+    assert "Traceback" not in packet_text
+
+
+def test_bootstrap_non_module_failure_has_no_missing_module(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    external_root = tmp_path / "external"
+    external_root.mkdir()
+    packet_path = external_root / "product.sanitized.json"
+    monkeypatch.chdir(repo_root)
+    monkeypatch.setattr(
+        bootstrap.importlib,
+        "import_module",
+        lambda _name: (_ for _ in ()).throw(RuntimeError("not serialized")),
+    )
+
+    result = bootstrap.main(
+        [
+            "--output",
+            str(packet_path),
+            "--external-output-root",
+            str(external_root),
+        ]
+    )
+
+    assert result == bootstrap.BOOTSTRAP_FAILURE_EXIT_CODE
+    packet = json.loads(packet_path.read_text(encoding="utf-8"))
+    assert packet["safe_error_type"] == "RuntimeError"
+    assert packet["missing_module"] is None
+
+
+def test_interpreter_origin_enum_is_mechanical(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        bootstrap.sys,
+        "executable",
+        str(bootstrap.REPO_ROOT / ".venv" / "Scripts" / "python.exe"),
+    )
+    assert bootstrap._interpreter_origin() == "repo_venv"
+
+    monkeypatch.setattr(bootstrap.sys, "executable", str(tmp_path / "python.exe"))
+    assert bootstrap._interpreter_origin() == "non_repo_venv_or_global"
 
 
 def test_broker_to_bootstrap_import_failure_has_terminal_packet(
@@ -347,11 +482,14 @@ def test_bootstrap_runner_nonzero_without_packet_gets_safe_sentinel(
     )
 
     assert result == 17
-    assert json.loads(packet_path.read_text(encoding="utf-8")) == {
+    packet = json.loads(packet_path.read_text(encoding="utf-8"))
+    assert packet == {
         "schema_version": bootstrap.BOOTSTRAP_SCHEMA_VERSION,
         "classification": "runner_exited_without_packet",
         "safe_phase": "runner_return",
         "safe_error_type": None,
+        "missing_module": None,
+        "interpreter_origin": packet["interpreter_origin"],
         "runner_exit_code": 17,
         "product_result_available": False,
         "raw_private_material_retained": False,
