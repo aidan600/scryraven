@@ -1,30 +1,43 @@
-# Quantitative Finalization Containment
+# Quantitative FAP Authority And Evaluator Containment
 
 Status: current
 Authority: canonical:quantitative-finalization-containment
 Default-read: no
-Applies-to: claim-scoped quantitative authority in the ordinary AuthorExecutor, deterministic AuthorProseFinalization, and guarded follow-up response-finalization consumers
-Does-not-authorize: new facts, calculation, conversion, claim admission, Sufficiency changes, route changes, acquisition changes, retries, or live validation
-Verified-against-runtime: 5e6fa705e0e7e13662c7860dcb5bea573b8ac0c2
-Update-trigger: merged change to quantitative FAP projection, Author numeric instructions, accepted-prose validation, or a guarded finalization consumer
+Applies-to: structured pre-Author quantitative authority in FinalAnswerPacket (FAP), retained evaluator diagnostics, and the ordinary/compatibility finalization consumer census
+Does-not-authorize: new facts, calculation, conversion, claim admission, Sufficiency changes, route changes, acquisition changes, retries, semantic repair, or live validation
+Verified-against-runtime: 969e3085922d10985d406bac1d620d459e2731c6
+Update-trigger: merged change to quantitative FAP projection, Author numeric instructions, post-Author mechanics, evaluator disposition, or a guarded finalization consumer
 
 ## Responsibility
 
-This document owns the installed invariant that unsupported derived
-quantitative content cannot enter accepted user-facing answer prose. It does
-not identify which earlier model or role first produced a rejected value. The
-earlier origin of the observed B01/D02 values remains `NOT_OBSERVABLE`.
+This document owns the quantitative boundary after the explicit architecture
+decision:
 
-The repair classifies the existing finalization capability as `ADAPT`: it
-reuses current FinalAnswerPacket, admitted-claim, D-prime, Specialist-result,
-and prose-finalization owners, and adds one shared deterministic containment
-owner at `core/quantitative_finalization_authority.py`. It creates no parallel
-truth, admission, calculation, conversion, Sufficiency, or retry path.
+```text
+FAP    = final semantic-authority boundary
+Author = final semantic actor
+post-Author PRODUCT = mechanics only
+```
 
-## Claim-Scoped Authority Manifest
+It preserves hard quantitative authority before Author without creating a new
+semantic voter. FAP structurally verifies authority already produced by current
+Component Analyst, applicable Specialist/result, RunKernel admission,
+ComponentCoverage, Sufficiency, source, and citation owners. It does not decide
+what a claim means, create a claim, revise Sufficiency, or add a second
+semantic-support decision.
 
-`quantitative_finalization_authority_manifest_v1` is derived from current FAP
-authority. Its durable shape is:
+FAP is the final semantic-authority boundary. Author is the final semantic
+actor.
+
+The former shared natural-language quantitative validator is retained as an
+evaluator. Its diagnostic is evidence about candidate prose, not authority over
+FAP, Author authorization, Author output, citation authority, canonical state,
+RunOutcome, product success/failure, or retry behavior.
+
+## Structured Quantitative Authority
+
+`quantitative_finalization_authority_manifest_v2` is transient FAP-side
+authority material. Its durable safe shape is:
 
 ```text
 schema_version
@@ -39,8 +52,8 @@ authorized_numeric_claims[]
   canonical_unit
   precision_posture
   evidence_or_specialist_ref
-  applicable_dprime_ref
-  applicable_dprime_consumption_ref
+  applicable_validator_ref
+  applicable_validator_consumption_ref
   admitted_claim_ref
   fap_material_ref
   semantic_claim_fingerprint_or_existing_equivalent
@@ -57,174 +70,144 @@ manifest_digest
 
 The two authority kinds are:
 
-- `direct_source_numeric`: the exact proposition and literal come from current
-  FAP-authorized bounded source material. A current admitted component
-  paraphrase may retain this kind only when its complete literal signature,
-  component identity, exact content and coverage refs, and conservative
-  subject/metric proposition core all bind to that same source material; and
-- `specialist_derived_numeric`: the exact claim comes from a completed installed
-  S1 result with canonical `result_unit`, `exact_match` claim-material binding,
-  applicable component or synthesis D-prime consumption, admission, and current
-  FAP inclusion.
+- `direct_source_numeric`: the current FAP-selected claim has exact
+  source/citation custody, Component Analyst or applicable semantic lineage,
+  exact literal value/unit/sign/scale/precision posture, and current
+  component/content/coverage binding; and
+- `specialist_derived_numeric`: the current FAP-selected claim has a completed
+  installed S1 result, exact claim-material alignment, canonical result unit and
+  precision, exact result/handoff lineage, and applicable Component Analyst or
+  synthesis validation consumption.
 
 Generic admission is not an authority kind. An admitted component, synthesis,
-or hardened-FAP numeric proposition that has only a D-prime ref, observation
-ref, coverage ref, matching value, or Author claim ref is omitted. It becomes
-direct-source authority only through the complete source binding above, or
-Specialist-derived authority only through the complete installed result and
-consumption lineage above.
+or hardened-FAP numeric claim that has only a D-prime ref, observation ref,
+coverage ref, matching value, or Author claim ref is not authorized numeric
+material. A literal already stated by a source remains `direct_source_numeric`;
+it is not routed through Specialist merely because it contains digits.
 
-## Hardened Component Route
+## FAP Pre-Author Gate
+
+`quantitative_fap_authority_preflight_v1` operates only on FAP-selected
+structured state. It checks that every required numeric claim has complete,
+current, structurally bound authority before FAP derives Author input. It blocks
+using existing FAP/Author-input semantics when it finds, for example:
+
+- unsupported calculation or conversion without an installed Specialist result;
+- an unadmitted, stale, foreign, or mismatched numeric claim;
+- missing direct-source, source/citation, Component Analyst, or required
+  Specialist lineage;
+- invalid unit, precision, or prohibited transformation posture.
+
+A block does not rewrite a claim, create a fallback answer, alter Sufficiency,
+or invoke Author. Its safe diagnostic records counts, enum reason codes, and
+digest/ref-shaped facts only; it includes no final text, raw source text, prompt,
+model response, provider payload, private log, or full trace.
 
 The hardened `SufficiencyReadiness -> HardenedFinalAnswerPacket ->
-AuthorProseFinalization` route preserves two component-scoped quantitative
-authority classes. Hardened direct source-explicit numeric authority requires
-exact current component, semantic-observation, content, coverage,
-evidence-custody, proposition-fingerprint, and complete literal-signature
-binding.
+AuthorProseFinalization` route applies the same pre-Author FAP preflight. It
+preserves two component-scoped quantitative authority classes: exact current
+component, semantic-observation, content, coverage, evidence-custody,
+proposition-fingerprint, and complete literal-signature binding for direct
+source material; and installed Specialist capability/version, result and
+handoff identities/digests, canonical component target, exact claim-material
+binding, canonical `result_unit` and precision, and terminal consumption by the
+applicable Component Analyst case (with retained historical component-D-prime
+records outside the ordinary component path). Generic D-prime admission alone
+remains nonauthority. The hardened packet packages component entries only; it
+does not project synthesis entries and does not install a hardened synthesis
+sidecar.
 
-Completed component S1 authority preserves the installed capability and
-version, result and handoff identities and digests, canonical component target,
-exact claim-material binding, canonical `result_unit` and precision, and
-terminal consumption by the applicable Component Analyst case, including its
-exact bounded Analyst-resume continuation when a Specialist result is used.
-Retained component-D-prime historical or explicit legacy-recovery records are
-not ordinary component authority. Generic D-prime admission alone remains
-nonauthority for arithmetic, conversion, aggregation, comparison, or same-value
-proposition reuse. Deterministic AuthorProse accepts valid bound direct-source
-and component S1 numeric claims and fails atomically on unsupported quantitative
-prose.
+## Author And Post-Author Boundary
 
-The current hardened FinalAnswerPacket owner packages component entries only.
-It does not project synthesis entries and does not install a hardened synthesis
-sidecar. Ordinary synthesis-origin S1 authority remains owned by the ordinary
-ComponentWorkGraph / synthesis D-prime / ordinary FinalAnswerPacket path.
+Author receives FAP-authorized quantitative material, evidence/citation
+authority, caveats, and prohibited transformations. It must preserve authorized
+meaning: value, unit, sign, scale, percent convention, material precision,
+subject, and proposition. It may explain or paraphrase that material naturally.
 
-The manifest is not a global numeric allowlist. A value/unit match is
-insufficient without the same complete assertion fingerprint and literal
-signature or the stricter current component/content/coverage equivalence above.
-An authorized value cannot be reused for another subject, metric, calculation
-result, conversion, estimate, comparison, ratio, rate, percentage, or
-proposition.
+The Author instruction does not mention parser acceptance, fingerprints,
+regexes, or an exact required surface. It continues to prohibit calculation,
+conversion, estimation, interpolation, unsupported rounding, rescaling,
+aggregation, and a new quantitative conclusion. It does not require Author to
+reproduce a canonical sentence merely so a downstream parser recognizes it.
 
-Retained references are limited to bounded identifier, digest, status,
-posture, route, and version shapes. Claim prose is used transiently to build
-the fingerprint and the Author instruction, then omitted from the manifest.
-The Author payload trace carries only shallow digest-and-count envelopes for the
-manifest and multi-component entries, not the full manifest, graph entries, or
-claim text.
+After Author, ordinary PRODUCT code may enforce mechanics such as required text
+presence, citation-token identity/placeholder resolution, private/control
+material protection, serialization, envelope shape, encoding, and size bounds.
+It may not reinterpret free-form prose to decide semantic acceptability. There
+is no post-Author semantic model, deterministic accepted-prose theorem prover,
+Author retry, revision loop, semantic repair loop, second FAP, or semantic
+readmission.
 
-## Before And After Author
+## Retained Evaluator
 
-Before ordinary Author execution, FAP adds fixed authority instructions and
-transient exact quantitative renderings. Author may explain and present those
-propositions while preserving value, unit, sign, scale, percent convention,
-and precision. Comma digit grouping is the only installed numeric surface
-equivalence. Author may not calculate, convert, estimate, interpolate, round,
-rescale, aggregate, or introduce a new numeric conclusion.
+`validate_author_output_quantitative_authority()` remains a throwing evaluator
+helper for explicit validation contexts, and
+`evaluate_author_output_quantitative_authority()` returns the same safe
+accepted/rejected diagnostic without making it authoritative. The evaluator can
+continue to report unsupported arithmetic, conversion, subject/value/unit/sign/
+scale/precision drift, unsupported numeric surfaces, unauthorized propositions,
+and fingerprint mismatch.
 
-After candidate prose exists, the shared deterministic validator:
-
-1. removes URL syntax, machine citations, affirmatively classified whole-row
-   references, true digests, and transport identifiers while keeping ambiguous
-   or factual rows under source/reference headings inspectable;
-2. extracts bounded digit, compact-currency, compact currency-rate, and
-   common-cardinal candidates, including bounded hyphenated forms;
-3. preserves value, unit, accounting sign, scale, notation, percent convention,
-   and declared precision in each literal signature;
-4. emits enum-only unsupported markers for bounded digit or factual word
-   ordinals, Unicode fractions, fullwidth digits, unconsumed superscript or
-   subscript digits, and unmatched numeric-looking nontransport surfaces;
-5. fingerprints the complete assertion rather than the value alone; and
-6. accepts only an exact manifest binding or fails closed.
-
-This parser identifies candidates; it does not infer factual authority,
-perform arithmetic, convert units, or act as a general language theorem
-prover. Common cardinal forms are contained deterministically. Unsupported
-quantifier forms fail closed rather than becoming a completeness claim about
-all natural-language numbers.
-
-The older two-item quantitative consistency diagnostic remains observable but
-is subordinated. It no longer deletes or rewrites answer text.
+The evaluator may be wrong. No PRODUCT runtime consumer may use it as a success
+or failure decision, mutate text because of it, delete a fragment, alter
+citations, change canonical state, or request another model call. The older
+two-item quantitative consistency signal likewise remains diagnostic only.
 
 ## Guarded Finalization Consumer Inventory
 
-| Guarded consumer | Manifest source | Validation point | Failure effect |
-| --- | --- | --- | --- |
-| Ordinary `AuthorExecutor` | ordinary FinalAnswerPacket Author payload | after the one model response is fully buffered, before display or `AUTHOR_OUTPUT_OBSERVED` | rejected prose is not displayed or reduced; no retry |
-| Deterministic `AuthorProseFinalization` | hardened FAP state/projection | before AuthorProse state or projection construction | no successful AuthorProse state |
-| Guarded follow-up response finalizer | serialized follow-up/current FAP authority | during its existing validation context, before authorization/reduction | no successful Author observation or final-answer outcome |
+| Guarded consumer | Current disposition | Product effect |
+| --- | --- | --- |
+| Ordinary `AuthorExecutor` | Post-Author semantic hard gate retired | FAP preflight occurs before Author; Author output is not reparsed for PRODUCT acceptance or withheld solely for quantitative semantics. |
+| Deterministic `AuthorProseFinalization` | Post-Author semantic hard gate retired | Structured hardened FAP preflight remains hard; deterministic generated prose is not semantically reparsed after construction. |
+| Guarded follow-up response finalizer | Semantic hard-gate authority retired | Internal compatibility finalization is mechanical-only; retained evaluator calls, if any, are non-throwing diagnostic only and do not affect final text or RunOutcome. |
 
-The guarded follow-up response-finalization capability remains installed
-internal supporting machinery, but its availability does not establish
-saved-thread product consumption. The legacy Streamlit consumer through
-`ui.pages_followup` and `core.followup` has been retired from ordinary product
-use and is not a current consumer of this finalizer or the shared quantitative
-validator. Any future follow-up activation must consume the shared
-accepted-prose validator before accepted user-facing prose is authorized.
-
-No accepted-prose compatibility formatter bypasses the shared validator. The
-ordinary route has no existing safe structured partial renderer that can
-replace a rejected model response without editing or trusting it, so it blocks
-rather than performing sentence surgery. No route automatically calls Author
-again.
+The guarded follow-up capability remains internal supporting machinery. It does
+not establish saved-thread product consumption. `ui.pages_followup` and
+`core.followup` are retired from ordinary product use and are not a current
+consumer of a shared accepted-prose validator: no shared accepted-prose
+validator remains as final-answer authority. Any future follow-up activation
+must consume the FAP/Author boundary deliberately; it cannot restore a
+post-Author semantic gate by compatibility naming.
 
 ## Proof Posture
 
-Focused offline tests establish:
+Focused offline proofs establish:
 
-- B-equivalent arithmetic rejection while the two direct source values remain
-  individually eligible;
-- D02-equivalent mile conversions and the derived mile difference rejection;
-- subject, result, unit, precision, repeated-literal, sign, scale, percent,
-  basis-point, scientific-notation, rate, textual-cardinal, and mixed-sentence
-  adversarial controls;
-- direct number, date, port, percentage, citation, URL, and comma-grouping
-  controls;
-- source-section assertions, compact currency, bracketed propositions,
-  hyphenated cardinals, digest-shaped decimals, and leading numeric
-  propositions cannot disappear into a zero-candidate acceptance;
-- compact currency rates retain deterministic currency-per-unit signatures;
-  ambiguous reference-noun rows remain inspectable; and factual word ordinals
-  plus unconsumed superscript or subscript digits fail with enum-only markers;
-- accounting currency parentheses preserve negative sign posture while valid
-  positive, explicit-negative, Unicode-minus, and explanatory-parenthesis
-  controls remain distinct and stable;
-- component-origin S1 and synthesis-origin two-hop S1 positive paths produced
-  by the installed adapter, registry, policy, and generic S0 handoff owners;
-- canonical `result_unit`, explicit legacy-only `unit` compatibility, same-unit
-  agreement, conflict rejection, exact claim-material digest, and consumed
-  component/synthesis D-prime lineage controls;
-- admitted non-Specialist component/synthesis arithmetic, conversion, and
-  same-value proposition-laundering rejection while direct source propositions
-  remain eligible;
-- atomic rejection with no display, successful Author/AuthorProse/final
-  outcome, answer rewrite, fragment deletion, or automatic retry; and
-- absence of raw prompts, model responses, source text, provider payloads,
-  private logs, and complete evidence candidates from retained manifests and
-  diagnostics.
+- FAP blocks unsupported arithmetic, unauthorized conversion, unbound source
+  numbers, unadmitted claims, stale/foreign authority, missing Specialist
+  binding, and source/claim mismatch before ordinary Author input;
+- direct source numeric and genuinely derived Specialist numeric authority
+  retain exact lineage and reach the respective FAP/Author paths;
+- the N1 Q1-shaped ordinary pipeline uses one answer-bearing READ, one Component
+  Analyst, deterministic admission, Coverage, Sufficiency, FAP,
+  `direct_source_numeric`, zero Specialist/D-prime/Cross/synthesis/Scrutineer
+  calls, one Author call, mechanically finalized citations, and a successful
+  offline RunOutcome;
+- a lawful ordinary Q1 Author paraphrase can complete even when the retained
+  evaluator directly reports a rejection diagnostic;
+- evaluator acceptance and rejection diagnostics do not mutate FAP state,
+  Author output, citation authority, RunOutcome, or product success; and
+- truly mechanical FAP/citation/output failures remain fail-closed.
 
-The reassessment's generic-conversion containment sentinel is now passing.
-The four numbered-imperative route-qualification sentinels remain strict
-expected-fails. The pre-FAP prompt-retention sentinel also remains expected-
-fail: prompt retention is not accepted-output authority once post-Author
-validation is mandatory, and removing it is not causally required by this
-repair. Acquisition completeness is unchanged and was not converted.
+The parser's adversarial surface matrix remains a validation/regression asset.
+It no longer asserts that Author output is withheld because a natural-language
+proposition matcher disagrees.
 
 ## Nonproofs
 
-- No live validation was performed.
-- No route-qualification repair was performed.
-- No acquisition-completeness repair was performed.
+- This boundary does not prove arbitrary-query readiness, broad Author quality,
+  citation rendering correctness, source-obligation satisfaction, or broad
+  quantitative reasoning quality.
+- It does not identify which upstream actor would have originated a bad Author
+  proposition, nor does it make evaluator disagreement a canonical truth.
 - No provider or model changed.
-- No S1 proposal or invocation policy expanded.
-- No new Specialist capability was added.
-- No hardened synthesis path was activated.
+- No route-qualification repair was performed.
+- No Specialist capability, operator, proposal policy, budget, route,
+  acquisition behavior, provider/model selection, synthesis architecture, or
+  follow-up product activation is changed.
+- Ordinary synthesis-origin S1 authority remains owned by the ordinary
+  ComponentWorkGraph / synthesis D-prime / ordinary FinalAnswerPacket path.
 - Broad live correctness, answer quality, and production stability remain
   unproved.
-
-This offline repair also does not prove which upstream role originated a
-rejected number, arbitrary-query coverage, unrestricted natural-language
-number understanding, or citation correctness. It does not change component
-selection, ranking, Specialist operators, conversion support, or Sufficiency
-policy.
+- Live evidence, when separately recorded by the current-state owner, remains
+  bounded evidence rather than a general reliability claim.
