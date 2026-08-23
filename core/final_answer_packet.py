@@ -16,6 +16,7 @@ from typing import Any, Mapping, Sequence
 
 from core.quantitative_finalization_authority import (
     build_quantitative_author_instruction_block,
+    build_quantitative_fap_authority_preflight,
     build_quantitative_finalization_authority_bundle,
 )
 from core.semantic_observation_foundation import SanitizedContentReference
@@ -1439,6 +1440,71 @@ class FinalAnswerPacket:
             ),
         )
 
+    def quantitative_fap_authority_preflight(
+        self,
+        *,
+        semantic_author_materialization: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Verify FAP-selected numeric claims before Author is authorized.
+
+        The returned diagnostic contains only safe structural facts.  The
+        accompanying bundle is transient Author-input material and must not be
+        treated as a post-Author prose decision.
+        """
+
+        return build_quantitative_fap_authority_preflight(
+            source_fap_ref={
+                "packet_id": self.packet_id,
+                "packet_schema_version": self.schema_version,
+                "readiness_status": self.readiness_status.value,
+            },
+            direct_component_entries=self.direct_component_entries,
+            admitted_synthesis_entries=self.admitted_synthesis_entries,
+            semantic_author_materialization=(
+                semantic_author_materialization
+                if semantic_author_materialization is not None
+                else self._semantic_author_materialization()
+            ),
+        )
+
+    def with_quantitative_authority_block(
+        self,
+        diagnostic: Mapping[str, Any],
+    ) -> "FinalAnswerPacket":
+        """Return a blocked packet when FAP cannot prove numeric lineage."""
+
+        safe_diagnostic = _safe_json(diagnostic)
+        readiness_reasons = tuple(
+            dict.fromkeys(
+                (*self.readiness_reasons, "quantitative_fap_authority_blocked")
+            )
+        )
+        mandatory_caveats = tuple(
+            dict.fromkeys(
+                (*self.mandatory_caveats, "quantitative_authority_unavailable")
+            )
+        )
+        prohibited_upgrades = tuple(
+            dict.fromkeys(
+                (
+                    *self.prohibited_upgrades,
+                    "do_not_call_author_without_complete_quantitative_authority",
+                )
+            )
+        )
+        return replace(
+            self,
+            final_answer_allowed=False,
+            readiness_status=FinalAnswerReadinessStatus.BLOCKED,
+            readiness_reasons=readiness_reasons,
+            mandatory_caveats=mandatory_caveats,
+            prohibited_upgrades=prohibited_upgrades,
+            author_input_refs={
+                **dict(self.author_input_refs),
+                "quantitative_fap_authority_preflight": safe_diagnostic,
+            },
+        )
+
     @property
     def quantitative_finalization_authority_manifest(self) -> dict[str, Any]:
         return dict(self._quantitative_finalization_authority_bundle()["manifest"])
@@ -1518,13 +1584,22 @@ class FinalAnswerPacket:
             satisfied_source_obligations=satisfied_source_obligations,
         )
         semantic_author_materialization = self._semantic_author_materialization()
-        quantitative_bundle = self._quantitative_finalization_authority_bundle(
+        quantitative_preflight = self.quantitative_fap_authority_preflight(
             semantic_author_materialization=semantic_author_materialization
         )
+        quantitative_diagnostic = _safe_json(
+            quantitative_preflight.get("diagnostic")
+        )
+        if quantitative_diagnostic.get("status") != "ready":
+            raise ValueError(
+                "FinalAnswerPacket quantitative authority is incomplete before Author"
+            )
+        quantitative_bundle = dict(quantitative_preflight["bundle"])
         quantitative_manifest = dict(quantitative_bundle["manifest"])
         authority_payload = {
             **authority_payload,
             "quantitative_finalization_authority_manifest": quantitative_manifest,
+            "quantitative_fap_authority_preflight": quantitative_diagnostic,
         }
         quantitative_instruction_block = build_quantitative_author_instruction_block(
             quantitative_manifest,

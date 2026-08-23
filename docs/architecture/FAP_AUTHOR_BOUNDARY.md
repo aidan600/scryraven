@@ -5,7 +5,7 @@ Authority: canonical:fap-author-boundary
 Default-read: no
 Applies-to: ordinary FinalAnswerPacket packaging, Author rendering, and blocked FAP terminal behavior
 Does-not-authorize: new claims, evidence interpretation, synthesis creation, citation upgrade, or Author execution when FAP is blocked
-Verified-against-runtime: 540141acaaaf041bda303edd62211dd6a11958bc
+Verified-against-runtime: 969e3085922d10985d406bac1d620d459e2731c6
 Update-trigger: merged change to FAP packaging, Author input, rendering, or blocked terminal behavior
 
 ## Responsibility
@@ -24,13 +24,18 @@ RunKernel-admitted direct and synthesized state
 -> Sufficiency readiness decision
 -> FinalAnswerPacket authority packaging
 -> Author rendering
--> deterministic quantitative finalization validation
+-> mechanical citation/output finalization
 -> RunOutcome
 ```
 
 Sufficiency decides whether admitted state is ready, partial, blocked,
 contested, insufficient, follow-up-required, or not applicable. Graph admission
 alone is not answer readiness.
+
+FAP is the final semantic-authority boundary. Author is the final semantic
+actor. Once FAP authorizes Author, ordinary post-Author PRODUCT code may enforce
+mechanical output requirements but does not reopen semantic support or make an
+accepted-prose decision.
 
 ## Direct And Inferred Packaging
 
@@ -63,7 +68,7 @@ FAP may package:
 - source and evidence bindings already authorized upstream;
 - not-claimed and prohibited-upgrade boundaries;
 - rendering and mode references; and
-- a claim-scoped quantitative finalization authority manifest; and
+- a structured quantitative authority preflight and manifest; and
 - readiness and support posture references.
 
 FAP must not:
@@ -80,13 +85,17 @@ FAP packaging does not itself prove answer correctness, citation correctness,
 or source-obligation satisfaction.
 
 For quantitative packaging, generic D-prime admission is not numeric rendering
-authority. The quantitative manifest projects a proposition only from exact
-current source material (including the narrow component/content/coverage-bound
+authority. Before Author, FAP verifies the already-produced structural lineage
+for every required numeric claim. A claim is packaged only from exact current
+source material (including the narrow component/content/coverage-bound
 equivalence) or from a completed installed Specialist result with exact
-claim-material alignment and applicable D-prime consumption. Full component and
-synthesis entries remain available to the Author payload itself, but their
-packet trace representation is reduced to counts and digests so RunKernel and
-Author execution compare the same packet-safe ref.
+claim-material alignment and the applicable Component Analyst or synthesis
+validation consumption. Missing source, Specialist, currentness, citation, unit,
+precision, or admission lineage blocks FAP/Author input; it does not create a
+second Sufficiency verdict. Full component and synthesis entries remain available
+to the Author payload itself, but their packet trace representation is reduced to
+counts and digests so RunKernel and Author execution compare the same packet-safe
+ref.
 
 ## Author Contract
 
@@ -101,18 +110,28 @@ Author may choose clear wording, structure the response, follow mode and
 rendering rules, preserve required caveats, pass through authorized sources,
 and explain synthesis that is already admitted and packaged.
 
-For quantitative propositions, Author receives exact transient renderings and
+For quantitative propositions, Author receives FAP-authorized material and
 fixed instructions prohibiting calculation, conversion, estimation,
 interpolation, unsupported rounding, rescaling, aggregation, and new numeric
-conclusions. Its response is buffered until the shared deterministic validator
-binds each numeric assertion to the current manifest. Accepted comma grouping
-does not broaden subject, metric, unit, sign, scale, percent, precision, or
-claim authority.
+conclusions. Author may paraphrase naturally while preserving the authorized
+value, unit, sign, scale, percent convention, precision, and proposition. It is
+not instructed about proposition fingerprints, parser acceptance, regexes, or a
+required accepted surface.
 
 Author must not reinterpret evidence, resolve conflicts, decide source
 authority, drop caveats, upgrade support, invent missing context, introduce new
 claims, create missing synthesis, repair evidence, satisfy a missing source
 obligation, or create authority absent from FAP.
+
+## Post-Author Mechanics
+
+The ordinary `AuthorExecutor` does not buffer prose solely for a quantitative
+semantic gate. Mechanical consumers may still require a complete output for
+citation placeholder resolution, foreign citation rejection, required answer
+presence, serialization, control/private-material protection, encoding, or
+envelope validation. These checks do not decide what an English proposition
+means and do not trigger Author retry, revision, semantic repair, a second FAP,
+or another semantic actor.
 
 ## Blocked FAP Terminal
 
@@ -151,10 +170,14 @@ phase records remain compatibility or historical context unless a current
 owner explicitly reuses them.
 
 The current ordinary AuthorExecutor, hardened AuthorProseFinalization, and
-follow-up AF5B finalizer all consume
+follow-up AF5B finalizer are explicitly classified in
 [Quantitative Finalization Containment](AG_S1_QUANTITATIVE_FINALIZATION_CONTAINMENT_01.md).
-Rejected prose creates no successful finalization, is not displayed or edited,
-and does not trigger an Author retry.
+Their former shared post-Author natural-language quantitative gate is retired:
+ordinary AuthorExecutor does not use it for PRODUCT acceptance, deterministic
+AuthorProseFinalization relies on the prior structured FAP check rather than
+reparsing generated prose, and the guarded internal AF5B finalizer has no
+accepted-prose semantic-gate authority. The retained evaluator is validation
+diagnostic only and has no authority over Author output or RunOutcome.
 
 ## Source Gateway
 

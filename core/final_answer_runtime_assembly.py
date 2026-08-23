@@ -137,6 +137,22 @@ def assemble_final_answer_author_runtime(
             author_input_blocked=True,
             blocked_reason="blocked_final_answer_packet",
         )
+    quantitative_preflight = packet.quantitative_fap_authority_preflight()
+    quantitative_diagnostic = dict(quantitative_preflight.get("diagnostic") or {})
+    if quantitative_diagnostic.get("status") != "ready":
+        packet = packet.with_quantitative_authority_block(quantitative_diagnostic)
+        return FinalAnswerAuthorRuntimeAssembly(
+            packet=packet,
+            author_payload=None,
+            author_prompt=author_prompt,
+            author_system_prompt_key=author_system_prompt_key,
+            author_effort=author_effort,
+            author_provider=author_provider,
+            author_model=author_model,
+            source_obligation_projection=source_obligation_projection,
+            author_input_blocked=True,
+            blocked_reason="quantitative_fap_authority_blocked",
+        )
     packet, payload = derive_author_input_payload(
         packet,
         prompt=author_prompt,

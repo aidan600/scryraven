@@ -1,21 +1,20 @@
-"""PRODUCT-PATH-REGRESSION: quantitative parser fail-closed repair.
+"""VALIDATION-REGRESSION: quantitative parser diagnostics.
 
 Proof class: offline_product_path_proof.
 Validation bucket: phase_focus.
-Surface guarded: the shared quantitative finalization parser and the ordinary
-AuthorExecutor, deterministic AuthorProse, and AF5B production callers.
-High-custody surface: accepted answer prose; follow-up wiring, acquisition,
-proposal contracts, QMR, Economist, provider/model, and retry behavior remain
-closed this phase.
-Runtime/product path guarded: the current product-consumed AuthorExecutor and
-the two current deterministic finalization consumers, using bounded offline
-fixtures only.
+Surface guarded: the retained quantitative prose evaluator and proof that its
+observations have no accepted-prose PRODUCT authority.
+High-custody surface: evaluator diagnostics and the pre-Author FAP boundary;
+follow-up wiring, acquisition, proposal contracts, QMR, Economist,
+provider/model, and retry behavior remain closed this phase.
+Runtime/product path guarded: AuthorExecutor, deterministic AuthorProse, and
+the AF5B compatibility surface, using bounded offline fixtures only.
 Expected cost: a focused offline matrix under two minutes.
 Promotion posture: remain phase_focus; the detailed parser/caller matrix is not
 ordinary fast_pr tax.
-Demotion/retirement condition: replace only if the shared parser or all three
-guarded finalizers are retired behind an equivalent smaller product sentinel.
-Why not fast_pr: this is exhaustive high-custody parser and atomicity detail.
+Demotion/retirement condition: replace only if the evaluator or all three
+boundary sentinels are retired behind an equivalent smaller proof.
+Why not fast_pr: this is exhaustive high-custody evaluator and boundary detail.
 """
 
 from __future__ import annotations
@@ -30,13 +29,10 @@ import core.pipeline_orchestrator as orchestrator
 from core.author_execution_runtime import execute_author_action
 from core.cost_accounting import CostAccumulator
 from core.final_answer_packet import FinalAnswerAuthorInputPayload
-from core.final_answer_packet_hardening_runtime import (
-    reduce_hardened_final_answer_packet,
-)
 from core.protocols import NullStatusWriter
 from core.quantitative_finalization_authority import (
-    QuantitativeFinalizationAuthorityError,
     build_quantitative_finalization_authority_manifest,
+    evaluate_author_output_quantitative_authority,
     extract_quantitative_literals,
     semantic_claim_fingerprint,
     validate_author_output_quantitative_authority,
@@ -46,7 +42,6 @@ from core.run_kernel import (
     ActionType,
     AuthorizedAction,
     ObservationType,
-    RunKernelTransitionError,
 )
 from core.sufficiency_readiness_runtime import reduce_sufficiency_readiness
 from tests.helpers.offline_ordinary_pipeline import (
@@ -62,7 +57,7 @@ from tests.test_ag96i3af5b_author_response_finalization import (
     _kernel_through_af4d,
 )
 from tests.test_hardened_quantitative_authority_parity_01 import (
-    _assert_author_fails_closed,
+    _assert_fap_blocks_before_author,
     _numeric_chain,
     _reduce_hardened_route,
     _source_authority_material,
@@ -358,7 +353,7 @@ def test_accounting_parentheses_preserve_negative_sign_posture() -> None:
     )
 
 
-def test_ordinary_author_executor_rejects_accounting_sign_substitution() -> None:
+def test_ordinary_author_executor_keeps_accounting_sign_diagnostic_non_authoritative() -> None:
     manifest = _source_bundle("Net income was $100.")["manifest"]
     payload = FinalAnswerAuthorInputPayload(
         packet_id="accounting-substitution-packet",
@@ -389,20 +384,27 @@ def test_ordinary_author_executor_rejects_accounting_sign_substitution() -> None
         calls += 1
         return ["Net income was ($100)."]
 
-    with pytest.raises(QuantitativeFinalizationAuthorityError):
-        execute_author_action(
-            action,
-            author_payload=payload,
-            ask_model=ask_model,
-            system_prompt_registry={"author": "Render only supported claims."},
-            base_url=None,
-            api_key=None,
-            query="What was net income?",
-            stream_display=lambda chunks: displayed.extend(chunks),
-        )
+    result = execute_author_action(
+        action,
+        author_payload=payload,
+        ask_model=ask_model,
+        system_prompt_registry={"author": "Render only supported claims."},
+        base_url=None,
+        api_key=None,
+        query="What was net income?",
+        stream_display=lambda chunks: displayed.extend(chunks),
+    )
 
     assert calls == 1
-    assert displayed == []
+    assert displayed == ["Net income was ($100)."]
+    assert result.report == "Net income was ($100)."
+    assert result.observation.payload["post_author_quantitative_semantic_gate_active"] is False
+    diagnostic = evaluate_author_output_quantitative_authority(
+        result.report,
+        manifest=manifest,
+    )
+    assert diagnostic["status"] == "rejected"
+    assert result.report == "Net income was ($100)."
 
 
 class _RejectedOrdinaryAuthorHarness(OfflineOrdinaryPipelineHarness):
@@ -444,13 +446,11 @@ class _RejectedOrdinaryAuthorHarness(OfflineOrdinaryPipelineHarness):
         ]
 
 
-@pytest.mark.parametrize(("label", "candidate"), REPRESENTATIVE_REJECTIONS)
-def test_ordinary_author_executor_rejects_before_display_reduction_or_run_outcome(
-    label: str,
-    candidate: str,
+def test_pre_author_fap_block_does_not_depend_on_evaluator_diagnostic(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    label, candidate = REPRESENTATIVE_REJECTIONS[0]
     scrub_offline_runtime(monkeypatch)
     harness = _RejectedOrdinaryAuthorHarness(tmp_path=tmp_path, candidate=candidate)
     captured = install_handoff_capture(
@@ -468,33 +468,31 @@ def test_ordinary_author_executor_rejects_before_display_reduction_or_run_outcom
         author_stream_display=lambda chunks: displayed.extend(chunks),
     )
 
-    with pytest.raises(QuantitativeFinalizationAuthorityError) as exc_info:
-        orchestrator.run_pipeline(
-            config,
-            harness.deps(),
-            NullStatusWriter(),
-            CostAccumulator(),
-        )
+    outcome = orchestrator.run_pipeline(
+        config,
+        harness.deps(),
+        NullStatusWriter(),
+        CostAccumulator(),
+    )
 
-    diagnostic = exc_info.value.diagnostic
     kernel = captured["run_kernel"]
+    outcome_before_evaluation = dict(kernel.state.final_answer_outcome)
+    diagnostic = evaluate_author_output_quantitative_authority(
+        candidate,
+        manifest=_empty_bundle()["manifest"],
+    )
     assert diagnostic["status"] == "rejected"
-    assert diagnostic["candidate_quantitative_literal_count"] >= 1
+    assert diagnostic["candidate_quantitative_literal_count"] >= 1, label
     assert displayed == []
-    assert captured["author_handoff_called"] is True
-    assert "author_handoff" not in captured
-    assert kernel.state.author_observation == {}
-    assert kernel.state.final_answer_outcome == {}
-    assert len(harness.author_prompts) == 1
-    assert diagnostic["answer_rewritten"] is False
-    assert diagnostic["answer_fragment_deleted"] is False
-    assert diagnostic["author_retry_requested"] is False
-    assert diagnostic["final_text_included"] is False
+    assert kernel.state.final_answer_outcome == outcome_before_evaluation
+    assert outcome.report.startswith("ScryRaven could not produce a supported answer.")
+    assert captured["author_handoff_called"] is False
+    assert len(harness.author_prompts) == 0
     assert candidate not in repr(diagnostic)
 
 
 @pytest.mark.parametrize(("label", "candidate"), REPRESENTATIVE_REJECTIONS)
-def test_deterministic_author_prose_rejects_before_state_or_projection_creation(
+def test_deterministic_author_prose_is_blocked_at_fap_before_state_or_projection_creation(
     label: str,
     candidate: str,
 ) -> None:
@@ -503,13 +501,11 @@ def test_deterministic_author_prose_rejects_before_state_or_projection_creation(
         safe_claim=candidate,
     )
     reduce_sufficiency_readiness(run_kernel=chain["kernel"])
-    reduce_hardened_final_answer_packet(run_kernel=chain["kernel"])
-
-    _assert_author_fails_closed(chain)
+    _assert_fap_blocks_before_author(chain)
     assert chain["kernel"].state.final_answer_outcome == {}, label
 
 
-def test_author_prose_rejects_accounting_sign_substitution_before_authority_projection() -> (
+def test_author_prose_blocks_accounting_sign_substitution_before_authority_projection() -> (
     None
 ):
     source_claim = "Net income was $100."
@@ -525,13 +521,7 @@ def test_author_prose_rejects_accounting_sign_substitution_before_authority_proj
         run_kernel=chain["kernel"],
         quantitative_source_authority_materials=(source_material,),
     )
-    fap = reduce_hardened_final_answer_packet(run_kernel=chain["kernel"])
-
-    rows = fap.final_answer_authority_projection[
-        "quantitative_finalization_authority_manifest"
-    ]["authorized_numeric_claims"]
-    assert rows == []
-    _assert_author_fails_closed(chain)
+    _assert_fap_blocks_before_author(chain)
 
 
 def test_author_prose_accepts_accounting_parentheses_with_valid_negative_authority() -> (
@@ -556,26 +546,40 @@ def test_author_prose_accepts_accounting_parentheses_with_valid_negative_authori
         "authorized_numeric_claims"
     ]
     assert {row["normalized_numeric_value_text"] for row in rows} == {"-100"}
-    assert author["quantitative_finalization_validation"]["status"] == "accepted"
+    assert author["post_author_quantitative_semantic_gate_active"] is False
+    diagnostic = evaluate_author_output_quantitative_authority(
+        author["answer_text"],
+        manifest=fap["quantitative_finalization_authority_manifest"],
+    )
+    assert diagnostic["status"] == "accepted"
     assert source_claim in author["answer_text"]
 
 
 @pytest.mark.parametrize(("label", "candidate"), REPRESENTATIVE_REJECTIONS)
-def test_af5b_rejects_before_author_observation_and_final_answer_outcome(
+def test_af5b_keeps_evaluator_rejections_out_of_final_answer_authority(
     label: str,
     candidate: str,
 ) -> None:
     kernel = _kernel_through_af4d()
     _consume_af5a_with_text(kernel, candidate)
 
-    with pytest.raises(RunKernelTransitionError):
-        kernel.authorize_followup_author_response_finalization()
+    action = kernel.authorize_followup_author_response_finalization()
+    from tests.test_ag96i3af5b_author_response_finalization import _execute_af5b
 
-    assert kernel.state.followup_author_response_finalization_state == {}, label
-    assert kernel.state.followup_author_response_finalization_projection == {}
-    assert kernel.state.followup_author_response_finalization_history == []
-    assert kernel.state.author_observation == {}
-    assert kernel.state.final_answer_outcome == {}
+    result = _execute_af5b(kernel, action=action)
+    kernel.reduce(result.observation)
+
+    answer_before_evaluation = dict(kernel.state.final_answer_outcome)
+    diagnostic = evaluate_author_output_quantitative_authority(
+        candidate,
+        manifest=_empty_bundle()["manifest"],
+    )
+    assert diagnostic["status"] == "rejected", label
+    assert kernel.state.followup_author_response_finalization_state
+    normalized_candidate = " ".join(candidate.split())
+    assert kernel.state.author_observation["final_answer_text"] == normalized_candidate
+    assert kernel.state.final_answer_outcome["final_answer_text"] == normalized_candidate
+    assert kernel.state.final_answer_outcome == answer_before_evaluation
 
 
 @pytest.mark.parametrize(

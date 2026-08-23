@@ -84,8 +84,11 @@ def _ledger_projection_with_gap() -> dict[str, Any]:
     return ledger.to_projection().to_dict()
 
 
-def _semantic_sufficiency_projection() -> dict[str, Any]:
-    return RunSufficiencyJudgment(
+def _semantic_sufficiency_projection(
+    *,
+    direct_component_entries: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    projection = RunSufficiencyJudgment(
         judgment_id="ag-sem-12b:judgment",
         decision=RunSufficiencyDecision.READY_DIRECT,
         final_answer_posture=SufficiencyPosture.DIRECT_ANSWER,
@@ -101,6 +104,42 @@ def _semantic_sufficiency_projection() -> dict[str, Any]:
             "covered_component_count": 1,
         },
     ).to_projection()
+    if direct_component_entries:
+        projection["final_packet_inputs"]["direct_component_entries"] = (
+            direct_component_entries
+        )
+    return projection
+
+
+def _unbound_numeric_component_entry(claim_text: str) -> dict[str, Any]:
+    return {
+        "entry_kind": "direct_component",
+        "component_id": "component:quantitative",
+        "claim_id": "claim:quantitative",
+        "claim_digest": "claim-digest-quantitative",
+        "claim_text": claim_text,
+        "admission_status": "admitted",
+        "current": True,
+        "stale": False,
+        "component_analyst_case_ref": {
+            "artifact_id": "component-analyst:quantitative",
+            "artifact_digest": "component-analyst-digest:quantitative",
+        },
+        "semantic_observation_ref": {
+            "observation_id": "observation:quantitative",
+            "observation_digest": "observation-digest:quantitative",
+        },
+        "component_coverage_ref": {
+            "coverage_record_id": "coverage:quantitative",
+            "coverage_record_digest": "coverage-digest:quantitative",
+        },
+        "evidence_refs": [
+            {
+                "content_ref_id": "content:quantitative",
+                "content_digest": "content-digest:quantitative",
+            }
+        ],
+    }
 
 
 def _blocked_sufficiency_projection() -> dict[str, Any]:
@@ -385,6 +424,54 @@ def test_blocked_packet_preparation_defers_author_input_derivation(
         kernel.authorize_author_execution()
 
 
+@pytest.mark.parametrize(
+    ("label", "claim_text"),
+    (
+        ("unsupported_arithmetic", "The difference is 40 km."),
+        ("unauthorized_conversion", "Object A has a length of 62.1 miles."),
+        ("unbound_source_number", "Object A has a length of 100 km."),
+        ("source_claim_mismatch", "Southstar rebate is $1,200."),
+    ),
+)
+def test_fap_quantitative_preflight_blocks_author_input_before_any_author_call(
+    label: str,
+    claim_text: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_derivation(*_args: Any, **_kwargs: Any) -> None:
+        raise AssertionError("incomplete FAP numeric authority must not derive Author input")
+
+    monkeypatch.setattr(
+        "core.final_answer_runtime_assembly.derive_author_input_payload",
+        fail_derivation,
+    )
+
+    kernel, _action, result = _prepare_packet(
+        sufficiency_judgment_projection=_semantic_sufficiency_projection(
+            direct_component_entries=[_unbound_numeric_component_entry(claim_text)]
+        ),
+    )
+
+    assert result.author_input_blocked is True, label
+    assert result.blocked_reason == "quantitative_fap_authority_blocked"
+    assert result.author_payload is None
+    assert result.packet.readiness_status is FinalAnswerReadinessStatus.BLOCKED
+    diagnostic = result.packet.author_input_refs[
+        "quantitative_fap_authority_preflight"
+    ]
+    assert diagnostic["status"] == "blocked"
+    assert diagnostic["author_invocation_allowed"] is False
+    assert "missing_direct_source_binding" in diagnostic["reason_codes"]
+    assert result.author_payload_ref["blocked_before_author_input"] is True
+
+    kernel.reduce(result.observation)
+    with pytest.raises(
+        RunKernelTransitionError,
+        match="author execution requires packet-ready author input payload",
+    ):
+        kernel.authorize_author_execution()
+
+
 def test_blocked_component_summary_reports_partial_missing_without_author() -> None:
     kernel, _action, result = _prepare_packet(
         final_top_evidence=[],
@@ -569,8 +656,10 @@ def test_author_executor_consumes_packet_payload_and_reduces_author_observation(
         "use_reasoning": False,
     }
     assert "FINAL ANSWER PACKET AUTHORITY" in calls[0][0][0]
-    assert displayed == ["RAW MODEL FINAL ANSWER [101]"]
+    assert displayed == ["RAW MODEL FINAL ", "ANSWER [101]"]
     assert result.report == "RAW MODEL FINAL ANSWER [101]"
+    assert result.stream_buffered is False
+    assert result.stream_displayed is True
     assert result.observation.observation_type is ObservationType.AUTHOR_OUTPUT_OBSERVED
     assert action.inputs["expected_author_payload_ref_digest"] == expected_digest
     assert action.inputs["packet_id"] == prepared.packet.packet_id

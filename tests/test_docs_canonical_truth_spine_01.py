@@ -124,7 +124,7 @@ QUERY_CONVERGENCE_RUNTIME_SHA = "2d346a73251f28a1187fb2958028db51117bf0c0"  # pr
 READ_SOURCE_CUSTODY_RUNTIME_SHA = "39573c29bc2394e798e507fc795d70197da20f10"  # pragma: allowlist secret
 SEARCHOS_SLICE_A_RUNTIME_SHA = MULTISLOT_SEARCHOS_RUNTIME_SHA
 SEARCHOS_RECOVERY_RUNTIME_SHA = "540141acaaaf041bda303edd62211dd6a11958bc"  # pragma: allowlist secret
-CURRENT_STATE_RUNTIME_SHA = "184f5f85b0d8bab26d510c39191db6ba0027e66b"  # pragma: allowlist secret
+CURRENT_STATE_RUNTIME_SHA = "969e3085922d10985d406bac1d620d459e2731c6"  # pragma: allowlist secret
 HISTORICAL_SEARCH_EXECUTOR_RECORD = (
     "Historical merge-stable SearchExecutor record: PR #330 / "
     "AG-SEARCH-EXECUTOR-HANDOFF-01; handoff consumes current_answer_contract "
@@ -512,27 +512,30 @@ def test_hardened_quantitative_component_boundary_is_current_and_narrow() -> Non
 
     for text in (containment, current):
         for phrase in (
+            "FAP is the final semantic-authority boundary",
+            "Author is the final semantic actor",
             "preserves two component-scoped quantitative authority classes",
             "exact current component, semantic-observation, content, coverage, evidence-custody, proposition-fingerprint, and complete literal-signature binding",
-            "installed capability and version, result and handoff identities and digests, canonical component target, exact claim-material binding, canonical `result_unit` and precision",
             "terminal consumption by the",
             "admission alone remains nonauthority",
-            "fails atomically on unsupported quantitative prose",
             "packages component entries only",
             "does not project synthesis entries",
             "does not install a hardened synthesis sidecar",
-            "No acquisition-completeness repair was performed.",
-            "No hardened synthesis path was activated.",
         ):
             assert phrase in text
 
-    assert "No live validation was performed." in containment
+    assert "structured hardened-FAP check" in current
+    assert "generated prose is not semantically reparsed" in containment
+    assert "No PRODUCT runtime consumer may use it as a success or failure decision" in containment
     assert (
-        "Two bounded Q1 ordinary-product runs are recorded above; they do not "
-        "establish broad live validation or repeatability."
+        "Two historical bounded Q1 ordinary-product runs, one offline golden-lane "
+        "proof, and one cap-limited post-repair Q1 run are recorded above; they do "
+        "not establish broad live validation or repeatability."
     ) in current
+    assert "The `run_pipeline` cap policy rejected the first planned" in current
+    assert "`cap_overflow`" in current
     assert "No provider or model changed." in containment
-    assert "terminal consumption by the applicable Component Analyst case" in containment
+    assert "applicable Component Analyst case" in containment
     assert "terminal consumption by the current Component Analyst case and direct RunKernel component admission" in current
     assert "Generic D-prime admission alone remains nonauthority" in containment
     assert "Generic semantic admission alone remains nonauthority" in current
@@ -544,13 +547,13 @@ def test_hardened_quantitative_component_boundary_is_current_and_narrow() -> Non
     assert "Arbitrary-query decomposition and broad route qualification remain unproved." in current
 
     for phrase in (
-        "No new Specialist capability was added.",
+        "No Specialist capability, operator, proposal policy, budget, route,",
         "Broad live correctness, answer quality, and production stability remain unproved.",
         "Ordinary synthesis-origin S1 authority remains owned by the ordinary ComponentWorkGraph / synthesis D-prime / ordinary FinalAnswerPacket path.",
     ):
         assert phrase in containment
         assert phrase in current
-    assert "No S1 proposal or invocation policy expanded." in containment
+    assert "follow-up product activation is changed." in containment
     assert (
         "No S1 capability, route eligibility, budget, scheduling order, recursion, or parallelism expanded." in current
     )
@@ -1197,7 +1200,7 @@ def test_searchos_phase3_gate_and_searchplanner_record_are_exclusive() -> None:
         "The installed result is organized by durable capability, not PR chronology",
         "Installed evaluator and validation infrastructure is not real-model component proof",
         "general SearchPlanner quality remain unproved",
-        "Q1 observations do not establish repeatability or arbitrary-query support",
+        "Neither offline proof nor historical live observations establish repeatability, arbitrary-query support, or broad live product behavior.",
         "OPERATOR/VALIDATION surface",
     ):
         assert phrase in current

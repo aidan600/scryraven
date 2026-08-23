@@ -27,10 +27,6 @@ from core.author_prose_policy import (
     author_prose_policy_ref,
     normalize_author_prose_policy,
 )
-from core.quantitative_finalization_authority import (
-    build_quantitative_finalization_authority_manifest,
-    validate_author_output_quantitative_authority,
-)
 
 AUTHOR_PROSE_FINALIZATION_SCHEMA_VERSION = (
     "author_prose_finalization_author_prose_only_finalization_01_v1"
@@ -342,24 +338,6 @@ def build_author_prose_finalization_state(
         fap_context=fap_context,
         policy=policy,
     )
-    quantitative_manifest = _safe_mapping(
-        _safe_mapping(final_answer_packet_state).get(
-            "quantitative_finalization_authority_manifest"
-        )
-    ) or _safe_mapping(
-        _safe_mapping(final_answer_authority_projection).get(
-            "quantitative_finalization_authority_manifest"
-        )
-    ) or build_quantitative_finalization_authority_manifest(
-        source_fap_ref={
-            "packet_id": fap_context.get("packet_id"),
-            "fap_status": fap_context.get("fap_status"),
-        }
-    )
-    quantitative_validation = validate_author_output_quantitative_authority(
-        prose["answer_text"],
-        manifest=quantitative_manifest,
-    )
     state_base = {
         "schema_version": AUTHOR_PROSE_FINALIZATION_SCHEMA_VERSION,
         "record_kind": AUTHOR_PROSE_STATE_KIND,
@@ -385,7 +363,7 @@ def build_author_prose_finalization_state(
         "policy_ref": author_prose_policy_ref(policy),
         "policy_digest": actual_policy_digest,
         "policy": policy.to_dict(),
-        "quantitative_finalization_validation": quantitative_validation,
+        "post_author_quantitative_semantic_gate_active": False,
         "answer_text": prose["answer_text"],
         "answer_blocks": prose["answer_blocks"],
         "component_prose_entries": prose["component_prose_entries"],
@@ -461,9 +439,7 @@ def build_author_prose_finalization_projection(
         "fap_context_digest": state.get("fap_context_digest"),
         "policy_ref": _safe_mapping(state.get("policy_ref")),
         "policy_digest": state.get("policy_digest"),
-        "quantitative_finalization_validation": _safe_mapping(
-            state.get("quantitative_finalization_validation")
-        ),
+        "post_author_quantitative_semantic_gate_active": False,
         "answer_text": state.get("answer_text"),
         "answer_blocks": _safe_list(state.get("answer_blocks")),
         "component_prose_entries": _safe_list(

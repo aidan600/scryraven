@@ -20,10 +20,6 @@ from core.followup_author_payload_safety import (
     safe_string_sequence,
 )
 from core.followup_deliberation import clean_text, safe_json
-from core.quantitative_finalization_authority import (
-    build_quantitative_finalization_authority_manifest,
-    validate_author_output_quantitative_authority,
-)
 
 FOLLOWUP_AUTHOR_RESPONSE_FINALIZATION_SCHEMA_VERSION = "followup_author_response_finalization_ag96i3af5b_v1"
 FOLLOWUP_AUTHOR_RESPONSE_FINALIZATION_STAGE = "followup_author_response_finalization"
@@ -341,9 +337,7 @@ def build_followup_author_response_finalization_record(
             "final_answer_text_length": len(answer_text),
             "product_answer_ready": True,
         },
-        "quantitative_finalization_validation": context[
-            "quantitative_finalization_validation"
-        ],
+        "post_author_quantitative_semantic_gate_active": False,
         **_FALSE_FLAGS,
         **_model_call_custody_from_action(action),
         **_true_flags_for_custody(action),
@@ -424,7 +418,7 @@ def build_followup_author_response_finalization_projection(
         author_observation_id author_observation_digest
         final_answer_outcome_id final_answer_outcome_digest
         final_answer_packet_ref source_refs citation_refs caveat_refs
-        quantitative_finalization_validation
+        post_author_quantitative_semantic_gate_active
         output_surface author_model_call_mode author_model_call_status
         author_model_call_source max_model_calls model_calls_used
         mock_model_adapter_calls_used live_model_call_performed
@@ -489,28 +483,6 @@ def _validated_context(
     candidate = _candidate_from_af5a(af5a["state"])
     answer_text = _answer_text(candidate)
     refs = _packet_output_refs(packet, authority)
-    payload_ref = safe_mapping(authority.get("author_payload_ref")) or safe_mapping(
-        packet.get("author_payload_ref")
-    )
-    authority_payload = safe_mapping(payload_ref.get("authority_payload"))
-    manifest = (
-        safe_mapping(packet.get("quantitative_finalization_authority_manifest"))
-        or safe_mapping(
-            payload_ref.get("quantitative_finalization_authority_manifest")
-        )
-        or safe_mapping(
-            authority_payload.get(
-                "quantitative_finalization_authority_manifest"
-            )
-        )
-        or build_quantitative_finalization_authority_manifest(
-            source_fap_ref={"packet_id": packet.get("packet_id")}
-        )
-    )
-    quantitative_validation = validate_author_output_quantitative_authority(
-        answer_text,
-        manifest=manifest,
-    )
     require(
         action.get("final_answer_packet_ref_digest") == _digest(refs["final_answer_packet_ref"]),
         "AF5B stale FinalAnswerPacket ref digest",
@@ -535,7 +507,7 @@ def _validated_context(
         "packet": packet,
         "authority": authority,
         "refs": refs,
-        "quantitative_finalization_validation": quantitative_validation,
+        "post_author_quantitative_semantic_gate_active": False,
     }
 
 

@@ -16,7 +16,7 @@ from hashlib import sha256
 from typing import Any
 
 from core.quantitative_finalization_authority import (
-    build_quantitative_finalization_authority_manifest,
+    build_quantitative_fap_authority_preflight,
 )
 from core.sufficiency_readiness_runtime import (
     READINESS_STATUSES,
@@ -406,7 +406,7 @@ def build_hardened_final_answer_packet_state(
 
     component_entries = _component_packet_entries(readiness_state, fap_status)
     source_support_refs = _source_support_refs(component_entries)
-    quantitative_manifest = build_quantitative_finalization_authority_manifest(
+    quantitative_preflight = build_quantitative_fap_authority_preflight(
         source_fap_ref={
             "owner": FINAL_ANSWER_PACKET_OWNER,
             "run_id": clean_run_id,
@@ -415,6 +415,16 @@ def build_hardened_final_answer_packet_state(
             "fap_status": fap_status,
         },
         component_packet_entries=component_entries,
+    )
+    quantitative_diagnostic = _safe_mapping(
+        quantitative_preflight.get("diagnostic")
+    )
+    if quantitative_diagnostic.get("status") != "ready":
+        raise FinalAnswerPacketHardeningRuntimeError(
+            "FAP quantitative authority is incomplete before Author prose finalization"
+        )
+    quantitative_manifest = _safe_mapping(
+        _safe_mapping(quantitative_preflight.get("bundle")).get("manifest")
     )
     state_base = {
         "schema_version": FINAL_ANSWER_PACKET_HARDENING_SCHEMA_VERSION,

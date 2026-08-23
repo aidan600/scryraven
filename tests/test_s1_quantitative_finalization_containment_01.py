@@ -7,13 +7,17 @@ from typing import Any, Mapping
 
 import pytest
 
+import core.author_execution_runtime as author_execution_runtime
+import core.quantitative_consistency as quantitative_consistency
 from core.author_execution_runtime import execute_author_action
 from core.final_answer_packet import FinalAnswerAuthorInputPayload
 from core.quantitative_finalization_authority import (
     QuantitativeFinalizationAuthorityError,
     build_quantitative_author_instruction_block,
+    build_quantitative_fap_authority_preflight,
     build_quantitative_finalization_authority_bundle,
     build_quantitative_finalization_authority_manifest,
+    evaluate_author_output_quantitative_authority,
     semantic_claim_fingerprint,
     specialist_quantitative_authority_ref_from_handoff,
     validate_author_output_quantitative_authority,
@@ -23,7 +27,6 @@ from core.run_kernel import (
     ActionType,
     AuthorizedAction,
     ObservationType,
-    RunKernelTransitionError,
 )
 
 
@@ -56,6 +59,57 @@ def _source_materialization(*claims: str) -> dict[str, Any]:
     }
 
 
+def _fap_materialization(*claims: str) -> dict[str, Any]:
+    return {
+        "available": True,
+        "bounded_material_complete": True,
+        "bounded_material_refs": [
+            {
+                "component_id": "component-a",
+                "content_ref_id": f"content-{index}",
+                "content_digest": f"content-digest-{index}",
+                "coverage_record_id": "coverage-a",
+                "coverage_record_digest": "coverage-digest-a",
+                "evidence_ref_id": f"evidence-{index}",
+                "packet_evidence_id": f"packet-evidence-{index}",
+                "source_id": index,
+                "bounded_text": claim,
+            }
+            for index, claim in enumerate(claims, start=1)
+        ],
+    }
+
+
+def _fap_direct_entry(claim_text: str, **overrides: Any) -> dict[str, Any]:
+    entry = {
+        "entry_kind": "direct_component",
+        "component_id": "component-a",
+        "claim_id": "claim-a",
+        "claim_digest": "claim-digest-a",
+        "claim_text": claim_text,
+        "admission_status": "admitted",
+        "current": True,
+        "stale": False,
+        "component_analyst_case_ref": {
+            "artifact_id": "component-analyst-a",
+            "artifact_digest": "component-analyst-digest-a",
+        },
+        "semantic_observation_ref": {
+            "observation_id": "observation-a",
+            "observation_digest": "observation-digest-a",
+        },
+        "component_coverage_ref": {
+            "coverage_record_id": "coverage-a",
+            "coverage_record_digest": "coverage-digest-a",
+        },
+        "evidence_refs": [
+            {"content_ref_id": "content-1", "content_digest": "content-digest-1"}
+        ],
+    }
+    entry.update(overrides)
+    return entry
+
+
 def _accept(text: str, bundle: Mapping[str, Any]) -> dict[str, Any]:
     return validate_author_output_quantitative_authority(
         text,
@@ -73,6 +127,111 @@ def _reject(text: str, bundle: Mapping[str, Any]) -> dict[str, Any]:
     assert diagnostic["author_retry_requested"] is False
     assert diagnostic["final_text_included"] is False
     return diagnostic
+
+
+def _evaluate(text: str, bundle: Mapping[str, Any]) -> dict[str, Any]:
+    """Run the retained parser only as a non-authoritative test observation."""
+
+    return evaluate_author_output_quantitative_authority(
+        text,
+        manifest=dict(bundle["manifest"]),
+    )
+
+
+@pytest.mark.parametrize(
+    ("label", "entry", "materialization", "expected_reason"),
+    (
+        (
+            "unsupported_arithmetic",
+            _fap_direct_entry("The difference is 40 km."),
+            _fap_materialization(
+                "Object A has a length of 100 km.",
+                "Object B has a length of 60 km.",
+            ),
+            "missing_direct_source_binding",
+        ),
+        (
+            "unauthorized_conversion",
+            _fap_direct_entry("Object A has a length of 62.1 miles."),
+            _fap_materialization("Object A has a length of 100 km."),
+            "missing_direct_source_binding",
+        ),
+        (
+            "unbound_source_number",
+            _fap_direct_entry("Object A has a length of 100 km."),
+            {},
+            "missing_direct_source_binding",
+        ),
+        (
+            "unadmitted_numeric_proposition",
+            _fap_direct_entry(
+                "Object A has a length of 100 km.",
+                admission_status="unsupported",
+            ),
+            _fap_materialization("Object A has a length of 100 km."),
+            "unadmitted_numeric_claim",
+        ),
+        (
+            "stale_foreign_authority",
+            _fap_direct_entry(
+                "Object A has a length of 100 km.",
+                stale=True,
+            ),
+            _fap_materialization("Object A has a length of 100 km."),
+            "stale_or_foreign_quantitative_authority",
+        ),
+        (
+            "missing_specialist_binding",
+            _fap_direct_entry(
+                "The derived amount is 40 km.",
+                specialist_quantitative_authority_ref={"result_id": "missing"},
+            ),
+            _fap_materialization("Object A has a length of 100 km."),
+            "missing_required_specialist_binding",
+        ),
+        (
+            "source_claim_mismatch",
+            _fap_direct_entry("Southstar rebate is $1,200."),
+            _fap_materialization("Northstar rebate is $1,200."),
+            "missing_direct_source_binding",
+        ),
+    ),
+)
+def test_fap_structured_quantitative_preflight_blocks_incomplete_claims_before_author(
+    label: str,
+    entry: Mapping[str, Any],
+    materialization: Mapping[str, Any],
+    expected_reason: str,
+) -> None:
+    preflight = build_quantitative_fap_authority_preflight(
+        source_fap_ref={"packet_id": f"preflight-{label}"},
+        direct_component_entries=(entry,),
+        semantic_author_materialization=materialization,
+    )
+
+    diagnostic = preflight["diagnostic"]
+    assert diagnostic["status"] == "blocked"
+    assert diagnostic["author_invocation_allowed"] is False
+    assert diagnostic["post_author_semantic_validation_required"] is False
+    assert expected_reason in diagnostic["reason_codes"]
+    assert diagnostic["final_text_included"] is False
+
+
+def test_fap_structured_direct_source_numeric_authority_is_ready_before_author() -> None:
+    claim = "Object A has a length of 100 km."
+    preflight = build_quantitative_fap_authority_preflight(
+        source_fap_ref={"packet_id": "preflight-direct-source"},
+        direct_component_entries=(_fap_direct_entry(claim),),
+        semantic_author_materialization=_fap_materialization(claim),
+    )
+
+    diagnostic = preflight["diagnostic"]
+    claims = preflight["bundle"]["manifest"]["authorized_numeric_claims"]
+    assert diagnostic["status"] == "ready", diagnostic["reason_codes"]
+    assert diagnostic["author_invocation_allowed"] is True
+    assert {claim["authority_kind"] for claim in claims} == {
+        "direct_source_numeric"
+    }
 
 
 def _specialist_ref(
@@ -288,6 +447,10 @@ def test_admitted_component_arithmetic_and_same_value_reuse_do_not_launder_autho
         "current": True,
         "stale": False,
         "dprime_validation_ref": {"artifact_id": "component-dprime"},
+        "component_analyst_case_ref": {
+            "artifact_id": "component-analyst",
+            "artifact_digest": "component-analyst-digest",
+        },
         "semantic_observation_ref": {
             "observation_id": "observation-component-1",
             "observation_digest": "observation-digest-1",
@@ -350,6 +513,10 @@ def test_lineage_bound_component_paraphrase_remains_direct_source_authority() ->
                 "current": True,
                 "stale": False,
                 "dprime_validation_ref": {"artifact_id": "component-dprime"},
+                "component_analyst_case_ref": {
+                    "artifact_id": "component-analyst",
+                    "artifact_digest": "component-analyst-digest",
+                },
                 "semantic_observation_ref": {
                     "observation_id": "observation-component-1",
                     "observation_digest": "observation-digest-1",
@@ -376,7 +543,7 @@ def test_lineage_bound_component_paraphrase_remains_direct_source_authority() ->
     ]
     assert len(matching) == 1
     assert matching[0]["authority_kind"] == "direct_source_numeric"
-    assert matching[0]["applicable_dprime_ref"] == {}
+    assert matching[0]["applicable_validator_ref"] == {}
     assert matching[0]["claim_authority_posture"].endswith(
         "component_source_lineage_equivalent"
     )
@@ -510,6 +677,10 @@ def test_component_specialist_exact_result_and_dprime_consumption_pass() -> None
                 "current": True,
                 "stale": False,
                 "dprime_validation_ref": {"artifact_id": "component-dprime"},
+                "component_analyst_case_ref": {
+                    "artifact_id": "component-analyst",
+                    "artifact_digest": "component-analyst-digest",
+                },
                 "semantic_observation_ref": {"observation_id": "observation-a"},
                 "component_coverage_ref": {"coverage_record_id": "coverage-a"},
                 "specialist_quantitative_authority_ref": specialist_ref,
@@ -535,6 +706,10 @@ def test_component_specialist_exact_result_and_dprime_consumption_pass() -> None
                 "current": True,
                 "stale": False,
                 "dprime_validation_ref": {"artifact_id": "component-dprime"},
+                "component_analyst_case_ref": {
+                    "artifact_id": "component-analyst",
+                    "artifact_digest": "component-analyst-digest",
+                },
                 "semantic_observation_ref": {"observation_id": "observation-a"},
                 "component_coverage_ref": {"coverage_record_id": "coverage-a"},
                 "specialist_quantitative_authority_ref": specialist_ref,
@@ -575,7 +750,7 @@ def test_synthesis_specialist_two_hop_result_and_dprime_consumption_pass() -> No
 
     entry = bundle["manifest"]["authorized_numeric_claims"][0]
     assert entry["authority_kind"] == "specialist_derived_numeric"
-    assert entry["applicable_dprime_consumption_ref"]["route"] == (
+    assert entry["applicable_validator_consumption_ref"]["route"] == (
         "synthesis_dprime"
     )
     assert _accept("The supported combined amount is 58800 USD.", bundle)[
@@ -596,7 +771,21 @@ def test_author_instruction_is_authority_only_and_lists_exact_rendering() -> Non
         assert prohibited in block
 
 
-def test_author_executor_rejects_atomically_and_never_retries() -> None:
+def test_author_executor_does_not_make_parser_disagreement_a_product_gate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_if_called(**_kwargs: Any) -> dict[str, Any]:
+        raise AssertionError(
+            "ordinary Author must not invoke the quantitative consistency helper"
+        )
+
+    for module in (quantitative_consistency, author_execution_runtime):
+        monkeypatch.setattr(
+            module,
+            "build_two_item_normalized_consistency_diagnostic",
+            fail_if_called,
+            raising=False,
+        )
     payload = FinalAnswerAuthorInputPayload(
         packet_id="executor-packet",
         prompt="Draft the answer.\nFINAL ANSWER PACKET AUTHORITY",
@@ -630,37 +819,79 @@ def test_author_executor_rejects_atomically_and_never_retries() -> None:
         calls += 1
         return ["The unsupported difference is 200 km."]
 
-    with pytest.raises(QuantitativeFinalizationAuthorityError):
-        execute_author_action(
-            action,
-            author_payload=payload,
-            ask_model=ask_model,
-            system_prompt_registry={"author": "Render only supported claims."},
-            base_url=None,
-            api_key=None,
-            query="Compare the objects.",
-            stream_display=lambda chunks: displayed.extend(chunks),
-        )
+    result = execute_author_action(
+        action,
+        author_payload=payload,
+        ask_model=ask_model,
+        system_prompt_registry={"author": "Render only supported claims."},
+        base_url=None,
+        api_key=None,
+        query="Compare the objects.",
+        stream_display=lambda chunks: displayed.extend(chunks),
+    )
 
     assert calls == 1
-    assert displayed == []
+    assert displayed == ["The unsupported difference is 200 km."]
+    assert result.report == "The unsupported difference is 200 km."
+    assert result.observation.payload["post_author_quantitative_semantic_gate_active"] is False
+    assert "quantitative_finalization_validation" not in result.observation.payload
+    assert result.quantitative_consistency_telemetry == {
+        "quantitative_consistency_shadow_mode": False,
+        "quantitative_consistency_check_attempted": False,
+        "quantitative_consistency_status": "not_evaluated",
+        "quantitative_consistency_reason": "validation_only_not_run_in_product",
+        "quantitative_consistency_contradiction_flag": False,
+        "quantitative_consistency_computed_winner": None,
+        "quantitative_consistency_stated_winner": None,
+        "quantitative_consistency_normalized_values": [],
+    }
+    assert result.quantitative_consistency_guard_telemetry == {
+        "quantitative_consistency_guard_applied": False,
+        "quantitative_consistency_guard_reason": (
+            "validation_only_not_run_in_product"
+        ),
+        "quantitative_consistency_guard_output_mode": "unchanged",
+        "quantitative_consistency_original_status": "not_evaluated",
+        "quantitative_consistency_guard_final_answer_replaced": False,
+        "guard_reason": "validation_only_not_run_in_product",
+        "answer_rewritten": False,
+    }
+    assert result.observation.payload["quantitative_consistency_telemetry"] == dict(
+        result.quantitative_consistency_telemetry
+    )
+    diagnostic = _evaluate(
+        result.report,
+        {"manifest": payload.quantitative_finalization_authority_manifest},
+    )
+    assert diagnostic["status"] == "rejected"
+    assert result.report == "The unsupported difference is 200 km."
 
 
-def test_af5b_compatibility_finalizer_cannot_admit_rejected_numeric_prose() -> None:
+def test_af5b_compatibility_finalizer_keeps_parser_disagreement_non_authoritative() -> None:
     from tests.test_ag96i3af5b_author_response_finalization import (
         _consume_af5a_with_text,
+        _execute_af5b,
         _kernel_through_af4d,
     )
 
     kernel = _kernel_through_af4d()
     _consume_af5a_with_text(kernel, "The unsupported difference is 200 km.")
+    action = kernel.authorize_followup_author_response_finalization()
+    result = _execute_af5b(kernel, action=action)
+    kernel.reduce(result.observation)
 
-    with pytest.raises(RunKernelTransitionError):
-        kernel.authorize_followup_author_response_finalization()
-
-    assert kernel.state.author_observation == {}
-    assert kernel.state.final_answer_outcome == {}
-    assert kernel.state.followup_author_response_finalization_state == {}
+    answer_before_evaluation = dict(kernel.state.final_answer_outcome)
+    diagnostic = _evaluate(
+        "The unsupported difference is 200 km.",
+        {"manifest": build_quantitative_finalization_authority_manifest(
+            source_fap_ref={"packet_id": "af5b-evaluator"}
+        )},
+    )
+    assert diagnostic["status"] == "rejected"
+    assert kernel.state.final_answer_outcome == answer_before_evaluation
+    assert kernel.state.author_observation["final_answer_text"] == (
+        "The unsupported difference is 200 km."
+    )
 
 
 def test_manifest_and_diagnostics_retain_no_private_or_full_text_material() -> None:

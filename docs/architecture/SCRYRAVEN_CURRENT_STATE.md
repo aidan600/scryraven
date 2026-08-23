@@ -5,7 +5,7 @@ Authority: canonical:current-installed-state
 Default-read: yes
 Applies-to: current ordinary product implementation and explicit nonproofs
 Does-not-authorize: live calls, arbitrary-query claims, roadmap execution, or closed-surface changes
-Runtime-audit-through: 184f5f85b0d8bab26d510c39191db6ba0027e66b
+Runtime-audit-through: 969e3085922d10985d406bac1d620d459e2731c6
 Update-trigger: merged change to installed product behavior, supported boundaries, evidence classification, or explicit nonproofs
 
 ## Purpose And Source-Of-Truth Rule
@@ -37,15 +37,18 @@ PR #541 merged on 2026-08-06 at
 `c742da77d4daa02d7cf5012ddc32da2b8cb5bc39`. Physical attempt/cost envelope
 enforcement is installed merged product state, and the public CLI requires one
 complete explicit per-run `--bounded-run-authorization` file to activate it.
-`public-cli-v1` remains removed; no reusable mode profiles exist. Two bounded
-Q1 ordinary-product runs on the answer-bearing READ repair branch are recorded
-below. The first crossed the repaired SearchOS handoff and stopped safely at
-Component Analyst output validation. After the existing role prompt was made
-explicitly typed, the second crossed Component Analyst support, deterministic
-admission, ComponentCoverage, Sufficiency, and FinalAnswerPacket readiness and
-invoked Author. Author's quantitative-finalization guard then rejected the
-generated prose, so no supported cited answer resulted. This is bounded
-evidence, not broad live-validation proof.
+`public-cli-v1` remains removed; no reusable mode profiles exist. Two historical
+bounded Q1 ordinary-product runs on the answer-bearing READ repair branch are
+recorded below. The first crossed the repaired SearchOS handoff and stopped
+safely at Component Analyst output validation. The second crossed Component
+Analyst support, deterministic admission, ComponentCoverage, Sufficiency, and
+FinalAnswerPacket readiness and invoked Author, then stopped at the now-retired
+post-Author quantitative semantic gate. One post-repair licensed Q1 run entered
+ordinary `run_pipeline()` but its explicit zero SmartSearchJudgment cap blocked
+the first planned SmartSearchJudgment action at configuration, before Component
+Analyst, FAP, or Author. The installed FAP/Author boundary no longer uses the
+retired gate; all of these observations remain bounded evidence, not broad
+live-validation proof.
 
 
 That downstream synthesis-class boundary does not limit initial semantic
@@ -89,7 +92,8 @@ live-validation license is widened.
 
 ## Bounded Q1 Ordinary-Product Evidence
 
-The two bounded Q1 ordinary-product observations for
+Two historical Q1 ordinary-product observations and one post-repair,
+cap-limited Q1 run for
 `N1-ANSWER-BEARING-ANALYST-SUPPORT-AND-GOLDEN-LANE-CONVERGENCE-01` are current
 evidence, not a general reliability claim.
 
@@ -120,7 +124,7 @@ single-contiguous-window selector, that the selected bounded text is
 digest-bound in custody, and that SearchJudgment seals the semantic handoff.
 It stopped safely at the Component Analyst output-validation boundary.
 
-After the bounded Component Analyst prompt repair, Run 2 reached:
+After the bounded Component Analyst prompt repair, historical Run 2 reached:
 
 ```text
 furthest_product_stage = final_answer_packet_ready
@@ -133,9 +137,9 @@ safe failure reasons    = unsupported_quantitative_surface,
 `final_answer_packet_ready` and an authorized Author call are downstream of the
 installed Component Analyst artifact, exact deterministic admission,
 ComponentCoverage, and Sufficiency gates; the second observation therefore
-live-proves that Q1 crossed that corridor. It does not prove successful Author
-finalization. The generated answer was rejected before a successful RunOutcome,
-and the sanitized packet retained no final answer or citations.
+live-proved that historical Q1 crossed that corridor. It did not prove successful
+Author finalization: the generated answer was rejected before a successful
+RunOutcome, and the sanitized packet retained no final answer or citations.
 
 The durable defect-chain classification is:
 
@@ -143,8 +147,8 @@ The durable defect-chain classification is:
 FIRST_PROVEN_CATEGORY = A
 ADDITIONAL_IN_CORRIDOR_DEFECTS = C, B
 FINAL_REMAINING_CATEGORY = NONE
-NEXT_UNRESOLVED_OWNER =
-  quantitative finalization authority / Author quantitative prose finalization
+HISTORICAL_STOP_OWNER =
+  retired post-Author quantitative semantic gate
 ```
 
 The additional Category C defect was deterministic admission's generic safe
@@ -156,33 +160,45 @@ not role topology or admission authority.
 
 The A/B/C/D Analyst-corridor taxonomy is exhausted. Run 2 proved the accepted
 Component Analyst case, deterministic admission, ComponentCoverage, Sufficiency,
-FinalAnswerPacket readiness, and Author invocation before
+FinalAnswerPacket readiness, and Author invocation before the historical
 `QuantitativeFinalizationAuthorityError` stopped candidate prose. Its safe reason
 codes, `unsupported_quantitative_surface` and
-`unauthorized_quantitative_proposition`, identify where validation stopped; they
-do not identify which actor inside that downstream owner is defective. This phase
-does not prove that the READ material was unsupported, that FAP omitted lawful
-numeric authority, that Author invented unsupported propositions, or that
-quantitative finalization rejected otherwise lawful source-explicit authority.
+`unauthorized_quantitative_proposition`, identify where the retired evaluator
+stopped; they do not identify whether FAP packaging, Author meaning, or parser
+recognition was at fault.
 
-The next unresolved frontier is:
+The one licensed post-repair Q1 run was not a FAP/Author result. Its sanitized
+structural packet records one `run_pipeline()` call, one search dispatch, zero
+observed SmartSearchJudgment calls, zero Author calls, zero retries, no answer,
+and no citations. The `run_pipeline` cap policy rejected the first planned
+SmartSearchJudgment action at configuration because
+`max_smart_search_judgment_model_calls=0`, with safe classification
+`cap_overflow`. No Component Analyst, Coverage, Sufficiency, FAP, or Author
+projection became available. This consumes the one licensed run; it neither
+validates nor falsifies the selected FAP/Author boundary.
+
+The installed final boundary is now:
 
 ```text
-admitted source-explicit numeric authority
--> FinalAnswerPacket quantitative authority
--> Author prose
--> quantitative-finalization validation
+admitted source-explicit or Specialist numeric authority
+-> FAP structured preflight (final semantic-authority boundary)
+-> Author (final semantic actor)
+-> mechanical citation/output finalization
+-> RunOutcome
 ```
 
-A later phase must distinguish authority packaging, Author prose outside its
-supplied authority, recognition of otherwise lawful source-explicit authority,
-or another directly evidenced cause within that exact downstream corridor.
+Missing quantitative lineage blocks FAP before Author. Once FAP authorizes
+Author, a retained quantitative prose evaluator can report diagnostics but cannot
+change Author output, citation authority, canonical state, RunOutcome, or product
+success. This changes no upstream SearchOS, Component Analyst, Coverage,
+Sufficiency, citation-eligibility, or Specialist ownership.
 
 The earlier accepted Q1 run (`90c035c6-8f53-438e-96e6-0a6e63895221`) and
 bounded SearchOS pulse (`45f3319b-9b43-4dcc-ba81-2d1d12f40a77`) remain
-historical provenance only. The two current observations do not generalize to
-all Q1 repetitions, Q2-Q6, arbitrary queries, broad SearchOS reliability,
-acquisition completeness, or product correctness.
+historical provenance only. The two historical observations and cap-limited
+post-repair observation do not generalize to all Q1 repetitions, Q2-Q6,
+arbitrary queries, broad SearchOS reliability, acquisition completeness, or
+product correctness.
 
 ### Frozen-handoff observation
 
@@ -199,19 +215,22 @@ is the product blocker. Replay infrastructure is not the next product phase.
 
 ### Current product frontier
 
-The immediate product frontier is:
+The installed Q1 product shape is:
 
 ```text
-FinalAnswerPacket ready
--> Author prose
--> quantitative-finalization authority validation
+SearchOS -> Component Analyst -> admission -> Coverage -> Sufficiency
+-> FAP structured quantitative preflight -> Author -> mechanics -> RunOutcome
 ```
 
-The latest Q1 observation crossed the answer-bearing SearchOS handoff,
-Component Analyst artifact, deterministic admission, ComponentCoverage,
-Sufficiency, and FAP gates and invoked Author. It stopped at the deterministic
-quantitative-finalization guard. The N=1 direct-admission topology correctly did
-not require a Component D-prime call.
+The retained historical Q1 observation predates that boundary repair. Offline
+ordinary proof now reaches the shown path with direct-source numeric authority,
+one Author call, cited success, no Specialist, no Component D-prime, no Cross or
+synthesis semantic call, no Scrutineer, and no post-Author semantic gate. The
+N=1 direct-admission topology correctly does not require a Component D-prime
+call. The only post-repair live run exhausted its licensed attempt at the
+`run_pipeline` SmartSearchJudgment cap before Component Analyst; it is not a
+live traversal of this FAP/Author path. This offline result is not a new broad
+live-product claim.
 
 ## Operator Doorman Boundary
 
@@ -243,7 +262,7 @@ configuration.
 | `MC-P5A-MAIN-THREAD-COST` | Response-bearing model cost is recorded on the main thread before deterministic canonical reduction. |
 | `SPECIALIST-S0-GENERIC` | Component Analyst, Cross-Component Analyst, and full Scrutineer may emit one exact candidate mapping under `specialist_need_proposal_v1`. Generic S0 rejects missing/stale schema, unknown envelope/target fields, raw/private material, authority claims, aliases, recursion, and invalid posture before RunKernel admission; it never normalizes them into validity. RunKernel alone binds a valid candidate to current authority. Invalid candidates retain only a bounded receipt and create no Specialist work or derived authority; required/unclassified cases block while optional cases contribute nothing. Closed defaults register and enable no product capability. |
 | `SPECIALIST-S1-QUANTITATIVE` | The ordinary CLI composes one fixed product registry/policy for `specialist.source_bound_calculation` on the named bounded multi-component class. Component and ordinary Cross-Component Analyst receive exact contract `quantitative_specialist_proposal_contract.v2`; before work creation the current contract instance, role input/artifact, target, source aliases, fixed fields, and capability request are re-proved and validated. Malformed proposals create no work, spend, lease, batch, dispatch, result, handoff, or downstream Specialist authority. Required malformed needs block dependent claims; optional malformed needs permit only independently supported continuation. Valid behavior remains one serial unit with component-before-synthesis priority, deterministic execution, canonical `result_unit`, and current semantic-case or synthesis-D-prime custody. |
-| `QUANT-FINALIZATION-CONTAINMENT` | The ordinary `AuthorExecutor`, deterministic `AuthorProseFinalization`, and guarded follow-up response finalizer each use one claim-scoped quantitative authority manifest and the same deterministic post-prose validator. Direct source-explicit propositions and exact completed S1 propositions remain eligible only through their complete source or Specialist lineage and the applicable current Component Analyst case or synthesis D-prime review. Generic semantic admission alone grants no numeric authority. Unsupported arithmetic, conversion, unit, precision, sign, scale, percentage, rate, subject, result, or same-value proposition reuse fails before successful finalization, without sentence surgery or automatic Author retry. |
+| `QUANT-FINALIZATION-CONTAINMENT` | FAP is the final semantic-authority boundary and Author is the final semantic actor. Direct source-explicit propositions and exact completed S1 propositions remain eligible only through complete source or Specialist lineage and the applicable current Component Analyst case or synthesis validation. Generic semantic admission alone grants no numeric authority. Missing arithmetic, conversion, unit, precision, sign, scale, percentage, rate, subject, result, source, Specialist, or currentness authority blocks FAP before Author. The retained natural-language quantitative evaluator is diagnostic only: ordinary `AuthorExecutor`, deterministic `AuthorProseFinalization`, and the guarded follow-up response finalizer do not use it as a post-Author accepted-prose gate, and it cannot cause sentence surgery or automatic Author retry. |
 | `PROVIDER-CAPABILITY-ROUTING` | `core.routing` owns one deterministic capability catalog and code-owned route policy. Ordinary DISCOVER consumes completed ProviderPlan decisions. `retrieval.DiscoverySourceResultIdentity` and `retrieval.DiscoveryResultMaterialStore` preserve bounded provider-result occurrence truth before chunking/ranking; existing ranking and selection populate the canonical ordinary `RunKernel.SearchResultCandidatePacket` with zero separate candidate-URL transport. Candidate selection remains a nontrigger. The post-selection RunKernel controller and typed Linkup/Tavily adapters remain installed for a future independent material-need producer. Focused Extract, Map, Crawl, and general Linkup Deep remain PRODUCT-blocked with exact controller blockers. |
 | `GENERIC-PROVIDER-EXECUTION-BROKER-V2` | One tracked loopback-only broker consumes the versioned explicit-route `scryraven_provider_execution_request_v2` / response family. It supports Serper and Tavily `search.query` plus OpenAI `model.generate`; only the broker child parses the private environment file, while session tokens stay out of argv and the generic client persists safe completion, exact cache/reasoning/usage accounting, elapsed time, and output digest/length rather than output text. Caller/evaluator owns route selection, exact reasoning-effort authorization, prompts/query, retries/timeouts/caps, pricing, cost ceilings, interpretation, and durable sanitization. Incomplete generation is published as `REVIEW_REQUIRED / INCOMPLETE_GENERATION` before parser or semantic scoring and stops later calls. The job/profile bouncer is fail-closed, and new AnalystOS addenda select the provider-neutral brokered model-origination transport rather than the direct OpenAI fallback. |
 | `SEARCHPLANNER-BOUNDARY-INTEGRITY` | `SEARCHPLANNER-SPARSE-UNCERTAINTY-AWARE-PLANNING-01` installs one fail-closed ordinary language shared by prompt and validator: `direct_simple | components`. The model-visible descriptor is the compact sufficient projection of that language: `direct_simple` may omit `source`/`freshness`/`caveat`, while `components` requires a nonempty `components` array and forbids those three top-level fields. The deterministic validator remains the exhaustive enforcement owner. Empty optional material must be omitted. Strict JSON parsing still rejects duplicate/nonfinite material, while the deterministic compiler alone constructs and revalidates the rich compatibility state. Mechanical IDs, runtime/contract references, provider authority, exact query/recon programs, evidence, and accepted state are forbidden model output. Closed privacy-safe M02 subtypes distinguish forbidden-surface, branch-field-set, omission-contract, type/enum/bound, and cross-field families without exposing raw model text. |
@@ -317,21 +336,33 @@ admission cannot upgrade underlying evidence. Contract, full catalog, and source
 material retention remains closed outside the transient role/adapter scope.
 
 At finalization, FinalAnswerPacket projects current numeric authority by claim,
-not as a global value/unit allowlist. Ordinary Author receives fixed no-
-calculation/no-conversion instructions and exact transient renderings. Candidate
-prose is buffered and deterministically validated before display or successful
-Author reduction. Deterministic AuthorProse and the guarded follow-up response
-finalizer consume the same validator. A failed check creates no accepted
-AuthorProse or final answer outcome and does not trigger a model retry.
+not as a global value/unit allowlist. FAP is the final semantic-authority
+boundary: it structurally checks required source/Specialist/currentness,
+Component Analyst or applicable validation, value/unit/sign/scale/precision,
+and citation lineage before deriving Author input. Ordinary Author receives
+fixed no-calculation/no-conversion instructions and FAP-authorized material, but
+may paraphrase naturally without parser-specific wording requirements.
+
+Author is the final semantic actor. Candidate prose is not buffered solely for a
+post-Author quantitative semantic check. Deterministic AuthorProse relies on
+the earlier structured hardened-FAP check, and the guarded follow-up finalizer
+has no accepted-prose semantic-gate authority. The retained parser/validator is
+an evaluation diagnostic only; it cannot alter FAP, Author output, citations,
+canonical state, RunOutcome, or trigger a model retry.
+
+No Specialist capability, operator, proposal policy, budget, route,
+acquisition behavior, provider/model selection, synthesis architecture, or
+follow-up product activation changed as part of this boundary repair.
 
 The guarded follow-up response-finalization capability remains installed
 internal supporting machinery; its availability does not establish ordinary
 saved-thread product consumption. The old saved-thread Streamlit follow-up path
 through `ui.pages_followup` and `core.followup` is legacy and retired from
 ordinary product use. It is not a current consumer of the guarded finalizer or
-the shared validator. Any future conversation or follow-up activation must
-consume the shared accepted-prose validator through transport-neutral
-application services and must be explicitly activated.
+a shared accepted-prose validator: no shared accepted-prose validator remains
+as final-answer authority. Any future conversation or follow-up activation must
+consume the FAP/Author boundary through transport-neutral application services
+and must be explicitly activated.
 
 The hardened `SufficiencyReadiness -> HardenedFinalAnswerPacket ->
 AuthorProseFinalization` route preserves two component-scoped quantitative
@@ -343,10 +374,10 @@ and version, result and handoff identities and digests, canonical component
 target, exact claim-material binding, canonical `result_unit` and precision,
 and terminal consumption by the current Component Analyst case and direct
 RunKernel component admission. Generic semantic admission alone remains
-nonauthority for arithmetic, conversion, aggregation,
-comparison, or same-value proposition reuse. Deterministic AuthorProse accepts
-valid bound direct-source and component S1 numeric claims and fails atomically
-on unsupported quantitative prose.
+nonauthority for arithmetic, conversion, aggregation, comparison, or same-value
+proposition reuse. Invalid or incomplete numeric lineage blocks hardened FAP
+before AuthorProse state construction; generated prose is not reparsed as a
+semantic acceptance condition.
 
 The current hardened FinalAnswerPacket owner packages component entries only.
 It does not project synthesis entries and does not install a hardened synthesis
@@ -1026,13 +1057,16 @@ causal effect.
 ### Ordinary supported-product proof
 
 The evaluator is an OPERATOR/VALIDATION surface, not ordinary supported-product
-consumption. The separate bounded Q1 ordinary-product observations above
-traversed the ordinary pipeline through a lawful SearchOS handoff and, on the
-second execution, Component Analyst semantic-artifact origination, direct
-admission, Coverage, Sufficiency, FAP readiness, and Author invocation. They did
-not reach successful quantitative finalization or a supported cited answer.
-The evaluator itself does not establish broader live product behavior, and the
-Q1 observations do not establish repeatability or arbitrary-query support.
+consumption. The historical bounded Q1 observations above traversed the ordinary
+pipeline through a lawful SearchOS handoff and, on the second execution,
+Component Analyst semantic-artifact origination, direct admission, Coverage,
+Sufficiency, FAP readiness, and Author invocation, but the former post-Author
+gate stopped the result. The current offline Q1 golden-lane proof traverses the
+same ordinary consumer with `direct_source_numeric`, one Author invocation,
+mechanically finalized citations, a successful RunOutcome, and an evaluator
+rejection that cannot block the product. Neither offline proof nor historical
+live observations establish repeatability, arbitrary-query support, or broad
+live product behavior.
 
 ## Installed SearchOS One-Hop Breadcrumb Navigation
 
@@ -1140,8 +1174,9 @@ Fetch, Tavily site acquisition, replacement semantic role, or live validation.
 
 ## Not Proved
 
-- Two bounded Q1 ordinary-product runs are recorded above; they do not establish
-  broad live validation or repeatability.
+- Two historical bounded Q1 ordinary-product runs, one offline golden-lane
+  proof, and one cap-limited post-repair Q1 run are recorded above; they do not
+  establish broad live validation or repeatability.
 - Real-model factual InterpretationBinding selection accuracy, abstention
   quality, and false-binding rate remain unproved.
 - Real-model user-clarification quality and arbitrary-query job escalation
@@ -1153,8 +1188,8 @@ Fetch, Tavily site acquisition, replacement semantic role, or live validation.
   admission beyond the bounded Q1 observation remain unproved.
 - Real-model synthesis D-prime behavior remains unproved.
 - Real-model full Scrutineer behavior remains unproved.
-- Supported cited Q1 completion remains unproved.
-- Successful Author quantitative finalization for Q1 remains unproved.
+- Supported cited Q1 completion remains unproved in live product evidence.
+- Successful Author quantitative finalization for Q1 is proved offline only.
 - Broad SearchOS or general-query reliability remains unproved.
 - The offline SearchOS/AnalystOS gate does not prove that a real SearchPlanner
   or Component/Cross-Component Analyst reliably originates its required
@@ -1217,7 +1252,7 @@ and this document does not license changes to that surface.
 - [SearchOS first-wave and iterative-judgment cutover](SEARCHOS_FIRST_WAVE_AND_ITERATIVE_JUDGMENT_CUTOVER.md) owns the installed Slice A first-wave boundary, candidate continuity, neutral judgment, READ material entry, N-component handoff, and readiness terminal.
 - [Cross-component Analyst Workbench](CROSS_COMPONENT_ANALYST_WORKBENCH.md) owns its concern-specific proposal contract.
 - [FAP / Author boundary](FAP_AUTHOR_BOUNDARY.md) owns final packet and prose boundaries.
-- [Quantitative finalization containment](AG_S1_QUANTITATIVE_FINALIZATION_CONTAINMENT_01.md) owns claim-scoped numeric projection and accepted-prose validation across active finalizers.
+- [Quantitative finalization containment](AG_S1_QUANTITATIVE_FINALIZATION_CONTAINMENT_01.md) owns FAP-side numeric authority and evaluator-only diagnostics across finalization consumers.
 - [RunAuthority implementation guide](../codex/RUNAUTHORITY_IMPLEMENTATION_GUIDE.md) owns authority-migration procedure.
 
 ## Current Roadmap
