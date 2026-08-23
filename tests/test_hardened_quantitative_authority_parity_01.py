@@ -35,10 +35,11 @@ from core.fetch_read_content_reference import (
     build_fetch_read_content_packet_from_candidate_packet,
 )
 from core.final_answer_packet_hardening_runtime import (
+    FinalAnswerPacketHardeningRuntimeError,
     reduce_hardened_final_answer_packet,
 )
 from core.quantitative_finalization_authority import (
-    QuantitativeFinalizationAuthorityError,
+    evaluate_author_output_quantitative_authority,
 )
 from core.quantitative_specialist_product_activation import (
     build_quantitative_product_specialist_policy,
@@ -181,24 +182,22 @@ def _reduce_hardened_route(
     return dict(readiness), dict(fap), dict(author)
 
 
-def _assert_author_fails_closed(chain: Mapping[str, Any]) -> None:
+def _assert_fap_blocks_before_author(chain: Mapping[str, Any]) -> None:
     kernel = chain["kernel"]
     with pytest.raises(
-        QuantitativeFinalizationAuthorityError,
-        match="unsupported quantitative proposition",
-    ) as exc_info:
-        reduce_author_prose_finalization(run_kernel=kernel)
-    diagnostic = exc_info.value.diagnostic
-    assert diagnostic["status"] == "rejected"
-    assert diagnostic["answer_rewritten"] is False
-    assert diagnostic["answer_fragment_deleted"] is False
-    assert diagnostic["author_retry_requested"] is False
-    assert diagnostic["final_text_included"] is False
+        FinalAnswerPacketHardeningRuntimeError,
+        match="FAP quantitative authority is incomplete before Author prose finalization",
+    ):
+        reduce_hardened_final_answer_packet(run_kernel=kernel)
     assert kernel.state.author_prose_state == {}
     assert kernel.state.author_prose_projection == {}
     assert kernel.state.author_prose_history == []
     assert (
-        sum(action.action_type.value == "author_prose_finalize" for action in kernel.state.issued_actions.values()) == 1
+        sum(
+            action.action_type.value == "author_prose_finalize"
+            for action in kernel.state.issued_actions.values()
+        )
+        == 0
     )
 
 
@@ -245,7 +244,14 @@ def test_hardened_direct_source_numeric_propositions_reach_author_prose(
     assert rows
     assert {row["authority_kind"] for row in rows} == {"direct_source_numeric"}
     assert safe_claim in author["answer_text"]
-    assert author["quantitative_finalization_validation"]["status"] == "accepted"
+    assert author["post_author_quantitative_semantic_gate_active"] is False
+    author_before_evaluation = json.dumps(author, sort_keys=True)
+    diagnostic = evaluate_author_output_quantitative_authority(
+        author["answer_text"],
+        manifest=fap["quantitative_finalization_authority_manifest"],
+    )
+    assert diagnostic["status"] == "accepted"
+    assert json.dumps(author, sort_keys=True) == author_before_evaluation
     assert author["supported_safe_claims_created"] is True
     if label == "comma":
         assert any(row["normalized_numeric_value_text"] == "1000" for row in rows)
@@ -312,12 +318,9 @@ def test_hardened_dprime_only_arithmetic_conversion_and_same_value_laundering_fa
         run_kernel=chain["kernel"],
         quantitative_source_authority_materials=materials,
     ).readiness_projection
-    fap = reduce_hardened_final_answer_packet(run_kernel=chain["kernel"]).final_answer_authority_projection
-
     component_id = next(iter(readiness["component_readiness_map"]))
     assert readiness["component_readiness_map"][component_id].get("quantitative_source_authority_refs", []) == []
-    assert fap["quantitative_finalization_authority_manifest"]["authorized_numeric_claims"] == []
-    _assert_author_fails_closed(chain)
+    _assert_fap_blocks_before_author(chain)
 
 
 @pytest.mark.parametrize(
@@ -351,12 +354,9 @@ def test_hardened_broken_source_custody_grants_no_numeric_authority(
         run_kernel=chain["kernel"],
         quantitative_source_authority_materials=(material,),
     ).readiness_projection
-    fap = reduce_hardened_final_answer_packet(run_kernel=chain["kernel"]).final_answer_authority_projection
-
     component_id = next(iter(readiness["component_readiness_map"]))
     assert readiness["component_readiness_map"][component_id].get("quantitative_source_authority_refs", []) == []
-    assert fap["quantitative_finalization_authority_manifest"]["authorized_numeric_claims"] == []
-    _assert_author_fails_closed(chain)
+    _assert_fap_blocks_before_author(chain)
 
 
 def _real_component_specialist_handoff(
@@ -504,7 +504,7 @@ def test_real_component_s1_authority_survives_readiness_hardened_fap_and_author(
         specialist_inputs=(
             {
                 "specialist_need_handoff": handoff,
-                "applicable_dprime_ref": handoff["validator_dprime_artifact_ref"],
+                    "applicable_dprime_ref": handoff["validator_artifact_ref"],
             },
         ),
     )
@@ -521,14 +521,25 @@ def test_real_component_s1_authority_survives_readiness_hardened_fap_and_author(
     assert readiness_ref["canonical_unit"] == "USD"
     assert readiness_ref["precision_posture"] == "exact_as_reported"
     assert readiness_ref["claim_material_digest"] == sha256(claim.encode("utf-8")).hexdigest()
-    assert readiness_ref["applicable_dprime_consumption_ref"]["route"] == ("component_dprime")
+    assert readiness_ref["applicable_validator_consumption_ref"]["route"] == (
+        "component_dprime"
+    )
     assert readiness_ref["current"] is True
     assert readiness_ref["stale"] is False
     assert row["normalized_numeric_value_text"] == "30"
     assert row["canonical_unit"] == "USD"
-    assert row["applicable_dprime_consumption_ref"]["route"] == ("component_dprime")
-    assert author["quantitative_finalization_validation"]["status"] == "accepted"
+    assert row["applicable_validator_consumption_ref"]["route"] == (
+        "component_dprime"
+    )
+    assert author["post_author_quantitative_semantic_gate_active"] is False
     assert claim in author["answer_text"]
+    author_before_evaluation = json.dumps(author, sort_keys=True)
+    diagnostic = evaluate_author_output_quantitative_authority(
+        author["answer_text"],
+        manifest=fap["quantitative_finalization_authority_manifest"],
+    )
+    assert diagnostic["status"] == "accepted"
+    assert json.dumps(author, sort_keys=True) == author_before_evaluation
     assert "admitted_synthesis_entries" not in fap
     assert "synthesis_specialist_quantitative_authority_ref" not in fap
     retained = json.dumps(
@@ -579,7 +590,7 @@ def test_broken_component_specialist_lineage_grants_no_hardened_authority(
             {
                 "specialist_need_handoff": handoff,
                 "applicable_dprime_ref": handoff.get(
-                    "validator_dprime_artifact_ref",
+                    "validator_artifact_ref",
                     {"artifact_id": "unconsumed-component-dprime"},
                 ),
             },
@@ -593,10 +604,6 @@ def test_broken_component_specialist_lineage_grants_no_hardened_authority(
         run_kernel=chain["kernel"],
         specialist_quantitative_authority_inputs=inputs,
     ).readiness_projection
-    fap = reduce_hardened_final_answer_packet(run_kernel=chain["kernel"]).final_answer_authority_projection
-
     component = readiness["component_readiness_map"]["component:quantitative"]
     assert component.get("specialist_quantitative_authority_ref", {}) == {}
-    assert fap["component_packet_entries"][0].get("specialist_quantitative_authority_ref", {}) == {}
-    assert fap["quantitative_finalization_authority_manifest"]["authorized_numeric_claims"] == []
-    _assert_author_fails_closed(chain)
+    _assert_fap_blocks_before_author(chain)

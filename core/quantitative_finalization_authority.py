@@ -1,10 +1,10 @@
-"""Claim-scoped quantitative authority for every final-answer prose route.
+"""Claim-scoped quantitative authority at the FinalAnswerPacket boundary.
 
 This module projects only authority already present in a FinalAnswerPacket (or
-its hardened compatibility form) and validates candidate prose deterministically.
-It does not calculate, convert, admit claims, interpret evidence, or call a
-model.  Assertion binding is intentionally conservative: the complete bounded
-assertion fingerprint, not merely a numeric value/unit pair, must match.
+its hardened compatibility form).  Its structured pre-Author preflight keeps
+incomplete numeric lineage from reaching Author.  The retained prose parser is
+an evaluator: it can report candidate-prose observations, but it is not a
+PRODUCT authorization or final-answer gate.
 """
 
 from __future__ import annotations
@@ -31,6 +31,9 @@ QUANTITATIVE_FINALIZATION_VALIDATION_SCHEMA_VERSION = (
 )
 QUANTITATIVE_FINALIZATION_PARSER_VERSION = (
     "claim_scoped_quantitative_finalization_parser_v4"
+)
+QUANTITATIVE_FAP_AUTHORITY_PREFLIGHT_SCHEMA_VERSION = (
+    "quantitative_fap_authority_preflight_v1"
 )
 
 _PROHIBITED_TRANSFORMATIONS = (
@@ -1714,6 +1717,227 @@ def build_quantitative_finalization_authority_manifest(
     return dict(build_quantitative_finalization_authority_bundle(**kwargs)["manifest"])
 
 
+def _structured_numeric_claim_requirements(
+    *,
+    direct_component_entries: Sequence[Mapping[str, Any]],
+    admitted_synthesis_entries: Sequence[Mapping[str, Any]],
+    component_packet_entries: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return only FAP-selected numeric claims and their structural posture.
+
+    This is deliberately not a claim-support classifier.  It merely asks
+    whether a numeric claim that FAP already selected has an exact authority
+    projection from the existing manifest builder.
+    """
+
+    requirements: list[dict[str, Any]] = []
+
+    def add_requirement(
+        *,
+        entry: Mapping[str, Any],
+        claim_text: str,
+        claim_ref: Mapping[str, Any],
+        claim_kind: str,
+        integrity_reason: str | None,
+    ) -> None:
+        literals = extract_quantitative_literals(claim_text)
+        if not literals:
+            return
+        requirements.append(
+            {
+                "claim_text": claim_text,
+                "claim_ref": _safe_ref(claim_ref),
+                "claim_kind": claim_kind,
+                "fingerprint": semantic_claim_fingerprint(claim_text),
+                "literal_signatures": Counter(
+                    _literal_signature(item) for item in literals
+                ),
+                "integrity_reason": integrity_reason,
+                "specialist_declared": bool(
+                    _safe_ref(entry.get("specialist_quantitative_authority_ref"))
+                ),
+            }
+        )
+
+    for index, raw in enumerate(direct_component_entries, start=1):
+        entry = _mapping(raw)
+        claim_text = _clean_text(entry.get("claim_text"), limit=2_000)
+        if not claim_text:
+            continue
+        integrity_reason: str | None = None
+        if entry.get("entry_kind") != "direct_component" or entry.get(
+            "admission_status"
+        ) not in {"admitted", "admitted_with_caveats"}:
+            integrity_reason = "unadmitted_numeric_claim"
+        elif entry.get("current") is not True or entry.get("stale") is not False:
+            integrity_reason = "stale_or_foreign_quantitative_authority"
+        elif not _safe_ref(
+            entry.get("component_analyst_case_ref")
+            or entry.get("analyst_finding_ref")
+        ):
+            integrity_reason = "missing_component_analyst_authority"
+        add_requirement(
+            entry=entry,
+            claim_text=claim_text,
+            claim_ref=_claim_ref_from_entry(entry, fallback_key=f"direct-{index}"),
+            claim_kind="direct_component",
+            integrity_reason=integrity_reason,
+        )
+
+    for index, raw in enumerate(admitted_synthesis_entries, start=1):
+        entry = _mapping(raw)
+        claim_text = _clean_text(entry.get("claim_text"), limit=2_000)
+        if not claim_text:
+            continue
+        carried = _mapping(entry.get("carried_semantic_lineage"))
+        integrity_reason = None
+        if entry.get("entry_kind") != "admitted_synthesis" or entry.get(
+            "status"
+        ) != "admitted":
+            integrity_reason = "unadmitted_numeric_claim"
+        elif entry.get("current") is not True or entry.get("stale") is not False:
+            integrity_reason = "stale_or_foreign_quantitative_authority"
+        elif not (
+            _safe_ref(entry.get("dprime_validation_ref"))
+            or _safe_ref(carried.get("prior_synthesis_dprime_ref"))
+        ):
+            integrity_reason = "missing_synthesis_validator_authority"
+        add_requirement(
+            entry=entry,
+            claim_text=claim_text,
+            claim_ref=_claim_ref_from_entry(entry, fallback_key=f"synthesis-{index}"),
+            claim_kind="admitted_synthesis",
+            integrity_reason=integrity_reason,
+        )
+
+    for index, raw in enumerate(component_packet_entries, start=1):
+        entry = _mapping(raw)
+        if (
+            entry.get("supported_safe_claim_allowed") is not True
+            or entry.get("must_not_answer") is True
+        ):
+            continue
+        claim_text = _clean_text(entry.get("safe_answer_claim_text"), limit=2_000)
+        if not claim_text:
+            continue
+        integrity_reason = None
+        if not _safe_ref(entry.get("semantic_observation_ref")):
+            integrity_reason = "missing_component_analyst_authority"
+        add_requirement(
+            entry=entry,
+            claim_text=claim_text,
+            claim_ref=_safe_ref(entry.get("fap_safe_claim_ref"))
+            or {
+                "component_id": entry.get("component_id"),
+                "claim_digest": _text_digest(claim_text),
+                "entry_index": index,
+            },
+            claim_kind="hardened_component",
+            integrity_reason=integrity_reason,
+        )
+
+    return requirements
+
+
+def build_quantitative_fap_authority_preflight(
+    *,
+    source_fap_ref: Mapping[str, Any],
+    direct_component_entries: Sequence[Mapping[str, Any]] = (),
+    admitted_synthesis_entries: Sequence[Mapping[str, Any]] = (),
+    semantic_author_materialization: Mapping[str, Any] | None = None,
+    component_packet_entries: Sequence[Mapping[str, Any]] = (),
+) -> dict[str, Any]:
+    """Build FAP-side quantitative authority and prove its required rows exist.
+
+    The input is FAP-selected structured state, never Author prose.  A blocked
+    result means Author must not be invoked; it does not revise Sufficiency or
+    create a second semantic verdict.
+    """
+
+    bundle = build_quantitative_finalization_authority_bundle(
+        source_fap_ref=source_fap_ref,
+        direct_component_entries=direct_component_entries,
+        admitted_synthesis_entries=admitted_synthesis_entries,
+        semantic_author_materialization=semantic_author_materialization,
+        component_packet_entries=component_packet_entries,
+    )
+    manifest = _mapping(bundle.get("manifest"))
+    rows_by_fingerprint: dict[str, list[dict[str, Any]]] = {}
+    for row in _mapping_sequence(manifest.get("authorized_numeric_claims")):
+        fingerprint = str(
+            row.get("semantic_claim_fingerprint_or_existing_equivalent") or ""
+        )
+        if fingerprint:
+            rows_by_fingerprint.setdefault(fingerprint, []).append(row)
+
+    requirements = _structured_numeric_claim_requirements(
+        direct_component_entries=direct_component_entries,
+        admitted_synthesis_entries=admitted_synthesis_entries,
+        component_packet_entries=component_packet_entries,
+    )
+    reasons: list[dict[str, Any]] = []
+    for requirement in requirements:
+        reason_code = requirement["integrity_reason"]
+        matching_rows = rows_by_fingerprint.get(requirement["fingerprint"], [])
+        matching_signatures = Counter(
+            "|".join(
+                str(row.get(key) or "")
+                for key in (
+                    "normalized_numeric_value_text",
+                    "canonical_unit",
+                    "precision_posture",
+                )
+            )
+            for row in matching_rows
+        )
+        if matching_signatures != requirement["literal_signatures"]:
+            matching_rows = []
+        # Check the complete structured proposition row-set, not a single
+        # matching number.  Rendering punctuation is deliberately irrelevant:
+        # FAP has already selected the claim and Author must not be constrained
+        # to a parser-specific surface form.
+        if reason_code is None and not matching_rows:
+            reason_code = (
+                "missing_required_specialist_binding"
+                if requirement["specialist_declared"]
+                else "missing_direct_source_binding"
+            )
+        if reason_code is not None:
+            claim_ref = _safe_ref(requirement["claim_ref"])
+            reasons.append(
+                {
+                    "claim_kind": requirement["claim_kind"],
+                    "claim_ref_digest": _digest(claim_ref),
+                    "literal_count": sum(
+                        requirement["literal_signatures"].values()
+                    ),
+                    "reason_code": reason_code,
+                    "specialist_declared": requirement["specialist_declared"],
+                }
+            )
+
+    reason_codes = list(dict.fromkeys(item["reason_code"] for item in reasons))
+    diagnostic = {
+        "schema_version": QUANTITATIVE_FAP_AUTHORITY_PREFLIGHT_SCHEMA_VERSION,
+        "status": "blocked" if reasons else "ready",
+        "final_semantic_authority_boundary": "final_answer_packet",
+        "author_invocation_allowed": not reasons,
+        "post_author_semantic_validation_required": False,
+        "required_numeric_claim_count": len(requirements),
+        "authorized_numeric_claim_count": len(
+            _mapping_sequence(manifest.get("authorized_numeric_claims"))
+        ),
+        "blocked_numeric_claim_count": len(reasons),
+        "reason_codes": reason_codes,
+        "reason_refs": reasons,
+        "final_text_included": False,
+    }
+    return {
+        "bundle": bundle,
+        "diagnostic": diagnostic,
+    }
+
+
 def build_quantitative_author_instruction_block(
     manifest: Mapping[str, Any],
     *,
@@ -1723,10 +1947,10 @@ def build_quantitative_author_instruction_block(
     renderings = dict(transient_renderings or {})
     lines = [
         "",
-        "QUANTITATIVE FINALIZATION AUTHORITY (mandatory; do not mention this block):",
-        "- You may render only the exact claim-scoped numeric propositions listed below.",
-        "- Preserve each authorized value, unit, sign, scale, percent convention, and precision posture.",
-        "- Comma digit grouping is the only numeric surface variation permitted.",
+        "QUANTITATIVE AUTHORITY (mandatory; do not mention this block):",
+        "- You may state only the FAP-authorized quantitative material listed below.",
+        "- Preserve each authorized value, unit, sign, scale, percent convention, and material precision.",
+        "- You may explain or paraphrase this material naturally without changing its meaning.",
         "- Do not calculate, convert, estimate, interpolate, round, rescale, aggregate, or introduce a new numeric conclusion.",
         "- Do not reuse an authorized value for another subject, metric, comparison, ratio, rate, percentage, or proposition.",
     ]
@@ -1734,7 +1958,7 @@ def build_quantitative_author_instruction_block(
     if not keys:
         lines.append("- This packet authorizes no quantitative claim; emit no quantitative assertion.")
     else:
-        lines.append("- Authorized exact quantitative renderings:")
+        lines.append("- FAP-authorized quantitative material:")
         for key in keys:
             rendering = _clean_text(renderings.get(key), limit=1200)
             if rendering:
@@ -1838,7 +2062,12 @@ def validate_author_output_quantitative_authority(
     *,
     manifest: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Accept nonquantitative prose or fail closed on any unbound assertion."""
+    """Legacy evaluator helper that raises on a reported mismatch.
+
+    PRODUCT code must not use this as an accepted-prose decision.  Validation
+    callers that need a non-throwing observation should use
+    :func:`evaluate_author_output_quantitative_authority`.
+    """
 
     current = _validate_manifest(manifest)
     claims = _mapping_sequence(current.get("authorized_numeric_claims"))
@@ -1943,14 +2172,33 @@ def validate_author_output_quantitative_authority(
     return {**diagnostic_base, "status": "accepted"}
 
 
+def evaluate_author_output_quantitative_authority(
+    answer_text: str,
+    *,
+    manifest: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Return a non-authoritative parser observation for validation only."""
+
+    try:
+        return validate_author_output_quantitative_authority(
+            answer_text,
+            manifest=manifest,
+        )
+    except QuantitativeFinalizationAuthorityError as exc:
+        return dict(exc.diagnostic)
+
+
 __all__ = [
     "QUANTITATIVE_FINALIZATION_AUTHORITY_MANIFEST_SCHEMA_VERSION",
     "QUANTITATIVE_FINALIZATION_PARSER_VERSION",
     "QUANTITATIVE_FINALIZATION_VALIDATION_SCHEMA_VERSION",
+    "QUANTITATIVE_FAP_AUTHORITY_PREFLIGHT_SCHEMA_VERSION",
     "QuantitativeFinalizationAuthorityError",
     "build_quantitative_author_instruction_block",
+    "build_quantitative_fap_authority_preflight",
     "build_quantitative_finalization_authority_bundle",
     "build_quantitative_finalization_authority_manifest",
+    "evaluate_author_output_quantitative_authority",
     "extract_quantitative_literals",
     "semantic_claim_fingerprint",
     "specialist_quantitative_authority_ref_from_handoff",

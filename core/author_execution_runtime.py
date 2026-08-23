@@ -17,10 +17,6 @@ from core.final_answer_packet import (
 from core.quantitative_consistency import (
     build_two_item_normalized_consistency_diagnostic,
 )
-from core.quantitative_finalization_authority import (
-    build_quantitative_finalization_authority_manifest,
-    validate_author_output_quantitative_authority,
-)
 from core.run_kernel import (
     AUTHOR_EXECUTION_STAGE,
     ActionType,
@@ -378,9 +374,10 @@ def execute_author_action(
         system_prompt=system_prompt,
     )
 
-    # Candidate prose cannot be displayed before the deterministic finalization
-    # gate decides whether it is accepted.
-    stream_buffered = stream_display is not None
+    # FAP has already made the semantic readiness decision.  Post-Author
+    # handling may still retain text for mechanical output construction, but it
+    # must not withhold prose for quantitative semantic reinterpretation.
+    stream_buffered = False
     started = time.monotonic()
     stream_out = ask_model(
         author_payload.prompt,
@@ -399,21 +396,6 @@ def execute_author_action(
         stream_buffered=stream_buffered,
     )
     report = str(report or "")
-    quantitative_manifest = dict(
-        author_payload.quantitative_finalization_authority_manifest
-        or build_quantitative_finalization_authority_manifest(
-            source_fap_ref={"packet_id": author_payload.packet_id}
-        )
-    )
-    quantitative_finalization_validation = (
-        validate_author_output_quantitative_authority(
-            report,
-            manifest=quantitative_manifest,
-        )
-    )
-    if stream_buffered and stream_display is not None:
-        stream_display((report,))
-        stream_displayed = True
     quantitative_consistency_telemetry = build_two_item_normalized_consistency_diagnostic(
         query=query,
         final_answer=report,
@@ -422,7 +404,7 @@ def execute_author_action(
     )
     quantitative_consistency_guard_telemetry = {
         "quantitative_consistency_guard_applied": False,
-        "guard_reason": "subordinated_to_claim_scoped_quantitative_finalization",
+        "guard_reason": "diagnostic_only_not_product_gate",
         "answer_rewritten": False,
     }
     author_seconds = max(0.0, time.monotonic() - started)
@@ -485,9 +467,7 @@ def execute_author_action(
         "quantitative_consistency_guard_telemetry": dict(
             quantitative_consistency_guard_telemetry or {}
         ),
-        "quantitative_finalization_validation": dict(
-            quantitative_finalization_validation
-        ),
+        "post_author_quantitative_semantic_gate_active": False,
     }
     return AuthorExecutionResult(
         report=report,

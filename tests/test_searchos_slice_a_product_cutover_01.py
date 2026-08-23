@@ -19,6 +19,7 @@ from typing import Any, Mapping
 import pytest
 
 import core.pipeline_orchestrator as pipeline_orchestrator
+import core.quantitative_finalization_authority as quantitative_evaluator
 import proplex.__main__ as compatibility_cli
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
@@ -1724,6 +1725,18 @@ def test_n1_plural_semantic_slots_share_one_current_read_and_one_analyst(
     )
 
     _install_q1_plural_planner_contract(monkeypatch)
+    original_validator = (
+        quantitative_evaluator.validate_author_output_quantitative_authority
+    )
+
+    def fail_if_product_calls_retired_validator(*_args: Any, **_kwargs: Any) -> None:
+        raise AssertionError("post-Author quantitative evaluator must not be a PRODUCT gate")
+
+    monkeypatch.setattr(
+        quantitative_evaluator,
+        "validate_author_output_quantitative_authority",
+        fail_if_product_calls_retired_validator,
+    )
     outcome, harness = run_post_retirement_ordinary_pipeline(
         tmp_path,
         monkeypatch,
@@ -1736,7 +1749,8 @@ def test_n1_plural_semantic_slots_share_one_current_read_and_one_analyst(
         primary_entity="Python math.isclose",
         researcher_queries=["Python math.isclose rel_tol abs_tol defaults"],
         raw_author_response=(
-            "The official documentation supports the stated defaults. "
+            "For math.isclose(), the default rel_tol value is 1e-09 and the "
+            "default abs_tol value is 0.0. "
             "[[1]](https://docs.python.org/3/library/math.html)"
         ),
         evidence_rows=[
@@ -1758,6 +1772,11 @@ def test_n1_plural_semantic_slots_share_one_current_read_and_one_analyst(
         read_content_by_url={
             "https://docs.python.org/3/library/math.html": long_read_text
         },
+    )
+    monkeypatch.setattr(
+        quantitative_evaluator,
+        "validate_author_output_quantitative_authority",
+        original_validator,
     )
 
     contract = harness.run_kernel.state.initial_answer_contract
@@ -1829,10 +1848,25 @@ def test_n1_plural_semantic_slots_share_one_current_read_and_one_analyst(
     assert harness.run_kernel.state.sufficiency_judgment_history[-1][
         "final_answer_allowed"
     ] is True
-    assert "final_answer_packet" in outcome.execution_trace
-    assert harness.author_prompts
+    packet = outcome.execution_trace["final_answer_packet"]
+    manifest = packet["quantitative_finalization_authority_manifest"]
+    assert {
+        row["authority_kind"] for row in manifest["authorized_numeric_claims"]
+    } == {"direct_source_numeric"}
+    evaluator_diagnostic = (
+        quantitative_evaluator.evaluate_author_output_quantitative_authority(
+            outcome.report,
+            manifest=manifest,
+        )
+    )
+    assert evaluator_diagnostic["status"] == "rejected"
+    assert harness.author_prompts and len(harness.author_prompts) == 1
+    assert harness.run_kernel.state.author_observation[
+        "post_author_quantitative_semantic_gate_active"
+    ] is False
     assert outcome.report == (
-        "The official documentation supports the stated defaults. "
+        "For math.isclose(), the default rel_tol value is 1e-09 and the "
+        "default abs_tol value is 0.0. "
         "[[1]](https://docs.python.org/3/library/math.html)"
     )
     assert ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST] in harness.model_system_prompts
