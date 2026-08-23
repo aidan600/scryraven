@@ -137,6 +137,36 @@ def test_current_python_target_uses_private_child_interpreter_and_completes(
     assert payload["executable"] == sys.executable
 
 
+def test_timeout_has_structural_status_without_raw_material(
+    tmp_path: Path,
+) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    external_root = tmp_path / "external"
+    external_root.mkdir()
+    env_file = _write_synthetic_env(tmp_path / "synthetic.env")
+    status_path = external_root / "broker.status.json"
+
+    result = _run_broker(
+        repo_root=repo_root,
+        env_file=env_file,
+        external_root=external_root,
+        command=[sys.executable, "-c", "import time; time.sleep(2)"],
+        status=status_path,
+        timeout=0.1,
+    )
+
+    assert result == doorman.TIMEOUT_EXIT_CODE
+    status = _status(status_path)
+    assert status["schema_version"] == doorman.STATUS_SCHEMA_VERSION
+    assert status["target_launch_attempted"] is True
+    assert status["target_launch_succeeded"] is True
+    assert status["timed_out"] is True
+    assert status["status"] == "target_timeout"
+    assert status["stdout_sanitized_written"] is True
+    assert status["stderr_sanitized_written"] is True
+
+
 def test_broker_bootstrap_q1_dry_run_is_end_to_end_and_non_live(
     tmp_path: Path,
 ) -> None:
