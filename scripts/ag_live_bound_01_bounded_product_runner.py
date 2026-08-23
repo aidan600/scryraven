@@ -21,14 +21,17 @@ from scripts.ag_live_bound_01_support import (  # noqa: E402
     DEFAULT_OUTPUT,
     DEFAULT_PROFILE_NAME,
     LIVE_PACKET_CAP_OVERFLOW,
+    LIVE_PACKET_PACKET_WRITE_FAILURE,
     LIVE_PACKET_PIPELINE_FAILURE,
     LIVE_PACKET_PRECHECK_FAILURE,
+    LIVE_PACKET_RESULT_PROJECTION_FAILURE,
     LIVE_PACKET_UNEXPECTED_FAILURE,
     AgLiveBoundPreflightError,
     build_dry_run_packet,
     build_failure_observability,
     build_live_failure_packet,
     build_live_success_packet,
+    build_minimal_live_failure_packet,
     build_preflight_context,
     parse_domains,
     resolve_output_path,
@@ -40,6 +43,9 @@ LIVE_SPEND_WARNING = (
     "AG-LIVE-BOUND-01 may spend live provider/model/search/fetch calls when enabled."
 )
 OUTPUT_DIR = ROOT / "output"
+PACKET_WRITE_FAILURE_EXIT_CODE = 3
+POST_RUN_RESULT_PROJECTION_PHASE = "post_run_result_projection"
+PACKET_WRITE_PHASE = "packet_write"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -85,16 +91,18 @@ def main(argv: list[str] | None = None) -> int:
 
 def _run_confirmed_live(context: Any, args: argparse.Namespace) -> int:
     print(LIVE_SPEND_WARNING, file=sys.stderr)
-    cap_policy = context.caps.to_run_cap_policy()
+    cap_policy: Any | None = None
     run_pipeline_call_count = 0
     config: Any | None = None
     deps: Any | None = None
     outcome: Any | None = None
     campaign_guard: Any | None = None
     campaign_run_started = False
+    campaign_guard_completion_attempted = False
     safe_phase = "run_policy_live_confirmation"
     try:
         safe_phase = "run_policy_live_confirmation"
+        cap_policy = context.caps.to_run_cap_policy()
         _load_live_environment()
         _validate_live_model_keys()
         campaign_guard = _build_campaign_guard(args, context)
@@ -137,94 +145,229 @@ def _run_confirmed_live(context: Any, args: argparse.Namespace) -> int:
         run_pipeline_call_count = 1
         with _suppress_ordinary_retention_for_bounded_runner():
             outcome = _call_run_pipeline_once(config, deps, status, accumulator)
+        safe_phase = POST_RUN_RESULT_PROJECTION_PHASE
+        (
+            campaign_guard_completion_attempted,
+            completion_error,
+        ) = _complete_campaign_guard_once(
+            campaign_guard,
+            campaign_run_started,
+            cap_policy,
+            attempted=campaign_guard_completion_attempted,
+        )
+        if completion_error is not None:
+            raise completion_error
+        packet = build_live_success_packet(
+            context,
+            outcome=outcome,
+            cap_policy=cap_policy,
+            run_config=config,
+        )
+        packet = _enrich_campaign_packet(
+            packet,
+            context=context,
+            deps=deps,
+            outcome=outcome,
+            campaign_guard=campaign_guard,
+            attempt=args.campaign_attempt,
+        )
+        safe_phase = PACKET_WRITE_PHASE
+        write_packet(context.output_path, packet)
+        print(f"wrote sanitized AG-LIVE-BOUND live packet to {context.output_path}")
+        return 0
     except AgLiveBoundPreflightError as exc:
-        _complete_campaign_guard(campaign_guard, campaign_run_started, cap_policy)
-        packet = build_live_failure_packet(
-            context,
+        return _handle_terminal_exception(
+            context=context,
+            args=args,
             cap_policy=cap_policy,
+            config=config,
+            deps=deps,
+            outcome=outcome,
+            campaign_guard=campaign_guard,
+            campaign_run_started=campaign_run_started,
+            campaign_guard_completion_attempted=campaign_guard_completion_attempted,
+            safe_phase=safe_phase,
             classification=LIVE_PACKET_PRECHECK_FAILURE,
-            failure_reason=str(exc),
+            exc=exc,
             run_pipeline_call_count=run_pipeline_call_count,
-            run_config=config,
-            failure_observability=build_failure_observability(
-                safe_phase=safe_phase,
-                exc=exc,
-            ),
         )
-        packet = _enrich_campaign_packet(
-            packet,
-            context=context,
-            deps=deps,
-            outcome=outcome,
-            campaign_guard=campaign_guard,
-            attempt=args.campaign_attempt,
-        )
-        write_packet(context.output_path, packet)
-        print(f"refusing live product execution: {exc}", file=sys.stderr)
-        return 2
     except _run_cap_exceeded_type() as exc:
-        _complete_campaign_guard(campaign_guard, campaign_run_started, cap_policy)
-        packet = build_live_failure_packet(
-            context,
+        return _handle_terminal_exception(
+            context=context,
+            args=args,
             cap_policy=cap_policy,
+            config=config,
+            deps=deps,
+            outcome=outcome,
+            campaign_guard=campaign_guard,
+            campaign_run_started=campaign_run_started,
+            campaign_guard_completion_attempted=campaign_guard_completion_attempted,
+            safe_phase=safe_phase,
             classification=LIVE_PACKET_CAP_OVERFLOW,
-            failure_reason=str(exc),
+            exc=exc,
             run_pipeline_call_count=run_pipeline_call_count,
-            run_config=config,
-            failure_observability=build_failure_observability(
-                safe_phase=safe_phase,
-                exc=exc,
-            ),
         )
-        packet = _enrich_campaign_packet(
-            packet,
-            context=context,
-            deps=deps,
-            outcome=outcome,
-            campaign_guard=campaign_guard,
-            attempt=args.campaign_attempt,
-        )
-        write_packet(context.output_path, packet)
-        print(f"bounded live product run exceeded caps: {exc}", file=sys.stderr)
-        return 2
     except _pipeline_error_type() as exc:
-        _complete_campaign_guard(campaign_guard, campaign_run_started, cap_policy)
-        packet = build_live_failure_packet(
-            context,
+        return _handle_terminal_exception(
+            context=context,
+            args=args,
             cap_policy=cap_policy,
+            config=config,
+            deps=deps,
+            outcome=outcome,
+            campaign_guard=campaign_guard,
+            campaign_run_started=campaign_run_started,
+            campaign_guard_completion_attempted=campaign_guard_completion_attempted,
+            safe_phase=safe_phase,
             classification=LIVE_PACKET_PIPELINE_FAILURE,
-            failure_reason=str(exc),
+            exc=exc,
             run_pipeline_call_count=run_pipeline_call_count,
-            run_config=config,
-            failure_observability=build_failure_observability(
-                safe_phase=safe_phase,
-                exc=exc,
-            ),
         )
-        packet = _enrich_campaign_packet(
-            packet,
+    except Exception as exc:
+        return _handle_terminal_exception(
             context=context,
+            args=args,
+            cap_policy=cap_policy,
+            config=config,
             deps=deps,
             outcome=outcome,
             campaign_guard=campaign_guard,
-            attempt=args.campaign_attempt,
+            campaign_run_started=campaign_run_started,
+            campaign_guard_completion_attempted=campaign_guard_completion_attempted,
+            safe_phase=safe_phase,
+            classification=_terminal_exception_classification(safe_phase, exc),
+            exc=exc,
+            run_pipeline_call_count=run_pipeline_call_count,
         )
-        write_packet(context.output_path, packet)
-        print(f"bounded live product run failed: {exc}", file=sys.stderr)
-        return 2
+
+
+def _complete_campaign_guard_once(
+    guard: Any | None,
+    started: bool,
+    cap_policy: Any | None,
+    *,
+    attempted: bool,
+) -> tuple[bool, BaseException | None]:
+    if attempted or guard is None or not started:
+        return attempted, None
+    try:
+        _complete_campaign_guard(guard, started, cap_policy)
     except Exception as exc:
-        _complete_campaign_guard(campaign_guard, campaign_run_started, cap_policy)
+        return True, exc
+    return True, None
+
+
+def _terminal_exception_classification(
+    safe_phase: str,
+    exc: BaseException,
+) -> str:
+    if safe_phase == POST_RUN_RESULT_PROJECTION_PHASE:
+        return LIVE_PACKET_RESULT_PROJECTION_FAILURE
+    if safe_phase == PACKET_WRITE_PHASE:
+        if isinstance(exc, OSError):
+            return LIVE_PACKET_PACKET_WRITE_FAILURE
+        return LIVE_PACKET_RESULT_PROJECTION_FAILURE
+    return LIVE_PACKET_UNEXPECTED_FAILURE
+
+
+def _handle_terminal_exception(
+    *,
+    context: Any,
+    args: argparse.Namespace,
+    cap_policy: Any | None,
+    config: Any | None,
+    deps: Any | None,
+    outcome: Any | None,
+    campaign_guard: Any | None,
+    campaign_run_started: bool,
+    campaign_guard_completion_attempted: bool,
+    safe_phase: str,
+    classification: str,
+    exc: BaseException,
+    run_pipeline_call_count: int,
+) -> int:
+    if safe_phase in {POST_RUN_RESULT_PROJECTION_PHASE, PACKET_WRITE_PHASE}:
+        post_run_classification = _terminal_exception_classification(safe_phase, exc)
+        return _emit_minimal_terminal_packet(
+            context=context,
+            cap_policy=cap_policy,
+            classification=post_run_classification,
+            safe_phase=safe_phase,
+            exc=exc,
+            run_pipeline_call_count=run_pipeline_call_count,
+        )
+    return _emit_normal_failure_packet(
+        context=context,
+        args=args,
+        cap_policy=cap_policy,
+        config=config,
+        deps=deps,
+        outcome=outcome,
+        campaign_guard=campaign_guard,
+        campaign_run_started=campaign_run_started,
+        campaign_guard_completion_attempted=campaign_guard_completion_attempted,
+        safe_phase=safe_phase,
+        classification=classification,
+        exc=exc,
+        run_pipeline_call_count=run_pipeline_call_count,
+    )
+
+
+def _emit_normal_failure_packet(
+    *,
+    context: Any,
+    args: argparse.Namespace,
+    cap_policy: Any | None,
+    config: Any | None,
+    deps: Any | None,
+    outcome: Any | None,
+    campaign_guard: Any | None,
+    campaign_run_started: bool,
+    campaign_guard_completion_attempted: bool,
+    safe_phase: str,
+    classification: str,
+    exc: BaseException,
+    run_pipeline_call_count: int,
+) -> int:
+    _, completion_error = _complete_campaign_guard_once(
+        campaign_guard,
+        campaign_run_started,
+        cap_policy,
+        attempted=campaign_guard_completion_attempted,
+    )
+    if completion_error is not None:
+        return _emit_minimal_terminal_packet(
+            context=context,
+            cap_policy=cap_policy,
+            classification=LIVE_PACKET_RESULT_PROJECTION_FAILURE,
+            safe_phase=POST_RUN_RESULT_PROJECTION_PHASE,
+            exc=completion_error,
+            run_pipeline_call_count=run_pipeline_call_count,
+        )
+    try:
+        failure_observability = build_failure_observability(
+            safe_phase=safe_phase,
+            exc=exc,
+        )
+        safe_error_message = failure_observability.get("safe_error_message")
+        if isinstance(exc, AgLiveBoundPreflightError):
+            failure_reason = str(exc)
+        elif classification in {
+            LIVE_PACKET_CAP_OVERFLOW,
+            LIVE_PACKET_PIPELINE_FAILURE,
+        }:
+            failure_reason = safe_error_message or type(exc).__name__
+        else:
+            failure_reason = type(exc).__name__
         packet = build_live_failure_packet(
             context,
             cap_policy=cap_policy,
-            classification=LIVE_PACKET_UNEXPECTED_FAILURE,
-            failure_reason=type(exc).__name__,
+            classification=classification,
+            failure_reason=failure_reason,
             run_pipeline_call_count=run_pipeline_call_count,
             run_config=config,
-            failure_observability=build_failure_observability(
-                safe_phase=safe_phase,
-                exc=exc,
-            ),
+            outcome=outcome,
+            failure_observability=failure_observability,
         )
         packet = _enrich_campaign_packet(
             packet,
@@ -235,30 +378,71 @@ def _run_confirmed_live(context: Any, args: argparse.Namespace) -> int:
             attempt=args.campaign_attempt,
         )
         write_packet(context.output_path, packet)
+        _print_normal_failure_message(classification, exc)
+    except Exception as packet_exc:
+        fallback_classification = (
+            LIVE_PACKET_PACKET_WRITE_FAILURE
+            if isinstance(packet_exc, OSError)
+            else classification
+        )
+        fallback_phase = (
+            PACKET_WRITE_PHASE if isinstance(packet_exc, OSError) else "terminal_packet_fallback"
+        )
+        return _emit_minimal_terminal_packet(
+            context=context,
+            cap_policy=cap_policy,
+            classification=fallback_classification,
+            safe_phase=fallback_phase,
+            exc=packet_exc,
+            run_pipeline_call_count=run_pipeline_call_count,
+        )
+    return 2
+
+
+def _print_normal_failure_message(
+    classification: str,
+    exc: BaseException,
+) -> None:
+    if classification == LIVE_PACKET_PRECHECK_FAILURE:
+        print(f"refusing live product execution: {exc}", file=sys.stderr)
+    elif classification == LIVE_PACKET_CAP_OVERFLOW:
+        print(f"bounded live product run exceeded caps: {exc}", file=sys.stderr)
+    elif classification == LIVE_PACKET_PIPELINE_FAILURE:
+        print(f"bounded live product run failed: {exc}", file=sys.stderr)
+    else:
         print(
             "bounded live product run failed unexpectedly; sanitized packet written",
             file=sys.stderr,
         )
-        return 2
 
-    _complete_campaign_guard(campaign_guard, campaign_run_started, cap_policy)
-    packet = build_live_success_packet(
-        context,
-        outcome=outcome,
-        cap_policy=cap_policy,
-        run_config=config,
-    )
-    packet = _enrich_campaign_packet(
-        packet,
-        context=context,
-        deps=deps,
-        outcome=outcome,
-        campaign_guard=campaign_guard,
-        attempt=args.campaign_attempt,
-    )
-    write_packet(context.output_path, packet)
-    print(f"wrote sanitized AG-LIVE-BOUND live packet to {context.output_path}")
-    return 0
+
+def _emit_minimal_terminal_packet(
+    *,
+    context: Any,
+    cap_policy: Any | None,
+    classification: str,
+    safe_phase: str,
+    exc: BaseException,
+    run_pipeline_call_count: int,
+) -> int:
+    try:
+        packet = build_minimal_live_failure_packet(
+            context,
+            classification=classification,
+            safe_phase=safe_phase,
+            safe_error_type=type(exc).__name__,
+            run_pipeline_call_count=run_pipeline_call_count,
+            cap_policy=cap_policy,
+        )
+        write_packet(context.output_path, packet)
+    except Exception:
+        print(
+            "sanitized terminal packet unavailable: packet_write_failure",
+            file=sys.stderr,
+        )
+        return PACKET_WRITE_FAILURE_EXIT_CODE
+    print("wrote sanitized terminal fallback packet", file=sys.stderr)
+    return 2
 
 
 def _load_live_environment() -> None:

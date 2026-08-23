@@ -57,6 +57,7 @@ from core.searchos_iterative_judgment_runtime import (
     validate_searchos_append_only_lineage,
     validate_searchos_judgment_model_output,
 )
+from core.source_class_recovery import canonical_documentation_source_class
 from core.source_classifier import classify_source
 
 SEARCHOS_SLICE_A_TRACE_KEY = "searchos_slice_a"
@@ -3821,9 +3822,27 @@ def _semantic_passages(
                 )
                 if (
                     tier != "unknown"
-                    and not read_source_facts.get("source_tier")
+                    and str(read_source_facts.get("source_tier") or "")
+                    .strip()
+                    .casefold()
+                    in {"", "unknown", "not_observable"}
                 ):
                     read_source_facts["source_tier"] = tier
+                source_tier = str(
+                    read_source_facts.get("source_tier") or ""
+                ).strip().casefold()
+                source_class = str(
+                    read_source_facts.get("source_class") or ""
+                ).strip().casefold()
+                if source_class in {"", "unknown", "not_observable"}:
+                    derived_source_class = canonical_documentation_source_class(
+                        url=url,
+                        title=reference.get("content_title") or "",
+                        snippet=reference.get("bounded_text") or "",
+                        source_tier=source_tier or tier,
+                    )
+                    if derived_source_class:
+                        read_source_facts["source_class"] = derived_source_class
                 qualification_lineage: dict[str, Any] = {
                     "navigation_origin": navigation_origin,
                     "canonical_candidate_id": source_id,

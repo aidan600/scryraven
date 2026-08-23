@@ -43,12 +43,15 @@ recorded below. The first crossed the repaired SearchOS handoff and stopped
 safely at Component Analyst output validation. The second crossed Component
 Analyst support, deterministic admission, ComponentCoverage, Sufficiency, and
 FinalAnswerPacket readiness and invoked Author, then stopped at the now-retired
-post-Author quantitative semantic gate. One post-repair licensed Q1 run entered
-ordinary `run_pipeline()` but its explicit zero SmartSearchJudgment cap blocked
-the first planned SmartSearchJudgment action at configuration, before Component
-Analyst, FAP, or Author. The installed FAP/Author boundary no longer uses the
-retired gate; all of these observations remain bounded evidence, not broad
-live-validation proof.
+post-Author quantitative semantic gate. A prior post-repair licensed Q1 run
+entered ordinary `run_pipeline()` but its explicit zero SmartSearchJudgment cap
+blocked the first planned SmartSearchJudgment action at configuration, before
+Component Analyst, FAP, or Author. The subsequent cap-contract confirmation
+run reached SearchOS, Component Analyst, admission, ComponentCoverage,
+Sufficiency, and FAP, then stopped at the FAP/source-obligation boundary with
+no citation-eligible source and no Author call. The installed FAP/Author
+boundary no longer uses the retired gate; all of these observations remain
+bounded evidence, not broad live-validation proof.
 
 
 That downstream synthesis-class boundary does not limit initial semantic
@@ -92,8 +95,8 @@ live-validation license is widened.
 
 ## Bounded Q1 Ordinary-Product Evidence
 
-Two historical Q1 ordinary-product observations and one post-repair,
-cap-limited Q1 run for
+Two historical Q1 ordinary-product observations, one post-repair cap-limited
+Q1 run, and one post-contract Q1 product confirmation for
 `N1-ANSWER-BEARING-ANALYST-SUPPORT-AND-GOLDEN-LANE-CONVERGENCE-01` are current
 evidence, not a general reliability claim.
 
@@ -177,6 +180,120 @@ SmartSearchJudgment action at configuration because
 projection became available. This consumes the one licensed run; it neither
 validates nor falsifies the selected FAP/Author boundary.
 
+The post-contract Q1 product confirmation run
+(`0c0fef74-a741-449e-bb73-acf4424bd848`) used the repaired AG-LIVE-SMOKE cap
+contract and records:
+
+```text
+PRODUCT runs                  = 1
+retries                       = 0
+search dispatches             = 1
+READ operations               = 1
+SmartSearchJudgment calls     = 2
+Component Analyst calls       = 1
+Component admission           = YES
+ComponentCoverage             = supported
+Sufficiency                   = ready_with_caveats
+FAP                           = blocked
+missing source obligations    = 3
+citation-eligible source IDs  = 0
+Author calls                  = 0
+supported cited answer        = NO
+RunOutcome                    = blocked
+failure classification        = blocked_final_answer_packet
+```
+
+The packet reached the ordinary product path through a sealed SearchOS
+semantic handoff, answer-bearing READ custody, Component Analyst support, and
+deterministic admission. FAP then remained blocked because the current packet
+had three unsatisfied required source obligations; no citation-eligible source
+was available for the final authority boundary. This is the first genuine
+post-repair product frontier for the phase, owned by the FAP/source-obligation
+handoff rather than the cap contract or the broker harness. No retry, backup
+query, alternate provider/model, Specialist, D-prime, Cross, synthesis, or
+Author call was made.
+
+The fresh credentialed Q1 confirmation attempt on 2026-08-23 used the exact
+official-Python query with `profile=AG-LIVE-SMOKE`, `mode=Balanced`, and
+`include_domains=docs.python.org` through
+`scripts/run_brokered_command_once.py`. The command was invoked exactly once
+with `max_scryraven_runs=1` and `max_retries=0`; no undeclared role-specific
+caps, backup query, alternate provider/model/route, or manual source check was
+supplied. The broker returned exit code `1`, and the designated external
+sanitized structural packet was not emitted. Because no sanctioned packet
+exists, no product `RunOutcome`, provider, route, retrieval, source-custody,
+FAP, citation, or Author result is claimed. The exact available failure record
+is `brokered_target_exit_1_without_sanitized_packet`, with the first genuine
+frontier at brokered target launch / sanitized-packet emission. Broker
+stdout/stderr, raw prompts and responses, READ bodies, private logs, caches,
+database rows, traces, secrets, and `.env` contents were not inspected, and no
+retry was made.
+
+The post-runner-repair Q1 confirmation attempt authorized at head
+`ec4b438127432cd56a31f0b86a2b700c612d5caa` on 2026-08-23 used the same exact
+official-Python query, `profile=AG-LIVE-SMOKE`, `mode=Balanced`, and
+`include_domains=docs.python.org` through
+`scripts/run_brokered_command_once.py`. The command was invoked exactly once
+with `max_scryraven_runs=1` and `max_retries=0`, with no undeclared
+role-specific caps, backup query, alternate provider/model/route, or manual
+source check. The brokered command returned exit code `1`, and the sanctioned
+terminal packet was absent. This records only
+`brokered_target_exit_1_without_sanitized_packet`; it does not prove a
+PRODUCT, FAP, citation, or Author result, and it does not prove the dynamic
+cause of the missing packet. No retry was made, and no broker stdout/stderr,
+raw prompts or responses, READ bodies, private logs, caches, database rows,
+traces, secrets, or `.env` contents were inspected.
+
+The fresh credentialed Q1 confirmation attempt authorized at head
+`ba5cf0cce08c549ee11c5f105629b3aa9a202918` on 2026-08-23 used the required
+`run_brokered_command_once.py` -> `--target-current-python` ->
+`ag_live_bound_01_target_bootstrap.py` -> bounded runner path with the exact
+official-Python query, `profile=AG-LIVE-SMOKE`, `mode=Balanced`, and
+`include_domains=docs.python.org`. The command was invoked exactly once with
+`max_scryraven_runs=1` and `max_retries=0`, with no undeclared role-specific
+caps, backup query, alternate provider/model/route, or manual source check.
+The sanctioned `broker_status_v1` receipt reports
+`status=target_completed`, `target_launch_attempted=true`,
+`target_launch_succeeded=true`, `target_exit_code=2`, and `timed_out=false`.
+The sanctioned bootstrap packet reports
+`classification=runner_bootstrap_failure`, `safe_phase=runner_import`,
+`safe_error_type=ModuleNotFoundError`, `runner_exit_code=null`, and
+`product_result_available=false`. Therefore this is a mechanical bootstrap
+failure at runner import; no PRODUCT, FAP, citation, or Author result is
+available or inferred. The packet does not expose the missing module identity,
+so the exact dynamic import cause is not established by this sanctioned
+record. No retry was made, and no broker stdout/stderr, raw prompts or
+responses, READ bodies, private logs, caches, database rows, traces, secrets,
+or `.env` contents were inspected.
+
+The first bounded-convergence Q1 attempt after the project-interpreter and
+bootstrap repair, at head `027eac70`, used the same exact query,
+`profile=AG-LIVE-SMOKE`, `mode=Balanced`, and
+`include_domains=docs.python.org` through
+`run_brokered_command_once.py` -> `--repo-env` -> `--target-current-python` ->
+the target bootstrap -> the bounded PRODUCT runner. It was invoked once with
+`max_scryraven_runs=1` and `max_retries=0`, with no undeclared role-specific
+caps, backup query, alternate provider/model/route, or manual source check.
+The sanctioned `broker_status_v1` receipt reports
+`status=target_completed`, `target_launch_succeeded=true`,
+`target_exit_code=0`, and `timed_out=false`. The normal sanitized PRODUCT
+packet proves `run_pipeline_call_count=1`, one search dispatch, one READ,
+two SmartSearchJudgment calls, one Component Analyst call, admission, and
+`Coverage=supported`; it classifies the terminal result as
+`blocked_final_answer_packet` with `FAP=blocked`, one missing source
+obligation, one satisfied source obligation, zero citation-eligible source
+IDs, zero Author calls, and `RunOutcome=blocked`. The sanctioned N1 packet
+also records a sealed SearchOS semantic handoff and no unresolved required
+slot. This proves the repaired bootstrap/runner boundary reaches ordinary
+PRODUCT execution, but it does not identify the missing obligation or prove
+that the live semantic/FAP block is a transport defect. The exact offline Q1
+golden lane still projects its real outcome to a normal cited success packet.
+No retry or second convergence attempt was made: a further fix would require
+changing protected semantic/FAP/sufficiency behavior or inspecting prohibited
+raw model/provider material. The bounded convergence therefore stops at an
+architecture-review frontier, with supported cited Q1 completion still
+unproved in live product evidence.
+
 The installed final boundary is now:
 
 ```text
@@ -227,10 +344,12 @@ ordinary proof now reaches the shown path with direct-source numeric authority,
 one Author call, cited success, no Specialist, no Component D-prime, no Cross or
 synthesis semantic call, no Scrutineer, and no post-Author semantic gate. The
 N=1 direct-admission topology correctly does not require a Component D-prime
-call. The only post-repair live run exhausted its licensed attempt at the
-`run_pipeline` SmartSearchJudgment cap before Component Analyst; it is not a
-live traversal of this FAP/Author path. This offline result is not a new broad
-live-product claim.
+call. The prior cap-limited post-repair live run exhausted its licensed attempt
+at the
+`run_pipeline` SmartSearchJudgment cap before Component Analyst. The new
+post-contract live run traversed the FAP boundary but did not authorize Author
+because required source obligations were unsatisfied. It is not a supported
+cited answer and does not establish broad live-product reliability.
 
 ## Operator Doorman Boundary
 
@@ -244,6 +363,22 @@ marker describes only the specialized explicit-provider/evaluator RPC
 mechanism; its provider matrix and mechanical request fuse are not general
 product or doorman policy. See
 [Brokered Command Session Operator Flow](../operator/BROKERED_COMMAND_SESSION_OPERATOR_FLOW.md).
+
+The generic broker now has an optional external `broker_status_v1` receipt for
+mechanical target-launch, timeout, exit, and sanitized-output-write facts. A
+target `Popen()` OSError is classified without traceback or exception text and
+returns a controlled exit distinct from target exit `1`. Python validation
+targets may explicitly request `--target-current-python`, which prepends the
+private child's `sys.executable` to the exact target argv. The bounded
+AG-LIVE-BOUND-01 lane uses the stdlib-only
+`scripts/ag_live_bound_01_target_bootstrap.py` wrapper to preserve the runner's
+return code and emit only a minimal bootstrap packet for runner import failure
+or nonzero return without a sanctioned packet. These mechanics do not claim
+that PRODUCT ran and do not own provider, model, SearchOS, FAP, Author, or
+source semantics. Offline synthetic-environment proof covers target launch
+failure, current-Python launch, Q1 dry-run traversal, private-child
+configuration failure, runner import failure, and runner nonzero-without-packet
+sentinels; no live calls were made.
 
 ## Installed Capability Table
 
@@ -1064,9 +1199,14 @@ Sufficiency, FAP readiness, and Author invocation, but the former post-Author
 gate stopped the result. The current offline Q1 golden-lane proof traverses the
 same ordinary consumer with `direct_source_numeric`, one Author invocation,
 mechanically finalized citations, a successful RunOutcome, and an evaluator
-rejection that cannot block the product. Neither offline proof nor historical
-live observations establish repeatability, arbitrary-query support, or broad
-live product behavior.
+rejection that cannot block the product. The fresh cap-contract live
+confirmation traversed the same ordinary consumer through FAP, but FAP blocked
+before Author with three unsatisfied source obligations and zero citation-
+eligible source IDs. Neither offline proof nor this bounded live non-success
+establishes repeatability, arbitrary-query support, or broad live product
+behavior.
+Neither offline proof nor historical live observations establish repeatability,
+arbitrary-query support, or broad live product behavior.
 
 ## Installed SearchOS One-Hop Breadcrumb Navigation
 
@@ -1177,6 +1317,8 @@ Fetch, Tavily site acquisition, replacement semantic role, or live validation.
 - Two historical bounded Q1 ordinary-product runs, one offline golden-lane
   proof, and one cap-limited post-repair Q1 run are recorded above; they do not
   establish broad live validation or repeatability.
+- The post-contract live confirmation is additionally recorded above; it also
+  does not establish broad live validation or repeatability.
 - Real-model factual InterpretationBinding selection accuracy, abstention
   quality, and false-binding rate remain unproved.
 - Real-model user-clarification quality and arbitrary-query job escalation

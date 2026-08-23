@@ -1880,6 +1880,229 @@ def test_n1_plural_semantic_slots_share_one_current_read_and_one_analyst(
     )
 
 
+def test_q1_provider_like_read_derives_official_current_source_authority(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A provider-like result without fixture source facts still closes Q1."""
+
+    _install_q1_plural_planner_contract(monkeypatch)
+    original_validator = (
+        quantitative_evaluator.validate_author_output_quantitative_authority
+    )
+
+    def fail_if_product_calls_retired_validator(*_args: Any, **_kwargs: Any) -> None:
+        raise AssertionError("post-Author quantitative evaluator must not be a PRODUCT gate")
+
+    monkeypatch.setattr(
+        quantitative_evaluator,
+        "validate_author_output_quantitative_authority",
+        fail_if_product_calls_retired_validator,
+    )
+    unrelated_prefix = " ".join(
+        [
+            "Earlier documentation section with background numeric examples 2024 and 42."
+        ]
+        * 70
+    )
+    answer_bearing_section = (
+        "math.isclose(a, b, *, rel_tol=1e-09, abs_tol=0.0) "
+        "determines whether two values are close."
+    )
+    long_read_text = (
+        f"{unrelated_prefix} {answer_bearing_section} "
+        + "Later documentation notes. " * 40
+    )
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        mode="Balanced",
+        query=(
+            "According to the official Python 3 documentation, what are the "
+            "default values for rel_tol and abs_tol in math.isclose()?"
+        ),
+        core_topic="Python math.isclose rel_tol abs_tol defaults",
+        primary_entity="Python math.isclose",
+        researcher_queries=["Python math.isclose rel_tol abs_tol defaults"],
+        raw_author_response=(
+            "For math.isclose(), the default rel_tol value is 1e-09 and the "
+            "default abs_tol value is 0.0. "
+            "[[1]](https://docs.python.org/3/library/math.html)"
+        ),
+        inject_default_source_qualification=False,
+        evidence_rows=[
+            {
+                "title": "math.isclose documentation",
+                "url": "https://docs.python.org/3/library/math.html",
+                "text": answer_bearing_section,
+                "credibility": 4,
+                "source_tier": "unknown",
+            }
+        ],
+        read_content_by_url={
+            "https://docs.python.org/3/library/math.html": long_read_text
+        },
+    )
+    monkeypatch.setattr(
+        quantitative_evaluator,
+        "validate_author_output_quantitative_authority",
+        original_validator,
+    )
+    searchos = outcome.execution_trace.get("searchos_slice_a") or {}
+    ledger = harness.run_kernel.state.evidence_ledger.to_projection().to_dict()
+    packet = outcome.execution_trace["final_answer_packet"]
+    admissions = harness.run_kernel.state.projections[
+        "multicomponent_component_admission"
+    ]
+    graph = harness.run_kernel.state.projections[
+        "multicomponent_component_work_graph_v1"
+    ]
+    assert admissions["physical_component_analyst_calls"] == 1
+    assert admissions["admitted_component_count"] == 1
+    assert graph["physical_call_accounting"]["component_analyst_calls"] == 1
+    assert graph["physical_call_accounting"]["cross_component_analyst_calls"] == 0
+    assert graph["physical_call_accounting"]["scrutineer_calls"] == 0
+    assert graph["physical_call_accounting"]["synthesis_dprime_calls"] == 0
+    assert searchos["readiness_projection"][
+        "all_required_slots_slice_a_ready"
+    ] is True
+    assert searchos["n1_closure_observability"] == {
+        "component_count": 1,
+        "semantic_slot_count": 2,
+        "source_obligation_count": 1,
+        "component_analyst_calls": 1,
+        "component_analyst_artifact_produced": True,
+        "component_admission": True,
+        "component_coverage": "supported",
+        "bounded_read_selection_count": 1,
+        "bounded_read_full_anchor_match_count": 0,
+        "bounded_read_partial_anchor_match_count": 1,
+        "bounded_read_digest_bound_count": 1,
+    }
+    candidate = next(
+        item
+        for item in ledger["candidate_records"]
+        if item["source_class"] == "primary_source_documents"
+    )
+    assert candidate["source_tier"] == "official"
+    assert candidate["eligible_for_stronger_obligation"] is True
+    canonical_obligation = next(
+        item
+        for item in packet["source_obligations"]
+        if item["obligation_id"] == "final-answer:run_contract:canonical_docs"
+    )
+    assert canonical_obligation["status"] == "source_obligation_satisfied"
+    assert packet["citation_eligible"]
+    assert [item["source_id"] for item in packet["citation_eligible"]] == [1]
+    assert packet["citation_ineligible"] == []
+    assert packet["semantic_packet_evidence_binding_ref"]["available"] is True
+    assert (
+        packet["semantic_packet_evidence_binding_ref"][
+            "semantic_packet_evidence_binding_count"
+        ]
+        == 1
+    )
+    assert harness.run_kernel.state.sufficiency_judgment_history[-1][
+        "final_answer_allowed"
+    ] is True
+    manifest = packet["quantitative_finalization_authority_manifest"]
+    assert {
+        row["authority_kind"] for row in manifest["authorized_numeric_claims"]
+    } == {"direct_source_numeric"}
+    assert outcome.terminal_status == "completed"
+    assert harness.author_prompts and len(harness.author_prompts) == 1
+    assert harness.run_kernel.state.author_observation[
+        "post_author_quantitative_semantic_gate_active"
+    ] is False
+    assert outcome.execution_trace["scrutineer_ran"] is False
+    assert ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST] in harness.model_system_prompts
+    assert all(
+        ROLE_SYSTEM_PROMPTS[role] not in harness.model_system_prompts
+        for role in (
+            ROLE_COMPONENT_DPRIME,
+            ROLE_CROSS_COMPONENT_ANALYST,
+            ROLE_SYNTHESIS_DPRIME,
+        )
+    )
+    assert outcome.report == (
+        "For math.isclose(), the default rel_tol value is 1e-09 and the "
+        "default abs_tol value is 0.0. "
+        "[[1]](https://docs.python.org/3/library/math.html)"
+    )
+
+
+@pytest.mark.parametrize(
+    ("source_url", "source_tier", "currentness_signal"),
+    [
+        (
+            "https://example.com/math-isclose-explainer",
+            "secondary",
+            "current",
+        ),
+        (
+            "https://docs.python.org/3/library/math.html",
+            "official",
+            "stale",
+        ),
+    ],
+)
+def test_q1_nonofficial_or_stale_source_does_not_satisfy_stronger_obligation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    source_url: str,
+    source_tier: str,
+    currentness_signal: str,
+) -> None:
+    """Weak or stale source facts cannot be upgraded by the READ handoff."""
+
+    _install_q1_plural_planner_contract(monkeypatch)
+    answer_bearing_section = (
+        "math.isclose(a, b, *, rel_tol=1e-09, abs_tol=0.0) "
+        "determines whether two values are close."
+    )
+    long_read_text = " ".join([answer_bearing_section] * 80)
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        mode="Balanced",
+        query=(
+            "According to the official Python 3 documentation, what are the "
+            "default values for rel_tol and abs_tol in math.isclose()?"
+        ),
+        core_topic="Python math.isclose rel_tol abs_tol defaults",
+        primary_entity="Python math.isclose",
+        researcher_queries=["Python math.isclose rel_tol abs_tol defaults"],
+        raw_author_response=(
+            "For math.isclose(), the default rel_tol value is 1e-09 and the "
+            "default abs_tol value is 0.0. "
+            f"[[1]]({source_url})"
+        ),
+        inject_default_source_qualification=False,
+        evidence_rows=[
+            {
+                "title": "math.isclose explainer",
+                "url": source_url,
+                "text": answer_bearing_section,
+                "credibility": 4,
+                "source_tier": source_tier,
+                "currentness_signal": currentness_signal,
+            }
+        ],
+        read_content_by_url={source_url: long_read_text},
+    )
+
+    packet = outcome.execution_trace["final_answer_packet"]
+    canonical_obligation = next(
+        item
+        for item in packet["source_obligations"]
+        if item["obligation_id"] == "final-answer:run_contract:canonical_docs"
+    )
+    assert canonical_obligation["status"] != "source_obligation_satisfied"
+    assert packet["citation_eligible"] == []
+    assert harness.author_prompts == []
+    assert outcome.terminal_status == "blocked"
+
+
 def test_n1_partial_anchor_read_does_not_launder_semantic_support(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

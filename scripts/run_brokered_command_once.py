@@ -8,6 +8,7 @@ secret values that appear unchanged in captured output.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import secrets
 import subprocess
@@ -19,6 +20,9 @@ PRIVATE_ENV_FILE_PATH_ENV_VAR = "SCRYRAVEN_DOORMAN_ENV_FILE_PATH"
 PRIVATE_NONCE_ENV_VAR = "SCRYRAVEN_DOORMAN_NONCE"
 CONFIGURATION_EXIT_CODE = 2
 TIMEOUT_EXIT_CODE = 124
+TARGET_LAUNCH_FAILURE_EXIT_CODE = 125
+STATUS_WRITE_FAILURE_EXIT_CODE = 126
+STATUS_SCHEMA_VERSION = "broker_status_v1"
 MINIMUM_REDACTABLE_SECRET_LENGTH = 4
 _MECHANICAL_ENVIRONMENT_NAMES = (
     "PATH",
@@ -64,10 +68,11 @@ def _parent_main(option_argv: Sequence[str], target_argv: list[str]) -> int:
         if args.repo_env
         else args.env_file
     )
-    stdout_path, stderr_path = validate_output_paths(
+    stdout_path, stderr_path, status_path = validate_output_paths(
         repo_root=repo_root,
         stdout=args.stdout,
         stderr=args.stderr,
+        status=args.status,
         replace_output=args.replace_output,
     )
     validate_target_argv(target_argv)
@@ -93,6 +98,10 @@ def _parent_main(option_argv: Sequence[str], target_argv: list[str]) -> int:
         "--timeout-seconds",
         str(args.timeout_seconds),
     ]
+    if status_path is not None:
+        child_argv.extend(["--status", str(status_path)])
+    if args.target_current_python:
+        child_argv.append("--target-current-python")
     if args.replace_output:
         child_argv.append("--replace-output")
     child_argv.extend(["--", *target_argv])
@@ -109,6 +118,18 @@ def _parent_main(option_argv: Sequence[str], target_argv: list[str]) -> int:
         )
         return completed.returncode
     except OSError:
+        if status_path is not None and not _write_broker_status(
+            status_path,
+            target_launch_attempted=False,
+            target_launch_succeeded=False,
+            target_exit_code=None,
+            timed_out=False,
+            stdout_sanitized_written=False,
+            stderr_sanitized_written=False,
+            status="private_child_configuration_failed",
+            safe_error_code="private_child_configuration_failed",
+        ):
+            return STATUS_WRITE_FAILURE_EXIT_CODE
         return CONFIGURATION_EXIT_CODE
     finally:
         nonce = None
@@ -123,29 +144,55 @@ def _private_main(option_argv: Sequence[str], target_argv: list[str]) -> int:
     env_file_path = os.environ.get(PRIVATE_ENV_FILE_PATH_ENV_VAR)
     if not nonce or not env_file_path:
         raise BrokeredCommandError("private_session_missing")
-    repo_root = normalize_repository_root(args.repo_root)
-    stdout_path, stderr_path = validate_output_paths(
-        repo_root=repo_root,
-        stdout=args.stdout,
-        stderr=args.stderr,
-        replace_output=args.replace_output,
-    )
-    validate_target_argv(target_argv)
-    if args.timeout_seconds <= 0:
-        raise BrokeredCommandError("timeout_seconds_must_be_positive")
-
-    parsed_values = load_private_environment_file(Path(env_file_path))
-    target_env = target_environment(parsed_values, os.environ)
+    repo_root: Path | None = None
+    stdout_path: Path | None = None
+    stderr_path: Path | None = None
+    status_path: Path | None = None
+    parsed_values: dict[str, str] = {}
+    target_env: dict[str, str] = {}
     try:
+        repo_root = normalize_repository_root(args.repo_root)
+        stdout_path, stderr_path, status_path = validate_output_paths(
+            repo_root=repo_root,
+            stdout=args.stdout,
+            stderr=args.stderr,
+            status=args.status,
+            replace_output=args.replace_output,
+        )
+        validate_target_argv(target_argv)
+        if args.timeout_seconds <= 0:
+            raise BrokeredCommandError("timeout_seconds_must_be_positive")
+
+        parsed_values = load_private_environment_file(Path(env_file_path))
+        target_env = target_environment(parsed_values, os.environ)
         return _run_and_write_sanitized_output(
             target_argv=target_argv,
+            target_current_python=args.target_current_python,
             repo_root=repo_root,
             target_env=target_env,
             stdout_path=stdout_path,
             stderr_path=stderr_path,
+            status_path=status_path,
             timeout_seconds=args.timeout_seconds,
             secret_values=secret_values_for_redaction(parsed_values),
         )
+    except BrokeredCommandError:
+        if status_path is not None:
+            stdout_written = _write_sanitized_text(stdout_path, "")
+            stderr_written = _write_sanitized_text(stderr_path, "")
+            if not _write_broker_status(
+                status_path,
+                target_launch_attempted=False,
+                target_launch_succeeded=False,
+                target_exit_code=None,
+                timed_out=False,
+                stdout_sanitized_written=stdout_written,
+                stderr_sanitized_written=stderr_written,
+                status="private_child_configuration_failed",
+                safe_error_code="private_child_configuration_failed",
+            ):
+                return STATUS_WRITE_FAILURE_EXIT_CODE
+        raise
     finally:
         parsed_values.clear()
         target_env.clear()
@@ -156,23 +203,50 @@ def _private_main(option_argv: Sequence[str], target_argv: list[str]) -> int:
 def _run_and_write_sanitized_output(
     *,
     target_argv: Sequence[str],
+    target_current_python: bool,
     repo_root: Path,
     target_env: Mapping[str, str],
     stdout_path: Path,
     stderr_path: Path,
+    status_path: Path | None,
     timeout_seconds: float,
     secret_values: Sequence[str],
 ) -> int:
-    process = subprocess.Popen(
-        list(target_argv),
-        cwd=str(repo_root),
-        env=dict(target_env),
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        shell=False,
-        **_target_process_group_options(),
-    )
+    launch_argv = list(target_argv)
+    if target_current_python:
+        launch_argv.insert(0, sys.executable)
+    try:
+        process = subprocess.Popen(
+            launch_argv,
+            cwd=str(repo_root),
+            env=dict(target_env),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            shell=False,
+            **_target_process_group_options(),
+        )
+    except OSError as exc:
+        stdout_written = _write_sanitized_text(stdout_path, "")
+        stderr_written = _write_sanitized_text(stderr_path, "")
+        status_written = _write_broker_status(
+            status_path,
+            target_launch_attempted=True,
+            target_launch_succeeded=False,
+            target_exit_code=None,
+            timed_out=False,
+            stdout_sanitized_written=stdout_written,
+            stderr_sanitized_written=stderr_written,
+            status="target_launch_failed",
+            safe_error_code=(
+                "target_executable_unavailable"
+                if isinstance(exc, FileNotFoundError)
+                else "target_launch_os_error"
+            ),
+        )
+        if not status_written or not stdout_written or not stderr_written:
+            return STATUS_WRITE_FAILURE_EXIT_CODE
+        return TARGET_LAUNCH_FAILURE_EXIT_CODE
     timed_out = False
     raw_stdout: bytes | None = None
     raw_stderr: bytes | None = None
@@ -185,20 +259,33 @@ def _run_and_write_sanitized_output(
     finally:
         if process.poll() is None:
             _terminate_process_tree(process)
-    try:
-        stdout_path.write_text(
-            redact_text(_normalize_captured_text(raw_stdout), secret_values),
-            encoding="utf-8",
-            newline="\n",
-        )
-        stderr_path.write_text(
-            redact_text(_normalize_captured_text(raw_stderr), secret_values),
-            encoding="utf-8",
-            newline="\n",
-        )
-    finally:
-        raw_stdout = None
-        raw_stderr = None
+    stdout_written = _write_sanitized_text(
+        stdout_path,
+        redact_text(_normalize_captured_text(raw_stdout), secret_values),
+    )
+    stderr_written = _write_sanitized_text(
+        stderr_path,
+        redact_text(_normalize_captured_text(raw_stderr), secret_values),
+    )
+    raw_stdout = None
+    raw_stderr = None
+    status_written = _write_broker_status(
+        status_path,
+        target_launch_attempted=True,
+        target_launch_succeeded=True,
+        target_exit_code=process.returncode,
+        timed_out=timed_out,
+        stdout_sanitized_written=stdout_written,
+        stderr_sanitized_written=stderr_written,
+        status="target_timeout" if timed_out else "target_completed",
+        safe_error_code=(
+            "sanitized_output_write_failed"
+            if not stdout_written or not stderr_written
+            else None
+        ),
+    )
+    if not status_written or not stdout_written or not stderr_written:
+        return STATUS_WRITE_FAILURE_EXIT_CODE
     return TIMEOUT_EXIT_CODE if timed_out else process.returncode
 
 
@@ -206,6 +293,47 @@ def _normalize_captured_text(raw: bytes | None) -> str:
     if not raw:
         return ""
     return raw.decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _write_sanitized_text(path: Path | None, text: str) -> bool:
+    if path is None:
+        return False
+    try:
+        path.write_text(text, encoding="utf-8", newline="\n")
+    except OSError:
+        return False
+    return True
+
+
+def _write_broker_status(
+    path: Path | None,
+    *,
+    target_launch_attempted: bool,
+    target_launch_succeeded: bool,
+    target_exit_code: int | None,
+    timed_out: bool,
+    stdout_sanitized_written: bool,
+    stderr_sanitized_written: bool,
+    status: str,
+    safe_error_code: str | None,
+) -> bool:
+    if path is None:
+        return True
+    payload = {
+        "schema_version": STATUS_SCHEMA_VERSION,
+        "target_launch_attempted": target_launch_attempted,
+        "target_launch_succeeded": target_launch_succeeded,
+        "target_exit_code": target_exit_code,
+        "timed_out": timed_out,
+        "stdout_sanitized_written": stdout_sanitized_written,
+        "stderr_sanitized_written": stderr_sanitized_written,
+        "status": status,
+        "safe_error_code": safe_error_code,
+    }
+    return _write_sanitized_text(
+        path,
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+    )
 
 
 def _parent_parser() -> argparse.ArgumentParser:
@@ -234,7 +362,17 @@ def _common_parser() -> argparse.ArgumentParser:
     parser.add_argument("--repo-root", required=True)
     parser.add_argument("--stdout", required=True)
     parser.add_argument("--stderr", required=True)
+    parser.add_argument(
+        "--status",
+        default=None,
+        help="Optional absolute external sanitized broker status path.",
+    )
     parser.add_argument("--timeout-seconds", type=float, required=True)
+    parser.add_argument(
+        "--target-current-python",
+        action="store_true",
+        help="Explicitly prepend the private child sys.executable to the target argv.",
+    )
     parser.add_argument("--replace-output", action="store_true")
     return parser
 
@@ -275,15 +413,24 @@ def validate_output_paths(
     stdout: str | Path,
     stderr: str | Path,
     replace_output: bool,
-) -> tuple[Path, Path]:
+    status: str | Path | None = None,
+) -> tuple[Path, Path, Path | None]:
     stdout_path = _normalize_external_output_path(stdout, repo_root)
     stderr_path = _normalize_external_output_path(stderr, repo_root)
-    if stdout_path == stderr_path:
-        raise BrokeredCommandError("stdout_and_stderr_must_differ")
-    for output_path in (stdout_path, stderr_path):
+    status_path = (
+        _normalize_external_output_path(status, repo_root)
+        if status is not None
+        else None
+    )
+    paths = [stdout_path, stderr_path]
+    if status_path is not None:
+        paths.append(status_path)
+    if len(set(paths)) != len(paths):
+        raise BrokeredCommandError("output_paths_must_differ")
+    for output_path in paths:
         if output_path.exists() and not replace_output:
             raise BrokeredCommandError("output_replacement_requires_authority")
-    return stdout_path, stderr_path
+    return stdout_path, stderr_path, status_path
 
 
 def _normalize_external_output_path(path: str | Path, repo_root: Path) -> Path:

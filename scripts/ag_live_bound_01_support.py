@@ -51,6 +51,8 @@ LIVE_PACKET_CAP_OVERFLOW = "cap_overflow"
 LIVE_PACKET_PIPELINE_FAILURE = "pipeline_failure"
 LIVE_PACKET_PRECHECK_FAILURE = "precheck_failure"
 LIVE_PACKET_UNEXPECTED_FAILURE = "unexpected_failure"
+LIVE_PACKET_RESULT_PROJECTION_FAILURE = "result_projection_failure"
+LIVE_PACKET_PACKET_WRITE_FAILURE = "packet_write_failure"
 FAILURE_OBSERVABILITY_SCHEMA_VERSION = "ag_live_failure_observability_v1"
 MAX_SAFE_ERROR_MESSAGE_CHARS = 240
 
@@ -223,7 +225,8 @@ class AgLiveBoundPacketError(ValueError):
 class AgLiveBoundCaps:
     max_scryraven_runs: int = 1
     # None means this ordinary runner records the observation without adding a
-    # logical role cap. Explicit resource experiments may supply an integer.
+    # logical role cap. A selected profile must explicitly declare any integer
+    # override before the runner can populate it.
     max_search_dispatches: int | None = None
     max_fetch_read_operations: int | None = None
     max_author_model_calls: int | None = None
@@ -470,6 +473,12 @@ def validate_caps_requested(
         raise AgLiveBoundPreflightError(
             f"refusing run: cap fields must be non-negative integers: "
             f"{', '.join(sorted(invalid))}"
+        )
+    undeclared = sorted(set(requested).difference(planned_caps))
+    if undeclared:
+        raise AgLiveBoundPreflightError(
+            f"refusing run: cap fields not declared by selected profile "
+            f"{profile.name}: {', '.join(undeclared)}"
         )
     missing = [key for key in planned_caps if key not in requested]
     if missing:
@@ -1156,6 +1165,130 @@ def build_live_failure_packet(
     }
     if failure_observability is not None:
         packet["failure_observability"] = dict(failure_observability)
+    reject_forbidden_packet(packet)
+    return packet
+
+
+def build_minimal_live_failure_packet(
+    context: PreflightContext,
+    *,
+    classification: str,
+    safe_phase: str,
+    safe_error_type: str,
+    run_pipeline_call_count: int,
+    cap_policy: RunCapPolicy | None = None,
+) -> dict[str, Any]:
+    """Build a terminal packet without inspecting a failed product outcome."""
+
+    profile = get_validation_profile(context.profile_name)
+    try:
+        caps_observed = (
+            caps_observed_from_policy(cap_policy)
+            if cap_policy is not None
+            else {"enforcement": "unavailable"}
+        )
+    except Exception:
+        caps_observed = {"enforcement": "unavailable"}
+    safe_phase_value = _safe_error_token(safe_phase) or "unexpected"
+    safe_error_type_value = str(safe_error_type or "Exception")[:120]
+    failure_observability = {
+        "schema_version": FAILURE_OBSERVABILITY_SCHEMA_VERSION,
+        "safe_phase": safe_phase_value,
+        "safe_error_type": safe_error_type_value,
+        "safe_error_code": _safe_error_code(
+            safe_phase=safe_phase_value,
+            safe_error_type=safe_error_type_value,
+        ),
+        "safe_error_message": None,
+        "safe_error_message_redacted": True,
+        "raw_traceback_retained": False,
+        "raw_exception_repr_retained": False,
+        "raw_provider_payload_retained": False,
+        "raw_prompt_retained": False,
+        "raw_model_response_retained": False,
+        "private_logs_retained": False,
+        "db_cache_rows_retained": False,
+        "secrets_returned": False,
+    }
+    packet = {
+        "packet_marker": PACKET_MARKER,
+        "schema_version": profile.packet_schema,
+        "phase_id": LIVE_PHASE_ID,
+        "validation_profile": profile.packet_identity(),
+        "expected_packet_criteria": list(profile.expected_packet_criteria),
+        "proof_surface": PROOF_SURFACE,
+        "dry_run": False,
+        "confirm_live_product_run": True,
+        "run_id": context.run_id,
+        "query": context.query,
+        "mode": context.mode,
+        "domain_allowlist": list(context.include_domains),
+        "output_path": _relative_output_path(context),
+        "caps_requested": context.caps.as_requested_dict(),
+        "caps_observed": caps_observed,
+        "cap_enforcement_product_path": {
+            "policy_surface": PRODUCT_CAP_POLICY_SURFACE,
+            "runtime_consumer": PRODUCT_RUNTIME_CONSUMER,
+            "script_owns_cap_authority": False,
+            "product_policy_constructible": True,
+        },
+        "source_custody_policy_requested": source_custody_policy_request(
+            context.profile_name
+        ),
+        "source_custody_policy_product_path": source_custody_policy_product_path(
+            context.profile_name
+        ),
+        "preflight": {
+            "query_lock": context.query_lock,
+            "output_path_safe": True,
+            "output_path_gitignored": context.output_path_gitignored,
+            "output_path_external_confined": context.output_path_external_confined,
+            "domain_allowlist_present": True,
+            "caps_valid": True,
+            "live_path_armed": True,
+        },
+        "redaction_status": "sanitized_live_result",
+        "forbidden_material_absent": forbidden_material_absent(),
+        "no_retention": no_retention_booleans(),
+        "retention_posture": suppressed_ordinary_retention_posture(context),
+        "success_classification": classification,
+        "terminal_packet_fallback": True,
+        "packet_generation_mode": "minimal_terminal_fallback",
+        "planned_live_dispatch": run_pipeline_call_count > 0,
+        "run_pipeline_call_count": run_pipeline_call_count,
+        "final_answer_text": "",
+        "cited_source_ids": [],
+        "cited_urls": [],
+        "source_ids_available": False,
+        "sanitized_projection_summaries": {
+            "component_binding": {"available": False},
+            "component_coverage": {"available": False},
+            "sufficiency": {"available": False},
+            "final_answer_packet": {"available": False},
+            "author_posture": {"available": False},
+        },
+        "validation_observability": {
+            "schema_version": "validation_observability_v1",
+            "projection_mode": "minimal_terminal_fallback",
+            "validation_profile_name": profile.name,
+            "raw_private_material_serialized": False,
+        },
+        "failure_summary": {
+            "reason": classification,
+            "classification": classification,
+            "safe_phase": safe_phase_value,
+            "safe_error_type": safe_error_type_value,
+            "safe_error_code": failure_observability["safe_error_code"],
+            "safe_error_message": None,
+            "safe_error_message_redacted": True,
+        },
+        "failure_observability": failure_observability,
+        "live_only": {
+            "ordinary_product_path": run_pipeline_call_count > 0,
+            "runtime_consumer": "run_pipeline",
+            "run_config_cap_policy": True,
+        },
+    }
     reject_forbidden_packet(packet)
     return packet
 

@@ -1109,6 +1109,7 @@ class PostRetirementOrdinaryPipelineHarness(OfflineOrdinaryPipelineHarness):
     evidence_rows: Sequence[Mapping[str, Any]] | None = None
     followup_evidence_rows: Sequence[Mapping[str, Any]] | None = None
     install_economist_sentinel: bool = True
+    inject_default_source_qualification: bool = True
     analyst_prompts: list[str] = field(default_factory=list)
     analyst_calls: int = 0
     economist_calls: list[str] = field(default_factory=list)
@@ -1180,7 +1181,8 @@ class PostRetirementOrdinaryPipelineHarness(OfflineOrdinaryPipelineHarness):
             row.setdefault("source_id", index)
             row.setdefault("score", 1.0 - ((index - 1) * 0.01))
             row.setdefault("credibility", 3 if self.healthy else 1)
-            row.setdefault("source_tier", "official" if self.healthy else "unknown")
+            if self.inject_default_source_qualification:
+                row.setdefault("source_tier", "official" if self.healthy else "unknown")
             row.setdefault("_provider", "offline_fake_search")
             passages.append(row)
         return passages
@@ -1236,6 +1238,7 @@ def run_post_retirement_ordinary_pipeline(
         "[[1]](https://alpha.example/report-1)"
     ),
     install_economist_sentinel: bool = True,
+    inject_default_source_qualification: bool = True,
     current_date: str = "2026-05-06",
     cap_policy: Any | None = None,
     deps_overrides: Mapping[str, Any] | None = None,
@@ -1264,6 +1267,7 @@ def run_post_retirement_ordinary_pipeline(
         evidence_rows=evidence_rows,
         followup_evidence_rows=followup_evidence_rows,
         install_economist_sentinel=install_economist_sentinel,
+        inject_default_source_qualification=inject_default_source_qualification,
         read_content_by_url=read_content_by_url,
         read_assessment_decision=read_assessment_decision,
     )

@@ -100,12 +100,13 @@ in the repository's private `.env`, launch it through the canonical repository
 environment mode:
 
 ```powershell
-py scripts\run_brokered_command_once.py `
+.\.venv\Scripts\python.exe scripts\run_brokered_command_once.py `
   --repo-root <REPO-ROOT> `
   --repo-env `
+  --status <ABSOLUTE-EXTERNAL-STATUS> `
   ... `
   -- `
-  python -m scryraven ...
+  <exact> <argv> <tokens>...
 ```
 
 `--repo-env` means the normalized repository root's `.env`, resolved inside the
@@ -114,11 +115,56 @@ form remains available for existing operator callers, but the Codex workflow
 must use `--repo-env` and must not discover, stat, or pass an environment-file
 path from the controlling Workspace Write process.
 
+For ScryRaven repository commands, the broker itself must be launched with the
+repository virtual-environment interpreter:
+`.\.venv\Scripts\python.exe`. Before a credentialed run, if that executable
+is absent or cannot be launched, stop with a mechanical interpreter/setup
+failure; do not fall back to `py`, a global `python`, or dependency
+installation. `--target-current-python` then makes the private target inherit
+the interpreter running the broker. Therefore the broker's interpreter, not
+the target flag alone, determines whether project dependencies are available.
+
 For an authorized credentialed command, Codex prepares the complete exact
 broker-plus-target argv, requests one exact command-level escalation, and then
 executes that command after the user approves it in the normal permission UI.
 The user should approve the command in Codex; they should not be asked to open
 PowerShell, run the broker manually, or paste its result back into the session.
+
+For a Python target in a bounded validation lane, pass
+`--target-current-python` explicitly and place the target script and its exact
+arguments after `--`. The private child then prepends its own `sys.executable`;
+the broker never silently rewrites an arbitrary target command or relies on a
+literal `python` lookup from the private target `PATH`.
+
+The bounded AG-LIVE target uses the stdlib-only bootstrap so interpreter or
+runner import failures can produce a minimal structural terminal packet:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_brokered_command_once.py `
+  --repo-root <REPO-ROOT> `
+  --repo-env `
+  --stdout <ABSOLUTE-EXTERNAL-STDOUT> `
+  --stderr <ABSOLUTE-EXTERNAL-STDERR> `
+  --status <ABSOLUTE-EXTERNAL-STATUS> `
+  --timeout-seconds <SECONDS> `
+  --target-current-python `
+  -- `
+  scripts\ag_live_bound_01_target_bootstrap.py `
+  --profile AG-LIVE-SMOKE `
+  --query <EXACT-QUERY> `
+  --mode Balanced `
+  --include-domains docs.python.org `
+  --output <ABSOLUTE-SANCTIONED-PACKET> `
+  --external-output-root <ABSOLUTE-EXTERNAL-PACKET-DIR>
+```
+
+When the bootstrap cannot import or enter the bounded runner, its fallback
+packet may include only the safe exception class, a bounded dotted
+`missing_module` identifier for `ModuleNotFoundError` (otherwise `null`), and
+the enum `interpreter_origin` (`repo_venv` or
+`non_repo_venv_or_global`). It never includes exception text, paths,
+tracebacks, `sys.path`, environment values, prompts, provider material, or
+READ content.
 
 Do not directly invoke:
 
@@ -151,9 +197,11 @@ operator
   -> private child
        parses the dotenv file
        builds the ordinary target environment
-       launches the exact argv with shell=False
+       launches the exact argv, or explicit current-Python + exact argv,
+       with shell=False
        redacts exact secret values from captured output
-       writes sanitized stdout/stderr outside the repository
+       writes sanitized stdout/stderr and the generic status receipt outside
+       the repository
   -> target command
        receives constructed environment, exact argv, and repo cwd
 ```
@@ -168,12 +216,14 @@ The canonical Codex/operator shape uses the repository-local `.env`; do not
 paste its contents or supply its path from an unprivileged preflight.
 
 ```powershell
-py scripts\run_brokered_command_once.py `
+.\.venv\Scripts\python.exe scripts\run_brokered_command_once.py `
   --repo-root <REPO-ROOT> `
   --repo-env `
   --stdout <ABSOLUTE-EXTERNAL-STDOUT> `
   --stderr <ABSOLUTE-EXTERNAL-STDERR> `
+  --status <ABSOLUTE-EXTERNAL-STATUS> `
   --timeout-seconds <SECONDS> `
+  [--target-current-python] `
   [--replace-output] `
   -- `
   <exact> <argv> <tokens>...
@@ -189,10 +239,25 @@ Rules:
 - Every subprocess launch uses `shell=False`.
 - `--stdout` and `--stderr` must be distinct absolute paths outside the
   repository. Existing files require `--replace-output`.
-- The parent returns the target exit code, or `124` on bounded timeout, or `2`
-  on sanitized configuration failure.
+- When supplied, `--status` must be a distinct absolute path outside the
+  repository. It contains only structural launch, exit, timeout, sanitized
+  output-write, and safe-error-code facts; it never contains argv, environment
+  values, prompts, provider/model material, captured output, exception text, or
+  tracebacks. Existing status files require `--replace-output`.
+- `--target-current-python` is an explicit Python-target mechanism. It prepends
+  the private child's `sys.executable` to the exact target argv after `--`.
+- The parent returns the target exit code, `124` on bounded timeout, `125` on
+  controlled target-launch failure, `126` when the requested status or
+  sanitized output cannot be written, or `2` on sanitized configuration
+  failure.
 - On timeout, the private child terminates the Windows target process tree and
   still writes redacted captured output when available.
+
+The broker status receipt uses `broker_status_v1` and classifies terminal
+mechanics as `target_completed`, `target_launch_failed`, `target_timeout`, or
+`private_child_configuration_failed`. A missing target executable is reported
+as `target_executable_unavailable`; other launch errors are reported as
+`target_launch_os_error`. The status receipt does not claim that PRODUCT ran.
 
 ## Credential Custody
 
@@ -217,7 +282,7 @@ Stop without launching the target when:
 - the repository root or selected environment file is unavailable;
 - the target argv separator or argv is missing;
 - an output path is relative, inside the repository, identical for stdout and
-  stderr, or would overwrite without `--replace-output`;
+  stderr/status, or would overwrite without `--replace-output`;
 - the private child is started without the private session environment;
 - timeout seconds are not positive.
 
