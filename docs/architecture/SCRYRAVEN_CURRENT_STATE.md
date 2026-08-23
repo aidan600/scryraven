@@ -213,6 +213,22 @@ handoff rather than the cap contract or the broker harness. No retry, backup
 query, alternate provider/model, Specialist, D-prime, Cross, synthesis, or
 Author call was made.
 
+The fresh credentialed Q1 confirmation attempt on 2026-08-23 used the exact
+official-Python query with `profile=AG-LIVE-SMOKE`, `mode=Balanced`, and
+`include_domains=docs.python.org` through
+`scripts/run_brokered_command_once.py`. The command was invoked exactly once
+with `max_scryraven_runs=1` and `max_retries=0`; no undeclared role-specific
+caps, backup query, alternate provider/model/route, or manual source check was
+supplied. The broker returned exit code `1`, and the designated external
+sanitized structural packet was not emitted. Because no sanctioned packet
+exists, no product `RunOutcome`, provider, route, retrieval, source-custody,
+FAP, citation, or Author result is claimed. The exact available failure record
+is `brokered_target_exit_1_without_sanitized_packet`, with the first genuine
+frontier at brokered target launch / sanitized-packet emission. Broker
+stdout/stderr, raw prompts and responses, READ bodies, private logs, caches,
+database rows, traces, secrets, and `.env` contents were not inspected, and no
+retry was made.
+
 The installed final boundary is now:
 
 ```text
