@@ -59,6 +59,124 @@ _REJECTED_CANDIDATE_DISPOSITIONS = frozenset(
 )
 _READABLE_CANDIDATE_STATUSES = frozenset({"readable", "available", "ok", "unknown"})
 _STALE_CURRENTNESS_SIGNALS = frozenset({"stale", "outdated", "expired", "superseded"})
+_SOURCE_OBLIGATION_TOPOLOGY_SCHEMA_VERSION = (
+    "final_answer_packet_source_obligation_topology_safe_v1"
+)
+_TOPOLOGY_SOURCE_OBLIGATION_KINDS = frozenset(
+    {
+        "official_current",
+        "legal_current_primary",
+        "canonical_documentation",
+        "primary_source_documents",
+        "source_bound_numeric",
+        "date_bound_currentness",
+        "peer_reviewed",
+        "reputable_secondary",
+        "conflict_resolution",
+        "user_document",
+        "no_special_obligation",
+        "supporting_fact",
+    }
+)
+_TOPOLOGY_EVIDENCE_LEDGER_REQUIREMENT_KINDS = frozenset(
+    {
+        "official_current",
+        "legal",
+        "canonical",
+        "source_bound",
+        "academic",
+        "general",
+        "current",
+        "user_document",
+    }
+)
+_TOPOLOGY_SOURCE_CLASSES = frozenset(
+    {
+        "official_current_rules",
+        "legal_or_regulatory_text",
+        "current_primary_or_official",
+        "primary_source_documents",
+        "archival_primary_text",
+        "historical_legal_text",
+        "sourced_numeric_values",
+        "secondary",
+        "secondary_only",
+        "secondary_analysis",
+        "reputable_secondary",
+        "social_signal",
+        "social_or_forum",
+        "community",
+        "context",
+    }
+)
+_TOPOLOGY_SOURCE_TIERS = frozenset(
+    {
+        "official",
+        "primary",
+        "canonical",
+        "secondary",
+        "trusted_community",
+        "social_or_forum",
+        "context",
+        "analysis",
+        "low_trust_commercial",
+        "content_mill",
+    }
+)
+_TOPOLOGY_CURRENTNESS_POSTURES = frozenset(
+    {
+        "current",
+        "official_current",
+        "stale",
+        "outdated",
+        "historical_only",
+        "off_topic",
+        "not_current",
+        "not_evaluated",
+        "unknown",
+    }
+)
+_TOPOLOGY_READABLE_STATUSES = frozenset(
+    {
+        "readable",
+        "unreadable",
+        "fetch_failed",
+        "not_readable",
+        "blocked",
+        "unfetchable",
+        "no_readable_text",
+        "not_read",
+        "not_evaluated",
+        "unknown",
+    }
+)
+_TOPOLOGY_BLOCKER_CODES = frozenset(
+    {
+        "candidate_not_readable_or_fetchable",
+        "candidate_material_type_does_not_satisfy_requirement",
+        "lower_tier_or_contextual_candidate_cannot_satisfy_stronger_obligation",
+        "stale_or_off_topic_candidate_cannot_satisfy_current_obligation",
+        "candidate_not_eligible_for_stronger_obligation",
+        "candidate_source_class_does_not_match_requirement",
+        "candidate_source_tier_does_not_match_requirement",
+        "candidate_not_accepted_for_requirement",
+        "no_linked_candidate_satisfies_requirement",
+        "requirement_has_no_linked_candidate_observation",
+        "requirement_not_observed",
+        "ambiguous_authoritative_ledger_binding",
+        "requirement_partially_satisfied",
+        "unrecognized_qualification_blocker",
+    }
+)
+_TOPOLOGY_KIND_BY_RUN_CONTRACT_REQUIREMENT_KIND = {
+    "official_current": "official_current",
+    "legal_primary": "legal_current_primary",
+    "canonical_docs": "canonical_documentation",
+    "source_bound_numeric": "source_bound_numeric",
+    "academic": "peer_reviewed",
+    "reputable_secondary": "reputable_secondary",
+    "user_document": "user_document",
+}
 
 
 def _hash_or_none(text: Any) -> tuple[str | None, int | None]:
@@ -488,10 +606,16 @@ def _source_obligations_from_run_contract(
 def _dedupe_source_obligations(
     obligations: Sequence[SourceObligationRecord],
 ) -> tuple[SourceObligationRecord, ...]:
+    """Remove only repeated canonical identities, never class-level semantics."""
+
     out: list[SourceObligationRecord] = []
     seen: set[tuple[str, str]] = set()
     for obligation in obligations:
-        key = (obligation.source_class, obligation.status.value)
+        identity = (
+            _contract_requirement_key(obligation.custody_requirement_id)
+            or _contract_requirement_key(obligation.obligation_id)
+        )
+        key = (identity, obligation.status.value)
         if key not in seen:
             out.append(obligation)
             seen.add(key)
@@ -517,6 +641,417 @@ def _clean_text(value: Any, *, limit: int = 500) -> str | None:
 
 def _clean_token(value: Any, *, limit: int = 160) -> str | None:
     return _clean_text(value, limit=limit)
+
+
+def _topology_token(value: Any, *, allowed: frozenset[str]) -> str:
+    token = (_clean_token(value, limit=160) or "").casefold()
+    return token if token in allowed else "not_observed"
+
+
+def _topology_identifiers(value: Any) -> tuple[str, ...]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return ()
+    values: list[str] = []
+    for item in value:
+        identifier = _clean_token(item, limit=240)
+        if identifier and identifier not in values:
+            values.append(identifier)
+    return tuple(values[:_MAX_SEMANTIC_REF_ITEMS])
+
+
+def _topology_opaque_ref(value: Any, *, prefix: str) -> str:
+    identifier = _clean_token(value, limit=240)
+    if not identifier:
+        return "not_observed"
+    digest = sha256(f"{prefix}:{identifier}".encode("utf-8")).hexdigest()
+    return f"{prefix}:{digest[:24]}"
+
+
+def _topology_status(ledger_requirement: Mapping[str, Any] | None) -> str:
+    status = _clean_token((ledger_requirement or {}).get("status"))
+    if status == "satisfied":
+        return "satisfied"
+    if status == "partially_satisfied":
+        return "partial"
+    return "missing"
+
+
+def _topology_candidate_fact(candidate: Mapping[str, Any]) -> dict[str, Any]:
+    citation_eligible = candidate.get("citation_eligible")
+    return {
+        "candidate_ref": _topology_opaque_ref(
+            candidate.get("candidate_id"),
+            prefix="candidate",
+        ),
+        "source_tier": _topology_token(
+            candidate.get("source_tier"),
+            allowed=_TOPOLOGY_SOURCE_TIERS,
+        ),
+        "source_class": _topology_token(
+            candidate.get("source_class") or candidate.get("source_class_hint"),
+            allowed=_TOPOLOGY_SOURCE_CLASSES,
+        ),
+        "currentness_posture": _topology_token(
+            candidate.get("currentness_signal") or candidate.get("currentness"),
+            allowed=_TOPOLOGY_CURRENTNESS_POSTURES,
+        ),
+        "eligible_for_stronger_obligation": (
+            candidate.get("eligible_for_stronger_obligation")
+            if isinstance(candidate.get("eligible_for_stronger_obligation"), bool)
+            else None
+        ),
+        "readable_status": _topology_token(
+            candidate.get("readable_status"),
+            allowed=_TOPOLOGY_READABLE_STATUSES,
+        ),
+        "citation_eligible": (
+            citation_eligible if isinstance(citation_eligible, bool) else None
+        ),
+    }
+
+
+def _topology_ledger_requirement(
+    *,
+    ledger_requirements: Sequence[Mapping[str, Any]],
+    requirement_id: str | None,
+    source_obligation_id: str | None = None,
+    component_id: str | None = None,
+) -> tuple[dict[str, Any], tuple[str, ...]]:
+    """Resolve one authoritative ledger record without class-based coalescing."""
+
+    matches = [
+        dict(item)
+        for item in ledger_requirements
+        if _clean_token(item.get("requirement_id")) == requirement_id
+    ]
+    if source_obligation_id:
+        matches = [
+            item
+            for item in matches
+            if _clean_token(item.get("source_obligation_id"))
+            == source_obligation_id
+        ]
+    if component_id:
+        matches = [
+            item
+            for item in matches
+            if _clean_token(item.get("component_id")) == component_id
+        ]
+    if len(matches) == 1:
+        return matches[0], ()
+    if not matches:
+        return {}, ("requirement_not_observed",)
+    return {}, ("ambiguous_authoritative_ledger_binding",)
+
+
+def _topology_ledger_requirement_by_component_obligation(
+    *,
+    ledger_requirements: Sequence[Mapping[str, Any]],
+    source_obligation_id: str,
+    component_id: str | None,
+) -> tuple[dict[str, Any], tuple[str, ...]]:
+    """Resolve an accepted component source obligation by its exact ownership."""
+
+    matches = [
+        dict(item)
+        for item in ledger_requirements
+        if _clean_token(item.get("source_obligation_id")) == source_obligation_id
+    ]
+    component_matches = matches
+    if component_id:
+        component_matches = [
+            item
+            for item in matches
+            if _clean_token(item.get("component_id")) == component_id
+        ]
+    if len(component_matches) == 1:
+        return component_matches[0], ()
+    # The accepted source-obligation ID is the canonical semantic identity.
+    # A uniquely owned ledger row may therefore remain authoritative even when
+    # a compatibility component projection does not reproduce its raw ID.
+    if len(matches) == 1:
+        return matches[0], ()
+    if not matches:
+        return {}, ("requirement_not_observed",)
+    return {}, ("ambiguous_authoritative_ledger_binding",)
+
+
+def _topology_ledger_requirement_for_run_contract(
+    *,
+    ledger_requirements: Sequence[Mapping[str, Any]],
+    requirement: Mapping[str, Any],
+) -> tuple[dict[str, Any], tuple[str, ...]]:
+    """Bind one run-contract row through exact IDs, then full owned posture."""
+
+    requirement_id = _clean_token(requirement.get("requirement_id"), limit=240)
+    exact, errors = _topology_ledger_requirement(
+        ledger_requirements=ledger_requirements,
+        requirement_id=requirement_id,
+    )
+    if exact or errors != ("requirement_not_observed",):
+        return exact, errors
+    contract_kind = (
+        _clean_token(requirement.get("requirement_kind")) or ""
+    ).casefold()
+    expected_ledger_kind = {
+        "official_current": "official_current",
+        "legal_primary": "legal",
+        "canonical_docs": "canonical",
+        "source_bound_numeric": "source_bound",
+        "academic": "academic",
+        "reputable_secondary": "general",
+        "user_document": "user_document",
+    }.get(contract_kind)
+    required_class = _clean_token(requirement.get("required_source_class"))
+    required_tier = _clean_token(requirement.get("required_source_tier"))
+    required_currentness = _clean_token(requirement.get("required_currentness"))
+    structural_matches = [
+        dict(item)
+        for item in ledger_requirements
+        if not _clean_token(item.get("component_id"))
+        and not _clean_token(item.get("source_obligation_id"))
+        and _clean_token(item.get("requirement_kind")) == expected_ledger_kind
+        and _clean_token(item.get("required_source_class")) == required_class
+        and _clean_token(item.get("required_source_tier")) == required_tier
+        and _clean_token(item.get("required_currentness")) == required_currentness
+    ]
+    if len(structural_matches) == 1:
+        return structural_matches[0], ()
+    if len(structural_matches) > 1:
+        return {}, ("ambiguous_authoritative_ledger_binding",)
+    return {}, errors
+
+
+def _topology_blocker_codes(
+    *,
+    status: str,
+    ledger_requirement: Mapping[str, Any],
+    binding_errors: Sequence[str],
+) -> list[str]:
+    if status == "satisfied":
+        return []
+    values = [*binding_errors, ledger_requirement.get("reason")]
+    codes: list[str] = []
+    for value in values:
+        code = (_clean_token(value, limit=180) or "").casefold()
+        if not code:
+            continue
+        if code not in _TOPOLOGY_BLOCKER_CODES:
+            code = "unrecognized_qualification_blocker"
+        if code not in codes:
+            codes.append(code)
+    if not codes:
+        codes.append(
+            "requirement_partially_satisfied"
+            if status == "partial"
+            else "no_linked_candidate_satisfies_requirement"
+        )
+    return codes
+
+
+def _source_obligation_topology_entry(
+    *,
+    obligation_id: str,
+    obligation_kind: str,
+    owning_scope: str,
+    component_id: str | None,
+    expected_requirement: Mapping[str, Any],
+    ledger_requirement: Mapping[str, Any],
+    binding_errors: Sequence[str],
+    candidate_records_by_id: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    status = _topology_status(ledger_requirement)
+    candidate_ids = _topology_identifiers(
+        ledger_requirement.get("linked_candidate_ids")
+    )
+    candidate_facts = [
+        _topology_candidate_fact(candidate_records_by_id[candidate_id])
+        for candidate_id in candidate_ids
+        if candidate_id in candidate_records_by_id
+    ]
+    required_source_class = (
+        ledger_requirement.get("required_source_class")
+        or expected_requirement.get("required_source_class")
+    )
+    required_source_tier = (
+        ledger_requirement.get("required_source_tier")
+        or expected_requirement.get("required_source_tier")
+    )
+    required_currentness = (
+        ledger_requirement.get("required_currentness")
+        or expected_requirement.get("required_currentness")
+    )
+    return {
+        "source_obligation_ref": _topology_opaque_ref(
+            obligation_id,
+            prefix="source_obligation",
+        ),
+        "obligation_kind": _topology_token(
+            obligation_kind,
+            allowed=_TOPOLOGY_SOURCE_OBLIGATION_KINDS,
+        ),
+        "evidence_ledger_requirement_kind": _topology_token(
+            ledger_requirement.get("requirement_kind"),
+            allowed=_TOPOLOGY_EVIDENCE_LEDGER_REQUIREMENT_KINDS,
+        ),
+        "owning_scope": owning_scope,
+        "owning_component_ref": (
+            _topology_opaque_ref(component_id, prefix="component")
+            if component_id
+            else "not_observed"
+        ),
+        "required_source_class": _topology_token(
+            required_source_class,
+            allowed=_TOPOLOGY_SOURCE_CLASSES,
+        ),
+        "required_source_tier": _topology_token(
+            required_source_tier,
+            allowed=_TOPOLOGY_SOURCE_TIERS,
+        ),
+        "required_temporal_posture": _topology_token(
+            required_currentness,
+            allowed=_TOPOLOGY_CURRENTNESS_POSTURES,
+        ),
+        "status": status,
+        "satisfying_evidence_count": len(candidate_ids) if status == "satisfied" else 0,
+        "candidate_evidence_binding_count": len(candidate_ids),
+        "qualification_blocker_reason_codes": _topology_blocker_codes(
+            status=status,
+            ledger_requirement=ledger_requirement,
+            binding_errors=binding_errors,
+        ),
+        "candidate_qualification_facts": candidate_facts,
+    }
+
+
+def _source_obligation_topology_projection(
+    *,
+    accepted_answer_contract_projection: Any,
+    run_contract_projection: Any,
+    evidence_ledger_projection: Any,
+) -> dict[str, Any]:
+    """Expose authoritative source-obligation rows without source content.
+
+    This is a packet observability projection only.  It never changes
+    qualification, sufficiency, citation, or final-answer policy.
+    """
+
+    accepted_contract = (
+        dict(accepted_answer_contract_projection)
+        if isinstance(accepted_answer_contract_projection, Mapping)
+        else {}
+    )
+    run_contract = (
+        dict(run_contract_projection)
+        if isinstance(run_contract_projection, Mapping)
+        else {}
+    )
+    ledger = _evidence_ledger_projection_from_any(evidence_ledger_projection)
+    ledger_requirements = [
+        dict(item)
+        for item in ledger.get("source_requirements") or ()
+        if isinstance(item, Mapping)
+    ]
+    candidate_records_by_id = {
+        candidate_id: dict(item)
+        for item in ledger.get("candidate_records") or ()
+        if isinstance(item, Mapping)
+        for candidate_id in (_clean_token(item.get("candidate_id")),)
+        if candidate_id
+    }
+    obligations: list[dict[str, Any]] = []
+    seen_component_owners: set[tuple[str, str | None]] = set()
+    for raw_obligation in accepted_contract.get(
+        "accepted_source_obligation_refs",
+        (),
+    ):
+        if not isinstance(raw_obligation, Mapping):
+            continue
+        obligation_id = _clean_token(
+            raw_obligation.get("source_obligation_id")
+            or raw_obligation.get("candidate_id"),
+            limit=240,
+        )
+        if not obligation_id:
+            continue
+        component_ids = _topology_identifiers(raw_obligation.get("component_ids"))
+        for component_id in component_ids or (None,):
+            owner_key = (obligation_id, component_id)
+            if owner_key in seen_component_owners:
+                continue
+            seen_component_owners.add(owner_key)
+            ledger_requirement, binding_errors = (
+                _topology_ledger_requirement_by_component_obligation(
+                    ledger_requirements=ledger_requirements,
+                    source_obligation_id=obligation_id,
+                    component_id=component_id,
+                )
+            )
+            obligations.append(
+                _source_obligation_topology_entry(
+                    obligation_id=obligation_id,
+                    obligation_kind=str(
+                        raw_obligation.get("kind")
+                        or raw_obligation.get("obligation_kind")
+                        or ""
+                    ),
+                    owning_scope="component",
+                    component_id=component_id,
+                    expected_requirement=raw_obligation,
+                    ledger_requirement=ledger_requirement,
+                    binding_errors=binding_errors,
+                    candidate_records_by_id=candidate_records_by_id,
+                )
+            )
+
+    seen_run_requirement_ids: set[str] = set()
+    for raw_requirement in run_contract.get("source_requirements") or ():
+        if not isinstance(raw_requirement, Mapping):
+            continue
+        if _clean_token(raw_requirement.get("strictness")) != "required":
+            continue
+        requirement_id = _clean_token(raw_requirement.get("requirement_id"), limit=240)
+        if not requirement_id or requirement_id in seen_run_requirement_ids:
+            continue
+        seen_run_requirement_ids.add(requirement_id)
+        ledger_requirement, binding_errors = _topology_ledger_requirement_for_run_contract(
+            ledger_requirements=ledger_requirements,
+            requirement=raw_requirement,
+        )
+        run_kind = (_clean_token(raw_requirement.get("requirement_kind")) or "").casefold()
+        obligations.append(
+            _source_obligation_topology_entry(
+                obligation_id=requirement_id,
+                obligation_kind=_TOPOLOGY_KIND_BY_RUN_CONTRACT_REQUIREMENT_KIND.get(
+                    run_kind,
+                    run_kind,
+                ),
+                owning_scope="run_contract",
+                component_id=None,
+                expected_requirement=raw_requirement,
+                ledger_requirement=ledger_requirement,
+                binding_errors=binding_errors,
+                candidate_records_by_id=candidate_records_by_id,
+            )
+        )
+
+    return {
+        "schema_version": _SOURCE_OBLIGATION_TOPOLOGY_SCHEMA_VERSION,
+        "available": bool(obligations),
+        "evidence_ledger_available": bool(ledger_requirements),
+        "evidence_ledger_requirement_count": len(ledger_requirements),
+        "accepted_obligation_count": len(obligations),
+        "satisfied_obligation_count": sum(
+            item["status"] == "satisfied" for item in obligations
+        ),
+        "partial_obligation_count": sum(
+            item["status"] == "partial" for item in obligations
+        ),
+        "missing_obligation_count": sum(
+            item["status"] == "missing" for item in obligations
+        ),
+        "obligations": obligations,
+    }
 
 
 def _list(value: Any) -> list[Any]:
@@ -1091,15 +1626,15 @@ def _source_obligations_from_sufficiency(
         if isinstance(sufficiency.get("final_packet_inputs"), Mapping)
         else {}
     )
-    raw_obligations = []
+    raw_obligations: list[Mapping[str, Any]] = []
     for key in (
         "missing_required_obligations",
         "partial_obligations",
         "satisfied_obligations",
-        "missing_source_obligations",
-        "source_obligations",
     ):
-        value = packet_inputs.get(key) or sufficiency.get(key) or ()
+        value = packet_inputs.get(key)
+        if value is None:
+            value = sufficiency.get(key) or ()
         if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
             raw_obligations.extend(item for item in value if isinstance(item, Mapping))
     obligations: list[SourceObligationRecord] = []
@@ -1119,15 +1654,20 @@ def _source_obligations_from_sufficiency(
             status = SourceObligationStatus.PARTIAL
         else:
             status = _status_for_sufficiency_obligation(item)
+        canonical_requirement_id = str(
+            item.get("requirement_id")
+            or item.get("source_obligation_id")
+            or source_class
+        ).strip()
         obligations.append(
             SourceObligationRecord(
                 obligation_id=(
                     "run-sufficiency:"
-                    f"{index}:{item.get('requirement_id') or source_class}"
+                    f"{canonical_requirement_id or index}"
                 ),
                 source_class=source_class,
                 status=status,
-                custody_requirement_id=item.get("requirement_id"),
+                custody_requirement_id=canonical_requirement_id or None,
                 satisfied_candidate_ids=tuple(
                     str(candidate)
                     for candidate in item.get("satisfied_candidate_ids", ())
@@ -1534,7 +2074,9 @@ def build_final_answer_packet(
     unique_source_urls: Mapping[str, Any] | None = None,
     final_answer_source_telemetry: Mapping[str, Any] | None = None,
     source_obligation_projection: Any | None = None,
+    evidence_ledger_projection: Mapping[str, Any] | None = None,
     answer_contract_projection: Any | None = None,
+    accepted_answer_contract_projection: Any | None = None,
     run_contract_projection: Any | None = None,
     sufficiency_judgment_projection: Any | None = None,
     query_lineage_refs: Mapping[str, Any] | None = None,
@@ -1573,15 +2115,15 @@ def build_final_answer_packet(
         for item in sufficiency_satisfied
         if isinstance(item, Mapping)
     )
-    evidence_ledger_projection = _evidence_ledger_projection_from_any(
-        source_obligation_projection
+    canonical_evidence_ledger_projection = _evidence_ledger_projection_from_any(
+        evidence_ledger_projection or source_obligation_projection
     )
     evidence_records = tuple(
         _evidence_record_from_passage(
             passage,
             position=index,
             packet_id=packet_id,
-            evidence_ledger_projection=evidence_ledger_projection,
+            evidence_ledger_projection=canonical_evidence_ledger_projection,
         )
         for index, passage in enumerate(final_evidence or (), start=1)
     )
@@ -1596,8 +2138,13 @@ def build_final_answer_packet(
     custody_source_obligations = _source_obligations_from_custody(
         source_obligation_projection
     )
-    answer_contract_source_obligations = _source_obligations_from_answer_contract(
-        answer_contract_projection
+    # The RunAuthority sufficiency judgment is the final semantic authority
+    # when available.  Its exact ledger-backed records supersede the legacy
+    # answer-contract source-class compatibility summary.
+    answer_contract_source_obligations = (
+        ()
+        if sufficiency_projection
+        else _source_obligations_from_answer_contract(answer_contract_projection)
     )
     contract_source_obligations = (
         ()
@@ -1617,6 +2164,15 @@ def build_final_answer_packet(
         + answer_contract_source_obligations
         + contract_source_obligations
         + sufficiency_source_obligations
+    )
+    source_obligation_topology = _source_obligation_topology_projection(
+        accepted_answer_contract_projection=accepted_answer_contract_projection,
+        run_contract_projection=run_contract_projection,
+        evidence_ledger_projection=(
+            canonical_evidence_ledger_projection
+            or evidence_ledger_projection
+            or source_obligation_projection
+        ),
     )
     author_evidence_ids = []
     author_urls = {str(p.get("url") or "") for p in (author_evidence or ())}
@@ -1779,6 +2335,7 @@ def build_final_answer_packet(
         evidence_records=evidence_records,
         citation_records=citation_records,
         source_obligations=source_obligations,
+        source_obligation_topology=source_obligation_topology,
         official_current_custody_summary=custody_summary,
         sufficiency_decision=sufficiency_decision,
         final_answer_posture=final_answer_posture,

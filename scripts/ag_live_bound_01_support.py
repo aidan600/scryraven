@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import subprocess
 import uuid
 from collections.abc import Callable, Mapping, Sequence
@@ -54,6 +55,9 @@ LIVE_PACKET_UNEXPECTED_FAILURE = "unexpected_failure"
 LIVE_PACKET_RESULT_PROJECTION_FAILURE = "result_projection_failure"
 LIVE_PACKET_PACKET_WRITE_FAILURE = "packet_write_failure"
 FAILURE_OBSERVABILITY_SCHEMA_VERSION = "ag_live_failure_observability_v1"
+SOURCE_OBLIGATION_TOPOLOGY_SCHEMA_VERSION = (
+    "ag_live_source_obligation_topology_safe_v1"
+)
 MAX_SAFE_ERROR_MESSAGE_CHARS = 240
 
 PLANNED_CAPS: dict[str, int] = _DEFAULT_PROFILE.cap_policy.as_requested_dict()
@@ -135,6 +139,159 @@ BLOCKED_FAP_COUNT_KEYS = frozenset(
     }
 )
 BLOCKED_FAP_LIST_KEYS = frozenset({"readiness_reasons", "claim_postures"})
+
+# The bounded product packet can report only enumerated, non-content facts about
+# an accepted source obligation.  These allowlists deliberately reject free
+# text, URLs, titles, snippets, and other source material.
+_TOPOLOGY_OBLIGATION_SECTIONS = (
+    ("missing_required_obligations", "missing"),
+    ("partial_obligations", "partial"),
+    ("satisfied_obligations", "satisfied"),
+)
+_SAFE_SOURCE_OBLIGATION_KINDS = frozenset(
+    {
+        "official_current",
+        "legal_current_primary",
+        "canonical_documentation",
+        "primary_source_documents",
+        "source_bound_numeric",
+        "date_bound_currentness",
+        "peer_reviewed",
+        "reputable_secondary",
+        "conflict_resolution",
+        "user_document",
+        "no_special_obligation",
+        "supporting_fact",
+        "component_readiness",
+        "answer_contract_source_class",
+        "semantic_component_coverage",
+    }
+)
+_SAFE_EVIDENCE_LEDGER_REQUIREMENT_KINDS = frozenset(
+    {
+        "official",
+        "current",
+        "legal",
+        "canonical",
+        "source_bound",
+        "official_current",
+        "official_current_legal",
+        "academic",
+        "general",
+        "user_document",
+        "canonical_docs",
+        "source_bound_numeric",
+        "component_readiness",
+        "answer_contract_source_class",
+        "semantic_component_coverage",
+    }
+)
+_SAFE_SOURCE_CLASS_VALUES = frozenset(
+    {
+        "official_current_rules",
+        "legal_or_regulatory_text",
+        "current_primary_or_official",
+        "primary_source_documents",
+        "archival_primary_text",
+        "historical_legal_text",
+        "sourced_numeric_values",
+        "secondary",
+        "secondary_only",
+        "secondary_analysis",
+        "reputable_secondary",
+        "social_signal",
+        "social_or_forum",
+        "community",
+        "context",
+        "unknown",
+        "not_observable",
+        "component_source_obligation",
+    }
+)
+_SAFE_SOURCE_TIER_VALUES = frozenset(
+    {
+        "official",
+        "primary",
+        "canonical",
+        "secondary",
+        "trusted_community",
+        "social_or_forum",
+        "context",
+        "analysis",
+        "low_trust_commercial",
+        "content_mill",
+        "unknown",
+        "not_observable",
+    }
+)
+_SAFE_CURRENTNESS_POSTURES = frozenset(
+    {
+        "current",
+        "official_current",
+        "stale",
+        "outdated",
+        "historical_only",
+        "off_topic",
+        "not_current",
+        "not_evaluated",
+        "unknown",
+        "not_observable",
+    }
+)
+_SAFE_READABLE_STATUSES = frozenset(
+    {
+        "readable",
+        "unreadable",
+        "fetch_failed",
+        "not_readable",
+        "blocked",
+        "unfetchable",
+        "no_readable_text",
+        "not_read",
+        "not_evaluated",
+        "unknown",
+        "not_observable",
+    }
+)
+_SAFE_QUALIFICATION_BLOCKER_CODES = frozenset(
+    {
+        "candidate_not_readable_or_fetchable",
+        "candidate_material_type_does_not_satisfy_requirement",
+        "lower_tier_or_contextual_candidate_cannot_satisfy_stronger_obligation",
+        "stale_or_off_topic_candidate_cannot_satisfy_current_obligation",
+        "candidate_not_eligible_for_stronger_obligation",
+        "candidate_source_class_does_not_match_requirement",
+        "candidate_source_tier_does_not_match_requirement",
+        "candidate_not_accepted_for_requirement",
+        "no_linked_candidate_satisfies_requirement",
+        "aggregate_counts_cannot_satisfy_custody",
+        "component_source_custody_missing_candidate",
+        "missing_official_current_candidate",
+        "requirement_has_no_linked_candidate_observation",
+        "exact_searchos_source_obligation_has_no_current_accepted_link",
+        "exact_searchos_source_obligation_unresolved",
+        "component_candidate_missing_or_unbound",
+        "component_binding_or_custody_blocked",
+        "component_canonical_support_partial",
+        "component_source_obligation_unbound",
+        "component_readiness_not_observed",
+        "missing_component_source_candidate",
+        "component_candidate_not_available",
+        "component_candidate_or_custody_presence_is_not_support",
+        "component_binding_partial",
+        "passive_binding_true_without_canonical_source_obligation",
+        "no_candidate",
+        "missing_candidate",
+        "blocked_by_unfetched_or_unread_candidate",
+        "answer_contract_unfulfilled_source_obligation",
+        "answer_contract_partial_source_obligation",
+        "answer_contract_source_bound_numeric_missing",
+        "requirement_not_observed",
+        "ambiguous_authoritative_ledger_binding",
+        "requirement_partially_satisfied",
+        "unrecognized_qualification_blocker",
+    }
+)
 COMPONENT_BLOCKED_SUMMARY_KEYS = (
     "schema_version",
     "component_summary_available",
@@ -1419,9 +1576,449 @@ def _sanitized_projection_summaries(trace: Mapping[str, Any]) -> dict[str, Any]:
         "component_binding": _component_binding_summary(packet),
         "component_coverage": _component_coverage_summary(packet),
         "sufficiency": _sufficiency_summary(trace, packet),
+        "source_obligation_topology": _source_obligation_topology_summary(packet),
         "final_answer_packet": _final_answer_packet_summary(packet),
         "author_posture": _author_posture_summary(trace, packet),
     }
+
+
+def _source_obligation_topology_summary(packet: Mapping[str, Any]) -> dict[str, Any]:
+    """Project accepted obligation records without retaining evidence content.
+
+    The Final Answer Packet receives these records from RunAuthority
+    sufficiency.  This projection intentionally preserves one row per record:
+    a shared candidate may satisfy more than one row, but that is not a reason
+    to merge distinct source-obligation predicates.
+    """
+
+    authoritative_topology = _mapping_or_empty(
+        packet.get("source_obligation_topology")
+    )
+    authoritative_obligations = _topology_mapping_sequence(
+        authoritative_topology.get("obligations")
+    )
+    if authoritative_obligations:
+        obligations = [
+            _source_obligation_topology_entry_from_authoritative_projection(item)
+            for item in authoritative_obligations
+        ]
+        return _source_obligation_topology_summary_from_entries(
+            obligations,
+            evidence_ledger_available=(
+                authoritative_topology.get("evidence_ledger_available")
+                if isinstance(
+                    authoritative_topology.get("evidence_ledger_available"),
+                    bool,
+                )
+                else None
+            ),
+            evidence_ledger_requirement_count=_topology_safe_count(
+                authoritative_topology.get("evidence_ledger_requirement_count")
+            ),
+        )
+
+    obligations: list[dict[str, Any]] = []
+    for key, status in _TOPOLOGY_OBLIGATION_SECTIONS:
+        for assessment in _topology_mapping_sequence(packet.get(key)):
+            obligations.append(
+                _source_obligation_topology_entry(assessment, status=status)
+            )
+    return _source_obligation_topology_summary_from_entries(obligations)
+
+
+def _source_obligation_topology_summary_from_entries(
+    obligations: Sequence[Mapping[str, Any]],
+    *,
+    evidence_ledger_available: bool | None = None,
+    evidence_ledger_requirement_count: int | None = None,
+) -> dict[str, Any]:
+    summary = {
+        "schema_version": SOURCE_OBLIGATION_TOPOLOGY_SCHEMA_VERSION,
+        "available": bool(obligations),
+        "accepted_obligation_count": len(obligations),
+        "satisfied_obligation_count": sum(
+            item["status"] == "satisfied" for item in obligations
+        ),
+        "partial_obligation_count": sum(
+            item["status"] == "partial" for item in obligations
+        ),
+        "missing_obligation_count": sum(
+            item["status"] == "missing" for item in obligations
+        ),
+        "obligations": obligations,
+    }
+    if evidence_ledger_available is not None:
+        summary["evidence_ledger_available"] = evidence_ledger_available
+    if evidence_ledger_requirement_count is not None:
+        summary["evidence_ledger_requirement_count"] = evidence_ledger_requirement_count
+    return summary
+
+
+def _source_obligation_topology_entry_from_authoritative_projection(
+    entry: Mapping[str, Any],
+) -> dict[str, Any]:
+    status = str(entry.get("status") or "").strip().casefold()
+    if status not in {"satisfied", "partial", "missing"}:
+        status = "missing"
+    return {
+        "source_obligation_ref": _topology_existing_opaque_ref(
+            entry.get("source_obligation_ref"),
+            prefix="source_obligation",
+        ),
+        "obligation_kind": _topology_safe_enum(
+            entry.get("obligation_kind"),
+            allowed=_SAFE_SOURCE_OBLIGATION_KINDS,
+        ),
+        "evidence_ledger_requirement_kind": _topology_safe_enum(
+            entry.get("evidence_ledger_requirement_kind"),
+            allowed=_SAFE_EVIDENCE_LEDGER_REQUIREMENT_KINDS,
+        ),
+        "owning_scope": _topology_existing_scope(entry.get("owning_scope")),
+        "owning_component_ref": _topology_existing_opaque_ref(
+            entry.get("owning_component_ref"),
+            prefix="component",
+        ),
+        "required_source_class": _topology_safe_enum(
+            entry.get("required_source_class"),
+            allowed=_SAFE_SOURCE_CLASS_VALUES,
+        ),
+        "required_source_tier": _topology_safe_enum(
+            entry.get("required_source_tier"),
+            allowed=_SAFE_SOURCE_TIER_VALUES,
+        ),
+        "required_temporal_posture": _topology_safe_enum(
+            entry.get("required_temporal_posture"),
+            allowed=_SAFE_CURRENTNESS_POSTURES,
+        ),
+        "status": status,
+        "satisfying_evidence_count": _topology_safe_count(
+            entry.get("satisfying_evidence_count")
+        ),
+        "candidate_evidence_binding_count": _topology_safe_count(
+            entry.get("candidate_evidence_binding_count")
+        ),
+        "qualification_blocker_reason_codes": (
+            _topology_explicit_blocker_codes(entry)
+            if status != "satisfied"
+            else []
+        ),
+        "candidate_qualification_facts": [
+            _topology_candidate_fact_from_authoritative_projection(candidate)
+            for candidate in _topology_mapping_sequence(
+                entry.get("candidate_qualification_facts")
+            )
+        ],
+    }
+
+
+def _topology_existing_opaque_ref(value: Any, *, prefix: str) -> str:
+    text = str(value or "").strip()
+    return text if text.startswith(f"{prefix}:") else "not_observed"
+
+
+def _topology_existing_scope(value: Any) -> str:
+    scope = str(value or "").strip().casefold()
+    return scope if scope in {"run_contract", "component", "synthesis", "other"} else "other"
+
+
+def _topology_safe_count(value: Any) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
+
+
+def _topology_explicit_blocker_codes(entry: Mapping[str, Any]) -> list[str]:
+    codes: list[str] = []
+    for item in entry.get("qualification_blocker_reason_codes") or ():
+        token = str(item or "").strip().casefold()
+        if token in _SAFE_QUALIFICATION_BLOCKER_CODES and token not in codes:
+            codes.append(token)
+    return codes or ["unrecognized_qualification_blocker"]
+
+
+def _topology_candidate_fact_from_authoritative_projection(
+    candidate: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "candidate_ref": _topology_existing_opaque_ref(
+            candidate.get("candidate_ref"),
+            prefix="candidate",
+        ),
+        "source_tier": _topology_safe_enum(
+            candidate.get("source_tier"),
+            allowed=_SAFE_SOURCE_TIER_VALUES,
+        ),
+        "source_class": _topology_safe_enum(
+            candidate.get("source_class"),
+            allowed=_SAFE_SOURCE_CLASS_VALUES,
+        ),
+        "currentness_posture": _topology_safe_enum(
+            candidate.get("currentness_posture"),
+            allowed=_SAFE_CURRENTNESS_POSTURES,
+        ),
+        "eligible_for_stronger_obligation": (
+            candidate.get("eligible_for_stronger_obligation")
+            if isinstance(candidate.get("eligible_for_stronger_obligation"), bool)
+            else None
+        ),
+        "readable_status": _topology_safe_enum(
+            candidate.get("readable_status"),
+            allowed=_SAFE_READABLE_STATUSES,
+        ),
+        "citation_eligible": (
+            candidate.get("citation_eligible")
+            if isinstance(candidate.get("citation_eligible"), bool)
+            else None
+        ),
+    }
+
+
+def _source_obligation_topology_entry(
+    assessment: Mapping[str, Any],
+    *,
+    status: str,
+) -> dict[str, Any]:
+    source_obligation_id = _topology_identifier(
+        assessment.get("source_obligation_id")
+        or assessment.get("obligation_id")
+        or assessment.get("requirement_id")
+    )
+    component_id = _topology_identifier(assessment.get("component_id"))
+    source_obligation_ref = _matching_topology_obligation_ref(
+        assessment,
+        source_obligation_id=source_obligation_id,
+    )
+    candidate_refs = _topology_candidate_refs(
+        assessment,
+        source_obligation_id=source_obligation_id,
+    )
+    candidate_facts = [
+        _topology_candidate_fact(candidate)
+        for candidate in candidate_refs
+    ]
+    satisfied_candidate_ids = _topology_identifiers(
+        assessment.get("satisfied_candidate_ids")
+    )
+    candidate_binding_count = len(candidate_facts) or len(satisfied_candidate_ids)
+    obligation_kind = _topology_first_safe_enum(
+        (
+            assessment.get("obligation_kind"),
+            assessment.get("kind"),
+            source_obligation_ref.get("obligation_kind"),
+            source_obligation_ref.get("kind"),
+        ),
+        allowed=_SAFE_SOURCE_OBLIGATION_KINDS,
+    )
+    return {
+        "source_obligation_ref": _topology_opaque_ref(
+            source_obligation_id,
+            prefix="source_obligation",
+        )
+        or "not_observed",
+        "obligation_kind": obligation_kind,
+        "evidence_ledger_requirement_kind": _topology_safe_enum(
+            assessment.get("requirement_kind"),
+            allowed=_SAFE_EVIDENCE_LEDGER_REQUIREMENT_KINDS,
+        ),
+        "owning_scope": _topology_owning_scope(
+            assessment,
+            component_id=component_id,
+        ),
+        "owning_component_ref": _topology_opaque_ref(
+            component_id,
+            prefix="component",
+        ),
+        "required_source_class": _topology_safe_enum(
+            assessment.get("required_source_class"),
+            allowed=_SAFE_SOURCE_CLASS_VALUES,
+        ),
+        "required_source_tier": _topology_safe_enum(
+            assessment.get("required_source_tier"),
+            allowed=_SAFE_SOURCE_TIER_VALUES,
+        ),
+        "required_temporal_posture": _topology_safe_enum(
+            assessment.get("required_currentness"),
+            allowed=_SAFE_CURRENTNESS_POSTURES,
+        ),
+        "status": status,
+        "satisfying_evidence_count": len(satisfied_candidate_ids),
+        "candidate_evidence_binding_count": candidate_binding_count,
+        "qualification_blocker_reason_codes": (
+            _topology_qualification_blocker_codes(assessment)
+            if status != "satisfied"
+            else []
+        ),
+        "candidate_qualification_facts": candidate_facts,
+    }
+
+
+def _topology_mapping_sequence(value: Any) -> list[Mapping[str, Any]]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return []
+    return [item for item in value if isinstance(item, Mapping)]
+
+
+def _topology_identifier(value: Any) -> str | None:
+    text = str(value or "").strip()
+    return text or None
+
+
+def _topology_identifiers(value: Any) -> list[str]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return []
+    identifiers: list[str] = []
+    for item in value:
+        identifier = _topology_identifier(item)
+        if identifier and identifier not in identifiers:
+            identifiers.append(identifier)
+    return identifiers
+
+
+def _topology_opaque_ref(value: str | None, *, prefix: str) -> str | None:
+    if not value:
+        return None
+    digest = hashlib.sha256(f"{prefix}:{value}".encode("utf-8")).hexdigest()
+    return f"{prefix}:{digest[:24]}"
+
+
+def _topology_safe_enum(value: Any, *, allowed: frozenset[str]) -> str:
+    token = str(value or "").strip().casefold()
+    return token if token in allowed else "not_observed"
+
+
+def _topology_first_safe_enum(
+    values: Sequence[Any],
+    *,
+    allowed: frozenset[str],
+) -> str:
+    for value in values:
+        token = _topology_safe_enum(value, allowed=allowed)
+        if token != "not_observed":
+            return token
+    return "not_observed"
+
+
+def _matching_topology_obligation_ref(
+    assessment: Mapping[str, Any],
+    *,
+    source_obligation_id: str | None,
+) -> Mapping[str, Any]:
+    if not source_obligation_id:
+        return {}
+    for ref in _topology_mapping_sequence(
+        assessment.get("component_source_obligation_refs")
+    ):
+        reference_id = _topology_identifier(
+            ref.get("source_obligation_id")
+            or ref.get("obligation_id")
+            or ref.get("requirement_id")
+        )
+        if reference_id == source_obligation_id:
+            return ref
+    return {}
+
+
+def _topology_candidate_refs(
+    assessment: Mapping[str, Any],
+    *,
+    source_obligation_id: str | None,
+) -> list[Mapping[str, Any]]:
+    if not source_obligation_id:
+        return []
+    matches: list[Mapping[str, Any]] = []
+    for ref in _topology_mapping_sequence(
+        assessment.get("component_candidate_link_refs")
+    ):
+        reference_id = _topology_identifier(
+            ref.get("source_obligation_id")
+            or ref.get("obligation_id")
+            or ref.get("requirement_id")
+        )
+        if reference_id == source_obligation_id:
+            matches.append(ref)
+    return matches
+
+
+def _topology_candidate_fact(candidate: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "candidate_ref": _topology_opaque_ref(
+            _topology_identifier(candidate.get("candidate_id")),
+            prefix="candidate",
+        )
+        or "not_observed",
+        "source_tier": _topology_safe_enum(
+            candidate.get("source_tier"),
+            allowed=_SAFE_SOURCE_TIER_VALUES,
+        ),
+        "source_class": _topology_first_safe_enum(
+            (
+                candidate.get("source_class"),
+                candidate.get("source_class_hint"),
+            ),
+            allowed=_SAFE_SOURCE_CLASS_VALUES,
+        ),
+        "currentness_posture": _topology_safe_enum(
+            candidate.get("currentness_signal")
+            or candidate.get("currentness"),
+            allowed=_SAFE_CURRENTNESS_POSTURES,
+        ),
+        "eligible_for_stronger_obligation": (
+            candidate.get("eligible_for_stronger_obligation")
+            if isinstance(candidate.get("eligible_for_stronger_obligation"), bool)
+            else None
+        ),
+        "readable_status": _topology_safe_enum(
+            candidate.get("readable_status"),
+            allowed=_SAFE_READABLE_STATUSES,
+        ),
+        "citation_eligible": (
+            candidate.get("citation_eligible")
+            if isinstance(candidate.get("citation_eligible"), bool)
+            else None
+        ),
+    }
+
+
+def _topology_owning_scope(
+    assessment: Mapping[str, Any],
+    *,
+    component_id: str | None,
+) -> str:
+    origin = str(assessment.get("origin_ref") or "").casefold()
+    if "runauthoritycontract" in origin or "run_authority_contract" in origin:
+        return "run_contract"
+    if "synthesis" in origin:
+        return "synthesis"
+    if component_id:
+        return "component"
+    return "other"
+
+
+def _topology_qualification_blocker_codes(
+    assessment: Mapping[str, Any],
+) -> list[str]:
+    values: list[Any] = [assessment.get("reason")]
+    binding = _mapping_or_empty(assessment.get("binding_status_ref"))
+    values.extend(binding.get("blocker_reasons") or ())
+    for gap in _topology_mapping_sequence(assessment.get("component_custody_gap_refs")):
+        values.append(gap.get("gap_type"))
+    for ref in _topology_mapping_sequence(
+        assessment.get("component_source_obligation_refs")
+    ):
+        values.append(ref.get("source_obligation_status"))
+
+    codes: list[str] = []
+    unrecognized = False
+    for value in values:
+        token = str(value or "").strip().casefold()
+        if not token:
+            continue
+        if token in _SAFE_QUALIFICATION_BLOCKER_CODES:
+            if token not in codes:
+                codes.append(token)
+        else:
+            unrecognized = True
+    if unrecognized:
+        codes.append("unrecognized_qualification_blocker")
+    return codes
 
 
 def _n1_closure_observability(

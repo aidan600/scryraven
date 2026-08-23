@@ -971,6 +971,7 @@ def execute_final_answer_packet_prepare_action(
     smart_model: str | None,
     evidence_ledger_projection: Mapping[str, Any] | None = None,
     answer_contract_projection: Any | None = None,
+    accepted_answer_contract_projection: Any | None = None,
     run_contract_projection: Mapping[str, Any] | None = None,
     sufficiency_judgment_projection: Mapping[str, Any] | None = None,
 ) -> FinalAnswerPacketPreparationResult:
@@ -1029,6 +1030,7 @@ def execute_final_answer_packet_prepare_action(
         author_provider=author_provider,
         author_model=author_model,
         answer_contract_projection=answer_contract_projection,
+        accepted_answer_contract_projection=accepted_answer_contract_projection,
         evidence_ledger_projection=evidence_ledger_projection,
         run_contract_projection=run_contract_projection,
         sufficiency_judgment_projection=sufficiency_judgment_projection,
@@ -1097,6 +1099,7 @@ def execute_final_answer_packet_prepare_action_from_scope(
     runtime_scope: Mapping[str, Any],
     *,
     default_system: Mapping[str, str],
+    accepted_answer_contract_projection: Any | None = None,
 ) -> FinalAnswerPacketPreparationResult:
     """Whitelisted pipeline-scope adapter for packet preparation."""
 
@@ -1135,6 +1138,11 @@ def execute_final_answer_packet_prepare_action_from_scope(
         smart_model=runtime_scope["smart_model"],
         evidence_ledger_projection=runtime_scope.get("evidence_ledger_projection"),
         answer_contract_projection=runtime_scope.get("answer_contract_projection"),
+        accepted_answer_contract_projection=(
+            accepted_answer_contract_projection
+            if accepted_answer_contract_projection is not None
+            else runtime_scope.get("accepted_answer_contract_projection")
+        ),
         run_contract_projection=runtime_scope.get("run_contract_projection"),
         sufficiency_judgment_projection=runtime_scope.get(
             "sufficiency_judgment_projection"
@@ -1169,10 +1177,22 @@ def prepare_final_answer_packet_author_handoff_from_scope(
             ].get("decision"),
         }
     )
+    accepted_answer_contract_projection = (
+        getattr(run_kernel.state, "current_answer_contract", {})
+        or getattr(run_kernel.state, "initial_answer_contract", {})
+    )
+    canonical_runtime_scope = dict(runtime_scope)
+    canonical_runtime_scope["evidence_ledger_projection"] = (
+        run_kernel.state.evidence_ledger.to_projection().to_dict()
+    )
+    canonical_runtime_scope["run_contract_projection"] = dict(
+        run_kernel.state.run_contract_projection
+    )
     preparation = execute_final_answer_packet_prepare_action_from_scope(
         action,
-        runtime_scope,
+        canonical_runtime_scope,
         default_system=default_system,
+        accepted_answer_contract_projection=accepted_answer_contract_projection,
     )
     run_kernel.reduce(preparation.observation)
     payload = preparation.author_payload

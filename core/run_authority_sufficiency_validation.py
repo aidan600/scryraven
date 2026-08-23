@@ -2630,24 +2630,45 @@ def build_deterministic_sufficiency_judgment(
         status = clean_token(ledger_requirement.get("status"))
         requirement_id = clean_token(ledger_requirement.get("requirement_id"))
         if (
-            status not in _MISSING_LEDGER_STATUSES
-            or not requirement_id
+            not requirement_id
             or not clean_token(ledger_requirement.get("component_id"))
             or not clean_token(ledger_requirement.get("source_obligation_id"))
-            or any(item.requirement_id == requirement_id for item in missing)
+            or any(
+                item.requirement_id == requirement_id
+                for item in (*missing, *partial, *satisfied)
+            )
         ):
             continue
-        missing.append(
-            _assessment(
-                ledger_requirement,
-                status="missing",
-                reason=(
-                    clean_text(ledger_requirement.get("reason"), limit=260)
-                    or "exact_evidence_ledger_source_obligation_unsatisfied"
-                ),
-                ledger_requirement=ledger_requirement,
+        if status == "satisfied":
+            satisfied.append(
+                _assessment(
+                    ledger_requirement,
+                    status="satisfied",
+                    reason="exact_evidence_ledger_source_obligation_satisfied",
+                    ledger_requirement=ledger_requirement,
+                )
             )
-        )
+        elif status == "partially_satisfied":
+            partial.append(
+                _assessment(
+                    ledger_requirement,
+                    status="partial",
+                    reason="exact_evidence_ledger_source_obligation_partially_satisfied",
+                    ledger_requirement=ledger_requirement,
+                )
+            )
+        elif status in _MISSING_LEDGER_STATUSES or not status:
+            missing.append(
+                _assessment(
+                    ledger_requirement,
+                    status="missing",
+                    reason=(
+                        clean_text(ledger_requirement.get("reason"), limit=260)
+                        or "exact_evidence_ledger_source_obligation_unsatisfied"
+                    ),
+                    ledger_requirement=ledger_requirement,
+                )
+            )
 
     for payload in searchos_recovery_terminal_consumption.get(
         "required_source_obligation_assessments",
@@ -2681,7 +2702,17 @@ def build_deterministic_sufficiency_judgment(
         ):
             missing.append(assessment)
 
+    authoritative_topology_present = bool(required_contract_requirements) or any(
+        clean_token(item.get("component_id"))
+        and clean_token(item.get("source_obligation_id"))
+        for item in ledger_requirements
+    )
     for item in _answer_contract_missing(answer_contract):
+        # A source-class compatibility summary has no canonical obligation ID.
+        # Once RunContract or exact component-owned ledger obligations exist, it
+        # is diagnostic-only and must not invent an additional FAP requirement.
+        if authoritative_topology_present:
+            continue
         if _answer_contract_assessment_exactly_reconciled(
             item,
             contract_requirements=required_contract_requirements,

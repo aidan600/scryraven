@@ -85,6 +85,7 @@ def assemble_final_answer_author_runtime(
     author_provider: str | None = None,
     author_model: str | None = None,
     answer_contract_projection: Any | None = None,
+    accepted_answer_contract_projection: Any | None = None,
     evidence_ledger_projection: Mapping[str, Any] | None = None,
     run_contract_projection: Mapping[str, Any] | None = None,
     sufficiency_judgment_projection: Mapping[str, Any] | None = None,
@@ -113,7 +114,9 @@ def assemble_final_answer_author_runtime(
         unique_source_urls=unique_source_urls,
         final_answer_source_telemetry=None,
         source_obligation_projection=source_obligation_projection,
+        evidence_ledger_projection=evidence_ledger_projection,
         answer_contract_projection=answer_contract_projection,
+        accepted_answer_contract_projection=accepted_answer_contract_projection,
         run_contract_projection=run_contract_projection,
         sufficiency_judgment_projection=sufficiency_judgment_projection,
         query_lineage_refs=query_lineage_refs,
@@ -349,6 +352,9 @@ def assemble_final_answer_author_runtime_from_scope(
         author_provider=runtime_scope.get("_author_provider"),
         author_model=runtime_scope.get("_author_model"),
         answer_contract_projection=runtime_scope.get("answer_contract_projection"),
+        accepted_answer_contract_projection=runtime_scope.get(
+            "accepted_answer_contract_projection"
+        ),
         evidence_ledger_projection=runtime_scope.get("evidence_ledger_projection"),
         run_contract_projection=runtime_scope.get("run_contract_projection"),
         sufficiency_judgment_projection=runtime_scope.get(
