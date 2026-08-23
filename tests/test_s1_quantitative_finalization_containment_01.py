@@ -7,6 +7,8 @@ from typing import Any, Mapping
 
 import pytest
 
+import core.author_execution_runtime as author_execution_runtime
+import core.quantitative_consistency as quantitative_consistency
 from core.author_execution_runtime import execute_author_action
 from core.final_answer_packet import FinalAnswerAuthorInputPayload
 from core.quantitative_finalization_authority import (
@@ -769,7 +771,21 @@ def test_author_instruction_is_authority_only_and_lists_exact_rendering() -> Non
         assert prohibited in block
 
 
-def test_author_executor_does_not_make_parser_disagreement_a_product_gate() -> None:
+def test_author_executor_does_not_make_parser_disagreement_a_product_gate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_if_called(**_kwargs: Any) -> dict[str, Any]:
+        raise AssertionError(
+            "ordinary Author must not invoke the quantitative consistency helper"
+        )
+
+    for module in (quantitative_consistency, author_execution_runtime):
+        monkeypatch.setattr(
+            module,
+            "build_two_item_normalized_consistency_diagnostic",
+            fail_if_called,
+            raising=False,
+        )
     payload = FinalAnswerAuthorInputPayload(
         packet_id="executor-packet",
         prompt="Draft the answer.\nFINAL ANSWER PACKET AUTHORITY",
@@ -819,6 +835,30 @@ def test_author_executor_does_not_make_parser_disagreement_a_product_gate() -> N
     assert result.report == "The unsupported difference is 200 km."
     assert result.observation.payload["post_author_quantitative_semantic_gate_active"] is False
     assert "quantitative_finalization_validation" not in result.observation.payload
+    assert result.quantitative_consistency_telemetry == {
+        "quantitative_consistency_shadow_mode": False,
+        "quantitative_consistency_check_attempted": False,
+        "quantitative_consistency_status": "not_evaluated",
+        "quantitative_consistency_reason": "validation_only_not_run_in_product",
+        "quantitative_consistency_contradiction_flag": False,
+        "quantitative_consistency_computed_winner": None,
+        "quantitative_consistency_stated_winner": None,
+        "quantitative_consistency_normalized_values": [],
+    }
+    assert result.quantitative_consistency_guard_telemetry == {
+        "quantitative_consistency_guard_applied": False,
+        "quantitative_consistency_guard_reason": (
+            "validation_only_not_run_in_product"
+        ),
+        "quantitative_consistency_guard_output_mode": "unchanged",
+        "quantitative_consistency_original_status": "not_evaluated",
+        "quantitative_consistency_guard_final_answer_replaced": False,
+        "guard_reason": "validation_only_not_run_in_product",
+        "answer_rewritten": False,
+    }
+    assert result.observation.payload["quantitative_consistency_telemetry"] == dict(
+        result.quantitative_consistency_telemetry
+    )
     diagnostic = _evaluate(
         result.report,
         {"manifest": payload.quantitative_finalization_authority_manifest},

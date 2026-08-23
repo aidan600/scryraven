@@ -151,7 +151,9 @@ and fingerprint mismatch.
 The evaluator may be wrong. No PRODUCT runtime consumer may use it as a success
 or failure decision, mutate text because of it, delete a fragment, alter
 citations, change canonical state, or request another model call. The older
-two-item quantitative consistency signal likewise remains diagnostic only.
+two-item quantitative consistency diagnostic is retained for validation and
+regression tooling only; ordinary PRODUCT does not invoke it inline after
+Author output.
 
 ## Guarded Finalization Consumer Inventory
 

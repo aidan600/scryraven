@@ -14,9 +14,6 @@ from core.final_answer_packet import (
     FinalAnswerAuthorInputPayload,
     _safe_json,
 )
-from core.quantitative_consistency import (
-    build_two_item_normalized_consistency_diagnostic,
-)
 from core.run_kernel import (
     AUTHOR_EXECUTION_STAGE,
     ActionType,
@@ -396,15 +393,31 @@ def execute_author_action(
         stream_buffered=stream_buffered,
     )
     report = str(report or "")
-    quantitative_consistency_telemetry = build_two_item_normalized_consistency_diagnostic(
-        query=query,
-        final_answer=report,
-        quantitative_packet=quantitative_packet,
-        calculation_results=calculation_results,
-    )
+    # Quantitative consistency remains a validation/evaluator concern.  The
+    # ordinary Author path must not inspect the generated report semantically.
+    # Keep the legacy telemetry shape, but make its non-evaluation explicit.
+    quantitative_consistency_telemetry = {
+        "quantitative_consistency_shadow_mode": False,
+        "quantitative_consistency_check_attempted": False,
+        "quantitative_consistency_status": "not_evaluated",
+        "quantitative_consistency_reason": (
+            "validation_only_not_run_in_product"
+        ),
+        "quantitative_consistency_contradiction_flag": False,
+        "quantitative_consistency_computed_winner": None,
+        "quantitative_consistency_stated_winner": None,
+        "quantitative_consistency_normalized_values": [],
+    }
     quantitative_consistency_guard_telemetry = {
         "quantitative_consistency_guard_applied": False,
-        "guard_reason": "diagnostic_only_not_product_gate",
+        "quantitative_consistency_guard_reason": (
+            "validation_only_not_run_in_product"
+        ),
+        "quantitative_consistency_guard_output_mode": "unchanged",
+        "quantitative_consistency_original_status": "not_evaluated",
+        "quantitative_consistency_guard_final_answer_replaced": False,
+        # Compatibility keys retained for existing projections.
+        "guard_reason": "validation_only_not_run_in_product",
         "answer_rewritten": False,
     }
     author_seconds = max(0.0, time.monotonic() - started)
