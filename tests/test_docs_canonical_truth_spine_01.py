@@ -1200,7 +1200,7 @@ def test_searchos_phase3_gate_and_searchplanner_record_are_exclusive() -> None:
         "The installed result is organized by durable capability, not PR chronology",
         "Installed evaluator and validation infrastructure is not real-model component proof",
         "general SearchPlanner quality remain unproved",
-            "Neither offline proof nor historical live observations establish repeatability, arbitrary-query support, or broad live product behavior.",
+        "Neither offline proof nor historical live observations establish repeatability, arbitrary-query support, or broad live product behavior.",
         "OPERATOR/VALIDATION surface",
     ):
         assert phrase in current

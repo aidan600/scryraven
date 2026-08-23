@@ -504,7 +504,7 @@ def test_real_component_s1_authority_survives_readiness_hardened_fap_and_author(
         specialist_inputs=(
             {
                 "specialist_need_handoff": handoff,
-                    "applicable_dprime_ref": handoff["validator_artifact_ref"],
+                "applicable_dprime_ref": handoff["validator_artifact_ref"],
             },
         ),
     )
