@@ -528,10 +528,12 @@ def test_hardened_quantitative_component_boundary_is_current_and_narrow() -> Non
     assert "generated prose is not semantically reparsed" in containment
     assert "No PRODUCT runtime consumer may use it as a success or failure decision" in containment
     assert (
-        "Two historical bounded Q1 ordinary-product runs and one offline golden-lane "
-        "proof are recorded above; they do not establish broad live validation or "
-        "repeatability."
+        "Two historical bounded Q1 ordinary-product runs, one offline golden-lane "
+        "proof, and one cap-limited post-repair Q1 run are recorded above; they do "
+        "not establish broad live validation or repeatability."
     ) in current
+    assert "The `run_pipeline` cap policy rejected the first planned" in current
+    assert "`cap_overflow`" in current
     assert "No provider or model changed." in containment
     assert "applicable Component Analyst case" in containment
     assert "terminal consumption by the current Component Analyst case and direct RunKernel component admission" in current

@@ -43,8 +43,11 @@ recorded below. The first crossed the repaired SearchOS handoff and stopped
 safely at Component Analyst output validation. The second crossed Component
 Analyst support, deterministic admission, ComponentCoverage, Sufficiency, and
 FinalAnswerPacket readiness and invoked Author, then stopped at the now-retired
-post-Author quantitative semantic gate. The installed FAP/Author boundary no
-longer uses that gate; historical evidence remains bounded evidence, not broad
+post-Author quantitative semantic gate. One post-repair licensed Q1 run entered
+ordinary `run_pipeline()` but its explicit zero SmartSearchJudgment cap blocked
+the first planned SmartSearchJudgment action at configuration, before Component
+Analyst, FAP, or Author. The installed FAP/Author boundary no longer uses the
+retired gate; all of these observations remain bounded evidence, not broad
 live-validation proof.
 
 
@@ -89,7 +92,8 @@ live-validation license is widened.
 
 ## Bounded Q1 Ordinary-Product Evidence
 
-The two bounded Q1 ordinary-product observations for
+Two historical Q1 ordinary-product observations and one post-repair,
+cap-limited Q1 run for
 `N1-ANSWER-BEARING-ANALYST-SUPPORT-AND-GOLDEN-LANE-CONVERGENCE-01` are current
 evidence, not a general reliability claim.
 
@@ -163,6 +167,16 @@ codes, `unsupported_quantitative_surface` and
 stopped; they do not identify whether FAP packaging, Author meaning, or parser
 recognition was at fault.
 
+The one licensed post-repair Q1 run was not a FAP/Author result. Its sanitized
+structural packet records one `run_pipeline()` call, one search dispatch, zero
+observed SmartSearchJudgment calls, zero Author calls, zero retries, no answer,
+and no citations. The `run_pipeline` cap policy rejected the first planned
+SmartSearchJudgment action at configuration because
+`max_smart_search_judgment_model_calls=0`, with safe classification
+`cap_overflow`. No Component Analyst, Coverage, Sufficiency, FAP, or Author
+projection became available. This consumes the one licensed run; it neither
+validates nor falsifies the selected FAP/Author boundary.
+
 The installed final boundary is now:
 
 ```text
@@ -181,9 +195,10 @@ Sufficiency, citation-eligibility, or Specialist ownership.
 
 The earlier accepted Q1 run (`90c035c6-8f53-438e-96e6-0a6e63895221`) and
 bounded SearchOS pulse (`45f3319b-9b43-4dcc-ba81-2d1d12f40a77`) remain
-historical provenance only. The two current observations do not generalize to
-all Q1 repetitions, Q2-Q6, arbitrary queries, broad SearchOS reliability,
-acquisition completeness, or product correctness.
+historical provenance only. The two historical observations and cap-limited
+post-repair observation do not generalize to all Q1 repetitions, Q2-Q6,
+arbitrary queries, broad SearchOS reliability, acquisition completeness, or
+product correctness.
 
 ### Frozen-handoff observation
 
@@ -212,7 +227,10 @@ ordinary proof now reaches the shown path with direct-source numeric authority,
 one Author call, cited success, no Specialist, no Component D-prime, no Cross or
 synthesis semantic call, no Scrutineer, and no post-Author semantic gate. The
 N=1 direct-admission topology correctly does not require a Component D-prime
-call. This offline result is not a new broad live-product claim.
+call. The only post-repair live run exhausted its licensed attempt at the
+`run_pipeline` SmartSearchJudgment cap before Component Analyst; it is not a
+live traversal of this FAP/Author path. This offline result is not a new broad
+live-product claim.
 
 ## Operator Doorman Boundary
 
@@ -1156,9 +1174,9 @@ Fetch, Tavily site acquisition, replacement semantic role, or live validation.
 
 ## Not Proved
 
-- Two historical bounded Q1 ordinary-product runs and one offline golden-lane
-  proof are recorded above; they do not establish broad live validation or
-  repeatability.
+- Two historical bounded Q1 ordinary-product runs, one offline golden-lane
+  proof, and one cap-limited post-repair Q1 run are recorded above; they do not
+  establish broad live validation or repeatability.
 - Real-model factual InterpretationBinding selection accuracy, abstention
   quality, and false-binding rate remain unproved.
 - Real-model user-clarification quality and arbitrary-query job escalation
