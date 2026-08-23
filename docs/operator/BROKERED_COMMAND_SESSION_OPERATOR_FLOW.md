@@ -103,9 +103,10 @@ environment mode:
 py scripts\run_brokered_command_once.py `
   --repo-root <REPO-ROOT> `
   --repo-env `
+  --status <ABSOLUTE-EXTERNAL-STATUS> `
   ... `
   -- `
-  python -m scryraven ...
+  <exact> <argv> <tokens>...
 ```
 
 `--repo-env` means the normalized repository root's `.env`, resolved inside the
@@ -119,6 +120,34 @@ broker-plus-target argv, requests one exact command-level escalation, and then
 executes that command after the user approves it in the normal permission UI.
 The user should approve the command in Codex; they should not be asked to open
 PowerShell, run the broker manually, or paste its result back into the session.
+
+For a Python target in a bounded validation lane, pass
+`--target-current-python` explicitly and place the target script and its exact
+arguments after `--`. The private child then prepends its own `sys.executable`;
+the broker never silently rewrites an arbitrary target command or relies on a
+literal `python` lookup from the private target `PATH`.
+
+The bounded AG-LIVE target uses the stdlib-only bootstrap so interpreter or
+runner import failures can produce a minimal structural terminal packet:
+
+```powershell
+py scripts\run_brokered_command_once.py `
+  --repo-root <REPO-ROOT> `
+  --repo-env `
+  --stdout <ABSOLUTE-EXTERNAL-STDOUT> `
+  --stderr <ABSOLUTE-EXTERNAL-STDERR> `
+  --status <ABSOLUTE-EXTERNAL-STATUS> `
+  --timeout-seconds <SECONDS> `
+  --target-current-python `
+  -- `
+  scripts\ag_live_bound_01_target_bootstrap.py `
+  --profile AG-LIVE-SMOKE `
+  --query <EXACT-QUERY> `
+  --mode Balanced `
+  --include-domains docs.python.org `
+  --output <ABSOLUTE-SANCTIONED-PACKET> `
+  --external-output-root <ABSOLUTE-EXTERNAL-PACKET-DIR>
+```
 
 Do not directly invoke:
 
@@ -151,9 +180,11 @@ operator
   -> private child
        parses the dotenv file
        builds the ordinary target environment
-       launches the exact argv with shell=False
+       launches the exact argv, or explicit current-Python + exact argv,
+       with shell=False
        redacts exact secret values from captured output
-       writes sanitized stdout/stderr outside the repository
+       writes sanitized stdout/stderr and the generic status receipt outside
+       the repository
   -> target command
        receives constructed environment, exact argv, and repo cwd
 ```
@@ -173,7 +204,9 @@ py scripts\run_brokered_command_once.py `
   --repo-env `
   --stdout <ABSOLUTE-EXTERNAL-STDOUT> `
   --stderr <ABSOLUTE-EXTERNAL-STDERR> `
+  --status <ABSOLUTE-EXTERNAL-STATUS> `
   --timeout-seconds <SECONDS> `
+  [--target-current-python] `
   [--replace-output] `
   -- `
   <exact> <argv> <tokens>...
@@ -189,10 +222,25 @@ Rules:
 - Every subprocess launch uses `shell=False`.
 - `--stdout` and `--stderr` must be distinct absolute paths outside the
   repository. Existing files require `--replace-output`.
-- The parent returns the target exit code, or `124` on bounded timeout, or `2`
-  on sanitized configuration failure.
+- When supplied, `--status` must be a distinct absolute path outside the
+  repository. It contains only structural launch, exit, timeout, sanitized
+  output-write, and safe-error-code facts; it never contains argv, environment
+  values, prompts, provider/model material, captured output, exception text, or
+  tracebacks. Existing status files require `--replace-output`.
+- `--target-current-python` is an explicit Python-target mechanism. It prepends
+  the private child's `sys.executable` to the exact target argv after `--`.
+- The parent returns the target exit code, `124` on bounded timeout, `125` on
+  controlled target-launch failure, `126` when the requested status or
+  sanitized output cannot be written, or `2` on sanitized configuration
+  failure.
 - On timeout, the private child terminates the Windows target process tree and
   still writes redacted captured output when available.
+
+The broker status receipt uses `broker_status_v1` and classifies terminal
+mechanics as `target_completed`, `target_launch_failed`, `target_timeout`, or
+`private_child_configuration_failed`. A missing target executable is reported
+as `target_executable_unavailable`; other launch errors are reported as
+`target_launch_os_error`. The status receipt does not claim that PRODUCT ran.
 
 ## Credential Custody
 
@@ -217,7 +265,7 @@ Stop without launching the target when:
 - the repository root or selected environment file is unavailable;
 - the target argv separator or argv is missing;
 - an output path is relative, inside the repository, identical for stdout and
-  stderr, or would overwrite without `--replace-output`;
+  stderr/status, or would overwrite without `--replace-output`;
 - the private child is started without the private session environment;
 - timeout seconds are not positive.
 

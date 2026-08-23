@@ -314,6 +314,22 @@ mechanism; its provider matrix and mechanical request fuse are not general
 product or doorman policy. See
 [Brokered Command Session Operator Flow](../operator/BROKERED_COMMAND_SESSION_OPERATOR_FLOW.md).
 
+The generic broker now has an optional external `broker_status_v1` receipt for
+mechanical target-launch, timeout, exit, and sanitized-output-write facts. A
+target `Popen()` OSError is classified without traceback or exception text and
+returns a controlled exit distinct from target exit `1`. Python validation
+targets may explicitly request `--target-current-python`, which prepends the
+private child's `sys.executable` to the exact target argv. The bounded
+AG-LIVE-BOUND-01 lane uses the stdlib-only
+`scripts/ag_live_bound_01_target_bootstrap.py` wrapper to preserve the runner's
+return code and emit only a minimal bootstrap packet for runner import failure
+or nonzero return without a sanctioned packet. These mechanics do not claim
+that PRODUCT ran and do not own provider, model, SearchOS, FAP, Author, or
+source semantics. Offline synthetic-environment proof covers target launch
+failure, current-Python launch, Q1 dry-run traversal, private-child
+configuration failure, runner import failure, and runner nonzero-without-packet
+sentinels; no live calls were made.
+
 ## Installed Capability Table
 
 The identifiers below are documentation sentinels, not runtime flags or public
