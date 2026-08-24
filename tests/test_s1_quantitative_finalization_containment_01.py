@@ -11,6 +11,7 @@ import core.author_execution_runtime as author_execution_runtime
 import core.quantitative_consistency as quantitative_consistency
 from core.author_execution_runtime import execute_author_action
 from core.final_answer_packet import FinalAnswerAuthorInputPayload
+from core.multicomponent_role_runtime import safe_packet_digest
 from core.quantitative_finalization_authority import (
     QuantitativeFinalizationAuthorityError,
     build_quantitative_author_instruction_block,
@@ -611,12 +612,17 @@ def test_same_lineage_subject_wording_is_not_a_fap_semantic_gate() -> None:
 
 
 def test_cross_component_identical_text_does_not_share_direct_source_binding() -> None:
-    claim = "Rebate is $1,200."
+    claim = "The rebate is $1,200."
+    shared_claim_digest = safe_packet_digest({"claim_text": claim})
     left = _fap_direct_entry(
         claim,
         component_id="component-a",
-        claim_id="claim-a",
-        claim_digest="claim-digest-a",
+        claim_id="component-claim:component-a",
+        claim_digest=shared_claim_digest,
+        semantic_observation_ref={
+            "observation_id": "observation-a",
+            "observation_digest": "observation-digest-a",
+        },
         evidence_refs=[
             {"content_ref_id": "content-1", "content_digest": "content-digest-1"}
         ],
@@ -628,8 +634,8 @@ def test_cross_component_identical_text_does_not_share_direct_source_binding() -
     right = _fap_direct_entry(
         claim,
         component_id="component-b",
-        claim_id="claim-b",
-        claim_digest="claim-digest-b",
+        claim_id="component-claim:component-b",
+        claim_digest=shared_claim_digest,
         semantic_observation_ref={
             "observation_id": "observation-b",
             "observation_digest": "observation-digest-b",
@@ -642,6 +648,8 @@ def test_cross_component_identical_text_does_not_share_direct_source_binding() -
             "coverage_record_digest": "coverage-digest-b",
         },
     )
+    assert left["claim_digest"] == right["claim_digest"] == shared_claim_digest
+    assert left["claim_id"] != right["claim_id"]
     materialization = {
         "available": True,
         "bounded_material_complete": True,
@@ -676,16 +684,40 @@ def test_cross_component_identical_text_does_not_share_direct_source_binding() -
         semantic_author_materialization=materialization,
     )
     assert ready["diagnostic"]["status"] == "ready"
-    rows = ready["bundle"]["manifest"]["authorized_numeric_claims"]
-    assert {row["current_claim_ref"]["component_id"] for row in rows} == {
-        "component-a",
-        "component-b",
+    rows = [
+        row
+        for row in ready["bundle"]["manifest"]["authorized_numeric_claims"]
+        if row["authority_kind"] == "direct_source_numeric"
+    ]
+    assert len(rows) == 2
+    assert {row["current_claim_ref"]["claim_digest"] for row in rows} == {
+        shared_claim_digest
     }
+    assert {row["current_claim_ref"]["claim_id"] for row in rows} == {
+        "component-claim:component-a",
+        "component-claim:component-b",
+    }
+    assert len({row["local_claim_key"] for row in rows}) == 2
+    assert all(
+        str(row["local_claim_key"]).startswith("quant-claim-") for row in rows
+    )
     by_component = {
-        row["current_claim_ref"]["component_id"]: row["fap_material_ref"]["content_ref_id"]
+        row["current_claim_ref"]["component_id"]: row
         for row in rows
     }
-    assert by_component == {"component-a": "content-1", "component-b": "content-2"}
+    assert set(by_component) == {"component-a", "component-b"}
+    assert by_component["component-a"]["current_claim_ref"]["claim_id"] == (
+        "component-claim:component-a"
+    )
+    assert by_component["component-a"]["fap_material_ref"]["content_ref_id"] == (
+        "content-1"
+    )
+    assert by_component["component-b"]["current_claim_ref"]["claim_id"] == (
+        "component-claim:component-b"
+    )
+    assert by_component["component-b"]["fap_material_ref"]["content_ref_id"] == (
+        "content-2"
+    )
 
     swapped = build_quantitative_fap_authority_preflight(
         source_fap_ref={"packet_id": "cross-component-swapped"},

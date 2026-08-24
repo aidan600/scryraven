@@ -1194,6 +1194,18 @@ def _claim_ref_from_entry(entry: Mapping[str, Any], *, fallback_key: str) -> dic
     }
 
 
+def _canonical_claim_ref_digest(claim_ref: Mapping[str, Any] | None) -> str:
+    """Digest the existing canonical claim ref without inventing a new identifier.
+
+    Production admission keeps claim_digest as digest({"claim_text": claim_text})
+    and claim_id component-scoped. Numeric-authority identity must therefore use
+    the whole installed claim ref so component_id, claim_id, and claim_digest
+    remain distinct across identical admitted text.
+    """
+
+    return _digest(_safe_ref(claim_ref))
+
+
 def specialist_quantitative_authority_ref_from_handoff(
     specialist_need_handoff: Mapping[str, Any] | None,
     *,
@@ -1671,7 +1683,7 @@ def build_quantitative_finalization_authority_bundle(
     authorized: list[dict[str, Any]] = []
     renderings: dict[str, str] = {}
     seen: set[tuple[str, str, int]] = set()
-    for claim_index, claim in enumerate(claims, start=1):
+    for claim in claims:
         claim_text = str(claim["claim_text"])
         literals = extract_quantitative_literals(claim_text)
         if not literals or any(
@@ -1679,10 +1691,8 @@ def build_quantitative_finalization_authority_bundle(
         ):
             continue
         claim_ref = _safe_ref(claim.get("claim_ref"))
-        claim_digest = str(
-            claim_ref.get("claim_digest") or _text_digest(claim_text)
-        )
-        local_claim_key = f"quant-claim-{claim_index:03d}-{claim_digest[:12]}"
+        canonical_claim_key = _canonical_claim_ref_digest(claim_ref)
+        local_claim_key = f"quant-claim-{canonical_claim_key}"
         specialist_ref = _safe_ref(claim.get("specialist_ref"))
         specialist_claim_authorized = _specialist_claim_matches(
             claim_text,
@@ -1743,7 +1753,7 @@ def build_quantitative_finalization_authority_bundle(
                 validator_ref = {}
                 validator_consumption_ref = {}
             dedupe_key = (
-                claim_digest,
+                canonical_claim_key,
                 _literal_signature(literal),
                 literal_index,
             )
@@ -1985,11 +1995,13 @@ def build_quantitative_fap_authority_preflight(
         component_packet_entries=component_packet_entries,
     )
     manifest = _mapping(bundle.get("manifest"))
-    rows_by_claim_digest: dict[str, list[dict[str, Any]]] = {}
+    rows_by_canonical_claim_key: dict[str, list[dict[str, Any]]] = {}
     for row in _mapping_sequence(manifest.get("authorized_numeric_claims")):
-        claim_digest = _digest(_safe_ref(row.get("current_claim_ref")))
-        if claim_digest:
-            rows_by_claim_digest.setdefault(claim_digest, []).append(row)
+        canonical_claim_key = _canonical_claim_ref_digest(
+            _safe_ref(row.get("current_claim_ref"))
+        )
+        if canonical_claim_key:
+            rows_by_canonical_claim_key.setdefault(canonical_claim_key, []).append(row)
 
     materials = _lineage_bound_materials(semantic_author_materialization)
     requirements = _structured_numeric_claim_requirements(
@@ -1997,8 +2009,8 @@ def build_quantitative_fap_authority_preflight(
         admitted_synthesis_entries=admitted_synthesis_entries,
         component_packet_entries=component_packet_entries,
     )
-    admitted_by_digest = {
-        _digest(_safe_ref(claim.get("claim_ref"))): claim
+    admitted_by_canonical_claim_key = {
+        _canonical_claim_ref_digest(_safe_ref(claim.get("claim_ref"))): claim
         for claim in _claim_sources(
             direct_component_entries=direct_component_entries,
             admitted_synthesis_entries=admitted_synthesis_entries,
@@ -2008,8 +2020,10 @@ def build_quantitative_fap_authority_preflight(
     reasons: list[dict[str, Any]] = []
     for requirement in requirements:
         reason_code = requirement["integrity_reason"]
-        claim_digest = _digest(_safe_ref(requirement["claim_ref"]))
-        matching_rows = rows_by_claim_digest.get(claim_digest, [])
+        canonical_claim_key = _canonical_claim_ref_digest(
+            _safe_ref(requirement["claim_ref"])
+        )
+        matching_rows = rows_by_canonical_claim_key.get(canonical_claim_key, [])
         matching_signatures = Counter(
             "|".join(
                 str(row.get(key) or "")
@@ -2029,7 +2043,7 @@ def build_quantitative_fap_authority_preflight(
             ):
                 reason_code = "incomplete_specialist_authority"
             else:
-                admitted = admitted_by_digest.get(claim_digest)
+                admitted = admitted_by_canonical_claim_key.get(canonical_claim_key)
                 if admitted is None:
                     reason_code = "missing_admitted_component_authority"
                 else:
@@ -2044,7 +2058,7 @@ def build_quantitative_fap_authority_preflight(
             reasons.append(
                 {
                     "claim_kind": requirement["claim_kind"],
-                    "claim_ref_digest": _digest(claim_ref),
+                    "claim_ref_digest": _canonical_claim_ref_digest(claim_ref),
                     "literal_count": sum(
                         requirement["literal_signatures"].values()
                     ),
