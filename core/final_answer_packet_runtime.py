@@ -36,11 +36,20 @@ _SAFE_QUANTITATIVE_CLAIM_KINDS = frozenset(
 _SAFE_QUANTITATIVE_PREFLIGHT_REASON_CODES = frozenset(
     {
         "unadmitted_numeric_claim",
+        "missing_admitted_component_authority",
         "stale_or_foreign_quantitative_authority",
+        "stale_or_foreign_lineage",
         "missing_component_analyst_authority",
+        "missing_semantic_observation_authority",
+        "missing_component_coverage_authority",
+        "missing_content_evidence_lineage",
         "missing_synthesis_validator_authority",
         "missing_required_specialist_binding",
+        "incomplete_specialist_authority",
         "missing_direct_source_binding",
+        "unsupported_claim_literal_surface",
+        "claim_literal_absent_from_bound_material",
+        "literal_signature_mismatch",
     }
 )
 

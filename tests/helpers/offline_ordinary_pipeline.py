@@ -719,9 +719,14 @@ class OfflineOrdinaryPipelineHarness:
             question = str(
                 dict(payload.get("component_ref") or {}).get("user_facing_question") or self.core_topic
             )
+            claim_text = (
+                prior_claim
+                or str(self.analyst_response or "").strip()
+                or ("Offline supported finding for " + question)
+            )
             return json.dumps(
                 {
-                    "claim_text": prior_claim or "Offline supported finding for " + question,
+                    "claim_text": claim_text,
                     "case_posture": "supported",
                     "evidence_analysis": (
                         "The exact bounded READ material supplied for this "

@@ -461,7 +461,7 @@ def test_fap_quantitative_preflight_blocks_author_input_before_any_author_call(
     ]
     assert diagnostic["status"] == "blocked"
     assert diagnostic["author_invocation_allowed"] is False
-    assert "missing_direct_source_binding" in diagnostic["reason_codes"]
+    assert "missing_content_evidence_lineage" in diagnostic["reason_codes"]
     assert result.author_payload_ref["blocked_before_author_input"] is True
 
     kernel.reduce(result.observation)
