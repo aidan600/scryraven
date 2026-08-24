@@ -127,6 +127,9 @@ def _stub_live_runner_without_env(
 def _run_repaired_q1_offline_outcome(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    *,
+    source_obligation_id: str = "obligation:official_current",
+    source_obligation_kind: str = "official_current",
 ) -> tuple[Any, Any, Any]:
     """Run the repaired provider-like Q1 lane and return its real outcome."""
 
@@ -139,7 +142,11 @@ def _run_repaired_q1_offline_outcome(
         _install_q1_plural_planner_contract,
     )
 
-    _install_q1_plural_planner_contract(monkeypatch)
+    _install_q1_plural_planner_contract(
+        monkeypatch,
+        source_obligation_id=source_obligation_id,
+        source_obligation_kind=source_obligation_kind,
+    )
     monkeypatch.setattr(
         quantitative_evaluator,
         "validate_author_output_quantitative_authority",
@@ -822,8 +829,122 @@ def test_repaired_q1_outcome_projects_through_normal_success_packet(
     assert packet["sanitized_projection_summaries"]["final_answer_packet"][
         "readiness_status"
     ] == "author_ready"
+    topology = packet["sanitized_projection_summaries"][
+        "source_obligation_topology"
+    ]
+    assert topology["schema_version"] == (
+        "ag_live_source_obligation_topology_safe_v1"
+    )
+    assert topology["available"] is True
+    assert topology["evidence_ledger_available"] is True
+    assert topology["evidence_ledger_requirement_count"] == 2
+    assert topology["accepted_obligation_count"] == 2
+    assert topology["satisfied_obligation_count"] == 2
+    assert topology["partial_obligation_count"] == 0
+    assert topology["missing_obligation_count"] == 0
+    by_kind = {item["obligation_kind"]: item for item in topology["obligations"]}
+    assert set(by_kind) == {"canonical_documentation", "official_current"}
+    canonical_docs = by_kind["canonical_documentation"]
+    assert canonical_docs["owning_scope"] == "run_contract"
+    assert canonical_docs["evidence_ledger_requirement_kind"] == "canonical"
+    assert canonical_docs["required_temporal_posture"] == "current"
+    assert canonical_docs["status"] == "satisfied"
+    assert canonical_docs["satisfying_evidence_count"] == 1
+    assert canonical_docs["candidate_evidence_binding_count"] == 1
+    assert canonical_docs["qualification_blocker_reason_codes"] == []
+    official_current = by_kind["official_current"]
+    assert official_current["owning_scope"] == "component"
+    assert official_current["evidence_ledger_requirement_kind"] == "official_current"
+    assert official_current["status"] == "satisfied"
+    assert official_current["satisfying_evidence_count"] == 1
+    assert official_current["candidate_evidence_binding_count"] == 1
+    assert official_current["qualification_blocker_reason_codes"] == []
+    assert official_current["owning_component_ref"].startswith("component:")
+    assert official_current["source_obligation_ref"].startswith(
+        "source_obligation:"
+    )
+    rendered_topology = json.dumps(topology, sort_keys=True)
+    assert "docs.python.org" not in rendered_topology
+    assert "math.isclose" not in rendered_topology
     assert packet["validation_observability"]["raw_private_material_serialized"] is False
     assert '"execution_trace":' not in json.dumps(packet, sort_keys=True)
+    support.reject_forbidden_packet(packet)
+
+
+def test_exact_live_topology_q1_offline_lane_preserves_two_canonical_records(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The offline Q1 lane models the two-record topology observed live."""
+
+    runner = _load_runner()
+    support = _load_support()
+    outcome, harness, cap_policy = _run_repaired_q1_offline_outcome(
+        tmp_path,
+        monkeypatch,
+        source_obligation_id="obligation:canonical_documentation",
+        source_obligation_kind="canonical_documentation",
+    )
+    assert outcome.terminal_status == "completed"
+    assert harness.author_prompts and len(harness.author_prompts) == 1
+
+    context = support.build_preflight_context(
+        root=ROOT,
+        profile_name="AG-LIVE-SMOKE",
+        query=PRIMARY_QUERY,
+        mode="Balanced",
+        include_domains=["docs.python.org"],
+        output_path=tmp_path / "q1-live-topology.sanitized.json",
+        external_output_root=tmp_path,
+        caps=support.AgLiveBoundCaps(),
+        run_id=str(getattr(outcome, "run_id", "q1-offline-run") or "q1-offline-run"),
+        confirm_live_product_run=True,
+        approved_backup_query=False,
+    )
+    packet = support.build_live_success_packet(
+        context,
+        outcome=outcome,
+        cap_policy=cap_policy,
+    )
+    packet = runner._enrich_campaign_packet(
+        packet,
+        context=context,
+        deps=None,
+        outcome=outcome,
+        campaign_guard=None,
+        attempt=None,
+    )
+    support.write_packet(context.output_path, packet)
+    packet = json.loads(context.output_path.read_text(encoding="utf-8"))
+
+    assert packet["success_classification"] == support.LIVE_PACKET_SUCCESS
+    assert packet["cited_source_ids"] == ["1"]
+    topology = packet["sanitized_projection_summaries"][
+        "source_obligation_topology"
+    ]
+    assert topology["accepted_obligation_count"] == 2
+    assert topology["satisfied_obligation_count"] == 2
+    assert topology["partial_obligation_count"] == 0
+    assert topology["missing_obligation_count"] == 0
+    [component_owned] = [
+        item for item in topology["obligations"] if item["owning_scope"] == "component"
+    ]
+    [run_owned] = [
+        item
+        for item in topology["obligations"]
+        if item["owning_scope"] == "run_contract"
+    ]
+    assert component_owned["obligation_kind"] == "canonical_documentation"
+    assert component_owned["evidence_ledger_requirement_kind"] == "canonical"
+    assert component_owned["status"] == "satisfied"
+    assert component_owned["satisfying_evidence_count"] == 1
+    assert component_owned["candidate_evidence_binding_count"] == 1
+    assert run_owned["obligation_kind"] == "canonical_documentation"
+    assert run_owned["evidence_ledger_requirement_kind"] == "canonical"
+    assert run_owned["required_temporal_posture"] == "current"
+    assert run_owned["status"] == "satisfied"
+    assert run_owned["satisfying_evidence_count"] == 1
+    assert run_owned["candidate_evidence_binding_count"] == 1
     support.reject_forbidden_packet(packet)
 
 
@@ -984,6 +1105,34 @@ def test_confirm_live_blocked_fap_pipeline_error_serializes_safe_summary(
         "mandatory_caveat_count": 1,
         "prohibited_upgrade_count": 2,
         "claim_postures": ["insufficient_answer"],
+        "quantitative_fap_authority_preflight": {
+            "schema_version": "quantitative_fap_authority_preflight_v1",
+            "status": "blocked",
+            "author_invocation_allowed": False,
+            "post_author_semantic_validation_required": False,
+            "required_numeric_claim_count": 2,
+            "authorized_numeric_claim_count": 0,
+            "blocked_numeric_claim_count": 1,
+            "reason_codes": [
+                "missing_direct_source_binding",
+                "must-not-serialize",
+            ],
+            "reason_refs": [
+                {
+                    "claim_kind": "direct_component",
+                    "claim_ref_digest": "a" * 64,
+                    "literal_count": 2,
+                    "reason_code": "missing_direct_source_binding",
+                    "specialist_declared": False,
+                    "raw_prompt": "nested must not serialize",
+                },
+                {
+                    "claim_kind": "must-not-serialize",
+                    "reason_code": "must-not-serialize",
+                },
+            ],
+            "provider_payload": "nested must not serialize",
+        },
         "component_blocked_summary": {
             "schema_version": "blocked_fap_component_summary_v1",
             "component_summary_available": True,
@@ -1075,6 +1224,24 @@ def test_confirm_live_blocked_fap_pipeline_error_serializes_safe_summary(
     assert observed["partial_source_obligation_count"] == 1
     assert observed["mandatory_caveat_count"] == 1
     assert observed["prohibited_upgrade_count"] == 2
+    assert observed["quantitative_fap_authority_preflight"] == {
+        "schema_version": "blocked_fap_quantitative_authority_safe_summary_v1",
+        "status": "blocked",
+        "author_invocation_allowed": False,
+        "post_author_semantic_validation_required": False,
+        "required_numeric_claim_count": 2,
+        "authorized_numeric_claim_count": 0,
+        "blocked_numeric_claim_count": 1,
+        "reason_codes": ["missing_direct_source_binding"],
+        "reason_refs": [
+            {
+                "claim_kind": "direct_component",
+                "literal_count": 2,
+                "reason_code": "missing_direct_source_binding",
+                "specialist_declared": False,
+            }
+        ],
+    }
     component_summary = observed["component_blocked_summary"]
     assert component_summary["expected_component_count"] == 3
     assert component_summary["supported_component_count"] == 2
@@ -1805,6 +1972,84 @@ def _q1_like_blocked_outcome(
                 "author_payload_status": "author_input_deferred",
                 "citation_eligible_source_ids": [],
                 "sufficiency_decision": "partial_answer_authorized",
+                "missing_required_obligations": [
+                    {
+                        "requirement_id": "ledger:q1-official-current",
+                        "requirement_kind": "official_current",
+                        "required_source_class": "official_current_rules",
+                        "required_source_tier": "official",
+                        "required_currentness": "current",
+                        "component_id": "q1-component-1",
+                        "source_obligation_id": "q1:official-current",
+                        "origin_ref": "SearchOS.ComponentSourceObligation",
+                        "status": "missing",
+                        "reason": "candidate_not_eligible_for_stronger_obligation",
+                        "component_source_obligation_refs": [
+                            {
+                                "source_obligation_id": "q1:official-current",
+                                "kind": "official_current",
+                                "required_source_class": "official_current_rules",
+                                "url": "https://fixture.invalid/obligation-canary",
+                                "title": _N1_PRIVATE_CANARY,
+                            }
+                        ],
+                        "component_candidate_link_refs": [
+                            {
+                                "candidate_id": "candidate-official-current",
+                                "source_obligation_id": "q1:official-current",
+                                "source_tier": "canonical",
+                                "source_class": "primary_source_documents",
+                                "currentness_signal": "current",
+                                "eligible_for_stronger_obligation": False,
+                                "readable_status": "readable",
+                                "citation_eligible": False,
+                                "url": "https://fixture.invalid/candidate-canary",
+                                "title": _N1_PRIVATE_CANARY,
+                                "raw_prompt": _N1_PRIVATE_CANARY,
+                                "provider_payload": _N1_PRIVATE_CANARY,
+                            }
+                        ],
+                    }
+                ],
+                "satisfied_obligations": [
+                    {
+                        "requirement_id": "ledger:q1-canonical-docs",
+                        "requirement_kind": "canonical",
+                        "required_source_class": "primary_source_documents",
+                        "required_source_tier": "canonical",
+                        "component_id": "q1-component-1",
+                        "source_obligation_id": "q1:canonical-documentation",
+                        "origin_ref": "SearchOS.ComponentSourceObligation",
+                        "status": "satisfied",
+                        "reason": "exact_searchos_source_obligation_satisfied",
+                        "satisfied_candidate_ids": ["candidate-canonical-docs"],
+                        "component_source_obligation_refs": [
+                            {
+                                "source_obligation_id": "q1:canonical-documentation",
+                                "kind": "canonical_documentation",
+                                "required_source_class": "primary_source_documents",
+                                "url": "https://fixture.invalid/canonical-obligation-canary",
+                                "title": _N1_PRIVATE_CANARY,
+                            }
+                        ],
+                        "component_candidate_link_refs": [
+                            {
+                                "candidate_id": "candidate-canonical-docs",
+                                "source_obligation_id": "q1:canonical-documentation",
+                                "source_tier": "canonical",
+                                "source_class": "primary_source_documents",
+                                "currentness_signal": "current",
+                                "eligible_for_stronger_obligation": True,
+                                "readable_status": "readable",
+                                "citation_eligible": True,
+                                "url": "https://fixture.invalid/canonical-candidate-canary",
+                                "title": _N1_PRIVATE_CANARY,
+                                "raw_prompt": _N1_PRIVATE_CANARY,
+                                "provider_payload": _N1_PRIVATE_CANARY,
+                            }
+                        ],
+                    }
+                ],
                 "semantic_evidence_authority_manifest": {
                     "semantic_packet_evidence_binding_available": False,
                     "semantic_packet_evidence_binding_count": 0,
@@ -1951,6 +2196,47 @@ def test_q1_like_blocked_fap_packet_reuses_canonical_n1_projection(
     assert summaries["sufficiency"]["sufficiency_decision"] == (
         "partial_answer_authorized"
     )
+    topology = summaries["source_obligation_topology"]
+    assert topology["schema_version"] == (
+        "ag_live_source_obligation_topology_safe_v1"
+    )
+    assert topology["available"] is True
+    assert topology["accepted_obligation_count"] == 2
+    assert topology["satisfied_obligation_count"] == 1
+    assert topology["partial_obligation_count"] == 0
+    assert topology["missing_obligation_count"] == 1
+    by_obligation_kind = {
+        item["obligation_kind"]: item for item in topology["obligations"]
+    }
+    assert set(by_obligation_kind) == {
+        "canonical_documentation",
+        "official_current",
+    }
+    canonical_docs = by_obligation_kind["canonical_documentation"]
+    official_current = by_obligation_kind["official_current"]
+    assert canonical_docs["status"] == "satisfied"
+    assert canonical_docs["evidence_ledger_requirement_kind"] == "canonical"
+    assert canonical_docs["satisfying_evidence_count"] == 1
+    assert canonical_docs["candidate_evidence_binding_count"] == 1
+    assert canonical_docs["qualification_blocker_reason_codes"] == []
+    assert official_current["status"] == "missing"
+    assert official_current["evidence_ledger_requirement_kind"] == "official_current"
+    assert official_current["required_temporal_posture"] == "current"
+    assert official_current["qualification_blocker_reason_codes"] == [
+        "candidate_not_eligible_for_stronger_obligation"
+    ]
+    [current_candidate] = official_current["candidate_qualification_facts"]
+    assert current_candidate["candidate_ref"].startswith("candidate:")
+    assert current_candidate["source_tier"] == "canonical"
+    assert current_candidate["source_class"] == "primary_source_documents"
+    assert current_candidate["currentness_posture"] == "current"
+    assert current_candidate["eligible_for_stronger_obligation"] is False
+    assert current_candidate["readable_status"] == "readable"
+    assert current_candidate["citation_eligible"] is False
+    assert official_current["source_obligation_ref"].startswith(
+        "source_obligation:"
+    )
+    assert official_current["owning_component_ref"].startswith("component:")
     assert packet["retention_posture"]["only_runner_artifact_written"] is True
     assert packet["no_retention"]["full_raw_traces_retained"] is False
     rendered = json.dumps(packet, sort_keys=True)

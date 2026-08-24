@@ -662,6 +662,81 @@ def test_final_answer_packet_consumes_sufficiency_to_demote_legacy_missing_infer
     )
 
 
+def test_exact_component_obligation_survives_sufficiency_without_legacy_class_gap() -> None:
+    """A ledger-satisfied component obligation remains distinct at FAP."""
+
+    contract = _contract(
+        "According to official technical documentation, what are the defaults?"
+    )
+    candidate = _candidate(
+        source_class="primary_source_documents",
+        source_tier="canonical",
+    )
+    ledger = _ledger_projection(
+        contract,
+        candidates=[candidate],
+        links=_links(contract),
+    )
+    baseline = build_deterministic_sufficiency_judgment(
+        _input(contract, ledger, search={"decision": "stop_satisfied"})
+    )
+    component_requirement_id = "searchos-source-obligation:component:q1:official"
+    ledger["source_requirements"].append(
+        {
+            "requirement_id": component_requirement_id,
+            "requirement_kind": "official_current",
+            "component_id": "component:q1",
+            "source_obligation_id": "obligation:official_current",
+            "origin_ref": "RunKernel.SearchOSIterativeJudgment:fixture",
+            "status": "satisfied",
+            "linked_candidate_ids": ["C1"],
+        }
+    )
+    judgment = build_deterministic_sufficiency_judgment(
+        _input(
+            contract,
+            ledger,
+            search={"decision": "stop_satisfied"},
+            answer_contract={
+                "unfulfilled_source_classes": ["reputable_secondary"]
+            },
+        )
+    )
+
+    satisfied_ids = {
+        item.requirement_id for item in judgment.satisfied_obligations
+    }
+    assert len(judgment.satisfied_obligations) == len(baseline.satisfied_obligations) + 1
+    assert component_requirement_id in satisfied_ids
+    assert not any(
+        item.requirement_kind == "answer_contract_source_class"
+        for item in judgment.missing_required_obligations
+    )
+    assert not any(
+        item.required_source_class == "reputable_secondary"
+        for item in judgment.missing_required_obligations
+    )
+
+    packet = build_final_answer_packet(
+        run_id="ag92c-exact-component",
+        final_evidence=[_final_passage()],
+        source_obligation_projection=ledger,
+        answer_contract_projection={
+            "unfulfilled_source_classes": ["reputable_secondary"]
+        },
+        run_contract_projection=contract,
+        sufficiency_judgment_projection=judgment.to_projection(),
+    )
+    packet_requirement_ids = {
+        record.custody_requirement_id for record in packet.source_obligations
+    }
+    assert component_requirement_id in packet_requirement_ids
+    assert all(
+        record.status is SourceObligationStatus.SATISFIED
+        for record in packet.source_obligations
+    )
+
+
 def test_final_answer_packet_consumes_missing_sufficiency_projection() -> None:
     contract = _contract("What is the current official filing fee?")
     ledger = _ledger_projection(contract)

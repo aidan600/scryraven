@@ -940,6 +940,7 @@ class FinalAnswerPacket:
     evidence_records: tuple[FinalEvidenceRecord, ...] = ()
     citation_records: tuple[CitationEligibilityRecord, ...] = ()
     source_obligations: tuple[SourceObligationRecord, ...] = ()
+    source_obligation_topology: Mapping[str, Any] = field(default_factory=dict)
     official_current_custody_summary: Mapping[str, Any] = field(default_factory=dict)
     sufficiency_decision: str | None = None
     final_answer_posture: str | None = None
@@ -2471,6 +2472,9 @@ class FinalAnswerPacket:
             "citation_eligible": [record.to_dict() for record in self.citation_eligible],
             "citation_ineligible": [record.to_dict() for record in self.citation_ineligible],
             "source_obligations": [record.to_dict() for record in self.source_obligations],
+            "source_obligation_topology": _safe_json(
+                self.source_obligation_topology
+            ),
             "official_current_custody_summary": _safe_json(self.official_current_custody_summary),
             "sufficiency_decision": _clean_text(self.sufficiency_decision, limit=120),
             "final_answer_posture": _clean_text(self.final_answer_posture, limit=120),

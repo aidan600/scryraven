@@ -14,6 +14,10 @@ from core.final_answer_packet import (
     FinalEvidenceRecord,
     SourceObligationStatus,
 )
+from core.final_answer_packet_runtime import (
+    _blocked_author_payload_ref,
+    build_safe_blocked_fap_summary,
+)
 from core.final_answer_runtime_adapter import (
     build_final_answer_packet,
     build_packet_derived_citation_source_handoff_state,
@@ -117,6 +121,104 @@ def test_ag89d_citation_ineligible_and_excluded_evidence_carry_reasons() -> None
         reason="not_selected_for_final_answer",
     )
     assert excluded.to_dict()["reason"] == "not_selected_for_final_answer"
+
+
+def test_ag89d_blocked_payload_exposes_only_safe_quantitative_preflight() -> None:
+    packet = build_final_answer_packet(
+        run_id="r4-quantitative-preflight",
+        final_evidence=[_passage(source_id=4)],
+    ).with_quantitative_authority_block(
+        {
+            "schema_version": "quantitative_fap_authority_preflight_v1",
+            "status": "blocked",
+            "author_invocation_allowed": False,
+            "post_author_semantic_validation_required": False,
+            "required_numeric_claim_count": 2,
+            "authorized_numeric_claim_count": 0,
+            "blocked_numeric_claim_count": 1,
+            "reason_codes": ["missing_direct_source_binding"],
+            "reason_refs": [
+                {
+                    "claim_kind": "direct_component",
+                    "claim_ref_digest": "a" * 64,
+                    "literal_count": 2,
+                    "reason_code": "missing_direct_source_binding",
+                    "specialist_declared": False,
+                    "raw_prompt": "must not escape into a blocked payload",
+                }
+            ],
+            "provider_payload": "must not escape into a blocked payload",
+        }
+    )
+
+    payload = _blocked_author_payload_ref(packet)
+    observed = payload["quantitative_fap_authority_preflight"]
+    assert observed == {
+        "schema_version": "blocked_fap_quantitative_authority_safe_summary_v1",
+        "status": "blocked",
+        "author_invocation_allowed": False,
+        "post_author_semantic_validation_required": False,
+        "required_numeric_claim_count": 2,
+        "authorized_numeric_claim_count": 0,
+        "blocked_numeric_claim_count": 1,
+        "reason_codes": ["missing_direct_source_binding"],
+        "reason_refs": [
+            {
+                "reason_code": "missing_direct_source_binding",
+                "claim_kind": "direct_component",
+                "literal_count": 2,
+                "specialist_declared": False,
+            }
+        ],
+    }
+    assert payload["authority_payload"]["quantitative_fap_authority_preflight"] == observed
+    encoded = json.dumps(payload, sort_keys=True)
+    assert "must not escape into a blocked payload" not in encoded
+    assert "claim_ref_digest" not in encoded
+
+
+def test_ag89d_blocked_summary_preserves_only_safe_quantitative_preflight() -> None:
+    packet = build_final_answer_packet(
+        run_id="r4-quantitative-preflight-summary",
+        final_evidence=[_passage(source_id=4)],
+    ).with_quantitative_authority_block(
+        {
+            "schema_version": "quantitative_fap_authority_preflight_v1",
+            "status": "blocked",
+            "author_invocation_allowed": False,
+            "post_author_semantic_validation_required": False,
+            "required_numeric_claim_count": 2,
+            "authorized_numeric_claim_count": 0,
+            "blocked_numeric_claim_count": 1,
+            "reason_codes": ["missing_direct_source_binding"],
+            "reason_refs": [
+                {
+                    "reason_code": "missing_direct_source_binding",
+                    "claim_kind": "direct_component",
+                    "literal_count": 2,
+                    "specialist_declared": False,
+                    "raw_prompt": "must not escape into the blocked summary",
+                }
+            ],
+            "provider_payload": "must not escape into the blocked summary",
+        }
+    )
+
+    payload = _blocked_author_payload_ref(packet)
+    summary = build_safe_blocked_fap_summary(
+        {
+            "packet_id": packet.packet_id,
+            "readiness_status": packet.readiness_status.value,
+            "author_payload_ref": payload,
+        }
+    )
+
+    assert summary["quantitative_fap_authority_preflight"] == payload[
+        "quantitative_fap_authority_preflight"
+    ]
+    encoded = json.dumps(summary, sort_keys=True)
+    assert "must not escape into the blocked summary" not in encoded
+    assert "provider_payload" not in encoded
 
 
 def test_ag89d_mandatory_caveats_and_prohibited_upgrades_are_packet_fields() -> None:
