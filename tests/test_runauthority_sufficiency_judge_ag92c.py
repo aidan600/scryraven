@@ -677,6 +677,9 @@ def test_exact_component_obligation_survives_sufficiency_without_legacy_class_ga
         candidates=[candidate],
         links=_links(contract),
     )
+    baseline = build_deterministic_sufficiency_judgment(
+        _input(contract, ledger, search={"decision": "stop_satisfied"})
+    )
     component_requirement_id = "searchos-source-obligation:component:q1:official"
     ledger["source_requirements"].append(
         {
@@ -703,6 +706,7 @@ def test_exact_component_obligation_survives_sufficiency_without_legacy_class_ga
     satisfied_ids = {
         item.requirement_id for item in judgment.satisfied_obligations
     }
+    assert len(judgment.satisfied_obligations) == len(baseline.satisfied_obligations) + 1
     assert component_requirement_id in satisfied_ids
     assert not any(
         item.requirement_kind == "answer_contract_source_class"

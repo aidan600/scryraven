@@ -87,6 +87,63 @@ gap: the FAP quantitative preflight was already present in the blocked
 the PRODUCT packet. The narrow repair projects that already-sanitized field;
 it does not alter the preflight, FAP decision, or Author eligibility.
 
+Final offline validation exposed one true Case-C mechanical duplicate in the
+Sufficiency accumulator: a run-contract row already consumed through canonical
+requirement and owned-obligation identity was re-added when its raw requirement
+ID differed only by `-` versus `_`. The repair skips only the already-consumed
+physical ledger row. It does not coalesce separately owned rows, even where
+their obligation kinds match.
+
 It does not change query-shape policy, SearchPlanner requirements, source
 definitions, currentness semantics, Sufficiency/FAP standards, citation policy,
 or provider behavior.
+
+## Bounded convergence attempt ledger
+
+All attempts used the exact Q1 query through the sanctioned brokered product
+path. Only broker receipts and sanitized structural packets were inspected.
+
+1. **Attempt 1:** target completed; both accepted canonical-documentation
+   obligations were satisfied, but FAP blocked before Author.
+2. **Attempt 2:** target completed; the same two obligations were satisfied.
+   It proved that the first safe FAP projection omitted an already-sanitized
+   quantitative preflight, which this phase repaired as observability-only
+   transport.
+3. **Attempt 3:** target completed with a nonzero target exit before SearchOS.
+   The safe error code was `run_pipeline_search_planner_model_adapter_error`;
+   no source-obligation topology or FAP packet was produced.
+4. **Attempt 4:** target completed; both obligations were satisfied. FAP then
+   blocked one direct-component numeric claim with the exact safe blocker code
+   `missing_direct_source_binding` (four literals, no specialist declared).
+   The preflight reported five authorized numeric claim rows overall. This does
+   not establish a missing source-obligation or a currentness-policy failure.
+
+The live budget is exhausted. Altering the remaining direct-source numeric
+claim-matching behavior would change or extend FAP claim-binding semantics, so
+it is intentionally outside this phase's licensed Case-A/Case-C repairs.
+
+The added `test_ag89d_blocked_summary_preserves_only_safe_quantitative_preflight`
+and the strengthened exact-component Sufficiency regression are classified as
+`phase_focus`: they guard bounded packet projection and exact owned-obligation
+transport, respectively, and are deliberately not `fast_pr` manifest
+candidates.
+
+## Final validation state
+
+The focused obligation, EvidenceLedger, Sufficiency, FAP, exact-Q1 offline,
+bounded-runner, broker/bootstrap, canonical-docs, semantic, Author, collection,
+and fast-PR checks passed. `ruff`, `git diff --check`, and `pre-commit
+--all-files` also passed.
+
+Two broader offline checks remain red outside the repaired causal boundary:
+
+- `test_sufficiency_fap_component_readiness_ag_readiness_01.py` stops before
+  Sufficiency/FAP construction because its fixture accesses absent
+  `search_work_plan` data (seven failures, two passes).
+- the semantic-search integration gate has one case whose expected Author
+  output is blocked by `missing_required_component_coverage`. It persists when
+  the final Case-C accumulator repair is temporarily removed.
+
+The repository bucket wrapper could not launch its configured Python runtime
+in this Windows environment (`Access is denied`), so the corresponding
+manifests were executed directly with the working `py -m pytest` path.

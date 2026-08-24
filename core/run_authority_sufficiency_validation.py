@@ -2626,17 +2626,19 @@ def build_deterministic_sufficiency_judgment(
                 )
             )
 
-    for ledger_requirement in ledger_requirements:
+    for ledger_index, ledger_requirement in enumerate(ledger_requirements):
         status = clean_token(ledger_requirement.get("status"))
         requirement_id = clean_token(ledger_requirement.get("requirement_id"))
         if (
             not requirement_id
             or not clean_token(ledger_requirement.get("component_id"))
             or not clean_token(ledger_requirement.get("source_obligation_id"))
-            or any(
-                item.requirement_id == requirement_id
-                for item in (*missing, *partial, *satisfied)
-            )
+            # The run-contract pass already consumed this exact ledger row
+            # through canonical requirement and owned-obligation identity.
+            # Skip only that physical row: raw requirement IDs may differ in
+            # harmless punctuation, while another row may represent a distinct
+            # component-owned obligation with the same requirement kind.
+            or ledger_index in consumed_required_ledger_indexes
         ):
             continue
         if status == "satisfied":
