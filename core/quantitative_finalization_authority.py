@@ -952,95 +952,230 @@ def _normalized_claim_body(assertion: str, literals: Sequence[Mapping[str, Any]]
 
 
 def semantic_claim_fingerprint(assertion: str) -> str:
+    """Diagnostic prose digest. Not a PRODUCT binding key."""
+
     prose = _strip_nonprose_transport(assertion)
     literals = extract_quantitative_literals(prose)
     return _text_digest(_normalized_claim_body(prose, literals))
 
 
-_SOURCE_EQUIVALENCE_STOPWORDS = frozenset(
-    {
-        "a",
-        "an",
-        "are",
-        "at",
-        "has",
-        "have",
-        "is",
-        "of",
-        "the",
-        "to",
-        "was",
-        "were",
-    }
-)
-_SOURCE_EQUIVALENCE_TOKEN_NORMALIZATION = {
-    "applications": "application",
-    "due": "deadline",
-}
+def _same_identity(left: Any, right: Any) -> bool:
+    a = str(left or "").strip()
+    b = str(right or "").strip()
+    return bool(a) and a == b
 
 
-def _source_equivalence_core(assertion: str) -> frozenset[str]:
-    literals = extract_quantitative_literals(assertion)
-    normalized = _normalized_claim_body(assertion, literals)
-    normalized = re.sub(r"quant\[[^\]]+\]", " ", normalized)
-    tokens: set[str] = set()
-    for token in re.findall(r"[a-z0-9]+(?:['â€™\-][a-z0-9]+)?", normalized):
-        if token in _SOURCE_EQUIVALENCE_STOPWORDS:
+def _literal_has_unsupported_surface(literal: Mapping[str, Any]) -> bool:
+    return bool(
+        literal.get("unsupported_textual_quantifier")
+        or literal.get("unsupported_quantitative_surface")
+    )
+
+
+def _literal_signature_counter(
+    text: str, *, supported_only: bool = True
+) -> Counter[str]:
+    counter: Counter[str] = Counter()
+    for literal in extract_quantitative_literals(text):
+        if supported_only and _literal_has_unsupported_surface(literal):
             continue
-        tokens.add(_SOURCE_EQUIVALENCE_TOKEN_NORMALIZATION.get(token, token))
-    return frozenset(tokens)
+        counter[_literal_signature(literal)] += 1
+    return counter
 
 
-def _component_id_tail(value: Any) -> str:
-    return str(value or "").strip().rsplit(":", 1)[-1]
+def _counter_subseteq(claim: Counter[str], material: Counter[str]) -> bool:
+    return all(material[signature] >= count for signature, count in claim.items())
 
 
-def _component_source_lineage_matches(
-    admitted_claim: Mapping[str, Any],
-    direct_claim: Mapping[str, Any],
-) -> bool:
-    admitted_ref = _mapping(admitted_claim.get("evidence_or_specialist_ref"))
+def _literal_values(text: str) -> set[str]:
+    values: set[str] = set()
+    for literal in extract_quantitative_literals(text):
+        if _literal_has_unsupported_surface(literal):
+            continue
+        value = str(literal.get("normalized_numeric_value_text") or "")
+        if value:
+            values.add(value)
+    return values
+
+
+def _lineage_bound_materials(
+    semantic_author_materialization: Mapping[str, Any] | None,
+) -> list[dict[str, Any]]:
+    materialization = _mapping(semantic_author_materialization)
+    if materialization.get("available") is not True or materialization.get(
+        "bounded_material_complete"
+    ) is not True:
+        return []
+    materials: list[dict[str, Any]] = []
+    for material_index, material in enumerate(
+        _mapping_sequence(materialization.get("bounded_material_refs")),
+        start=1,
+    ):
+        bounded_text = str(material.get("bounded_text") or "")
+        if not bounded_text:
+            continue
+        materials.append(
+            {
+                "component_id": material.get("component_id"),
+                "component_revision": material.get("component_revision"),
+                "component_digest": material.get("component_digest"),
+                "content_ref_id": material.get("content_ref_id"),
+                "content_digest": material.get("content_digest"),
+                "coverage_record_id": material.get("coverage_record_id"),
+                "coverage_record_digest": material.get("coverage_record_digest"),
+                "evidence_ref_id": material.get("evidence_ref_id")
+                or material.get("origin_evidence_ref_id"),
+                "origin_evidence_ref_id": material.get("origin_evidence_ref_id"),
+                "packet_evidence_id": material.get("packet_evidence_id"),
+                "source_id": material.get("source_id"),
+                "bounded_text": bounded_text,
+                "material_index": material_index,
+                "fap_material_ref": {
+                    "material_index": material_index,
+                    "content_ref_id": material.get("content_ref_id"),
+                    "content_digest": material.get("content_digest"),
+                    "coverage_record_id": material.get("coverage_record_id"),
+                    "coverage_record_digest": material.get("coverage_record_digest"),
+                    "evidence_ref_id": material.get("evidence_ref_id"),
+                    "packet_evidence_id": material.get("packet_evidence_id"),
+                },
+            }
+        )
+    return materials
+
+
+def _admitted_lineage_gap(claim: Mapping[str, Any]) -> str | None:
+    admitted_ref = _mapping(claim.get("evidence_or_specialist_ref"))
     observation_ref = _mapping(admitted_ref.get("semantic_observation_ref"))
     coverage_ref = _mapping(admitted_ref.get("component_coverage_ref"))
-    evidence_refs = _mapping_sequence(admitted_ref.get("evidence_refs"))
-    direct_material_ref = _mapping(direct_claim.get("fap_material_ref"))
-    admitted_component = _component_id_tail(
-        _mapping(admitted_claim.get("claim_ref")).get("component_id")
-    )
-    direct_component = _component_id_tail(
-        _mapping(direct_claim.get("claim_ref")).get("component_id")
-    )
-    exact_content_ref = any(
-        ref.get("content_ref_id") == direct_material_ref.get("content_ref_id")
-        and ref.get("content_digest") == direct_material_ref.get("content_digest")
-        for ref in evidence_refs
-    )
-    exact_coverage_ref = bool(
-        coverage_ref.get("coverage_record_id")
-        and coverage_ref.get("coverage_record_id")
-        == direct_material_ref.get("coverage_record_id")
-        and coverage_ref.get("coverage_record_digest")
-        == direct_material_ref.get("coverage_record_digest")
-    )
-    admitted_core = _source_equivalence_core(
-        str(admitted_claim.get("claim_text") or "")
-    )
-    direct_core = _source_equivalence_core(
-        str(direct_claim.get("claim_text") or "")
-    )
-    shared_core = admitted_core & direct_core
-    proposition_core_matches = bool(
-        len(shared_core) >= 2
-        and (admitted_core <= direct_core or direct_core <= admitted_core)
-    )
-    return bool(
+    if not (
         observation_ref.get("observation_id")
         and observation_ref.get("observation_digest")
-        and admitted_component
-        and admitted_component == direct_component
-        and exact_content_ref
-        and exact_coverage_ref
-        and proposition_core_matches
+    ):
+        return "missing_semantic_observation_authority"
+    if not (
+        coverage_ref.get("coverage_record_id")
+        and coverage_ref.get("coverage_record_digest")
+    ):
+        return "missing_component_coverage_authority"
+    evidence_refs = _mapping_sequence(admitted_ref.get("evidence_refs"))
+    if not any(
+        ref.get("content_ref_id") and ref.get("content_digest") for ref in evidence_refs
+    ):
+        return "missing_content_evidence_lineage"
+    return None
+
+
+def _material_matches_admitted(
+    admitted_claim: Mapping[str, Any],
+    material: Mapping[str, Any],
+) -> bool:
+    claim_ref = _mapping(admitted_claim.get("claim_ref"))
+    admitted_ref = _mapping(admitted_claim.get("evidence_or_specialist_ref"))
+    coverage_ref = _mapping(admitted_ref.get("component_coverage_ref"))
+    if not _same_identity(claim_ref.get("component_id"), material.get("component_id")):
+        return False
+    for key in ("component_revision", "component_digest"):
+        left = claim_ref.get(key)
+        right = material.get(key)
+        if left and right and not _same_identity(left, right):
+            return False
+    if not _same_identity(
+        coverage_ref.get("coverage_record_id"), material.get("coverage_record_id")
+    ) or not _same_identity(
+        coverage_ref.get("coverage_record_digest"),
+        material.get("coverage_record_digest"),
+    ):
+        return False
+    evidence_refs = _mapping_sequence(admitted_ref.get("evidence_refs"))
+    if not any(
+        _same_identity(ref.get("content_ref_id"), material.get("content_ref_id"))
+        and _same_identity(ref.get("content_digest"), material.get("content_digest"))
+        for ref in evidence_refs
+    ):
+        return False
+    admitted_evidence_ids = [
+        ref.get("evidence_ref_id")
+        for ref in evidence_refs
+        if str(ref.get("evidence_ref_id") or "").strip()
+    ]
+    material_evidence_id = material.get("evidence_ref_id")
+    if (
+        admitted_evidence_ids
+        and str(material_evidence_id or "").strip()
+        and not any(
+            _same_identity(evidence_id, material_evidence_id)
+            for evidence_id in admitted_evidence_ids
+        )
+    ):
+        return False
+    admitted_packet_ids = [
+        ref.get("packet_evidence_id")
+        for ref in evidence_refs
+        if str(ref.get("packet_evidence_id") or "").strip()
+    ]
+    material_packet_id = material.get("packet_evidence_id")
+    if (
+        admitted_packet_ids
+        and str(material_packet_id or "").strip()
+        and not any(
+            _same_identity(packet_id, material_packet_id)
+            for packet_id in admitted_packet_ids
+        )
+    ):
+        return False
+    return True
+
+
+def _try_direct_source_bind(
+    claim: Mapping[str, Any],
+    materials: Sequence[Mapping[str, Any]],
+) -> tuple[dict[str, Any] | None, str | None]:
+    gap = _admitted_lineage_gap(claim)
+    if gap:
+        return None, gap
+    claim_text = str(claim.get("claim_text") or "")
+    claim_literals = extract_quantitative_literals(claim_text)
+    if any(_literal_has_unsupported_surface(item) for item in claim_literals):
+        return None, "unsupported_claim_literal_surface"
+    matched = [
+        material
+        for material in materials
+        if _material_matches_admitted(claim, material)
+    ]
+    if not matched:
+        return None, "missing_content_evidence_lineage"
+    matched.sort(
+        key=lambda item: (
+            str(item.get("content_ref_id") or ""),
+            int(item.get("material_index") or 0),
+        )
+    )
+    material_counter: Counter[str] = Counter()
+    for material in matched:
+        material_counter.update(
+            _literal_signature_counter(str(material.get("bounded_text") or ""))
+        )
+    claim_counter = _literal_signature_counter(claim_text)
+    if not _counter_subseteq(claim_counter, material_counter):
+        if _literal_values(claim_text) & {
+            value
+            for material in matched
+            for value in _literal_values(str(material.get("bounded_text") or ""))
+        }:
+            return None, "literal_signature_mismatch"
+        return None, "claim_literal_absent_from_bound_material"
+    primary = matched[0]
+    return (
+        {
+            "evidence_or_specialist_ref": {
+                "evidence_ref_id": primary.get("evidence_ref_id"),
+                "packet_evidence_id": primary.get("packet_evidence_id"),
+                "source_id": primary.get("source_id"),
+            },
+            "fap_material_ref": _safe_ref(primary.get("fap_material_ref")),
+        },
+        None,
     )
 
 
@@ -1051,6 +1186,8 @@ def _claim_ref_from_entry(entry: Mapping[str, Any], *, fallback_key: str) -> dic
             "claim_id": entry.get("claim_id") or entry.get("synthesis_key") or fallback_key,
             "claim_digest": entry.get("claim_digest") or _text_digest(str(entry.get("claim_text") or "")),
             "component_id": entry.get("component_id"),
+            "component_revision": entry.get("component_revision"),
+            "component_digest": entry.get("component_digest"),
             "synthesis_key": entry.get("synthesis_key"),
         }.items()
         if value not in (None, "", [], {})
@@ -1283,10 +1420,8 @@ def _claim_sources(
     *,
     direct_component_entries: Sequence[Mapping[str, Any]],
     admitted_synthesis_entries: Sequence[Mapping[str, Any]],
-    semantic_author_materialization: Mapping[str, Any] | None,
     component_packet_entries: Sequence[Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
-    direct_claims: list[dict[str, Any]] = []
     admitted_claims: list[dict[str, Any]] = []
     for index, raw in enumerate(direct_component_entries, start=1):
         entry = _mapping(raw)
@@ -1367,9 +1502,12 @@ def _claim_sources(
             {
                 "source_kind": "admitted_quantitative_claim",
                 "claim_text": claim_text,
-                "claim_ref": _safe_ref(entry.get("fap_safe_claim_ref")) or {
+                "claim_ref": {
+                    **(
+                        _safe_ref(entry.get("fap_safe_claim_ref"))
+                        or {"claim_digest": _text_digest(claim_text)}
+                    ),
                     "component_id": entry.get("component_id"),
-                    "claim_digest": _text_digest(claim_text),
                 },
                 "claim_authority_posture": "hardened_fap_current_admitted_component_case_supported",
                 "applicable_validator_ref": observation_ref,
@@ -1377,6 +1515,7 @@ def _claim_sources(
                 "evidence_or_specialist_ref": {
                     "semantic_observation_ref": observation_ref,
                     "component_coverage_ref": _safe_ref(entry.get("component_coverage_ref")),
+                    "evidence_refs": _safe_value(entry.get("evidence_refs") or []),
                 },
                 "specialist_ref": _safe_ref(entry.get("specialist_quantitative_authority_ref")),
                 "source_authority_refs": _safe_value(
@@ -1385,62 +1524,37 @@ def _claim_sources(
                 "fap_material_ref": {"entry_kind": "hardened_component", "entry_index": index},
             }
         )
-    materialization = _mapping(semantic_author_materialization)
-    if materialization.get("available") is True and materialization.get(
-        "bounded_material_complete"
-    ) is True:
-        for material_index, material in enumerate(
-            _mapping_sequence(materialization.get("bounded_material_refs")),
-            start=1,
-        ):
-            bounded_text = str(material.get("bounded_text") or "")
-            for assertion_index, assertion in enumerate(_assertions(bounded_text), start=1):
-                if not extract_quantitative_literals(assertion):
-                    continue
-                direct_claims.append(
-                    {
-                        "source_kind": "direct_source_numeric",
-                        "claim_text": assertion,
-                        "claim_ref": {
-                            "component_id": material.get("component_id"),
-                            "content_ref_id": material.get("content_ref_id"),
-                            "content_digest": material.get("content_digest"),
-                            "claim_digest": _text_digest(assertion),
-                        },
-                        "claim_authority_posture": "current_fap_authorized_source_bound_material",
-                        "applicable_validator_ref": {},
-                        "applicable_validator_consumption_ref": {},
-                        "evidence_or_specialist_ref": {
-                            "evidence_ref_id": material.get("evidence_ref_id"),
-                            "packet_evidence_id": material.get("packet_evidence_id"),
-                            "source_id": material.get("source_id"),
-                        },
-                        "specialist_ref": {},
-                        "fap_material_ref": {
-                            "material_index": material_index,
-                            "assertion_index": assertion_index,
-                            "content_ref_id": material.get("content_ref_id"),
-                            "content_digest": material.get("content_digest"),
-                            "coverage_record_id": material.get("coverage_record_id"),
-                            "coverage_record_digest": material.get("coverage_record_digest"),
-                        },
-                    }
+    return admitted_claims
+
+
+def _hardened_literal_counter(refs: Sequence[Mapping[str, Any]]) -> Counter[str]:
+    counter: Counter[str] = Counter()
+    for ref in refs:
+        counter[
+            "|".join(
+                str(ref.get(key) or "")
+                for key in (
+                    "normalized_numeric_value_text",
+                    "canonical_unit",
+                    "precision_posture",
                 )
-    return [*direct_claims, *admitted_claims]
+            )
+        ] += 1
+    return counter
 
 
 def _hardened_source_binding(
     claim: Mapping[str, Any],
     *,
-    fingerprint: str,
     literals: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any] | None:
     claim_ref = _mapping(claim.get("claim_ref"))
     admitted_ref = _mapping(claim.get("evidence_or_specialist_ref"))
     admitted_observation_ref = _mapping(admitted_ref.get("semantic_observation_ref"))
     admitted_coverage_ref = _mapping(admitted_ref.get("component_coverage_ref"))
-    expected_literal_refs = _hardened_literal_signature_refs(literals)
-    expected_literal_digest = _digest(expected_literal_refs)
+    expected_counter = _hardened_literal_counter(
+        _hardened_literal_signature_refs(literals)
+    )
     for raw_ref in _mapping_sequence(claim.get("source_authority_refs")):
         ref = _mapping(raw_ref)
         declared_ref_digest = ref.pop("source_authority_ref_digest", None)
@@ -1452,25 +1566,41 @@ def _hardened_source_binding(
         if not (
             declared_ref_digest
             and declared_ref_digest == _digest(ref)
-            and ref.get("source_proposition_fingerprint") == fingerprint
-            and ref.get("safe_claim_fingerprint") == fingerprint
-            and ref.get("source_safe_claim_relationship") == "exact_claim_fingerprint"
-            and ref.get("component_id") == claim_ref.get("component_id")
-            and ref.get("component_revision") == claim_ref.get("component_revision")
-            and ref.get("component_digest") == claim_ref.get("component_digest")
-            and observation_ref.get("observation_id")
-            == admitted_observation_ref.get("observation_id")
-            and observation_ref.get("observation_digest")
-            == admitted_observation_ref.get("observation_digest")
-            and coverage_ref.get("coverage_record_id")
-            == admitted_coverage_ref.get("coverage_record_id")
-            and coverage_ref.get("coverage_record_digest")
-            == admitted_coverage_ref.get("coverage_record_digest")
+            and _same_identity(ref.get("component_id"), claim_ref.get("component_id"))
+            and (
+                not claim_ref.get("component_revision")
+                or _same_identity(
+                    ref.get("component_revision"), claim_ref.get("component_revision")
+                )
+            )
+            and (
+                not claim_ref.get("component_digest")
+                or _same_identity(
+                    ref.get("component_digest"), claim_ref.get("component_digest")
+                )
+            )
+            and _same_identity(
+                observation_ref.get("observation_id"),
+                admitted_observation_ref.get("observation_id"),
+            )
+            and _same_identity(
+                observation_ref.get("observation_digest"),
+                admitted_observation_ref.get("observation_digest"),
+            )
+            and _same_identity(
+                coverage_ref.get("coverage_record_id"),
+                admitted_coverage_ref.get("coverage_record_id"),
+            )
+            and _same_identity(
+                coverage_ref.get("coverage_record_digest"),
+                admitted_coverage_ref.get("coverage_record_digest"),
+            )
             and content_ref.get("content_ref_id")
             and content_ref.get("content_digest")
             and evidence_ref.get("evidence_ref_id")
-            and ref.get("complete_literal_signature_digest") == expected_literal_digest
-            and literal_refs == expected_literal_refs
+            and _counter_subseteq(
+                expected_counter, _hardened_literal_counter(literal_refs)
+            )
             and ref.get("current") is True
             and ref.get("stale") is False
             and ref.get("currentness_posture") == "current"
@@ -1532,91 +1662,57 @@ def build_quantitative_finalization_authority_bundle(
 ) -> dict[str, Any]:
     """Build the safe manifest plus transient exact renderings for Author input."""
 
+    materials = _lineage_bound_materials(semantic_author_materialization)
     claims = _claim_sources(
         direct_component_entries=direct_component_entries,
         admitted_synthesis_entries=admitted_synthesis_entries,
-        semantic_author_materialization=semantic_author_materialization,
         component_packet_entries=component_packet_entries,
     )
     authorized: list[dict[str, Any]] = []
     renderings: dict[str, str] = {}
     seen: set[tuple[str, str, int]] = set()
-    direct_bindings: dict[
-        tuple[str, tuple[tuple[str, int], ...]], dict[str, Any]
-    ] = {}
-    direct_bindings_by_signature: dict[
-        tuple[tuple[str, int], ...], list[dict[str, Any]]
-    ] = {}
-    for claim in claims:
-        if claim.get("source_kind") != "direct_source_numeric":
-            continue
-        claim_text = str(claim.get("claim_text") or "")
-        literals = extract_quantitative_literals(claim_text)
-        if not literals:
-            continue
-        fingerprint = semantic_claim_fingerprint(claim_text)
-        signatures = tuple(sorted(Counter(_literal_signature(item) for item in literals).items()))
-        direct_bindings.setdefault((fingerprint, signatures), claim)
-        direct_bindings_by_signature.setdefault(signatures, []).append(claim)
     for claim_index, claim in enumerate(claims, start=1):
         claim_text = str(claim["claim_text"])
         literals = extract_quantitative_literals(claim_text)
         if not literals or any(
-            item.get("unsupported_textual_quantifier")
-            or item.get("unsupported_quantitative_surface")
-            for item in literals
+            _literal_has_unsupported_surface(item) for item in literals
         ):
             continue
-        fingerprint = semantic_claim_fingerprint(claim_text)
         claim_ref = _safe_ref(claim.get("claim_ref"))
-        local_claim_key = (
-            f"quant-claim-{claim_index:03d}-{fingerprint[:12]}"
+        claim_digest = str(
+            claim_ref.get("claim_digest") or _text_digest(claim_text)
         )
-        signatures = tuple(
-            sorted(Counter(_literal_signature(item) for item in literals).items())
-        )
-        source_binding = direct_bindings.get((fingerprint, signatures))
-        source_binding_posture = (
-            "exact_claim_fingerprint"
-            if source_binding is not None
-            else ""
-        )
-        if (
-            source_binding is None
-            and claim.get("source_kind") == "admitted_quantitative_claim"
-            and _mapping(claim.get("fap_material_ref")).get("entry_kind")
-            == "direct_component"
-        ):
-            source_binding = next(
-                (
-                    direct
-                    for direct in direct_bindings_by_signature.get(signatures, ())
-                    if _component_source_lineage_matches(claim, direct)
-                ),
-                None,
-            )
-            if source_binding is not None:
-                source_binding_posture = "component_source_lineage_equivalent"
-        if (
-            source_binding is None
-            and claim.get("source_kind") == "admitted_quantitative_claim"
-            and _mapping(claim.get("fap_material_ref")).get("entry_kind")
-            == "hardened_component"
-        ):
-            source_binding = _hardened_source_binding(
-                claim,
-                fingerprint=fingerprint,
-                literals=literals,
-            )
-            if source_binding is not None:
-                source_binding_posture = "hardened_exact_source_fingerprint"
+        local_claim_key = f"quant-claim-{claim_index:03d}-{claim_digest[:12]}"
         specialist_ref = _safe_ref(claim.get("specialist_ref"))
         specialist_claim_authorized = _specialist_claim_matches(
             claim_text,
             literals,
             specialist_ref,
         )
+        source_binding: dict[str, Any] | None = None
+        source_binding_posture = ""
+        if not specialist_claim_authorized:
+            entry_kind = str(
+                _mapping(claim.get("fap_material_ref")).get("entry_kind") or ""
+            )
+            if entry_kind == "hardened_component":
+                source_binding = _hardened_source_binding(
+                    claim,
+                    literals=literals,
+                )
+                if source_binding is not None:
+                    source_binding_posture = "lineage_bound_literal_subset"
+            if source_binding is None and entry_kind in {
+                "direct_component",
+                "hardened_component",
+            }:
+                source_binding, _bind_reason = _try_direct_source_bind(
+                    claim, materials
+                )
+                if source_binding is not None:
+                    source_binding_posture = "lineage_bound_literal_subset"
         claim_authorized = False
+        diagnostic_fingerprint = semantic_claim_fingerprint(claim_text)
         for literal_index, literal in enumerate(literals, start=1):
             authority_kind = str(claim.get("source_kind"))
             evidence_ref = _safe_ref(claim.get("evidence_or_specialist_ref"))
@@ -1647,7 +1743,7 @@ def build_quantitative_finalization_authority_bundle(
                 validator_ref = {}
                 validator_consumption_ref = {}
             dedupe_key = (
-                fingerprint,
+                claim_digest,
                 _literal_signature(literal),
                 literal_index,
             )
@@ -1687,7 +1783,9 @@ def build_quantitative_finalization_authority_bundle(
                         and source_binding is not None
                         else claim.get("fap_material_ref")
                     ),
-                    "semantic_claim_fingerprint_or_existing_equivalent": fingerprint,
+                    "semantic_claim_fingerprint_or_existing_equivalent": (
+                        diagnostic_fingerprint
+                    ),
                     "literal_signature_digest": _text_digest(
                         _literal_signature(literal)
                     ),
@@ -1743,6 +1841,10 @@ def _structured_numeric_claim_requirements(
         literals = extract_quantitative_literals(claim_text)
         if not literals:
             return
+        if integrity_reason is None and any(
+            _literal_has_unsupported_surface(item) for item in literals
+        ):
+            integrity_reason = "unsupported_claim_literal_surface"
         requirements.append(
             {
                 "claim_text": claim_text,
@@ -1750,7 +1852,9 @@ def _structured_numeric_claim_requirements(
                 "claim_kind": claim_kind,
                 "fingerprint": semantic_claim_fingerprint(claim_text),
                 "literal_signatures": Counter(
-                    _literal_signature(item) for item in literals
+                    _literal_signature(item)
+                    for item in literals
+                    if not _literal_has_unsupported_surface(item)
                 ),
                 "integrity_reason": integrity_reason,
                 "specialist_declared": bool(
@@ -1768,14 +1872,33 @@ def _structured_numeric_claim_requirements(
         if entry.get("entry_kind") != "direct_component" or entry.get(
             "admission_status"
         ) not in {"admitted", "admitted_with_caveats"}:
-            integrity_reason = "unadmitted_numeric_claim"
+            integrity_reason = "missing_admitted_component_authority"
         elif entry.get("current") is not True or entry.get("stale") is not False:
-            integrity_reason = "stale_or_foreign_quantitative_authority"
+            integrity_reason = "stale_or_foreign_lineage"
         elif not _safe_ref(
             entry.get("component_analyst_case_ref")
             or entry.get("analyst_finding_ref")
         ):
-            integrity_reason = "missing_component_analyst_authority"
+            integrity_reason = "missing_admitted_component_authority"
+        elif not (
+            _mapping(entry.get("semantic_observation_ref")).get("observation_id")
+            and _mapping(entry.get("semantic_observation_ref")).get(
+                "observation_digest"
+            )
+        ):
+            integrity_reason = "missing_semantic_observation_authority"
+        elif not (
+            _mapping(entry.get("component_coverage_ref")).get("coverage_record_id")
+            and _mapping(entry.get("component_coverage_ref")).get(
+                "coverage_record_digest"
+            )
+        ):
+            integrity_reason = "missing_component_coverage_authority"
+        elif not any(
+            _mapping(ref).get("content_ref_id") and _mapping(ref).get("content_digest")
+            for ref in _mapping_sequence(entry.get("evidence_refs"))
+        ):
+            integrity_reason = "missing_content_evidence_lineage"
         add_requirement(
             entry=entry,
             claim_text=claim_text,
@@ -1794,9 +1917,9 @@ def _structured_numeric_claim_requirements(
         if entry.get("entry_kind") != "admitted_synthesis" or entry.get(
             "status"
         ) != "admitted":
-            integrity_reason = "unadmitted_numeric_claim"
+            integrity_reason = "missing_admitted_component_authority"
         elif entry.get("current") is not True or entry.get("stale") is not False:
-            integrity_reason = "stale_or_foreign_quantitative_authority"
+            integrity_reason = "stale_or_foreign_lineage"
         elif not (
             _safe_ref(entry.get("dprime_validation_ref"))
             or _safe_ref(carried.get("prior_synthesis_dprime_ref"))
@@ -1862,23 +1985,31 @@ def build_quantitative_fap_authority_preflight(
         component_packet_entries=component_packet_entries,
     )
     manifest = _mapping(bundle.get("manifest"))
-    rows_by_fingerprint: dict[str, list[dict[str, Any]]] = {}
+    rows_by_claim_digest: dict[str, list[dict[str, Any]]] = {}
     for row in _mapping_sequence(manifest.get("authorized_numeric_claims")):
-        fingerprint = str(
-            row.get("semantic_claim_fingerprint_or_existing_equivalent") or ""
-        )
-        if fingerprint:
-            rows_by_fingerprint.setdefault(fingerprint, []).append(row)
+        claim_digest = _digest(_safe_ref(row.get("current_claim_ref")))
+        if claim_digest:
+            rows_by_claim_digest.setdefault(claim_digest, []).append(row)
 
+    materials = _lineage_bound_materials(semantic_author_materialization)
     requirements = _structured_numeric_claim_requirements(
         direct_component_entries=direct_component_entries,
         admitted_synthesis_entries=admitted_synthesis_entries,
         component_packet_entries=component_packet_entries,
     )
+    admitted_by_digest = {
+        _digest(_safe_ref(claim.get("claim_ref"))): claim
+        for claim in _claim_sources(
+            direct_component_entries=direct_component_entries,
+            admitted_synthesis_entries=admitted_synthesis_entries,
+            component_packet_entries=component_packet_entries,
+        )
+    }
     reasons: list[dict[str, Any]] = []
     for requirement in requirements:
         reason_code = requirement["integrity_reason"]
-        matching_rows = rows_by_fingerprint.get(requirement["fingerprint"], [])
+        claim_digest = _digest(_safe_ref(requirement["claim_ref"]))
+        matching_rows = rows_by_claim_digest.get(claim_digest, [])
         matching_signatures = Counter(
             "|".join(
                 str(row.get(key) or "")
@@ -1892,16 +2023,22 @@ def build_quantitative_fap_authority_preflight(
         )
         if matching_signatures != requirement["literal_signatures"]:
             matching_rows = []
-        # Check the complete structured proposition row-set, not a single
-        # matching number.  Rendering punctuation is deliberately irrelevant:
-        # FAP has already selected the claim and Author must not be constrained
-        # to a parser-specific surface form.
         if reason_code is None and not matching_rows:
-            reason_code = (
-                "missing_required_specialist_binding"
-                if requirement["specialist_declared"]
-                else "missing_direct_source_binding"
-            )
+            if requirement["specialist_declared"] or requirement["claim_kind"] == (
+                "admitted_synthesis"
+            ):
+                reason_code = "incomplete_specialist_authority"
+            else:
+                admitted = admitted_by_digest.get(claim_digest)
+                if admitted is None:
+                    reason_code = "missing_admitted_component_authority"
+                else:
+                    _binding, reason_code = _try_direct_source_bind(
+                        admitted, materials
+                    )
+                    reason_code = (
+                        reason_code or "claim_literal_absent_from_bound_material"
+                    )
         if reason_code is not None:
             claim_ref = _safe_ref(requirement["claim_ref"])
             reasons.append(

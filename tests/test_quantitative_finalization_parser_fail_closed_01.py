@@ -282,7 +282,7 @@ def test_source_section_nonreference_numeric_row_without_copula_fails_closed() -
         ("The supported rate is GBP40/hour.", "The supported rate is GBP40/hour."),
         ("The supported count is twenty-one.", "The supported count is twenty-one."),
         ("The supported difference is [200] km.", "The supported difference is [200] km."),
-        ("200) km is the supported difference.", "200) km is the supported difference."),
+        ("200 km is the supported difference.", "200 km is the supported difference."),
     ),
 )
 def test_exact_supported_numeric_controls_remain_accepted(

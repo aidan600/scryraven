@@ -18,7 +18,6 @@ from core.quantitative_finalization_authority import (
     build_quantitative_finalization_authority_bundle,
     build_quantitative_finalization_authority_manifest,
     evaluate_author_output_quantitative_authority,
-    semantic_claim_fingerprint,
     specialist_quantitative_authority_ref_from_handoff,
     validate_author_output_quantitative_authority,
 )
@@ -31,9 +30,42 @@ from core.run_kernel import (
 
 
 def _source_bundle(*claims: str) -> dict[str, Any]:
+    entries = tuple(
+        {
+            "entry_kind": "direct_component",
+            "component_id": f"component-{index}",
+            "claim_id": f"claim-{index}",
+            "claim_digest": f"claim-digest-{index}",
+            "claim_text": claim,
+            "admission_status": "admitted",
+            "current": True,
+            "stale": False,
+            "component_analyst_case_ref": {
+                "artifact_id": f"component-analyst-{index}",
+                "artifact_digest": f"component-analyst-digest-{index}",
+            },
+            "semantic_observation_ref": {
+                "observation_id": f"observation-{index}",
+                "observation_digest": f"observation-digest-{index}",
+            },
+            "component_coverage_ref": {
+                "coverage_record_id": f"coverage-{index}",
+                "coverage_record_digest": f"coverage-digest-{index}",
+            },
+            "evidence_refs": [
+                {
+                    "content_ref_id": f"content-{index}",
+                    "content_digest": f"content-digest-{index}",
+                    "evidence_ref_id": f"evidence-{index}",
+                }
+            ],
+        }
+        for index, claim in enumerate(claims, start=1)
+    )
     return build_quantitative_finalization_authority_bundle(
         source_fap_ref={"packet_id": "packet-direct", "readiness_status": "author_ready"},
         semantic_author_materialization=_source_materialization(*claims),
+        direct_component_entries=entries,
     )
 
 
@@ -148,19 +180,19 @@ def _evaluate(text: str, bundle: Mapping[str, Any]) -> dict[str, Any]:
                 "Object A has a length of 100 km.",
                 "Object B has a length of 60 km.",
             ),
-            "missing_direct_source_binding",
+            "claim_literal_absent_from_bound_material",
         ),
         (
             "unauthorized_conversion",
             _fap_direct_entry("Object A has a length of 62.1 miles."),
             _fap_materialization("Object A has a length of 100 km."),
-            "missing_direct_source_binding",
+            "claim_literal_absent_from_bound_material",
         ),
         (
             "unbound_source_number",
             _fap_direct_entry("Object A has a length of 100 km."),
             {},
-            "missing_direct_source_binding",
+            "missing_content_evidence_lineage",
         ),
         (
             "unadmitted_numeric_proposition",
@@ -169,7 +201,7 @@ def _evaluate(text: str, bundle: Mapping[str, Any]) -> dict[str, Any]:
                 admission_status="unsupported",
             ),
             _fap_materialization("Object A has a length of 100 km."),
-            "unadmitted_numeric_claim",
+            "missing_admitted_component_authority",
         ),
         (
             "stale_foreign_authority",
@@ -178,7 +210,7 @@ def _evaluate(text: str, bundle: Mapping[str, Any]) -> dict[str, Any]:
                 stale=True,
             ),
             _fap_materialization("Object A has a length of 100 km."),
-            "stale_or_foreign_quantitative_authority",
+            "stale_or_foreign_lineage",
         ),
         (
             "missing_specialist_binding",
@@ -187,13 +219,29 @@ def _evaluate(text: str, bundle: Mapping[str, Any]) -> dict[str, Any]:
                 specialist_quantitative_authority_ref={"result_id": "missing"},
             ),
             _fap_materialization("Object A has a length of 100 km."),
-            "missing_required_specialist_binding",
+            "incomplete_specialist_authority",
         ),
         (
-            "source_claim_mismatch",
-            _fap_direct_entry("Southstar rebate is $1,200."),
-            _fap_materialization("Northstar rebate is $1,200."),
-            "missing_direct_source_binding",
+            "wrong_content_lineage",
+            _fap_direct_entry("Rebate is $1,200."),
+            {
+                "available": True,
+                "bounded_material_complete": True,
+                "bounded_material_refs": [
+                    {
+                        "component_id": "component-a",
+                        "content_ref_id": "content-other",
+                        "content_digest": "content-digest-other",
+                        "coverage_record_id": "coverage-a",
+                        "coverage_record_digest": "coverage-digest-a",
+                        "evidence_ref_id": "evidence-other",
+                        "packet_evidence_id": "packet-evidence-other",
+                        "source_id": 99,
+                        "bounded_text": "Rebate is $1,200.",
+                    }
+                ],
+            },
+            "missing_content_evidence_lineage",
         ),
     ),
 )
@@ -418,7 +466,7 @@ def test_unsupported_claim_without_current_dprime_is_not_manifest_authority() ->
         direct_component_entries=(
             {
                 "entry_kind": "direct_component",
-                "component_id": "component-a",
+                "component_id": "component-1",
                 "claim_id": "claim-a",
                 "claim_digest": "claim-a-digest",
                 "claim_text": "Object A has a length of 100 km.",
@@ -473,16 +521,9 @@ def test_admitted_component_arithmetic_and_same_value_reuse_do_not_launder_autho
             {**common, "claim_text": "The difference is 40 km."},
         ),
     )
-    values = {
-        item["normalized_numeric_value_text"]
-        for item in arithmetic["manifest"]["authorized_numeric_claims"]
-    }
-    assert values == {"100", "60"}
+    assert arithmetic["manifest"]["authorized_numeric_claims"] == []
     assert "The difference is 40 km." not in arithmetic["transient_renderings"].values()
     _reject("The difference is 40 km.", arithmetic)
-    assert _accept("Object A has a length of 100 km.", arithmetic)["status"] == (
-        "accepted"
-    )
 
     same_value = build_quantitative_finalization_authority_bundle(
         source_fap_ref={"packet_id": "component-same-value"},
@@ -491,7 +532,11 @@ def test_admitted_component_arithmetic_and_same_value_reuse_do_not_launder_autho
             {**common, "claim_text": "The difference is 100 km."},
         ),
     )
-    _reject("The difference is 100 km.", same_value)
+    same_value_rows = same_value["manifest"]["authorized_numeric_claims"]
+    assert len(same_value_rows) == 1
+    assert same_value_rows[0]["authority_kind"] == "direct_source_numeric"
+    assert same_value_rows[0]["normalized_numeric_value_text"] == "100"
+    _accept("The difference is 100 km.", same_value)
 
 
 def test_lineage_bound_component_paraphrase_remains_direct_source_authority() -> None:
@@ -538,16 +583,140 @@ def test_lineage_bound_component_paraphrase_remains_direct_source_authority() ->
     matching = [
         item
         for item in bundle["manifest"]["authorized_numeric_claims"]
-        if item["semantic_claim_fingerprint_or_existing_equivalent"]
-        == semantic_claim_fingerprint(claim_text)
+        if item["authority_kind"] == "direct_source_numeric"
     ]
     assert len(matching) == 1
-    assert matching[0]["authority_kind"] == "direct_source_numeric"
     assert matching[0]["applicable_validator_ref"] == {}
     assert matching[0]["claim_authority_posture"].endswith(
-        "component_source_lineage_equivalent"
+        "lineage_bound_literal_subset"
     )
+    assert matching[0]["fap_material_ref"]["content_ref_id"] == "content-1"
     assert _accept(claim_text, bundle)["status"] == "accepted"
+
+
+def test_same_lineage_subject_wording_is_not_a_fap_semantic_gate() -> None:
+    claim = "Southstar rebate is $1,200."
+    preflight = build_quantitative_fap_authority_preflight(
+        source_fap_ref={"packet_id": "same-lineage-wording"},
+        direct_component_entries=(_fap_direct_entry(claim),),
+        semantic_author_materialization=_fap_materialization(
+            "Northstar rebate is $1,200."
+        ),
+    )
+    assert preflight["diagnostic"]["status"] == "ready"
+    assert {
+        item["authority_kind"]
+        for item in preflight["bundle"]["manifest"]["authorized_numeric_claims"]
+    } == {"direct_source_numeric"}
+
+
+def test_cross_component_identical_text_does_not_share_direct_source_binding() -> None:
+    claim = "Rebate is $1,200."
+    left = _fap_direct_entry(
+        claim,
+        component_id="component-a",
+        claim_id="claim-a",
+        claim_digest="claim-digest-a",
+        evidence_refs=[
+            {"content_ref_id": "content-1", "content_digest": "content-digest-1"}
+        ],
+        component_coverage_ref={
+            "coverage_record_id": "coverage-a",
+            "coverage_record_digest": "coverage-digest-a",
+        },
+    )
+    right = _fap_direct_entry(
+        claim,
+        component_id="component-b",
+        claim_id="claim-b",
+        claim_digest="claim-digest-b",
+        semantic_observation_ref={
+            "observation_id": "observation-b",
+            "observation_digest": "observation-digest-b",
+        },
+        evidence_refs=[
+            {"content_ref_id": "content-2", "content_digest": "content-digest-2"}
+        ],
+        component_coverage_ref={
+            "coverage_record_id": "coverage-b",
+            "coverage_record_digest": "coverage-digest-b",
+        },
+    )
+    materialization = {
+        "available": True,
+        "bounded_material_complete": True,
+        "bounded_material_refs": [
+            {
+                "component_id": "component-a",
+                "content_ref_id": "content-1",
+                "content_digest": "content-digest-1",
+                "coverage_record_id": "coverage-a",
+                "coverage_record_digest": "coverage-digest-a",
+                "evidence_ref_id": "evidence-1",
+                "packet_evidence_id": "packet-evidence-1",
+                "source_id": 1,
+                "bounded_text": claim,
+            },
+            {
+                "component_id": "component-b",
+                "content_ref_id": "content-2",
+                "content_digest": "content-digest-2",
+                "coverage_record_id": "coverage-b",
+                "coverage_record_digest": "coverage-digest-b",
+                "evidence_ref_id": "evidence-2",
+                "packet_evidence_id": "packet-evidence-2",
+                "source_id": 2,
+                "bounded_text": claim,
+            },
+        ],
+    }
+    ready = build_quantitative_fap_authority_preflight(
+        source_fap_ref={"packet_id": "cross-component-ready"},
+        direct_component_entries=(left, right),
+        semantic_author_materialization=materialization,
+    )
+    assert ready["diagnostic"]["status"] == "ready"
+    rows = ready["bundle"]["manifest"]["authorized_numeric_claims"]
+    assert {row["current_claim_ref"]["component_id"] for row in rows} == {
+        "component-a",
+        "component-b",
+    }
+    by_component = {
+        row["current_claim_ref"]["component_id"]: row["fap_material_ref"]["content_ref_id"]
+        for row in rows
+    }
+    assert by_component == {"component-a": "content-1", "component-b": "content-2"}
+
+    swapped = build_quantitative_fap_authority_preflight(
+        source_fap_ref={"packet_id": "cross-component-swapped"},
+        direct_component_entries=(left,),
+        semantic_author_materialization={
+            "available": True,
+            "bounded_material_complete": True,
+            "bounded_material_refs": [materialization["bounded_material_refs"][1]],
+        },
+    )
+    assert swapped["diagnostic"]["status"] == "blocked"
+    assert "missing_content_evidence_lineage" in swapped["diagnostic"]["reason_codes"]
+
+
+def test_diagnostic_fingerprint_disagreement_does_not_block_lineage_binding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    claim = "Object A has a length of 100 km."
+    monkeypatch.setattr(
+        "core.quantitative_finalization_authority.semantic_claim_fingerprint",
+        lambda _text: "0" * 64,
+    )
+    preflight = build_quantitative_fap_authority_preflight(
+        source_fap_ref={"packet_id": "fingerprint-diagnostic"},
+        direct_component_entries=(_fap_direct_entry(claim),),
+        semantic_author_materialization=_fap_materialization(claim),
+    )
+    assert preflight["diagnostic"]["status"] == "ready"
+    rows = preflight["bundle"]["manifest"]["authorized_numeric_claims"]
+    assert {row["authority_kind"] for row in rows} == {"direct_source_numeric"}
+    assert {row["normalized_numeric_value_text"] for row in rows} == {"100"}
 
 
 def test_admitted_synthesis_arithmetic_and_conversion_require_specialist_lineage() -> None:
@@ -578,9 +747,7 @@ def test_admitted_synthesis_arithmetic_and_conversion_require_specialist_lineage
         )
         assert claim not in bundle["transient_renderings"].values()
         _reject(claim, bundle)
-        assert _accept("Object A has a length of 100 km.", bundle)["status"] == (
-            "accepted"
-        )
+        assert bundle["manifest"]["authorized_numeric_claims"] == []
 
 
 def test_hardened_component_claim_requires_same_source_explicit_proposition() -> None:
@@ -592,12 +759,24 @@ def test_hardened_component_claim_requires_same_source_explicit_proposition() ->
         semantic_author_materialization=source_materialization,
         component_packet_entries=(
             {
-                "component_id": "component-a",
+                "component_id": "component-1",
                 "supported_safe_claim_allowed": True,
                 "must_not_answer": False,
                 "safe_answer_claim_text": "Object A has a length of 100 km.",
-                "semantic_observation_ref": {"observation_id": "observation-a"},
-                "component_coverage_ref": {"coverage_record_id": "coverage-a"},
+                "semantic_observation_ref": {
+                    "observation_id": "observation-1",
+                    "observation_digest": "observation-digest-1",
+                },
+                "component_coverage_ref": {
+                    "coverage_record_id": "coverage-1",
+                    "coverage_record_digest": "coverage-digest-1",
+                },
+                "evidence_refs": [
+                    {
+                        "content_ref_id": "content-1",
+                        "content_digest": "content-digest-1",
+                    }
+                ],
                 "fap_safe_claim_ref": {"claim_id": "hardened-claim-a"},
             },
         ),
@@ -613,12 +792,24 @@ def test_hardened_component_claim_requires_same_source_explicit_proposition() ->
         semantic_author_materialization=source_materialization,
         component_packet_entries=(
             {
-                "component_id": "component-a",
+                "component_id": "component-1",
                 "supported_safe_claim_allowed": True,
                 "must_not_answer": False,
                 "safe_answer_claim_text": "Object A has a length of 62.1 miles.",
-                "semantic_observation_ref": {"observation_id": "observation-a"},
-                "component_coverage_ref": {"coverage_record_id": "coverage-a"},
+                "semantic_observation_ref": {
+                    "observation_id": "observation-1",
+                    "observation_digest": "observation-digest-1",
+                },
+                "component_coverage_ref": {
+                    "coverage_record_id": "coverage-1",
+                    "coverage_record_digest": "coverage-digest-1",
+                },
+                "evidence_refs": [
+                    {
+                        "content_ref_id": "content-1",
+                        "content_digest": "content-digest-1",
+                    }
+                ],
                 "fap_safe_claim_ref": {"claim_id": "hardened-claim-a"},
             },
         ),
