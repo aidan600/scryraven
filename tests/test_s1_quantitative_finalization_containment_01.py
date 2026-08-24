@@ -732,6 +732,82 @@ def test_cross_component_identical_text_does_not_share_direct_source_binding() -
     assert "missing_content_evidence_lineage" in swapped["diagnostic"]["reason_codes"]
 
 
+def test_split_claim_literals_across_matched_materials_fail_closed() -> None:
+    claim = "The rebate is $1,200 and the processing fee is $45."
+    entry = _fap_direct_entry(
+        claim,
+        evidence_refs=[
+            {"content_ref_id": "content-1", "content_digest": "content-digest-1"},
+            {"content_ref_id": "content-2", "content_digest": "content-digest-2"},
+        ],
+    )
+    split = build_quantitative_fap_authority_preflight(
+        source_fap_ref={"packet_id": "split-literal-multi-material"},
+        direct_component_entries=(entry,),
+        semantic_author_materialization={
+            "available": True,
+            "bounded_material_complete": True,
+            "bounded_material_refs": [
+                {
+                    "component_id": "component-a",
+                    "content_ref_id": "content-1",
+                    "content_digest": "content-digest-1",
+                    "coverage_record_id": "coverage-a",
+                    "coverage_record_digest": "coverage-digest-a",
+                    "evidence_ref_id": "evidence-1",
+                    "packet_evidence_id": "packet-evidence-1",
+                    "source_id": 1,
+                    "bounded_text": "The rebate is $1,200.",
+                },
+                {
+                    "component_id": "component-a",
+                    "content_ref_id": "content-2",
+                    "content_digest": "content-digest-2",
+                    "coverage_record_id": "coverage-a",
+                    "coverage_record_digest": "coverage-digest-a",
+                    "evidence_ref_id": "evidence-2",
+                    "packet_evidence_id": "packet-evidence-2",
+                    "source_id": 2,
+                    "bounded_text": "The processing fee is $45.",
+                },
+            ],
+        },
+    )
+    assert split["diagnostic"]["status"] == "blocked"
+    assert split["bundle"]["manifest"]["authorized_numeric_claims"] == []
+    assert {
+        "literal_signature_mismatch",
+        "claim_literal_absent_from_bound_material",
+    } & set(split["diagnostic"]["reason_codes"])
+
+    complete = build_quantitative_fap_authority_preflight(
+        source_fap_ref={"packet_id": "single-material-complete-literals"},
+        direct_component_entries=(
+            _fap_direct_entry(
+                claim,
+                evidence_refs=[
+                    {
+                        "content_ref_id": "content-1",
+                        "content_digest": "content-digest-1",
+                    }
+                ],
+            ),
+        ),
+        semantic_author_materialization=_fap_materialization(claim),
+    )
+    assert complete["diagnostic"]["status"] == "ready"
+    rows = [
+        row
+        for row in complete["bundle"]["manifest"]["authorized_numeric_claims"]
+        if row["authority_kind"] == "direct_source_numeric"
+    ]
+    assert {row["normalized_numeric_value_text"] for row in rows} == {"1200", "45"}
+    assert {row["fap_material_ref"]["content_ref_id"] for row in rows} == {"content-1"}
+    assert all(
+        row["fap_material_ref"]["content_digest"] == "content-digest-1" for row in rows
+    )
+
+
 def test_diagnostic_fingerprint_disagreement_does_not_block_lineage_binding(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

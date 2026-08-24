@@ -1145,19 +1145,16 @@ def _try_direct_source_bind(
     ]
     if not matched:
         return None, "missing_content_evidence_lineage"
-    matched.sort(
-        key=lambda item: (
-            str(item.get("content_ref_id") or ""),
-            int(item.get("material_index") or 0),
-        )
-    )
-    material_counter: Counter[str] = Counter()
-    for material in matched:
-        material_counter.update(
-            _literal_signature_counter(str(material.get("bounded_text") or ""))
-        )
     claim_counter = _literal_signature_counter(claim_text)
-    if not _counter_subseteq(claim_counter, material_counter):
+    complete = [
+        material
+        for material in matched
+        if _counter_subseteq(
+            claim_counter,
+            _literal_signature_counter(str(material.get("bounded_text") or "")),
+        )
+    ]
+    if not complete:
         if _literal_values(claim_text) & {
             value
             for material in matched
@@ -1165,7 +1162,13 @@ def _try_direct_source_bind(
         }:
             return None, "literal_signature_mismatch"
         return None, "claim_literal_absent_from_bound_material"
-    primary = matched[0]
+    complete.sort(
+        key=lambda item: (
+            str(item.get("content_ref_id") or ""),
+            int(item.get("material_index") or 0),
+        )
+    )
+    primary = complete[0]
     return (
         {
             "evidence_or_specialist_ref": {
