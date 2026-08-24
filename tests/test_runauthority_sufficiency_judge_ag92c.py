@@ -662,9 +662,7 @@ def test_final_answer_packet_consumes_sufficiency_to_demote_legacy_missing_infer
     )
 
 
-def test_exact_component_obligation_survives_sufficiency_without_legacy_class_gap() -> None:
-    """A ledger-satisfied component obligation remains distinct at FAP."""
-
+def _docs_contract_and_satisfied_ledger() -> tuple[dict[str, Any], dict[str, Any]]:
     contract = _contract(
         "According to official technical documentation, what are the defaults?"
     )
@@ -677,6 +675,26 @@ def test_exact_component_obligation_survives_sufficiency_without_legacy_class_ga
         candidates=[candidate],
         links=_links(contract),
     )
+    return contract, ledger
+
+
+def _packet_input_assessments(
+    judgment: Any,
+    key: str,
+) -> tuple[dict[str, Any], ...]:
+    projection = judgment.to_projection()
+    packet_inputs = projection.get("final_packet_inputs") or {}
+    return tuple(
+        dict(item)
+        for item in packet_inputs.get(key) or ()
+        if isinstance(item, dict)
+    )
+
+
+def test_unreconciled_answer_contract_requirement_survives_unrelated_canonical_topology() -> None:
+    """Unrelated AnswerContract gaps remain missing when topology exists."""
+
+    contract, ledger = _docs_contract_and_satisfied_ledger()
     baseline = build_deterministic_sufficiency_judgment(
         _input(contract, ledger, search={"decision": "stop_satisfied"})
     )
@@ -692,38 +710,42 @@ def test_exact_component_obligation_survives_sufficiency_without_legacy_class_ga
             "linked_candidate_ids": ["C1"],
         }
     )
+    answer_contract = {"unfulfilled_source_classes": ["reputable_secondary"]}
     judgment = build_deterministic_sufficiency_judgment(
         _input(
             contract,
             ledger,
             search={"decision": "stop_satisfied"},
-            answer_contract={
-                "unfulfilled_source_classes": ["reputable_secondary"]
-            },
+            answer_contract=answer_contract,
         )
     )
 
     satisfied_ids = {
         item.requirement_id for item in judgment.satisfied_obligations
     }
-    assert len(judgment.satisfied_obligations) == len(baseline.satisfied_obligations) + 1
+    missing_packet = _packet_input_assessments(
+        judgment,
+        "missing_required_obligations",
+    )
     assert component_requirement_id in satisfied_ids
-    assert not any(
+    assert len(judgment.satisfied_obligations) == len(baseline.satisfied_obligations) + 1
+    assert any(
         item.requirement_kind == "answer_contract_source_class"
+        and item.required_source_class == "reputable_secondary"
         for item in judgment.missing_required_obligations
     )
-    assert not any(
-        item.required_source_class == "reputable_secondary"
-        for item in judgment.missing_required_obligations
+    assert any(
+        item.get("required_source_class") == "reputable_secondary"
+        for item in missing_packet
     )
+    assert judgment.decision is not RunSufficiencyDecision.READY_DIRECT
 
     packet = build_final_answer_packet(
-        run_id="ag92c-exact-component",
+        run_id="ag92c-unreconciled-answer-contract",
         final_evidence=[_final_passage()],
         source_obligation_projection=ledger,
-        answer_contract_projection={
-            "unfulfilled_source_classes": ["reputable_secondary"]
-        },
+        evidence_ledger_projection=ledger,
+        answer_contract_projection=answer_contract,
         run_contract_projection=contract,
         sufficiency_judgment_projection=judgment.to_projection(),
     )
@@ -731,10 +753,216 @@ def test_exact_component_obligation_survives_sufficiency_without_legacy_class_ga
         record.custody_requirement_id for record in packet.source_obligations
     }
     assert component_requirement_id in packet_requirement_ids
-    assert all(
-        record.status is SourceObligationStatus.SATISFIED
+    assert any(
+        record.source_class == "reputable_secondary"
+        and record.status is not SourceObligationStatus.SATISFIED
         for record in packet.source_obligations
     )
+    assert packet.readiness_status is not FinalAnswerReadinessStatus.AUTHOR_READY
+
+
+def test_exact_answer_contract_duplicate_does_not_reappear_when_canonical_satisfied() -> None:
+    """Exact class summaries are omitted once the canonical requirement owns status."""
+
+    contract, ledger = _docs_contract_and_satisfied_ledger()
+    answer_contract = {"unfulfilled_source_classes": ["primary_source_documents"]}
+    judgment = build_deterministic_sufficiency_judgment(
+        _input(
+            contract,
+            ledger,
+            search={"decision": "stop_satisfied"},
+            answer_contract=answer_contract,
+        )
+    )
+    packet = build_final_answer_packet(
+        run_id="ag92c-exact-duplicate-answer-contract",
+        final_evidence=[_final_passage()],
+        source_obligation_projection=ledger,
+        evidence_ledger_projection=ledger,
+        answer_contract_projection=answer_contract,
+        run_contract_projection=contract,
+        sufficiency_judgment_projection=judgment.to_projection(),
+    )
+
+    assert not any(
+        item.requirement_kind == "answer_contract_source_class"
+        for item in (
+            *judgment.missing_required_obligations,
+            *judgment.partial_obligations,
+        )
+    )
+    canonical_satisfied = [
+        item
+        for item in judgment.satisfied_obligations
+        if item.required_source_class == "primary_source_documents"
+    ]
+    assert canonical_satisfied
+    assert all(
+        item.requirement_kind != "answer_contract_source_class"
+        for item in canonical_satisfied
+    )
+    assert not any(
+        str(record.obligation_id).startswith("run-sufficiency:answer-contract:")
+        for record in packet.source_obligations
+    )
+    missing_or_partial = [
+        record
+        for record in packet.source_obligations
+        if record.status is not SourceObligationStatus.SATISFIED
+    ]
+    assert not any(
+        record.source_class == "primary_source_documents"
+        for record in missing_or_partial
+    )
+
+
+def test_same_source_class_does_not_reconcile_distinct_canonical_requirements() -> None:
+    """Same source class is not identity for distinct owned obligations."""
+
+    contract, ledger = _docs_contract_and_satisfied_ledger()
+    satisfied_id = "searchos-source-obligation:component:alpha:official"
+    missing_id = "searchos-source-obligation:component:beta:official"
+    ledger["source_requirements"].extend(
+        [
+            {
+                "requirement_id": satisfied_id,
+                "requirement_kind": "official_current",
+                "required_source_class": "official_current_rules",
+                "required_source_tier": "official",
+                "required_currentness": "current",
+                "component_id": "component:alpha",
+                "source_obligation_id": "obligation:official_current:alpha",
+                "origin_ref": "RunKernel.SearchOSIterativeJudgment:fixture",
+                "status": "satisfied",
+                "linked_candidate_ids": ["C1"],
+            },
+            {
+                "requirement_id": missing_id,
+                "requirement_kind": "official_current",
+                "required_source_class": "official_current_rules",
+                "required_source_tier": "official",
+                "required_currentness": "current",
+                "component_id": "component:beta",
+                "source_obligation_id": "obligation:official_current:beta",
+                "origin_ref": "RunKernel.SearchOSIterativeJudgment:fixture",
+                "status": "unsatisfied",
+            },
+        ]
+    )
+    judgment = build_deterministic_sufficiency_judgment(
+        _input(contract, ledger, search={"decision": "stop_satisfied"})
+    )
+    packet = build_final_answer_packet(
+        run_id="ag92c-same-class-distinct-requirements",
+        final_evidence=[_final_passage()],
+        source_obligation_projection=ledger,
+        evidence_ledger_projection=ledger,
+        run_contract_projection=contract,
+        sufficiency_judgment_projection=judgment.to_projection(),
+    )
+
+    satisfied_ids = {
+        item.requirement_id for item in judgment.satisfied_obligations
+    }
+    missing_ids = {
+        item.requirement_id for item in judgment.missing_required_obligations
+    }
+    assert satisfied_id in satisfied_ids
+    assert missing_id in missing_ids
+    assert missing_id not in satisfied_ids
+    assert any(
+        record.custody_requirement_id == missing_id
+        and record.status is not SourceObligationStatus.SATISFIED
+        for record in packet.source_obligations
+    )
+    assert packet.readiness_status is not FinalAnswerReadinessStatus.AUTHOR_READY
+
+
+def test_q1_two_canonical_documentation_obligations_do_not_recreate_reputable_secondary() -> None:
+    """Q1's two canonical_documentation obligations stay satisfied without a phantom class."""
+
+    contract, ledger = _docs_contract_and_satisfied_ledger()
+    component_requirement_id = (
+        "searchos-source-obligation:component:q1:canonical_documentation"
+    )
+    ledger["source_requirements"].append(
+        {
+            "requirement_id": component_requirement_id,
+            "requirement_kind": "canonical_documentation",
+            "required_source_class": "primary_source_documents",
+            "required_source_tier": "canonical",
+            "required_currentness": "current",
+            "component_id": "component:q1",
+            "source_obligation_id": "obligation:canonical_documentation",
+            "origin_ref": "RunKernel.SearchOSIterativeJudgment:fixture",
+            "status": "satisfied",
+            "linked_candidate_ids": ["C1"],
+        }
+    )
+    accepted = {
+        "accepted_source_obligation_refs": [
+            {
+                "source_obligation_id": "obligation:canonical_documentation",
+                "kind": "canonical_documentation",
+                "component_ids": ["component:q1"],
+                "required_source_class": "primary_source_documents",
+                "required_source_tier": "canonical",
+                "required_currentness": "current",
+            }
+        ]
+    }
+    judgment = build_deterministic_sufficiency_judgment(
+        _input(
+            contract,
+            ledger,
+            search={"decision": "stop_satisfied"},
+            answer_contract={"unfulfilled_source_classes": ["primary_source_documents"]},
+        )
+    )
+    packet = build_final_answer_packet(
+        run_id="ag92c-q1-canonical-topology",
+        final_evidence=[_final_passage()],
+        source_obligation_projection=ledger,
+        evidence_ledger_projection=ledger,
+        answer_contract_projection={
+            "unfulfilled_source_classes": ["primary_source_documents"]
+        },
+        accepted_answer_contract_projection=accepted,
+        run_contract_projection=contract,
+        sufficiency_judgment_projection=judgment.to_projection(),
+    )
+
+    satisfied_ids = {
+        item.requirement_id for item in judgment.satisfied_obligations
+    }
+    assert component_requirement_id in satisfied_ids
+    assert any(
+        item.requirement_id == "run-contract:canonical_docs"
+        and item.status == "satisfied"
+        for item in judgment.satisfied_obligations
+    )
+    assert not any(
+        item.required_source_class == "reputable_secondary"
+        for item in (
+            *judgment.missing_required_obligations,
+            *judgment.partial_obligations,
+        )
+    )
+    assert not any(
+        record.source_class == "reputable_secondary"
+        for record in packet.source_obligations
+        if record.status is not SourceObligationStatus.SATISFIED
+    )
+    topology = packet.source_obligation_topology
+    assert topology["accepted_obligation_count"] == 2
+    assert topology["satisfied_obligation_count"] == 2
+    assert topology["missing_obligation_count"] == 0
+    owning_scopes = {item["owning_scope"] for item in topology["obligations"]}
+    assert owning_scopes == {"component", "run_contract"}
+    assert {item["obligation_kind"] for item in topology["obligations"]} == {
+        "canonical_documentation"
+    }
+    assert packet.readiness_status is FinalAnswerReadinessStatus.AUTHOR_READY
 
 
 def test_final_answer_packet_consumes_missing_sufficiency_projection() -> None:

@@ -25,7 +25,6 @@ from core.final_answer_runtime_adapter import (
     final_answer_packet_compatibility_refs,
     final_answer_packet_trace_fragment,
 )
-from core.source_class_recovery import build_source_class_observability_telemetry
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,20 +91,11 @@ def assemble_final_answer_author_runtime(
 ) -> FinalAnswerAuthorRuntimeAssembly:
     """Build packet and Author payload from already-computed runtime facts."""
 
-    legacy_source_obligation_projection = build_source_class_observability_telemetry(
-        query=query,
-        intent=intent,
-        report_type=report_type,
-        query_type=query_type,
-        core_topic=core_topic,
-        primary_entity=primary_entity,
-        anchor_packet=anchor_packet_telemetry,
-        final_top_evidence=final_top_evidence,
-        final_answer_source_ids=None,
-    ).get("official_current_source_custody")
-    source_obligation_projection = (
-        evidence_ledger_projection or legacy_source_obligation_projection
-    )
+    # EvidenceLedger is the sole FAP source-custody authority. Query/intent
+    # fields remain on this signature for orchestrator compatibility.
+    # Source-class observability telemetry may still be emitted elsewhere as
+    # diagnostics, but it must not substitute for missing ledger custody.
+    source_obligation_projection = evidence_ledger_projection
     packet = build_final_answer_packet(
         run_id=run_id,
         final_evidence=final_top_evidence,
