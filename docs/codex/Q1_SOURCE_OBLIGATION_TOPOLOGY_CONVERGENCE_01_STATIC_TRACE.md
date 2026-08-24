@@ -80,6 +80,13 @@ The repair is limited to exact record transport and canonical identity:
 - build the safe bounded packet topology from accepted contract, run contract,
   and current kernel EvidenceLedger state.
 
+The second brokered attempt reached a separate safe-observability transport
+gap: the FAP quantitative preflight was already present in the blocked
+`author_payload_ref`, which the ordinary RunKernel projection preserves, but
+`build_safe_blocked_fap_summary` did not copy its closed-vocabulary summary to
+the PRODUCT packet. The narrow repair projects that already-sanitized field;
+it does not alter the preflight, FAP decision, or Author eligibility.
+
 It does not change query-shape policy, SearchPlanner requirements, source
 definitions, currentness semantics, Sufficiency/FAP standards, citation policy,
 or provider behavior.

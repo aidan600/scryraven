@@ -859,6 +859,12 @@ def build_safe_blocked_fap_summary(
     )
     if component_summary:
         summary["component_blocked_summary"] = component_summary
+    quantitative_preflight = _safe_quantitative_fap_authority_preflight(
+        payload_ref.get("quantitative_fap_authority_preflight")
+        or authority_payload.get("quantitative_fap_authority_preflight")
+    )
+    if quantitative_preflight:
+        summary["quantitative_fap_authority_preflight"] = quantitative_preflight
     return summary
 
 
