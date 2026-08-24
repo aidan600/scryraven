@@ -17,15 +17,29 @@ URLs, prompts, provider payloads, or model output.
 | Coverage and Sufficiency | `core/run_authority_sufficiency_validation.py::build_deterministic_sufficiency_judgment` | Carries each exact ledger-backed obligation into `missing`, `partial`, or `satisfied` assessments and then `final_packet_inputs`. |
 | FAP | `core/final_answer_runtime_adapter.py::build_final_answer_packet` and `core/final_answer_packet_runtime.py::prepare_final_answer_packet_author_handoff_from_scope` | Consumes canonical current kernel ledger state and preserves exact requirement identity through FAP/Author handoff. |
 
-## Real Q1 topology
+## Observed Q1 topology
 
-| Semantic obligation kind | Owner | EvidenceLedger requirement kind | Offline pre-repair ledger status |
+The first brokered PRODUCT packet exposed these two accepted, independently
+owned records. Both were satisfied by the same opaque candidate binding.
+
+| Semantic obligation kind | Owner | EvidenceLedger requirement kind | Live status |
 | --- | --- | --- | --- |
-| `official_current` | component | `official_current` | satisfied |
+| `canonical_documentation` | component | `canonical` | satisfied |
 | `canonical_documentation` | run contract | `canonical` | satisfied |
 
-These are distinct predicates and remain distinct records. A single candidate
-may satisfy both; no source-count or URL-diversity rule is implied.
+The component record is the QMR/accepted-answer-contract direct-support
+obligation. The run-contract record is the independently template-owned
+canonical-docs requirement for current technical behavior. Their matching kind
+does not authorize identity coalescing: they have distinct opaque IDs and
+owners. A single candidate may satisfy both; no source-count or URL-diversity
+rule is implied.
+
+The prior provider-like regression modeled `official_current` at component
+scope plus the run-contract `canonical_documentation` row. It remains useful
+for that source path, but it is not live-topology equivalent. The added exact
+Q1 offline regression models the observed component-plus-run-contract
+`canonical_documentation` shape without changing query-shape or currentness
+policy.
 
 ## Mismatch classification
 
@@ -33,7 +47,7 @@ may satisfy both; no source-count or URL-diversity rule is implied.
 
 The authoritative ledger already held both exact satisfied rows. The old
 Sufficiency projection emitted component-owned ledger rows only when missing,
-dropping the satisfied `official_current` row. It also allowed a legacy
+dropping a satisfied component-owned requirement. It also allowed a legacy
 AnswerContract source-class compatibility summary with no canonical obligation
 identity to become a new missing FAP obligation. The FAP adapter then merged
 records by source class/status rather than canonical identity.
@@ -45,12 +59,13 @@ diagnostic-only whenever authoritative topology exists.
 
 ## Currentness posture
 
-No currentness policy changed. The run-contract canonical-documentation row
-requires temporal posture `current`; the offline fixture's candidate-currentness
-field is `not_observed`, not inferred from source age, source title, or
-official/canonical status. The ledger nevertheless reports the exact canonical
-requirement satisfied under its existing qualification policy. No Q1 blocker was
-classified as a currentness-policy failure.
+No currentness policy changed. The live run-contract canonical-documentation
+row requires temporal posture `current`; its observed candidate-currentness
+posture is `not_observed`, as is the component row's. No currentness was
+inferred from source age, source title, or official/canonical status. The ledger
+reports the exact canonical requirements satisfied under its existing
+qualification policy; this phase neither reinterprets nor broadens that policy.
+No Q1 blocker was classified as a currentness-policy failure.
 
 ## Repair boundary
 

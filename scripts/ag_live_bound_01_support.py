@@ -119,6 +119,7 @@ BLOCKED_FAP_SUMMARY_KEYS = (
     "prohibited_upgrade_count",
     "claim_postures",
     "component_blocked_summary",
+    "quantitative_fap_authority_preflight",
 )
 BLOCKED_FAP_BOOLEAN_KEYS = frozenset(
     {
@@ -139,6 +140,20 @@ BLOCKED_FAP_COUNT_KEYS = frozenset(
     }
 )
 BLOCKED_FAP_LIST_KEYS = frozenset({"readiness_reasons", "claim_postures"})
+_SAFE_QUANTITATIVE_PREFLIGHT_STATUSES = frozenset({"ready", "blocked"})
+_SAFE_QUANTITATIVE_CLAIM_KINDS = frozenset(
+    {"direct_component", "admitted_synthesis", "hardened_component"}
+)
+_SAFE_QUANTITATIVE_PREFLIGHT_REASON_CODES = frozenset(
+    {
+        "unadmitted_numeric_claim",
+        "stale_or_foreign_quantitative_authority",
+        "missing_component_analyst_authority",
+        "missing_synthesis_validator_authority",
+        "missing_required_specialist_binding",
+        "missing_direct_source_binding",
+    }
+)
 
 # The bounded product packet can report only enumerated, non-content facts about
 # an accepted source obligation.  These allowlists deliberately reject free
@@ -885,6 +900,62 @@ def _safe_summary_int(value: Any) -> int | None:
         return None
 
 
+def _quantitative_fap_authority_preflight_from_raw(value: Any) -> dict[str, Any]:
+    """Keep only closed-vocabulary quantitative FAP preflight facts."""
+
+    raw = _mapping_or_empty(value)
+    status = _safe_summary_text(raw.get("status"), limit=40)
+    if status not in _SAFE_QUANTITATIVE_PREFLIGHT_STATUSES:
+        return {}
+    summary: dict[str, Any] = {
+        "schema_version": "blocked_fap_quantitative_authority_safe_summary_v1",
+        "status": status,
+    }
+    for key in (
+        "author_invocation_allowed",
+        "post_author_semantic_validation_required",
+    ):
+        if isinstance(raw.get(key), bool):
+            summary[key] = raw[key]
+    for key in (
+        "required_numeric_claim_count",
+        "authorized_numeric_claim_count",
+        "blocked_numeric_claim_count",
+    ):
+        count = _safe_summary_int(raw.get(key))
+        if count is not None and count >= 0:
+            summary[key] = count
+    reason_codes = [
+        code
+        for code in _safe_summary_text_list(raw.get("reason_codes"))
+        if code in _SAFE_QUANTITATIVE_PREFLIGHT_REASON_CODES
+    ]
+    if reason_codes:
+        summary["reason_codes"] = list(dict.fromkeys(reason_codes))
+    reason_refs: list[dict[str, Any]] = []
+    raw_refs = raw.get("reason_refs")
+    if isinstance(raw_refs, Sequence) and not isinstance(raw_refs, (str, bytes)):
+        for item in raw_refs:
+            ref_raw = _mapping_or_empty(item)
+            reason_code = _safe_summary_text(ref_raw.get("reason_code"), limit=120)
+            if reason_code not in _SAFE_QUANTITATIVE_PREFLIGHT_REASON_CODES:
+                continue
+            ref: dict[str, Any] = {"reason_code": reason_code}
+            claim_kind = _safe_summary_text(ref_raw.get("claim_kind"), limit=120)
+            if claim_kind in _SAFE_QUANTITATIVE_CLAIM_KINDS:
+                ref["claim_kind"] = claim_kind
+            literal_count = _safe_summary_int(ref_raw.get("literal_count"))
+            if literal_count is not None and literal_count >= 0:
+                ref["literal_count"] = literal_count
+            if isinstance(ref_raw.get("specialist_declared"), bool):
+                ref["specialist_declared"] = ref_raw["specialist_declared"]
+            if ref not in reason_refs:
+                reason_refs.append(ref)
+    if reason_refs:
+        summary["reason_refs"] = reason_refs
+    return summary
+
+
 def _blocked_fap_summary_from_exception(exc: BaseException) -> dict[str, Any]:
     raw = getattr(exc, "blocked_fap_summary", None)
     if not isinstance(raw, Mapping):
@@ -908,6 +979,12 @@ def _blocked_fap_summary_from_raw(raw: Any) -> dict[str, Any]:
             component_summary = _component_blocked_summary_from_raw(value)
             if component_summary:
                 summary[key] = component_summary
+        elif key == "quantitative_fap_authority_preflight":
+            quantitative_summary = _quantitative_fap_authority_preflight_from_raw(
+                value
+            )
+            if quantitative_summary:
+                summary[key] = quantitative_summary
         elif key in BLOCKED_FAP_BOOLEAN_KEYS:
             if isinstance(value, bool):
                 summary[key] = value

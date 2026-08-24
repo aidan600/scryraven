@@ -1597,6 +1597,9 @@ def test_searchos_receiver_block_cannot_report_completed_or_originate_analyst(
 
 def _install_q1_plural_planner_contract(
     monkeypatch: pytest.MonkeyPatch,
+    *,
+    source_obligation_id: str = "obligation:official_current",
+    source_obligation_kind: str = "official_current",
 ) -> None:
     original_produce = DeterministicSearchPlannerAdapter.produce
 
@@ -1606,7 +1609,7 @@ def _install_q1_plural_planner_contract(
         component.update(
             {
                 "semantic_slot_ids": ["slot:rel_tol", "slot:abs_tol"],
-                "source_obligation_candidate_ids": ["obligation:official_current"],
+                "source_obligation_candidate_ids": [source_obligation_id],
                 "user_facing_question": (
                     "What are the defaults for rel_tol and abs_tol in math.isclose()?"
                 ),
@@ -1631,25 +1634,21 @@ def _install_q1_plural_planner_contract(
         result["answer_components"] = [component]
         result["source_obligation_candidates"] = [
             {
-                "candidate_id": "obligation:official_current",
-                "obligation_kind": "official_current",
+                "candidate_id": source_obligation_id,
+                "obligation_kind": source_obligation_kind,
                 "component_candidate_ids": [component["component_id"]],
                 "strictness": "required",
             }
         ]
         requirement = dict(result["component_search_requirements"][0])
-        requirement["source_obligation_candidate_ids"] = [
-            "obligation:official_current"
-        ]
+        requirement["source_obligation_candidate_ids"] = [source_obligation_id]
         requirement_metadata = dict(requirement.get("metadata") or {})
         strategies = [
             dict(item)
             for item in requirement_metadata.get("query_strategy_candidates") or ()
         ]
         for strategy in strategies:
-            strategy["source_obligation_candidate_ids"] = [
-                "obligation:official_current"
-            ]
+            strategy["source_obligation_candidate_ids"] = [source_obligation_id]
         requirement_metadata["query_strategy_candidates"] = strategies
         requirement["metadata"] = requirement_metadata
         result["component_search_requirements"] = [requirement]

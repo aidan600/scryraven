@@ -25,6 +25,24 @@ from core.runtime_prompt_assembly import select_author_system_prompt
 
 SAFE_BLOCKED_FAP_SUMMARY_SCHEMA_VERSION = "blocked_final_answer_packet_safe_summary_v1"
 COMPONENT_BLOCKED_SUMMARY_SCHEMA_VERSION = "blocked_fap_component_summary_v1"
+QUANTITATIVE_FAP_AUTHORITY_SAFE_SUMMARY_SCHEMA_VERSION = (
+    "blocked_fap_quantitative_authority_safe_summary_v1"
+)
+
+_SAFE_QUANTITATIVE_PREFLIGHT_STATUSES = frozenset({"ready", "blocked"})
+_SAFE_QUANTITATIVE_CLAIM_KINDS = frozenset(
+    {"direct_component", "admitted_synthesis", "hardened_component"}
+)
+_SAFE_QUANTITATIVE_PREFLIGHT_REASON_CODES = frozenset(
+    {
+        "unadmitted_numeric_claim",
+        "stale_or_foreign_quantitative_authority",
+        "missing_component_analyst_authority",
+        "missing_synthesis_validator_authority",
+        "missing_required_specialist_binding",
+        "missing_direct_source_binding",
+    }
+)
 
 
 def _safe_text(value: Any, *, limit: int = 240) -> str | None:
@@ -57,6 +75,78 @@ def _safe_mapping_sequence_from_any(value: Any) -> list[dict[str, Any]]:
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
         return []
     return [dict(item) for item in value if isinstance(item, Mapping)]
+
+
+def _safe_nonnegative_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        normalized = int(value)
+    except (TypeError, ValueError):
+        return None
+    return normalized if normalized >= 0 else None
+
+
+def _safe_quantitative_fap_authority_preflight(value: Any) -> dict[str, Any]:
+    """Project only enumerated FAP quantitative preflight facts.
+
+    The blocked-Author path must not surface selected claim text, source text,
+    provider output, or prompt material.  The preflight already emits a
+    structural diagnostic; this helper keeps the PRODUCT failure packet to its
+    closed safe vocabulary so a blocked run remains mechanically diagnosable.
+    """
+
+    raw = _safe_mapping(value)
+    status = _safe_text(raw.get("status"), limit=40)
+    if status not in _SAFE_QUANTITATIVE_PREFLIGHT_STATUSES:
+        return {}
+
+    summary: dict[str, Any] = {
+        "schema_version": QUANTITATIVE_FAP_AUTHORITY_SAFE_SUMMARY_SCHEMA_VERSION,
+        "status": status,
+    }
+    for key in (
+        "author_invocation_allowed",
+        "post_author_semantic_validation_required",
+    ):
+        if isinstance(raw.get(key), bool):
+            summary[key] = raw[key]
+    for key in (
+        "required_numeric_claim_count",
+        "authorized_numeric_claim_count",
+        "blocked_numeric_claim_count",
+    ):
+        count = _safe_nonnegative_int(raw.get(key))
+        if count is not None:
+            summary[key] = count
+
+    reason_codes = [
+        code
+        for code in _safe_text_list(raw.get("reason_codes"), limit=120)
+        if code in _SAFE_QUANTITATIVE_PREFLIGHT_REASON_CODES
+    ]
+    if reason_codes:
+        summary["reason_codes"] = list(dict.fromkeys(reason_codes))
+
+    reason_refs: list[dict[str, Any]] = []
+    for raw_ref in _safe_mapping_sequence_from_any(raw.get("reason_refs")):
+        reason_code = _safe_text(raw_ref.get("reason_code"), limit=120)
+        if reason_code not in _SAFE_QUANTITATIVE_PREFLIGHT_REASON_CODES:
+            continue
+        ref: dict[str, Any] = {"reason_code": reason_code}
+        claim_kind = _safe_text(raw_ref.get("claim_kind"), limit=120)
+        if claim_kind in _SAFE_QUANTITATIVE_CLAIM_KINDS:
+            ref["claim_kind"] = claim_kind
+        literal_count = _safe_nonnegative_int(raw_ref.get("literal_count"))
+        if literal_count is not None:
+            ref["literal_count"] = literal_count
+        if isinstance(raw_ref.get("specialist_declared"), bool):
+            ref["specialist_declared"] = raw_ref["specialist_declared"]
+        if ref not in reason_refs:
+            reason_refs.append(ref)
+    if reason_refs:
+        summary["reason_refs"] = reason_refs
+    return summary
 
 
 def _optional_int(value: Any) -> int | None:
@@ -873,6 +963,11 @@ def _blocked_author_payload_ref(packet: FinalAnswerPacket) -> dict[str, Any]:
         if isinstance(packet.author_input_refs, Mapping)
         else {}
     )
+    quantitative_preflight = _safe_quantitative_fap_authority_preflight(
+        packet.author_input_refs.get("quantitative_fap_authority_preflight")
+        if isinstance(packet.author_input_refs, Mapping)
+        else {}
+    )
     authority_payload = {
         "packet_id": packet.packet_id,
         "readiness_status": readiness_status,
@@ -892,6 +987,10 @@ def _blocked_author_payload_ref(packet: FinalAnswerPacket) -> dict[str, Any]:
     }
     if component_readiness:
         authority_payload["component_readiness"] = component_readiness
+    if quantitative_preflight:
+        authority_payload["quantitative_fap_authority_preflight"] = (
+            quantitative_preflight
+        )
     semantic_component_refs = _safe_semantic_component_refs(
         packet.semantic_content_coverage_ref_projection.get("component_refs")
         if isinstance(packet.semantic_content_coverage_ref_projection, Mapping)
@@ -931,6 +1030,8 @@ def _blocked_author_payload_ref(packet: FinalAnswerPacket) -> dict[str, Any]:
     }
     if component_readiness:
         payload["component_readiness"] = component_readiness
+    if quantitative_preflight:
+        payload["quantitative_fap_authority_preflight"] = quantitative_preflight
     if packet.semantic_authority_ref:
         payload["semantic_authority_ref"] = _safe_mapping(packet.semantic_authority_ref)
     if semantic_component_refs:
