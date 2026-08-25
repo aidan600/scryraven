@@ -349,6 +349,31 @@ def test_fap_direct_source_numeric_still_requires_plain_integer_claims() -> None
     assert {row["normalized_numeric_value_text"] for row in rows} == {"17"}
 
 
+def test_fap_direct_source_numeric_survives_when_bind_keeps_digest_limit_excerpt() -> None:
+    prefix = "Object B has a length of 100 miles. " * 20
+    source = prefix + "Object A has a length of 100 km."
+    truncated = " ".join(source.split())[:600]
+    claim = "Object A has a length of 100 km."
+    blocked = build_quantitative_fap_authority_preflight(
+        source_fap_ref={"packet_id": "preflight-truncated-excerpt"},
+        direct_component_entries=(_fap_direct_entry(claim),),
+        semantic_author_materialization=_fap_materialization(truncated),
+    )
+    ready = build_quantitative_fap_authority_preflight(
+        source_fap_ref={"packet_id": "preflight-digest-limit-excerpt"},
+        direct_component_entries=(_fap_direct_entry(claim),),
+        semantic_author_materialization=_fap_materialization(source),
+    )
+
+    assert "100 km" not in truncated
+    assert blocked["diagnostic"]["status"] == "blocked"
+    assert "literal_signature_mismatch" in blocked["diagnostic"]["reason_codes"]
+    assert ready["diagnostic"]["status"] == "ready", ready["diagnostic"]
+    rows = ready["bundle"]["manifest"]["authorized_numeric_claims"]
+    assert {row["normalized_numeric_value_text"] for row in rows} == {"100"}
+    assert {row["canonical_unit"] for row in rows} == {"km"}
+
+
 def test_fap_preflight_blocks_when_every_numeric_surface_is_unsupported() -> None:
     claim = "The result is first."
     preflight = build_quantitative_fap_authority_preflight(

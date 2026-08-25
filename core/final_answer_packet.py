@@ -2160,10 +2160,7 @@ class FinalAnswerPacket:
                 ),
                 "sanitized": True,
                 "bounded": True,
-                "bounded_text": _clean_text(
-                    bounded_text,
-                    limit=_SEMANTIC_MATERIALIZATION_EXCERPT_CHAR_LIMIT,
-                ),
+                "bounded_text": bounded_text,
                 "raw_content_retained": False,
                 "raw_provider_payload_retained": False,
                 "raw_prompt_retained": False,
