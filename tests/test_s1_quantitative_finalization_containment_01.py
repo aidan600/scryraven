@@ -9,8 +9,14 @@ import pytest
 
 import core.author_execution_runtime as author_execution_runtime
 import core.quantitative_consistency as quantitative_consistency
+import core.quantitative_finalization_authority as quantitative_finalization_authority
 from core.author_execution_runtime import execute_author_action
-from core.final_answer_packet import FinalAnswerAuthorInputPayload
+from core.final_answer_packet import (
+    _SEMANTIC_MATERIALIZATION_DIGEST_TEXT_LIMIT,
+    _SEMANTIC_MATERIALIZATION_EXCERPT_CHAR_LIMIT,
+    FinalAnswerAuthorInputPayload,
+    FinalAnswerPacket,
+)
 from core.multicomponent_role_runtime import safe_packet_digest
 from core.quantitative_finalization_authority import (
     QuantitativeFinalizationAuthorityError,
@@ -19,6 +25,7 @@ from core.quantitative_finalization_authority import (
     build_quantitative_finalization_authority_bundle,
     build_quantitative_finalization_authority_manifest,
     evaluate_author_output_quantitative_authority,
+    extract_quantitative_literals,
     specialist_quantitative_authority_ref_from_handoff,
     validate_author_output_quantitative_authority,
 )
@@ -63,11 +70,120 @@ def _source_bundle(*claims: str) -> dict[str, Any]:
         }
         for index, claim in enumerate(claims, start=1)
     )
-    return build_quantitative_finalization_authority_bundle(
+    materialization = _source_materialization(*claims)
+    product = build_quantitative_finalization_authority_bundle(
         source_fap_ref={"packet_id": "packet-direct", "readiness_status": "author_ready"},
-        semantic_author_materialization=_source_materialization(*claims),
+        semantic_author_materialization=materialization,
         direct_component_entries=entries,
     )
+    return _with_evaluator_direct_source_projection(
+        product,
+        direct_component_entries=entries,
+        semantic_author_materialization=materialization,
+    )
+
+
+def _with_evaluator_direct_source_projection(
+    bundle: Mapping[str, Any],
+    *,
+    direct_component_entries: tuple[Mapping[str, Any], ...] = (),
+    admitted_synthesis_entries: tuple[Mapping[str, Any], ...] = (),
+    semantic_author_materialization: Mapping[str, Any] | None = None,
+    component_packet_entries: tuple[Mapping[str, Any], ...] = (),
+) -> dict[str, Any]:
+    """Seed evaluator-only direct-source rows. This is not a PRODUCT authority path."""
+
+    qfa = quantitative_finalization_authority
+    materials = qfa._lineage_bound_materials(semantic_author_materialization)
+    seeded = list(bundle["manifest"]["authorized_numeric_claims"])
+    renderings = dict(bundle["transient_renderings"])
+    for claim in qfa._claim_sources(
+        direct_component_entries=direct_component_entries,
+        admitted_synthesis_entries=admitted_synthesis_entries,
+        component_packet_entries=component_packet_entries,
+    ):
+        if qfa._safe_ref(claim.get("specialist_ref")):
+            continue
+        if qfa._direct_source_mechanical_lineage_reason(claim, materials):
+            continue
+        claim_text = str(claim.get("claim_text") or "")
+        literals = qfa._supported_quantitative_literals(
+            extract_quantitative_literals(claim_text)
+        )
+        if not literals:
+            continue
+        claim_ref = qfa._safe_ref(claim.get("claim_ref"))
+        local_claim_key = f"quant-claim-{qfa._canonical_claim_ref_digest(claim_ref)}"
+        matched = [
+            material
+            for material in materials
+            if qfa._material_matches_admitted(claim, material)
+        ]
+        matched.sort(
+            key=lambda item: (
+                str(item.get("content_ref_id") or ""),
+                int(item.get("material_index") or 0),
+            )
+        )
+        if matched:
+            primary = matched[0]
+            evidence_ref = qfa._safe_ref(
+                {
+                    "evidence_ref_id": primary.get("evidence_ref_id"),
+                    "packet_evidence_id": primary.get("packet_evidence_id"),
+                    "source_id": primary.get("source_id"),
+                }
+            )
+            material_ref = qfa._safe_ref(primary.get("fap_material_ref"))
+        else:
+            hardened = qfa._hardened_mechanical_binding(claim)
+            if hardened is None:
+                evidence_ref = qfa._safe_ref(claim.get("evidence_or_specialist_ref"))
+                material_ref = qfa._safe_ref(claim.get("fap_material_ref"))
+            else:
+                evidence_ref = qfa._safe_ref(
+                    hardened.get("evidence_or_specialist_ref")
+                )
+                material_ref = qfa._safe_ref(hardened.get("fap_material_ref"))
+        fingerprint = qfa.semantic_claim_fingerprint(claim_text)
+        for literal_index, literal in enumerate(literals, start=1):
+            seeded.append(
+                {
+                    "local_claim_key": local_claim_key,
+                    "claim_literal_ordinal": literal_index,
+                    "current_claim_ref": claim_ref,
+                    "claim_authority_posture": "evaluator_direct_source_observation",
+                    "authority_kind": "direct_source_numeric",
+                    "normalized_numeric_value_text": literal.get(
+                        "normalized_numeric_value_text"
+                    ),
+                    "canonical_unit": literal.get("canonical_unit"),
+                    "precision_posture": literal.get("precision_posture"),
+                    "evidence_or_specialist_ref": evidence_ref,
+                    "applicable_validator_ref": {},
+                    "applicable_validator_consumption_ref": {},
+                    "admitted_claim_ref": {},
+                    "fap_material_ref": material_ref,
+                    "semantic_claim_fingerprint_or_existing_equivalent": fingerprint,
+                    "literal_signature_digest": qfa._text_digest(
+                        qfa._literal_signature(literal)
+                    ),
+                }
+            )
+        renderings[local_claim_key] = claim_text
+    manifest_base = {
+        key: value
+        for key, value in dict(bundle["manifest"]).items()
+        if key != "manifest_digest"
+    }
+    manifest_base["authorized_numeric_claims"] = seeded
+    return {
+        "manifest": {
+            **manifest_base,
+            "manifest_digest": qfa._digest(manifest_base),
+        },
+        "transient_renderings": renderings,
+    }
 
 
 def _source_materialization(*claims: str) -> dict[str, Any]:
@@ -175,21 +291,6 @@ def _evaluate(text: str, bundle: Mapping[str, Any]) -> dict[str, Any]:
     ("label", "entry", "materialization", "expected_reason"),
     (
         (
-            "unsupported_arithmetic",
-            _fap_direct_entry("The difference is 40 km."),
-            _fap_materialization(
-                "Object A has a length of 100 km.",
-                "Object B has a length of 60 km.",
-            ),
-            "claim_literal_absent_from_bound_material",
-        ),
-        (
-            "unauthorized_conversion",
-            _fap_direct_entry("Object A has a length of 62.1 miles."),
-            _fap_materialization("Object A has a length of 100 km."),
-            "claim_literal_absent_from_bound_material",
-        ),
-        (
             "unbound_source_number",
             _fap_direct_entry("Object A has a length of 100 km."),
             {},
@@ -278,52 +379,16 @@ def test_fap_structured_direct_source_numeric_authority_is_ready_before_author()
     claims = preflight["bundle"]["manifest"]["authorized_numeric_claims"]
     assert diagnostic["status"] == "ready", diagnostic["reason_codes"]
     assert diagnostic["author_invocation_allowed"] is True
-    assert {claim["authority_kind"] for claim in claims} == {
-        "direct_source_numeric"
+    assert "direct_source_numeric" not in {
+        claim["authority_kind"] for claim in claims
     }
 
 
-def test_fap_direct_source_numeric_survives_incidental_unsupported_surfaces() -> None:
-    source = "Object A has a length of 100 km."
-    claim = "The result is first. " + source
+def test_fap_direct_source_does_not_classify_incidental_digits_in_admitted_prose() -> None:
+    # Boundary A: FAP does not decide whether 3 is a version and 17 is the count.
+    claim = "Example Product 3 documentation states the count is 17 requests."
     preflight = build_quantitative_fap_authority_preflight(
-        source_fap_ref={"packet_id": "preflight-incidental-unsupported"},
-        direct_component_entries=(_fap_direct_entry(claim),),
-        semantic_author_materialization=_fap_materialization(source),
-    )
-
-    diagnostic = preflight["diagnostic"]
-    rows = preflight["bundle"]["manifest"]["authorized_numeric_claims"]
-    assert diagnostic["status"] == "ready", diagnostic
-    assert diagnostic["author_invocation_allowed"] is True
-    assert "unsupported_claim_literal_surface" not in diagnostic["reason_codes"]
-    assert {row["authority_kind"] for row in rows} == {"direct_source_numeric"}
-    assert {row["normalized_numeric_value_text"] for row in rows} == {"100"}
-
-
-def test_fap_direct_source_numeric_survives_incidental_name_integer() -> None:
-    source = "Object A has a length of 100 km."
-    claim = "Example Product 3 documentation states " + source
-    preflight = build_quantitative_fap_authority_preflight(
-        source_fap_ref={"packet_id": "preflight-incidental-name-integer"},
-        direct_component_entries=(_fap_direct_entry(claim),),
-        semantic_author_materialization=_fap_materialization(source),
-    )
-
-    diagnostic = preflight["diagnostic"]
-    rows = preflight["bundle"]["manifest"]["authorized_numeric_claims"]
-    assert diagnostic["status"] == "ready", diagnostic
-    assert diagnostic["author_invocation_allowed"] is True
-    assert "literal_signature_mismatch" not in diagnostic["reason_codes"]
-    assert {row["authority_kind"] for row in rows} == {"direct_source_numeric"}
-    assert {row["normalized_numeric_value_text"] for row in rows} == {"100"}
-    assert {row["canonical_unit"] for row in rows} == {"km"}
-
-
-def test_fap_preflight_ignores_claim_with_only_incidental_name_integers() -> None:
-    claim = "Example Product 3 documentation is the cited handbook."
-    preflight = build_quantitative_fap_authority_preflight(
-        source_fap_ref={"packet_id": "preflight-only-incidental-name-integer"},
+        source_fap_ref={"packet_id": "preflight-direct-source-incidental-digits"},
         direct_component_entries=(_fap_direct_entry(claim),),
         semantic_author_materialization=_fap_materialization(claim),
     )
@@ -331,62 +396,60 @@ def test_fap_preflight_ignores_claim_with_only_incidental_name_integers() -> Non
     diagnostic = preflight["diagnostic"]
     assert diagnostic["status"] == "ready", diagnostic
     assert diagnostic["author_invocation_allowed"] is True
-    assert diagnostic["required_numeric_claim_count"] == 0
+    assert diagnostic["reason_codes"] == []
     assert preflight["bundle"]["manifest"]["authorized_numeric_claims"] == []
 
 
-def test_fap_direct_source_numeric_still_requires_plain_integer_claims() -> None:
-    source = "The direct count is 17."
+def test_fap_direct_source_does_not_reject_same_lineage_prose_mismatch() -> None:
+    # Boundary B: semantic support belongs to Analyst + RunKernel admission.
+    # FAP must not reject an admitted same-lineage claim by reparsing prose.
+    claim = "Object A has a length of 62.1 miles."
     preflight = build_quantitative_fap_authority_preflight(
-        source_fap_ref={"packet_id": "preflight-plain-integer"},
-        direct_component_entries=(_fap_direct_entry(source),),
-        semantic_author_materialization=_fap_materialization(source),
+        source_fap_ref={"packet_id": "preflight-direct-source-prose-mismatch"},
+        direct_component_entries=(_fap_direct_entry(claim),),
+        semantic_author_materialization=_fap_materialization(
+            "Object A has a length of 100 km."
+        ),
     )
 
     diagnostic = preflight["diagnostic"]
-    rows = preflight["bundle"]["manifest"]["authorized_numeric_claims"]
     assert diagnostic["status"] == "ready", diagnostic
-    assert {row["normalized_numeric_value_text"] for row in rows} == {"17"}
+    assert diagnostic["author_invocation_allowed"] is True
+    assert "claim_literal_absent_from_bound_material" not in diagnostic["reason_codes"]
+    assert "literal_signature_mismatch" not in diagnostic["reason_codes"]
+    assert "unsupported_claim_literal_surface" not in diagnostic["reason_codes"]
 
 
-def test_fap_direct_source_numeric_survives_when_bind_keeps_digest_limit_excerpt() -> None:
-    prefix = "Object B has a length of 100 miles. " * 20
-    source = prefix + "Object A has a length of 100 km."
-    truncated = " ".join(source.split())[:600]
-    claim = "Object A has a length of 100 km."
-    blocked = build_quantitative_fap_authority_preflight(
-        source_fap_ref={"packet_id": "preflight-truncated-excerpt"},
-        direct_component_entries=(_fap_direct_entry(claim),),
-        semantic_author_materialization=_fap_materialization(truncated),
+def test_digest_verified_authority_excerpt_is_independent_of_author_presentation_cap() -> None:
+    # Boundary F: digest-verified material may keep a tail past 600 up to 2000.
+    # Author presentation remains independently capped at 600.
+    assert _SEMANTIC_MATERIALIZATION_EXCERPT_CHAR_LIMIT == 600
+    assert _SEMANTIC_MATERIALIZATION_DIGEST_TEXT_LIMIT == 2000
+    tail = "TAIL_SENTINEL_AFTER_AUTHOR_PRESENTATION_CAP"
+    bounded = ("supporting sentence " * 80) + tail
+    compact = " ".join(bounded.split())
+    assert len(compact) > _SEMANTIC_MATERIALIZATION_EXCERPT_CHAR_LIMIT
+    assert len(compact) <= _SEMANTIC_MATERIALIZATION_DIGEST_TEXT_LIMIT
+    packet = FinalAnswerPacket(packet_id="surface-separation")
+    block = packet._semantic_author_materialization_block(
+        component_count=1,
+        materials=[
+            {
+                "component_id": "component-a",
+                "source_id": 7,
+                "bounded_text": bounded,
+            }
+        ],
     )
+    assert tail not in block
+    assert tail in compact
     ready = build_quantitative_fap_authority_preflight(
         source_fap_ref={"packet_id": "preflight-digest-limit-excerpt"},
-        direct_component_entries=(_fap_direct_entry(claim),),
-        semantic_author_materialization=_fap_materialization(source),
+        direct_component_entries=(_fap_direct_entry("Object A has a length of 100 km."),),
+        semantic_author_materialization=_fap_materialization(bounded),
     )
-
-    assert "100 km" not in truncated
-    assert blocked["diagnostic"]["status"] == "blocked"
-    assert "literal_signature_mismatch" in blocked["diagnostic"]["reason_codes"]
     assert ready["diagnostic"]["status"] == "ready", ready["diagnostic"]
-    rows = ready["bundle"]["manifest"]["authorized_numeric_claims"]
-    assert {row["normalized_numeric_value_text"] for row in rows} == {"100"}
-    assert {row["canonical_unit"] for row in rows} == {"km"}
-
-
-def test_fap_preflight_blocks_when_every_numeric_surface_is_unsupported() -> None:
-    claim = "The result is first."
-    preflight = build_quantitative_fap_authority_preflight(
-        source_fap_ref={"packet_id": "preflight-all-unsupported"},
-        direct_component_entries=(_fap_direct_entry(claim),),
-        semantic_author_materialization=_fap_materialization(claim),
-    )
-
-    diagnostic = preflight["diagnostic"]
-    assert diagnostic["status"] == "blocked"
-    assert diagnostic["author_invocation_allowed"] is False
-    assert "unsupported_claim_literal_surface" in diagnostic["reason_codes"]
-    assert diagnostic["final_text_included"] is False
+    assert ready["bundle"]["manifest"]["authorized_numeric_claims"] == []
 
 
 def _specialist_ref(
@@ -628,9 +691,16 @@ def test_admitted_component_arithmetic_and_same_value_reuse_do_not_launder_autho
             {**common, "claim_text": "The difference is 40 km."},
         ),
     )
+    arithmetic_preflight = build_quantitative_fap_authority_preflight(
+        source_fap_ref={"packet_id": "component-arithmetic"},
+        semantic_author_materialization=source_materialization,
+        direct_component_entries=(
+            {**common, "claim_text": "The difference is 40 km."},
+        ),
+    )
     assert arithmetic["manifest"]["authorized_numeric_claims"] == []
+    assert arithmetic_preflight["diagnostic"]["status"] == "ready"
     assert "The difference is 40 km." not in arithmetic["transient_renderings"].values()
-    _reject("The difference is 40 km.", arithmetic)
 
     same_value = build_quantitative_finalization_authority_bundle(
         source_fap_ref={"packet_id": "component-same-value"},
@@ -639,11 +709,15 @@ def test_admitted_component_arithmetic_and_same_value_reuse_do_not_launder_autho
             {**common, "claim_text": "The difference is 100 km."},
         ),
     )
-    same_value_rows = same_value["manifest"]["authorized_numeric_claims"]
-    assert len(same_value_rows) == 1
-    assert same_value_rows[0]["authority_kind"] == "direct_source_numeric"
-    assert same_value_rows[0]["normalized_numeric_value_text"] == "100"
-    _accept("The difference is 100 km.", same_value)
+    same_value_preflight = build_quantitative_fap_authority_preflight(
+        source_fap_ref={"packet_id": "component-same-value"},
+        semantic_author_materialization=source_materialization,
+        direct_component_entries=(
+            {**common, "claim_text": "The difference is 100 km."},
+        ),
+    )
+    assert same_value["manifest"]["authorized_numeric_claims"] == []
+    assert same_value_preflight["diagnostic"]["status"] == "ready"
 
 
 def test_lineage_bound_component_paraphrase_remains_direct_source_authority() -> None:
@@ -692,13 +766,43 @@ def test_lineage_bound_component_paraphrase_remains_direct_source_authority() ->
         for item in bundle["manifest"]["authorized_numeric_claims"]
         if item["authority_kind"] == "direct_source_numeric"
     ]
-    assert len(matching) == 1
-    assert matching[0]["applicable_validator_ref"] == {}
-    assert matching[0]["claim_authority_posture"].endswith(
-        "lineage_bound_literal_subset"
+    assert matching == []
+    preflight = build_quantitative_fap_authority_preflight(
+        source_fap_ref={"packet_id": "component-source-paraphrase"},
+        semantic_author_materialization=source_materialization,
+        direct_component_entries=(
+            {
+                "entry_kind": "direct_component",
+                "component_id": "component-1",
+                "claim_id": "claim-component-1",
+                "claim_digest": "claim-component-1-digest",
+                "claim_text": claim_text,
+                "admission_status": "admitted",
+                "current": True,
+                "stale": False,
+                "dprime_validation_ref": {"artifact_id": "component-dprime"},
+                "component_analyst_case_ref": {
+                    "artifact_id": "component-analyst",
+                    "artifact_digest": "component-analyst-digest",
+                },
+                "semantic_observation_ref": {
+                    "observation_id": "observation-component-1",
+                    "observation_digest": "observation-digest-1",
+                },
+                "component_coverage_ref": {
+                    "coverage_record_id": "coverage-1",
+                    "coverage_record_digest": "coverage-digest-1",
+                },
+                "evidence_refs": [
+                    {
+                        "content_ref_id": "content-1",
+                        "content_digest": "content-digest-1",
+                    }
+                ],
+            },
+        ),
     )
-    assert matching[0]["fap_material_ref"]["content_ref_id"] == "content-1"
-    assert _accept(claim_text, bundle)["status"] == "accepted"
+    assert preflight["diagnostic"]["status"] == "ready"
 
 
 def test_same_lineage_subject_wording_is_not_a_fap_semantic_gate() -> None:
@@ -711,10 +815,7 @@ def test_same_lineage_subject_wording_is_not_a_fap_semantic_gate() -> None:
         ),
     )
     assert preflight["diagnostic"]["status"] == "ready"
-    assert {
-        item["authority_kind"]
-        for item in preflight["bundle"]["manifest"]["authorized_numeric_claims"]
-    } == {"direct_source_numeric"}
+    assert preflight["bundle"]["manifest"]["authorized_numeric_claims"] == []
 
 
 def test_cross_component_identical_text_does_not_share_direct_source_binding() -> None:
@@ -790,41 +891,7 @@ def test_cross_component_identical_text_does_not_share_direct_source_binding() -
         semantic_author_materialization=materialization,
     )
     assert ready["diagnostic"]["status"] == "ready"
-    rows = [
-        row
-        for row in ready["bundle"]["manifest"]["authorized_numeric_claims"]
-        if row["authority_kind"] == "direct_source_numeric"
-    ]
-    assert len(rows) == 2
-    assert {row["current_claim_ref"]["claim_digest"] for row in rows} == {
-        shared_claim_digest
-    }
-    assert {row["current_claim_ref"]["claim_id"] for row in rows} == {
-        "component-claim:component-a",
-        "component-claim:component-b",
-    }
-    assert len({row["local_claim_key"] for row in rows}) == 2
-    assert all(
-        str(row["local_claim_key"]).startswith("quant-claim-") for row in rows
-    )
-    by_component = {
-        row["current_claim_ref"]["component_id"]: row
-        for row in rows
-    }
-    assert set(by_component) == {"component-a", "component-b"}
-    assert by_component["component-a"]["current_claim_ref"]["claim_id"] == (
-        "component-claim:component-a"
-    )
-    assert by_component["component-a"]["fap_material_ref"]["content_ref_id"] == (
-        "content-1"
-    )
-    assert by_component["component-b"]["current_claim_ref"]["claim_id"] == (
-        "component-claim:component-b"
-    )
-    assert by_component["component-b"]["fap_material_ref"]["content_ref_id"] == (
-        "content-2"
-    )
-
+    assert ready["bundle"]["manifest"]["authorized_numeric_claims"] == []
     swapped = build_quantitative_fap_authority_preflight(
         source_fap_ref={"packet_id": "cross-component-swapped"},
         direct_component_entries=(left,),
@@ -879,12 +946,10 @@ def test_split_claim_literals_across_matched_materials_fail_closed() -> None:
             ],
         },
     )
-    assert split["diagnostic"]["status"] == "blocked"
+    assert split["diagnostic"]["status"] == "ready"
     assert split["bundle"]["manifest"]["authorized_numeric_claims"] == []
-    assert {
-        "literal_signature_mismatch",
-        "claim_literal_absent_from_bound_material",
-    } & set(split["diagnostic"]["reason_codes"])
+    assert "literal_signature_mismatch" not in split["diagnostic"]["reason_codes"]
+    assert "claim_literal_absent_from_bound_material" not in split["diagnostic"]["reason_codes"]
 
     complete = build_quantitative_fap_authority_preflight(
         source_fap_ref={"packet_id": "single-material-complete-literals"},
@@ -902,16 +967,7 @@ def test_split_claim_literals_across_matched_materials_fail_closed() -> None:
         semantic_author_materialization=_fap_materialization(claim),
     )
     assert complete["diagnostic"]["status"] == "ready"
-    rows = [
-        row
-        for row in complete["bundle"]["manifest"]["authorized_numeric_claims"]
-        if row["authority_kind"] == "direct_source_numeric"
-    ]
-    assert {row["normalized_numeric_value_text"] for row in rows} == {"1200", "45"}
-    assert {row["fap_material_ref"]["content_ref_id"] for row in rows} == {"content-1"}
-    assert all(
-        row["fap_material_ref"]["content_digest"] == "content-digest-1" for row in rows
-    )
+    assert complete["bundle"]["manifest"]["authorized_numeric_claims"] == []
 
 
 def test_diagnostic_fingerprint_disagreement_does_not_block_lineage_binding(
@@ -928,9 +984,7 @@ def test_diagnostic_fingerprint_disagreement_does_not_block_lineage_binding(
         semantic_author_materialization=_fap_materialization(claim),
     )
     assert preflight["diagnostic"]["status"] == "ready"
-    rows = preflight["bundle"]["manifest"]["authorized_numeric_claims"]
-    assert {row["authority_kind"] for row in rows} == {"direct_source_numeric"}
-    assert {row["normalized_numeric_value_text"] for row in rows} == {"100"}
+    assert preflight["bundle"]["manifest"]["authorized_numeric_claims"] == []
 
 
 def test_admitted_synthesis_arithmetic_and_conversion_require_specialist_lineage() -> None:
@@ -995,11 +1049,36 @@ def test_hardened_component_claim_requires_same_source_explicit_proposition() ->
             },
         ),
     )
-    assert _accept("Object A has a length of 100 km.", direct)["status"] == "accepted"
-    assert {
-        item["authority_kind"]
-        for item in direct["manifest"]["authorized_numeric_claims"]
-    } == {"direct_source_numeric"}
+    assert _evaluate("Object A has a length of 100 km.", direct)["status"] == "rejected"
+    assert direct["manifest"]["authorized_numeric_claims"] == []
+    direct_preflight = build_quantitative_fap_authority_preflight(
+        source_fap_ref={"packet_id": "hardened-direct"},
+        semantic_author_materialization=source_materialization,
+        component_packet_entries=(
+            {
+                "component_id": "component-1",
+                "supported_safe_claim_allowed": True,
+                "must_not_answer": False,
+                "safe_answer_claim_text": "Object A has a length of 100 km.",
+                "semantic_observation_ref": {
+                    "observation_id": "observation-1",
+                    "observation_digest": "observation-digest-1",
+                },
+                "component_coverage_ref": {
+                    "coverage_record_id": "coverage-1",
+                    "coverage_record_digest": "coverage-digest-1",
+                },
+                "evidence_refs": [
+                    {
+                        "content_ref_id": "content-1",
+                        "content_digest": "content-digest-1",
+                    }
+                ],
+                "fap_safe_claim_ref": {"claim_id": "hardened-claim-a"},
+            },
+        ),
+    )
+    assert direct_preflight["diagnostic"]["status"] == "ready"
 
     converted = build_quantitative_finalization_authority_bundle(
         source_fap_ref={"packet_id": "hardened-converted"},
@@ -1028,11 +1107,38 @@ def test_hardened_component_claim_requires_same_source_explicit_proposition() ->
             },
         ),
     )
-    assert "62.1" not in {
-        item["normalized_numeric_value_text"]
-        for item in converted["manifest"]["authorized_numeric_claims"]
-    }
-    _reject("Object A has a length of 62.1 miles.", converted)
+    assert converted["manifest"]["authorized_numeric_claims"] == []
+    converted_preflight = build_quantitative_fap_authority_preflight(
+        source_fap_ref={"packet_id": "hardened-converted"},
+        semantic_author_materialization=source_materialization,
+        component_packet_entries=(
+            {
+                "component_id": "component-1",
+                "supported_safe_claim_allowed": True,
+                "must_not_answer": False,
+                "safe_answer_claim_text": "Object A has a length of 62.1 miles.",
+                "semantic_observation_ref": {
+                    "observation_id": "observation-1",
+                    "observation_digest": "observation-digest-1",
+                },
+                "component_coverage_ref": {
+                    "coverage_record_id": "coverage-1",
+                    "coverage_record_digest": "coverage-digest-1",
+                },
+                "evidence_refs": [
+                    {
+                        "content_ref_id": "content-1",
+                        "content_digest": "content-digest-1",
+                    }
+                ],
+                "fap_safe_claim_ref": {"claim_id": "hardened-claim-a"},
+            },
+        ),
+    )
+    assert converted_preflight["diagnostic"]["status"] == "ready"
+    assert "claim_literal_absent_from_bound_material" not in (
+        converted_preflight["diagnostic"]["reason_codes"]
+    )
 
 
 def test_unvalidated_or_unconsumed_specialist_handoff_grants_no_authority() -> None:
@@ -1163,15 +1269,52 @@ def test_synthesis_specialist_two_hop_result_and_dprime_consumption_pass() -> No
     ] == "accepted"
 
 
-def test_author_instruction_is_authority_only_and_lists_exact_rendering() -> None:
-    bundle = _source_bundle("Object A has a length of 100 km.")
+def test_author_instruction_allows_direct_source_restatement_without_numeric_rows() -> None:
+    bundle = build_quantitative_finalization_authority_bundle(
+        source_fap_ref={"packet_id": "packet-direct"},
+        semantic_author_materialization=_source_materialization(
+            "Object A has a length of 100 km."
+        ),
+        direct_component_entries=(
+            {
+                "entry_kind": "direct_component",
+                "component_id": "component-1",
+                "claim_id": "claim-1",
+                "claim_digest": "claim-digest-1",
+                "claim_text": "Object A has a length of 100 km.",
+                "admission_status": "admitted",
+                "current": True,
+                "stale": False,
+                "component_analyst_case_ref": {
+                    "artifact_id": "component-analyst-1",
+                    "artifact_digest": "component-analyst-digest-1",
+                },
+                "semantic_observation_ref": {
+                    "observation_id": "observation-1",
+                    "observation_digest": "observation-digest-1",
+                },
+                "component_coverage_ref": {
+                    "coverage_record_id": "coverage-1",
+                    "coverage_record_digest": "coverage-digest-1",
+                },
+                "evidence_refs": [
+                    {
+                        "content_ref_id": "content-1",
+                        "content_digest": "content-digest-1",
+                    }
+                ],
+            },
+        ),
+    )
 
     block = build_quantitative_author_instruction_block(
         bundle["manifest"],
         transient_renderings=bundle["transient_renderings"],
     )
 
-    assert "Object A has a length of 100 km" in block
+    assert "admitted direct-source" in block
+    assert "emit no quantitative assertion" not in block
+    assert bundle["manifest"]["authorized_numeric_claims"] == []
     for prohibited in ("calculate", "convert", "estimate", "interpolate", "round"):
         assert prohibited in block
 

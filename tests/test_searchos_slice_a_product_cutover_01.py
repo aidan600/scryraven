@@ -1849,9 +1849,9 @@ def test_n1_plural_semantic_slots_share_one_current_read_and_one_analyst(
     ] is True
     packet = outcome.execution_trace["final_answer_packet"]
     manifest = packet["quantitative_finalization_authority_manifest"]
-    assert {
+    assert "direct_source_numeric" not in {
         row["authority_kind"] for row in manifest["authorized_numeric_claims"]
-    } == {"direct_source_numeric"}
+    }
     evaluator_diagnostic = (
         quantitative_evaluator.evaluate_author_output_quantitative_authority(
             outcome.report,
@@ -2005,9 +2005,9 @@ def test_q1_provider_like_read_derives_official_current_source_authority(
         "final_answer_allowed"
     ] is True
     manifest = packet["quantitative_finalization_authority_manifest"]
-    assert {
+    assert "direct_source_numeric" not in {
         row["authority_kind"] for row in manifest["authorized_numeric_claims"]
-    } == {"direct_source_numeric"}
+    }
     assert outcome.terminal_status == "completed"
     assert harness.author_prompts and len(harness.author_prompts) == 1
     assert harness.run_kernel.state.author_observation[

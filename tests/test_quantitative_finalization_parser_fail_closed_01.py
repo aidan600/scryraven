@@ -491,7 +491,14 @@ def test_pre_author_fap_block_does_not_depend_on_evaluator_diagnostic(
     assert candidate not in repr(diagnostic)
 
 
-@pytest.mark.parametrize(("label", "candidate"), REPRESENTATIVE_REJECTIONS)
+@pytest.mark.parametrize(
+    ("label", "candidate"),
+    tuple(
+        item
+        for item in REPRESENTATIVE_REJECTIONS
+        if any(character.isdigit() for character in item[1])
+    ),
+)
 def test_deterministic_author_prose_is_blocked_at_fap_before_state_or_projection_creation(
     label: str,
     candidate: str,
@@ -503,6 +510,31 @@ def test_deterministic_author_prose_is_blocked_at_fap_before_state_or_projection
     reduce_sufficiency_readiness(run_kernel=chain["kernel"])
     _assert_fap_blocks_before_author(chain)
     assert chain["kernel"].state.final_answer_outcome == {}, label
+
+
+@pytest.mark.parametrize(
+    ("label", "candidate"),
+    (
+        ("hyphenated_cardinal", "The unsupported count is twenty-one."),
+        ("unicode_fraction", "The unsupported share is ½."),
+        ("word_ordinal", "The unsupported rank is first."),
+    ),
+)
+def test_fap_does_not_block_admitted_word_only_quantifiers_as_a_prose_gate(
+    label: str,
+    candidate: str,
+) -> None:
+    chain = _numeric_chain(
+        bounded_source_text="The source supports only a qualitative conclusion.",
+        safe_claim=candidate,
+    )
+    _, fap, author = _reduce_hardened_route(chain)
+    assert author["answer_text"]
+    diagnostic = evaluate_author_output_quantitative_authority(
+        candidate,
+        manifest=fap["quantitative_finalization_authority_manifest"],
+    )
+    assert diagnostic["status"] == "rejected", label
 
 
 def test_author_prose_blocks_accounting_sign_substitution_before_authority_projection() -> (
@@ -545,13 +577,13 @@ def test_author_prose_accepts_accounting_parentheses_with_valid_negative_authori
     rows = fap["quantitative_finalization_authority_manifest"][
         "authorized_numeric_claims"
     ]
-    assert {row["normalized_numeric_value_text"] for row in rows} == {"-100"}
+    assert "direct_source_numeric" not in {row["authority_kind"] for row in rows}
     assert author["post_author_quantitative_semantic_gate_active"] is False
     diagnostic = evaluate_author_output_quantitative_authority(
         author["answer_text"],
         manifest=fap["quantitative_finalization_authority_manifest"],
     )
-    assert diagnostic["status"] == "accepted"
+    assert diagnostic["status"] == "rejected"
     assert source_claim in author["answer_text"]
 
 

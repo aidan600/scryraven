@@ -1,10 +1,14 @@
 """Claim-scoped quantitative authority at the FinalAnswerPacket boundary.
 
 This module projects only authority already present in a FinalAnswerPacket (or
-its hardened compatibility form).  Its structured pre-Author preflight keeps
-incomplete numeric lineage from reaching Author.  The retained prose parser is
-an evaluator: it can report candidate-prose observations, but it is not a
-PRODUCT authorization or final-answer gate.
+its hardened compatibility form).  Direct-source semantic correctness belongs
+to Analyst plus RunKernel admission.  FAP verifies provenance and mechanical
+lineage only; it does not reparse admitted prose to decide which numbers
+matter, whether a token is a unit or version, or whether one sentence
+semantically supports another.  Derived quantitative results remain protected
+by exact Specialist authority.  The retained prose parser is an evaluator: it
+can report candidate-prose observations, but it is not a PRODUCT authorization
+or final-answer gate.
 """
 
 from __future__ import annotations
@@ -152,40 +156,6 @@ _UNIT_STOPWORDS = frozenset(
         "with",
     }
 )
-_MEASUREMENT_UNIT_STEMS = (
-    "ampere",
-    "byte",
-    "celsius",
-    "day",
-    "fahrenheit",
-    "feet",
-    "foot",
-    "gram",
-    "hertz",
-    "hour",
-    "inch",
-    "joule",
-    "kelvin",
-    "liter",
-    "litre",
-    "meter",
-    "metre",
-    "mile",
-    "minute",
-    "mole",
-    "newton",
-    "ounce",
-    "pascal",
-    "percent",
-    "pound",
-    "second",
-    "volt",
-    "watt",
-    "week",
-    "yard",
-    "year",
-)
-_CAPITALIZED_NAME_TOKEN_RE = re.compile(r"([A-Z][A-Za-z0-9_\-]*)\s+$")
 _COMPACT_CURRENCY_CODES = frozenset(
     {
         "AED",
@@ -616,67 +586,6 @@ def _currency_code(match: re.Match[str]) -> str:
     )
 
 
-def _unit_looks_like_measurement(unit: str) -> bool:
-    text = str(unit or "").casefold()
-    if not text or text == "dimensionless":
-        return False
-    if (
-        text.startswith("currency")
-        or "/" in text
-        or "_per_" in text
-        or text
-        in {"percent", "percentage", "basis_points", "percentage_points"}
-    ):
-        return True
-    if len(text) <= 3 and text.isalpha():
-        return True
-    return any(stem in text for stem in _MEASUREMENT_UNIT_STEMS)
-
-
-def _is_bare_integer_literal_match(match: re.Match[str]) -> bool:
-    if any(
-        match.group(name)
-        for name in (
-            "qualifier",
-            "sign",
-            "currency_code",
-            "compact_currency_code",
-            "currency_symbol",
-            "exponent",
-            "slash_rate_unit",
-            "scale",
-            "percent",
-        )
-    ):
-        return False
-    number = str(match.group("number") or "")
-    return bool(number) and "." not in number and "," not in number
-
-
-def _preceded_by_capitalized_name(match: re.Match[str]) -> bool:
-    prefix = match.string[: match.start("number")]
-    return _CAPITALIZED_NAME_TOKEN_RE.search(prefix) is not None
-
-
-def _incidental_nonclaim_numeric_surface(
-    match: re.Match[str], *, canonical_unit: str
-) -> str | None:
-    if not _is_bare_integer_literal_match(match):
-        return None
-    unit = str(canonical_unit or "dimensionless")
-    if unit == "dimensionless" and _preceded_by_capitalized_name(match):
-        return "capitalized_name_integer"
-    compact_unit = unit.replace("_", "")
-    if (
-        unit != "dimensionless"
-        and not _unit_looks_like_measurement(unit)
-        and compact_unit.isalpha()
-        and len(compact_unit) >= 6
-    ):
-        return "swallowed_prose_unit_integer"
-    return None
-
-
 def _unit_text(match: re.Match[str]) -> tuple[str | None, int]:
     slash_rate = str(match.group("slash_rate_unit") or "")
     if slash_rate:
@@ -818,7 +727,7 @@ def _digit_literal(match: re.Match[str]) -> dict[str, Any] | None:
         if match.group(group_name):
             span_start = min(span_start, match.start(group_name))
     canonical_unit = unit or "dimensionless"
-    literal = {
+    return {
         "span_start": span_start,
         "span_end": span_end,
         "normalized_numeric_value_text": _decimal_text(value),
@@ -830,12 +739,6 @@ def _digit_literal(match: re.Match[str]) -> dict[str, Any] | None:
         "notation_posture": notation,
         "parser_version": QUANTITATIVE_FINALIZATION_PARSER_VERSION,
     }
-    incidental_surface = _incidental_nonclaim_numeric_surface(
-        match, canonical_unit=canonical_unit
-    )
-    if incidental_surface:
-        literal["incidental_nonclaim_numeric_surface"] = incidental_surface
-    return literal
 
 
 def _parse_cardinal_words(words: Sequence[str]) -> Decimal | None:
@@ -1074,54 +977,14 @@ def _literal_has_unsupported_surface(literal: Mapping[str, Any]) -> bool:
     )
 
 
-def _literal_is_nonclaim_surface(literal: Mapping[str, Any]) -> bool:
-    return _literal_has_unsupported_surface(literal) or bool(
-        literal.get("incidental_nonclaim_numeric_surface")
-    )
-
-
 def _supported_quantitative_literals(
     literals: Sequence[Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
     return [
         dict(item)
         for item in literals
-        if not _literal_is_nonclaim_surface(item)
+        if not _literal_has_unsupported_surface(item)
     ]
-
-
-def _only_unsupported_quantitative_surfaces(
-    literals: Sequence[Mapping[str, Any]],
-) -> bool:
-    if _supported_quantitative_literals(literals):
-        return False
-    return any(_literal_has_unsupported_surface(item) for item in literals)
-
-
-def _literal_signature_counter(
-    text: str, *, supported_only: bool = True
-) -> Counter[str]:
-    counter: Counter[str] = Counter()
-    for literal in extract_quantitative_literals(text):
-        if supported_only and _literal_is_nonclaim_surface(literal):
-            continue
-        counter[_literal_signature(literal)] += 1
-    return counter
-
-
-def _counter_subseteq(claim: Counter[str], material: Counter[str]) -> bool:
-    return all(material[signature] >= count for signature, count in claim.items())
-
-
-def _literal_values(text: str) -> set[str]:
-    values: set[str] = set()
-    for literal in extract_quantitative_literals(text):
-        if _literal_is_nonclaim_surface(literal):
-            continue
-        value = str(literal.get("normalized_numeric_value_text") or "")
-        if value:
-            values.add(value)
-    return values
 
 
 def _lineage_bound_materials(
@@ -1253,59 +1116,35 @@ def _material_matches_admitted(
     return True
 
 
-def _try_direct_source_bind(
+def _direct_source_mechanical_lineage_reason(
     claim: Mapping[str, Any],
     materials: Sequence[Mapping[str, Any]],
-) -> tuple[dict[str, Any] | None, str | None]:
+) -> str | None:
+    """Return a mechanical lineage gap, or None when identity binding is current.
+
+    This check does not inspect claim_text numbers, units, ordinals, or whether
+    bounded prose semantically supports the admitted claim.
+    """
+
+    entry_kind = str(_mapping(claim.get("fap_material_ref")).get("entry_kind") or "")
+    source_refs = _mapping_sequence(claim.get("source_authority_refs"))
+    if entry_kind == "hardened_component" and source_refs:
+        if _hardened_mechanical_binding(claim) is None:
+            return "missing_content_evidence_lineage"
+        return None
     gap = _admitted_lineage_gap(claim)
     if gap:
-        return None, gap
-    claim_text = str(claim.get("claim_text") or "")
-    claim_literals = extract_quantitative_literals(claim_text)
-    if _only_unsupported_quantitative_surfaces(claim_literals):
-        return None, "unsupported_claim_literal_surface"
+        return gap
     matched = [
         material
         for material in materials
         if _material_matches_admitted(claim, material)
     ]
-    if not matched:
-        return None, "missing_content_evidence_lineage"
-    claim_counter = _literal_signature_counter(claim_text)
-    complete = [
-        material
-        for material in matched
-        if _counter_subseteq(
-            claim_counter,
-            _literal_signature_counter(str(material.get("bounded_text") or "")),
-        )
-    ]
-    if not complete:
-        if _literal_values(claim_text) & {
-            value
-            for material in matched
-            for value in _literal_values(str(material.get("bounded_text") or ""))
-        }:
-            return None, "literal_signature_mismatch"
-        return None, "claim_literal_absent_from_bound_material"
-    complete.sort(
-        key=lambda item: (
-            str(item.get("content_ref_id") or ""),
-            int(item.get("material_index") or 0),
-        )
-    )
-    primary = complete[0]
-    return (
-        {
-            "evidence_or_specialist_ref": {
-                "evidence_ref_id": primary.get("evidence_ref_id"),
-                "packet_evidence_id": primary.get("packet_evidence_id"),
-                "source_id": primary.get("source_id"),
-            },
-            "fap_material_ref": _safe_ref(primary.get("fap_material_ref")),
-        },
-        None,
-    )
+    if matched:
+        return None
+    if entry_kind == "hardened_component" and not materials:
+        return None
+    return "missing_content_evidence_lineage"
 
 
 def _claim_ref_from_entry(entry: Mapping[str, Any], *, fallback_key: str) -> dict[str, Any]:
@@ -1668,34 +1507,15 @@ def _claim_sources(
     return admitted_claims
 
 
-def _hardened_literal_counter(refs: Sequence[Mapping[str, Any]]) -> Counter[str]:
-    counter: Counter[str] = Counter()
-    for ref in refs:
-        counter[
-            "|".join(
-                str(ref.get(key) or "")
-                for key in (
-                    "normalized_numeric_value_text",
-                    "canonical_unit",
-                    "precision_posture",
-                )
-            )
-        ] += 1
-    return counter
-
-
-def _hardened_source_binding(
+def _hardened_mechanical_binding(
     claim: Mapping[str, Any],
-    *,
-    literals: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any] | None:
+    """Bind hardened source-authority identity without inspecting claim prose."""
+
     claim_ref = _mapping(claim.get("claim_ref"))
     admitted_ref = _mapping(claim.get("evidence_or_specialist_ref"))
     admitted_observation_ref = _mapping(admitted_ref.get("semantic_observation_ref"))
     admitted_coverage_ref = _mapping(admitted_ref.get("component_coverage_ref"))
-    expected_counter = _hardened_literal_counter(
-        _hardened_literal_signature_refs(literals)
-    )
     for raw_ref in _mapping_sequence(claim.get("source_authority_refs")):
         ref = _mapping(raw_ref)
         declared_ref_digest = ref.pop("source_authority_ref_digest", None)
@@ -1703,7 +1523,6 @@ def _hardened_source_binding(
         coverage_ref = _mapping(ref.get("component_coverage_ref"))
         content_ref = _mapping(ref.get("content_reference_ref"))
         evidence_ref = _mapping(ref.get("evidence_or_packet_evidence_ref"))
-        literal_refs = _mapping_sequence(ref.get("literal_signatures"))
         if not (
             declared_ref_digest
             and declared_ref_digest == _digest(ref)
@@ -1739,9 +1558,6 @@ def _hardened_source_binding(
             and content_ref.get("content_ref_id")
             and content_ref.get("content_digest")
             and evidence_ref.get("evidence_ref_id")
-            and _counter_subseteq(
-                expected_counter, _hardened_literal_counter(literal_refs)
-            )
             and ref.get("current") is True
             and ref.get("stale") is False
             and ref.get("currentness_posture") == "current"
@@ -1771,28 +1587,6 @@ def _hardened_source_binding(
     return None
 
 
-def _hardened_literal_signature_refs(
-    literals: Sequence[Mapping[str, Any]],
-) -> list[dict[str, Any]]:
-    refs: list[dict[str, Any]] = []
-    for ordinal, literal in enumerate(literals, start=1):
-        signature = {
-            "claim_literal_ordinal": ordinal,
-            "normalized_numeric_value_text": literal.get(
-                "normalized_numeric_value_text"
-            ),
-            "canonical_unit": literal.get("canonical_unit"),
-            "precision_posture": literal.get("precision_posture"),
-        }
-        refs.append(
-            {
-                **signature,
-                "literal_signature_digest": _digest(signature),
-            }
-        )
-    return refs
-
-
 def build_quantitative_finalization_authority_bundle(
     *,
     source_fap_ref: Mapping[str, Any],
@@ -1803,7 +1597,7 @@ def build_quantitative_finalization_authority_bundle(
 ) -> dict[str, Any]:
     """Build the safe manifest plus transient exact renderings for Author input."""
 
-    materials = _lineage_bound_materials(semantic_author_materialization)
+    _ = semantic_author_materialization
     claims = _claim_sources(
         direct_component_entries=direct_component_entries,
         admitted_synthesis_entries=admitted_synthesis_entries,
@@ -1823,64 +1617,13 @@ def build_quantitative_finalization_authority_bundle(
         canonical_claim_key = _canonical_claim_ref_digest(claim_ref)
         local_claim_key = f"quant-claim-{canonical_claim_key}"
         specialist_ref = _safe_ref(claim.get("specialist_ref"))
-        specialist_claim_authorized = _specialist_claim_matches(
-            claim_text,
-            literals,
-            specialist_ref,
-        )
-        source_binding: dict[str, Any] | None = None
-        source_binding_posture = ""
-        if not specialist_claim_authorized:
-            entry_kind = str(
-                _mapping(claim.get("fap_material_ref")).get("entry_kind") or ""
-            )
-            if entry_kind == "hardened_component":
-                source_binding = _hardened_source_binding(
-                    claim,
-                    literals=literals,
-                )
-                if source_binding is not None:
-                    source_binding_posture = "lineage_bound_literal_subset"
-            if source_binding is None and entry_kind in {
-                "direct_component",
-                "hardened_component",
-            }:
-                source_binding, _bind_reason = _try_direct_source_bind(
-                    claim, materials
-                )
-                if source_binding is not None:
-                    source_binding_posture = "lineage_bound_literal_subset"
-        claim_authorized = False
+        if not _specialist_claim_matches(claim_text, literals, specialist_ref):
+            continue
         diagnostic_fingerprint = semantic_claim_fingerprint(claim_text)
+        claim_authorized = False
         for literal_index, literal in enumerate(literals, start=1):
-            authority_kind = str(claim.get("source_kind"))
-            evidence_ref = _safe_ref(claim.get("evidence_or_specialist_ref"))
-            validator_ref = _safe_ref(claim.get("applicable_validator_ref"))
-            validator_consumption_ref = _safe_ref(
-                claim.get("applicable_validator_consumption_ref")
-            )
-            if specialist_claim_authorized:
-                authority_kind = "specialist_derived_numeric"
-                evidence_ref = _safe_ref(
-                    specialist_ref.get("specialist_result_ref")
-                )
-                validator_ref = _safe_ref(
-                    specialist_ref.get("applicable_validator_ref")
-                    or specialist_ref.get("applicable_dprime_ref")
-                )
-                validator_consumption_ref = _safe_ref(
-                    specialist_ref.get("applicable_validator_consumption_ref")
-                    or specialist_ref.get("applicable_dprime_consumption_ref")
-                )
-            elif authority_kind == "admitted_quantitative_claim":
-                if source_binding is None:
-                    continue
-                authority_kind = "direct_source_numeric"
-                evidence_ref = _safe_ref(
-                    source_binding.get("evidence_or_specialist_ref")
-                )
-                validator_ref = {}
-                validator_consumption_ref = {}
+            if not _specialist_matches(literal, specialist_ref):
+                continue
             dedupe_key = (
                 canonical_claim_key,
                 _literal_signature(literal),
@@ -1895,33 +1638,26 @@ def build_quantitative_finalization_authority_bundle(
                     "local_claim_key": local_claim_key,
                     "claim_literal_ordinal": literal_index,
                     "current_claim_ref": claim_ref,
-                    "claim_authority_posture": (
-                        "current_fap_authorized_source_bound_material_"
-                        + source_binding_posture
-                        if source_binding is not None
-                        and authority_kind == "direct_source_numeric"
-                        else claim.get("claim_authority_posture")
-                    ),
-                    "authority_kind": authority_kind,
+                    "claim_authority_posture": claim.get("claim_authority_posture"),
+                    "authority_kind": "specialist_derived_numeric",
                     "normalized_numeric_value_text": literal.get(
                         "normalized_numeric_value_text"
                     ),
                     "canonical_unit": literal.get("canonical_unit"),
                     "precision_posture": literal.get("precision_posture"),
-                    "evidence_or_specialist_ref": evidence_ref,
-                    "applicable_validator_ref": validator_ref,
-                    "applicable_validator_consumption_ref": validator_consumption_ref,
-                    "admitted_claim_ref": (
-                        claim_ref
-                        if authority_kind == "specialist_derived_numeric"
-                        else {}
+                    "evidence_or_specialist_ref": _safe_ref(
+                        specialist_ref.get("specialist_result_ref")
                     ),
-                    "fap_material_ref": _safe_ref(
-                        source_binding.get("fap_material_ref")
-                        if authority_kind == "direct_source_numeric"
-                        and source_binding is not None
-                        else claim.get("fap_material_ref")
+                    "applicable_validator_ref": _safe_ref(
+                        specialist_ref.get("applicable_validator_ref")
+                        or specialist_ref.get("applicable_dprime_ref")
                     ),
+                    "applicable_validator_consumption_ref": _safe_ref(
+                        specialist_ref.get("applicable_validator_consumption_ref")
+                        or specialist_ref.get("applicable_dprime_consumption_ref")
+                    ),
+                    "admitted_claim_ref": claim_ref,
+                    "fap_material_ref": _safe_ref(claim.get("fap_material_ref")),
                     "semantic_claim_fingerprint_or_existing_equivalent": (
                         diagnostic_fingerprint
                     ),
@@ -1960,16 +1696,36 @@ def _structured_numeric_claim_requirements(
     admitted_synthesis_entries: Sequence[Mapping[str, Any]],
     component_packet_entries: Sequence[Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Return only FAP-selected numeric claims and their structural posture.
+    """Return FAP-selected claims that still need a mechanical or Specialist check.
 
-    This is deliberately not a claim-support classifier.  It merely asks
-    whether a numeric claim that FAP already selected has an exact authority
-    projection from the existing manifest builder.
+    Direct-source claims are not classified by rediscovering numbers in prose.
+    Specialist-declared and admitted-synthesis quantitative claims still require
+    exact Specialist authority rows.
     """
 
     requirements: list[dict[str, Any]] = []
 
-    def add_requirement(
+    def add_mechanical_requirement(
+        *,
+        claim_text: str,
+        claim_ref: Mapping[str, Any],
+        claim_kind: str,
+        integrity_reason: str | None,
+    ) -> None:
+        requirements.append(
+            {
+                "claim_text": claim_text,
+                "claim_ref": _safe_ref(claim_ref),
+                "claim_kind": claim_kind,
+                "fingerprint": semantic_claim_fingerprint(claim_text),
+                "literal_signatures": Counter(),
+                "integrity_reason": integrity_reason,
+                "specialist_declared": False,
+                "product_gate": "direct_source_mechanical_lineage",
+            }
+        )
+
+    def add_specialist_requirement(
         *,
         entry: Mapping[str, Any],
         claim_text: str,
@@ -1978,16 +1734,9 @@ def _structured_numeric_claim_requirements(
         integrity_reason: str | None,
     ) -> None:
         literals = extract_quantitative_literals(claim_text)
-        if not literals:
-            return
         supported = _supported_quantitative_literals(literals)
         if not supported:
-            if integrity_reason is None and _only_unsupported_quantitative_surfaces(
-                literals
-            ):
-                integrity_reason = "unsupported_claim_literal_surface"
-            elif integrity_reason is None:
-                return
+            return
         requirements.append(
             {
                 "claim_text": claim_text,
@@ -2001,6 +1750,7 @@ def _structured_numeric_claim_requirements(
                 "specialist_declared": bool(
                     _safe_ref(entry.get("specialist_quantitative_authority_ref"))
                 ),
+                "product_gate": "specialist_derived_numeric",
             }
         )
 
@@ -2040,13 +1790,22 @@ def _structured_numeric_claim_requirements(
             for ref in _mapping_sequence(entry.get("evidence_refs"))
         ):
             integrity_reason = "missing_content_evidence_lineage"
-        add_requirement(
-            entry=entry,
-            claim_text=claim_text,
-            claim_ref=_claim_ref_from_entry(entry, fallback_key=f"direct-{index}"),
-            claim_kind="direct_component",
-            integrity_reason=integrity_reason,
-        )
+        claim_ref = _claim_ref_from_entry(entry, fallback_key=f"direct-{index}")
+        if _safe_ref(entry.get("specialist_quantitative_authority_ref")):
+            add_specialist_requirement(
+                entry=entry,
+                claim_text=claim_text,
+                claim_ref=claim_ref,
+                claim_kind="direct_component",
+                integrity_reason=integrity_reason,
+            )
+        elif any(character.isdigit() for character in claim_text):
+            add_mechanical_requirement(
+                claim_text=claim_text,
+                claim_ref=claim_ref,
+                claim_kind="direct_component",
+                integrity_reason=integrity_reason,
+            )
 
     for index, raw in enumerate(admitted_synthesis_entries, start=1):
         entry = _mapping(raw)
@@ -2066,7 +1825,7 @@ def _structured_numeric_claim_requirements(
             or _safe_ref(carried.get("prior_synthesis_dprime_ref"))
         ):
             integrity_reason = "missing_synthesis_validator_authority"
-        add_requirement(
+        add_specialist_requirement(
             entry=entry,
             claim_text=claim_text,
             claim_ref=_claim_ref_from_entry(entry, fallback_key=f"synthesis-{index}"),
@@ -2074,7 +1833,7 @@ def _structured_numeric_claim_requirements(
             integrity_reason=integrity_reason,
         )
 
-    for index, raw in enumerate(component_packet_entries, start=1):
+    for raw in component_packet_entries:
         entry = _mapping(raw)
         if (
             entry.get("supported_safe_claim_allowed") is not True
@@ -2087,18 +1846,28 @@ def _structured_numeric_claim_requirements(
         integrity_reason = None
         if not _safe_ref(entry.get("semantic_observation_ref")):
             integrity_reason = "missing_component_analyst_authority"
-        add_requirement(
-            entry=entry,
-            claim_text=claim_text,
-            claim_ref=_safe_ref(entry.get("fap_safe_claim_ref"))
-            or {
-                "component_id": entry.get("component_id"),
-                "claim_digest": _text_digest(claim_text),
-                "entry_index": index,
-            },
-            claim_kind="hardened_component",
-            integrity_reason=integrity_reason,
-        )
+        claim_ref = {
+            **(
+                _safe_ref(entry.get("fap_safe_claim_ref"))
+                or {"claim_digest": _text_digest(claim_text)}
+            ),
+            "component_id": entry.get("component_id"),
+        }
+        if _safe_ref(entry.get("specialist_quantitative_authority_ref")):
+            add_specialist_requirement(
+                entry=entry,
+                claim_text=claim_text,
+                claim_ref=claim_ref,
+                claim_kind="hardened_component",
+                integrity_reason=integrity_reason,
+            )
+        elif any(character.isdigit() for character in claim_text):
+            add_mechanical_requirement(
+                claim_text=claim_text,
+                claim_ref=claim_ref,
+                claim_kind="hardened_component",
+                integrity_reason=integrity_reason,
+            )
 
     return requirements
 
@@ -2111,11 +1880,12 @@ def build_quantitative_fap_authority_preflight(
     semantic_author_materialization: Mapping[str, Any] | None = None,
     component_packet_entries: Sequence[Mapping[str, Any]] = (),
 ) -> dict[str, Any]:
-    """Build FAP-side quantitative authority and prove its required rows exist.
+    """Build FAP-side quantitative authority and prove required lineage exists.
 
-    The input is FAP-selected structured state, never Author prose.  A blocked
-    result means Author must not be invoked; it does not revise Sufficiency or
-    create a second semantic verdict.
+    The input is FAP-selected structured state, never Author prose.  Direct-source
+    claims are checked for mechanical provenance only.  A blocked result means
+    Author must not be invoked; it does not revise Sufficiency or create a second
+    semantic verdict from admitted prose.
     """
 
     bundle = build_quantitative_finalization_authority_bundle(
@@ -2155,35 +1925,32 @@ def build_quantitative_fap_authority_preflight(
             _safe_ref(requirement["claim_ref"])
         )
         matching_rows = rows_by_canonical_claim_key.get(canonical_claim_key, [])
-        matching_signatures = Counter(
-            "|".join(
-                str(row.get(key) or "")
-                for key in (
-                    "normalized_numeric_value_text",
-                    "canonical_unit",
-                    "precision_posture",
-                )
-            )
-            for row in matching_rows
-        )
-        if matching_signatures != requirement["literal_signatures"]:
-            matching_rows = []
-        if reason_code is None and not matching_rows:
-            if requirement["specialist_declared"] or requirement["claim_kind"] == (
-                "admitted_synthesis"
-            ):
-                reason_code = "incomplete_specialist_authority"
-            else:
+        product_gate = str(requirement.get("product_gate") or "")
+        if product_gate == "direct_source_mechanical_lineage":
+            if reason_code is None:
                 admitted = admitted_by_canonical_claim_key.get(canonical_claim_key)
                 if admitted is None:
                     reason_code = "missing_admitted_component_authority"
                 else:
-                    _binding, reason_code = _try_direct_source_bind(
+                    reason_code = _direct_source_mechanical_lineage_reason(
                         admitted, materials
                     )
-                    reason_code = (
-                        reason_code or "claim_literal_absent_from_bound_material"
+        else:
+            matching_signatures = Counter(
+                "|".join(
+                    str(row.get(key) or "")
+                    for key in (
+                        "normalized_numeric_value_text",
+                        "canonical_unit",
+                        "precision_posture",
                     )
+                )
+                for row in matching_rows
+            )
+            if matching_signatures != requirement["literal_signatures"]:
+                matching_rows = []
+            if reason_code is None and not matching_rows:
+                reason_code = "incomplete_specialist_authority"
         if reason_code is not None:
             claim_ref = _safe_ref(requirement["claim_ref"])
             reasons.append(
@@ -2225,22 +1992,32 @@ def build_quantitative_author_instruction_block(
     *,
     transient_renderings: Mapping[str, str] | None = None,
 ) -> str:
-    claims = _mapping_sequence(_mapping(manifest).get("authorized_numeric_claims"))
+    claims = [
+        item
+        for item in _mapping_sequence(
+            _mapping(manifest).get("authorized_numeric_claims")
+        )
+        if item.get("authority_kind") == "specialist_derived_numeric"
+    ]
     renderings = dict(transient_renderings or {})
     lines = [
         "",
         "QUANTITATIVE AUTHORITY (mandatory; do not mention this block):",
-        "- You may state only the FAP-authorized quantitative material listed below.",
-        "- Preserve each authorized value, unit, sign, scale, percent convention, and material precision.",
-        "- You may explain or paraphrase this material naturally without changing its meaning.",
-        "- Do not calculate, convert, estimate, interpolate, round, rescale, aggregate, or introduce a new numeric conclusion.",
-        "- Do not reuse an authorized value for another subject, metric, comparison, ratio, rate, percentage, or proposition.",
+        "- You may restate numbers from admitted direct-source claims and packet-owned bounded evidence. Those numbers are ordinary admitted claim content, not a separate FAP numeric-authorization row.",
+        "- Do not calculate, convert, estimate, interpolate, round, rescale, aggregate, or introduce a new numeric conclusion unless listed derived Specialist authority below authorizes that exact result.",
+        "- Do not reuse a Specialist-derived value for another subject, metric, comparison, ratio, rate, percentage, or proposition.",
     ]
     keys = list(dict.fromkeys(str(item.get("local_claim_key")) for item in claims))
     if not keys:
-        lines.append("- This packet authorizes no quantitative claim; emit no quantitative assertion.")
+        lines.append(
+            "- This packet lists no Specialist-derived quantitative results."
+        )
     else:
-        lines.append("- FAP-authorized quantitative material:")
+        lines.append(
+            "- Preserve each authorized derived value, unit, sign, scale, percent convention, and material precision."
+        )
+        lines.append("- You may explain or paraphrase this derived material naturally without changing its meaning.")
+        lines.append("- FAP-authorized derived quantitative material:")
         for key in keys:
             rendering = _clean_text(renderings.get(key), limit=1200)
             if rendering:
@@ -2366,23 +2143,18 @@ def validate_author_output_quantitative_authority(
     reasons: list[dict[str, Any]] = []
     for assertion_index, assertion in enumerate(_assertions(str(answer_text or "")), start=1):
         literals = extract_quantitative_literals(assertion)
-        counted = [
-            item
-            for item in literals
-            if not item.get("incidental_nonclaim_numeric_surface")
-        ]
-        if not counted:
+        if not literals:
             continue
-        candidate_count += len(counted)
+        candidate_count += len(literals)
         assertion_digest = _text_digest(assertion)
         unsupported_words = [
             str(item.get("unsupported_textual_quantifier"))
-            for item in counted
+            for item in literals
             if item.get("unsupported_textual_quantifier")
         ]
         unsupported_surfaces = [
             str(item.get("unsupported_quantitative_surface"))
-            for item in counted
+            for item in literals
             if item.get("unsupported_quantitative_surface")
         ]
         if unsupported_words or unsupported_surfaces:
@@ -2405,7 +2177,7 @@ def validate_author_output_quantitative_authority(
             continue
         fingerprint = semantic_claim_fingerprint(assertion)
         authorized_entries = by_fingerprint.get(fingerprint, [])
-        supported = _supported_quantitative_literals(counted)
+        supported = _supported_quantitative_literals(literals)
         candidate_signatures = Counter(_literal_signature(item) for item in supported)
         authorized_signatures = Counter(
             "|".join(
