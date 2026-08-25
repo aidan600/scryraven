@@ -241,8 +241,7 @@ def test_hardened_direct_source_numeric_propositions_reach_author_prose(
     rows = fap["quantitative_finalization_authority_manifest"]["authorized_numeric_claims"]
     assert source_refs
     assert fap_entry["quantitative_source_authority_refs"] == source_refs
-    assert rows
-    assert {row["authority_kind"] for row in rows} == {"direct_source_numeric"}
+    assert "direct_source_numeric" not in {row["authority_kind"] for row in rows}
     assert safe_claim in author["answer_text"]
     assert author["post_author_quantitative_semantic_gate_active"] is False
     author_before_evaluation = json.dumps(author, sort_keys=True)
@@ -250,11 +249,9 @@ def test_hardened_direct_source_numeric_propositions_reach_author_prose(
         author["answer_text"],
         manifest=fap["quantitative_finalization_authority_manifest"],
     )
-    assert diagnostic["status"] == "accepted"
+    assert diagnostic["status"] == "rejected"
     assert json.dumps(author, sort_keys=True) == author_before_evaluation
     assert author["supported_safe_claims_created"] is True
-    if label == "comma":
-        assert any(row["normalized_numeric_value_text"] == "1000" for row in rows)
     if label == "integer":
         ref = source_refs[0]
         assert ref["component_id"] == component_id

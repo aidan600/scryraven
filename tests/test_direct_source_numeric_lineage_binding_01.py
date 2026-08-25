@@ -151,9 +151,9 @@ def test_non_q1_ordinary_direct_source_numeric_fee_completes_offline(
     ]
     manifest = packet["quantitative_finalization_authority_manifest"]
     assert outcome.terminal_status == "completed"
-    assert {
+    assert "direct_source_numeric" not in {
         row["authority_kind"] for row in manifest["authorized_numeric_claims"]
-    } == {"direct_source_numeric"}
+    }
     assert admissions["physical_component_analyst_calls"] == 1
     assert graph["physical_call_accounting"]["component_analyst_calls"] == 1
     assert graph["physical_call_accounting"].get("specialist_calls", 0) == 0

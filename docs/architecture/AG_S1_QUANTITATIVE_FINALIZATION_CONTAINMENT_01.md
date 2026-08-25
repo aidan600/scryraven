@@ -70,65 +70,85 @@ manifest_digest
 
 The two authority kinds are:
 
-- `direct_source_numeric`: the current FAP-selected claim has exact
-  source/citation custody, Component Analyst or applicable semantic lineage,
-  exact literal value/unit/sign/scale/precision posture, and current
-  component/content/coverage binding; and
+- `direct_source_numeric`: retained only as an evaluator/diagnostic claim
+  shape. Ordinary PRODUCT no longer creates or requires these rows for
+  admitted direct-source claims merely because the claim text contains digits.
+  Direct-source semantic support is Analyst explanation plus RunKernel
+  admission. FAP packages the admitted claim, evidence context, and citations,
+  and verifies mechanical provenance only; and
 - `specialist_derived_numeric`: the current FAP-selected claim has a completed
   installed S1 result, exact claim-material alignment, canonical result unit and
   precision, exact result/handoff lineage, and applicable Component Analyst or
   synthesis validation consumption.
 
-Generic admission is not an authority kind. An admitted component, synthesis,
-or hardened-FAP numeric claim that has only a D-prime ref, observation ref,
-coverage ref, matching value, or Author claim ref is not authorized numeric
-material. A literal already stated by a source remains `direct_source_numeric`;
-it is not routed through Specialist merely because it contains digits.
+Generic admission is not an authority kind. FAP does not rediscover required
+numeric occurrences from admitted prose, classify incidental digits, decide
+whether a token is a unit or version, or judge whether one sentence
+semantically supports another. A bad Analyst semantic judgment is not rescued
+by reparsing its prose. Derived/calculated quantitative results remain
+separately protected by exact Specialist authority.
+
+Admitted direct-source numbers are ordinary claim content for Author to
+restate. They are not a separate FAP numeric-authorization row.
 
 ## FAP Pre-Author Gate
 
 `quantitative_fap_authority_preflight_v1` operates only on FAP-selected
-structured state. It checks that every required numeric claim has complete,
-current, structurally bound authority before FAP derives Author input. It blocks
-using existing FAP/Author-input semantics when it finds, for example:
+structured state. For admitted direct-source claims it checks mechanical
+lineage only: current/not-stale component identity, observation, Coverage,
+content digest, and evidence/citation custody. It does not extract claim-text
+literals, match them against bounded excerpts, or classify incidental numeric
+surfaces. It still blocks using existing FAP/Author-input semantics when it
+finds, for example:
 
-- unsupported calculation or conversion without an installed Specialist result;
-- an unadmitted, stale, foreign, or mismatched numeric claim;
-- missing direct-source, source/citation, Component Analyst, or required
-  Specialist lineage;
-- invalid unit, precision, or prohibited transformation posture.
+- missing or incomplete Specialist authority for a declared derived/calculated
+  quantitative result or admitted-synthesis numeric claim;
+- an unadmitted, stale, foreign, or mismatched component/content/coverage
+  identity;
+- missing semantic-observation, Coverage, or evidence/citation lineage;
+- malformed or impossible authority state.
 
 A block does not rewrite a claim, create a fallback answer, alter Sufficiency,
 or invoke Author. Its safe diagnostic records counts, enum reason codes, and
 digest/ref-shaped facts only; it includes no final text, raw source text, prompt,
 model response, provider payload, private log, or full trace.
 
+The desired failure boundary is mechanical, not semantic interpretation of
+admitted prose. Digest-verified bounded material may retain up to 2000
+characters of packet-owned text. Author presentation of that material remains
+independently capped at 600 characters.
+
 The hardened `SufficiencyReadiness -> HardenedFinalAnswerPacket ->
-AuthorProseFinalization` route applies the same pre-Author FAP preflight. It
-preserves two component-scoped quantitative authority classes: exact current
-component, semantic-observation, content, coverage, evidence-custody,
-proposition-fingerprint, and complete literal-signature binding for direct
-source material; and installed Specialist capability/version, result and
+AuthorProseFinalization` route applies the same pre-Author FAP preflight. Direct
+source material uses current component, semantic-observation, content, coverage,
+and evidence-custody identity; it does not require FAP to re-prove literal
+signatures from prose. Installed Specialist capability/version, result and
 handoff identities/digests, canonical component target, exact claim-material
 binding, canonical `result_unit` and precision, and terminal consumption by the
-applicable Component Analyst case (with retained historical component-D-prime
-records outside the ordinary component path). Generic D-prime admission alone
-remains nonauthority. The hardened packet packages component entries only; it
-does not project synthesis entries and does not install a hardened synthesis
-sidecar.
+applicable Component Analyst case remain hard for derived numeric results (with
+retained historical component-D-prime records outside the ordinary component
+path). Generic D-prime admission alone remains nonauthority. The hardened packet
+packages component entries only; it does not project synthesis entries and does
+not install a hardened synthesis sidecar.
 
 ## Author And Post-Author Boundary
 
-Author receives FAP-authorized quantitative material, evidence/citation
-authority, caveats, and prohibited transformations. It must preserve authorized
-meaning: value, unit, sign, scale, percent convention, material precision,
-subject, and proposition. It may explain or paraphrase that material naturally.
+Author receives admitted direct-source claims, packet-owned evidence/citation
+context, caveats, prohibited transformations, and any listed Specialist-derived
+quantitative results. Author may restate numbers from those admitted
+direct-source claims and bounded evidence. It must preserve authorized derived
+meaning when Specialist results are listed: value, unit, sign, scale, percent
+convention, material precision, subject, and proposition. It may explain or
+paraphrase that material naturally.
 
 The Author instruction does not mention parser acceptance, fingerprints,
 regexes, or an exact required surface. It continues to prohibit calculation,
 conversion, estimation, interpolation, unsupported rounding, rescaling,
-aggregation, and a new quantitative conclusion. It does not require Author to
-reproduce a canonical sentence merely so a downstream parser recognizes it.
+aggregation, and a new quantitative conclusion unless listed derived Specialist
+authority authorizes that exact result. It does not require Author to
+reproduce a canonical sentence merely so a downstream parser recognizes it, and
+it does not tell Author to emit no quantitative assertion merely because no
+`direct_source_numeric` row exists.
 
 After Author, ordinary PRODUCT code may enforce mechanics such as required text
 presence, citation-token identity/placeholder resolution, private/control
@@ -175,16 +195,18 @@ post-Author semantic gate by compatibility naming.
 
 Focused offline proofs establish:
 
-- FAP blocks unsupported arithmetic, unauthorized conversion, unbound source
-  numbers, unadmitted claims, stale/foreign authority, missing Specialist
-  binding, and source/claim mismatch before ordinary Author input;
-- direct source numeric and genuinely derived Specialist numeric authority
-  retain exact lineage and reach the respective FAP/Author paths;
+- FAP blocks unadmitted, stale, foreign, or mismatched mechanical lineage,
+  missing Coverage/observation/content/evidence custody, and incomplete
+  Specialist authority before ordinary Author input;
+- FAP does not block an admitted same-lineage direct-source claim by reparsing
+  its numbers, units, ordinals, or incidental digits;
+- genuinely derived Specialist numeric authority retains exact lineage and
+  still reaches the FAP/Author path only when complete;
 - the N1 Q1-shaped ordinary pipeline uses one answer-bearing READ, one Component
-  Analyst, deterministic admission, Coverage, Sufficiency, FAP,
-  `direct_source_numeric`, zero Specialist/D-prime/Cross/synthesis/Scrutineer
-  calls, one Author call, mechanically finalized citations, and a successful
-  offline RunOutcome;
+  Analyst, deterministic admission, Coverage, Sufficiency, FAP mechanical
+  lineage, zero `direct_source_numeric` PRODUCT rows, zero
+  Specialist/D-prime/Cross/synthesis/Scrutineer calls, one Author call,
+  mechanically finalized citations, and a successful offline RunOutcome;
 - a lawful ordinary Q1 Author paraphrase can complete even when the retained
   evaluator directly reports a rejection diagnostic;
 - evaluator acceptance and rejection diagnostics do not mutate FAP state,
