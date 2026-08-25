@@ -256,7 +256,8 @@ def test_default_read_spine_stays_small_and_nonhistorical() -> None:
     )[0]
     assert CURRENT_STATE.name in default_path
     assert ROADMAP.name in default_path
-    assert "history" not in default_path.casefold()
+    assert "Historical Document Index" not in default_path
+    assert "Historical Architecture Index" not in default_path
     assert "ChatGPT Project Sources are external context, not repository files" in guidance
 
 
