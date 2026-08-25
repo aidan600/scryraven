@@ -187,6 +187,8 @@ _BAD_CURRENTNESS = frozenset(
         "not_current",
     }
 )
+_TELEMETRY_SOURCE_CUSTODY_ORIGIN_REF = "official_current_source_custody"
+_TELEMETRY_SOURCE_CUSTODY_LINK_REASON = "official_current_source_custody_record"
 
 
 @dataclass(frozen=True, slots=True)
@@ -502,14 +504,29 @@ class EvidenceLedger:
         if any(ref.get("observation_id") == observation_id for ref in self.observation_refs):
             return self
         self.observation_refs.append({"observation_id": observation_id, "source": source})
+        helper_candidate_ids = {
+            candidate_id
+            for candidate_id in (
+                _candidate_id(candidate, index=index)
+                for index, candidate in enumerate(_list(payload.get("candidates")), start=1)
+                if isinstance(candidate, Mapping)
+                and _record_kind(candidate) is CandidateCustodyKind.HELPER_ASSESSMENT
+            )
+            if candidate_id
+        }
         for requirement in _list(payload.get("requirements") or payload.get("source_requirements")):
             self._admit_requirement(requirement)
         for candidate in _list(payload.get("candidates")):
             self._admit_candidate(candidate, observation_id=observation_id, source=source)
         for link in _list(payload.get("requirement_links") or payload.get("links")):
+            if not isinstance(link, Mapping):
+                continue
+            linked_candidate_id = _clean_token(link.get("candidate_id"))
+            if linked_candidate_id in helper_candidate_ids or _is_telemetry_source_custody_link(link):
+                continue
             self._link_candidate(
                 _clean_token(link.get("requirement_id")),
-                _clean_token(link.get("candidate_id")),
+                linked_candidate_id,
                 reason=_clean_text(link.get("link_reason")),
                 status=_clean_token(link.get("link_status")),
             )
@@ -746,6 +763,8 @@ class EvidenceLedger:
     def _admit_requirement(self, record: Any) -> None:
         if not isinstance(record, Mapping):
             return
+        if _is_telemetry_source_custody_requirement(record):
+            return
         requirement_id = _clean_token(
             record.get("requirement_id")
             or record.get("custody_requirement_id")
@@ -882,28 +901,30 @@ class EvidenceLedger:
                 source_ref=source,
             )
             return
-        update = _candidate_update(record, candidate_id=candidate_id)
         candidate = self.candidates.get(candidate_id)
         if candidate is None:
             candidate = EvidenceCandidate(candidate_id=candidate_id)
             self.candidates[candidate_id] = candidate
-        candidate.merge(update)
 
         record_kind = _record_kind(record)
         disposition = _candidate_disposition(record)
+        if record_kind is CandidateCustodyKind.HELPER_ASSESSMENT:
+            self._record_helper_assessment(
+                candidate,
+                record=record,
+                candidate_id=candidate_id,
+                disposition=disposition,
+                observation_id=observation_id,
+                source=source,
+            )
+            return
+
+        update = _candidate_update(record, candidate_id=candidate_id)
+        candidate.merge(update)
         if record_kind is CandidateCustodyKind.FACT:
             candidate.fact_disposition = disposition
             candidate.disposition_reason = (
                 _clean_text(record.get("reason") or record.get("disposition_reason")) or candidate.disposition_reason
-            )
-        elif record_kind is CandidateCustodyKind.HELPER_ASSESSMENT:
-            candidate.helper_assessment = disposition.value
-            self._gap(
-                EvidenceCustodyGapType.HELPER_CONTROLLER_ASSESSMENT_NOT_PROMOTABLE,
-                candidate_id=candidate_id,
-                requirement_id=_clean_token(record.get("requirement_id")),
-                reason="helper assessment recorded but not promoted as fact",
-                source_ref=source,
             )
         else:
             candidate.proposal_disposition = disposition.value
@@ -956,6 +977,42 @@ class EvidenceLedger:
                 source_ref=source,
             )
 
+    def _record_helper_assessment(
+        self,
+        candidate: EvidenceCandidate,
+        *,
+        record: Mapping[str, Any],
+        candidate_id: str,
+        disposition: CandidateDisposition,
+        observation_id: str,
+        source: str,
+    ) -> None:
+        claimed = _clean_text(record.get("helper_assessment")) or disposition.value
+        candidate.helper_assessment = claimed
+        diagnostic_requirement_id = _clean_token(
+            record.get("diagnostic_requirement_id") or record.get("requirement_id")
+        )
+        self._gap(
+            EvidenceCustodyGapType.HELPER_CONTROLLER_ASSESSMENT_NOT_PROMOTABLE,
+            candidate_id=candidate_id,
+            requirement_id=diagnostic_requirement_id,
+            reason="helper assessment recorded but not promoted as fact",
+            source_ref=source,
+        )
+        self.custody_records.append(
+            CandidateCustodyRecord(
+                candidate_id=candidate_id,
+                record_kind=CandidateCustodyKind.HELPER_ASSESSMENT,
+                disposition=disposition,
+                reason=_clean_text(
+                    record.get("reason") or record.get("disposition_reason") or record.get("rejection_reason")
+                ),
+                source=source,
+                requirement_id=diagnostic_requirement_id,
+                observation_id=observation_id,
+            )
+        )
+
     def _link_candidate(
         self,
         requirement_id: str | None,
@@ -965,6 +1022,8 @@ class EvidenceLedger:
         status: str | None = None,
     ) -> None:
         if not requirement_id or not candidate_id:
+            return
+        if _clean_text(reason) == _TELEMETRY_SOURCE_CUSTODY_LINK_REASON:
             return
         requirement = self.requirements.get(requirement_id)
         if requirement is None:
@@ -1171,7 +1230,13 @@ def build_evidence_ledger_observation_from_runtime(
     final_top_evidence: Iterable[Mapping[str, Any]] | None = None,
     final_evidence_selected: bool = False,
 ) -> EvidenceLedgerObservation:
-    """Build a sanitized ledger observation from existing runtime projections."""
+    """Build a sanitized ledger observation from existing runtime projections.
+
+    Source-class observability telemetry is diagnostic helper input only. It
+    must not mint canonical requirements, authoritative requirement links, FACT
+    custody, or stronger-obligation eligibility. Selected final-evidence FACT
+    records remain the ordinary product path for those authority fields.
+    """
 
     telemetry = _safe_mapping(source_class_recovery_telemetry)
     custody = telemetry.get("official_current_source_custody")
@@ -1181,50 +1246,24 @@ def build_evidence_ledger_observation_from_runtime(
     aggregate_counts: dict[str, int] = {}
 
     if isinstance(custody, Mapping):
-        for requirement in _list(custody.get("requirements")):
-            req_id = _clean_token(requirement.get("requirement_id"))
-            source_class = _clean_token(requirement.get("source_class"))
-            if not req_id:
-                continue
-            requirements.append(
-                {
-                    "requirement_id": req_id,
-                    "requirement_kind": _kind_for_source_class(source_class),
-                    "required_source_class": source_class,
-                    "origin_ref": "official_current_source_custody",
-                    "aggregate_counts_insufficient": False,
-                }
-            )
         for record in _list(custody.get("records")):
             req_id = _clean_token(record.get("requirement_id"))
             candidate_id = _clean_token(record.get("candidate_id"))
             status = _clean_token(record.get("status"))
-            if status == OfficialCurrentCustodyStatus.CANDIDATE_AGGREGATE_ONLY.value:
-                aggregate_counts[req_id] = aggregate_counts.get(req_id, 0) + 1
-                continue
             if not candidate_id:
                 continue
+            if status == OfficialCurrentCustodyStatus.CANDIDATE_AGGREGATE_ONLY.value:
+                continue
+            claimed_disposition = _disposition_from_official_current_status(status)
             candidates.append(
                 {
                     "candidate_id": candidate_id,
-                    "requirement_id": req_id,
-                    "disposition": _disposition_from_official_current_status(status),
-                    "record_kind": CandidateCustodyKind.FACT.value,
-                    "reason": record.get("disposition_reason"),
-                    "source_class": record.get("source_class") or _required_class_for_requirement_id(req_id),
-                    "eligible_for_stronger_obligation": status
-                    in {
-                        OfficialCurrentCustodyStatus.CANDIDATE_ACCEPTED.value,
-                        OfficialCurrentCustodyStatus.CANDIDATE_PARTIALLY_ACCEPTED.value,
-                    },
-                }
-            )
-            links.append(
-                {
-                    "requirement_id": req_id,
-                    "candidate_id": candidate_id,
-                    "link_reason": "official_current_source_custody_record",
-                    "link_status": status,
+                    "record_kind": CandidateCustodyKind.HELPER_ASSESSMENT.value,
+                    "disposition": CandidateDisposition.HELPER_ASSESSED.value,
+                    "helper_assessment": claimed_disposition,
+                    "reason": record.get("disposition_reason")
+                    or "source_class_observability_helper_assessment",
+                    "diagnostic_requirement_id": req_id,
                 }
             )
 
@@ -1825,6 +1864,14 @@ def _required_class_for_requirement_id(requirement_id: str | None) -> str | None
     if value in _STRONG_SOURCE_CLASSES:
         return value
     return None
+
+
+def _is_telemetry_source_custody_requirement(record: Mapping[str, Any]) -> bool:
+    return _clean_text(record.get("origin_ref")) == _TELEMETRY_SOURCE_CUSTODY_ORIGIN_REF
+
+
+def _is_telemetry_source_custody_link(record: Mapping[str, Any]) -> bool:
+    return _clean_text(record.get("link_reason")) == _TELEMETRY_SOURCE_CUSTODY_LINK_REASON
 
 
 def _disposition_from_official_current_status(status: str | None) -> str:
