@@ -14,8 +14,6 @@ AG_LIVE_MULTI_COMPONENT = "AG-LIVE-MULTI-COMPONENT"
 AG_LIVE_DISAMBIG = "AG-LIVE-DISAMBIG"
 AG_LIVE_XAXIS_SEARCH_CANDIDATES = "AG-LIVE-XAXIS-SEARCH-CANDIDATES"
 AG_LIVE_S1_PRODUCT_CONVERGENCE = "AG-LIVE-S1-PRODUCT-CONVERGENCE"
-AG_LIVE_N2_PRODUCT_FRONTIER_Q1 = "AG-LIVE-N2-PRODUCT-FRONTIER-Q1"
-AG_LIVE_N2_PRODUCT_FRONTIER_Q2 = "AG-LIVE-N2-PRODUCT-FRONTIER-Q2"
 
 DIRECT_HUMAN_PRIVATE_SHELL = "direct_human_private_shell"
 BROKER_PRIVATE_ADAPTER = "broker_private_adapter"
@@ -82,24 +80,6 @@ AG_LIVE_MULTI_COMPONENT_BACKUP_QUERY = (
     "Server, Caddy, and Traefik. Answer separately for each project with one "
     "official citation per project."
 )
-N2_Q1_TWO_OFFICIAL_SOURCES_LENGTH = "N2-Q1-TWO-OFFICIAL-SOURCES-LENGTH"
-N2_Q2_SHARED_OFFICIAL_SOURCE_DATES = "N2-Q2-SHARED-OFFICIAL-SOURCE-DATES"
-AG_LIVE_N2_Q1_TWO_OFFICIAL_SOURCES_LENGTH = (
-    "1. Report the overall length of the Boeing 777-9 using only Boeing's "
-    "official published specifications.\n"
-    "2. Report the overall length of the Airbus A350-1000 using only Airbus's "
-    "official published specifications.\n\n"
-    "Then compare the two stated lengths and say which aircraft is longer.\n"
-    "Cite the official manufacturer source for each value.\n"
-    "Do not calculate a difference, ratio, percentage, or converted value."
-)
-AG_LIVE_N2_Q2_SHARED_OFFICIAL_SOURCE_DATES = (
-    "1. Report Voyager 1's launch date using NASA's official mission information.\n"
-    "2. Report Voyager 2's launch date using NASA's official mission information.\n\n"
-    "Then compare the two dates and say which spacecraft launched first.\n"
-    "Cite NASA for each date.\n"
-    "Do not calculate elapsed time."
-)
 
 BALANCED_MODE = "Balanced"
 PYTHON_DOCS_DOMAIN = "docs.python.org"
@@ -109,8 +89,6 @@ MULTI_COMPONENT_DOCS_DOMAINS = (
     "redis.io",
     "mongodb.com",
 )
-N2_Q1_OFFICIAL_DOMAINS = ("boeing.com", "airbus.com")
-N2_Q2_OFFICIAL_DOMAINS = ("nasa.gov",)
 PACKET_SCHEMA = "ag_live_bound_01_bounded_product_runner_v1"
 APPROVED_PRODUCT_ENTRYPOINT = "scripts/ag_live_bound_01_bounded_product_runner.py"
 PRODUCT_RUNTIME_CONSUMER = "run_pipeline"
@@ -494,89 +472,9 @@ AG_LIVE_MULTI_COMPONENT_SUBJECT_BUDGET = ValidationSubjectBudgetSpec(
     policy_status="planned_not_run_not_live_licensed",
 )
 
-AG_LIVE_N2_Q1_SUBJECT_BUDGET = ValidationSubjectBudgetSpec(
-    subject_budget_enabled=True,
-    max_initial_selected_subjects=2,
-    subject_budget_scope=SUBJECT_BUDGET_SCOPE_INITIAL_INDEPENDENT,
-    applies_to_internal_followups=False,
-    same_source_evidence_allowed=False,
-    subject_selection_source=SUBJECT_BUDGET_SELECTION_SOURCE,
-    followup_budget_policy=FOLLOWUP_BUDGET_POLICY,
-    policy_status="planned_not_run_not_live_licensed",
-)
-
-AG_LIVE_N2_Q2_SUBJECT_BUDGET = ValidationSubjectBudgetSpec(
-    subject_budget_enabled=True,
-    max_initial_selected_subjects=2,
-    subject_budget_scope=SUBJECT_BUDGET_SCOPE_INITIAL_INDEPENDENT,
-    applies_to_internal_followups=False,
-    same_source_evidence_allowed=True,
-    subject_selection_source=SUBJECT_BUDGET_SELECTION_SOURCE,
-    followup_budget_policy=FOLLOWUP_BUDGET_POLICY,
-    policy_status="planned_not_run_not_live_licensed",
-)
-
 AG_LIVE_XAXIS_SEARCH_CANDIDATE_PROFILE = SearchCandidateValidationProfile()
 
 VALIDATION_PROFILES: dict[str, ValidationProfile] = {
-    AG_LIVE_N2_PRODUCT_FRONTIER_Q1: ValidationProfile(
-        name=AG_LIVE_N2_PRODUCT_FRONTIER_Q1,
-        purpose=(
-            "Bounded ordinary N>=2 product-frontier observation for two "
-            "official manufacturer length components and one comparison."
-        ),
-        proof_target=(
-            "one fixed two-component official-source comparison through the "
-            "ordinary product path"
-        ),
-        allowed_invocation_modes=(DIRECT_HUMAN_PRIVATE_SHELL, BROKER_PRIVATE_ADAPTER),
-        live_status=LIVE_STATUS_NOT_RUN,
-        query_intent=(
-            "two separately sourced aircraft-length components with one direct "
-            "ordered comparison"
-        ),
-        required_mode=BALANCED_MODE,
-        required_include_domains=N2_Q1_OFFICIAL_DOMAINS,
-        cap_policy=ORDINARY_DOGFOOD_CAP_POLICY,
-        expected_packet_criteria=(
-            "ordinary run_pipeline executes exactly once per requested run",
-            "the immutable query and official-domain posture pass preflight",
-            "sanitized packet retains no raw or private material",
-        ),
-        fixed_queries=(
-            (N2_Q1_TWO_OFFICIAL_SOURCES_LENGTH, AG_LIVE_N2_Q1_TWO_OFFICIAL_SOURCES_LENGTH),
-        ),
-        subject_budget=AG_LIVE_N2_Q1_SUBJECT_BUDGET,
-    ),
-    AG_LIVE_N2_PRODUCT_FRONTIER_Q2: ValidationProfile(
-        name=AG_LIVE_N2_PRODUCT_FRONTIER_Q2,
-        purpose=(
-            "Bounded ordinary N>=2 product-frontier observation for two NASA "
-            "launch-date components and one temporal comparison."
-        ),
-        proof_target=(
-            "one fixed two-component shared-official-source comparison through "
-            "the ordinary product path"
-        ),
-        allowed_invocation_modes=(DIRECT_HUMAN_PRIVATE_SHELL, BROKER_PRIVATE_ADAPTER),
-        live_status=LIVE_STATUS_NOT_RUN,
-        query_intent=(
-            "two separately requested Voyager launch dates with one direct "
-            "temporal ordering"
-        ),
-        required_mode=BALANCED_MODE,
-        required_include_domains=N2_Q2_OFFICIAL_DOMAINS,
-        cap_policy=ORDINARY_DOGFOOD_CAP_POLICY,
-        expected_packet_criteria=(
-            "ordinary run_pipeline executes exactly once per requested run",
-            "the immutable query and official-domain posture pass preflight",
-            "sanitized packet retains no raw or private material",
-        ),
-        fixed_queries=(
-            (N2_Q2_SHARED_OFFICIAL_SOURCE_DATES, AG_LIVE_N2_Q2_SHARED_OFFICIAL_SOURCE_DATES),
-        ),
-        subject_budget=AG_LIVE_N2_Q2_SUBJECT_BUDGET,
-    ),
     AG_LIVE_S1_PRODUCT_CONVERGENCE: ValidationProfile(
         name=AG_LIVE_S1_PRODUCT_CONVERGENCE,
         purpose=(
