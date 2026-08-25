@@ -130,15 +130,6 @@ executes that command after the user approves it in the normal permission UI.
 The user should approve the command in Codex; they should not be asked to open
 PowerShell, run the broker manually, or paste its result back into the session.
 
-The controlling executor must retain and wait for the broker process's actual
-terminal result. A nonterminal tool yield or session handle is not a completed
-broker command and is not evidence that a requested status receipt is missing.
-When the controlling executor has a hard timeout, give it at least 60 seconds
-more than `--timeout-seconds` so the private child can terminate its target
-tree and write its terminal structural receipt. Inspect the status only after
-the controlling executor reports the broker's terminal exit, and record that
-outer result separately from the broker status.
-
 For a Python target in a bounded validation lane, pass
 `--target-current-python` explicitly and place the target script and its exact
 arguments after `--`. The private child then prepends its own `sys.executable`;
