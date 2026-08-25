@@ -273,8 +273,8 @@ def test_current_docs_exclude_retired_fap_semantic_doctrine() -> None:
         "FAP decides which numbers matter",
         "FAP re-proves literal signatures",
         "direct-source numeric proposition fingerprint",
-        "post-Author semantic hard gate",
-        "Author retry/revision loop",
+        "Author output is withheld solely because a prose evaluator disagrees",
+        "FAP parses admitted prose to determine authority",
     )
     for path in current_docs:
         normalized = _collapsed(path)
