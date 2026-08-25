@@ -152,6 +152,40 @@ _UNIT_STOPWORDS = frozenset(
         "with",
     }
 )
+_MEASUREMENT_UNIT_STEMS = (
+    "ampere",
+    "byte",
+    "celsius",
+    "day",
+    "fahrenheit",
+    "feet",
+    "foot",
+    "gram",
+    "hertz",
+    "hour",
+    "inch",
+    "joule",
+    "kelvin",
+    "liter",
+    "litre",
+    "meter",
+    "metre",
+    "mile",
+    "minute",
+    "mole",
+    "newton",
+    "ounce",
+    "pascal",
+    "percent",
+    "pound",
+    "second",
+    "volt",
+    "watt",
+    "week",
+    "yard",
+    "year",
+)
+_CAPITALIZED_NAME_TOKEN_RE = re.compile(r"([A-Z][A-Za-z0-9_\-]*)\s+$")
 _COMPACT_CURRENCY_CODES = frozenset(
     {
         "AED",
@@ -582,6 +616,67 @@ def _currency_code(match: re.Match[str]) -> str:
     )
 
 
+def _unit_looks_like_measurement(unit: str) -> bool:
+    text = str(unit or "").casefold()
+    if not text or text == "dimensionless":
+        return False
+    if (
+        text.startswith("currency")
+        or "/" in text
+        or "_per_" in text
+        or text
+        in {"percent", "percentage", "basis_points", "percentage_points"}
+    ):
+        return True
+    if len(text) <= 3 and text.isalpha():
+        return True
+    return any(stem in text for stem in _MEASUREMENT_UNIT_STEMS)
+
+
+def _is_bare_integer_literal_match(match: re.Match[str]) -> bool:
+    if any(
+        match.group(name)
+        for name in (
+            "qualifier",
+            "sign",
+            "currency_code",
+            "compact_currency_code",
+            "currency_symbol",
+            "exponent",
+            "slash_rate_unit",
+            "scale",
+            "percent",
+        )
+    ):
+        return False
+    number = str(match.group("number") or "")
+    return bool(number) and "." not in number and "," not in number
+
+
+def _preceded_by_capitalized_name(match: re.Match[str]) -> bool:
+    prefix = match.string[: match.start("number")]
+    return _CAPITALIZED_NAME_TOKEN_RE.search(prefix) is not None
+
+
+def _incidental_nonclaim_numeric_surface(
+    match: re.Match[str], *, canonical_unit: str
+) -> str | None:
+    if not _is_bare_integer_literal_match(match):
+        return None
+    unit = str(canonical_unit or "dimensionless")
+    if unit == "dimensionless" and _preceded_by_capitalized_name(match):
+        return "capitalized_name_integer"
+    compact_unit = unit.replace("_", "")
+    if (
+        unit != "dimensionless"
+        and not _unit_looks_like_measurement(unit)
+        and compact_unit.isalpha()
+        and len(compact_unit) >= 6
+    ):
+        return "swallowed_prose_unit_integer"
+    return None
+
+
 def _unit_text(match: re.Match[str]) -> tuple[str | None, int]:
     slash_rate = str(match.group("slash_rate_unit") or "")
     if slash_rate:
@@ -722,11 +817,12 @@ def _digit_literal(match: re.Match[str]) -> dict[str, Any] | None:
     ):
         if match.group(group_name):
             span_start = min(span_start, match.start(group_name))
-    return {
+    canonical_unit = unit or "dimensionless"
+    literal = {
         "span_start": span_start,
         "span_end": span_end,
         "normalized_numeric_value_text": _decimal_text(value),
-        "canonical_unit": unit or "dimensionless",
+        "canonical_unit": canonical_unit,
         "precision_posture": precision_posture,
         "scale_posture": scale,
         "sign_posture": sign_posture,
@@ -734,6 +830,12 @@ def _digit_literal(match: re.Match[str]) -> dict[str, Any] | None:
         "notation_posture": notation,
         "parser_version": QUANTITATIVE_FINALIZATION_PARSER_VERSION,
     }
+    incidental_surface = _incidental_nonclaim_numeric_surface(
+        match, canonical_unit=canonical_unit
+    )
+    if incidental_surface:
+        literal["incidental_nonclaim_numeric_surface"] = incidental_surface
+    return literal
 
 
 def _parse_cardinal_words(words: Sequence[str]) -> Decimal | None:
@@ -972,20 +1074,28 @@ def _literal_has_unsupported_surface(literal: Mapping[str, Any]) -> bool:
     )
 
 
+def _literal_is_nonclaim_surface(literal: Mapping[str, Any]) -> bool:
+    return _literal_has_unsupported_surface(literal) or bool(
+        literal.get("incidental_nonclaim_numeric_surface")
+    )
+
+
 def _supported_quantitative_literals(
     literals: Sequence[Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
     return [
         dict(item)
         for item in literals
-        if not _literal_has_unsupported_surface(item)
+        if not _literal_is_nonclaim_surface(item)
     ]
 
 
 def _only_unsupported_quantitative_surfaces(
     literals: Sequence[Mapping[str, Any]],
 ) -> bool:
-    return bool(literals) and not _supported_quantitative_literals(literals)
+    if _supported_quantitative_literals(literals):
+        return False
+    return any(_literal_has_unsupported_surface(item) for item in literals)
 
 
 def _literal_signature_counter(
@@ -993,7 +1103,7 @@ def _literal_signature_counter(
 ) -> Counter[str]:
     counter: Counter[str] = Counter()
     for literal in extract_quantitative_literals(text):
-        if supported_only and _literal_has_unsupported_surface(literal):
+        if supported_only and _literal_is_nonclaim_surface(literal):
             continue
         counter[_literal_signature(literal)] += 1
     return counter
@@ -1006,7 +1116,7 @@ def _counter_subseteq(claim: Counter[str], material: Counter[str]) -> bool:
 def _literal_values(text: str) -> set[str]:
     values: set[str] = set()
     for literal in extract_quantitative_literals(text):
-        if _literal_has_unsupported_surface(literal):
+        if _literal_is_nonclaim_surface(literal):
             continue
         value = str(literal.get("normalized_numeric_value_text") or "")
         if value:
@@ -1871,10 +1981,13 @@ def _structured_numeric_claim_requirements(
         if not literals:
             return
         supported = _supported_quantitative_literals(literals)
-        if integrity_reason is None and _only_unsupported_quantitative_surfaces(
-            literals
-        ):
-            integrity_reason = "unsupported_claim_literal_surface"
+        if not supported:
+            if integrity_reason is None and _only_unsupported_quantitative_surfaces(
+                literals
+            ):
+                integrity_reason = "unsupported_claim_literal_surface"
+            elif integrity_reason is None:
+                return
         requirements.append(
             {
                 "claim_text": claim_text,
@@ -2253,18 +2366,23 @@ def validate_author_output_quantitative_authority(
     reasons: list[dict[str, Any]] = []
     for assertion_index, assertion in enumerate(_assertions(str(answer_text or "")), start=1):
         literals = extract_quantitative_literals(assertion)
-        if not literals:
+        counted = [
+            item
+            for item in literals
+            if not item.get("incidental_nonclaim_numeric_surface")
+        ]
+        if not counted:
             continue
-        candidate_count += len(literals)
+        candidate_count += len(counted)
         assertion_digest = _text_digest(assertion)
         unsupported_words = [
             str(item.get("unsupported_textual_quantifier"))
-            for item in literals
+            for item in counted
             if item.get("unsupported_textual_quantifier")
         ]
         unsupported_surfaces = [
             str(item.get("unsupported_quantitative_surface"))
-            for item in literals
+            for item in counted
             if item.get("unsupported_quantitative_surface")
         ]
         if unsupported_words or unsupported_surfaces:
@@ -2287,7 +2405,8 @@ def validate_author_output_quantitative_authority(
             continue
         fingerprint = semantic_claim_fingerprint(assertion)
         authorized_entries = by_fingerprint.get(fingerprint, [])
-        candidate_signatures = Counter(_literal_signature(item) for item in literals)
+        supported = _supported_quantitative_literals(counted)
+        candidate_signatures = Counter(_literal_signature(item) for item in supported)
         authorized_signatures = Counter(
             "|".join(
                 str(entry.get(key) or "")
@@ -2310,7 +2429,7 @@ def validate_author_output_quantitative_authority(
                         if authorized_entries
                         else "unauthorized_quantitative_proposition"
                     ),
-                    "candidate_literal_count": len(literals),
+                    "candidate_literal_count": len(supported),
                 }
             )
             continue

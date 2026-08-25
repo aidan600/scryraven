@@ -301,6 +301,54 @@ def test_fap_direct_source_numeric_survives_incidental_unsupported_surfaces() ->
     assert {row["normalized_numeric_value_text"] for row in rows} == {"100"}
 
 
+def test_fap_direct_source_numeric_survives_incidental_name_integer() -> None:
+    source = "Object A has a length of 100 km."
+    claim = "Example Product 3 documentation states " + source
+    preflight = build_quantitative_fap_authority_preflight(
+        source_fap_ref={"packet_id": "preflight-incidental-name-integer"},
+        direct_component_entries=(_fap_direct_entry(claim),),
+        semantic_author_materialization=_fap_materialization(source),
+    )
+
+    diagnostic = preflight["diagnostic"]
+    rows = preflight["bundle"]["manifest"]["authorized_numeric_claims"]
+    assert diagnostic["status"] == "ready", diagnostic
+    assert diagnostic["author_invocation_allowed"] is True
+    assert "literal_signature_mismatch" not in diagnostic["reason_codes"]
+    assert {row["authority_kind"] for row in rows} == {"direct_source_numeric"}
+    assert {row["normalized_numeric_value_text"] for row in rows} == {"100"}
+    assert {row["canonical_unit"] for row in rows} == {"km"}
+
+
+def test_fap_preflight_ignores_claim_with_only_incidental_name_integers() -> None:
+    claim = "Example Product 3 documentation is the cited handbook."
+    preflight = build_quantitative_fap_authority_preflight(
+        source_fap_ref={"packet_id": "preflight-only-incidental-name-integer"},
+        direct_component_entries=(_fap_direct_entry(claim),),
+        semantic_author_materialization=_fap_materialization(claim),
+    )
+
+    diagnostic = preflight["diagnostic"]
+    assert diagnostic["status"] == "ready", diagnostic
+    assert diagnostic["author_invocation_allowed"] is True
+    assert diagnostic["required_numeric_claim_count"] == 0
+    assert preflight["bundle"]["manifest"]["authorized_numeric_claims"] == []
+
+
+def test_fap_direct_source_numeric_still_requires_plain_integer_claims() -> None:
+    source = "The direct count is 17."
+    preflight = build_quantitative_fap_authority_preflight(
+        source_fap_ref={"packet_id": "preflight-plain-integer"},
+        direct_component_entries=(_fap_direct_entry(source),),
+        semantic_author_materialization=_fap_materialization(source),
+    )
+
+    diagnostic = preflight["diagnostic"]
+    rows = preflight["bundle"]["manifest"]["authorized_numeric_claims"]
+    assert diagnostic["status"] == "ready", diagnostic
+    assert {row["normalized_numeric_value_text"] for row in rows} == {"17"}
+
+
 def test_fap_preflight_blocks_when_every_numeric_surface_is_unsupported() -> None:
     claim = "The result is first."
     preflight = build_quantitative_fap_authority_preflight(
