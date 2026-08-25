@@ -5,202 +5,193 @@ Authority: canonical:fap-author-boundary
 Default-read: no
 Applies-to: ordinary FinalAnswerPacket packaging, Author rendering, and blocked FAP terminal behavior
 Does-not-authorize: new claims, evidence interpretation, synthesis creation, citation upgrade, or Author execution when FAP is blocked
-Verified-against-runtime: 969e3085922d10985d406bac1d620d459e2731c6
+Verified-against-runtime: d3df96994f72b371f6a2451677784376ac3f7cb9
 Update-trigger: merged change to FAP packaging, Author input, rendering, or blocked terminal behavior
 
 ## Responsibility
 
 This document owns the installed boundary among Sufficiency,
-FinalAnswerPacket (FAP), Author, and blocked terminal behavior. The complete
-semantic authority flow belongs to
-[Run-Contract Semantic Loop](RUN_CONTRACT_SEMANTIC_LOOP.md), and the bounded
-multi-component producer path belongs to
-[Multi-Component Synthesis Runtime Architecture](MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md).
-
-The authority sequence is:
+FinalAnswerPacket (FAP), Author, mechanical finalization, and blocked terminal
+behavior.
 
 ```text
-RunKernel-admitted direct and synthesized state
--> Sufficiency readiness decision
--> FinalAnswerPacket authority packaging
+RunKernel-admitted state
+-> ComponentCoverage
+-> Sufficiency whole-run readiness
+-> FinalAnswerPacket packaging
 -> Author rendering
 -> mechanical citation/output finalization
 -> RunOutcome
 ```
 
-Sufficiency decides whether admitted state is ready, partial, blocked,
-contested, insufficient, follow-up-required, or not applicable. Graph admission
-alone is not answer readiness.
+Sufficiency computes whether the admitted run is ready, caveated, partial,
+insufficient, or blocked. FAP does not repeat that decision. Graph or component
+admission alone is not whole-answer readiness.
 
-FAP is the final semantic-authority boundary. Author is the final semantic
-actor. Once FAP authorizes Author, ordinary post-Author PRODUCT code may enforce
-mechanical output requirements but does not reopen semantic support or make an
-accepted-prose decision.
+FAP is the final semantic-authority boundary because it is the last structured
+container defining what Author may use. It is not a semantic adjudicator.
+Author is the final semantic actor.
 
-## Direct And Inferred Packaging
+## Semantically Stupid, Mechanically Strict
 
-Sufficiency may select one exact current direct fulfillment or one admitted
-inferred fulfillment for an accepted answer target. When both are valid it
-prefers direct. An inferred fulfillment is packaged in
-`admitted_synthesis_entries` with exact target, premise-node,
-ComponentCoverage, relationship/admission, semantic-depth, caveat, and
-prohibited-upgrade lineage. It is never copied into
-`direct_component_entries` or represented as source text that states the
-conclusion verbatim.
+FAP packages the authorized world. It may enforce mechanical integrity such as:
 
-The FinalAnswerPacket identity is derived after Boundary B contract/graph
-mutation and therefore binds the current contract and graph rather than the
-pre-recovery state. Author receives only that packet, may render its admitted
-inference, and may not research, add premises, strengthen the relationship,
-upgrade inferred support to direct, or invoke recovery. Exact replay creates no
-second packet or Author invocation.
+```text
+current component/revision/digest
+exact Analyst and semantic-observation refs
+exact ComponentCoverage refs
+exact content/evidence/citation lineage
+stale or foreign rejection
+required Specialist result/handoff authority
+packet shape, privacy, and boundedness
+```
 
-## FinalAnswerPacket Contract
+FAP must not decide from prose:
 
-FAP is a constrained authority manifest, not a planner, Analyst, validator, or
-repair layer. It packages admitted and readiness-approved material for Author.
+```text
+which number matters
+whether an integer is a version, section, rank, or count
+whether a token is a unit
+whether an ordinal is substantive
+whether two propositions mean the same thing
+whether source prose semantically supports admitted claim prose
+which supplied context Author must mention
+```
 
-FAP may package:
+Those meaning-bearing judgments belong upstream to Component Analyst, Cross when
+applicable, and RunKernel admission of their exact current output.
 
-- admitted direct component claims;
-- admitted synthesis;
-- required caveats and uncertainty posture;
-- source and evidence bindings already authorized upstream;
-- not-claimed and prohibited-upgrade boundaries;
-- rendering and mode references; and
-- a structured quantitative authority preflight and manifest; and
-- readiness and support posture references.
+## Direct-Source Packaging
 
-FAP must not:
+For an admitted direct-source component, FAP packages:
 
-- create, repair, reinterpret, or validate a claim or synthesis;
-- glue unadmitted component outputs;
-- decide what evidence means or which source is authoritative;
-- create citation eligibility or satisfy source obligations;
-- remove blockers or required caveats;
-- upgrade weak or contested support; or
-- package material that Sufficiency did not authorize.
+- the admitted claim and its exact current claim ref;
+- Analyst context, caveats, nonclaims, and uncertainty;
+- semantic-observation and ComponentCoverage refs;
+- exact evidence and citation lineage; and
+- useful bounded source context.
 
-FAP packaging does not itself prove answer correctness, citation correctness,
-or source-obligation satisfaction.
+Direct-source numbers are ordinary admitted claim content. FAP does not create or
+require a separate `direct_source_numeric` PRODUCT authority row merely because
+claim text contains digits. It does not parse the claim to decide which digits
+are meaningful or compare claim-text numeric signatures against source prose.
 
-For quantitative packaging, generic D-prime admission is not numeric rendering
-authority. Before Author, FAP verifies the already-produced structural lineage
-for every required numeric claim. A claim is packaged only from exact current
-source material (including the narrow component/content/coverage-bound
-equivalence) or from a completed installed Specialist result with exact
-claim-material alignment and the applicable Component Analyst or synthesis
-validation consumption. Missing source, Specialist, currentness, citation, unit,
-precision, or admission lineage blocks FAP/Author input; it does not create a
-second Sufficiency verdict. Full component and synthesis entries remain available
-to the Author payload itself, but their packet trace representation is reduced to
-counts and digests so RunKernel and Author execution compare the same packet-safe
-ref.
+A bad upstream semantic judgment is not rescued by a weaker deterministic
+reader inside FAP. FAP still rejects wrong, stale, foreign, missing, or
+mechanically inconsistent lineage.
+
+## Bounded Evidence Context
+
+The installed semantic-materialization path retains up to 2,000 characters of
+digest-verified packet-owned authority material. Author presentation of that
+material is independently capped at 600 characters.
+
+These surfaces serve different purposes:
+
+```text
+authority material = mechanical provenance and useful bounded context
+Author presentation = concise model-visible evidence context
+```
+
+Extra context is a resource, not an output checklist. Its presence does not
+create new claims, authorize every visible fact, or require Author to mention
+every sentence or numeric literal.
+
+## Derived Quantitative Work
+
+A source-stated literal remains ordinary direct-source evidence.
+
+A genuinely new calculated, converted, aggregated, rescaled, or otherwise
+derived result requires complete exact Specialist authority before Author may
+use it. The installed hard path is:
+
+```text
+semantic owner identifies calculation need
+-> code validates and binds the request
+-> Specialist executes the bounded calculation
+-> semantic owner consumes the result
+-> RunKernel admits exact result lineage
+-> FAP verifies specialist_derived_numeric authority
+-> Author may render the result
+```
+
+Missing, stale, mismatched, unconsumed, or incomplete Specialist authority
+blocks the derived result. Specialist execution success alone is not semantic
+support.
+
+The retained prose quantitative parser and evaluator may report diagnostics in
+validation contexts. They have no PRODUCT authority over FAP readiness, Author
+output, citations, canonical state, RunOutcome, or retry behavior.
+
+## Inferred And Multi-Component Packaging
+
+Sufficiency may authorize current direct component entries and, for genuine
+N>=2 work, admitted synthesis entries. FAP packages only the exact current
+entries and lineage Sufficiency authorizes.
+
+An admitted inference remains labeled as inference. FAP must not copy it into a
+direct-source entry, invent missing premises, flatten caveats, or upgrade its
+support posture.
+
+The currently installed bounded N>=2 path retains synthesis D-prime before
+synthesis admission. That installed role does not give D-prime direct FAP or
+Author authority; FAP consumes only RunKernel-admitted current state.
 
 ## Author Contract
 
-Author is a constrained communication layer over FAP-authorized material.
+Author is a constrained communication layer over FAP-supplied claims, context,
+citations, caveats, and Specialist-derived authority.
 
 ```text
 Author may improve presentation.
 Author may not improve truth posture.
 ```
 
-Author may choose clear wording, structure the response, follow mode and
-rendering rules, preserve required caveats, pass through authorized sources,
-and explain synthesis that is already admitted and packaged.
+Author may organize the response, choose clear wording, preserve caveats,
+explain admitted synthesis, and restate numbers from admitted direct-source
+claims and packet-owned evidence context.
 
-For quantitative propositions, Author receives FAP-authorized material and
-fixed instructions prohibiting calculation, conversion, estimation,
-interpolation, unsupported rounding, rescaling, aggregation, and new numeric
-conclusions. Author may paraphrase naturally while preserving the authorized
-value, unit, sign, scale, percent convention, precision, and proposition. It is
-not instructed about proposition fingerprints, parser acceptance, regexes, or a
-required accepted surface.
-
-Author must not reinterpret evidence, resolve conflicts, decide source
-authority, drop caveats, upgrade support, invent missing context, introduce new
-claims, create missing synthesis, repair evidence, satisfy a missing source
-obligation, or create authority absent from FAP.
+Author must not search, add evidence, invent missing context, repair support,
+resolve conflicts, upgrade inferred or contested claims, satisfy missing source
+obligations, or create new calculations or conversions without exact Specialist
+authority.
 
 ## Post-Author Mechanics
 
-The ordinary `AuthorExecutor` does not buffer prose solely for a quantitative
-semantic gate. Mechanical consumers may still require a complete output for
-citation placeholder resolution, foreign citation rejection, required answer
-presence, serialization, control/private-material protection, encoding, or
-envelope validation. These checks do not decide what an English proposition
-means and do not trigger Author retry, revision, semantic repair, a second FAP,
-or another semantic actor.
+After Author, ordinary PRODUCT code may enforce only genuinely mechanical
+requirements, including:
+
+- nonempty required answer presence;
+- citation placeholder resolution and authorized citation identity;
+- foreign-citation rejection;
+- private/control-material protection;
+- serialization, envelope, encoding, and size limits.
+
+Post-Author code does not reinterpret free-form prose for semantic acceptance.
+There is no deterministic prose theorem prover, second semantic model, Author
+retry/revision loop, semantic repair loop, or second FAP.
+
+A retained evaluator may disagree with Author prose in validation. That
+observation cannot change PRODUCT success or output.
 
 ## Blocked FAP Terminal
 
-When FAP readiness is blocked, Author does not run. No Author input is derived
-and no Author model call is made.
+When FAP mechanical readiness is blocked, Author does not run. No Author input
+or Author model call is created.
 
-For the installed ordinary blocked-readiness case, the product returns a
-deterministic sanitized non-Author `RunOutcome` rather than relabeling the case
-as an Author answer or raising `PipelineError`. The exported terminal posture is
-blocked/insufficient even when upstream diagnostics preserved a partial-answer
-lineage.
+The ordinary product may return a deterministic sanitized non-Author
+`RunOutcome` for an expected blocked-readiness case. That summary may contain
+safe reason codes, counts, refs, and posture, but never prompts, raw model or
+provider material, raw evidence, credentials, private logs, database rows, or
+full traces.
 
-The safe summary may include sanitized readiness reasons, missing obligations,
-component counts, and evidence posture. It must not contain prompts, raw model
-or provider material, raw evidence, credentials, private logs, full traces,
-chain of thought, or unsupported answer claims. Pre-FAP execution facts such as
-recovery, conflict, weak-corpus, and source-class posture may remain available
-as safe diagnostics.
-
-This normalization is narrow. Malformed packets, broken identity or lineage,
-invariant failures, infrastructure failures, and unrelated internal failures
-remain errors. They must not be relabeled as ordinary insufficiency.
-
-## Ordinary And Supporting Surfaces
-
-The ordinary product path currently consumes Sufficiency, FAP, Author,
-`RunOutcome`, and CLI-visible output for supported direct and bounded
-multi-component cases. That ordinary behavior is the current product contract.
-
-[Final Answer Packet Hardening](AG_FINAL_ANSWER_PACKET_HARDENING_01.md) and
-[Author Prose-Only Finalization](AUTHOR_PROSE_ONLY_FINALIZATION_01.md) preserve
-useful bounded hardening, packet-posture, and prose-only supporting contracts.
-They do not define the only current product path and must not be used to demote
-ordinary FAP/Author consumption to future work. Older FAP, Author, and follow-up
-phase records remain compatibility or historical context unless a current
-owner explicitly reuses them.
-
-The current ordinary AuthorExecutor, hardened AuthorProseFinalization, and
-follow-up AF5B finalizer are explicitly classified in
-[Quantitative Finalization Containment](AG_S1_QUANTITATIVE_FINALIZATION_CONTAINMENT_01.md).
-Their former shared post-Author natural-language quantitative gate is retired:
-ordinary AuthorExecutor does not use it for PRODUCT acceptance, deterministic
-AuthorProseFinalization relies on the prior structured FAP check rather than
-reparsing generated prose, and the guarded internal AF5B finalizer has no
-accepted-prose semantic-gate authority. The retained evaluator is validation
-diagnostic only and has no authority over Author output or RunOutcome.
-
-## Source Gateway
-
-A presentation layer may make already authorized claims inspectable through a
-chain such as:
-
-```text
-answer claim
--> admitted component or synthesis
--> FAP authorization
--> source binding
--> bounded source material
-```
-
-This is presentation and inspectability direction. It is not an installed
-source-authority engine, citation eligibility engine, citation renderer, or
-source-obligation satisfaction path unless current code and focused tests
-separately establish that exact behavior. This phase changes none of those
-runtime surfaces.
+Malformed packets, broken identity, invariant failures, infrastructure failures,
+and unrelated exceptions remain errors; they must not be relabeled as ordinary
+insufficiency.
 
 ## Nonproofs
 
-This contract does not prove arbitrary-query readiness, live product behavior,
-citation rendering, source-obligation satisfaction, broad Author quality, or
-product correctness. It does not authorize changes to citations, prompts,
-models, providers, source ranking, FAP runtime, or Author runtime.
+This boundary does not prove arbitrary-query readiness, semantic correctness,
+retrieval quality, citation selection quality, broad Author quality, or product
+reliability. It defines who may decide what and prevents FAP or post-Author code
+from becoming another semantic actor.
