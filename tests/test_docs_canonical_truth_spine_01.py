@@ -126,7 +126,7 @@ def test_current_state_describes_installed_authority_chain() -> None:
         "Sufficiency whole-run readiness",
         "FinalAnswerPacket packaging",
         "Author is the final semantic actor",
-        "FAP is semantically stupid and mechanically strict",
+        "FinalAnswerPacket is semantically stupid and mechanically strict",
         "Direct-source numbers are ordinary admitted claim content",
         "specialist_derived_numeric",
         "Source-class observability and telemetry are helper/diagnostic only",
@@ -221,7 +221,7 @@ def test_dprime_contract_preserves_installed_selected_split() -> None:
     dprime = _collapsed(DPRIME)
     for phrase in (
         "Component D-prime has no ordinary component producer or consumer",
-        "the bounded genuine N>=2 path still executes a synthesis D-prime model call",
+        "The bounded genuine N>=2 path still executes a synthesis D-prime model call",
         "selected for retirement",
         "RunKernel synthesis admission",
         "D-prime has no direct FAP or Author authority",
