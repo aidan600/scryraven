@@ -972,6 +972,22 @@ def _literal_has_unsupported_surface(literal: Mapping[str, Any]) -> bool:
     )
 
 
+def _supported_quantitative_literals(
+    literals: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    return [
+        dict(item)
+        for item in literals
+        if not _literal_has_unsupported_surface(item)
+    ]
+
+
+def _only_unsupported_quantitative_surfaces(
+    literals: Sequence[Mapping[str, Any]],
+) -> bool:
+    return bool(literals) and not _supported_quantitative_literals(literals)
+
+
 def _literal_signature_counter(
     text: str, *, supported_only: bool = True
 ) -> Counter[str]:
@@ -1136,7 +1152,7 @@ def _try_direct_source_bind(
         return None, gap
     claim_text = str(claim.get("claim_text") or "")
     claim_literals = extract_quantitative_literals(claim_text)
-    if any(_literal_has_unsupported_surface(item) for item in claim_literals):
+    if _only_unsupported_quantitative_surfaces(claim_literals):
         return None, "unsupported_claim_literal_surface"
     matched = [
         material
@@ -1688,10 +1704,10 @@ def build_quantitative_finalization_authority_bundle(
     seen: set[tuple[str, str, int]] = set()
     for claim in claims:
         claim_text = str(claim["claim_text"])
-        literals = extract_quantitative_literals(claim_text)
-        if not literals or any(
-            _literal_has_unsupported_surface(item) for item in literals
-        ):
+        literals = _supported_quantitative_literals(
+            extract_quantitative_literals(claim_text)
+        )
+        if not literals:
             continue
         claim_ref = _safe_ref(claim.get("claim_ref"))
         canonical_claim_key = _canonical_claim_ref_digest(claim_ref)
@@ -1854,8 +1870,9 @@ def _structured_numeric_claim_requirements(
         literals = extract_quantitative_literals(claim_text)
         if not literals:
             return
-        if integrity_reason is None and any(
-            _literal_has_unsupported_surface(item) for item in literals
+        supported = _supported_quantitative_literals(literals)
+        if integrity_reason is None and _only_unsupported_quantitative_surfaces(
+            literals
         ):
             integrity_reason = "unsupported_claim_literal_surface"
         requirements.append(
@@ -1865,9 +1882,7 @@ def _structured_numeric_claim_requirements(
                 "claim_kind": claim_kind,
                 "fingerprint": semantic_claim_fingerprint(claim_text),
                 "literal_signatures": Counter(
-                    _literal_signature(item)
-                    for item in literals
-                    if not _literal_has_unsupported_surface(item)
+                    _literal_signature(item) for item in supported
                 ),
                 "integrity_reason": integrity_reason,
                 "specialist_declared": bool(

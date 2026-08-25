@@ -283,6 +283,39 @@ def test_fap_structured_direct_source_numeric_authority_is_ready_before_author()
     }
 
 
+def test_fap_direct_source_numeric_survives_incidental_unsupported_surfaces() -> None:
+    source = "Object A has a length of 100 km."
+    claim = "The result is first. " + source
+    preflight = build_quantitative_fap_authority_preflight(
+        source_fap_ref={"packet_id": "preflight-incidental-unsupported"},
+        direct_component_entries=(_fap_direct_entry(claim),),
+        semantic_author_materialization=_fap_materialization(source),
+    )
+
+    diagnostic = preflight["diagnostic"]
+    rows = preflight["bundle"]["manifest"]["authorized_numeric_claims"]
+    assert diagnostic["status"] == "ready", diagnostic
+    assert diagnostic["author_invocation_allowed"] is True
+    assert "unsupported_claim_literal_surface" not in diagnostic["reason_codes"]
+    assert {row["authority_kind"] for row in rows} == {"direct_source_numeric"}
+    assert {row["normalized_numeric_value_text"] for row in rows} == {"100"}
+
+
+def test_fap_preflight_blocks_when_every_numeric_surface_is_unsupported() -> None:
+    claim = "The result is first."
+    preflight = build_quantitative_fap_authority_preflight(
+        source_fap_ref={"packet_id": "preflight-all-unsupported"},
+        direct_component_entries=(_fap_direct_entry(claim),),
+        semantic_author_materialization=_fap_materialization(claim),
+    )
+
+    diagnostic = preflight["diagnostic"]
+    assert diagnostic["status"] == "blocked"
+    assert diagnostic["author_invocation_allowed"] is False
+    assert "unsupported_claim_literal_surface" in diagnostic["reason_codes"]
+    assert diagnostic["final_text_included"] is False
+
+
 def _specialist_ref(
     *, target_kind: str, value: str, unit: str, claim_text: str
 ) -> dict[str, Any]:
