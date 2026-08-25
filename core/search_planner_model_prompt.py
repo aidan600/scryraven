@@ -24,7 +24,7 @@ from core.semantic_contract_foundation import (
     SupportKind,
 )
 
-SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION = "search_planner_sparse_model_prompt_v8"
+SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION = "search_planner_sparse_model_prompt_v9"
 
 SEARCH_PLANNER_MODEL_STRICT_JSON_OUTPUT_CONTRACT = (
     "Return exactly one JSON object.",
@@ -740,6 +740,9 @@ def build_search_planner_model_prompt(planner_input: Mapping[str, Any]) -> str:
             "requested_mode": planner_input.get("requested_mode"),
             "user_query_text_for_planning": str(planner_input.get("user_query_text_for_planning") or ""),
             "safe_context": planner_input.get("safe_context"),
+            "qualified_multicomponent_structure_for_planning": planner_input.get(
+                "qualified_multicomponent_structure_for_planning"
+            ),
         },
         "output_schema": _semantic_model_output_schema(),
     }
@@ -748,7 +751,20 @@ def build_search_planner_model_prompt(planner_input: Mapping[str, Any]) -> str:
         "Choose one disposition: direct_simple or components.",
         "direct_simple: one required direct need; never fallback.",
         "components: 1-5 objects; local keys, not runtime identity; omit empty optionals/defaults.",
+        (
+            "When qualified_multicomponent_structure_for_planning is present, it is code-owned: "
+            "use components only, emit exactly component_count items in the supplied order, and copy "
+            "each matching component_slots[i].user_facing_question exactly into components[i].need. "
+            "Those slots remain required user-facing targets; never add, collapse, reorder, replace, "
+            "or demote them, and never promote the request-level directive into a component."
+        ),
         "Direct: no depends_on. inferred|direct_or_inferred: needs depends_on. inferred: no source/freshness.",
+        (
+            "source_bound_numeric is only for a genuinely new derived, calculated, or converted "
+            "numeric result with an explicit calculation posture. A source-stated numeric fact uses "
+            "its ordinary direct source class; digits, units, comparison wording, and a prohibition "
+            "on calculation do not create a source_bound_numeric need."
+        ),
         "uncertainty: kind+status. unresolved|ambiguous: no selected. selected in candidates. confirm=true only if material unresolved|ambiguous.",
         "Never author queries/recon/Scout/PlannerRevision, IDs/digests/lineage, routing, evidence/citations, accepted state, or answers.",
         "Return one JSON object only. Unknown fields, old rich output, prose/Markdown, duplicate keys, and nonfinite JSON fail closed.",

@@ -156,8 +156,8 @@ class NorthstarHarness(OfflineOrdinaryPipelineHarness):
                             {
                                 "synthesis_key": "E",
                                 "claim_text": (
-                                    "Applicants at or below $60,000 who seek the "
-                                    "income bonus must use the paper application."
+                                    "Applicants who qualify for the income bonus and seek it "
+                                    "must use the paper application."
                                 ),
                                 "relationship_type": "eligibility_and_filing_requirement",
                                 "component_inputs": [
@@ -690,7 +690,7 @@ def test_numbered_and_imperative_northstar_queries_reach_same_governed_report(
     assert len(accepted["accepted_answer_component_refs"]) == 5
     component_refs = {item["component_id"]: item for item in accepted["accepted_answer_component_refs"]}
     first_source_ids = set(component_refs["component-1"].get("source_obligation_candidate_ids", []))
-    assert "obligation:source_bound_numeric" in first_source_ids
+    assert "obligation:source_bound_numeric" not in first_source_ids
     assert "obligation:legal_current_primary" not in first_source_ids
     assert "obligation:conflict_resolution" not in first_source_ids
     assert any(

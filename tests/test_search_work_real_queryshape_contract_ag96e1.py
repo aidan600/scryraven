@@ -575,12 +575,12 @@ def test_canonical_documentation_query_derives_canonical_obligation() -> None:
     assert ProviderJobKind.CANONICAL_EXTRACTION.value in _provider_job_kinds(assessment)
 
 
-def test_source_bound_numeric_query_derives_numeric_obligation_and_fetch_read_hint() -> None:
+def test_numeric_words_do_not_deterministically_create_source_bound_work() -> None:
     assessment = _assessment_payload("What is the current numeric rate and how is it calculated?")
 
-    assert QueryShapeKind.SOURCE_BOUND_NUMERIC.value in _kinds(assessment)
-    assert SourceObligationKind.SOURCE_BOUND_NUMERIC.value in _obligation_kinds(assessment)
-    assert ProviderJobKind.FETCH_READ_EXTRACT.value in _provider_job_kinds(assessment)
+    assert QueryShapeKind.SOURCE_BOUND_NUMERIC.value not in _kinds(assessment)
+    assert SourceObligationKind.SOURCE_BOUND_NUMERIC.value not in _obligation_kinds(assessment)
+    assert ProviderJobKind.FETCH_READ_EXTRACT.value not in _provider_job_kinds(assessment)
 
 
 def test_multipart_query_produces_multiple_components_in_lane_projection() -> None:

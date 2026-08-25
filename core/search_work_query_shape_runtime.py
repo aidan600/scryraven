@@ -1084,15 +1084,20 @@ def _query_shape_kinds(
 
 
 def _inferred_obligation_kinds(text: str) -> list[SourceObligationKind]:
+    """Infer only explicit source-class posture, never a numeric calculation need.
+
+    Source-bound quantitative work is a semantic/contract nomination.  A word
+    such as ``rate``, ``percentage``, or ``calculation`` cannot distinguish a
+    direct source-stated value from a newly derived result, so deterministic
+    query-shape handling must not mint ``source_bound_numeric`` from tokens.
+    """
+
     kinds: list[SourceObligationKind] = []
     legal = _has_any(text, _LEGAL_MARKERS) and (
         _has_any(text, _CURRENT_MARKERS) or "current" in text
     )
     canonical = _has_any(text, _CANONICAL_DOC_MARKERS)
-    source_numeric = _has_any(text, _NUMERIC_MARKERS)
-    official = _has_any(text, _OFFICIAL_MARKERS) and (
-        _has_any(text, _CURRENT_MARKERS) or source_numeric
-    )
+    official = _has_any(text, _OFFICIAL_MARKERS)
     conflict = _has_any(text, _CONFLICT_MARKERS)
     if official:
         kinds.append(SourceObligationKind.OFFICIAL_CURRENT)
@@ -1100,8 +1105,6 @@ def _inferred_obligation_kinds(text: str) -> list[SourceObligationKind]:
         kinds.append(SourceObligationKind.LEGAL_CURRENT_PRIMARY)
     if canonical:
         kinds.append(SourceObligationKind.CANONICAL_DOCUMENTATION)
-    if source_numeric:
-        kinds.append(SourceObligationKind.SOURCE_BOUND_NUMERIC)
     if conflict:
         kinds.append(SourceObligationKind.CONFLICT_RESOLUTION)
     if not kinds:

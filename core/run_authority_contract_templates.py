@@ -95,7 +95,7 @@ TEMPLATE_REGISTRY: dict[str, RunContractTemplate] = {
     CURRENT_OFFICIAL_NUMERIC_OR_RULE: RunContractTemplate(
         template_id=CURRENT_OFFICIAL_NUMERIC_OR_RULE,
         question_type="current_official_numeric_or_rule",
-        claim_type="source_bound_current_fact",
+        claim_type="direct_source_current_fact",
         source_requirements=(
             _req(
                 "run-contract:official_current_rules",
@@ -106,22 +106,11 @@ TEMPLATE_REGISTRY: dict[str, RunContractTemplate] = {
                 required_currentness="current",
                 satisfaction_rule="direct official/current source required for current rule or threshold claims",
                 allowed_lower_tier_use="leads_or_context_only",
-                rationale="current official numeric/rule questions require source-bound official evidence",
-            ),
-            _req(
-                "run-contract:source_bound_numeric",
-                requirement_kind=RunContractRequirementKind.SOURCE_BOUND_NUMERIC,
-                strictness=RunContractStrictness.REQUIRED,
-                required_source_class="official_current_rules",
-                required_source_tier="official",
-                required_currentness="current",
-                satisfaction_rule="numeric values must be bound to an identified current official or primary source",
-                allowed_lower_tier_use="leads_or_context_only",
-                rationale="unsupported numeric values remain unknown",
+                rationale="source-stated numeric/rule questions require direct official evidence",
             ),
         ),
         numeric_policy={
-            "source_bound_required": True,
+            "source_bound_required": False,
             "calculations_allowed_from_sourced_values": True,
             "unsupported_values_unknown": True,
         },
@@ -130,12 +119,11 @@ TEMPLATE_REGISTRY: dict[str, RunContractTemplate] = {
             "stop_when_budget_exhausted": True,
         },
         final_posture_policy={
-            "definitive_allowed_if": "required official/current source-bound values satisfied",
+            "definitive_allowed_if": "required official/current sources satisfied",
             "partial_allowed_if": "some required values missing but caveated",
-            "insufficient_required_if": "required official/current source-bound value is missing",
+            "insufficient_required_if": "required official/current source is missing",
             "mandatory_caveats": (
                 "missing_official_current_source_must_be_caveated",
-                "missing_source_bound_numeric_value_remains_unknown",
             ),
             "prohibited_upgrades": (
                 "do_not_treat_secondary_or_aggregate_counts_as_official_current_satisfaction",
@@ -149,18 +137,13 @@ TEMPLATE_REGISTRY: dict[str, RunContractTemplate] = {
                     "requirement_id": "run-contract:official_current_rules",
                     "query_hint": "prefer official current source",
                 },
-                {
-                    "hint_id": "source-bound-numeric",
-                    "requirement_id": "run-contract:source_bound_numeric",
-                    "query_hint": "bind numeric values to official source",
-                },
             ),
             "evidence_ledger_requirement_hints": (
                 "official_current_rules",
                 "current_primary_or_official",
             ),
             "final_answer_packet_hints": (
-                "missing official/current source-bound values require caveats",
+                "missing official/current sources require caveats",
             ),
         },
     ),

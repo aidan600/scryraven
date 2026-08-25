@@ -51,10 +51,16 @@ SEARCH_PLANNER_QMR_RESOLVER_VERSION = "ag-search-planner-runtime-01"
 SEARCH_PLANNER_INPUT_PREVIEW_CHARS = 500
 SEARCH_PLANNER_FULL_QUERY_TEXT_CHARS = 12000
 SEARCH_PLANNER_MAX_ANSWER_COMPONENTS = 5
+SEARCH_PLANNER_QUALIFIED_MULTICOMPONENT_STRUCTURE_SCHEMA_VERSION = (
+    "search_planner_qualified_multicomponent_structure_v1"
+)
 SEARCH_PLANNER_SAFE_CONTEXT_MAX_DEPTH = 12
 SEARCH_PLANNER_SAFE_CONTEXT_MAX_COLLECTION_ITEMS = 64
 SEARCH_PLANNER_SAFE_CONTEXT_TEXT_CHARS = 900
 _ADAPTER_ONLY_USER_QUERY_TEXT_KEY = "user_query_text_for_planning"
+_ADAPTER_ONLY_QUALIFIED_MULTICOMPONENT_STRUCTURE_KEY = (
+    "qualified_multicomponent_structure_for_planning"
+)
 
 _ALLOWED_INITIAL_QUERY_ROLES = frozenset(
     {
@@ -259,6 +265,9 @@ class SearchPlannerRuntimeSafeFailureCode(str, Enum):
     INITIAL_STRATEGY_IDENTITY_INVALID = "initial_strategy_identity_invalid"
     STRATEGY_CANDIDATE_INVALID = "strategy_candidate_invalid"
     RECON_REQUIREMENT_INVALID = "recon_requirement_invalid"
+    QUALIFIED_MULTICOMPONENT_STRUCTURE_VIOLATION = (
+        "qualified_multicomponent_structure_violation"
+    )
 
 
 class SearchPlannerRuntimeError(ValueError):
@@ -646,7 +655,12 @@ class SearchPlannerInput:
                 "search planner input cannot open closed runtime surfaces",
                 failure_code=SearchPlannerRuntimeSafeFailureCode.INPUT_CLOSED_SURFACE_OPENED,
             )
-        return {
+        qualified_structure = _qualified_multicomponent_structure_for_planning(
+            user_query_text=self.normalized_user_query_text,
+            requested_mode=_clean_token(self.requested_mode) or "balanced",
+            safe_context=self.safe_context,
+        )
+        payload = {
             "schema_version": self.planner_schema_version,
             "run_id": run_id,
             "request_id": request_id,
@@ -670,6 +684,173 @@ class SearchPlannerInput:
             },
             "closed_surface_flags": closed_flags,
         }
+        if qualified_structure:
+            payload[_ADAPTER_ONLY_QUALIFIED_MULTICOMPONENT_STRUCTURE_KEY] = (
+                qualified_structure
+            )
+            payload["qualified_multicomponent_structure_ref"] = (
+                _qualified_multicomponent_structure_ref(qualified_structure)
+            )
+        return payload
+
+
+def _qualified_multicomponent_structure_for_planning(
+    *,
+    user_query_text: str,
+    requested_mode: str,
+    safe_context: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    """Return the binding envelope for one deterministically qualified request.
+
+    The deterministic query-shape owner is used only for explicit request
+    structure: ordered user components and the one request-level directive.
+    It neither supplies semantic meaning nor source obligations to the model.
+    The exact component text is adapter-only; the retained projection below
+    keeps only mechanical identities and digests.
+    """
+
+    context = _safe_mapping(safe_context)
+    route_facts = _safe_mapping(context.get("route_facts"))
+    run_contract = _safe_mapping(context.get("run_contract_projection"))
+    contract_id = _clean_token(run_contract.get("contract_id"))
+    query_text = _normalize_user_query_text(user_query_text)
+    if not query_text or not contract_id or not route_facts:
+        return None
+    try:
+        records = build_deterministic_search_work_runtime_records(
+            DeterministicSearchWorkRuntimeInput(
+                contract_id=contract_id,
+                run_contract_projection=run_contract,
+                route_facts=route_facts,
+                requested_mode=requested_mode,
+                selected_depth=_clean_token(run_contract.get("selected_depth")),
+                safe_query_preview=query_text,
+                current_date_ref=_clean_text(context.get("current_date")),
+                metadata={
+                    "owner": "search_planner_qualified_multicomponent_structure",
+                    "provider_free": True,
+                    "structure_only": True,
+                },
+            )
+        )
+    except Exception as exc:  # noqa: BLE001 - boundary failures remain safe and closed.
+        raise SearchPlannerRuntimeError(
+            "qualified multi-component structure could not be constructed",
+            failure_code=(
+                SearchPlannerRuntimeSafeFailureCode.QUALIFIED_MULTICOMPONENT_STRUCTURE_VIOLATION
+            ),
+        ) from exc
+
+    assessment = records.query_shape_assessment
+    metadata = _safe_mapping(assessment.metadata)
+    if metadata.get("structured_route_posture") != "QUALIFIED":
+        return None
+    directive = _clean_text(metadata.get("requested_synthesis_directive"), limit=360)
+    components = tuple(assessment.component_candidates)
+    if not directive or not (2 <= len(components) <= SEARCH_PLANNER_MAX_ANSWER_COMPONENTS):
+        raise SearchPlannerRuntimeError(
+            "qualified multi-component structure is incomplete",
+            failure_code=(
+                SearchPlannerRuntimeSafeFailureCode.QUALIFIED_MULTICOMPONENT_STRUCTURE_VIOLATION
+            ),
+        )
+
+    slots: list[dict[str, Any]] = []
+    for position, component in enumerate(components, start=1):
+        component_id = _clean_token(component.component_id)
+        question = _clean_text(component.user_facing_subquestion, limit=400)
+        if not component_id or not question:
+            raise SearchPlannerRuntimeError(
+                "qualified multi-component structure has an invalid component slot",
+                failure_code=(
+                    SearchPlannerRuntimeSafeFailureCode.QUALIFIED_MULTICOMPONENT_STRUCTURE_VIOLATION
+                ),
+            )
+        slots.append(
+            {
+                "position": position,
+                "component_id": component_id,
+                "user_facing_question": question,
+                "user_facing_question_digest": _digest_json(
+                    {
+                        "position": position,
+                        "component_id": component_id,
+                        "user_facing_question": question,
+                    }
+                ),
+            }
+        )
+    return {
+        "schema_version": SEARCH_PLANNER_QUALIFIED_MULTICOMPONENT_STRUCTURE_SCHEMA_VERSION,
+        "route_form": "explicit_factual_components_plus_request_directive",
+        "structured_route_syntax_kind": _clean_token(
+            metadata.get("structured_route_syntax_kind")
+        ),
+        "newly_licensed_route_form": bool(
+            metadata.get("newly_licensed_route_form")
+        ),
+        "route_qualification_behavior_changed": bool(
+            metadata.get("route_qualification_behavior_changed")
+        ),
+        "query_plan_behavior_changed": bool(
+            metadata.get("query_plan_behavior_changed")
+        ),
+        "provider_search_behavior_changed": bool(
+            metadata.get("provider_search_behavior_changed")
+        ),
+        "component_count": len(slots),
+        "component_slots": slots,
+        "requested_synthesis_directive": directive,
+        "requested_synthesis_directive_digest": _digest_json(
+            {"requested_synthesis_directive": directive}
+        ),
+        "component_order_is_binding": True,
+        "directive_is_not_an_answer_component": True,
+        "additional_required_answer_targets_forbidden": True,
+    }
+
+
+def _qualified_multicomponent_structure_ref(
+    structure: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Project only durable mechanical bindings from an adapter-only envelope."""
+
+    slots = []
+    for slot in _safe_list(structure.get("component_slots")):
+        item = _safe_mapping(slot)
+        component_id = _clean_token(item.get("component_id"))
+        position = item.get("position")
+        digest = _clean_token(item.get("user_facing_question_digest"), limit=128)
+        if component_id and isinstance(position, int) and digest:
+            slots.append(
+                {
+                    "position": position,
+                    "component_id": component_id,
+                    "user_facing_question_digest": digest,
+                }
+            )
+    return {
+        "schema_version": _clean_token(structure.get("schema_version")),
+        "route_form": _clean_token(structure.get("route_form")),
+        "structured_route_syntax_kind": _clean_token(
+            structure.get("structured_route_syntax_kind")
+        ),
+        "component_count": len(slots),
+        "component_slots": slots,
+        "requested_synthesis_directive_digest": _clean_token(
+            structure.get("requested_synthesis_directive_digest"),
+            limit=128,
+        ),
+        "component_order_is_binding": bool(
+            structure.get("component_order_is_binding")
+        ),
+        "directive_is_not_an_answer_component": bool(
+            structure.get("directive_is_not_an_answer_component")
+        ),
+        "additional_required_answer_targets_forbidden": bool(
+            structure.get("additional_required_answer_targets_forbidden")
+        ),
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -1075,6 +1256,7 @@ def contract_ref_from_contract(
 def _planner_input_ref_for_observation(planner_input: Mapping[str, Any]) -> dict[str, Any]:
     planner_input_ref = _safe_mapping(planner_input)
     planner_input_ref.pop(_ADAPTER_ONLY_USER_QUERY_TEXT_KEY, None)
+    planner_input_ref.pop(_ADAPTER_ONLY_QUALIFIED_MULTICOMPONENT_STRUCTURE_KEY, None)
     planner_input_ref.pop("user_query_text_for_planning_char_limit", None)
     return planner_input_ref
 
@@ -1168,6 +1350,14 @@ def _question_meaning_record_from_adapter_result(
         adapter_result.get("source_obligation_candidates"),
         components=components,
     )
+    qualified_structure = _qualified_multicomponent_structure_from_planner_input(
+        planner_input
+    )
+    if qualified_structure:
+        _validate_qualified_multicomponent_structure_binding(
+            components=components,
+            structure=qualified_structure,
+        )
     planner_model_metadata = _safe_mapping(
         adapter_result.get("planner_model_metadata")
     )
@@ -1176,13 +1366,32 @@ def _question_meaning_record_from_adapter_result(
         components=components,
     )
 
-    adapter_explicit_component_list = adapter_result.get(
-        "explicit_factual_component_list"
-    )
+    adapter_explicit_component_list = adapter_result.get("explicit_factual_component_list")
     explicit_factual_component_list = (
-        adapter_explicit_component_list is True
-        if "explicit_factual_component_list" in adapter_result
-        else len(components) > 1
+        True
+        if qualified_structure
+        else (
+            adapter_explicit_component_list is True
+            if "explicit_factual_component_list" in adapter_result
+            else len(components) > 1
+        )
+    )
+    requested_synthesis_directive = (
+        _clean_text(
+            qualified_structure.get("requested_synthesis_directive"),
+            limit=360,
+        )
+        if qualified_structure
+        else (
+            _clean_text(
+                adapter_result.get("requested_synthesis_directive")
+                or adapter_result.get("requested_output")
+                or adapter_result.get("question_meaning_summary"),
+                limit=360,
+            )
+            if len(components) > 1
+            else None
+        )
     )
     metadata = {
         "search_planner_schema_version": SEARCH_PLANNER_SCHEMA_VERSION,
@@ -1221,19 +1430,11 @@ def _question_meaning_record_from_adapter_result(
         ),
         "model_proposed_component_count": len(components),
         # Existing downstream multi-component consumers use these compatibility
-        # fields. Ordinary model output derives them mechanically from the
-        # accepted proposal; explicit fixtures may carry their own posture.
+        # fields. A qualified route gets them from the code-owned structural
+        # envelope; unqualified proposals retain the existing adapter posture.
         "explicit_factual_component_list": explicit_factual_component_list,
-        "requested_synthesis_directive": (
-            _clean_text(
-                adapter_result.get("requested_synthesis_directive")
-                or adapter_result.get("requested_output")
-                or adapter_result.get("question_meaning_summary"),
-                limit=360,
-            )
-            if len(components) > 1
-            else None
-        ),
+        "requested_synthesis_directive": requested_synthesis_directive,
+        "qualified_multicomponent_structure_bound": bool(qualified_structure),
     }
 
     record = QuestionMeaningRecord(
@@ -1276,7 +1477,57 @@ def _deterministic_query_shape_metadata(
     planner_input: Mapping[str, Any],
     components: Sequence[AnswerComponentContract],
 ) -> dict[str, Any]:
-    """Emit bounded compatibility telemetry without semantic authority."""
+    """Emit bounded route metadata and structural binding telemetry."""
+
+    qualified_structure = _qualified_multicomponent_structure_from_planner_input(
+        planner_input
+    )
+    if qualified_structure:
+        slots = [
+            _safe_mapping(item)
+            for item in _safe_list(qualified_structure.get("component_slots"))
+        ]
+        expected_ids = [
+            _clean_token(item.get("component_id"))
+            for item in slots
+            if _clean_token(item.get("component_id"))
+        ]
+        proposal_component_ids = [component.component_id for component in components]
+        return {
+            "deterministic_query_shape_signal_owner": "core.search_work_query_shape_runtime",
+            "deterministic_query_shape_role": "mechanical_structural_envelope",
+            "deterministic_query_shape_assessed_from_transient_input": True,
+            "deterministic_explicit_factual_component_list": True,
+            "deterministic_requested_synthesis_directive": _clean_text(
+                qualified_structure.get("requested_synthesis_directive"),
+                limit=360,
+            ),
+            "structured_route_posture": "QUALIFIED",
+            "structured_route_syntax_kind": _clean_token(
+                qualified_structure.get("structured_route_syntax_kind")
+            ),
+            "newly_licensed_route_form": bool(
+                qualified_structure.get("newly_licensed_route_form")
+            ),
+            "route_qualification_behavior_changed": bool(
+                qualified_structure.get("route_qualification_behavior_changed")
+            ),
+            "query_plan_behavior_changed": bool(
+                qualified_structure.get("query_plan_behavior_changed")
+            ),
+            "provider_search_behavior_changed": bool(
+                qualified_structure.get("provider_search_behavior_changed")
+            ),
+            "deterministic_query_shape_component_ids": expected_ids,
+            "model_proposed_component_ids": proposal_component_ids,
+            "deterministic_component_count_matches_model": (
+                len(expected_ids) == len(proposal_component_ids)
+            ),
+            "deterministic_component_ids_match_model": (
+                expected_ids == proposal_component_ids
+            ),
+            "qualified_multicomponent_structure_bound": True,
+        }
 
     safe_context = _safe_mapping(planner_input.get("safe_context"))
     route_facts = _safe_mapping(safe_context.get("route_facts"))
@@ -1343,6 +1594,96 @@ def _deterministic_query_shape_metadata(
             assessment_component_ids == proposal_component_ids
         ),
     }
+
+
+def _qualified_multicomponent_structure_from_planner_input(
+    planner_input: Mapping[str, Any],
+) -> Mapping[str, Any] | None:
+    structure = _safe_mapping(
+        planner_input.get(_ADAPTER_ONLY_QUALIFIED_MULTICOMPONENT_STRUCTURE_KEY)
+    )
+    if not structure:
+        return None
+    if (
+        _clean_token(structure.get("schema_version"))
+        != SEARCH_PLANNER_QUALIFIED_MULTICOMPONENT_STRUCTURE_SCHEMA_VERSION
+    ):
+        raise SearchPlannerRuntimeError(
+            "qualified multi-component structure schema is invalid",
+            failure_code=(
+                SearchPlannerRuntimeSafeFailureCode.QUALIFIED_MULTICOMPONENT_STRUCTURE_VIOLATION
+            ),
+        )
+    return structure
+
+
+def _validate_qualified_multicomponent_structure_binding(
+    *,
+    components: Sequence[AnswerComponentContract],
+    structure: Mapping[str, Any],
+) -> None:
+    """Fail closed unless accepted components exactly match code-owned slots."""
+
+    slots = tuple(
+        _safe_mapping(item)
+        for item in _safe_list(structure.get("component_slots"))
+    )
+    expected_count = structure.get("component_count")
+    if not isinstance(expected_count, int) or expected_count != len(slots):
+        _raise_qualified_multicomponent_structure_violation()
+    if len(components) != expected_count:
+        _raise_qualified_multicomponent_structure_violation()
+
+    directive = _clean_text(
+        structure.get("requested_synthesis_directive"),
+        limit=360,
+    )
+    if not directive:
+        _raise_qualified_multicomponent_structure_violation()
+    for position, (component, slot) in enumerate(zip(components, slots), start=1):
+        expected_position = slot.get("position")
+        expected_id = _clean_token(slot.get("component_id"))
+        expected_question = _clean_text(
+            slot.get("user_facing_question"),
+            limit=400,
+        )
+        expected_digest = _clean_token(
+            slot.get("user_facing_question_digest"),
+            limit=128,
+        )
+        if (
+            expected_position != position
+            or not expected_id
+            or not expected_question
+            or not expected_digest
+            or expected_digest
+            != _digest_json(
+                {
+                    "position": position,
+                    "component_id": expected_id,
+                    "user_facing_question": expected_question,
+                }
+            )
+        ):
+            _raise_qualified_multicomponent_structure_violation()
+        if (
+            component.component_id != expected_id
+            or component.user_facing_question != expected_question
+            or component.component_purpose
+            is not ComponentPurpose.USER_FACING_ANSWER_TARGET
+            or component.requirement_posture is not RequirementPosture.REQUIRED
+            or component.user_facing_question == directive
+        ):
+            _raise_qualified_multicomponent_structure_violation()
+
+
+def _raise_qualified_multicomponent_structure_violation() -> None:
+    raise SearchPlannerRuntimeError(
+        "qualified multi-component structure binding was not preserved",
+        failure_code=(
+            SearchPlannerRuntimeSafeFailureCode.QUALIFIED_MULTICOMPONENT_STRUCTURE_VIOLATION
+        ),
+    )
 
 
 def _semantic_slots(value: Any) -> list[SemanticSlot]:
@@ -2419,6 +2760,7 @@ __all__ = [
     "SEARCH_PLANNER_INPUT_PREVIEW_CHARS",
     "SEARCH_PLANNER_PROPOSAL_OWNER",
     "SEARCH_PLANNER_PROPOSAL_SCHEMA_VERSION",
+    "SEARCH_PLANNER_QUALIFIED_MULTICOMPONENT_STRUCTURE_SCHEMA_VERSION",
     "SEARCH_PLANNER_SCHEMA_VERSION",
     "SEARCH_PLANNER_TRACE_KEY",
     "SearchPlannerAdapter",

@@ -1825,6 +1825,9 @@ class SearchPlannerModelAdapter:
             parsed,
             user_query_text=str(planner_input.get("user_query_text_for_planning") or ""),
             requested_mode=str(planner_input.get("requested_mode") or "balanced"),
+            qualified_multicomponent_structure=planner_input.get(
+                "qualified_multicomponent_structure_for_planning"
+            ),
         )
         proposal["planner_model_metadata"] = _planner_model_metadata(
             prompt_meta=metadata,
@@ -1942,6 +1945,7 @@ def accept_planner_model_output(
     *,
     user_query_text: str,
     requested_mode: str,
+    qualified_multicomponent_structure: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Accept only the sparse ordinary language, then validate compiled rich state."""
 
@@ -1951,6 +1955,7 @@ def accept_planner_model_output(
             semantic,
             user_query_text=user_query_text,
             requested_mode=requested_mode,
+            qualified_multicomponent_structure=qualified_multicomponent_structure,
         )
     except SearchPlannerSemanticProposalError as exc:
         raise SearchPlannerModelAdapterError(
