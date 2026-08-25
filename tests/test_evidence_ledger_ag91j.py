@@ -159,10 +159,21 @@ def test_helper_assessments_and_proposals_do_not_promote_to_facts() -> None:
     }
     assert records["helper_accepted"]["record_kind"] == "helper_assessment"
     assert records["proposal_accepted"]["record_kind"] == "proposal"
-    assert _requirement(
+    helper = next(
+        candidate
+        for candidate in projection["candidate_records"]
+        if candidate["candidate_id"] == "helper_accepted"
+    )
+    assert helper["fact_disposition"] == "unknown"
+    assert helper["eligible_for_stronger_obligation"] is False
+    assert helper.get("source_class") != "official_current_rules"
+    assert helper.get("source_tier") != "official"
+    requirement = _requirement(
         projection,
         "official_current_source:official_current_rules",
-    )["status"] == SourceRequirementStatus.UNSATISFIED.value
+    )
+    assert requirement["status"] == SourceRequirementStatus.UNSATISFIED.value
+    assert "helper_accepted" not in requirement["linked_candidate_ids"]
     assert (
         EvidenceCustodyGapType.HELPER_CONTROLLER_ASSESSMENT_NOT_PROMOTABLE.value
         in _gap_types(projection)

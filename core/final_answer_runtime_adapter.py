@@ -437,6 +437,12 @@ def _evidence_ledger_projection_from_any(value: Any) -> dict[str, Any]:
 
 
 def _source_obligations_from_custody(projection: Any) -> tuple[SourceObligationRecord, ...]:
+    """Parse OfficialCurrentSourceCustodyState for historical/unit callers.
+
+    Ordinary PRODUCT assembly no longer supplies telemetry custody here.
+    EvidenceLedger projections may still carry a nested compatibility view.
+    """
+
     custody_projection = _custody_projection_from_any(projection)
     if not custody_projection:
         return ()

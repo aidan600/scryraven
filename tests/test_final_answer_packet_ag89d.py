@@ -11,6 +11,7 @@ from core.final_answer_packet import (
     ClaimPosture,
     EvidenceAuthorityStatus,
     FinalAnswerPacket,
+    FinalAnswerReadinessStatus,
     FinalEvidenceRecord,
     SourceObligationStatus,
 )
@@ -738,7 +739,9 @@ def test_ag89d_static_orchestrator_wiring_does_not_change_protected_surfaces() -
     assert "derive_author_input_payload(" in helper_text
     assert "build_packet_derived_citation_source_handoff_state(" in helper_text
     assert "final_answer_packet_compatibility_refs(" in helper_text
-    assert "source_obligation_projection = build_source_class_observability_telemetry" in helper_text
+    assert "source_obligation_projection = evidence_ledger_projection" in helper_text
+    assert "legacy_source_obligation_projection" not in helper_text
+    assert "build_source_class_observability_telemetry" not in helper_text
     assert "final_source_telemetry_inputs.final_evidence_snapshot_payload" in helper_text
     assert '"authority": "final_answer_packet"' not in text
 
@@ -851,3 +854,254 @@ def test_final_answer_packet_rejects_carried_synthesis_on_non_ready_graph_even_w
                 "Only unaffected admitted synthesis remains available.",
             ),
         )
+
+
+def _assemble_author_runtime(**overrides):
+    from core.final_answer_runtime_assembly import assemble_final_answer_author_runtime
+
+    passage = overrides.pop("passage", _passage())
+    evidence = overrides.get("final_top_evidence") or [passage]
+    first = evidence[0] if evidence else passage
+    params = {
+        "run_id": "fallback-retirement",
+        "query": "Explain why plants need sunlight",
+        "intent": "research",
+        "report_type": "general",
+        "query_type": "general",
+        "core_topic": "plants",
+        "primary_entity": "plants",
+        "anchor_packet_telemetry": {},
+        "final_top_evidence": evidence,
+        "author_evidence": list(evidence),
+        "ordered_sources": [
+            f"- [{first.get('source_id')}] [{first.get('title')}]({first.get('url')})"
+        ],
+        "unique_source_urls": {first["url"]: first["source_id"]},
+        "query_lineage_refs": {},
+        "corpus_weak": False,
+        "failure_card_payload": {"show": False, "reason": None},
+        "conflicts_present": False,
+        "synth_was_insufficient": False,
+        "author_notes": "",
+        "author_prompt": "base prompt",
+        "author_system_prompt_key": "author",
+        "author_effort": "low",
+    }
+    params.update(overrides)
+    return assemble_final_answer_author_runtime(**params)
+
+
+def _official_fee_contract_and_ledger():
+    from core.evidence_ledger import (
+        CandidateDisposition,
+        EvidenceLedger,
+        build_evidence_ledger_observation_from_run_contract,
+    )
+    from core.run_authority_contract_templates import build_deterministic_contract
+
+    contract = build_deterministic_contract(
+        query="What is the current official filing fee?",
+        mode="Balanced",
+    ).to_projection()
+    ledger = EvidenceLedger()
+    ledger.reduce_observation(
+        build_evidence_ledger_observation_from_run_contract(
+            observation_id="fallback-retirement:ledger:contract",
+            contract_projection=contract,
+        ).to_dict()
+    )
+    ledger.reduce_observation(
+        {
+            "observation_id": "fallback-retirement:ledger:candidates",
+            "observation_source": "fallback_retirement_fixture",
+            "candidates": [
+                {
+                    "candidate_id": "C1",
+                    "url": "https://example.test/C1",
+                    "title": "C1",
+                    "source_class": "official_current_rules",
+                    "source_tier": "official",
+                    "currentness_signal": "current",
+                    "readable_status": "readable",
+                    "fetchable_status": "fetchable",
+                    "disposition": CandidateDisposition.ACCEPTED.value,
+                    "eligible_for_stronger_obligation": True,
+                }
+            ],
+            "requirement_links": [
+                {
+                    "requirement_id": requirement["requirement_id"],
+                    "candidate_id": "C1",
+                    "link_status": "fixture_link",
+                }
+                for requirement in contract["source_requirements"]
+            ],
+        }
+    )
+    return contract, ledger.to_projection().to_dict()
+
+
+def _telemetry_for_official_fee(passage):
+    from core.source_class_recovery import build_source_class_observability_telemetry
+
+    return build_source_class_observability_telemetry(
+        query="What is the current official filing fee?",
+        intent="research",
+        report_type="general",
+        query_type="general",
+        core_topic="filing fee",
+        primary_entity="agency",
+        anchor_packet=None,
+        final_top_evidence=[passage],
+    )
+
+
+def test_telemetry_only_custody_cannot_satisfy_required_official_current() -> None:
+    from core.run_authority_contract_templates import build_deterministic_contract
+
+    passage = _passage(
+        source_id=91,
+        title="Official fee schedule",
+        url="https://official.example/fee",
+        text="The official current filing fee is $45.",
+        source_tier="official",
+        source_class="official_current_rules",
+    )
+    telemetry = _telemetry_for_official_fee(passage)
+    custody = telemetry.get("official_current_source_custody") or {}
+    telemetry_satisfied_classes = {
+        item.get("source_class")
+        for item in custody.get("requirements") or ()
+        if item.get("status") == "requirement_satisfied"
+        or item.get("satisfied_candidate_ids")
+    }
+    assert "official_current_rules" in telemetry_satisfied_classes
+
+    contract = build_deterministic_contract(
+        query="What is the current official filing fee?",
+        mode="Balanced",
+    ).to_projection()
+    assembly = _assemble_author_runtime(
+        run_id="telemetry-no-authority",
+        query="What is the current official filing fee?",
+        core_topic="filing fee",
+        primary_entity="agency",
+        passage=passage,
+        run_contract_projection=contract,
+    )
+    packet = assembly.packet
+
+    assert assembly.source_obligation_projection is None
+    assert packet.official_current_custody_summary.get("available") is False
+    assert not any(
+        record.status is SourceObligationStatus.SATISFIED
+        and record.source_class == "official_current_rules"
+        for record in packet.source_obligations
+    )
+    assert any(
+        record.source_class == "official_current_rules"
+        and record.status is not SourceObligationStatus.SATISFIED
+        for record in packet.source_obligations
+    )
+    assert packet.readiness_status is not FinalAnswerReadinessStatus.AUTHOR_READY
+
+
+def test_evidence_ledger_canonical_custody_still_satisfies_source_obligation() -> None:
+    from core.run_authority_sufficiency import RunSufficiencyJudgmentInput
+    from core.run_authority_sufficiency_validation import (
+        build_deterministic_sufficiency_judgment,
+    )
+
+    contract, ledger = _official_fee_contract_and_ledger()
+    judgment = build_deterministic_sufficiency_judgment(
+        RunSufficiencyJudgmentInput(
+            contract_projection=contract,
+            evidence_ledger_projection=ledger,
+            search_judgment_projection={"decision": "stop_satisfied"},
+            answer_contract_projection={},
+            source_obligation_projection=ledger,
+            final_evidence_facts={
+                "final_evidence_count": 1,
+                "author_evidence_count": 1,
+            },
+            budget={"iteration": 1, "max_iterations": 3},
+        )
+    )
+    assembly = _assemble_author_runtime(
+        run_id="ledger-canonical-custody",
+        query="What is the current official filing fee?",
+        core_topic="filing fee",
+        primary_entity="agency",
+        passage=_passage(),
+        evidence_ledger_projection=ledger,
+        run_contract_projection=contract,
+        sufficiency_judgment_projection=judgment.to_projection(),
+    )
+    packet = assembly.packet
+
+    assert assembly.source_obligation_projection is ledger
+    assert packet.official_current_custody_summary.get("custody_authority") == (
+        "RunKernel.EvidenceLedger"
+    )
+    assert any(
+        record.source_class == "official_current_rules"
+        and record.status is SourceObligationStatus.SATISFIED
+        for record in packet.source_obligations
+    )
+    assert packet.citation_eligible
+    assert packet.readiness_status is FinalAnswerReadinessStatus.AUTHOR_READY
+
+
+def test_no_special_obligation_ordinary_path_does_not_gain_official_current_requirement() -> None:
+    assembly = _assemble_author_runtime(
+        run_id="ordinary-no-special-obligation",
+        query="Explain why plants need sunlight",
+    )
+    packet = assembly.packet
+
+    assert assembly.source_obligation_projection is None
+    assert not any(
+        record.source_class in {"official_current_rules", "official_current"}
+        for record in packet.source_obligations
+    )
+    assert packet.readiness_status is FinalAnswerReadinessStatus.AUTHOR_READY
+    assert packet.citation_eligible
+
+
+def test_source_class_observability_telemetry_remains_diagnostic_only() -> None:
+    passage = _passage(
+        source_id=92,
+        title="Official fee schedule",
+        url="https://official.example/fee-diagnostic",
+        text="The official current filing fee is $45.",
+        source_tier="official",
+        source_class="official_current_rules",
+    )
+    telemetry = _telemetry_for_official_fee(passage)
+    assert "official_current_source_custody" in telemetry
+    custody = telemetry["official_current_source_custody"]
+    assert custody.get("schema_version") == "official_current_source_custody_ag89b_v1"
+
+    assembly = _assemble_author_runtime(
+        run_id="telemetry-diagnostic-only",
+        query="What is the current official filing fee?",
+        core_topic="filing fee",
+        primary_entity="agency",
+        passage=passage,
+    )
+    packet = assembly.packet
+    telemetry_requirement_ids = {
+        item.get("requirement_id")
+        for item in custody.get("requirements") or ()
+        if item.get("requirement_id")
+    }
+
+    assert assembly.source_obligation_projection is None
+    assert not any(
+        record.custody_requirement_id in telemetry_requirement_ids
+        for record in packet.source_obligations
+    )
+    assert not any(
+        str(record.obligation_id).startswith("final-answer:official_current_source:")
+        for record in packet.source_obligations
+    )

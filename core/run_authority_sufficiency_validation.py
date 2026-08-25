@@ -2704,17 +2704,10 @@ def build_deterministic_sufficiency_judgment(
         ):
             missing.append(assessment)
 
-    authoritative_topology_present = bool(required_contract_requirements) or any(
-        clean_token(item.get("component_id"))
-        and clean_token(item.get("source_obligation_id"))
-        for item in ledger_requirements
-    )
     for item in _answer_contract_missing(answer_contract):
-        # A source-class compatibility summary has no canonical obligation ID.
-        # Once RunContract or exact component-owned ledger obligations exist, it
-        # is diagnostic-only and must not invent an additional FAP requirement.
-        if authoritative_topology_present:
-            continue
+        # Compatibility summaries are omitted only when an exact canonical
+        # requirement accounts for them. Broad RunContract or ledger topology
+        # presence is not authority to drop an unreconciled requirement.
         if _answer_contract_assessment_exactly_reconciled(
             item,
             contract_requirements=required_contract_requirements,
