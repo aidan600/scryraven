@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 from types import MappingProxyType
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 from core.semantic_contract_foundation import (
     ComponentPurpose,
@@ -597,6 +597,12 @@ class SearchPlannerSemanticValidationRuleId(str, Enum):
     COMPONENT_CALCULATION_JSON_TYPE = "component_calculation_json_type"
     COMPONENT_CALCULATION_OMIT_EMPTY = "component_calculation_omit_empty"
     COMPONENT_CALCULATION_MAX_BOUND = "component_calculation_max_bound"
+    SOURCE_BOUND_NUMERIC_REQUIRES_CALCULATION = (
+        "source_bound_numeric_requires_calculation"
+    )
+    QUALIFIED_MULTICOMPONENT_STRUCTURE_BINDING = (
+        "qualified_multicomponent_structure_binding"
+    )
     AUTHORITATIVE_USER_QUERY_JSON_TYPE = "authoritative_user_query_json_type"
     AUTHORITATIVE_USER_QUERY_NONEMPTY = "authoritative_user_query_nonempty"
     AUTHORITATIVE_USER_QUERY_MAX_BOUND = "authoritative_user_query_max_bound"
@@ -728,6 +734,8 @@ def _build_semantic_validation_rule_registry() -> Mapping[
             SearchPlannerSemanticValidationRuleId.INFERRED_SUPPORT_REQUIRES_DEPENDS_ON,
             SearchPlannerSemanticValidationRuleId.INFERRED_SUPPORT_FORBIDS_SOURCE,
             SearchPlannerSemanticValidationRuleId.INFERRED_SUPPORT_FORBIDS_FRESHNESS,
+            SearchPlannerSemanticValidationRuleId.SOURCE_BOUND_NUMERIC_REQUIRES_CALCULATION,
+            SearchPlannerSemanticValidationRuleId.QUALIFIED_MULTICOMPONENT_STRUCTURE_BINDING,
             SearchPlannerSemanticValidationRuleId.UNRESOLVED_AMBIGUOUS_FORBIDS_SELECTED,
             SearchPlannerSemanticValidationRuleId.SELECTED_MUST_BE_DECLARED_CANDIDATE,
             SearchPlannerSemanticValidationRuleId.CONFIRMATION_REQUIRES_MATERIAL_UNRESOLVED,
@@ -874,6 +882,7 @@ def compile_semantic_planner_proposal(
     *,
     user_query_text: str,
     requested_mode: str,
+    qualified_multicomponent_structure: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Compile accepted sparse meaning into the current rich compatibility state."""
 
@@ -886,7 +895,12 @@ def compile_semantic_planner_proposal(
         nonempty_rule_id=SearchPlannerSemanticValidationRuleId.AUTHORITATIVE_USER_QUERY_NONEMPTY,
         max_bound_rule_id=SearchPlannerSemanticValidationRuleId.AUTHORITATIVE_USER_QUERY_MAX_BOUND,
     )
+    qualified_slots = _qualified_multicomponent_structure_slots(
+        qualified_multicomponent_structure
+    )
     if proposal["disposition"] == "direct_simple":
+        if qualified_slots:
+            _raise_qualified_multicomponent_structure_binding()
         if len(query) > _MAX_NEED_CHARS:
             raise SearchPlannerSemanticProposalError(
                 "direct_simple requires the authoritative query to fit the current "
@@ -910,8 +924,18 @@ def compile_semantic_planner_proposal(
     else:
         components_in = list(proposal["components"])
 
+    if qualified_slots:
+        _validate_qualified_multicomponent_components(
+            components=components_in,
+            slots=qualified_slots,
+        )
+
     key_to_component_id = {
-        component["key"]: f"component:{index:02d}"
+        component["key"]: (
+            qualified_slots[index - 1]["component_id"]
+            if qualified_slots
+            else f"component:{index:02d}"
+        )
         for index, component in enumerate(components_in, start=1)
         if component.get("key")
     }
@@ -928,7 +952,11 @@ def compile_semantic_planner_proposal(
     obligation_ordinal = 0
 
     for index, component in enumerate(components_in, start=1):
-        component_id = f"component:{index:02d}"
+        component_id = (
+            qualified_slots[index - 1]["component_id"]
+            if qualified_slots
+            else f"component:{index:02d}"
+        )
         uncertainties = list(component.get("uncertainties") or ())
         slot_ids: list[str] = []
         if uncertainties:
@@ -1077,6 +1105,90 @@ def compile_semantic_planner_proposal(
         "assumptions": [],
         "unsupported_or_deferred_outputs": [],
     }
+
+
+def _qualified_multicomponent_structure_slots(
+    structure: Mapping[str, Any] | None,
+) -> tuple[dict[str, str], ...]:
+    """Validate code-owned component bindings supplied beside sparse meaning."""
+
+    if structure is None:
+        return ()
+    if not isinstance(structure, Mapping):
+        _raise_qualified_multicomponent_structure_binding()
+    raw_slots = structure.get("component_slots")
+    expected_count = structure.get("component_count")
+    directive = _qualified_structure_text(
+        structure.get("requested_synthesis_directive"),
+        limit=360,
+    )
+    if (
+        not directive
+        or not isinstance(raw_slots, list)
+        or not isinstance(expected_count, int)
+        or expected_count != len(raw_slots)
+        or not (2 <= expected_count <= _MAX_COMPONENTS)
+        or structure.get("component_order_is_binding") is not True
+        or structure.get("directive_is_not_an_answer_component") is not True
+        or structure.get("additional_required_answer_targets_forbidden") is not True
+    ):
+        _raise_qualified_multicomponent_structure_binding()
+    slots: list[dict[str, str]] = []
+    for position, item in enumerate(raw_slots, start=1):
+        if not isinstance(item, Mapping) or item.get("position") != position:
+            _raise_qualified_multicomponent_structure_binding()
+        component_id = _qualified_structure_text(item.get("component_id"), limit=160)
+        question = _qualified_structure_text(
+            item.get("user_facing_question"),
+            limit=_MAX_NEED_CHARS,
+        )
+        if not component_id or not question:
+            _raise_qualified_multicomponent_structure_binding()
+        slots.append(
+            {
+                "component_id": component_id,
+                "user_facing_question": question,
+            }
+        )
+    if len({slot["component_id"] for slot in slots}) != len(slots):
+        _raise_qualified_multicomponent_structure_binding()
+    return tuple(slots)
+
+
+def _qualified_structure_text(value: Any, *, limit: int) -> str | None:
+    if not isinstance(value, str):
+        return None
+    text = " ".join(value.strip().split())
+    if not text or len(text) > limit:
+        return None
+    return text
+
+
+def _validate_qualified_multicomponent_components(
+    *,
+    components: Sequence[Mapping[str, Any]],
+    slots: Sequence[Mapping[str, str]],
+) -> None:
+    """Reject model cardinality, ordering, target, or directive drift."""
+
+    if len(components) != len(slots):
+        _raise_qualified_multicomponent_structure_binding()
+    for component, slot in zip(components, slots):
+        if (
+            component.get("need") != slot.get("user_facing_question")
+            or component.get("purpose") not in {None, "user_facing_answer_target"}
+            or component.get("posture") not in {None, "required"}
+        ):
+            _raise_qualified_multicomponent_structure_binding()
+
+
+def _raise_qualified_multicomponent_structure_binding() -> None:
+    raise SearchPlannerSemanticProposalError(
+        "qualified multi-component structure binding failed closed",
+        semantic_validation_rule_id=(
+            SearchPlannerSemanticValidationRuleId.QUALIFIED_MULTICOMPONENT_STRUCTURE_BINDING
+        ),
+    )
 
 
 def _validate_direct_simple(model_output: Mapping[str, Any]) -> dict[str, Any]:
@@ -1353,6 +1465,13 @@ def _validate_component(item: Any, *, index: int) -> dict[str, Any]:
     )
     if calculation:
         result["calculation"] = calculation
+    if source and source.get("kind") == "source_bound_numeric" and not calculation:
+        raise SearchPlannerSemanticProposalError(
+            f"components[{index}] source_bound_numeric requires an explicit calculation posture",
+            semantic_validation_rule_id=(
+                SearchPlannerSemanticValidationRuleId.SOURCE_BOUND_NUMERIC_REQUIRES_CALCULATION
+            ),
+        )
     return result
 
 

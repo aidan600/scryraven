@@ -59,7 +59,6 @@ from core.multicomponent_role_runtime import (
 )
 from core.protocols import NullStatusWriter
 from core.quantitative_finalization_authority import (
-    QuantitativeFinalizationAuthorityError,
     specialist_quantitative_authority_ref_from_handoff,
 )
 from core.quantitative_specialist_product_activation import (
@@ -93,6 +92,7 @@ from core.run_config import RunDeps
 from core.run_kernel import ActionType
 from core.search_planner_runtime import (
     SEARCH_PLANNER_MAX_ANSWER_COMPONENTS,
+    DeterministicSearchPlannerAdapter,
     SearchPlannerRuntimeError,
     SearchPlannerRuntimeSafeFailureCode,
 )
@@ -141,6 +141,88 @@ from tests.test_multicomponent_ordinary_end_to_end_synthesis_01 import (
 from tests.test_specialist_graph_substrate_01 import SpecialistNorthstarHarness
 
 ROOT = Path(__file__).resolve().parents[1]
+
+QUANTITATIVE_SYNTHESIS_QUERY = """For the fictional Northstar Home-Energy Rebate:
+- What is the base rebate amount?
+- What is the application deadline?
+- Who qualifies for the income-based bonus?
+- Must bonus applicants use the paper application?
+- Can ordinary applicants file online?
+
+Then calculate the difference between the stated income-bonus threshold and
+the base rebate amount, and explain how bonus eligibility changes the filing
+route and what an eligible applicant should do."""
+
+
+class _FixtureDeclaredCalculationPlannerAdapter:
+    """Offline fixture adapter for a model-declared derived component need.
+
+    The ordinary deterministic planner fixture intentionally no longer infers a
+    source-bound calculation from numeric words.  These Specialist product
+    fixtures instead declare their genuine derived target explicitly at the
+    planner boundary, matching the ordinary model-owned semantic path.
+    """
+
+    def __init__(self, *, calculation_policy: str | None = None) -> None:
+        self._base = DeterministicSearchPlannerAdapter()
+        self._calculation_policy = calculation_policy or (
+            "derive the requested result from the supplied source-stated values"
+        )
+
+    def produce(self, planner_input: Mapping[str, Any]) -> Mapping[str, Any]:
+        proposal = deepcopy(dict(self._base.produce(planner_input)))
+        components = list(proposal["answer_components"])
+        first = dict(components[0])
+        first["calculation_policy"] = self._calculation_policy
+        first["source_obligation_candidate_ids"] = [
+            "obligation:source_bound_numeric"
+        ]
+        components[0] = first
+        proposal["answer_components"] = components
+        proposal["source_obligation_candidates"] = [
+            item
+            for item in list(proposal.get("source_obligation_candidates") or ())
+            if first["component_id"]
+            not in list(item.get("component_candidate_ids") or ())
+        ] + [
+            {
+                "candidate_id": "obligation:source_bound_numeric",
+                "obligation_kind": "source_bound_numeric",
+                "component_candidate_ids": [first["component_id"]],
+                "strictness": "required",
+                "metadata": {
+                    "required_source_class": "official_current_rules",
+                    "currentness_requirement": "current",
+                    "fixture_model_declared_calculation": True,
+                },
+            },
+        ]
+        requirements: list[dict[str, Any]] = []
+        for item in list(proposal.get("component_search_requirements") or ()):
+            if item.get("component_id") != first["component_id"]:
+                requirements.append(item)
+                continue
+            metadata = dict(item.get("metadata") or {})
+            metadata["query_strategy_candidates"] = [
+                {
+                    **dict(strategy),
+                    "source_obligation_candidate_ids": [
+                        "obligation:source_bound_numeric"
+                    ],
+                }
+                for strategy in list(metadata.get("query_strategy_candidates") or ())
+            ]
+            requirements.append(
+                {
+                    **dict(item),
+                    "source_obligation_candidate_ids": [
+                        "obligation:source_bound_numeric"
+                    ],
+                    "metadata": metadata,
+                }
+            )
+        proposal["component_search_requirements"] = requirements
+        return proposal
 
 
 @pytest.fixture(autouse=True)
@@ -1469,7 +1551,10 @@ def _contract_driven_quantitative_proposal(
 class QuantitativeComponentNorthstarHarness(SpecialistNorthstarHarness):
     proposal_origin = "component"
     fixture_preserves_clear_conflict_posture = True
-    component_posture = "optional"
+    # This fixture's first component is a model-declared derived answer target.
+    # Its Specialist need is therefore required; an invalid proposal must block
+    # that target rather than falling through to ordinary direct admission.
+    component_posture = "required"
     also_synthesis_proposal = False
     later_synthesis_posture = "optional"
     proposal_mutation: str | None = None
@@ -1495,6 +1580,11 @@ class QuantitativeComponentNorthstarHarness(SpecialistNorthstarHarness):
                 "The Northstar income bonus threshold is 60000 USD."
             ),
         }
+
+    def deps(self) -> RunDeps:
+        deps = super().deps()
+        deps.search_planner_adapter = _FixtureDeclaredCalculationPlannerAdapter()
+        return deps
 
     def _component_claim(self, question: str) -> str:
         if "base rebate" in question:
@@ -1799,39 +1889,15 @@ def test_invalid_parsed_quantitative_proposal_never_becomes_specialist_work(
     )
     harness = QuantitativeComponentNorthstarHarness(tmp_path)
     harness.proposal_mutation = mutation
-    if mutation == "missing_posture":
-        outcome, kernel, captured, _deps = _execute_product_run(
-            harness=harness,
-            monkeypatch=monkeypatch,
-            run_id=f"quantitative-invalid-admission-{mutation}",
-        )
-        assert outcome.report != harness.raw_author_response
-        assert captured["author_handoff_called"] is False
-    else:
-        error, kernel, captured = _expect_quantitative_finalization_rejection(
-            harness=harness,
-            monkeypatch=monkeypatch,
-            run_id=f"quantitative-invalid-admission-{mutation}",
-        )
-        assert error.diagnostic["status"] == "rejected"
-        assert any(
-            item.get("reason_code") == "unauthorized_quantitative_proposition"
-            for item in error.diagnostic["reason_refs"]
-        )
-        assert captured["author_handoff_called"] is True
-        assert len(harness.author_prompts) == 1
-        if mutation == "target_mismatch":
-            component_admission = next(
-                item
-                for item in kernel.state.projections[
-                    "multicomponent_component_admission"
-                ]["component_admission_refs"]
-                if item["component_id"] == "component-1"
-            )
-            assert (
-                component_admission["component_analyst_case_ref"]["role"]
-                == ROLE_COMPONENT_ANALYST
-            )
+    outcome, kernel, captured, _deps = _execute_product_run(
+        harness=harness,
+        monkeypatch=monkeypatch,
+        run_id=f"quantitative-invalid-admission-{mutation}",
+    )
+    scheduler = kernel.state.projections[MULTICOMPONENT_SCHEDULER_STAGE]
+    assert outcome.report != harness.raw_author_response
+    assert captured["author_handoff_called"] is False
+    assert scheduler["status"] == "blocked_required_specialist_proposal"
     _assert_no_specialist_authority(
         kernel=kernel,
         captured=captured,
@@ -1852,17 +1918,14 @@ def test_optional_nested_input_ref_authority_is_rejected_without_retention_or_wo
         forbidden_adapter,
     )
     harness = QuantitativeComponentNorthstarHarness(tmp_path)
+    harness.component_posture = "optional"
     harness.proposal_mutation = "nested_input_ref_authority"
-    error, kernel, captured = _expect_quantitative_finalization_rejection(
+    outcome, kernel, captured, _deps = _execute_product_run(
         harness=harness,
         monkeypatch=monkeypatch,
         run_id="quantitative-optional-nested-authority-rejection",
     )
-    assert error.diagnostic["status"] == "rejected"
-    assert any(
-        item.get("reason_code") == "unauthorized_quantitative_proposition"
-        for item in error.diagnostic["reason_refs"]
-    )
+    assert outcome.report == harness.raw_author_response
     assert captured["author_handoff_called"] is True
 
     plane = kernel.state.projections[SPECIALIST_WORK_PLANE_STAGE]
@@ -2020,16 +2083,17 @@ class QuantitativeSynthesisNorthstarHarness(SpecialistNorthstarHarness):
     proposal_origin = "synthesis"
     fixture_preserves_clear_conflict_posture = True
     synthesis_target_key = "E"
+    posture = "required"
 
     def __init__(self, tmp_path: Path) -> None:
         super().__init__(tmp_path)
+        self.query = QUANTITATIVE_SYNTHESIS_QUERY
         self._source_aliases: dict[str, str] = {}
         self.cross_inputs: list[dict[str, Any]] = []
         self._active_role_packet: dict[str, Any] = {}
         self.raw_author_response = (
             "Northstar quantitative synthesis\n\n"
-            "The difference between the 60000 USD threshold and the "
-            "1200 USD base amount is 58800 USD. The filing-route synthesis remains "
+            "The requested difference is 58800 USD. The filing-route synthesis remains "
             "subject to the admitted paper and online rules."
         )
         self.read_content_by_url = {
@@ -2041,6 +2105,19 @@ class QuantitativeSynthesisNorthstarHarness(SpecialistNorthstarHarness):
                 "The Northstar income bonus threshold is 60000 USD."
             ),
         }
+
+    def deps(self) -> RunDeps:
+        deps = super().deps()
+        # This fixture's requested relationship is itself a derived result.
+        # The test adapter models the ordinary planner's semantic nomination;
+        # it does not infer a calculation from numeric-looking text.
+        deps.search_planner_adapter = _FixtureDeclaredCalculationPlannerAdapter(
+            calculation_policy=(
+                "use this source-stated component as an input to the explicitly "
+                "requested derived difference"
+            )
+        )
+        return deps
 
     def _component_claim(self, question: str) -> str:
         if "base rebate" in question:
@@ -2087,11 +2164,11 @@ class QuantitativeSynthesisNorthstarHarness(SpecialistNorthstarHarness):
         posture: str,
         requirement: str,
     ) -> dict[str, Any]:
-        del hint, posture, requirement, target_kind
+        del hint, requirement, target_kind
         return _contract_driven_quantitative_proposal(
             role_packet=self._active_role_packet,
             target_key=target_key,
-            posture="optional",
+            posture=posture,
             calculation_kind="difference",
             operand_specs=[
                 (
@@ -2147,10 +2224,7 @@ class QuantitativeSynthesisNorthstarHarness(SpecialistNorthstarHarness):
             output["synthesis_proposals"] = [
                 {
                     "synthesis_key": "E",
-                    "claim_text": (
-                        "The difference between the 60000 USD threshold and the "
-                        "1200 USD base amount is 58800 USD."
-                    ),
+                    "claim_text": "The requested difference is 58800 USD.",
                     "relationship_type": "source_bound_numeric_difference",
                     "component_inputs": [
                         component_ids["base"],
@@ -2164,7 +2238,7 @@ class QuantitativeSynthesisNorthstarHarness(SpecialistNorthstarHarness):
                 {
                     "synthesis_key": "S",
                     "claim_text": (
-                        "The admitted quantitative difference is 58800 USD; bonus "
+                        "The admitted derived result means bonus "
                         "claimants still use paper and non-claimants may file online."
                     ),
                     "relationship_type": "quantitative_and_filing_route",
@@ -2183,7 +2257,7 @@ class QuantitativeSynthesisNorthstarHarness(SpecialistNorthstarHarness):
             nominated_claim = str(
                 dict(payload.get("nominated_claim") or {}).get("claim_text") or ""
             )
-            if "difference between" in nominated_claim:
+            if "requested difference" in nominated_claim:
                 return _quantitative_synthesis_dprime_response(payload)
         return raw
 
@@ -2281,22 +2355,6 @@ def _execute_product_run(
         CostAccumulator(),
     )
     return outcome, captured["semantic_run_kernel"], captured, deps
-
-
-def _expect_quantitative_finalization_rejection(
-    *,
-    harness: NorthstarHarness,
-    monkeypatch: pytest.MonkeyPatch,
-    run_id: str,
-) -> tuple[QuantitativeFinalizationAuthorityError, Any, dict[str, Any]]:
-    with pytest.raises(QuantitativeFinalizationAuthorityError) as raised:
-        _execute_product_run(
-            harness=harness,
-            monkeypatch=monkeypatch,
-            run_id=run_id,
-        )
-    captured = getattr(harness, "_quantitative_test_capture")
-    return raised.value, captured["semantic_run_kernel"], captured
 
 
 def _forbid_legacy_reducer(*_args: Any, **_kwargs: Any) -> Any:
@@ -2576,7 +2634,9 @@ def test_component_origin_product_path_and_paired_final_answer_delta(
         positive_plane["proposals"][0]["capability_request"]
     )
     assert negative_result["execution_posture"] == EXECUTION_BLOCKED
-    assert negative_result["validator_consumption"] == "rejected_by_validator"
+    # A required calculation that cannot execute has no Analyst-resume
+    # consumption step; the scheduler blocks it before Author instead.
+    assert negative_result["validator_consumption"] == "pending_validator_consumption"
     assert "supported derived combined amount is 1500 USD" not in negative.report
     assert negative_harness.author_prompts == []
 
@@ -2814,16 +2874,28 @@ def test_product_composition_preserves_single_component_reports(
             activate_product=False,
         )
     assert product.report == closed.report
-    product_scheduler = _assert_n1_direct_admission_scheduler(
-        kernel=product_kernel,
-        harness=product_harness,
+    # A direct official fact is no longer incorrectly promoted into the
+    # quantitative Specialist route merely because the historical template
+    # carried a numeric posture.  Both composition modes retain the ordinary
+    # direct producer path and identical user-visible output.
+    assert not ordinary_runtime.ordinary_multicomponent_path_selected(product_kernel)
+    assert not ordinary_runtime.ordinary_multicomponent_path_selected(closed_kernel)
+    assert (
+        product_kernel.state.multicomponent_scheduler_context[
+            "specialist_scheduler_enabled"
+        ]
+        is False
     )
-    closed_scheduler = _assert_n1_direct_admission_scheduler(
-        kernel=closed_kernel,
-        harness=closed_harness,
+    assert (
+        closed_kernel.state.multicomponent_scheduler_context[
+            "specialist_scheduler_enabled"
+        ]
+        is False
     )
-    assert product_scheduler["schema_version"] == MULTICOMPONENT_SCHEDULER_V3_SCHEMA_VERSION
-    assert closed_scheduler["schema_version"] == MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION
+    assert MULTICOMPONENT_SCHEDULER_STAGE not in product_kernel.state.projections
+    assert MULTICOMPONENT_SCHEDULER_STAGE not in closed_kernel.state.projections
+    assert SPECIALIST_WORK_PLANE_STAGE not in product_kernel.state.projections
+    assert SPECIALIST_WORK_PLANE_STAGE not in closed_kernel.state.projections
 
 
 def test_product_composition_preserves_overlimit_cardinality_fail_closed(

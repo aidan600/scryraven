@@ -37,7 +37,7 @@ from scripts.evaluation.search_planner_product_boundary_observer import (
 )
 
 _COMPILER_PATH = Path(compiler.__file__).resolve()
-_EXPECTED_RULE_COUNT = 92
+_EXPECTED_RULE_COUNT = 94
 
 _EXPECTED_TYPE_ENUM_OR_BOUND_RULE_IDS = frozenset(
     {
@@ -128,6 +128,8 @@ _EXPECTED_CROSS_FIELD_RULE_IDS = frozenset(
         SearchPlannerSemanticValidationRuleId.INFERRED_SUPPORT_REQUIRES_DEPENDS_ON,
         SearchPlannerSemanticValidationRuleId.INFERRED_SUPPORT_FORBIDS_SOURCE,
         SearchPlannerSemanticValidationRuleId.INFERRED_SUPPORT_FORBIDS_FRESHNESS,
+        SearchPlannerSemanticValidationRuleId.SOURCE_BOUND_NUMERIC_REQUIRES_CALCULATION,
+        SearchPlannerSemanticValidationRuleId.QUALIFIED_MULTICOMPONENT_STRUCTURE_BINDING,
         SearchPlannerSemanticValidationRuleId.UNRESOLVED_AMBIGUOUS_FORBIDS_SELECTED,
         SearchPlannerSemanticValidationRuleId.SELECTED_MUST_BE_DECLARED_CANDIDATE,
         SearchPlannerSemanticValidationRuleId.CONFIRMATION_REQUIRES_MATERIAL_UNRESOLVED,
@@ -277,6 +279,33 @@ def _compile_direct(value: Any) -> None:
         _direct(),
         user_query_text=value,
         requested_mode="Balanced",
+    )
+
+
+def _compile_qualified_multicomponent(proposal: Any) -> None:
+    compile_semantic_planner_proposal(
+        proposal,
+        user_query_text="First direct fact. Second direct fact. Then compare them.",
+        requested_mode="Balanced",
+        qualified_multicomponent_structure={
+            "component_count": 2,
+            "component_slots": [
+                {
+                    "position": 1,
+                    "component_id": "component-1",
+                    "user_facing_question": "First direct fact.",
+                },
+                {
+                    "position": 2,
+                    "component_id": "component-2",
+                    "user_facing_question": "Second direct fact.",
+                },
+            ],
+            "requested_synthesis_directive": "Then compare them.",
+            "component_order_is_binding": True,
+            "directive_is_not_an_answer_component": True,
+            "additional_required_answer_targets_forbidden": True,
+        },
     )
 
 
@@ -481,6 +510,10 @@ def _census_cases() -> tuple[RuleCase, ...]:
             _rejects(_direct(source={"kind": "official_current", "strictness": " "})),
         ),
         (
+            SearchPlannerSemanticValidationRuleId.SOURCE_BOUND_NUMERIC_REQUIRES_CALCULATION,
+            _rejects(_components(_component(source={"kind": "source_bound_numeric"}))),
+        ),
+        (
             SearchPlannerSemanticValidationRuleId.COMPONENT_FRESHNESS_JSON_TYPE,
             _rejects(_components(_component(freshness=1))),
         ),
@@ -627,6 +660,12 @@ def _census_cases() -> tuple[RuleCase, ...]:
         (
             SearchPlannerSemanticValidationRuleId.COMPONENT_CALCULATION_MAX_BOUND,
             _rejects(_components(_component(calculation="x" * 301))),
+        ),
+        (
+            SearchPlannerSemanticValidationRuleId.QUALIFIED_MULTICOMPONENT_STRUCTURE_BINDING,
+            lambda: _compile_qualified_multicomponent(
+                _components(_component(need="First direct fact."))
+            ),
         ),
         (
             SearchPlannerSemanticValidationRuleId.AUTHORITATIVE_USER_QUERY_JSON_TYPE,

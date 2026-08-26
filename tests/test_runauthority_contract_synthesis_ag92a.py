@@ -330,16 +330,13 @@ def test_invalid_model_json_falls_back_without_storing_raw_response() -> None:
     assert kernel.state.run_contract_projection["model_response_text_retained"] is False
 
 
-def test_model_cannot_weaken_strong_source_obligations() -> None:
+def test_model_cannot_weaken_direct_official_source_obligation() -> None:
     query = "What is the current official filing fee for Form I-130?"
     deterministic = build_deterministic_contract(query=query, mode="Balanced").to_projection()
     weakened = deepcopy(deterministic)
     weakened["contract_id"] = "weakened-contract"
     for requirement in weakened["source_requirements"]:
-        if requirement["requirement_kind"] in {
-            RunContractRequirementKind.OFFICIAL_CURRENT.value,
-            RunContractRequirementKind.SOURCE_BOUND_NUMERIC.value,
-        }:
+        if requirement["requirement_kind"] == RunContractRequirementKind.OFFICIAL_CURRENT.value:
             requirement["strictness"] = "contextual"
             requirement["required_source_class"] = "blog_summary"
             requirement["required_source_tier"] = "secondary"
@@ -362,14 +359,12 @@ def test_model_cannot_weaken_strong_source_obligations() -> None:
     )
     projection = result.contract.to_projection()
     official = _requirement_by_kind(projection, RunContractRequirementKind.OFFICIAL_CURRENT)
-    numeric = _requirement_by_kind(projection, RunContractRequirementKind.SOURCE_BOUND_NUMERIC)
 
     assert result.validation.status is ContractSynthesisStatus.REPAIRED
     assert official["strictness"] == "required"
     assert official["required_source_class"] == "official_current_rules"
     assert official["required_source_tier"] == "official"
     assert official["required_currentness"] == "current"
-    assert numeric["required_source_class"] == "official_current_rules"
     assert "social_signal" in official["cannot_satisfy_with"]
     assert "trusted_community" in official["cannot_satisfy_with"]
 
@@ -398,7 +393,7 @@ def test_evidence_ledger_consumes_contract_requirements() -> None:
 
     ledger = kernel.state.evidence_ledger.to_projection().to_dict()
     assert kernel.state.projections[EVIDENCE_LEDGER_STAGE]["owner"] == "RunKernel.EvidenceLedger"
-    assert ledger["requirement_count"] >= 2
+    assert ledger["requirement_count"] >= 1
     assert any(
         item["origin_ref"].startswith("RunKernel.RunAuthorityContract:")
         for item in ledger["source_requirements"]

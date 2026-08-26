@@ -6,9 +6,16 @@ from pathlib import Path
 import pytest
 
 from core.cap_enforcement import RunCapPolicy
+from core.search_work_query_shape_runtime import _assess_structured_multicomponent_shape
 from core.validation_profiles import (
     AG_LIVE_DISAMBIG,
     AG_LIVE_MULTI_COMPONENT,
+    AG_LIVE_N2_PRODUCT_FRONTIER_Q1,
+    AG_LIVE_N2_PRODUCT_FRONTIER_Q2,
+    AG_LIVE_N2_Q1_SUBJECT_BUDGET,
+    AG_LIVE_N2_Q1_TWO_OFFICIAL_SOURCES_LENGTH,
+    AG_LIVE_N2_Q2_SHARED_OFFICIAL_SOURCE_DATES,
+    AG_LIVE_N2_Q2_SUBJECT_BUDGET,
     AG_LIVE_S1_PRODUCT_CONVERGENCE,
     AG_LIVE_SMOKE,
     AG_LIVE_SOURCE_CUSTODY,
@@ -16,6 +23,10 @@ from core.validation_profiles import (
     DIRECT_HUMAN_PRIVATE_SHELL,
     MAX_INITIAL_SELECTED_SUBJECTS,
     MULTI_COMPONENT_DOCS_DOMAINS,
+    N2_Q1_OFFICIAL_DOMAINS,
+    N2_Q1_TWO_OFFICIAL_SOURCES_LENGTH,
+    N2_Q2_OFFICIAL_DOMAINS,
+    N2_Q2_SHARED_OFFICIAL_SOURCE_DATES,
     VALIDATION_PROFILES,
     get_validation_profile,
     validation_profile_names,
@@ -33,6 +44,8 @@ def test_profile_registry_contains_required_ag_live_profiles() -> None:
         AG_LIVE_MULTI_COMPONENT,
         AG_LIVE_DISAMBIG,
         AG_LIVE_S1_PRODUCT_CONVERGENCE,
+        AG_LIVE_N2_PRODUCT_FRONTIER_Q1,
+        AG_LIVE_N2_PRODUCT_FRONTIER_Q2,
     }
     for profile in VALIDATION_PROFILES.values():
         assert profile.purpose
@@ -183,6 +196,72 @@ def test_future_profiles_and_retired_source_custody_are_not_live_proof() -> None
         "no provider bake-off" in criterion
         for criterion in disambig.expected_packet_criteria
     )
+
+
+@pytest.mark.parametrize(
+    ("profile_name", "query_id", "query", "domains", "subject_budget"),
+    (
+        (
+            AG_LIVE_N2_PRODUCT_FRONTIER_Q1,
+            N2_Q1_TWO_OFFICIAL_SOURCES_LENGTH,
+            AG_LIVE_N2_Q1_TWO_OFFICIAL_SOURCES_LENGTH,
+            N2_Q1_OFFICIAL_DOMAINS,
+            AG_LIVE_N2_Q1_SUBJECT_BUDGET,
+        ),
+        (
+            AG_LIVE_N2_PRODUCT_FRONTIER_Q2,
+            N2_Q2_SHARED_OFFICIAL_SOURCE_DATES,
+            AG_LIVE_N2_Q2_SHARED_OFFICIAL_SOURCE_DATES,
+            N2_Q2_OFFICIAL_DOMAINS,
+            AG_LIVE_N2_Q2_SUBJECT_BUDGET,
+        ),
+    ),
+)
+def test_n2_frontier_profiles_register_exact_queries_and_offline_shape(
+    profile_name: str,
+    query_id: str,
+    query: str,
+    domains: tuple[str, ...],
+    subject_budget: object,
+) -> None:
+    profile = get_validation_profile(profile_name)
+
+    assert profile.fixed_queries == ((query_id, query),)
+    assert profile.required_include_domains == domains
+    assert profile.cap_policy.as_requested_dict() == {
+        "max_scryraven_runs": 1,
+        "max_retries": 0,
+    }
+    assert profile.subject_budget == subject_budget
+    assert profile.subject_budget is not None
+    assert profile.subject_budget.max_initial_selected_subjects == 2
+
+    shape = _assess_structured_multicomponent_shape(query)
+    assert shape.posture.value == "QUALIFIED"
+    assert shape.syntax_kind == "numbered_imperative"
+    assert len(shape.component_items) == 2
+    assert shape.requested_synthesis_directive is not None
+    assert shape.requested_synthesis_directive.startswith("Then compare")
+
+    context = support.build_preflight_context(
+        root=ROOT,
+        profile_name=profile_name,
+        query=query,
+        mode="Balanced",
+        include_domains=list(domains),
+        output_path=ROOT / "output" / f"{query_id}.sanitized.json",
+        caps=support.AgLiveBoundCaps(),
+        run_id=f"{query_id}-dry-run",
+        confirm_live_product_run=False,
+        approved_backup_query=False,
+        requested_query_id=query_id,
+    )
+    packet = support.build_dry_run_packet(context)
+
+    assert packet["preflight"]["query_lock"] == query_id
+    assert packet["domain_allowlist"] == list(domains)
+    assert packet["subject_budget_summary"]["max_initial_selected_subjects"] == 2
+    support.reject_forbidden_packet(packet)
 
 
 def test_runner_context_and_packet_include_profile_cap_and_schema() -> None:

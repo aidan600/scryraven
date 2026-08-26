@@ -3499,7 +3499,7 @@ def test_model_prompt_embeds_the_exact_sparse_contract_and_version() -> None:
     prompt = search_planner_model_prompt.build_search_planner_model_prompt(planner_input)
     prompt_packet = json.loads(prompt.split("Sanitized planner input JSON:\n", 1)[1])
 
-    assert SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION == "search_planner_sparse_model_prompt_v8"
+    assert SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION == "search_planner_sparse_model_prompt_v9"
     assert SEARCH_PLANNER_MODEL_ADAPTER_SCHEMA_VERSION == "search_planner_model_adapter_ag_search_planner_model_01_v2"
     assert prompt_packet["schema_version"] == SEARCH_PLANNER_MODEL_PROMPT_SCHEMA_VERSION
     assert prompt_packet["output_schema"] == search_planner_model_prompt.SEARCH_PLANNER_MODEL_OUTPUT_SCHEMA
@@ -3507,6 +3507,7 @@ def test_model_prompt_embeds_the_exact_sparse_contract_and_version() -> None:
         "requested_mode",
         "user_query_text_for_planning",
         "safe_context",
+        "qualified_multicomponent_structure_for_planning",
     }
     assert "Never author queries/recon/Scout/PlannerRevision" in prompt
     assert "runtime identity" in prompt

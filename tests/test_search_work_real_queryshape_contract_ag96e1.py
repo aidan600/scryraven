@@ -18,6 +18,7 @@ from core.run_authority_contract_runtime import execute_run_contract_synthesis_a
 from core.run_kernel import QUERY_PLAN_ADMISSION_STAGE, RunKernel
 from core.search_work_query_shape_runtime import (
     DeterministicSearchWorkRuntimeInput,
+    _inferred_obligation_kinds,
     build_deterministic_search_work_runtime_records,
 )
 from core.semantic_contract_foundation import SourceObligationKind
@@ -550,6 +551,14 @@ def test_simple_lookup_produces_one_simple_component_without_strict_official_or_
     assert SourceObligationKind.LEGAL_CURRENT_PRIMARY.value not in _obligation_kinds(assessment)
 
 
+def test_official_without_currentness_does_not_derive_official_current_obligation() -> None:
+    kinds = _inferred_obligation_kinds(
+        "Using official published specifications, report the overall length of an aircraft."
+    )
+
+    assert SourceObligationKind.OFFICIAL_CURRENT not in kinds
+
+
 def test_official_current_query_derives_official_obligation_and_acquisition_hint() -> None:
     assessment = _assessment_payload("What is the current official filing fee for Form I-130?")
 
@@ -575,12 +584,23 @@ def test_canonical_documentation_query_derives_canonical_obligation() -> None:
     assert ProviderJobKind.CANONICAL_EXTRACTION.value in _provider_job_kinds(assessment)
 
 
-def test_source_bound_numeric_query_derives_numeric_obligation_and_fetch_read_hint() -> None:
+def test_numeric_words_do_not_deterministically_create_source_bound_work() -> None:
     assessment = _assessment_payload("What is the current numeric rate and how is it calculated?")
 
-    assert QueryShapeKind.SOURCE_BOUND_NUMERIC.value in _kinds(assessment)
-    assert SourceObligationKind.SOURCE_BOUND_NUMERIC.value in _obligation_kinds(assessment)
-    assert ProviderJobKind.FETCH_READ_EXTRACT.value in _provider_job_kinds(assessment)
+    assert QueryShapeKind.SOURCE_BOUND_NUMERIC.value not in _kinds(assessment)
+    assert SourceObligationKind.SOURCE_BOUND_NUMERIC.value not in _obligation_kinds(assessment)
+    assert ProviderJobKind.FETCH_READ_EXTRACT.value not in _provider_job_kinds(assessment)
+
+
+def test_direct_source_stated_numeric_value_does_not_create_source_bound_work() -> None:
+    assessment = _assessment_payload(
+        "Report the source-stated 76.7 m overall length using official published "
+        "specifications. Do not calculate a difference or converted value."
+    )
+
+    assert QueryShapeKind.SOURCE_BOUND_NUMERIC.value not in _kinds(assessment)
+    assert SourceObligationKind.SOURCE_BOUND_NUMERIC.value not in _obligation_kinds(assessment)
+    assert ProviderJobKind.FETCH_READ_EXTRACT.value not in _provider_job_kinds(assessment)
 
 
 def test_multipart_query_produces_multiple_components_in_lane_projection() -> None:
