@@ -88,6 +88,13 @@ KNOWN_SECTIONS = (
     "quantitative_source_catalog",
     "quantitative_specialist_proposal_contract",
 )
+FROZEN_COMPONENT_ANALYST_PACKET_SECTIONS = {
+    "supported_query_class",
+    "run_binding",
+    "component_ref",
+    "component_evidence",
+    "quantitative_specialist_proposal_contract",
+}
 _DIGEST_A = "a" * 64
 _DIGEST_B = "b" * 64
 _DIGEST_COMPONENT = "c" * 64
@@ -228,6 +235,15 @@ def _packet(
         component_ref=ref,
         evidence_input=evidence_input or _evidence_input(),
     )
+
+
+def _unexpected_component_analyst_catalog() -> dict[str, Any]:
+    """Return an impossible legacy packet section for rejection coverage."""
+
+    return {
+        "schema_version": "quantitative_source_catalog.v1",
+        "catalog_kind": "component_quantitative_sources",
+    }
 
 
 def _semantic_output(*, supported: bool = False) -> dict[str, Any]:
@@ -414,8 +430,14 @@ def _establish_official_current_qualification_truth(
     )
 
 
-def test_successful_exact_input_admission_has_no_mismatch_diagnostic() -> None:
-    packet = _packet()
+def test_direct_nonnumeric_component_packet_is_catalog_free_and_admits() -> None:
+    evidence = _evidence_input()
+    evidence["bounded_text"] = "The official rule applies to this component."
+    evidence.pop("numeric_literal", None)
+    packet = _packet(evidence_input=evidence)
+    assert set(packet) == FROZEN_COMPONENT_ANALYST_PACKET_SECTIONS
+    assert "quantitative_source_catalog" not in packet
+    assert "quantitative_specialist_proposal_contract" in packet
     staged = stage_multicomponent_component_admission(**_stage_kwargs(analyst_input=packet))
     assert staged["component_admission_ref"]["admission_status"] == "unsupported"
     assert "component_analyst_input_binding_mismatch_v1" not in json.dumps(
@@ -423,17 +445,36 @@ def test_successful_exact_input_admission_has_no_mismatch_diagnostic() -> None:
     )
 
 
-def test_supplied_catalog_tamper_does_not_change_exact_digest_guard() -> None:
-    original = _packet()
-    supplied = deepcopy(original)
-    supplied["quantitative_source_catalog"] = {
-        **deepcopy(original["quantitative_source_catalog"]),
-        "catalog_kind": "tampered",
-    }
+def test_source_stated_numeric_packet_is_catalog_free_without_specialist_work() -> None:
+    evidence = _evidence_input()
+    evidence["bounded_text"] = "NASA records the official launch date as September 5, 1977."
+    packet = _packet(evidence_input=evidence)
+    assert set(packet) == FROZEN_COMPONENT_ANALYST_PACKET_SECTIONS
+    assert "quantitative_source_catalog" not in packet
+    assert "quantitative_specialist_proposal_contract" in packet
     staged = stage_multicomponent_component_admission(
-        **_stage_kwargs(analyst_input=supplied, artifact=_artifact(original))
+        **_stage_kwargs(analyst_input=packet)
     )
     assert staged["component_admission_ref"]["admission_status"] == "unsupported"
+    assert staged["component_admission_ref"][
+        "specialist_quantitative_authority_ref"
+    ] == {}
+
+
+def test_unexpected_catalog_in_component_analyst_packet_fails_closed() -> None:
+    original = _packet()
+    supplied = deepcopy(original)
+    supplied["quantitative_source_catalog"] = _unexpected_component_analyst_catalog()
+    diagnostic = _diagnostic_from(
+        analyst_input=supplied,
+        artifact=_artifact(original),
+        independent_dispatch_input_digest=safe_packet_digest(original),
+    )
+    assert diagnostic["mismatch_class"] == "SUPPLIED_PACKET_CHANGED"
+    assert diagnostic["first_divergent_section"] == "quantitative_source_catalog"
+    assert diagnostic["artifact_digest_equals_reconstructed"] is True
+    assert diagnostic["supplied_digest_equals_dispatch"] is False
+    _assert_digest_only(diagnostic)
 
 
 def test_mismatched_component_analyst_input_still_fails_closed() -> None:
@@ -507,8 +548,9 @@ def test_first_divergent_section_from_non_mapping_component_evidence() -> None:
     ("mutate", "expected_section"),
     [
         (
-            lambda packet: packet["quantitative_source_catalog"].__setitem__(
-                "catalog_kind", "tampered"
+            lambda packet: packet.__setitem__(
+                "quantitative_source_catalog",
+                _unexpected_component_analyst_catalog(),
             ),
             "quantitative_source_catalog",
         ),
@@ -625,10 +667,7 @@ def test_privacy_canaries_are_absent_from_diagnostic_and_product_packet(
 def test_conservative_classification_does_not_guess_supplied_or_artifact_change() -> None:
     original = _packet()
     supplied = deepcopy(original)
-    supplied["quantitative_source_catalog"] = {
-        **deepcopy(original["quantitative_source_catalog"]),
-        "catalog_kind": "tampered",
-    }
+    supplied["quantitative_source_catalog"] = _unexpected_component_analyst_catalog()
     diagnostic = _diagnostic_from(
         analyst_input=supplied,
         artifact=_artifact(original, input_packet_digest="0" * 64),
@@ -642,10 +681,7 @@ def test_conservative_classification_does_not_guess_supplied_or_artifact_change(
 def test_independent_dispatch_digest_can_prove_supplied_packet_changed() -> None:
     original = _packet()
     supplied = deepcopy(original)
-    supplied["quantitative_source_catalog"] = {
-        **deepcopy(original["quantitative_source_catalog"]),
-        "catalog_kind": "tampered",
-    }
+    supplied["quantitative_source_catalog"] = _unexpected_component_analyst_catalog()
     original_digest = safe_packet_digest(original)
     diagnostic = _diagnostic_from(
         analyst_input=supplied,
@@ -714,28 +750,13 @@ def test_component_ref_difference_is_other_not_reconstruction() -> None:
     _assert_digest_only(diagnostic)
 
 
-def test_true_reconstruction_non_idempotent_for_derived_catalog() -> None:
-    original = _packet()
-    supplied = deepcopy(original)
-    supplied["quantitative_source_catalog"] = {
-        **deepcopy(original["quantitative_source_catalog"]),
-        "catalog_kind": "tampered",
-    }
-    supplied_digest = safe_packet_digest(supplied)
-    diagnostic = _diagnostic_from(
-        analyst_input=supplied,
-        artifact=_artifact(supplied),
-        independent_dispatch_input_digest=supplied_digest,
-    )
-    assert diagnostic["mismatch_class"] == "PACKET_RECONSTRUCTION_NON_IDEMPOTENT"
-    assert diagnostic["first_divergent_section"] == "quantitative_source_catalog"
-    assert diagnostic["supplied_digest_equals_artifact"] is True
-    assert diagnostic["supplied_digest_equals_dispatch"] is True
-    assert diagnostic["run_binding_equal"] is True
-    assert diagnostic["component_ref_equal"] is True
-    assert diagnostic["component_evidence_equal"] is True
-    assert diagnostic["quantitative_source_catalog_equal"] is False
-    _assert_digest_only(diagnostic)
+def test_retired_derived_catalog_drift_is_replaced_by_frozen_packet_shape() -> None:
+    # A derived catalog was a lawful Component Analyst section when the former
+    # non-idempotence regression was written. The catalog now belongs only to
+    # Specialist dispatch, so packet shape—not catalog drift—is the CA guard.
+    packet = _packet()
+    assert set(packet) == FROZEN_COMPONENT_ANALYST_PACKET_SECTIONS
+    assert "quantitative_source_catalog" not in packet
 
 
 def test_contract_authority_changed_is_mechanically_proven() -> None:
@@ -767,10 +788,7 @@ def test_contract_authority_changed_is_mechanically_proven() -> None:
 def test_initial_and_current_authority_facts_are_truthful_without_policy_change() -> None:
     packet = _packet()
     supplied = deepcopy(packet)
-    supplied["quantitative_source_catalog"] = {
-        **deepcopy(packet["quantitative_source_catalog"]),
-        "catalog_kind": "tampered",
-    }
+    supplied["quantitative_source_catalog"] = _unexpected_component_analyst_catalog()
     initial_only = _diagnostic_from(
         analyst_input=supplied,
         artifact=_artifact(packet, input_packet_digest="0" * 64),

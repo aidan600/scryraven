@@ -549,6 +549,7 @@ def test_cross_input_reproof_accepts_both_exact_authority_routes() -> None:
     nodes, accepted_ref, directive, packets, cross_input, cross = (
         _cross_input_reproof_fixture()
     )
+    assert all("quantitative_source_catalog" not in packet for packet in packets.values())
     supplied = component_work_graph_v1_from_cross_component_artifact(
         run_id=RUN_ID,
         request_id=REQUEST_ID,
