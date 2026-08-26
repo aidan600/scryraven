@@ -1097,7 +1097,9 @@ def _inferred_obligation_kinds(text: str) -> list[SourceObligationKind]:
         _has_any(text, _CURRENT_MARKERS) or "current" in text
     )
     canonical = _has_any(text, _CANONICAL_DOC_MARKERS)
-    official = _has_any(text, _OFFICIAL_MARKERS)
+    official = _has_any(text, _OFFICIAL_MARKERS) and _has_any(
+        text, _CURRENT_MARKERS
+    )
     conflict = _has_any(text, _CONFLICT_MARKERS)
     if official:
         kinds.append(SourceObligationKind.OFFICIAL_CURRENT)
