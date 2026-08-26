@@ -112,6 +112,248 @@ MULTICOMPONENT_SAFE_FAILURE_KINDS = frozenset(
     }
 )
 
+# Closed, non-authoritative receiver attribution.  This is deliberately a
+# projection contract, not scheduler state: it describes the already-caught
+# receiver failure without changing work selection, lease settlement, or any
+# downstream product decision.
+COMPONENT_RECEIVER_CAUSE_SCHEMA_VERSION = "component_receiver_cause_v1"
+COMPONENT_RECEIVER_CAUSE_STATUS_EXACT = "exact"
+COMPONENT_RECEIVER_CAUSE_STATUS_SCHEDULER_CORRELATED = "scheduler_correlated"
+COMPONENT_RECEIVER_CAUSE_STATUS_OTHER_SAFE = "other_safe"
+
+COMPONENT_RECEIVER_CAUSE_TRANSITION_EVIDENCE_SELECTION_OR_CUSTODY = (
+    "evidence_selection_or_custody"
+)
+COMPONENT_RECEIVER_CAUSE_TRANSITION_COMPONENT_ANALYST_WORK = (
+    "component_analyst_work"
+)
+COMPONENT_RECEIVER_CAUSE_TRANSITION_COMPONENT_ADMISSION = "component_admission"
+COMPONENT_RECEIVER_CAUSE_TRANSITION_COMPONENT_COVERAGE = "component_coverage"
+COMPONENT_RECEIVER_CAUSE_TRANSITION_SELECTED_LANE_INTEGRITY = (
+    "selected_lane_integrity"
+)
+COMPONENT_RECEIVER_CAUSE_TRANSITION_OTHER_SAFE = "other_safe"
+
+_COMPONENT_RECEIVER_CAUSE_TRANSITIONS = frozenset(
+    {
+        COMPONENT_RECEIVER_CAUSE_TRANSITION_EVIDENCE_SELECTION_OR_CUSTODY,
+        COMPONENT_RECEIVER_CAUSE_TRANSITION_COMPONENT_ANALYST_WORK,
+        COMPONENT_RECEIVER_CAUSE_TRANSITION_COMPONENT_ADMISSION,
+        COMPONENT_RECEIVER_CAUSE_TRANSITION_COMPONENT_COVERAGE,
+        COMPONENT_RECEIVER_CAUSE_TRANSITION_SELECTED_LANE_INTEGRITY,
+        COMPONENT_RECEIVER_CAUSE_TRANSITION_OTHER_SAFE,
+    }
+)
+_COMPONENT_RECEIVER_EVIDENCE_OR_CUSTODY_FAILURE_CODES = frozenset(
+    {
+        "no_bindable_passage",
+        "source_obligation_custody_not_current",
+    }
+)
+_COMPONENT_RECEIVER_SCHEDULER_ROLES = frozenset(
+    {ROLE_COMPONENT_ANALYST, ROLE_COMPONENT_ANALYST_RESUME}
+)
+_COMPONENT_RECEIVER_SCHEDULER_SETTLEMENT_POSTURES = frozenset(
+    {LEASE_FAILED, LEASE_STALE}
+)
+
+
+def _closed_string_member(value: Any, choices: frozenset[str]) -> bool:
+    return isinstance(value, str) and value in choices
+
+
+def component_identity_digest(value: Any) -> str:
+    """Return the shared opaque component identity used by bounded projections."""
+
+    text = str(value or "").strip()
+    return sha256(text.encode("utf-8")).hexdigest()
+
+
+def _valid_component_identity_digest(value: Any) -> bool:
+    return bool(
+        isinstance(value, str)
+        and len(value) == 64
+        and not (set(value) - set("0123456789abcdef"))
+    )
+
+
+def component_receiver_other_safe_cause(
+    *,
+    cause_transition: str = COMPONENT_RECEIVER_CAUSE_TRANSITION_OTHER_SAFE,
+) -> dict[str, str]:
+    transition = (
+        cause_transition
+        if _closed_string_member(
+            cause_transition,
+            _COMPONENT_RECEIVER_CAUSE_TRANSITIONS,
+        )
+        else COMPONENT_RECEIVER_CAUSE_TRANSITION_OTHER_SAFE
+    )
+    return {
+        "schema_version": COMPONENT_RECEIVER_CAUSE_SCHEMA_VERSION,
+        "cause_status": COMPONENT_RECEIVER_CAUSE_STATUS_OTHER_SAFE,
+        "cause_transition": transition,
+        "failure_code": "other_safe",
+    }
+
+
+def component_receiver_exact_evidence_or_custody_cause(
+    *,
+    component_id: Any,
+    failure_code: Any,
+) -> dict[str, str]:
+    """Build the exact cause only for the installed selected-lane gate codes."""
+
+    identifier = str(component_id or "").strip()
+    code = str(failure_code or "").strip()
+    if not identifier or code not in _COMPONENT_RECEIVER_EVIDENCE_OR_CUSTODY_FAILURE_CODES:
+        return component_receiver_other_safe_cause(
+            cause_transition=(
+                COMPONENT_RECEIVER_CAUSE_TRANSITION_EVIDENCE_SELECTION_OR_CUSTODY
+            )
+        )
+    return {
+        "schema_version": COMPONENT_RECEIVER_CAUSE_SCHEMA_VERSION,
+        "cause_status": COMPONENT_RECEIVER_CAUSE_STATUS_EXACT,
+        "cause_transition": (
+            COMPONENT_RECEIVER_CAUSE_TRANSITION_EVIDENCE_SELECTION_OR_CUSTODY
+        ),
+        "component_identity_digest": component_identity_digest(identifier),
+        "failure_code": code,
+    }
+
+
+def _scheduler_correlated_component_receiver_cause(
+    *,
+    component_id: Any,
+    role: Any,
+    failure_kind: Any,
+    settlement_posture: Any,
+) -> dict[str, str]:
+    identifier = str(component_id or "").strip()
+    safe_role = str(role or "").strip()
+    safe_failure_kind = str(failure_kind or "").strip()
+    safe_settlement = str(settlement_posture or "").strip()
+    if (
+        not identifier
+        or safe_role not in _COMPONENT_RECEIVER_SCHEDULER_ROLES
+        or safe_failure_kind not in MULTICOMPONENT_SAFE_FAILURE_KINDS
+        or safe_settlement not in _COMPONENT_RECEIVER_SCHEDULER_SETTLEMENT_POSTURES
+    ):
+        return component_receiver_other_safe_cause(
+            cause_transition=COMPONENT_RECEIVER_CAUSE_TRANSITION_COMPONENT_ANALYST_WORK
+        )
+    return {
+        "schema_version": COMPONENT_RECEIVER_CAUSE_SCHEMA_VERSION,
+        "cause_status": COMPONENT_RECEIVER_CAUSE_STATUS_SCHEDULER_CORRELATED,
+        "cause_transition": COMPONENT_RECEIVER_CAUSE_TRANSITION_COMPONENT_ANALYST_WORK,
+        "component_identity_digest": component_identity_digest(identifier),
+        "failure_code": safe_failure_kind,
+        "role": safe_role,
+        "failure_kind": safe_failure_kind,
+        "settlement_posture": safe_settlement,
+    }
+
+
+def validate_component_receiver_cause(value: Any) -> dict[str, str]:
+    """Return a strict safe cause projection; invalid input collapses closed."""
+
+    candidate = _mapping(value)
+    if candidate.get("schema_version") != COMPONENT_RECEIVER_CAUSE_SCHEMA_VERSION:
+        return component_receiver_other_safe_cause()
+
+    status = candidate.get("cause_status")
+    transition = candidate.get("cause_transition")
+    if (
+        status == COMPONENT_RECEIVER_CAUSE_STATUS_EXACT
+        and set(candidate)
+        == {
+            "schema_version",
+            "cause_status",
+            "cause_transition",
+            "component_identity_digest",
+            "failure_code",
+        }
+        and transition
+        == COMPONENT_RECEIVER_CAUSE_TRANSITION_EVIDENCE_SELECTION_OR_CUSTODY
+        and _closed_string_member(
+            candidate.get("failure_code"),
+            _COMPONENT_RECEIVER_EVIDENCE_OR_CUSTODY_FAILURE_CODES,
+        )
+        and _valid_component_identity_digest(candidate.get("component_identity_digest"))
+    ):
+        return {
+            "schema_version": COMPONENT_RECEIVER_CAUSE_SCHEMA_VERSION,
+            "cause_status": COMPONENT_RECEIVER_CAUSE_STATUS_EXACT,
+            "cause_transition": (
+                COMPONENT_RECEIVER_CAUSE_TRANSITION_EVIDENCE_SELECTION_OR_CUSTODY
+            ),
+            "component_identity_digest": str(
+                candidate["component_identity_digest"]
+            ),
+            "failure_code": str(candidate["failure_code"]),
+        }
+
+    if (
+        status == COMPONENT_RECEIVER_CAUSE_STATUS_SCHEDULER_CORRELATED
+        and set(candidate)
+        == {
+            "schema_version",
+            "cause_status",
+            "cause_transition",
+            "component_identity_digest",
+            "failure_code",
+            "role",
+            "failure_kind",
+            "settlement_posture",
+        }
+        and transition == COMPONENT_RECEIVER_CAUSE_TRANSITION_COMPONENT_ANALYST_WORK
+        and _closed_string_member(
+            candidate.get("role"),
+            _COMPONENT_RECEIVER_SCHEDULER_ROLES,
+        )
+        and _closed_string_member(
+            candidate.get("failure_kind"),
+            MULTICOMPONENT_SAFE_FAILURE_KINDS,
+        )
+        and candidate.get("failure_code") == candidate.get("failure_kind")
+        and _closed_string_member(
+            candidate.get("settlement_posture"),
+            _COMPONENT_RECEIVER_SCHEDULER_SETTLEMENT_POSTURES,
+        )
+        and _valid_component_identity_digest(candidate.get("component_identity_digest"))
+    ):
+        return {
+            "schema_version": COMPONENT_RECEIVER_CAUSE_SCHEMA_VERSION,
+            "cause_status": COMPONENT_RECEIVER_CAUSE_STATUS_SCHEDULER_CORRELATED,
+            "cause_transition": COMPONENT_RECEIVER_CAUSE_TRANSITION_COMPONENT_ANALYST_WORK,
+            "component_identity_digest": str(
+                candidate["component_identity_digest"]
+            ),
+            "failure_code": str(candidate["failure_code"]),
+            "role": str(candidate["role"]),
+            "failure_kind": str(candidate["failure_kind"]),
+            "settlement_posture": str(candidate["settlement_posture"]),
+        }
+
+    if (
+        status == COMPONENT_RECEIVER_CAUSE_STATUS_OTHER_SAFE
+        and set(candidate)
+        == {
+            "schema_version",
+            "cause_status",
+            "cause_transition",
+            "failure_code",
+        }
+        and _closed_string_member(
+            transition,
+            _COMPONENT_RECEIVER_CAUSE_TRANSITIONS,
+        )
+        and candidate.get("failure_code") == "other_safe"
+    ):
+        return component_receiver_other_safe_cause(cause_transition=str(transition))
+    return component_receiver_other_safe_cause()
+
 _RESERVED_STATUSES = frozenset({LEASE_GRANTED})
 _SPENT_STATUSES = frozenset(
     {
@@ -3162,7 +3404,69 @@ def project_current_component_analyst_failure(
     )
 
 
+def component_receiver_cause_from_current_scheduler_failure(
+    *,
+    state: Mapping[str, Any] | None,
+    expected_run_id: str | None,
+    expected_request_id: str | None,
+) -> dict[str, str]:
+    """Project one exact scheduler-owned Component Analyst failure if unique.
+
+    This is intentionally narrower than the existing public failure summary:
+    it is used only while converting a caught receiver exception into the
+    closed receiver-cause contract.  It never exposes a raw component ID.
+    """
+
+    run_id = str(expected_run_id or "").strip()
+    request_id = str(expected_request_id or "").strip()
+    if not run_id or not request_id or not isinstance(state, Mapping) or not state:
+        return component_receiver_other_safe_cause(
+            cause_transition=COMPONENT_RECEIVER_CAUSE_TRANSITION_COMPONENT_ANALYST_WORK
+        )
+    try:
+        scheduler = validate_scheduler_state(_mapping(state))
+    except (TypeError, ValueError):
+        return component_receiver_other_safe_cause(
+            cause_transition=COMPONENT_RECEIVER_CAUSE_TRANSITION_COMPONENT_ANALYST_WORK
+        )
+    correlation = _scheduled_component_analyst_failure_correlation(
+        scheduler,
+        run_id=run_id,
+        request_id=request_id,
+    )
+    if correlation is None:
+        return component_receiver_other_safe_cause(
+            cause_transition=COMPONENT_RECEIVER_CAUSE_TRANSITION_COMPONENT_ANALYST_WORK
+        )
+    return _scheduler_correlated_component_receiver_cause(
+        component_id=correlation.get("component_id"),
+        role=correlation.get("role"),
+        failure_kind=correlation.get("failure_kind"),
+        settlement_posture=correlation.get("settlement_posture"),
+    )
+
+
 def _project_scheduled_component_analyst_failure(
+    scheduler: Mapping[str, Any],
+    *,
+    run_id: str,
+    request_id: str,
+) -> dict[str, str] | None:
+    correlation = _scheduled_component_analyst_failure_correlation(
+        scheduler,
+        run_id=run_id,
+        request_id=request_id,
+    )
+    if correlation is None:
+        return None
+    return {
+        "role": ROLE_COMPONENT_ANALYST,
+        "failure_kind": str(correlation["failure_kind"]),
+        "settlement_posture": str(correlation["settlement_posture"]),
+    }
+
+
+def _scheduled_component_analyst_failure_correlation(
     scheduler: Mapping[str, Any],
     *,
     run_id: str,
@@ -3199,6 +3503,9 @@ def _project_scheduled_component_analyst_failure(
             or work.get("role") != failed_role
             or work.get("run_id") != run_id
             or work.get("request_id") != request_id
+            or work.get("target_kind") != "component"
+            or not isinstance(work.get("component_id"), str)
+            or not str(work.get("component_id") or "").strip()
             or not isinstance(role_action_ref.get("action_id"), str)
             or not role_action_ref.get("action_id")
         ):
@@ -3210,7 +3517,8 @@ def _project_scheduled_component_analyst_failure(
     if normalized_failure_kind is None:
         return None
     return {
-        "role": ROLE_COMPONENT_ANALYST,
+        "component_id": str(_mapping(matches[0].get("work")).get("component_id") or ""),
+        "role": failed_role,
         "failure_kind": normalized_failure_kind,
         "settlement_posture": str(settlement),
     }
@@ -3252,7 +3560,19 @@ def _project_unscheduled_component_analyst_failure(
         "failure_kind": normalized_failure_kind,
         "settlement_posture": LEASE_FAILED,
     }
+
+
 __all__ = [
+    "COMPONENT_RECEIVER_CAUSE_SCHEMA_VERSION",
+    "COMPONENT_RECEIVER_CAUSE_STATUS_EXACT",
+    "COMPONENT_RECEIVER_CAUSE_STATUS_OTHER_SAFE",
+    "COMPONENT_RECEIVER_CAUSE_STATUS_SCHEDULER_CORRELATED",
+    "COMPONENT_RECEIVER_CAUSE_TRANSITION_COMPONENT_ADMISSION",
+    "COMPONENT_RECEIVER_CAUSE_TRANSITION_COMPONENT_ANALYST_WORK",
+    "COMPONENT_RECEIVER_CAUSE_TRANSITION_COMPONENT_COVERAGE",
+    "COMPONENT_RECEIVER_CAUSE_TRANSITION_EVIDENCE_SELECTION_OR_CUSTODY",
+    "COMPONENT_RECEIVER_CAUSE_TRANSITION_OTHER_SAFE",
+    "COMPONENT_RECEIVER_CAUSE_TRANSITION_SELECTED_LANE_INTEGRITY",
     "EXECUTOR_REGISTERED_DETERMINISTIC",
     "LEASE_BLOCKED",
     "LEASE_CANCELLED",
@@ -3290,6 +3610,10 @@ __all__ = [
     "canonical_multicomponent_contract_ref",
     "canonical_multicomponent_graph_ref",
     "classify_work_parallelism",
+    "component_identity_digest",
+    "component_receiver_cause_from_current_scheduler_failure",
+    "component_receiver_exact_evidence_or_custody_cause",
+    "component_receiver_other_safe_cause",
     "complete_scheduler",
     "derive_multicomponent_compatibility_envelope",
     "derive_multicomponent_transport_profile",
@@ -3308,6 +3632,7 @@ __all__ = [
     "project_current_component_analyst_failure",
     "settle_role_lease",
     "settle_specialist_lease",
+    "validate_component_receiver_cause",
     "validate_scheduler_state",
     "validate_role_lease_settlement",
     "work_is_current",

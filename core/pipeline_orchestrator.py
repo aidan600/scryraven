@@ -3789,6 +3789,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 searchos_slice_a_projection["component_receiver_failure"] = (
                     type(exc).__name__
                 )
+                searchos_slice_a_projection["component_receiver_cause"] = dict(
+                    exc.component_receiver_cause
+                )
                 searchos_slice_a_projection[
                     "component_receiver_failure_reason"
                 ] = str(exc)[:240]

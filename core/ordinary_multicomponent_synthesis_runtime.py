@@ -56,7 +56,12 @@ from core.multicomponent_component_admission import (
     execute_multicomponent_component_admission,
 )
 from core.multicomponent_graph_scheduling import (
+    MULTICOMPONENT_SCHEDULER_STAGE,
     canonical_multicomponent_contract_ref,
+    component_receiver_cause_from_current_scheduler_failure,
+    component_receiver_exact_evidence_or_custody_cause,
+    component_receiver_other_safe_cause,
+    validate_component_receiver_cause,
 )
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
@@ -107,6 +112,17 @@ class OrdinaryMulticomponentResult:
 class OrdinaryMulticomponentRuntimeError(RuntimeError):
     """Raised when a selected typed lane cannot complete without fallback."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        component_receiver_cause: Mapping[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.component_receiver_cause = validate_component_receiver_cause(
+            component_receiver_cause
+        )
+
 
 class _ScheduledSemanticWorkBlocked(RuntimeError):
     """Internal control transfer from canonical scheduler blockage to FAP."""
@@ -114,6 +130,26 @@ class _ScheduledSemanticWorkBlocked(RuntimeError):
 
 def _safe_mapping(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _selected_lane_evidence_or_custody_failure_cause(
+    missing_component_reasons: Mapping[str, str],
+) -> dict[str, str]:
+    """Attach exact attribution only when one selected component failed."""
+
+    items = [
+        (str(component_id or "").strip(), str(reason or "").strip())
+        for component_id, reason in missing_component_reasons.items()
+    ]
+    if len(items) != 1:
+        return component_receiver_other_safe_cause(
+            cause_transition="evidence_selection_or_custody"
+        )
+    component_id, failure_code = items[0]
+    return component_receiver_exact_evidence_or_custody_cause(
+        component_id=component_id,
+        failure_code=failure_code,
+    )
 
 
 def _component_requires_direct_work(
@@ -3585,7 +3621,12 @@ def _execute_selected_lane(
         accepted,
         allow_searchos_component_receiver=(allow_searchos_component_receiver),
     ):
-        raise OrdinaryMulticomponentRuntimeError("accepted contract lost typed multi-component qualification")
+        raise OrdinaryMulticomponentRuntimeError(
+            "accepted contract lost typed multi-component qualification",
+            component_receiver_cause=component_receiver_other_safe_cause(
+                cause_transition="selected_lane_integrity"
+            ),
+        )
     metadata = _safe_mapping(accepted.get("question_meaning_metadata"))
     all_component_refs = [
         dict(item) for item in accepted.get("accepted_answer_component_refs") or () if isinstance(item, Mapping)
@@ -3597,7 +3638,12 @@ def _execute_selected_lane(
     if _clean_text(metadata.get("requested_synthesis_directive"), limit=360) != requested_synthesis_directive and not (
         single_component_direct_admission and requested_synthesis_directive == "single_component_direct_admission"
     ):
-        raise OrdinaryMulticomponentRuntimeError("accepted contract lost typed multi-component qualification")
+        raise OrdinaryMulticomponentRuntimeError(
+            "accepted contract lost typed multi-component qualification",
+            component_receiver_cause=component_receiver_other_safe_cause(
+                cause_transition="selected_lane_integrity"
+            ),
+        )
 
     final_top_evidence = [
         dict(item) for item in runtime_scope.get("final_top_evidence") or () if isinstance(item, Mapping)
@@ -3666,7 +3712,12 @@ def _execute_selected_lane(
             "for: "
             + ",".join(
                 f"{component_id}={missing_component_reasons[component_id]}" for component_id in missing_component_ids
-            )
+            ),
+            component_receiver_cause=(
+                _selected_lane_evidence_or_custody_failure_cause(
+                    missing_component_reasons
+                )
+            ),
         )
     query = str(runtime_scope.get("query") or "")
     analyst_inputs = {
@@ -3900,7 +3951,16 @@ def execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
                 if allow_searchos_component_receiver:
                     raise OrdinaryMulticomponentRuntimeError(
                         "SearchOS component receiver did not complete: "
-                        + str(exc)[:240]
+                        + str(exc)[:240],
+                        component_receiver_cause=(
+                            component_receiver_cause_from_current_scheduler_failure(
+                                state=run_kernel.state.projections.get(
+                                    MULTICOMPONENT_SCHEDULER_STAGE
+                                ),
+                                expected_run_id=run_kernel.state.run_id,
+                                expected_request_id=run_kernel.state.request_id,
+                            )
+                        ),
                     ) from exc
             return OrdinaryMulticomponentResult(status=OrdinaryMulticomponentStatus.COMPLETED)
         return direct_or_deferred()

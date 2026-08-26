@@ -16,6 +16,10 @@ from core.fetch_read_content_reference import (
     fetch_read_content_packet_ref_from_packet,
     validate_fetch_read_content_packet,
 )
+from core.multicomponent_graph_scheduling import (
+    component_identity_digest,
+    validate_component_receiver_cause,
+)
 from core.query_plan_runtime_adapter import QueryPlanRuntimeAdapter
 from core.run_kernel import (
     Observation,
@@ -4060,10 +4064,7 @@ _SAFE_MODEL_OUTPUT_INVALID_SUBTYPE_BY_SUFFIX: dict[str, str] = {
 
 
 def _opaque_identity_digest(token: Any) -> str:
-    text = str(token or "").strip()
-    if not text:
-        return sha256(b"").hexdigest()
-    return sha256(text.encode("utf-8")).hexdigest()
+    return component_identity_digest(token)
 
 
 def _allowlisted_support_kind(value: Any) -> str:
@@ -4957,6 +4958,10 @@ def build_bounded_searchos_n1_causal_projection(
         "logical_call_correlation": "not_directly_available",
         "slots": slots,
     }
+    if receiver_failure_class == "OrdinaryMulticomponentRuntimeError":
+        result["component_receiver_cause"] = validate_component_receiver_cause(
+            searchos_slice_a_projection.get("component_receiver_cause")
+        )
     component_analyst_failure = _project_component_analyst_failure(
         searchos_slice_a_projection.get("component_analyst_failure"),
         receiver_failure=receiver_failure,
