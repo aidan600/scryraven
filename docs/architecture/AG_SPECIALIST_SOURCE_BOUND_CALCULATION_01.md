@@ -156,13 +156,15 @@ full page, private artifact, raw prompt, or response.
 
 Component Analyst receives a `component_evidence` alias with bounded source
 posture, evidence/custody refs, lineage completeness, and a digest of the
-bounded material. Cross-Component Analyst receives deterministic
-`component_01`, `component_02`, and later aliases for current admitted
-component claims. Its model catalog and the later execution catalog are built
-from the same underlying component evidence and have identical nonmaterial
-fields and `posture_digest`; only the execution catalog adds `source_material`.
-The model catalog contains no bounded claim or evidence text. Each synthesis
-entry binds:
+bounded material. Its initial and resume packets do not contain a
+`quantitative_source_catalog`; after an accepted component proposal, Specialist
+dispatch reconstructs the material catalog from that exact current evidence.
+Cross-Component Analyst receives deterministic `component_01`,
+`component_02`, and later aliases for current admitted component claims. Its
+model catalog and the later execution catalog are built from the same underlying
+component evidence and have identical nonmaterial fields and `posture_digest`;
+only the execution catalog adds `source_material`. The model catalog contains
+no bounded claim or evidence text. Each synthesis entry binds:
 
 ```text
 nominated admitted component claim

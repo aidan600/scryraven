@@ -553,6 +553,7 @@ def test_versioned_proposal_contract_is_shared_by_component_and_cross_inputs() -
         "target_key": _component_ref()["component_id"],
     }
     assert component["allowed_source_local_keys"] == ["component_evidence"]
+    assert "quantitative_source_catalog" not in component_packet
     assert cross["target_contract"] == {
         "target_kind": "synthesis",
         "target_key_rule": QUANTITATIVE_SYNTHESIS_TARGET_KEY_RULE,
@@ -729,10 +730,17 @@ def test_component_catalog_selector_exact_binding_and_repeated_occurrence() -> N
         component_ref=_component_ref(),
         evidence_input=_evidence("10 USD then 10 USD and 20 USD."),
     )
-    entry = packet["quantitative_source_catalog"]["component_evidence"]
+    assert "quantitative_source_catalog" not in packet
+    catalog = build_component_quantitative_source_catalog(
+        component_ref=_component_ref(),
+        evidence_input=_evidence("10 USD then 10 USD and 20 USD."),
+        include_material=True,
+    )
+    entry = catalog["component_evidence"]
     assert entry["source_local_key"] == "component_evidence"
     assert entry["source_binding_kind"] == "component_evidence"
     assert entry["allowed_source_field"] == "bounded_text"
+    assert entry["source_material"]["bounded_text"] == "10 USD then 10 USD and 20 USD."
     ambiguous = _adapter_result(
         evidence_text="10 USD then 10 USD and 20 USD.",
         request=_request(),
@@ -2365,10 +2373,24 @@ def test_component_origin_product_path_and_paired_final_answer_delta(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    captured_specialist_inputs: list[dict[str, Any]] = []
+    original_adapter = quantitative_product.source_bound_quantitative_calculation_adapter
+
+    def capture_specialist_input(
+        transient_bounded_input: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        captured_specialist_inputs.append(deepcopy(dict(transient_bounded_input)))
+        return original_adapter(transient_bounded_input)
+
     monkeypatch.setattr(
         legacy_calculation,
         "reduce_specialist_source_bound_calculation",
         _forbid_legacy_reducer,
+    )
+    monkeypatch.setattr(
+        quantitative_product,
+        "source_bound_quantitative_calculation_adapter",
+        capture_specialist_input,
     )
     with monkeypatch.context() as positive_patch:
         positive_harness = QuantitativeComponentNorthstarHarness(tmp_path / "positive")
@@ -2519,6 +2541,9 @@ def test_component_origin_product_path_and_paired_final_answer_delta(
     resume_packet = positive_harness.specialist_analyst_resume_inputs[0]
     assert "specialist_need_proposal" not in resume_packet
     assert "specialist_need_proposal" not in resume_packet["prior_component_case"]
+    assert "quantitative_source_catalog" not in resume_packet[
+        "exact_component_and_evidence_input"
+    ]
     assert resume_packet["prior_component_case"]["claim_text"] == (
         "The supported derived combined Northstar amount is 1500 USD."
     )
@@ -2543,9 +2568,20 @@ def test_component_origin_product_path_and_paired_final_answer_delta(
     assert validate_quantitative_specialist_proposal_contract(
         component_role_packet["quantitative_specialist_proposal_contract"]
     )
-    assert component_role_packet["quantitative_source_catalog"][
-        "component_evidence"
-    ]["source_quality_posture"] == "authoritative_current_clear"
+    assert "quantitative_source_catalog" not in component_role_packet
+    assert len(captured_specialist_inputs) == 1
+    material_catalog = captured_specialist_inputs[0][
+        "quantitative_source_catalog"
+    ]
+    assert material_catalog["component_evidence"][
+        "source_quality_posture"
+    ] == "authoritative_current_clear"
+    assert material_catalog["component_evidence"]["source_material"][
+        "bounded_text"
+    ] == (
+        "The Northstar record reports a base amount of 1200 USD and a "
+        "supplemental amount of 300 USD."
+    )
     assert "_request" not in _contract_driven_quantitative_proposal.__code__.co_names
     assert (
         "_product_proposal"
@@ -2761,6 +2797,29 @@ def test_product_enabled_no_need_preserves_answer_and_closed_path_parity(
             activate_product=False,
         )
     assert product.report == closed.report == NORTHSTAR_REPORT
+    # These ordinary direct Component Analyst cases include source-stated
+    # numeric literals (the rebate amount and income threshold).  Their
+    # canonical inputs remain catalog-free, and numeric evidence alone never
+    # creates Specialist work.
+    product_component_packets = [
+        item["input_packet"]
+        for item in product_harness.role_input_packets
+        if item["system_prompt"] == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST]
+    ]
+    assert product_component_packets
+    assert all(
+        "quantitative_source_catalog" not in packet
+        and "quantitative_specialist_proposal_contract" in packet
+        for packet in product_component_packets
+    )
+    admissions = product_kernel.state.projections[
+        MULTICOMPONENT_COMPONENT_ADMISSION_STAGE
+    ]["component_admission_refs"]
+    assert admissions
+    assert all(
+        item["admission_status"] in {"admitted", "admitted_with_caveats"}
+        for item in admissions
+    )
     product_scheduler = product_kernel.state.projections[
         MULTICOMPONENT_SCHEDULER_STAGE
     ]

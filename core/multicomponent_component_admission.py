@@ -513,7 +513,6 @@ def component_analyst_input_packet(
     evidence_input: Mapping[str, Any],
 ) -> dict[str, Any]:
     from core.quantitative_specialist_product_activation import (
-        build_component_quantitative_source_catalog,
         build_quantitative_specialist_proposal_contract,
     )
 
@@ -546,12 +545,6 @@ def component_analyst_input_packet(
         },
         "component_evidence": _safe_mapping(evidence_input),
     }
-    packet["quantitative_source_catalog"] = (
-        build_component_quantitative_source_catalog(
-            component_ref=packet["component_ref"],
-            evidence_input=packet["component_evidence"],
-        )
-    )
     packet["quantitative_specialist_proposal_contract"] = (
         build_quantitative_specialist_proposal_contract(
             target_kind="component",
@@ -765,7 +758,7 @@ def _exact_component_analyst_input_for_admission(
     if analyst_role == ROLE_COMPONENT_ANALYST:
         if analyst.get("input_packet_digest") != safe_packet_digest(
             expected_base_input
-        ):
+        ) or supplied_input != expected_base_input:
             raise MulticomponentComponentAdmissionError(
                 COMPONENT_ANALYST_EXACT_INPUT_BINDING_MISMATCH,
                 component_analyst_input_binding_mismatch_v1=(

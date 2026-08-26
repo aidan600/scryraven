@@ -294,22 +294,26 @@ reservation and creates one failed disposition plus unified handoff. Optional
 work remains nonblocking; required work reaches the Specialist-specific blocked
 terminal before ordinary sanitized blocked finalization.
 
-Component and ordinary Cross-Component Analyst input packets include the same
-repository-owned model-visible quantitative proposal contract plus transient
-source catalogs. The component contract binds the exact component target and
-`component_evidence`; the synthesis contract binds the same-artifact
-`synthesis_key` rule and exact `component_01`, `component_02`, ... aliases. The
-proposal is a sibling of ordinary component fields or `synthesis_proposals`,
-never nested. Component requests bind exact literals to bounded component
-evidence. Synthesis requests use deterministic component aliases and require
-two-hop proof from each admitted component claim to the same literal in its
-underlying current evidence. Candidate-primary source facts and exact passage
-fallbacks remain unknown when absent; graph admission does not upgrade them.
-Model and execution catalogs share the same nonmaterial posture and digest,
-while source material exists only in the execution catalog. The contract and
-transient source material are reconstructed only for their scoped consumers and
-are not retained in canonical graph, scheduler, work, result, log, or trace
-projections. Deterministic
+Component Analyst input packets include the repository-owned model-visible
+quantitative proposal contract and bounded `component_evidence`, but never a
+`quantitative_source_catalog`. Ordinary Cross-Component Analyst input includes
+the same contract plus its own transient source catalog. The component contract
+binds the exact component target and `component_evidence`; the synthesis
+contract binds the same-artifact `synthesis_key` rule and exact `component_01`,
+`component_02`, ... aliases. The proposal is a sibling of ordinary component
+fields or `synthesis_proposals`, never nested. Component requests bind exact
+literals to bounded component evidence. Synthesis requests use deterministic
+component aliases and require two-hop proof from each admitted component claim
+to the same literal in its underlying current evidence. Candidate-primary
+source facts and exact passage fallbacks remain unknown when absent; graph
+admission does not upgrade them. After an accepted component proposal,
+Specialist dispatch reconstructs the material component catalog from that exact
+current `component_evidence`; the original Component Analyst packet and its
+resume binding stay catalog-free. Model and execution Cross catalogs share the
+same nonmaterial posture and digest, while source material exists only in the
+execution catalog. The contract and transient source material are reconstructed
+only for their scoped consumers and are not retained in canonical graph,
+scheduler, work, result, log, or trace projections. Deterministic
 Decimal arithmetic, units, precision, and exact claim alignment flow through
 the existing unified handoff; the current Component Analyst case, retained
 synthesis D-prime, and RunKernel retain their respective validation and admission authority.
