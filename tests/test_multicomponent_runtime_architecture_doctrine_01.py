@@ -117,7 +117,7 @@ def test_graph_and_answer_contract_boundaries_are_current() -> None:
         "an obligation the run owes the user",
         "A synthesis node does not automatically become an AnswerContract component",
         "ComponentWorkGraph V1 is the installed ordinary graph",
-        "ComponentWorkGraph V0 remains historical/review/ compatibility material",
+        "V0 graph compatibility implementation has been retired",
     ):
         assert phrase in text
 

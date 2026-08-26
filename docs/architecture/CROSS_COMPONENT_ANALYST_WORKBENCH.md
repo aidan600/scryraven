@@ -6,7 +6,8 @@ Default-read: no
 
 This document records **INSTALLED** Boundary B consumption, durable
 proposal-only Workbench rules, and **HISTORICAL** V0 design/phase-planning
-material. Installed bounded multi-component execution lives in
+material from retired compatibility implementations. Installed bounded
+multi-component execution lives in
 [MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md](MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md).
 Selected AnalystOS target topology, including Cross consumption, belongs only to
 [AnalystOS Operating Model](ANALYSTOS_OPERATING_MODEL.md). This document does
@@ -33,9 +34,10 @@ because it prevents fake graph scheduling, parallel Analyst drift,
 D-prime-as-Analyst, direct retrieval dispatch, FAP synthesis, and Author glue
 before the next Build checkpoint: `COMPONENTWORKGRAPH-V0-NOEXEC-CONTRACT-01`.
 
-That checkpoint and the subsequent V0 contract sequence are now merged. They
-remain **HISTORICAL** bounded reusable contracts, not ordinary product
-consumption and not selected-target architecture. Phase 1
+That checkpoint and the subsequent V0 contract sequence were historically
+merged. Their compatibility implementations have been retired; the sequence
+remains **HISTORICAL** provenance, not ordinary product consumption or
+selected-target architecture. Phase 1
 `AG-MULTICOMPONENT-ORDINARY-END-TO-END-SYNTHESIS-01` now installs the separate
 ordinary V1 product path. SearchOS Boundary B now consumes its typed
 query-resolution proposals.

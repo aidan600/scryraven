@@ -228,8 +228,8 @@ readiness.
 ComponentWorkGraph V1 is the installed ordinary graph for the supported class.
 It contains component refs, first-class synthesis nodes, structural and
 semantic edges, challenge refs, revision/staleness metadata, and bounded depth
-and budget posture. ComponentWorkGraph V0 remains historical/review/
-compatibility material and is subordinated to V1; it is not silently redefined
+and budget posture. The V0 graph compatibility implementation has been retired;
+its historical provenance is subordinated to V1 and is not silently redefined
 or treated as the ordinary executor.
 
 ## Current Bounded Envelope

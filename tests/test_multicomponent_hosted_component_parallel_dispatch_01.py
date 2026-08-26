@@ -31,14 +31,11 @@ from core.multicomponent_graph_scheduling import (
     BACKEND_CONSERVATIVE_UNKNOWN,
     BACKEND_HOSTED_API,
     BACKEND_LOCAL_OPENAI_COMPATIBLE,
-    MULTICOMPONENT_SCHEDULER_SCHEMA_VERSION,
     MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION,
     MulticomponentGraphSchedulingError,
     cancel_batch,
     derive_ready_batch_work,
-    initialize_scheduler_state,
     initialize_scheduler_v2_state,
-    validate_scheduler_state,
 )
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
@@ -305,42 +302,6 @@ def test_scheduler_v2_profile_is_derived_only_from_canonical_provider_identity(
     assert scheduler["maximum_active_physical_leases"] == width
     assert scheduler["runtime_parallelism"] is (width == 2)
     assert scheduler["serial_scheduling"] is (width == 1)
-
-
-def test_retained_scheduler_v1_rejects_every_parallel_or_batch_extension() -> None:
-    scheduler = initialize_scheduler_state(
-        run_id="run-v1",
-        request_id="request-v1",
-    )
-    assert scheduler["schema_version"] == MULTICOMPONENT_SCHEDULER_SCHEMA_VERSION
-    validate_scheduler_state(scheduler)
-
-    mutations = (
-        ("runtime_parallelism", True),
-        ("maximum_active_physical_leases", 2),
-        ("effective_width", 2),
-        ("batch_history", []),
-    )
-    for key, value in mutations:
-        forged = deepcopy(scheduler)
-        forged[key] = value
-        with pytest.raises(MulticomponentGraphSchedulingError):
-            validate_scheduler_state(forged)
-    two_active = deepcopy(scheduler)
-    two_active.pop("scheduler_digest")
-    two_active["lease_history"] = [
-        {
-            "status": "granted_reserved",
-            "work": {"role": ROLE_COMPONENT_ANALYST},
-        },
-        {
-            "status": "granted_reserved",
-            "work": {"role": ROLE_COMPONENT_ANALYST},
-        },
-    ]
-    two_active["compatibility_envelope"]["remaining_units"] -= 2
-    with pytest.raises(MulticomponentGraphSchedulingError):
-        scheduling._refresh_scheduler(two_active)
 
 
 def test_v2_batch_grant_reserves_exact_contiguous_analyst_prefix() -> None:
