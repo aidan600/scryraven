@@ -3,15 +3,15 @@
 Status: current
 Authority: canonical:dprime-role-contract
 Default-read: no
-Applies-to: retained synthesis D-prime and bounded Component D-prime compatibility role boundaries
+Applies-to: retained synthesis D-prime role boundaries
 Does-not-authorize: model calls, retrieval, admission, contract mutation, FAP, Author, Specialist activation, or live validation
 Verified-against-runtime: d3df96994f72b371f6a2451677784376ac3f7cb9
-Update-trigger: merged change to retained synthesis D-prime or Component D-prime compatibility authority
+Update-trigger: merged change to retained synthesis D-prime authority
 
 ## Installed And Selected Status
 
-**INSTALLED:** Component D-prime has no ordinary component producer or consumer.
-The bounded genuine N>=2 path still executes a synthesis D-prime model call after
+**INSTALLED:** the separate Component D-prime role has been retired. The bounded
+genuine N>=2 path still executes a synthesis D-prime model call after
 Cross-Component Analyst and before RunKernel synthesis admission.
 
 **SELECTED TARGET:** the remaining synthesis D-prime call is a retirement target,
@@ -50,7 +50,6 @@ exact current refs and admits or rejects it.
 | Role | Installed responsibility |
 | --- | --- |
 | Component Analyst | Builds and self-audits one component case; ordinary component output proceeds directly to mechanical binding and RunKernel admission. |
-| Component D-prime | Compatibility contract only; no ordinary component work producer or consumer. |
 | Cross-Component Analyst | Proposes genuine N>=2 relationship or synthesis meaning over current admitted component refs. |
 | Synthesis D-prime | Validates the nominated Cross synthesis against exact current component, graph, evidence, caveat, blocker, and Specialist lineage. |
 | Scrutineer | Separately challenges a component, synthesis, subgraph, or whole-case posture when selected by policy. |

@@ -49,7 +49,6 @@ from core.multicomponent_graph_scheduling import (
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
     ROLE_COMPONENT_ANALYST_RESUME,
-    ROLE_COMPONENT_DPRIME,
     ROLE_CROSS_COMPONENT_ANALYST,
     ROLE_SCRUTINEER,
     ROLE_SYNTHESIS_DPRIME,
@@ -157,10 +156,7 @@ class SpecialistNorthstarHarness(NorthstarHarness):
         payload = json.loads(prompt)
         if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST_RESUME]:
             self.specialist_analyst_resume_inputs.append(deepcopy(payload))
-        if system_prompt in {
-            ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_DPRIME],
-            ROLE_SYSTEM_PROMPTS[ROLE_SYNTHESIS_DPRIME],
-        }:
+        if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_SYNTHESIS_DPRIME]:
             self.all_dprime_inputs.append(deepcopy(payload))
             if payload.get("specialist_need_handoff"):
                 self.specialist_dprime_inputs.append(deepcopy(payload))
@@ -497,10 +493,6 @@ def test_component_origin_runs_through_v3_registry_and_analyst_resume(
         == "specialist_need_handoff"
     )
     assert scheduler["compatibility_envelope"]["total_units"] == 24
-    assert not any(
-        item["system_prompt"] == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_DPRIME]
-        for item in harness.role_input_packets
-    )
     assert any(
         item["system_prompt"] == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST_RESUME]
         for item in harness.role_input_packets

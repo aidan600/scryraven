@@ -1250,10 +1250,6 @@ def validate_component_work_node_v1(value: Mapping[str, Any]) -> dict[str, Any]:
         raise ComponentWorkNodeError(
             "ComponentWorkNode V1 Analyst case compatibility ref mismatch"
         )
-    if "dprime_validation_ref" in node:
-        raise ComponentWorkNodeError(
-            "ComponentWorkNode V1 cannot retain a component D-prime ref"
-        )
     if node.get("stale") is True or node.get("current") is not True:
         if node.get("direct_output_eligible") is True:
             raise ComponentWorkNodeError(

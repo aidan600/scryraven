@@ -302,18 +302,12 @@ def test_observation_spoofing_is_overwritten_by_canonical_packet_derivation() ->
 def test_closed_surfaces_remain_closed_and_orchestrator_is_untouched() -> None:
     kernel = run_followup_through_sufficiency_recheck(run_id=RUN_ID)
     before = {
-        "search_judgment": deepcopy(kernel.state.search_judgment),
-        "search_judgment_projection": deepcopy(kernel.state.search_judgment_projection),
         "author_observation": deepcopy(kernel.state.author_observation),
         "final_answer_outcome": deepcopy(kernel.state.final_answer_outcome),
     }
 
     consume_followup_final_answer_packet(kernel)
 
-    assert kernel.state.search_judgment == before["search_judgment"]
-    assert kernel.state.search_judgment_projection == before[
-        "search_judgment_projection"
-    ]
     assert kernel.state.author_observation == before["author_observation"]
     assert kernel.state.final_answer_outcome == before["final_answer_outcome"]
     flags = kernel.state.followup_final_answer_packet_projection[
@@ -322,7 +316,6 @@ def test_closed_surfaces_remain_closed_and_orchestrator_is_untouched() -> None:
     assert flags["author_executor_invoked"] is False
     assert flags["citation_formatter_invoked"] is False
     assert flags["product_answer_behavior_changed"] is False
-    assert flags["search_judgment_rerun"] is False
 
     module_paths = [
         ROOT / "core" / "followup_final_answer_packet_runtime.py",

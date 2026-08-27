@@ -46,7 +46,6 @@ from core.multicomponent_graph_scheduling import (
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
     ROLE_COMPONENT_ANALYST_RESUME,
-    ROLE_COMPONENT_DPRIME,
     ROLE_CROSS_COMPONENT_ANALYST,
     ROLE_SCRUTINEER,
     ROLE_SYNTHESIS_DPRIME,
@@ -296,31 +295,9 @@ def test_01_ordinary_serial_product_success(ordinary_product) -> None:
     semantic_calls = [
         call for call in harness.model_calls if call.get("system_prompt") in ROLE_SYSTEM_PROMPTS.values()
     ]
-    assert ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_DPRIME] not in {
-        call["system_prompt"] for call in semantic_calls
-    }
-    assert not [
-        action
-        for action in kernel.state.issued_actions.values()
-        if action.action_type
-        is ActionType.MULTICOMPONENT_COMPONENT_DPRIME_EXECUTE
-    ]
     assert len(semantic_calls) == len(scheduler["lease_history"])
     assert all(lease["status"] == LEASE_COMPLETED for lease in scheduler["lease_history"])
     assert scheduler["active_physical_lease_count"] == 0
-
-
-
-def test_01a_ordinary_component_dprime_authorization_requires_recovery_cycle() -> None:
-    kernel, _packets_by_component = _scheduler_kernel()
-
-    with pytest.raises(RunKernelTransitionError, match="execution is retired"):
-        kernel.authorize_multicomponent_role_call(
-            role=ROLE_COMPONENT_DPRIME,
-            input_packet_digest="retired-component-dprime-input",
-            logical_evaluation_key="component-1@ordinary",
-        )
-
 
 def test_02_multiple_ready_items_are_serial_and_deterministic(ordinary_product) -> None:
     _outcome, kernel, _captured, _harness = ordinary_product

@@ -673,7 +673,6 @@ def execute_query_plan_admission_action(
     route_runtime_posture: Mapping[str, Any],
     accepted_contract: Mapping[str, Any] | None = None,
     initial_query_allocation_policy: InitialQueryAllocationPolicy = (DEFAULT_INITIAL_QUERY_ALLOCATION_POLICY),
-    search_judgment_projection: Mapping[str, Any] | None = None,
 ) -> QueryPlanAdmissionResult:
     """Admit component-bound planner strategies into the first DISCOVER wave."""
 
@@ -685,8 +684,6 @@ def execute_query_plan_admission_action(
     )
     if candidate_source != "search_planner":
         raise ValueError(f"unsupported query admission candidate source: {candidate_source}")
-    if search_judgment_projection:
-        raise ValueError("initial QueryPlan admission cannot dispatch post-result SearchJudgment follow-up")
     strategies = [dict(item) for item in candidate_strategies if isinstance(item, Mapping)]
     strategy_queries = [str(item.get("candidate_query_text") or "").strip() for item in strategies]
     if strategy_queries != [str(query) for query in candidate_queries]:

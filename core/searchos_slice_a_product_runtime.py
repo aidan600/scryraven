@@ -1909,7 +1909,6 @@ def _execute_searchos_slice_a_iterative_judgment(
         "expander_invoked_after_first_wave": False,
         "disambiguation_invoked_after_first_wave": False,
         "weak_corpus_recovery_invoked_after_first_wave": False,
-        "ag92b_full_search_judgment_invoked": False,
         "provider_calls_attempted": provider_calls[0],
         "provider_calls_completed": provider_calls[1],
         _SEMANTIC_HANDOFF_AUTHORIZATION_ATTEMPTED_SLOT_IDS_KEY: list(
@@ -4417,9 +4416,6 @@ def _project_slot_summary(
             outcome.get("searchos_handoff_material_consumed") is True
         ),
         "component_analyst_case_present": component_case_present,
-        "component_dprime_validation_present": False,
-        "component_dprime_model_call_required": False,
-        "component_dprime_model_call_executed": False,
         "semantic_admission_status": (
             "admitted" if admission_status in {"admitted", "admitted_with_caveats"} else admission_status
         ),
@@ -4767,9 +4763,6 @@ def build_bounded_searchos_n1_causal_projection(
                     "semantic_handoff_present": False,
                     "handoff_material_consumed": False,
                     "component_analyst_case_present": False,
-                    "component_dprime_validation_present": False,
-                    "component_dprime_model_call_required": False,
-                    "component_dprime_model_call_executed": False,
                     "semantic_admission_status": "not_admitted",
                     "component_coverage_satisfied": False,
                 }

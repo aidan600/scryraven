@@ -456,10 +456,36 @@ def _specialist_ref(
     *, target_kind: str, value: str, unit: str, claim_text: str
 ) -> dict[str, Any]:
     target_key = "component-a" if target_kind == "component" else "synthesis-a"
-    dprime_ref = {
-        "artifact_id": f"{target_kind}-dprime-artifact",
-        "artifact_digest": f"{target_kind}-dprime-digest",
-    }
+    if target_kind == "component":
+        validator_ref = {
+            "artifact_id": "component-analyst-artifact",
+            "artifact_digest": "component-analyst-digest",
+        }
+        validator_fields = {
+            "applicable_analyst_case_ref": validator_ref,
+            "applicable_validator_consumption_ref": {
+                "route": "component_analyst",
+                "handoff_id": "handoff-component",
+                "handoff_digest": "handoff-component-digest",
+                "validator_artifact_ref": validator_ref,
+                "consumption_posture": "consumed_by_applicable_analyst_case",
+            },
+        }
+    else:
+        validator_ref = {
+            "artifact_id": "synthesis-dprime-artifact",
+            "artifact_digest": "synthesis-dprime-digest",
+        }
+        validator_fields = {
+            "applicable_dprime_ref": validator_ref,
+            "applicable_validator_consumption_ref": {
+                "route": "synthesis_dprime",
+                "handoff_id": "handoff-synthesis",
+                "handoff_digest": "handoff-synthesis-digest",
+                "validator_artifact_ref": validator_ref,
+                "consumption_posture": "consumed_by_applicable_dprime",
+            },
+        }
     return {
         "specialist_result_ref": {
             "result_id": f"result-{target_kind}",
@@ -487,14 +513,8 @@ def _specialist_ref(
         "claim_alignment_posture": "exact_match",
         "claim_alignment_ref_digest": f"alignment-{target_kind}-digest",
         "claim_material_digest": sha256(claim_text.encode("utf-8")).hexdigest(),
-        "applicable_dprime_ref": dprime_ref,
-        "applicable_dprime_consumption_ref": {
-            "route": f"{target_kind}_dprime",
-            "handoff_id": f"handoff-{target_kind}",
-            "handoff_digest": f"handoff-{target_kind}-digest",
-            "dprime_artifact_ref": dprime_ref,
-            "consumption_posture": "consumed_by_applicable_dprime",
-        },
+        "applicable_validator_ref": validator_ref,
+        **validator_fields,
     }
 
 
@@ -664,7 +684,6 @@ def test_admitted_component_arithmetic_and_same_value_reuse_do_not_launder_autho
         "admission_status": "admitted",
         "current": True,
         "stale": False,
-        "dprime_validation_ref": {"artifact_id": "component-dprime"},
         "component_analyst_case_ref": {
             "artifact_id": "component-analyst",
             "artifact_digest": "component-analyst-digest",
@@ -738,7 +757,6 @@ def test_lineage_bound_component_paraphrase_remains_direct_source_authority() ->
                 "admission_status": "admitted",
                 "current": True,
                 "stale": False,
-                "dprime_validation_ref": {"artifact_id": "component-dprime"},
                 "component_analyst_case_ref": {
                     "artifact_id": "component-analyst",
                     "artifact_digest": "component-analyst-digest",
@@ -780,7 +798,6 @@ def test_lineage_bound_component_paraphrase_remains_direct_source_authority() ->
                 "admission_status": "admitted",
                 "current": True,
                 "stale": False,
-                "dprime_validation_ref": {"artifact_id": "component-dprime"},
                 "component_analyst_case_ref": {
                     "artifact_id": "component-analyst",
                     "artifact_digest": "component-analyst-digest",
@@ -1166,11 +1183,11 @@ def test_unvalidated_or_unconsumed_specialist_handoff_grants_no_authority() -> N
     }
     assert specialist_quantitative_authority_ref_from_handoff(
         malformed,
-        applicable_dprime_ref={"artifact_id": "component-dprime"},
+        applicable_analyst_case_ref={"artifact_id": "component-analyst"},
     ) == {}
 
 
-def test_component_specialist_exact_result_and_dprime_consumption_pass() -> None:
+def test_component_specialist_exact_result_and_analyst_consumption_pass() -> None:
     claim_text = "The supported derived amount is 1500 USD."
     specialist_ref = _specialist_ref(
         target_kind="component", value="1500", unit="USD", claim_text=claim_text
@@ -1187,7 +1204,6 @@ def test_component_specialist_exact_result_and_dprime_consumption_pass() -> None
                 "admission_status": "admitted",
                 "current": True,
                 "stale": False,
-                "dprime_validation_ref": {"artifact_id": "component-dprime"},
                 "component_analyst_case_ref": {
                     "artifact_id": "component-analyst",
                     "artifact_digest": "component-analyst-digest",
@@ -1216,7 +1232,6 @@ def test_component_specialist_exact_result_and_dprime_consumption_pass() -> None
                 "admission_status": "admitted",
                 "current": True,
                 "stale": False,
-                "dprime_validation_ref": {"artifact_id": "component-dprime"},
                 "component_analyst_case_ref": {
                     "artifact_id": "component-analyst",
                     "artifact_digest": "component-analyst-digest",
@@ -1462,11 +1477,6 @@ def test_manifest_and_diagnostics_retain_no_private_or_full_text_material() -> N
                 "admission_status": "admitted",
                 "current": True,
                 "stale": False,
-                "dprime_validation_ref": {
-                    "artifact_id": "dprime-private",
-                    "artifact_digest": "dprime-private-digest",
-                    "title": private_sentinel,
-                },
                 "evidence_refs": [
                     {
                         "evidence_id": "evidence-private",

@@ -3,24 +3,18 @@ from __future__ import annotations
 import json
 from copy import deepcopy
 from dataclasses import replace
-from pathlib import Path
 from typing import Any, Mapping
 
 import pytest
 
 import core.pipeline as pipeline
-import core.pipeline_orchestrator as orchestrator
 from core.acquisition_adapters import AcquisitionTransports
 from core.acquisition_control import (
     build_acquisition_authority_snapshot,
 )
 from core.cap_enforcement import RunCapPolicy
-from core.run_authority_search_judgment_adapter import (
-    build_search_judgment_input_from_runtime,
-)
 from core.run_kernel import RunKernel
 from core.search_judgment_read_assessment_runtime import (
-    build_full_search_judgment_containment_projection,
     execute_search_judgment_read_source_and_custody,
 )
 from core.search_planner_runtime import (
@@ -259,8 +253,6 @@ def test_mandatory_no_read_call_ignores_legacy_full_judgment_flag(
     assert projection["provider_calls_attempted"] == 0
     assert projection["provider_calls_completed"] == 0
     assert projection["standalone_read_assessment_invoked"] is False
-    assert projection["ag92b_full_search_judgment_invoked"] is False
-    assert harness.full_search_judgment_inputs == []
     assert _read_actions(harness) == []
     assert _acquisition_actions(harness) == []
     packet = trace["search_result_candidate_packet"]
@@ -319,7 +311,6 @@ def test_assessment_failure_is_typed_closed_without_fallback_or_acquisition(
     assert projection["provider_calls_attempted"] == 0
     assert projection["provider_calls_completed"] == 0
     assert projection["standalone_read_assessment_invoked"] is False
-    assert projection["ag92b_full_search_judgment_invoked"] is False
     assert _acquisition_actions(harness) == []
 
 
@@ -537,7 +528,6 @@ def test_sixth_product_component_is_rejected_before_any_assessment(
     assert harness.run_kernel is None
     assert harness.read_assessment_calls == []
     assert provider_calls == []
-    assert harness.full_search_judgment_inputs == []
     assert search_dispatches == []
     assert harness.analyst_calls == 0
     assert harness.analyst_prompts == []
@@ -749,109 +739,7 @@ def test_response_only_read_reaches_main_kernel_canonical_custody(
     assert record["semantic_support_created"] is False
     assert record["source_obligation_satisfied"] is False
     assert projection["standalone_read_assessment_invoked"] is False
-    assert projection["ag92b_full_search_judgment_invoked"] is False
-    assert harness.full_search_judgment_inputs == []
-
-
-def test_full_search_judgment_containment_restores_baseline_input_facts() -> None:
-    baseline = {
-        "schema_version": "ledger-v1",
-        "owner": "RunKernel.EvidenceLedger",
-        "candidate_count": 1,
-        "candidate_records": [{"candidate_id": "baseline"}],
-        "observation_refs": [{"observation_id": "base", "source": "baseline"}],
-        "fetch_read_candidate_custody": {
-            "candidate_content_custody_visible": False,
-            "custody_record_count": 0,
-            "readable_record_count": 0,
-            "unreadable_record_count": 0,
-            "fetch_read_candidate_custody_records": [],
-            "custody_gaps": [],
-            "custody_gap_count": 0,
-        },
-    }
-    with_read = json.loads(json.dumps(baseline))
-    with_read["candidate_count"] = 2
-    with_read["candidate_records"].append({"candidate_id": "read-candidate"})
-    with_read["observation_refs"].append(
-        {
-            "observation_id": "read-observation",
-            "source": "fetch_read_content_packet_candidate_custody",
-        }
-    )
-    with_read["fetch_read_candidate_custody"] = {
-        "candidate_content_custody_visible": True,
-        "custody_record_count": 1,
-        "readable_record_count": 1,
-        "unreadable_record_count": 0,
-        "fetch_read_candidate_custody_records": [
-            {
-                "candidate_id": "read-candidate",
-                "fetch_read_content_packet_id": "read-packet",
-                "fetch_read_status": "readable",
-            }
-        ],
-        "custody_gaps": [],
-        "custody_gap_count": 0,
-    }
-    state = {
-        "custody_by_normalized_url": {
-            "https://alpha.example/report": {
-                "candidate_id": "read-candidate",
-                "fetch_read_content_packet_ref": {"packet_id": "read-packet"},
-                "evidence_ledger_observation_ref": {
-                    "observation_id": "read-observation"
-                },
-            }
-        }
-    }
-
-    contained = build_full_search_judgment_containment_projection(
-        evidence_ledger_projection=with_read,
-        search_judgment_read_state=state,
-    )
-
-    assert contained == baseline
-    serialized = json.dumps(contained, sort_keys=True)
-    assert "read-candidate" not in serialized
-    assert "read-packet" not in serialized
-    assert "read-observation" not in serialized
-    common = {
-        "contract_projection": {"contract_id": "contract"},
-        "query_authority_trace": {},
-        "core_topic": "Alpha",
-        "primary_entity": "Alpha",
-        "result_count": 1,
-        "iterations_run": 1,
-        "source_tier_counts": {},
-        "source_domain_counts": {},
-        "top_source_domains": [],
-        "provider_diagnostic_count": 0,
-        "source_class_recovery_recommendation": {},
-        "source_class_observability": {},
-        "retrieval_stop_shadow_telemetry": {},
-        "retrieval_stop_active_telemetry": {},
-        "answer_contract_projection": {},
-        "max_iterations": 1,
-        "recovery_attempt_count": 0,
-    }
-    baseline_input = build_search_judgment_input_from_runtime(
-        evidence_ledger_projection=baseline,
-        **common,
-    )
-    contained_input = build_search_judgment_input_from_runtime(
-        evidence_ledger_projection=contained,
-        **common,
-    )
-    assert contained_input == baseline_input
-
-
-def test_both_full_search_judgment_input_seams_apply_read_containment() -> None:
-    source = Path(orchestrator.__file__).read_text(encoding="utf-8")
-    assert source.count("build_full_search_judgment_containment_projection(") == 2
-
-
-def test_successful_read_bypasses_retired_full_search_judgment_inputs(
+def test_successful_read_uses_only_searchos_read_custody(
     tmp_path: Any,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -901,16 +789,12 @@ def test_successful_read_bypasses_retired_full_search_judgment_inputs(
     )
 
     assert len(calls) == 1
-    assert no_read_harness.full_search_judgment_inputs == []
-    assert read_harness.full_search_judgment_inputs == []
     no_read_projection = no_read_outcome.execution_trace["searchos_slice_a"]
     read_projection = read_outcome.execution_trace["searchos_slice_a"]
     assert no_read_projection["semantic_handoff_refs"] == []
     assert read_projection["semantic_handoff_refs"]
     assert no_read_projection["all_passages_iteration_append_count"] == 0
     assert read_projection["all_passages_iteration_append_count"] == 0
-    assert no_read_projection["ag92b_full_search_judgment_invoked"] is False
-    assert read_projection["ag92b_full_search_judgment_invoked"] is False
     assert read_projection["read_custody_is_only_support_proposal_eligible_material"] is True
 
 
@@ -966,7 +850,6 @@ def test_provider_failure_ends_after_one_attempt_without_fallback(
     assert all(slot["custody_refs"] == [] for slot in slots)
     assert projection["semantic_handoff_refs"] == []
     assert projection["standalone_read_assessment_invoked"] is False
-    assert projection["ag92b_full_search_judgment_invoked"] is False
     execution_actions = [
         item
         for item in _acquisition_actions(harness)

@@ -58,7 +58,7 @@ RUNNER_RELATIVE = Path("scripts/ag_live_bound_01_bounded_product_runner.py")
 QUERY_ORDER = tuple(query_id for query_id, _query in AG_LIVE_S1_FIXED_QUERIES)
 EXPECTED_DISPOSITIONS = {
     "A_NO_QUANT": "ordinary final output with no Specialist work",
-    "B_COMPONENT_CALC": "one component-origin difference consumed by component D-prime",
+    "B_COMPONENT_CALC": "one component-origin difference consumed by Component Analyst",
     "C_SYNTHESIS_CALC": "one synthesis-origin difference with two-hop binding",
     "D_CONVERSION_NEGATIVE": "no unsupported converted mile result presented as supported",
 }
@@ -689,7 +689,7 @@ def finalize_budget_exhausted_campaign(
             "runner_classification": "success",
             "observed_disposition": (
                 "reviewable arithmetic final output with no Specialist proposal, "
-                "result, or component D-prime consumption"
+                "result, or Component Analyst consumption"
             ),
         },
         {
@@ -834,7 +834,7 @@ def finalize_budget_exhausted_campaign(
         f"observed search identities were {', '.join(exercised_search)}. Broker use "
         "was false and alternate-model comparison was not run.\n\n"
         "A reached reviewable output without Specialist work but remained incomplete. "
-        "B presented arithmetic without Specialist or component D-prime consumption. "
+        "B presented arithmetic without Specialist or Component Analyst consumption. "
         "C returned insufficient evidence without Specialist, two-hop, or synthesis "
         "D-prime consumption. D stopped before final output at the Block A token cap.\n\n"
         f"Consumed telemetry: {consumed['full_scryraven_runs']} runs, "
@@ -1393,7 +1393,7 @@ def finalize_wave_1_completion_extension(
         ),
         "B_COMPONENT_CALC": (
             "arithmetic reached final output without a Specialist proposal, result, "
-            "spend, or component D-prime consumption"
+            "spend, or Component Analyst consumption"
         ),
         "C_SYNTHESIS_CALC": (
             "required exact literals and difference did not reach final output; no "
@@ -1440,9 +1440,6 @@ def finalize_wave_1_completion_extension(
                 "specialist_proposal_count": specialist.get("proposal_count", 0),
                 "specialist_result_count": specialist.get("result_count", 0),
                 "specialist_spent": specialist.get("specialist_spent", 0),
-                "component_dprime_consumed": runtime.get(
-                    "component_dprime_consumed", False
-                ),
                 "synthesis_dprime_consumed": runtime.get(
                     "synthesis_dprime_consumed", False
                 ),

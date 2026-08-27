@@ -132,10 +132,6 @@ def test_component_work_node_v1_keeps_final_component_analyst_case(
     assert node["component_analyst_case_ref"] == analyst_case_ref
     assert node["analyst_finding_ref"] == analyst_case_ref
     assert "dprime_validation_ref" not in node
-    legacy = deepcopy(node)
-    legacy["dprime_validation_ref"] = {"role": "component_dprime"}
-    with pytest.raises(ComponentWorkNodeError, match="cannot retain a component D-prime ref"):
-        validate_component_work_node_v1(legacy)
 
 def test_component_work_node_rejects_multiple_components() -> None:
     refs = component_work_node_v0_refs_from_product_packet(_product_packet())

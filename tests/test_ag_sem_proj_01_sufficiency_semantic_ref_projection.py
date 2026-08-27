@@ -122,7 +122,6 @@ def _sufficiency_projection(*coverages: dict[str, Any]) -> dict[str, Any]:
         RunSufficiencyJudgmentInput(
             contract_projection={},
             evidence_ledger_projection={},
-            search_judgment_projection={"decision": "stop_satisfied"},
             final_evidence_facts={"final_evidence_count": 1, "author_evidence_count": 1},
             semantic_state_facts=facts,
         )

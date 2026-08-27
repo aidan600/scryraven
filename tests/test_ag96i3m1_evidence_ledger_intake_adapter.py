@@ -375,8 +375,6 @@ def _requirement(projection: dict[str, Any], requirement_id: str) -> dict[str, A
 
 def _closed_surface_snapshot(kernel: RunKernel) -> dict[str, Any]:
     return {
-        "search_judgment": deepcopy(kernel.state.search_judgment),
-        "search_judgment_projection": deepcopy(kernel.state.search_judgment_projection),
         "sufficiency_judgment": deepcopy(kernel.state.sufficiency_judgment),
         "sufficiency_judgment_projection": deepcopy(
             kernel.state.sufficiency_judgment_projection

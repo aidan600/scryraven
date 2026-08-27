@@ -26,7 +26,6 @@ SUPPORTED_QUERY_CLASS = "ordinary-bounded-multicomponent-factual-synthesis-v1"
 
 ROLE_COMPONENT_ANALYST = "component_analyst"
 ROLE_COMPONENT_ANALYST_RESUME = "component_analyst_resume"
-ROLE_COMPONENT_DPRIME = "component_dprime"
 ROLE_CROSS_COMPONENT_ANALYST = "cross_component_analyst"
 ROLE_SYNTHESIS_DPRIME = "synthesis_dprime"
 ROLE_SCRUTINEER = "scrutineer"
@@ -100,18 +99,6 @@ ROLE_SYSTEM_PROMPTS = {
         "Do not make a new Specialist proposal, admit anything, create runtime "
         "IDs, refs, revisions, digests, or bindings, route providers, search, "
         "or write final answer prose."
-    ),
-    ROLE_COMPONENT_DPRIME: (
-        "You are ScryRaven's legacy-recovery component D-prime. Validate only the nominated "
-        "component Analyst claim against its exact bounded evidence and scope. "
-        "When specialist_need_handoff is present, a completed quantitative result "
-        "supports the nominated claim only when its exact calculated value, "
-        "operator, unit, source lineage, assumptions, caveats, and claim_alignment "
-        "all support that claim; execution success alone is insufficient and any "
-        "non-exact alignment must not be clean support. Return validation_status, "
-        "reasons, caveats, nonclaims, and blockers. Do not create or replace the "
-        "claim, calculate a substitute, authorize the capability, admit it, "
-        "authorize search or dispatch research, or write final prose."
     ),
     ROLE_CROSS_COMPONENT_ANALYST: (
         "You are ScryRaven's Cross-Component Analyst. Propose bounded semantic "
@@ -192,7 +179,6 @@ _LEGACY_SUPPORT_STATUS_BY_COMPONENT_ANALYST_CASE_POSTURE = {
 _ROLE_STATUSES = {
     ROLE_COMPONENT_ANALYST: COMPONENT_ANALYST_CASE_POSTURES,
     ROLE_COMPONENT_ANALYST_RESUME: COMPONENT_ANALYST_CASE_POSTURES,
-    ROLE_COMPONENT_DPRIME: {"supported", "supported_with_caveats", "unsupported", "challenged", "blocked"},
     ROLE_SYNTHESIS_DPRIME: {"supported", "supported_with_caveats", "unsupported", "challenged", "blocked", "ambiguous"},
     ROLE_SCRUTINEER: {"passed", "passed_with_caveats", "challenged", "blocked"},
 }
@@ -585,7 +571,7 @@ def _normalize_semantic_output(
             payload,
             resume=role == ROLE_COMPONENT_ANALYST_RESUME,
         )
-    if role in {ROLE_COMPONENT_DPRIME, ROLE_SYNTHESIS_DPRIME}:
+    if role == ROLE_SYNTHESIS_DPRIME:
         if _clean_text(payload.get("claim_text")) or _clean_text(
             payload.get("replacement_claim")
         ):
@@ -1573,7 +1559,6 @@ def safe_packet_digest(value: Mapping[str, Any]) -> str:
 __all__ = [
     "ROLE_COMPONENT_ANALYST",
     "ROLE_COMPONENT_ANALYST_RESUME",
-    "ROLE_COMPONENT_DPRIME",
     "ROLE_CROSS_COMPONENT_ANALYST",
     "ROLE_SCRUTINEER",
     "ROLE_SYNTHESIS_DPRIME",

@@ -218,7 +218,7 @@ class OfflineObservedRunSnapshot:
     task_id: str | None = None
     contract_obligations: Mapping[str, Any] = field(default_factory=dict)
     evidence_ledger: Mapping[str, Any] = field(default_factory=dict)
-    search_judgment: Mapping[str, Any] = field(default_factory=dict)
+    search_outcome: Mapping[str, Any] = field(default_factory=dict)
     sufficiency_judgment: Mapping[str, Any] = field(default_factory=dict)
     final_answer_packet: Mapping[str, Any] = field(default_factory=dict)
     final_answer_text: str = ""
@@ -237,9 +237,8 @@ class OfflineObservedRunSnapshot:
         search = _first_projection(
             payload,
             "search",
-            "search_judgment",
-            "search_judgment_projection",
-            "run_authority_search_judgment",
+            "searchos_judgment",
+            "searchos_state",
         )
         search_attempt_count = payload.get("search_attempt_count")
         if search_attempt_count is None:
@@ -269,7 +268,7 @@ class OfflineObservedRunSnapshot:
                 "evidence_ledger",
                 "evidence_ledger_projection",
             ),
-            search_judgment=search,
+            search_outcome=search,
             sufficiency_judgment=_first_projection(
                 payload,
                 "sufficiency",
@@ -733,7 +732,7 @@ class OfflineGoldenTaskEvaluator:
         findings: list[GoldenEvaluationFinding],
     ) -> None:
         expected = task.expected_search
-        decision = str(snapshot.search_judgment.get("decision") or "")
+        decision = str(snapshot.search_outcome.get("decision") or "")
         if expected.allowed_decisions and decision not in expected.allowed_decisions:
             self._add(
                 findings,
@@ -777,7 +776,7 @@ class OfflineGoldenTaskEvaluator:
                 expected.max_recovery_attempts,
                 "max_recovery_attempts",
             )
-        target_classes = set(_strings(snapshot.search_judgment.get("target_source_classes")))
+        target_classes = set(_strings(snapshot.search_outcome.get("target_source_classes")))
         missing_targets = [
             item for item in expected.required_target_source_classes if item not in target_classes
         ]

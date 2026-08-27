@@ -750,8 +750,6 @@ def _build_sufficiency_input(
     return RunSufficiencyJudgmentInput(
         contract_projection=contract_projection,
         evidence_ledger_projection=ledger_projection,
-        search_judgment_projection={"decision": "defer_to_legacy_compatibility"},
-        search_judgment_history=(),
         answer_contract_projection=answer_contract_projection,
         source_obligation_projection=ledger_projection,
         final_evidence_facts={

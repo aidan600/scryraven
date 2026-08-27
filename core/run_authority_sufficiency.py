@@ -12,7 +12,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping
 
 RUN_AUTHORITY_SUFFICIENCY_SCHEMA_VERSION = "run_authority_sufficiency_ag92c_v1"
 RUN_AUTHORITY_SUFFICIENCY_TRACE_KEY = "run_authority_sufficiency_judgment"
@@ -321,8 +321,6 @@ class RunSufficiencyJudgmentInput:
 
     contract_projection: Mapping[str, Any]
     evidence_ledger_projection: Mapping[str, Any]
-    search_judgment_projection: Mapping[str, Any] = field(default_factory=dict)
-    search_judgment_history: Sequence[Mapping[str, Any]] = ()
     answer_contract_projection: Mapping[str, Any] = field(default_factory=dict)
     source_obligation_projection: Mapping[str, Any] = field(default_factory=dict)
     final_evidence_facts: Mapping[str, Any] = field(default_factory=dict)
@@ -346,10 +344,8 @@ class RunSufficiencyJudgmentInput:
     def to_model_payload(self) -> dict[str, Any]:
         contract = _safe_mapping(self.contract_projection)
         ledger = _safe_mapping(self.evidence_ledger_projection)
-        search = _safe_mapping(self.search_judgment_projection)
         answer_contract = _safe_mapping(self.answer_contract_projection)
         source_obligation = _safe_mapping(self.source_obligation_projection)
-        history = [_safe_mapping(item) for item in self.search_judgment_history]
         return {
             "schema_version": RUN_AUTHORITY_SUFFICIENCY_SCHEMA_VERSION,
             "contract_ref": {
@@ -376,17 +372,6 @@ class RunSufficiencyJudgmentInput:
                 ),
                 "compatibility": ledger.get("compatibility", {}),
                 "candidate_records": ledger.get("candidate_records", []),
-            },
-            "search_judgment_ref": {
-                "decision": search.get("decision"),
-                "classifications": search.get("classifications", []),
-                "gaps": search.get("gaps", []),
-                "target_source_classes": search.get("target_source_classes", []),
-                "insufficient_posture": search.get("insufficient_posture", {}),
-                "history_count": len(history),
-                "history_decisions": [
-                    item.get("decision") for item in history[-5:] if item.get("decision")
-                ],
             },
             "answer_contract_ref": {
                 "fulfilled_source_classes": answer_contract.get(

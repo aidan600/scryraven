@@ -1795,8 +1795,6 @@ _N1_TARGET_FACTS = (
     "semantic_handoff_present",
     "handoff_material_consumed",
     "component_analyst_case_present",
-    "component_dprime_model_call_required",
-    "component_dprime_model_call_executed",
     "semantic_admission_status",
     "component_coverage_satisfied",
     "canonical_slot_posture",
@@ -2087,8 +2085,6 @@ def _assert_target_facts(projection: Mapping[str, Any]) -> None:
     assert slot["semantic_handoff_present"] is True
     assert slot["handoff_material_consumed"] is True
     assert slot["component_analyst_case_present"] is True
-    assert slot["component_dprime_model_call_required"] is False
-    assert slot["component_dprime_model_call_executed"] is False
     assert slot["semantic_admission_status"] == "admitted"
     assert slot["component_coverage_satisfied"] is True
     assert slot["canonical_slot_posture"] == "semantically_handed_off"

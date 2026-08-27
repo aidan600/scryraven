@@ -522,7 +522,6 @@ def _source_class_recovery_recommendation_path_visible(
             "missing_expected_source_class:",
             "answer_contract_",
             "official_source_obligation_bridge:",
-            "run_authority_search_judgment:",
         )
     ):
         return True
@@ -533,7 +532,6 @@ def _source_class_recovery_recommendation_path_visible(
             "official_canonical_acquisition_path_visibility",
             "official_source_obligation_bridge",
             "official_source_obligation_trace",
-            "run_authority_search_judgment",
             "source_domain_counts",
             "source_tier_counts",
             "official_evidence_found",

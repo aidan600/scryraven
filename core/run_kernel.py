@@ -585,18 +585,12 @@ SEMANTIC_OBSERVATION_ADMISSION_STAGE = (
     SEMANTIC_OBSERVATION_ADMISSION_STAGE_NAME
 )
 COMPONENT_COVERAGE_REDUCTION_STAGE = COMPONENT_COVERAGE_REDUCTION_STAGE_NAME
-RECOVERED_SEMANTIC_DELTA_COMMIT_STAGE = (
-    "component_gap_recovery_semantic_delta_commit"
-)
 SEMANTIC_PRODUCER_BUNDLE_COMMIT_STAGE = "semantic_producer_bundle_commit"
 MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE = (
     "multicomponent_selective_recomputation_closure"
 )
 SEMANTIC_PRODUCER_BUNDLE_COMMIT_REASON = (
     "ordinary_semantic_producer_atomic_bundle_commit"
-)
-RECOVERED_SEMANTIC_DELTA_COMMIT_REASON = (
-    "component_gap_recovery_atomic_semantic_delta_commit"
 )
 CONTRACT_AMENDMENT_ADMISSION_STAGE = CONTRACT_AMENDMENT_ADMISSION_STAGE_NAME
 CONTRACT_AMENDMENT_APPLICATION_STAGE = CONTRACT_AMENDMENT_APPLICATION_STAGE_NAME
@@ -626,7 +620,6 @@ COMPONENT_SCOPED_SOURCE_CUSTODY_STAGE = "component_scoped_source_custody"
 MAIN_RETRIEVAL_STAGE = "main_retrieval"
 RETRIEVAL_STOP_CHECKPOINT_STAGE = "retrieval_stop_checkpoint"
 EVIDENCE_LEDGER_STAGE = "evidence_ledger"
-SEARCH_JUDGMENT_STAGE = "search_judgment"
 SUFFICIENCY_JUDGMENT_STAGE = "sufficiency_judgment"
 FINAL_ANSWER_PACKET_STAGE = "final_answer_packet"
 AUTHOR_PROSE_FINALIZATION_STAGE = AUTHOR_PROSE_FINALIZATION_STAGE_NAME
@@ -769,9 +762,6 @@ class ActionType(str, Enum):
     INITIAL_ANSWER_CONTRACT_ACCEPT = "initial_answer_contract_accept"
     SEMANTIC_OBSERVATION_ADMIT = "semantic_observation_admit"
     COMPONENT_COVERAGE_REDUCE = "component_coverage_reduce"
-    RECOVERED_SEMANTIC_DELTA_COMMIT = (
-        "component_gap_recovery_semantic_delta_commit"
-    )
     SEMANTIC_PRODUCER_BUNDLE_COMMIT = "semantic_producer_bundle_commit"
     MULTICOMPONENT_COMPONENT_ANALYST_EXECUTE = (
         "multicomponent_component_analyst_execute"
@@ -788,9 +778,6 @@ class ActionType(str, Enum):
     MULTICOMPONENT_BATCH_GRANT = "multicomponent_semantic_batch_grant"
     MULTICOMPONENT_BATCH_DISPATCH = "multicomponent_semantic_batch_dispatch"
     MULTICOMPONENT_BATCH_CANCEL = "multicomponent_semantic_batch_cancel"
-    MULTICOMPONENT_COMPONENT_DPRIME_EXECUTE = (
-        "multicomponent_component_dprime_execute"
-    )
     MULTICOMPONENT_CROSS_ANALYST_EXECUTE = (
         "multicomponent_cross_analyst_execute"
     )
@@ -823,7 +810,6 @@ class ActionType(str, Enum):
     MAIN_RETRIEVAL_PASS = "main_retrieval_pass"
     RETRIEVAL_STOP_CHECKPOINT = "retrieval_stop_checkpoint"
     EVIDENCE_LEDGER_REDUCE = "evidence_ledger_reduce"
-    SEARCH_JUDGMENT_DECIDE = "search_judgment_decide"
     SUFFICIENCY_JUDGMENT_DECIDE = "sufficiency_judgment_decide"
     FINAL_ANSWER_PACKET_HARDEN = "final_answer_packet_harden"
     AUTHOR_PROSE_FINALIZE = "author_prose_finalize"
@@ -926,9 +912,6 @@ class ObservationType(str, Enum):
     INITIAL_ANSWER_CONTRACT_ACCEPTED = "initial_answer_contract_accepted"
     SEMANTIC_OBSERVATION_ADMITTED = "semantic_observation_admitted"
     COMPONENT_COVERAGE_REDUCED = "component_coverage_reduced"
-    RECOVERED_SEMANTIC_DELTA_COMMITTED = (
-        "component_gap_recovery_semantic_delta_committed"
-    )
     SEMANTIC_PRODUCER_BUNDLE_COMMITTED = "semantic_producer_bundle_committed"
     MULTICOMPONENT_COMPONENT_ANALYST_COMPLETED = (
         "multicomponent_component_analyst_completed"
@@ -945,9 +928,6 @@ class ObservationType(str, Enum):
     MULTICOMPONENT_BATCH_GRANTED = "multicomponent_semantic_batch_granted"
     MULTICOMPONENT_BATCH_DISPATCHED = "multicomponent_semantic_batch_dispatched"
     MULTICOMPONENT_BATCH_CANCELLED = "multicomponent_semantic_batch_cancelled"
-    MULTICOMPONENT_COMPONENT_DPRIME_COMPLETED = (
-        "multicomponent_component_dprime_completed"
-    )
     MULTICOMPONENT_CROSS_ANALYST_COMPLETED = (
         "multicomponent_cross_analyst_completed"
     )
@@ -982,7 +962,6 @@ class ObservationType(str, Enum):
     RETRIEVAL_PASS_RESULT = "retrieval_pass_result"
     RETRIEVAL_STOP_DECISION = "retrieval_stop_decision"
     EVIDENCE_CUSTODY_OBSERVED = "evidence_custody_observed"
-    SEARCH_JUDGMENT_DECIDED = "search_judgment_decided"
     SUFFICIENCY_JUDGMENT_DECIDED = "sufficiency_judgment_decided"
     FINAL_ANSWER_PACKET_HARDENED = "final_answer_packet_hardened"
     AUTHOR_PROSE_FINALIZED = "author_prose_finalized"
@@ -1445,7 +1424,6 @@ class Observation:
         semantic_role_observation_types = {
             ObservationType.MULTICOMPONENT_COMPONENT_ANALYST_COMPLETED,
             ObservationType.MULTICOMPONENT_COMPONENT_ANALYST_RESUME_COMPLETED,
-            ObservationType.MULTICOMPONENT_COMPONENT_DPRIME_COMPLETED,
             ObservationType.MULTICOMPONENT_CROSS_ANALYST_COMPLETED,
             ObservationType.MULTICOMPONENT_SYNTHESIS_DPRIME_COMPLETED,
             ObservationType.MULTICOMPONENT_SCRUTINEER_COMPLETED,
@@ -1610,9 +1588,6 @@ class RunState:
     sufficiency_readiness_history: list[dict[str, Any]] = field(
         default_factory=list
     )
-    component_gap_recovery_history: list[dict[str, Any]] = field(
-        default_factory=list
-    )
     contract_amendment_admission_state: dict[str, Any] = field(default_factory=dict)
     contract_amendment_admission_projection: dict[str, Any] = field(
         default_factory=dict
@@ -1647,9 +1622,6 @@ class RunState:
         default_factory=list
     )
     evidence_ledger: EvidenceLedger = field(default_factory=EvidenceLedger)
-    search_judgment: dict[str, Any] = field(default_factory=dict)
-    search_judgment_projection: dict[str, Any] = field(default_factory=dict)
-    search_judgment_history: list[dict[str, Any]] = field(default_factory=list)
     sufficiency_judgment: dict[str, Any] = field(default_factory=dict)
     sufficiency_judgment_projection: dict[str, Any] = field(default_factory=dict)
     sufficiency_judgment_history: list[dict[str, Any]] = field(default_factory=list)
@@ -1986,9 +1958,6 @@ class RunState:
             sufficiency_readiness_history=deepcopy(
                 self.sufficiency_readiness_history
             ),
-            component_gap_recovery_history=deepcopy(
-                self.component_gap_recovery_history
-            ),
             contract_amendment_admission_state=deepcopy(
                 self.contract_amendment_admission_state
             ),
@@ -2015,9 +1984,6 @@ class RunState:
                 self.contract_amendment_application_history
             ),
             evidence_ledger=self.evidence_ledger.to_projection().to_dict(),
-            search_judgment=deepcopy(self.search_judgment),
-            search_judgment_projection=deepcopy(self.search_judgment_projection),
-            search_judgment_history=deepcopy(self.search_judgment_history),
             sufficiency_judgment=deepcopy(self.sufficiency_judgment),
             sufficiency_judgment_projection=deepcopy(
                 self.sufficiency_judgment_projection
@@ -2317,7 +2283,6 @@ class KernelTraceProjection:
     sufficiency_readiness_state: Mapping[str, Any]
     sufficiency_readiness_projection: Mapping[str, Any]
     sufficiency_readiness_history: Sequence[Mapping[str, Any]]
-    component_gap_recovery_history: Sequence[Mapping[str, Any]]
     contract_amendment_admission_state: Mapping[str, Any]
     contract_amendment_admission_projection: Mapping[str, Any]
     contract_amendment_admission_history: Sequence[Mapping[str, Any]]
@@ -2328,9 +2293,6 @@ class KernelTraceProjection:
     contract_amendment_application_projection: Mapping[str, Any]
     contract_amendment_application_history: Sequence[Mapping[str, Any]]
     evidence_ledger: Mapping[str, Any]
-    search_judgment: Mapping[str, Any]
-    search_judgment_projection: Mapping[str, Any]
-    search_judgment_history: Sequence[Mapping[str, Any]]
     sufficiency_judgment: Mapping[str, Any]
     sufficiency_judgment_projection: Mapping[str, Any]
     sufficiency_judgment_history: Sequence[Mapping[str, Any]]
@@ -2545,10 +2507,6 @@ class KernelTraceProjection:
             "sufficiency_readiness_history": [
                 _safe_mapping(item) for item in self.sufficiency_readiness_history
             ],
-            "component_gap_recovery_history": [
-                _safe_mapping(item)
-                for item in self.component_gap_recovery_history
-            ],
             "contract_amendment_admission_state": _safe_mapping(
                 self.contract_amendment_admission_state
             ),
@@ -2577,13 +2535,6 @@ class KernelTraceProjection:
                 for item in self.contract_amendment_application_history
             ],
             "evidence_ledger": _safe_mapping(self.evidence_ledger),
-            "search_judgment": _safe_mapping(self.search_judgment),
-            "search_judgment_projection": _safe_mapping(
-                self.search_judgment_projection
-            ),
-            "search_judgment_history": [
-                _safe_mapping(item) for item in self.search_judgment_history
-            ],
             "sufficiency_judgment": _safe_mapping(self.sufficiency_judgment),
             "sufficiency_judgment_projection": _safe_mapping(
                 self.sufficiency_judgment_projection
@@ -5155,10 +5106,6 @@ class RunKernel:
                 ActionType.MULTICOMPONENT_COMPONENT_ANALYST_EXECUTE,
                 ObservationType.MULTICOMPONENT_COMPONENT_ANALYST_COMPLETED,
             ),
-            "component_dprime": (
-                ActionType.MULTICOMPONENT_COMPONENT_DPRIME_EXECUTE,
-                ObservationType.MULTICOMPONENT_COMPONENT_DPRIME_COMPLETED,
-            ),
             "cross_component_analyst": (
                 ActionType.MULTICOMPONENT_CROSS_ANALYST_EXECUTE,
                 ObservationType.MULTICOMPONENT_CROSS_ANALYST_COMPLETED,
@@ -5958,12 +5905,6 @@ class RunKernel:
         role_name = _clean_text(role, limit=80)
         input_digest = _clean_text(input_packet_digest, limit=128)
         evaluation_key = _clean_text(logical_evaluation_key, limit=180)
-        if role_name == "component_dprime" and not searchos_recovery_cycle_ref:
-            raise RunKernelTransitionError(
-                "ordinary component-D-prime execution is retired; only the "
-                "explicit legacy SearchOS recovery corridor may execute it"
-            )
-
         handoff_digest = _clean_text(specialist_handoff_digest, limit=128)
         if role_name not in ROLE_SYSTEM_PROMPTS:
             raise RunKernelTransitionError("unknown multi-component semantic role")
@@ -5972,7 +5913,6 @@ class RunKernel:
                 "multi-component role execution requires exact input and logical bindings"
             )
         if handoff_digest and role_name not in {
-            "component_dprime",
             "component_analyst_resume",
             "synthesis_dprime",
         }:
@@ -5987,10 +5927,6 @@ class RunKernel:
             "component_analyst_resume": (
                 ActionType.MULTICOMPONENT_COMPONENT_ANALYST_RESUME_EXECUTE,
                 ObservationType.MULTICOMPONENT_COMPONENT_ANALYST_RESUME_COMPLETED,
-            ),
-            "component_dprime": (
-                ActionType.MULTICOMPONENT_COMPONENT_DPRIME_EXECUTE,
-                ObservationType.MULTICOMPONENT_COMPONENT_DPRIME_COMPLETED,
             ),
             "cross_component_analyst": (
                 ActionType.MULTICOMPONENT_CROSS_ANALYST_EXECUTE,
@@ -6031,14 +5967,14 @@ class RunKernel:
             )
 
             if (
-                role_name not in {"component_analyst", "component_dprime"}
+                role_name != "component_analyst"
                 or lease_id
                 or dispatch_action_id
                 or output_schema_variant
                 or handoff_digest
             ):
                 raise RunKernelTransitionError(
-                    "SearchOS recovery may execute only the retained legacy Component Analyst and component-D-prime corridor"
+                    "SearchOS recovery may execute only the Component Analyst recovery corridor"
                 )
             try:
                 cycle = validate_active_searchos_generalized_recovery_cycle_ref(
@@ -7146,79 +7082,6 @@ class RunKernel:
             ),
         )
 
-    def authorize_recovered_semantic_delta_commit(
-        self,
-        *,
-        semantic_observation_id: str,
-        semantic_observation_digest: str,
-        coverage_record_id: str,
-        coverage_record_digest: str,
-        answer_component_id: str,
-        component_revision: str,
-        component_digest: str,
-        accepted_contract_digest: str | None = None,
-        accepted_contract_version: str | None = None,
-        request_id: str | None = None,
-        reason: str = RECOVERED_SEMANTIC_DELTA_COMMIT_REASON,
-        inputs: Mapping[str, Any] | None = None,
-    ) -> AuthorizedAction:
-        if not self.state.initial_answer_contract_projection:
-            raise RunKernelTransitionError(
-                "recovered semantic delta commit requires an accepted initial "
-                "answer contract"
-            )
-        accepted = self.state.initial_answer_contract
-        resolved_contract_digest = (
-            accepted_contract_digest
-            or accepted.get("accepted_contract_digest")
-        )
-        resolved_contract_version = (
-            accepted_contract_version
-            or accepted.get("accepted_contract_version")
-        )
-        for label, value in (
-            ("semantic_observation_id", semantic_observation_id),
-            ("semantic_observation_digest", semantic_observation_digest),
-            ("coverage_record_id", coverage_record_id),
-            ("coverage_record_digest", coverage_record_digest),
-            ("answer_component_id", answer_component_id),
-            ("component_revision", component_revision),
-            ("component_digest", component_digest),
-            ("accepted_contract_digest", resolved_contract_digest),
-            ("accepted_contract_version", resolved_contract_version),
-        ):
-            if not _clean_text(value, limit=200):
-                raise RunKernelTransitionError(
-                    "recovered semantic delta commit requires "
-                    f"{label} binding"
-                )
-        merged_inputs = {
-            "semantic_observation_id": semantic_observation_id,
-            "semantic_observation_digest": semantic_observation_digest,
-            "coverage_record_id": coverage_record_id,
-            "coverage_record_digest": coverage_record_digest,
-            "answer_component_id": answer_component_id,
-            "component_revision": component_revision,
-            "component_digest": component_digest,
-            "accepted_contract_digest": resolved_contract_digest,
-            "accepted_contract_version": resolved_contract_version,
-            "request_id": request_id or self.state.request_id,
-            "atomic_recovered_semantic_delta_commit": True,
-            "semantic_delta_boundary": (
-                "semantic_observation_plus_component_coverage"
-            ),
-            **dict(inputs or {}),
-        }
-        return self.authorize(
-            stage=RECOVERED_SEMANTIC_DELTA_COMMIT_STAGE,
-            action_type=ActionType.RECOVERED_SEMANTIC_DELTA_COMMIT,
-            reason=reason,
-            inputs=merged_inputs,
-            expected_observation_type=(
-                ObservationType.RECOVERED_SEMANTIC_DELTA_COMMITTED
-            ),
-        )
-
     def commit_semantic_producer_bundle(
         self,
         *,
@@ -7396,245 +7259,6 @@ class RunKernel:
             ],
             "live_validation_not_run": True,
         }
-        self.state.observations.append(observation)
-        self.state.next_observation_sequence += 1
-
-    def commit_recovered_semantic_delta(
-        self,
-        *,
-        semantic_observation: Mapping[str, Any],
-        sanitized_content_references: Sequence[Mapping[str, Any]],
-        component_coverage_record: Mapping[str, Any],
-        answer_component_id: str,
-        component_revision: str,
-        component_digest: str,
-        accepted_contract_digest: str | None = None,
-        accepted_contract_version: str | None = None,
-        request_id: str | None = None,
-        reason: str = RECOVERED_SEMANTIC_DELTA_COMMIT_REASON,
-        inputs: Mapping[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        """Atomically commit a recovered SemanticObservation plus coverage.
-
-        This commit is for an already accepted contract. It stages both existing
-        canonical reducers before mutating RunState, then applies observation and
-        coverage together through one RunKernel-owned transaction boundary.
-        """
-
-        observation_payload = _safe_mapping(semantic_observation)
-        content_reference_payloads = [
-            _safe_mapping(ref)
-            for ref in sanitized_content_references
-            if isinstance(ref, Mapping)
-        ]
-        coverage_payload = _safe_mapping(component_coverage_record)
-        action = self.authorize_recovered_semantic_delta_commit(
-            semantic_observation_id=str(
-                observation_payload.get("observation_id") or ""
-            ),
-            semantic_observation_digest=str(
-                observation_payload.get("observation_digest") or ""
-            ),
-            coverage_record_id=str(
-                coverage_payload.get("record_id")
-                or coverage_payload.get("coverage_record_id")
-                or ""
-            ),
-            coverage_record_digest=str(
-                coverage_payload.get("record_digest")
-                or coverage_payload.get("coverage_record_digest")
-                or ""
-            ),
-            answer_component_id=answer_component_id,
-            component_revision=component_revision,
-            component_digest=component_digest,
-            accepted_contract_digest=accepted_contract_digest,
-            accepted_contract_version=accepted_contract_version,
-            request_id=request_id,
-            reason=reason,
-            inputs=inputs,
-        )
-        try:
-            if action.action_id in self.state.reduced_action_ids:
-                raise RunKernelTransitionError("authorized action was already reduced")
-            if action.sequence != self.state.next_observation_sequence:
-                raise RunKernelTransitionError(
-                    "recovered semantic delta commit observation reduced out of order"
-                )
-            if not observation_payload or not content_reference_payloads:
-                raise RunKernelTransitionError(
-                    "recovered semantic delta commit requires SemanticObservation "
-                    "and sanitized content references"
-                )
-            if not coverage_payload:
-                raise RunKernelTransitionError(
-                    "recovered semantic delta commit requires ComponentCoverageRecord"
-                )
-            existing_observation_ids = [
-                _safe_mapping(item).get("observation_id")
-                for item in self.state.semantic_observation_admission_history
-            ]
-            existing_observation_digests = [
-                _safe_mapping(item).get("observation_digest")
-                for item in self.state.semantic_observation_admission_history
-            ]
-            admission_state = build_semantic_observation_admission_state(
-                action_id=action.action_id,
-                action_inputs=action.inputs,
-                observation_payload={
-                    "semantic_observation": observation_payload,
-                    "sanitized_content_references": content_reference_payloads,
-                },
-                accepted_contract=self.state.initial_answer_contract,
-                evidence_ledger_projection=(
-                    self.state.evidence_ledger.to_projection().to_dict()
-                ),
-                existing_observation_ids=existing_observation_ids,
-                existing_observation_digests=existing_observation_digests,
-                run_id=self.state.run_id,
-                request_id=self.state.request_id,
-            )
-            admission_projection = build_semantic_observation_admission_projection(
-                admission_state=admission_state
-            )
-            staged_admission_history = [
-                *[
-                    deepcopy(dict(item))
-                    for item in self.state.semantic_observation_admission_history
-                    if isinstance(item, Mapping)
-                ],
-                deepcopy(admission_projection),
-            ]
-            existing_coverage_record_ids = [
-                _safe_mapping(item).get("coverage_record_id")
-                for item in self.state.component_coverage_history
-            ]
-            existing_coverage_record_digests = [
-                _safe_mapping(item).get("coverage_record_digest")
-                for item in self.state.component_coverage_history
-            ]
-            coverage_state = build_component_coverage_reduction_state(
-                action_id=action.action_id,
-                action_inputs=action.inputs,
-                coverage_payload={
-                    "component_coverage_record": coverage_payload,
-                },
-                accepted_contract=self.state.initial_answer_contract,
-                admission_history=staged_admission_history,
-                evidence_ledger_projection=(
-                    self.state.evidence_ledger.to_projection().to_dict()
-                ),
-                existing_coverage_record_ids=existing_coverage_record_ids,
-                existing_coverage_record_digests=existing_coverage_record_digests,
-                run_id=self.state.run_id,
-                request_id=self.state.request_id,
-            )
-            coverage_projection = build_component_coverage_reduction_projection(
-                coverage_state=coverage_state
-            )
-        except (SemanticObservationAdmissionError, ComponentCoverageReductionError) as exc:
-            transition_error = RunKernelTransitionError(str(exc))
-            self._record_recovered_semantic_delta_commit_failure(
-                action=action,
-                exc=transition_error,
-            )
-            raise transition_error from exc
-        except Exception as exc:
-            self._record_recovered_semantic_delta_commit_failure(
-                action=action,
-                exc=exc,
-            )
-            if isinstance(exc, RunKernelTransitionError):
-                raise
-            raise RunKernelTransitionError(
-                "recovered semantic delta commit failed before canonical "
-                "semantic state mutation"
-            ) from exc
-
-        observation = Observation.from_action(
-            action,
-            observation_type=(
-                ObservationType.RECOVERED_SEMANTIC_DELTA_COMMITTED
-            ),
-            status=RunStageStatus.COMPLETED,
-            payload={
-                "semantic_observation": observation_payload,
-                "sanitized_content_references": content_reference_payloads,
-                "component_coverage_record": coverage_payload,
-            },
-        )
-        admission_state = deepcopy(dict(admission_state))
-        admission_projection = deepcopy(dict(admission_projection))
-        coverage_state = deepcopy(dict(coverage_state))
-        coverage_projection = deepcopy(dict(coverage_projection))
-        self.state.reduced_action_ids.add(action.action_id)
-        self.state.action_statuses[action.action_id] = observation.status
-        self.state.stage_statuses[action.stage] = observation.status
-        self.state.semantic_observation_admission_state = admission_state
-        self.state.semantic_observation_admission_projection = admission_projection
-        self.state.semantic_observation_admission_history.append(
-            deepcopy(admission_projection)
-        )
-        self.state.projections[SEMANTIC_OBSERVATION_ADMISSION_STAGE] = (
-            deepcopy(admission_projection)
-        )
-        self.state.component_coverage_state = coverage_state
-        self.state.component_coverage_projection = coverage_projection
-        self.state.component_coverage_history.append(deepcopy(coverage_projection))
-        self.state.projections[COMPONENT_COVERAGE_REDUCTION_STAGE] = (
-            deepcopy(coverage_projection)
-        )
-        projection = {
-            "owner": "RunKernel.RecoveredSemanticDeltaCommit",
-            "canonical_state": True,
-            "trace_only": False,
-            "storage_only": False,
-            "atomic_recovered_semantic_delta_commit": True,
-            "accepted_contract_digest": self.state.initial_answer_contract.get(
-                "accepted_contract_digest"
-            ),
-            "accepted_contract_version": self.state.initial_answer_contract.get(
-                "accepted_contract_version"
-            ),
-            "semantic_observation_id": admission_projection.get(
-                "observation_id"
-            ),
-            "coverage_record_id": coverage_projection.get("coverage_record_id"),
-            "answer_component_id": coverage_projection.get(
-                "answer_component_id"
-            ),
-            "live_validation_not_run": True,
-        }
-        self.state.projections[action.stage] = projection
-        self.state.observations.append(observation)
-        self.state.next_observation_sequence += 1
-        return projection
-
-    def _record_recovered_semantic_delta_commit_failure(
-        self,
-        *,
-        action: AuthorizedAction,
-        exc: Exception,
-    ) -> None:
-        if action.action_id in self.state.reduced_action_ids:
-            return
-        observation = Observation.from_action(
-            action,
-            observation_type=(
-                ObservationType.RECOVERED_SEMANTIC_DELTA_COMMITTED
-            ),
-            status=RunStageStatus.FAILED,
-            payload={
-                "recovered_semantic_delta_commit_failed": True,
-                "semantic_state_mutated": False,
-                "error_type": type(exc).__name__,
-                "error_message": _clean_text(str(exc), limit=300),
-            },
-        )
-        self.state.reduced_action_ids.add(action.action_id)
-        self.state.action_statuses[action.action_id] = RunStageStatus.FAILED
-        self.state.stage_statuses[action.stage] = RunStageStatus.FAILED
-        self.state.projections[action.stage] = dict(observation.payload)
         self.state.observations.append(observation)
         self.state.next_observation_sequence += 1
 
@@ -8043,7 +7667,6 @@ class RunKernel:
                 self.state.semantic_observation_admission_projection
             ),
             component_coverage_projection=self.state.component_coverage_projection,
-            search_judgment_projection=self.state.search_judgment_projection,
             sufficiency_judgment_projection=(
                 self.state.sufficiency_judgment_projection
             ),
@@ -9051,31 +8674,6 @@ class RunKernel:
             reason=reason,
             inputs=inputs,
             expected_observation_type=ObservationType.EVIDENCE_CUSTODY_OBSERVED,
-        )
-
-    def authorize_search_judgment(
-        self,
-        *,
-        reason: str = "run_authority_iterative_search_judgment",
-        inputs: Mapping[str, Any] | None = None,
-    ) -> AuthorizedAction:
-        if not self.state.run_contract_projection:
-            raise RunKernelTransitionError(
-                "search judgment requires a reduced RunAuthority contract"
-            )
-        if self.state.evidence_ledger.to_projection().to_dict().get(
-            "requirement_count",
-            0,
-        ) <= 0:
-            raise RunKernelTransitionError(
-                "search judgment requires a reduced EvidenceLedger projection"
-            )
-        return self.authorize(
-            stage=SEARCH_JUDGMENT_STAGE,
-            action_type=ActionType.SEARCH_JUDGMENT_DECIDE,
-            reason=reason,
-            inputs=inputs,
-            expected_observation_type=ObservationType.SEARCH_JUDGMENT_DECIDED,
         )
 
     def authorize_sufficiency_judgment(
@@ -15876,7 +15474,6 @@ class RunKernel:
         semantic_role_transition = action.action_type in {
             ActionType.MULTICOMPONENT_COMPONENT_ANALYST_EXECUTE,
             ActionType.MULTICOMPONENT_COMPONENT_ANALYST_RESUME_EXECUTE,
-            ActionType.MULTICOMPONENT_COMPONENT_DPRIME_EXECUTE,
             ActionType.MULTICOMPONENT_CROSS_ANALYST_EXECUTE,
             ActionType.MULTICOMPONENT_SYNTHESIS_DPRIME_EXECUTE,
             ActionType.MULTICOMPONENT_SCRUTINEER_EXECUTE,
@@ -17915,74 +17512,6 @@ class RunKernel:
             self.state.evidence_ledger.reduce_observation(observation.payload)
             self.state.projections[action.stage] = (
                 self.state.evidence_ledger.to_projection().to_dict()
-            )
-        elif action.action_type is ActionType.SEARCH_JUDGMENT_DECIDE:
-            judgment_projection = _safe_mapping(
-                observation.payload.get("judgment_projection")
-            )
-            if not judgment_projection:
-                raise RunKernelTransitionError(
-                    "search judgment observation requires judgment_projection"
-                )
-            validation = _safe_mapping(observation.payload.get("validation"))
-            self.state.search_judgment = judgment_projection
-            self.state.search_judgment_projection = {
-                "owner": "RunKernel.RunAuthoritySearchJudgment",
-                "canonical_state": True,
-                "trace_only": False,
-                "storage_only": False,
-                "schema_version": judgment_projection.get("schema_version"),
-                "judgment_id": judgment_projection.get("judgment_id"),
-                "decision": judgment_projection.get("decision"),
-                "mode": judgment_projection.get("mode"),
-                "classifications": judgment_projection.get("classifications", []),
-                "contract_id": judgment_projection.get("contract_id"),
-                "selected_template_ids": judgment_projection.get(
-                    "selected_template_ids",
-                    [],
-                ),
-                "satisfaction": judgment_projection.get("satisfaction", {}),
-                "gaps": judgment_projection.get("gaps", []),
-                "redundancy": judgment_projection.get("redundancy", {}),
-                "continuation": judgment_projection.get("continuation", {}),
-                "target_source_classes": judgment_projection.get(
-                    "target_source_classes",
-                    [],
-                ),
-                "recommended_queries": judgment_projection.get(
-                    "recommended_queries",
-                    [],
-                ),
-                "helper_assessments": judgment_projection.get(
-                    "helper_assessments",
-                    {},
-                ),
-                "insufficient_posture": judgment_projection.get(
-                    "insufficient_posture",
-                    {},
-                ),
-                "rationale": judgment_projection.get("rationale"),
-                "validation_status": validation.get("status")
-                or judgment_projection.get("validation", {}).get("status"),
-                "prompt_hash": validation.get("prompt_hash")
-                or observation.payload.get("prompt_hash"),
-                "prompt_length": validation.get("prompt_length")
-                or observation.payload.get("prompt_length"),
-                "model_identity": {
-                    "provider": validation.get("provider"),
-                    "model": validation.get("model"),
-                    "effort": validation.get("effort"),
-                    "use_reasoning": validation.get("use_reasoning"),
-                },
-                "prompt_text_retained": False,
-                "model_response_text_retained": False,
-                "provider_payload_retained": False,
-            }
-            self.state.search_judgment_history.append(
-                deepcopy(self.state.search_judgment_projection)
-            )
-            self.state.projections[action.stage] = deepcopy(
-                self.state.search_judgment_projection
             )
         elif action.action_type is ActionType.SUFFICIENCY_JUDGMENT_DECIDE:
             raw_judgment_projection = observation.payload.get("judgment_projection")
@@ -21058,12 +20587,7 @@ class RunKernel:
                 synthesis_dprime_input_packet,
                 validate_component_work_graph_v1,
             )
-            from core.multicomponent_component_admission import (
-                component_dprime_input_packet,
-            )
             from core.multicomponent_role_runtime import (
-                ROLE_COMPONENT_ANALYST,
-                ROLE_COMPONENT_DPRIME,
                 ROLE_SYNTHESIS_DPRIME,
                 role_artifact_ref,
                 safe_packet_digest,
@@ -21102,14 +20626,12 @@ class RunKernel:
             dprime_action = self.state.issued_actions.get(dprime_action_id)
             target = _safe_mapping(handoff.get("canonical_target_ref"))
             target_kind = str(target.get("target_kind") or "")
-            expected_role = {
-                "component": ROLE_COMPONENT_DPRIME,
-                "synthesis": ROLE_SYNTHESIS_DPRIME,
-            }.get(target_kind)
-            expected_action_type = {
-                "component": ActionType.MULTICOMPONENT_COMPONENT_DPRIME_EXECUTE,
-                "synthesis": ActionType.MULTICOMPONENT_SYNTHESIS_DPRIME_EXECUTE,
-            }.get(target_kind)
+            if target_kind != "synthesis":
+                raise RunKernelTransitionError(
+                    "Specialist validator consumption requires a synthesis target"
+                )
+            expected_role = ROLE_SYNTHESIS_DPRIME
+            expected_action_type = ActionType.MULTICOMPONENT_SYNTHESIS_DPRIME_EXECUTE
             if (
                 dprime_action is None
                 or dprime_action.action_id not in self.state.reduced_action_ids
@@ -21132,124 +20654,50 @@ class RunKernel:
                 )
             target_key = str(target.get("target_key") or "")
             node_ref = _safe_mapping(dprime_action.inputs.get("node_ref"))
-            reconstructed_packet_digest: str | None = None
-            if target_kind == "component":
-                accepted = _safe_mapping(
-                    self.state.current_answer_contract
-                    or self.state.initial_answer_contract
+            graph = validate_component_work_graph_v1(
+                _safe_mapping(
+                    self.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE)
                 )
-                component_ref = next(
-                    (
-                        _safe_mapping(item)
-                        for item in accepted.get(
-                            "accepted_answer_component_refs"
-                        )
-                        or ()
-                        if _safe_mapping(item).get("component_id")
-                        == target_key
-                    ),
-                    {},
+            )
+            synthesis_node = next(
+                (
+                    _safe_mapping(item)
+                    for item in graph.get("synthesis_nodes") or ()
+                    if _safe_mapping(item).get("synthesis_key") == target_key
+                ),
+                {},
+            )
+            graph_ref = _safe_mapping(dprime_action.inputs.get("graph_ref"))
+            scrutineer_successor = handoff.get("origin_role") == "scrutineer"
+            target_revision_matches = (
+                int(synthesis_node.get("node_revision") or 0)
+                > int(target.get("target_revision") or 0)
+                and _safe_mapping(synthesis_node.get("specialist_result_ref"))
+                == _safe_mapping(
+                    _safe_mapping(handoff.get("result")).get("result_ref")
                 )
-                analyst = validate_multicomponent_role_artifact(
-                    _safe_mapping(
-                        self.state.projections.get(
-                            f"multicomponent_role:{ROLE_COMPONENT_ANALYST}:{target_key}"
-                        )
-                    ),
-                    expected_role=ROLE_COMPONENT_ANALYST,
+                if scrutineer_successor
+                else synthesis_node.get("node_revision")
+                == target.get("target_revision")
+            )
+            if (
+                dprime_action.inputs.get("synthesis_key") != target_key
+                or not target_revision_matches
+                or node_ref.get("node_revision") != synthesis_node.get("node_revision")
+                or node_ref.get("node_digest") != synthesis_node.get("node_digest")
+                or graph_ref.get("graph_revision") != graph.get("graph_revision")
+                or graph_ref.get("graph_digest") != graph.get("graph_digest")
+            ):
+                raise RunKernelTransitionError(
+                    "Specialist synthesis handoff target is no longer exact"
                 )
-                scheduler_context = _safe_mapping(
-                    self.state.multicomponent_scheduler_context
-                )
-                if (
-                    dprime_action.inputs.get("component_id") != target_key
-                    or component_ref.get("component_revision")
-                    != target.get("target_revision")
-                    or component_ref.get("component_digest")
-                    != target.get("target_digest")
-                    or node_ref.get("component_revision")
-                    != target.get("target_revision")
-                    or node_ref.get("component_digest")
-                    != target.get("target_digest")
-                ):
-                    raise RunKernelTransitionError(
-                        "Specialist component handoff target is no longer exact"
-                    )
-                if scheduler_context.get("transient_context_released") is True:
-                    reconstructed_packet_digest = str(
-                        dprime_action.inputs.get("input_packet_digest") or ""
-                    )
-                else:
-                    analyst_input = _safe_mapping(
-                        scheduler_context.get(
-                            "component_analyst_input_packets", {}
-                        ).get(target_key)
-                    )
-                    packet = component_dprime_input_packet(
-                        analyst_artifact=analyst,
-                        analyst_input_packet=analyst_input,
-                        specialist_need_handoff=handoff,
-                    )
-                    reconstructed_packet_digest = safe_packet_digest(packet)
-                route = "component_dprime"
-            else:
-                graph = validate_component_work_graph_v1(
-                    _safe_mapping(
-                        self.state.projections.get(
-                            COMPONENT_WORK_GRAPH_V1_STAGE
-                        )
-                    )
-                )
-                synthesis_node = next(
-                    (
-                        _safe_mapping(item)
-                        for item in graph.get("synthesis_nodes") or ()
-                        if _safe_mapping(item).get("synthesis_key")
-                        == target_key
-                    ),
-                    {},
-                )
-                graph_ref = _safe_mapping(
-                    dprime_action.inputs.get("graph_ref")
-                )
-                scrutineer_successor = (
-                    handoff.get("origin_role") == "scrutineer"
-                )
-                target_revision_matches = (
-                    int(synthesis_node.get("node_revision") or 0)
-                    > int(target.get("target_revision") or 0)
-                    and _safe_mapping(
-                        synthesis_node.get("specialist_result_ref")
-                    )
-                    == _safe_mapping(
-                        _safe_mapping(handoff.get("result")).get("result_ref")
-                    )
-                    if scrutineer_successor
-                    else synthesis_node.get("node_revision")
-                    == target.get("target_revision")
-                )
-                if (
-                    dprime_action.inputs.get("synthesis_key") != target_key
-                    or not target_revision_matches
-                    or node_ref.get("node_revision")
-                    != synthesis_node.get("node_revision")
-                    or node_ref.get("node_digest")
-                    != synthesis_node.get("node_digest")
-                    or graph_ref.get("graph_revision")
-                    != graph.get("graph_revision")
-                    or graph_ref.get("graph_digest")
-                    != graph.get("graph_digest")
-                ):
-                    raise RunKernelTransitionError(
-                        "Specialist synthesis handoff target is no longer exact"
-                    )
-                packet = synthesis_dprime_input_packet(
-                    graph,
-                    synthesis_key=target_key,
-                    specialist_need_handoff=handoff,
-                )
-                reconstructed_packet_digest = safe_packet_digest(packet)
-                route = "synthesis_dprime"
+            packet = synthesis_dprime_input_packet(
+                graph,
+                synthesis_key=target_key,
+                specialist_need_handoff=handoff,
+            )
+            reconstructed_packet_digest = safe_packet_digest(packet)
+            route = "synthesis_dprime"
             if reconstructed_packet_digest != dprime_action.inputs.get(
                 "input_packet_digest"
             ) or completed.get(
@@ -21640,7 +21088,6 @@ class RunKernel:
         elif action.action_type in {
             ActionType.MULTICOMPONENT_COMPONENT_ANALYST_EXECUTE,
             ActionType.MULTICOMPONENT_COMPONENT_ANALYST_RESUME_EXECUTE,
-            ActionType.MULTICOMPONENT_COMPONENT_DPRIME_EXECUTE,
             ActionType.MULTICOMPONENT_CROSS_ANALYST_EXECUTE,
             ActionType.MULTICOMPONENT_SYNTHESIS_DPRIME_EXECUTE,
             ActionType.MULTICOMPONENT_SCRUTINEER_EXECUTE,
@@ -23598,7 +23045,6 @@ __all__ = [
     "MAIN_RETRIEVAL_STAGE",
     "MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE",
     "EVIDENCE_LEDGER_STAGE",
-    "SEARCH_JUDGMENT_STAGE",
     "SEARCHOS_INITIALIZATION_STAGE",
     "SEARCHOS_INTERPRETATION_BINDING_ADMISSION_STAGE",
     "SEARCHOS_ITERATION_CANDIDATE_ADMISSION_STAGE",

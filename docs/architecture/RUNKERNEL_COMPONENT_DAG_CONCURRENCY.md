@@ -132,8 +132,8 @@ The active direct-path envelope is derived from the ordinary role caps:
 | Scrutineer | 2 |
 
 The 17-unit active parent total is the sum of that mapping; callers cannot author
-a second total. A retained ComponentDprime compatibility cap grants no ordinary
-work. Grant moves units from remaining to reserved; dispatch moves them to spent.
+a second total. Grant moves units from remaining to reserved; dispatch moves
+them to spent.
 
 Predispatch cancellation may return an exact granted reservation once. For a
 V2 batch, cancellation returns the full still-granted batch atomically; partial

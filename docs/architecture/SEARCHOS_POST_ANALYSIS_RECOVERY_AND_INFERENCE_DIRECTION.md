@@ -138,8 +138,8 @@ bounded query-centered inference are ordinary product behavior. Component
 Analyst, deterministic exact-current binding, RunKernel component admission,
 synthesis D-prime, ComponentCoverage, EvidenceLedger, Sufficiency,
 FinalAnswerPacket, Author, ContractAmendment v2, and ComponentWorkGraph V1 are
-the reused owners. Component D-prime remains only as explicit legacy SearchOS
-recovery compatibility, not an ordinary component owner.
+the reused owners. The separate Component D-prime role has been retired; it is
+not a SearchOS recovery or ordinary component owner.
 
 The installed path can retain SearchOS slots, action and query histories,
 custody, local action budgets, and terminal reasons. SearchJudgment can select
@@ -189,7 +189,7 @@ existing-gap routes are forward-dead or gated and retain residual surfaces.
 | --- | --- | --- |
 | Scrutineer | Supervisory and adversarial review; identify defects, contradictions, unsupported reasoning, unresolved nodes, and exact findings for Analyst. | Authoring components or ContractAmendments; deciding that a child must exist; writing recovery queries; initiating retrieval; admitting support or inference. |
 | Analyst | Decide whether an existing component lacks evidence or a genuinely new child is needed; propose component facts, direct claims, derived claims, and explicit relationships. | Admitting its own proposal, dispatching retrieval, or creating a parallel graph or truth lane. |
-| Component D-prime (legacy recovery compatibility only) | Has no ordinary component work producer or consumer. It may execute only within the explicit retained legacy SearchOS recovery corridor. | Re-entering ordinary component execution, acting as Analyst, admitting canonical state, or authorizing search. |
+| Component Analyst direct admission | The sole ordinary component semantic path is Component Analyst self-audit followed by RunKernel admission. | Re-entering ordinary component execution, acting as a second review authority, authorizing search, or admitting canonical state outside RunKernel. |
 | Synthesis D-prime | Independently validate cross-component synthesis and inference relationships over admitted component and dependency refs. | Inventing synthesis, components, premises, or evidence. |
 | Specialists | Produce bounded subordinate analysis or validation artifacts through installed Specialist custody. | Creating a second class of truth, admitting claims, or bypassing Analyst, synthesis D-prime, or canonical admission. |
 | ContractAmendment admission/application | Independently validate and apply proposed contract changes while preserving exact current-contract, component, dependency, and parent lineage. | Becoming a second amendment family or accepting self-admitted Analyst output. |

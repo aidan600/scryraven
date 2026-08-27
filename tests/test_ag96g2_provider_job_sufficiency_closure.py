@@ -240,7 +240,6 @@ def _judgment(
         RunSufficiencyJudgmentInput(
             contract_projection=contract,
             evidence_ledger_projection=ledger,
-            search_judgment_projection={"decision": "stop_satisfied"},
             answer_contract_projection={},
             source_obligation_projection=ledger,
             final_evidence_facts={
@@ -687,7 +686,6 @@ def test_runtime_handoff_consumes_post_g1_runkernel_evidence_ledger_projection()
     kernel, ledger = _kernel_with_contract_and_provider_job_ledger(contract)
     runtime_scope = {
         "evidence_ledger_projection": ledger,
-        "search_judgment_projection": {"decision": "stop_satisfied"},
         "run_contract_projection": contract,
         "final_top_evidence": [{"url": "https://example.gov/rule"}],
         "scrutineer_flags": [],

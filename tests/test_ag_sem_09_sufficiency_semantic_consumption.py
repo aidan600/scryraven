@@ -939,7 +939,6 @@ def _input(
     return RunSufficiencyJudgmentInput(
         contract_projection=contract,
         evidence_ledger_projection=ledger,
-        search_judgment_projection={"decision": "stop_satisfied"},
         final_evidence_facts={"final_evidence_count": 1, "author_evidence_count": 1},
         semantic_state_facts=facts or {},
     )
@@ -961,8 +960,6 @@ def _adapter_input_for_kernel(
     return build_sufficiency_judgment_input_from_runtime(
         contract_projection=contract,
         evidence_ledger_projection=ledger,
-        search_judgment_projection={"decision": "stop_satisfied"},
-        search_judgment_history=[],
         answer_contract_projection={},
         final_evidence_count=1,
         author_evidence_count=1,
@@ -1000,8 +997,6 @@ def test_semantic_facts_in_input_and_projection_exclude_sensitive_data() -> None
     judgment_input = build_sufficiency_judgment_input_from_runtime(
         contract_projection=contract,
         evidence_ledger_projection=ledger,
-        search_judgment_projection={"decision": "stop_satisfied"},
-        search_judgment_history=[],
         answer_contract_projection={},
         final_evidence_count=1,
         author_evidence_count=1,

@@ -270,8 +270,6 @@ def test_source_bound_numeric_unknown_remains_unknown_without_quant_resolution()
 def test_recheck_preserves_closed_search_final_answer_author_and_citation_surfaces() -> None:
     kernel = run_followup_through_evidence_intake(run_id=RUN_ID)
     before = {
-        "search_judgment": deepcopy(kernel.state.search_judgment),
-        "search_judgment_projection": deepcopy(kernel.state.search_judgment_projection),
         "final_answer_packet": deepcopy(kernel.state.final_answer_packet),
         "final_answer_authority_projection": deepcopy(
             kernel.state.final_answer_authority_projection
@@ -282,8 +280,6 @@ def test_recheck_preserves_closed_search_final_answer_author_and_citation_surfac
 
     consume_followup_sufficiency_recheck(kernel)
 
-    assert kernel.state.search_judgment == before["search_judgment"]
-    assert kernel.state.search_judgment_projection == before["search_judgment_projection"]
     assert kernel.state.final_answer_packet == before["final_answer_packet"]
     assert kernel.state.final_answer_authority_projection == (
         before["final_answer_authority_projection"]
@@ -293,7 +289,6 @@ def test_recheck_preserves_closed_search_final_answer_author_and_citation_surfac
     flags = kernel.state.followup_sufficiency_recheck_projection[
         "behavior_boundary_flags"
     ]
-    assert flags["search_judgment_rerun"] is False
     assert flags["final_answer_packet_updated"] is False
     assert flags["citation_behavior_changed"] is False
     assert flags["author_activation_allowed"] is False

@@ -59,9 +59,6 @@ from core.routing import (
     ProviderCapabilityRequest,
     route_provider_capability,
 )
-from core.run_authority_search_judgment_runtime import (
-    execute_run_authority_search_judgment_action,
-)
 from core.run_cap_authorization import (
     BoundedRunAuthorizationError,
     CompiledRunCapAuthorization,
@@ -77,12 +74,6 @@ from core.strict_one_shot_model_transport import (
     build_strict_one_shot_smart_model_transport,
 )
 from tests.helpers.offline_ordinary_pipeline import PostRetirementOrdinaryPipelineHarness
-from tests.test_runauthority_iterative_search_judgment_ag92b import (
-    _input as search_judgment_input,
-)
-from tests.test_runauthority_iterative_search_judgment_ag92b import (
-    _kernel_with_official_contract,
-)
 
 
 def _pricing(
@@ -854,32 +845,6 @@ def test_read_adapter_marks_fake_transport_dispatched_and_settles_once() -> None
     snapshot = policy.physical_snapshot()
     assert snapshot["physical_attempts_by_family"]["read"] == 1
     assert snapshot["lifecycle_counts"]["settled_observed"] == 1
-
-
-def test_search_judgment_cap_denial_is_not_converted_to_fallback() -> None:
-    kernel, contract = _kernel_with_official_contract()
-    action = kernel.authorize_search_judgment(inputs={"phase": "cap-terminal"})
-
-    def denied(*_args: Any, **_kwargs: Any) -> str:
-        raise RunCapExceeded(
-            "model_attempt_cap",
-            family=ExternalCallFamily.MODEL,
-        )
-
-    with pytest.raises(RunCapExceeded) as exc:
-        execute_run_authority_search_judgment_action(
-            action,
-            judgment_input=search_judgment_input(
-                contract,
-                kernel.state.evidence_ledger.to_projection().to_dict(),
-            ),
-            ask_model=denied,
-            clean_json_response=lambda value: value,
-            smart_model_enabled=True,
-            provider="OpenAI",
-            model="gpt-5.4",
-        )
-    assert exc.value.terminal_payload()["code"] == "bounded_run_cap_reached"
 
 
 _ISCLOSE_QUERY = (

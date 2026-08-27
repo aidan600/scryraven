@@ -32,10 +32,8 @@ for installed bounded multi-component execution and
 target topology. The current ordinary semantic producer establishes a typed,
 self-audited Component Analyst case and sends its exact current binding directly
 to RunKernel component admission. Cross-Component Analyst and synthesis D-prime
-remain installed for genuine N>=2 work. N=1 has no Cross, synthesis, or
-component-D-prime semantic ceremony. Component D-prime is retained only for an
-explicit legacy SearchOS recovery compatibility corridor, not as an ordinary
-Workbench consumer. Existing Workbench packets and specialized status lanes are
+remain installed for genuine N>=2 work. N=1 has no Cross, synthesis, or separate
+per-component validation ceremony. Existing Workbench packets and specialized status lanes are
 reuse candidates; their presence is not proof that an ordinary producer role is
 installed.
 
@@ -218,8 +216,7 @@ official-looking, readable, or answer-like.
 
 **Installed** current-source single-fact runs bind Workbench dossier context to
 a self-audited Component Analyst case and then to direct RunKernel component
-admission. Component D-prime does not review ordinary component work; it remains
-only for the explicit legacy SearchOS recovery compatibility corridor.
+admission. No separate component-validation role reviews ordinary component work.
 
 Workbench context does not substitute for Analyst case construction,
 deterministic exact-current binding, RunKernel admission, or downstream

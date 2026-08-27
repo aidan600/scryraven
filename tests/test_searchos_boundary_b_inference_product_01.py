@@ -89,11 +89,6 @@ def _node(component: AnswerComponentContract, index: int) -> dict:
         "artifact_id": f"analyst:{index}",
         "artifact_digest": f"analyst-digest-{index}",
     }
-    dprime_ref = {
-        "role": "component_dprime",
-        "artifact_id": f"dprime:{index}",
-        "artifact_digest": f"dprime-digest-{index}",
-    }
     admission = {
         "schema_version": "multicomponent_component_admission_ref_v1",
         "owner": "RunKernel.MulticomponentComponentAdmission",
@@ -110,7 +105,6 @@ def _node(component: AnswerComponentContract, index: int) -> dict:
         "current": True,
         "stale": False,
         "analyst_finding_ref": analyst_ref,
-        "dprime_validation_ref": dprime_ref,
         "admitted_claim_ref": {
             "claim_id": f"claim:{index}",
             "claim_text": claim,

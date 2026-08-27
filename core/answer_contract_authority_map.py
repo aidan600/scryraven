@@ -255,7 +255,6 @@ def build_answer_contract_authority_map(
     evidence_ledger_projection: Mapping[str, Any] | None = None,
     semantic_observation_projection: Mapping[str, Any] | None = None,
     component_coverage_projection: Mapping[str, Any] | None = None,
-    search_judgment_projection: Mapping[str, Any] | None = None,
     sufficiency_judgment_projection: Mapping[str, Any] | None = None,
     final_answer_packet_projection: Mapping[str, Any] | None = None,
     final_answer_authority_projection: Mapping[str, Any] | None = None,
@@ -277,7 +276,6 @@ def build_answer_contract_authority_map(
     ledger = _mapping(evidence_ledger_projection)
     semantic = _mapping(semantic_observation_projection)
     coverage = _mapping(component_coverage_projection)
-    search_judgment = _mapping(search_judgment_projection)
     sufficiency = _mapping(sufficiency_judgment_projection)
     packet = _mapping(final_answer_packet_projection)
     final_authority = _mapping(final_answer_authority_projection)
@@ -291,7 +289,6 @@ def build_answer_contract_authority_map(
         evidence_ledger=ledger,
         semantic_observation=semantic,
         component_coverage=coverage,
-        search_judgment=search_judgment,
         sufficiency_judgment=sufficiency,
         final_answer_packet=packet,
         final_answer_authority=final_authority,
@@ -317,7 +314,6 @@ def build_answer_contract_authority_map(
             ledger=ledger,
             semantic=semantic,
             coverage=coverage,
-            search_judgment=search_judgment,
             sufficiency=sufficiency,
             packet=packet,
             final_status=final_status,
@@ -341,7 +337,6 @@ def _component_authority(
     ledger: Mapping[str, Any],
     semantic: Mapping[str, Any],
     coverage: Mapping[str, Any],
-    search_judgment: Mapping[str, Any],
     sufficiency: Mapping[str, Any],
     packet: Mapping[str, Any],
     final_status: Mapping[str, Any],
@@ -362,7 +357,6 @@ def _component_authority(
         semantic_coverage=semantic_status,
         binding=binding,
         sufficiency=sufficiency,
-        search_judgment=search_judgment,
     )
     return AnswerContractComponentAuthority(
         component_id=component_id,
@@ -1653,7 +1647,6 @@ def _blocker_reasons(
     semantic_coverage: Mapping[str, Any],
     binding: Mapping[str, Any],
     sufficiency: Mapping[str, Any],
-    search_judgment: Mapping[str, Any],
 ) -> list[str]:
     reasons = list(binding.get("blocker_reasons") or [])
     if work.get("execution_status") == "not_started":
@@ -1664,11 +1657,6 @@ def _blocker_reasons(
         reasons.append("semantic_component_coverage_not_satisfied")
     if sufficiency.get("final_answer_allowed") is False:
         reasons.append("sufficiency_blocks_final_answer")
-    if _clean_token(search_judgment.get("decision")) in {
-        "continue_search",
-        "continue_targeted_search",
-    }:
-        reasons.append("search_judgment_requires_more_work")
     return list(dict.fromkeys(reason for reason in reasons if reason))
 
 

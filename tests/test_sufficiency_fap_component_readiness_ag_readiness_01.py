@@ -156,12 +156,6 @@ def _runtime_scope(
 ) -> dict[str, Any]:
     return {
         "evidence_ledger_projection": ledger_projection,
-        "search_judgment_projection": {
-            "owner": "RunKernel.RunAuthoritySearchJudgment",
-            "canonical_state": True,
-            "trace_only": False,
-            "decision": "stop_insufficient",
-        },
         "run_contract_projection": run_contract,
         "final_top_evidence": [],
         "scrutineer_flags": [],

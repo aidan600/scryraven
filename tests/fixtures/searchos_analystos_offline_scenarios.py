@@ -26,7 +26,6 @@ from core.cost_accounting import CostAccumulator
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
     ROLE_COMPONENT_ANALYST_RESUME,
-    ROLE_COMPONENT_DPRIME,
     ROLE_CROSS_COMPONENT_ANALYST,
     ROLE_SCRUTINEER,
     ROLE_SYNTHESIS_DPRIME,
@@ -1195,16 +1194,6 @@ class SearchOSAnalystOSHarness(OfflineOrdinaryPipelineHarness):
                         "blockers": [],
                     }
                 )
-            if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_DPRIME]:
-                return json.dumps(
-                    {
-                        "validation_status": "supported",
-                        "reasons": ["The exact current fictional source supports only the nominated direct premise."],
-                        "caveats": [],
-                        "nonclaims": [],
-                        "blockers": [],
-                    }
-                )
             if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST_RESUME]:
                 prior = dict(payload.get("prior_component_case") or {})
                 semantic = dict(prior)
@@ -1733,7 +1722,6 @@ def run_offline_integration_scenario(
             current_date="2026-07-26",
             session_id=f"integration-{scenario.scenario_id}",
             run_id=f"integration-{scenario.scenario_id}",
-            smart_search_judgment_model=True,
         ),
         mode=scenario.mode,
     )

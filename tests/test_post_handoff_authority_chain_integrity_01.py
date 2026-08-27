@@ -102,11 +102,6 @@ def test_returned_blocked_fap_is_not_a_completed_bounded_answer(
         for slot in projection["slots"]
     )
     assert all(
-        slot["component_dprime_model_call_required"] is False
-        and slot["component_dprime_model_call_executed"] is False
-        for slot in projection["slots"]
-    )
-    assert all(
         slot["semantic_admission_status"] != "admitted"
         and slot["component_coverage_satisfied"] is False
         for slot in projection["slots"]
