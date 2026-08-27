@@ -388,26 +388,32 @@ def navigation_destination_eligibility(parent: Mapping[str, Any], destination: M
     return False, "navigation_scheme_transition_ineligible"
 
 
+def _relationship_label_is_unsafe(value: str, *, had_control: bool = False) -> bool:
+    return (
+        had_control
+        or bool(_URL_RE.search(value))
+        or bool(_EMAIL_RE.search(value))
+        or bool(_HOST_RE.search(value))
+        or bool(_IPV4_RE.search(value))
+        or _ipv6_literal_like(value)
+        or bool(_QUERY_RE.search(value))
+        or bool(_CREDENTIAL_RE.search(value))
+        or _path_like(value)
+    )
+
+
 def scrub_navigation_relationship_label(value: str) -> str:
     """Return bounded safe relationship text or the fixed privacy fallback."""
 
     raw = str(value or "")
     had_control = bool(_CONTROL_RE.search(raw))
     compact = " ".join(_CONTROL_RE.sub(" ", raw).split())
-    unsafe = (
-        had_control
-        or bool(_URL_RE.search(compact))
-        or bool(_EMAIL_RE.search(compact))
-        or bool(_HOST_RE.search(compact))
-        or bool(_IPV4_RE.search(compact))
-        or _ipv6_literal_like(compact)
-        or bool(_QUERY_RE.search(compact))
-        or bool(_CREDENTIAL_RE.search(compact))
-        or _path_like(compact)
-    )
-    if unsafe or not compact:
+    if not compact or _relationship_label_is_unsafe(compact, had_control=had_control):
         return "linked page"
-    return compact[:NAVIGATION_LABEL_LENGTH_LIMIT]
+    bounded = " ".join(compact[:NAVIGATION_LABEL_LENGTH_LIMIT].split())
+    if _relationship_label_is_unsafe(bounded):
+        return "linked page"
+    return bounded
 
 
 def extract_bounded_navigation_links(
