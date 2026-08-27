@@ -17,9 +17,9 @@ and integrated authority flow belongs to
 [Run-Contract Semantic Loop](RUN_CONTRACT_SEMANTIC_LOOP.md).
 
 ComponentWorkGraph V1 is installed for
-`ordinary-bounded-multicomponent-factual-synthesis-v1`. ComponentWorkGraph V0
-is historical/review/compatibility material and is not the ordinary executor,
-scheduler, or answer path.
+`ordinary-bounded-multicomponent-factual-synthesis-v1`. The V0 graph
+compatibility implementation has been retired; its historical provenance is not
+the ordinary executor, scheduler, or answer path.
 
 ## Graph Contract
 
@@ -194,8 +194,8 @@ affected synthesis validation, and all graph-bound work remain serial.
 
 The width-2 hosted posture is a compatibility cap, not measured provider
 capacity, adaptive rate-limit policy, user-configurable concurrency, or routing
-authority. Scheduler V1 remains immutable historical serial schema and rejects
-V2 batch or parallel fields.
+authority. The retired Scheduler V1 schema is not accepted; current scheduling
+uses V2 or V3.
 
 ## Worker Boundary And Determinism
 

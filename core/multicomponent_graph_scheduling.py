@@ -31,7 +31,6 @@ from core.multicomponent_role_runtime import (
 
 MULTICOMPONENT_SCHEDULER_STAGE = "multicomponent_graph_scheduler"
 MULTICOMPONENT_SCHEDULER_OWNER = "RunKernel.MulticomponentGraphScheduler"
-MULTICOMPONENT_SCHEDULER_SCHEMA_VERSION = "multicomponent_graph_scheduler_v1"
 MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION = "multicomponent_graph_scheduler_v2"
 MULTICOMPONENT_SCHEDULER_V3_SCHEMA_VERSION = "multicomponent_graph_scheduler_v3"
 MULTICOMPONENT_LEASE_SCHEMA_VERSION = "multicomponent_semantic_work_lease_v1"
@@ -437,59 +436,6 @@ def _refresh_scheduler(state: Mapping[str, Any]) -> dict[str, Any]:
     return current
 
 
-def initialize_scheduler_state(*, run_id: str, request_id: str) -> dict[str, Any]:
-    """Construct the retained historical Phase 4 scheduler V1 projection."""
-
-    total = derive_multicomponent_compatibility_envelope()
-    caps = dict(MULTICOMPONENT_ROLE_CALL_LIMITS)
-    envelope_core = {
-        "owner": MULTICOMPONENT_SCHEDULER_OWNER,
-        "role_limits": caps,
-        "total_units": total,
-    }
-    state = {
-        "schema_version": MULTICOMPONENT_SCHEDULER_SCHEMA_VERSION,
-        "owner": MULTICOMPONENT_SCHEDULER_OWNER,
-        "canonical_state": True,
-        "trace_only": False,
-        "run_id": run_id,
-        "request_id": request_id,
-        "supported_query_class": SUPPORTED_QUERY_CLASS,
-        "status": "active",
-        "scheduler_revision": 1,
-        "runtime_parallelism": False,
-        "serial_scheduling": True,
-        "maximum_active_physical_leases": 1,
-        "active_physical_lease_count": 0,
-        "compatibility_envelope": {
-            **envelope_core,
-            "envelope_id": f"multicomponent-envelope:{_digest(envelope_core)[:20]}",
-            "envelope_digest": _digest(envelope_core),
-            "remaining_units": total,
-            "reserved_units": 0,
-            "spent_units": 0,
-            "returned_units": 0,
-            "role_reserved_units": {role: 0 for role in caps},
-            "role_spent_units": {role: 0 for role in caps},
-        },
-        "lease_history": [],
-        "transition_history": [
-            {
-                "transition": "scheduler_initialized",
-                "scheduler_revision": 1,
-                "runtime_parallelism": False,
-            }
-        ],
-        "last_ready_work": [],
-        "raw_prompt_retained": False,
-        "raw_model_response_retained": False,
-        "raw_provider_payload_retained": False,
-        "private_log_retained": False,
-        "full_trace_retained": False,
-    }
-    return _refresh_scheduler(state)
-
-
 def initialize_scheduler_v2_state(
     *, run_id: str, request_id: str, configured_provider: Any
 ) -> dict[str, Any]:
@@ -628,26 +574,7 @@ def validate_scheduler_state(value: Mapping[str, Any]) -> dict[str, Any]:
         state.get("owner") != MULTICOMPONENT_SCHEDULER_OWNER
         or state.get("canonical_state") is not True
     )
-    if schema_version == MULTICOMPONENT_SCHEDULER_SCHEMA_VERSION:
-        v2_only_fields = {
-            "configured_provider_class",
-            "backend_class",
-            "effective_width",
-            "hard_cap",
-            "batch_history",
-            "accounting_counters",
-            "private_descriptor_retained",
-            "prepared_transport_retained",
-            "worker_result_retained",
-        }
-        invalid = (
-            common_invalid
-            or state.get("runtime_parallelism") is not False
-            or state.get("serial_scheduling") is not True
-            or state.get("maximum_active_physical_leases") != 1
-            or any(field in state for field in v2_only_fields)
-        )
-    elif schema_version in _BATCH_SCHEDULER_VERSIONS:
+    if schema_version in _BATCH_SCHEDULER_VERSIONS:
         profile = derive_multicomponent_transport_profile(
             state.get("configured_provider_class")
         )
@@ -3275,7 +3202,6 @@ __all__ = [
     "MULTICOMPONENT_SAFE_FAILURE_KINDS",
     "MULTICOMPONENT_SAFE_WORKER_RESULT_SCHEMA_VERSION",
     "MULTICOMPONENT_SCHEDULER_OWNER",
-    "MULTICOMPONENT_SCHEDULER_SCHEMA_VERSION",
     "MULTICOMPONENT_SCHEDULER_V2_SCHEMA_VERSION",
     "MULTICOMPONENT_SCHEDULER_V3_SCHEMA_VERSION",
     "MULTICOMPONENT_SCHEDULER_STAGE",
@@ -3299,7 +3225,6 @@ __all__ = [
     "dispatch_batch",
     "grant_next_lease",
     "grant_next_batch",
-    "initialize_scheduler_state",
     "initialize_scheduler_v2_state",
     "initialize_scheduler_v3_state",
     "reconstruct_specialist_bounded_input",
