@@ -245,8 +245,6 @@ def build_sufficiency_judgment_input_from_runtime(
     *,
     contract_projection: Mapping[str, Any],
     evidence_ledger_projection: Mapping[str, Any],
-    search_judgment_projection: Mapping[str, Any],
-    search_judgment_history: Sequence[Mapping[str, Any]],
     answer_contract_projection: Mapping[str, Any],
     final_evidence_count: int,
     author_evidence_count: int,
@@ -292,8 +290,6 @@ def build_sufficiency_judgment_input_from_runtime(
     return RunSufficiencyJudgmentInput(
         contract_projection=contract_projection,
         evidence_ledger_projection=evidence_ledger_projection,
-        search_judgment_projection=search_judgment_projection,
-        search_judgment_history=search_judgment_history,
         answer_contract_projection=answer_contract_projection,
         source_obligation_projection=evidence_ledger_projection,
         final_evidence_facts={

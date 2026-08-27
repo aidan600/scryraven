@@ -258,8 +258,6 @@ def test_observation_spoofing_is_overwritten_by_canonical_gate_derivation() -> N
 def test_closed_surfaces_remain_closed_and_orchestrator_is_untouched() -> None:
     kernel = run_followup_through_final_answer_packet(run_id=RUN_ID)
     before = {
-        "search_judgment": deepcopy(kernel.state.search_judgment),
-        "search_judgment_projection": deepcopy(kernel.state.search_judgment_projection),
         "final_answer_packet": deepcopy(kernel.state.final_answer_packet),
         "final_answer_authority_projection": deepcopy(
             kernel.state.final_answer_authority_projection
@@ -270,10 +268,6 @@ def test_closed_surfaces_remain_closed_and_orchestrator_is_untouched() -> None:
 
     consume_followup_author_gate(kernel)
 
-    assert kernel.state.search_judgment == before["search_judgment"]
-    assert kernel.state.search_judgment_projection == before[
-        "search_judgment_projection"
-    ]
     assert kernel.state.final_answer_packet == before["final_answer_packet"]
     assert kernel.state.final_answer_authority_projection == before[
         "final_answer_authority_projection"
@@ -286,7 +280,6 @@ def test_closed_surfaces_remain_closed_and_orchestrator_is_untouched() -> None:
     assert flags["author_prose_behavior_changed"] is False
     assert flags["citation_formatter_invoked"] is False
     assert flags["product_answer_behavior_changed"] is False
-    assert flags["search_judgment_rerun"] is False
     assert flags["final_answer_packet_rebuilt"] is False
 
     module_paths = [

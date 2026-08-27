@@ -336,8 +336,6 @@ def test_sufficiency_consumes_current_answer_contract_not_only_initial() -> None
     judgment_input = build_sufficiency_judgment_input_from_runtime(
         contract_projection={},
         evidence_ledger_projection=kernel.state.evidence_ledger.to_projection().to_dict(),
-        search_judgment_projection={},
-        search_judgment_history=(),
         answer_contract_projection={},
         final_evidence_count=0,
         author_evidence_count=0,

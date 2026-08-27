@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-RUN_AUTHORITY_SEARCH_JUDGMENT_OWNER = "RunKernel.RunAuthoritySearchJudgment"
 RUN_AUTHORITY_SUFFICIENCY_JUDGMENT_OWNER = (
     "RunKernel.RunAuthoritySufficiencyJudgment"
 )
@@ -26,33 +25,6 @@ def canonical_projection_ref(value: Any, *, owner: str) -> dict[str, Any]:
     if projection.get("trace_only") is not False:
         return {}
     return projection
-
-
-def is_canonical_search_judgment_projection(value: Any) -> bool:
-    return bool(canonical_search_judgment_projection(value))
-
-
-def canonical_search_judgment_projection(value: Any) -> dict[str, Any]:
-    return canonical_projection_ref(
-        value,
-        owner=RUN_AUTHORITY_SEARCH_JUDGMENT_OWNER,
-    )
-
-
-def compact_search_judgment_ref(value: Any) -> dict[str, Any]:
-    projection = canonical_search_judgment_projection(value)
-    if not projection:
-        return {}
-    return {
-        "owner": projection.get("owner"),
-        "judgment_id": projection.get("judgment_id"),
-        "decision": projection.get("decision"),
-        "classifications": projection.get("classifications", []),
-        "target_source_classes": projection.get("target_source_classes", []),
-        "validation_status": projection.get("validation_status"),
-        "canonical_state": projection.get("canonical_state"),
-        "trace_only": projection.get("trace_only"),
-    }
 
 
 def is_canonical_sufficiency_judgment_projection(value: Any) -> bool:
@@ -82,13 +54,9 @@ def compact_sufficiency_judgment_ref(value: Any) -> dict[str, Any]:
 
 
 __all__ = [
-    "RUN_AUTHORITY_SEARCH_JUDGMENT_OWNER",
     "RUN_AUTHORITY_SUFFICIENCY_JUDGMENT_OWNER",
     "canonical_projection_ref",
-    "canonical_search_judgment_projection",
     "canonical_sufficiency_judgment_projection",
-    "compact_search_judgment_ref",
     "compact_sufficiency_judgment_ref",
-    "is_canonical_search_judgment_projection",
     "is_canonical_sufficiency_judgment_projection",
 ]

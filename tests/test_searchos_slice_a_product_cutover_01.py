@@ -23,7 +23,6 @@ import core.quantitative_finalization_authority as quantitative_evaluator
 import proplex.__main__ as compatibility_cli
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
-    ROLE_COMPONENT_DPRIME,
     ROLE_CROSS_COMPONENT_ANALYST,
     ROLE_SYNTHESIS_DPRIME,
     ROLE_SYSTEM_PROMPTS,
@@ -540,7 +539,6 @@ def test_one_component_read_credits_only_exact_owned_obligation(
         ]
         for item in harness.read_assessment_calls
     )
-    assert harness.full_search_judgment_inputs == []
     assert trace["searchos_slice_a"]["all_passages_iteration_append_count"] == 0
 
 
@@ -805,7 +803,6 @@ def test_readable_insufficient_read_remains_iterative_and_is_not_retained(
         sort_keys=True,
         default=str,
     )
-    assert harness.full_search_judgment_inputs == []
 
 
 def test_required_unresolved_slot_reaches_sufficiency_owned_blocked_fap(
@@ -879,11 +876,9 @@ def test_required_unresolved_slot_reaches_sufficiency_owned_blocked_fap(
     assert harness.author_prompts == []
     assert harness.read_transport_calls == []
     assert len(harness.search_calls) == 1
-    assert harness.full_search_judgment_inputs == []
     assert DEFAULT_SYSTEM["evaluator"] not in harness.model_system_prompts
     assert DEFAULT_SYSTEM["expander"] not in harness.model_system_prompts
     assert ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST] not in (harness.model_system_prompts)
-    assert ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_DPRIME] not in (harness.model_system_prompts)
     events = _execution_events(tmp_path / "execution.jsonl")
     [execution_event] = [event for event in events if event.get("event") == "execution"]
     [completed_event] = [event for event in events if event.get("event") == "run_completed"]
@@ -1038,7 +1033,6 @@ def test_judgment_failure_is_typed_closed_without_read_or_fallback(
     )
     assert harness.read_transport_calls == []
     assert len(harness.search_calls) == 1
-    assert harness.full_search_judgment_inputs == []
 
 
 def test_first_wave_recoverable_post_read_rejection_can_still_handoff(
@@ -1134,8 +1128,6 @@ def test_exact_model_followup_is_appended_and_dispatched_through_query_plan(
     assert searchos["all_passages_iteration_append_count"] == 0
     assert searchos["evaluator_invoked_after_first_wave"] is False
     assert searchos["expander_invoked_after_first_wave"] is False
-    assert searchos["ag92b_full_search_judgment_invoked"] is False
-    assert harness.full_search_judgment_inputs == []
     assert harness.searchos_product_result is not None
     revision_1 = dict(harness.searchos_product_result.revision_1)
     [iteration_set] = harness.searchos_product_result.iteration_candidate_sets
@@ -1477,9 +1469,6 @@ def test_bounded_searchos_n1_causal_projection_successful_path(
     assert slot["semantic_handoff_present"] is True
     assert slot["handoff_material_consumed"] is True
     assert slot["component_analyst_case_present"] is True
-    assert slot["component_dprime_validation_present"] is False
-    assert slot["component_dprime_model_call_required"] is False
-    assert slot["component_dprime_model_call_executed"] is False
     assert slot["semantic_admission_status"] == "admitted"
     assert slot["component_coverage_satisfied"] is True
     assert slot["read_custody_observed"] is True
@@ -1508,7 +1497,6 @@ def test_bounded_searchos_n1_causal_projection_successful_path(
     assert all(
         ROLE_SYSTEM_PROMPTS[role] not in harness.model_system_prompts
         for role in (
-            ROLE_COMPONENT_DPRIME,
             ROLE_CROSS_COMPONENT_ANALYST,
             ROLE_SYNTHESIS_DPRIME,
         )
@@ -1578,9 +1566,6 @@ def test_searchos_receiver_block_cannot_report_completed_or_originate_analyst(
     slot = _required_causal_slot(projection)
     assert slot["component_analyst_case_present"] is False
     assert slot["handoff_material_consumed"] is False
-    assert slot["component_dprime_validation_present"] is False
-    assert slot["component_dprime_model_call_required"] is False
-    assert slot["component_dprime_model_call_executed"] is False
     assert slot["semantic_admission_status"] != "admitted"
     assert harness.analyst_calls == 0
     assert DEFAULT_SYSTEM["analyst"] not in harness.model_system_prompts
@@ -1872,7 +1857,6 @@ def test_n1_plural_semantic_slots_share_one_current_read_and_one_analyst(
     assert all(
         ROLE_SYSTEM_PROMPTS[role] not in harness.model_system_prompts
         for role in (
-            ROLE_COMPONENT_DPRIME,
             ROLE_CROSS_COMPONENT_ANALYST,
             ROLE_SYNTHESIS_DPRIME,
         )
@@ -2018,7 +2002,6 @@ def test_q1_provider_like_read_derives_official_current_source_authority(
     assert all(
         ROLE_SYSTEM_PROMPTS[role] not in harness.model_system_prompts
         for role in (
-            ROLE_COMPONENT_DPRIME,
             ROLE_CROSS_COMPONENT_ANALYST,
             ROLE_SYNTHESIS_DPRIME,
         )
@@ -2286,9 +2269,6 @@ def test_bounded_searchos_n1_causal_projection_read_then_receiver_failure(
     assert slot["semantic_handoff_present"] is True
     assert slot["handoff_material_consumed"] is False
     assert slot["component_analyst_case_present"] is False
-    assert slot["component_dprime_validation_present"] is False
-    assert slot["component_dprime_model_call_required"] is False
-    assert slot["component_dprime_model_call_executed"] is False
     assert slot["semantic_admission_status"] != "admitted"
     assert slot["component_coverage_satisfied"] is False
     assert projection["component_receiver_selected"] is True
@@ -2381,11 +2361,6 @@ def test_bounded_searchos_n1_projects_current_component_analyst_failure(
     assert outcome.terminal_status == "blocked"
     assert outcome.execution_trace["analyst_skipped"] is True
     assert outcome.execution_trace["scrutineer_ran"] is False
-    assert not any(
-        prompt == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_DPRIME]
-        for prompt in harness.model_system_prompts
-    )
-
     scheduler = harness.run_kernel.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE)
     assert scheduler is None
     kernel = harness.run_kernel
@@ -2413,7 +2388,7 @@ def test_bounded_searchos_n1_projects_current_component_analyst_failure(
             "multicomponent_component_analyst_completed",
             "multicomponent_component_analyst_resume_completed",
         }:
-            item["observation_type"] = "multicomponent_component_dprime_completed"
+            item["observation_type"] = "multicomponent_cross_component_analyst_completed"
     assert project_current_component_analyst_failure(
         state=scheduler,
         expected_run_id=outcome.run_id,
@@ -2509,15 +2484,8 @@ def test_bounded_searchos_n1_rejects_legacy_thin_component_analyst_output(
     assert slot["component_analyst_case_present"] is False
     assert slot["semantic_admission_status"] != "admitted"
     assert slot["component_coverage_satisfied"] is False
-    assert slot["component_dprime_validation_present"] is False
-    assert slot["component_dprime_model_call_required"] is False
-    assert slot["component_dprime_model_call_executed"] is False
     assert "multicomponent_component_admission" not in (
         harness.run_kernel.state.projections
-    )
-    assert not any(
-        prompt == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_DPRIME]
-        for prompt in harness.model_system_prompts
     )
     assert not any(
         prompt == ROLE_SYSTEM_PROMPTS[ROLE_CROSS_COMPONENT_ANALYST]
@@ -3311,9 +3279,6 @@ def test_bounded_searchos_n1_causal_projection_transport_field_parity(
     assert slot["semantic_handoff_present"] is True
     assert slot["handoff_material_consumed"] is True
     assert slot["component_analyst_case_present"] is True
-    assert slot["component_dprime_validation_present"] is False
-    assert slot["component_dprime_model_call_required"] is False
-    assert slot["component_dprime_model_call_executed"] is False
     assert slot["semantic_admission_status"] == "admitted"
     assert slot["component_coverage_satisfied"] is True
     assert set(slot) >= {
@@ -3324,9 +3289,6 @@ def test_bounded_searchos_n1_causal_projection_transport_field_parity(
         "semantic_handoff_present",
         "handoff_material_consumed",
         "component_analyst_case_present",
-        "component_dprime_validation_present",
-        "component_dprime_model_call_required",
-        "component_dprime_model_call_executed",
         "semantic_admission_status",
         "component_coverage_satisfied",
         "canonical_slot_posture",

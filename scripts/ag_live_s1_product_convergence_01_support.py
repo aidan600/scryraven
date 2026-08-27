@@ -1384,10 +1384,6 @@ def sanitized_s1_runtime_summary(outcome: Any) -> dict[str, Any]:
             for result in results
             for ref in result.get("literal_binding_refs") or ()
         ),
-        "component_dprime_consumed": any(
-            item.get("validator_consumption") == "consumed_by_component_dprime"
-            for item in results + handoffs
-        ),
         "synthesis_dprime_consumed": any(
             item.get("validator_consumption") == "consumed_by_synthesis_dprime"
             for item in results + handoffs

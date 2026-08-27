@@ -8,7 +8,6 @@ from typing import Any, Mapping, Sequence
 from core.multicomponent_sufficiency_consumption_runtime import (
     build_multicomponent_graph_consumption,
 )
-from core.run_authority_search_judgment import RunSearchJudgmentDecision
 from core.run_authority_sufficiency import (
     RunSufficiencyDecision,
     RunSufficiencyJudgment,
@@ -1511,35 +1510,6 @@ def _partial_allowed(projection: Mapping[str, Any]) -> bool:
     )
 
 
-def _search_stopped_insufficient(projection: Mapping[str, Any]) -> bool:
-    return (
-        clean_token(projection.get("decision"))
-        == RunSearchJudgmentDecision.STOP_INSUFFICIENT.value
-    )
-
-
-def _search_stopped_satisfied(projection: Mapping[str, Any]) -> bool:
-    return (
-        clean_token(projection.get("decision"))
-        == RunSearchJudgmentDecision.STOP_SATISFIED.value
-    )
-
-
-def _recovery_exhausted(
-    search_projection: Mapping[str, Any],
-    budget: Mapping[str, Any],
-) -> bool:
-    if _search_stopped_insufficient(search_projection):
-        return True
-    if _truthy(budget.get("recovery_exhausted")):
-        return True
-    if _truthy(budget.get("budget_exhausted")):
-        return True
-    iteration = _int_value(budget.get("iteration") or budget.get("iterations_run"))
-    max_iterations = _int_value(budget.get("max_iterations"))
-    return max_iterations > 0 and iteration >= max_iterations
-
-
 def _answer_contract_missing(
     projection: Mapping[str, Any],
 ) -> tuple[SufficiencyRequirementAssessment, ...]:
@@ -2196,7 +2166,6 @@ def _readiness_reasons(
     unknowns: Sequence[Mapping[str, Any]],
     weak: Sequence[str],
     failure_card: bool,
-    search_insufficient: bool,
 ) -> tuple[str, ...]:
     reasons: list[str] = []
     if missing:
@@ -2213,8 +2182,6 @@ def _readiness_reasons(
         reasons.extend(weak)
     if failure_card:
         reasons.append("failure_card_authorized")
-    if search_insufficient:
-        reasons.append("search_judgment_stop_insufficient")
     return tuple(dict.fromkeys(reasons))
 
 
@@ -2307,7 +2274,6 @@ def _decision_and_posture(
     weak: Sequence[str],
     failure_card: bool,
     recovery_exhausted: bool,
-    search_satisfied: bool,
     final_evidence_count: int,
 ) -> tuple[RunSufficiencyDecision, SufficiencyPosture, bool, str]:
     if failure_card:
@@ -2382,7 +2348,7 @@ def _decision_and_posture(
             True,
             "weak_or_thin_evidence_requires_caveats",
         )
-    if search_satisfied or final_evidence_count > 0:
+    if final_evidence_count > 0:
         return (
             RunSufficiencyDecision.READY_DIRECT,
             SufficiencyPosture.DIRECT_ANSWER,
@@ -2472,7 +2438,6 @@ def build_deterministic_sufficiency_judgment(
 
     contract = _mapping(judgment_input.contract_projection)
     ledger = _mapping(judgment_input.evidence_ledger_projection)
-    search = _mapping(judgment_input.search_judgment_projection)
     answer_contract = _mapping(judgment_input.answer_contract_projection)
     final_evidence = _mapping(judgment_input.final_evidence_facts)
     conflict_facts = _mapping(judgment_input.conflict_facts)
@@ -2810,8 +2775,15 @@ def build_deterministic_sufficiency_judgment(
     weak = _weak_reasons(weak_facts, final_evidence)
     failure_card = _failure_card_authorized(weak_facts)
     failure_reason = _failure_card_reason(weak_facts)
-    search_insufficient = _search_stopped_insufficient(search)
-    recovery_exhausted = _recovery_exhausted(search, budget)
+    recovery_exhausted = (
+        _truthy(budget.get("recovery_exhausted"))
+        or _truthy(budget.get("budget_exhausted"))
+        or (
+            _int_value(budget.get("max_iterations")) > 0
+            and _int_value(budget.get("iteration") or budget.get("iterations_run"))
+            >= _int_value(budget.get("max_iterations"))
+        )
+    )
     if searchos_recovery_terminal_consumption.get("settled_interpretation") in {
         "lawful_recovery_exhaustion",
         "lawful_recovery_ineligible",
@@ -2820,7 +2792,6 @@ def build_deterministic_sufficiency_judgment(
         and searchos_recovery_terminal_consumption.get("terminal_status") == "exhausted_insufficient"
     ):
         recovery_exhausted = True
-    search_satisfied = _search_stopped_satisfied(search)
     final_evidence_count = _int_value(final_evidence.get("final_evidence_count"))
     if final_evidence_count <= 0:
         final_evidence_count = _int_value(final_evidence.get("author_evidence_count"))
@@ -2835,7 +2806,6 @@ def build_deterministic_sufficiency_judgment(
         weak=weak,
         failure_card=failure_card,
         recovery_exhausted=recovery_exhausted,
-        search_satisfied=search_satisfied,
         final_evidence_count=final_evidence_count,
     )
     decision, posture, final_allowed, rationale = _apply_semantic_decision_overlay(
@@ -3112,7 +3082,6 @@ def build_deterministic_sufficiency_judgment(
         unknowns=unknowns,
         weak=weak,
         failure_card=failure_card,
-        search_insufficient=search_insufficient,
     )
     readiness_reasons = tuple(
         dict.fromkeys(

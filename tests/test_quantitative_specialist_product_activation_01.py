@@ -50,7 +50,6 @@ from core.multicomponent_graph_scheduling import (
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
     ROLE_COMPONENT_ANALYST_RESUME,
-    ROLE_COMPONENT_DPRIME,
     ROLE_CROSS_COMPONENT_ANALYST,
     ROLE_SCRUTINEER,
     ROLE_SYNTHESIS_DPRIME,
@@ -1300,7 +1299,6 @@ def test_prompt_contracts_activate_quantitative_roles_but_not_scrutineer() -> No
     component = prompts["component_analyst"]
     component_resume = prompts[ROLE_COMPONENT_ANALYST_RESUME]
     cross = prompts["cross_component_analyst"]
-    legacy_component_dprime = prompts[ROLE_COMPONENT_DPRIME]
     synthesis_dprime = prompts["synthesis_dprime"]
     assert "component_evidence" in component
     assert "quantitative_specialist_proposal_contract" in component
@@ -1315,10 +1313,6 @@ def test_prompt_contracts_activate_quantitative_roles_but_not_scrutineer() -> No
     assert "one sibling specialist_need_proposal" in cross
     assert "synthesis_proposals only" not in cross
     assert "underlying current component evidence" in cross
-    # Component D-prime is retained solely as a legacy-recovery prompt; this
-    # product path has no ordinary Component-D-prime execution.
-    assert "legacy-recovery component D-prime" in legacy_component_dprime
-    assert "claim_alignment" in legacy_component_dprime
     assert "claim_alignment" in synthesis_dprime
     assert "two-hop source lineage" in synthesis_dprime
     scrutineer = prompts[ROLE_SCRUTINEER]
@@ -1335,7 +1329,6 @@ def test_prompt_contracts_activate_quantitative_roles_but_not_scrutineer() -> No
     for prompt in (
         component,
         cross,
-        legacy_component_dprime,
         synthesis_dprime,
     ):
         assert "write final" in prompt or "render" in prompt
@@ -2550,10 +2543,6 @@ def test_component_origin_product_path_and_paired_final_answer_delta(
     assert resume_packet["specialist_need_handoff"]["result"]["bounded_result"][
         "claim_alignment"
     ]["posture"] == "exact_match"
-    assert not any(
-        item["system_prompt"] == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_DPRIME]
-        for item in positive_harness.role_input_packets
-    )
     component_role_packet = next(
         packet
         for packet in positive_harness.component_inputs
@@ -2848,7 +2837,6 @@ def _assert_n1_direct_admission_scheduler(
     roles = [dict(item.get("work") or {}).get("role") for item in leases]
     work_kinds = [dict(item.get("work") or {}).get("work_kind") for item in leases]
     forbidden_roles = {
-        ROLE_COMPONENT_DPRIME,
         ROLE_CROSS_COMPONENT_ANALYST,
         ROLE_SYNTHESIS_DPRIME,
         ROLE_SCRUTINEER,
@@ -2876,8 +2864,6 @@ def _assert_n1_direct_admission_scheduler(
     admissions = list(admission["component_admission_refs"])
     assert len(admissions) == 1
     assert admissions[0]["admission_status"] in {"admitted", "admitted_with_caveats"}
-    assert not admissions[0].get("component_dprime_artifact_ref")
-
     graph = kernel.state.projections[COMPONENT_WORK_GRAPH_V1_STAGE]
     assert graph["dependency_posture"] == "single_component_direct_admission"
     assert graph["synthesis_nodes"] == []
@@ -2893,7 +2879,6 @@ def _assert_n1_direct_admission_scheduler(
     assert logical.get("synthesis_dprime_evaluations", 0) == 0
 
     forbidden_actions = {
-        ActionType.MULTICOMPONENT_COMPONENT_DPRIME_EXECUTE,
         ActionType.MULTICOMPONENT_CROSS_ANALYST_EXECUTE,
         ActionType.MULTICOMPONENT_SYNTHESIS_DPRIME_EXECUTE,
     }

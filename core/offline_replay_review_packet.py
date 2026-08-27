@@ -134,7 +134,7 @@ class OfflineReplayReviewPacket:
     corpus_availability: Mapping[str, Any]
     observed_contract: Mapping[str, Any]
     observed_evidence_ledger: Mapping[str, Any]
-    observed_search_judgment: Mapping[str, Any]
+    observed_search_outcome: Mapping[str, Any]
     observed_sufficiency_judgment: Mapping[str, Any]
     observed_final_answer_packet: Mapping[str, Any]
     final_answer: Mapping[str, Any]
@@ -153,7 +153,7 @@ class OfflineReplayReviewPacket:
             "corpus_availability": self.corpus_availability,
             "observed_contract": self.observed_contract,
             "observed_evidence_ledger": self.observed_evidence_ledger,
-            "observed_search_judgment": self.observed_search_judgment,
+            "observed_search_outcome": self.observed_search_outcome,
             "observed_sufficiency_judgment": self.observed_sufficiency_judgment,
             "observed_final_answer_packet": self.observed_final_answer_packet,
             "final_answer": self.final_answer,
@@ -186,7 +186,7 @@ def build_offline_replay_review_packet(
         corpus_availability=_corpus_availability(task),
         observed_contract=_contract_summary(task, snapshot),
         observed_evidence_ledger=_ledger_summary(task, snapshot),
-        observed_search_judgment=_search_summary(task, snapshot),
+        observed_search_outcome=_search_summary(task, snapshot),
         observed_sufficiency_judgment=_sufficiency_summary(task, snapshot),
         observed_final_answer_packet=_final_packet_summary(task, snapshot),
         final_answer=_final_answer_summary(task, snapshot, result),
@@ -203,7 +203,7 @@ def render_offline_replay_review_packet_markdown(
     metadata = payload["metadata"]
     evaluation = payload["ag93b_evaluation"]
     ledger = payload["observed_evidence_ledger"]
-    search = payload["observed_search_judgment"]
+    search = payload["observed_search_outcome"]
     sufficiency = payload["observed_sufficiency_judgment"]
     final_packet = payload["observed_final_answer_packet"]
     final_answer = payload["final_answer"]
@@ -461,7 +461,7 @@ def _search_summary(
     )
     warnings: list[dict[str, Any]] = []
     missing_requirements = _missing_ledger_requirement_ids(snapshot)
-    decision = str(snapshot.search_judgment.get("decision") or "")
+    decision = str(snapshot.search_outcome.get("decision") or "")
     if decision == "stop_satisfied" and missing_requirements:
         warnings.append(
             {
@@ -489,8 +489,8 @@ def _search_summary(
         )
     return {
         "decision": decision,
-        "classifications": _strings(snapshot.search_judgment.get("classifications")),
-        "target_source_classes": _strings(snapshot.search_judgment.get("target_source_classes")),
+        "classifications": _strings(snapshot.search_outcome.get("classifications")),
+        "target_source_classes": _strings(snapshot.search_outcome.get("target_source_classes")),
         "search_attempt_count": snapshot.search_attempt_count,
         "recovery_attempt_count": snapshot.recovery_attempt_count,
         "expected_bounds": expected.to_dict(),
@@ -752,7 +752,7 @@ def _project_observed_for_privacy(observed: Any) -> Any:
             "task_id": observed.task_id,
             "contract": dict(observed.contract_obligations),
             "ledger": dict(observed.evidence_ledger),
-            "search": dict(observed.search_judgment),
+            "search": dict(observed.search_outcome),
             "sufficiency": dict(observed.sufficiency_judgment),
             "final_packet": dict(observed.final_answer_packet),
             "final_answer": {

@@ -13,7 +13,6 @@ from core.cost_accounting import CostAccumulator
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
     ROLE_COMPONENT_ANALYST_RESUME,
-    ROLE_COMPONENT_DPRIME,
     ROLE_CROSS_COMPONENT_ANALYST,
     ROLE_SCRUTINEER,
     ROLE_SYNTHESIS_DPRIME,
@@ -124,7 +123,6 @@ def offline_balanced_run_config(
         or_api_key="",
         use_reasoning=False,
         run_authority_contract_smart_model=False,
-        run_authority_search_judgment_smart_model=smart_search_judgment_model,
         run_authority_sufficiency_smart_model=False,
         search_planner_supplied_context=dict(
             search_planner_supplied_context or {}
@@ -186,9 +184,6 @@ class OfflineOrdinaryPipelineHarness:
         default=None, init=False, repr=False
     )
     searchos_product_result: Any | None = field(default=None, init=False, repr=False)
-    full_search_judgment_inputs: list[dict[str, Any]] = field(
-        default_factory=list, init=False, repr=False
-    )
     searchos_followup_nominated_slots: set[str] = field(
         default_factory=set, init=False, repr=False
     )
@@ -736,16 +731,6 @@ class OfflineOrdinaryPipelineHarness:
                         "The finding is limited to the supplied component "
                         "evidence and does not establish unstated facts."
                     ),
-                    "caveats": [],
-                    "nonclaims": [],
-                    "blockers": [],
-                }
-            )
-        if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_DPRIME]:
-            return json.dumps(
-                {
-                    "validation_status": "supported",
-                    "reasons": ["Offline exact READ material supports the finding."],
                     "caveats": [],
                     "nonclaims": [],
                     "blockers": [],
@@ -1321,20 +1306,6 @@ def run_post_retirement_ordinary_pipeline(
         orchestrator,
         "execute_searchos_zero_result_orientation",
         capture_zero_result_runtime,
-    )
-    original_full_judgment_input = (
-        orchestrator.build_search_judgment_input_from_runtime
-    )
-
-    def capture_full_judgment_input(*args: Any, **kwargs: Any) -> Any:
-        result = original_full_judgment_input(*args, **kwargs)
-        harness.full_search_judgment_inputs.append(result.to_dict())
-        return result
-
-    monkeypatch.setattr(
-        orchestrator,
-        "build_search_judgment_input_from_runtime",
-        capture_full_judgment_input,
     )
     config = replace(
         offline_balanced_run_config(

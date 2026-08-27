@@ -51,10 +51,6 @@ def build_ag93c_observed_snapshot_projection(
         payload.setdefault("contract", _first_mapping(kernel, "run_contract_projection", "run_contract"))
         payload.setdefault("ledger", _first_mapping(kernel, "evidence_ledger"))
         payload.setdefault(
-            "search",
-            _first_mapping(kernel, "search_judgment_projection", "search_judgment"),
-        )
-        payload.setdefault(
             "sufficiency",
             _first_mapping(
                 kernel,

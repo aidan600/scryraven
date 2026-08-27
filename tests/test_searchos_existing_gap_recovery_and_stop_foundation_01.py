@@ -774,27 +774,9 @@ def test_product_existing_gap_recovers_through_same_component_roles(
     captured_gap = _capture_first_gap_basis(monkeypatch)
     sufficiency_inputs = _capture_sufficiency_inputs(monkeypatch)
 
-    def forbidden_legacy_recovery(*_args: Any, **_kwargs: Any) -> None:
-        raise AssertionError("legacy existing-gap recovery path was invoked")
-
     assert not hasattr(
         multicomponent_runtime,
         "_begin_scheduler_dynamic_recovery",
-    )
-    monkeypatch.setattr(
-        pipeline_orchestrator,
-        "execute_component_gap_recovery",
-        forbidden_legacy_recovery,
-    )
-    monkeypatch.setattr(
-        pipeline_orchestrator,
-        "run_source_class_recovery_dispatch",
-        forbidden_legacy_recovery,
-    )
-    monkeypatch.setattr(
-        pipeline_orchestrator,
-        "execute_run_authority_search_judgment_action",
-        forbidden_legacy_recovery,
     )
     recovery_results: list[Any] = []
     reassessment_errors: list[str] = []
@@ -1061,12 +1043,7 @@ def test_product_existing_gap_recovers_through_same_component_roles(
         == recovered_coverage_ref["coverage_record_digest"]
     )
     assert role_system_prompts.count(ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST]) == 2
-    assert not any(
-        "component D-prime" in prompt
-        for prompt in role_system_prompts
-    )
     assert ROLE_SYSTEM_PROMPTS[ROLE_SCRUTINEER] not in role_system_prompts
-    assert not harness.full_search_judgment_inputs
     sufficiency = kernel.state.sufficiency_judgment_projection
     assert sufficiency, (
         outcome.report,
@@ -2441,20 +2418,7 @@ def test_recovery_records_are_ref_only_and_use_one_canonical_component_path(
     pipeline_source = inspect.getsource(
         pipeline_orchestrator._run_pipeline_inner
     )
-    assert (
-        "if searchos_slice_a_active:\n"
-        "        authorized_spine_action = None\n"
-        "        source_class_recovery_execution"
-    ) in pipeline_source
-    assert (
-        "component_gap_recovery_result = None\n"
-        "    if not searchos_slice_a_active:\n"
-        "        recovery_policy"
-    ) in pipeline_source
-    assert (
-        "if not searchos_slice_a_active\n"
-        "        else None"
-    ) in pipeline_source
+    assert "execute_component_gap_recovery" not in pipeline_source
 
 
 def test_consolidated_exact_ownership_matrix_spans_ledger_coverage_and_slot() -> None:

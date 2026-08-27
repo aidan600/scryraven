@@ -89,18 +89,6 @@ class QueryPlanRuntimeAdapter:
         )
         return authorized
 
-    def consume_search_judgment_component_gap_authority(
-        self,
-        queries: Sequence[str],
-        *,
-        search_judgment_projection: Mapping[str, Any] | None,
-    ) -> list[str]:
-        self.plan = self.plan.consume_search_judgment_component_gap_authority(
-            queries,
-            search_judgment_projection=search_judgment_projection,
-        )
-        return list(queries)
-
     def admit_researcher_candidates(self, queries: Sequence[str]) -> list[str]:
         """Admit researcher fallback candidates before they become retrieval queries."""
 

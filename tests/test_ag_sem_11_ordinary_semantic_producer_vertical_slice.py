@@ -24,10 +24,6 @@ from core.ordinary_semantic_producer_runtime import (
     preflight_ordinary_semantic_producer_bundle,
     select_bindable_final_passage,
 )
-from core.run_authority_search_judgment import RunSearchJudgmentInput
-from core.run_authority_search_judgment_validation import (
-    build_deterministic_search_judgment,
-)
 from core.run_kernel import RunKernel, RunKernelTransitionError
 from core.search_work_query_shape_runtime import (
     DeterministicSearchWorkRuntimeInput,
@@ -140,19 +136,6 @@ def _assert_atomic_failure_closed(kernel: RunKernel) -> None:
         evidence_ledger_projection=kernel.state.evidence_ledger.to_projection().to_dict(),
     )
     assert facts["accepted_contract_digest"] is None
-    search_judgment = build_deterministic_search_judgment(
-        RunSearchJudgmentInput(
-            contract_projection={},
-            evidence_ledger_projection=(
-                kernel.state.evidence_ledger.to_projection().to_dict()
-            ),
-            helper_proposals={
-                "semantic_state_facts": facts,
-                "semantic_missing_assessments": [],
-            },
-        )
-    )
-    assert search_judgment.gaps == ()
     assert not kernel.state.final_answer_packet
     assert not kernel.state.author_observation
 

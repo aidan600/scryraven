@@ -13,7 +13,7 @@ Update-trigger: maintainer changes selected AnalystOS topology, role responsibil
 **INSTALLED:** ordinary N=1 uses a current Component Analyst case, exact
 deterministic binding, direct RunKernel component admission,
 ComponentCoverage, Sufficiency, FAP, and Author. Component D-prime has no
-ordinary component producer or consumer.
+ordinary component producer or consumer and has been retired.
 
 For genuine N>=2 work, the installed bounded path still uses Cross-Component
 Analyst followed by a separate synthesis D-prime model call before RunKernel
@@ -130,7 +130,7 @@ SearchOS handoff
 -> Author
 ```
 
-Ordinary N=1 does not schedule Cross, component D-prime, synthesis D-prime,
+Ordinary N=1 does not schedule Cross, synthesis D-prime,
 Scrutineer, or Specialist unless the query genuinely requires their distinct
 responsibility.
 
@@ -206,7 +206,7 @@ become a second Analyst by reparsing prose.
 
 Do not reintroduce without explicit maintainer decision:
 
-- routine component D-prime consumption;
+- a separate routine component-validation role;
 - Cross or synthesis ceremony for N=1;
 - FAP fingerprints, token overlap, literal-role heuristics, or proposition
   matching as PRODUCT authority;

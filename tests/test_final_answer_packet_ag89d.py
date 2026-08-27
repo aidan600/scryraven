@@ -1017,7 +1017,6 @@ def test_evidence_ledger_canonical_custody_still_satisfies_source_obligation() -
         RunSufficiencyJudgmentInput(
             contract_projection=contract,
             evidence_ledger_projection=ledger,
-            search_judgment_projection={"decision": "stop_satisfied"},
             answer_contract_projection={},
             source_obligation_projection=ledger,
             final_evidence_facts={

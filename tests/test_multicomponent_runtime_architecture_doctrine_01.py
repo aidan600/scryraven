@@ -70,7 +70,7 @@ def test_direct_and_qualifying_lanes_are_selected_before_semantic_output() -> No
         "Direct ordinary lane",
         "Qualifying bounded multi-component lane",
         "component Analyst proposal",
-        "component D-prime validation",
+        "Component Analyst case + self-audit",
         "Cross-Component Analyst synthesis proposal",
         "synthesis D-prime validation",
         "full Scrutineer challenge when triggered",
@@ -84,7 +84,6 @@ def test_roles_remain_separate_and_shortcuts_are_closed() -> None:
     text = _collapsed(CANONICAL)
     for role in (
         "Component Analyst",
-        "Component D-prime",
         "Cross-Component Analyst",
         "Synthesis D-prime",
         "Full Scrutineer",
@@ -132,7 +131,6 @@ def test_current_bounded_envelope_and_role_caps_are_exact() -> None:
         "Missing-component recovery | at most 1",
         "Graph/AnswerContract amendment rounds | at most 1",
         "Component Analyst | 5",
-        "Component D-prime | 5",
         "Cross-Component Analyst | 3",
         "Synthesis D-prime | 8",
         "Scrutineer | 3",

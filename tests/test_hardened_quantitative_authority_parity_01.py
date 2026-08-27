@@ -422,16 +422,16 @@ def _real_component_specialist_handoff(
         target_key=target_key,
     )
     if consumed:
-        dprime_ref = {
-            "artifact_id": "component-dprime:hardened-specialist",
-            "artifact_digest": "component-dprime-digest:hardened-specialist",
+        analyst_case_ref = {
+            "artifact_id": "component-analyst:hardened-specialist",
+            "artifact_digest": "component-analyst-digest:hardened-specialist",
         }
         plane = mark_validator_consumption(
             plane,
             handoff_id=handoff["handoff_id"],
-            route="component_dprime",
+            route="component_analyst",
             validation_status="supported",
-            dprime_artifact_ref=dprime_ref,
+            validator_artifact_ref=analyst_case_ref,
         )
         handoff = handoff_for_target(
             plane,
@@ -501,7 +501,7 @@ def test_real_component_s1_authority_survives_readiness_hardened_fap_and_author(
         specialist_inputs=(
             {
                 "specialist_need_handoff": handoff,
-                "applicable_dprime_ref": handoff["validator_artifact_ref"],
+                "applicable_analyst_case_ref": handoff["validator_artifact_ref"],
             },
         ),
     )
@@ -519,14 +519,14 @@ def test_real_component_s1_authority_survives_readiness_hardened_fap_and_author(
     assert readiness_ref["precision_posture"] == "exact_as_reported"
     assert readiness_ref["claim_material_digest"] == sha256(claim.encode("utf-8")).hexdigest()
     assert readiness_ref["applicable_validator_consumption_ref"]["route"] == (
-        "component_dprime"
+        "component_analyst"
     )
     assert readiness_ref["current"] is True
     assert readiness_ref["stale"] is False
     assert row["normalized_numeric_value_text"] == "30"
     assert row["canonical_unit"] == "USD"
     assert row["applicable_validator_consumption_ref"]["route"] == (
-        "component_dprime"
+        "component_analyst"
     )
     assert author["post_author_quantitative_semantic_gate_active"] is False
     assert claim in author["answer_text"]
@@ -586,9 +586,9 @@ def test_broken_component_specialist_lineage_grants_no_hardened_authority(
         inputs = (
             {
                 "specialist_need_handoff": handoff,
-                "applicable_dprime_ref": handoff.get(
+                "applicable_analyst_case_ref": handoff.get(
                     "validator_artifact_ref",
-                    {"artifact_id": "unconsumed-component-dprime"},
+                    {"artifact_id": "unconsumed-component-analyst"},
                 ),
             },
         )

@@ -170,7 +170,7 @@ def test_analystos_separates_meaning_admission_and_readiness() -> None:
     for phrase in (
         "INSTALLED:",
         "SELECTED TARGET:",
-        "Component D-prime has no ordinary component producer or consumer",
+        "Component D-prime has no ordinary component producer or consumer and has been retired",
         "the installed bounded path still uses Cross-Component Analyst followed by a separate synthesis D-prime model call",
         "Analyst explains",
         "RunKernel admits",
@@ -220,7 +220,7 @@ def test_fap_boundary_is_semantically_stupid_and_mechanically_strict() -> None:
 def test_dprime_contract_preserves_installed_selected_split() -> None:
     dprime = _collapsed(DPRIME)
     for phrase in (
-        "Component D-prime has no ordinary component producer or consumer",
+        "the separate Component D-prime role has been retired",
         "The bounded genuine N>=2 path still executes a synthesis D-prime model call",
         "selected for retirement",
         "RunKernel synthesis admission",

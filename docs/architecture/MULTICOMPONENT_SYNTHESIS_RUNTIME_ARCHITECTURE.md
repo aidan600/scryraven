@@ -45,7 +45,7 @@ Component Analyst case + self-audit
 -> RunKernel graph/synthesis admission
 ```
 
-Component D-prime has no ordinary component consumer. The retained synthesis
+The separate Component D-prime role has been retired. The retained synthesis
 D-prime is not the selected AnalystOS target and remains installed only for
 genuine N>=2 synthesis until its convergence phase retires the separate ordinary
 model call.
@@ -66,7 +66,7 @@ Component Analyst path. This separately licensed entry does not establish
 general arbitrary single-component qualification into
 `ordinary-bounded-multicomponent-factual-synthesis-v1`. The installed N=1
 receiver forms a current Component Analyst case and sends it directly to
-RunKernel; it does not execute Component D-prime.
+RunKernel through direct Component Analyst admission.
 
 ## Installed Query-Centered Recovery And Inference
 
@@ -85,7 +85,7 @@ order, list order, and RunKernel never choose a semantic alternative.
 Boundary A reuses the accepted component. Boundary B uses the existing
 ContractAmendment v2 family to add a direct searched premise and revise exact
 targets/dependencies, then reuses the same whole-run SearchOS lease/cycle,
-QueryPlan, custody, component Analyst/D-prime, ComponentCoverage, Graph V1,
+QueryPlan, custody, direct Component Analyst admission, ComponentCoverage, Graph V1,
 and affected-only resynthesis path. The deleted legacy dynamic-recovery runtime
 has no ordinary fallback or consumer.
 
@@ -176,7 +176,6 @@ authority.
 | --- | --- | --- |
 | Planner / semantic producer | Proposes query meaning, answer components, search/source requirements, and structural request relationships. | Admit claims, validate its own proposals, or manufacture evidence. |
 | Component Analyst | Uses the configured SmartModel role to propose what bounded custodied evidence supports for one component and may nominate an exact source-bound quantitative need. | Validate or admit its proposal, authorize the capability, dispatch recovery, or render. |
-| Component D-prime | Retained only as a bounded compatibility contract; it has no ordinary component work producer or admission consumer. | Re-enter the ordinary component path, act as a second review authority, or admit support. |
 | Cross-Component Analyst | Proposes dependencies, contradictions, constraints, synthesis nodes, missing components, caveats, recovery needs, and exact cross-component quantitative needs. | Validate or admit its synthesis, authorize the capability or recovery, or render. |
 | Synthesis D-prime | Validates nominated synthesis against current admitted component, synthesis, edge, blocker, caveat, and two-hop calculator lineage refs. | Invent synthesis or calculate a substitute, act as Cross-Component Analyst, admit state, or render. |
 | Full Scrutineer | Adversarially challenges component, synthesis, edge, subgraph, or whole-case posture when triggered. | Replace first-pass analysis, manufacture a replacement case, admit state, or render. |
@@ -267,8 +266,8 @@ The shared semantic-call caps are:
 | Scrutineer | 3 |
 
 These active direct-path caps cover initial and authorized continuation work and sum to a 19-unit
-semantic-role envelope. A retained ComponentDprime compatibility cap has no ordinary work grant; these are not model-quality
-claims or permanent target budgets. Full Scrutineer is triggered by the
+semantic-role envelope; these are not model-quality claims or permanent target
+budgets. Full Scrutineer is triggered by the
 installed policy, including Deep mode, contradiction, unresolved dependency,
 material caveat, high-stakes quantitative posture, layered synthesis, or a
 synthesis-D-prime challenge/follow-up/ambiguous-support result. Fast and

@@ -130,7 +130,7 @@ material is not automatically current for every proposition.
 
 Ordinary N=1 uses one Component Analyst case, direct RunKernel admission,
 ComponentCoverage, Sufficiency, FAP, and Author. It does not schedule Cross,
-component D-prime, synthesis D-prime, or Specialist unless differentiated work
+synthesis D-prime, or Specialist unless differentiated work
 actually requires them.
 
 For genuine N>=2 work, the bounded component graph, Cross-Component Analyst,
@@ -156,7 +156,7 @@ SearchOS -> READ -> Component Analyst -> RunKernel admission
 ```
 
 The answer cited `docs.python.org`. The run used one Component Analyst and one
-Author, with no required component D-prime. Four of five licensed PRODUCT runs
+Author, with no separate per-component validation call. Four of five licensed PRODUCT runs
 were used; run 05 remained unused.
 
 The final PR #601 correction then removed FAP's direct-source prose numeric gate

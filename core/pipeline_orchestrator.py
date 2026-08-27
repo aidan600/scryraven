@@ -48,11 +48,6 @@ from core.cap_enforcement import (
     TokenUsage,
     is_cap_aware,
 )
-from core.component_gap_recovery_coordinator import (
-    ComponentGapRecoveryPipelineInputs,
-    execute_component_gap_recovery,
-    resolve_component_gap_recovery_mode_policy,
-)
 from core.conflict_resolution_controller import (
     ConflictResolutionDecision,
     conflict_resolution_lifecycle_defaults,
@@ -68,7 +63,6 @@ from core.context_measurement import (
 from core.controller_action_envelope import (
     RECOVER_MISSING_SOURCE_CLASS,
     RECOVER_WEAK_CORPUS,
-    RESOLVE_CONFLICT,
 )
 from core.controller_loop_spine import (
     ControllerLoopSpineInput,
@@ -229,11 +223,9 @@ from core.retrieval_depth_policy import (
 from core.retrieval_dispatch_runtime import (
     EmbeddingActionRecord,
     RetrievalPostMaterialDispatchError,
-    execute_conflict_resolution_from_scope,
     execute_disambiguation_retry_from_scope,
     execute_embedding_action,
     execute_main_retrieval_pass_from_scope,
-    source_class_recovery_context_from_scope,
 )
 from core.retrieval_quality import (
     DEFAULT_UTILIZATION_THRESHOLD,
@@ -274,12 +266,6 @@ from core.routing import (
 )
 from core.routing_runtime import execute_route_request_action
 from core.run_authority_contract_runtime import execute_run_contract_synthesis_action
-from core.run_authority_search_judgment_adapter import (
-    build_search_judgment_input_from_runtime,
-)
-from core.run_authority_search_judgment_runtime import (
-    execute_run_authority_search_judgment_action,
-)
 from core.run_authority_sufficiency_runtime import (
     execute_sufficiency_judgment_handoff_from_scope,
 )
@@ -304,7 +290,6 @@ from core.runtime_prompt_assembly import (
 )
 from core.search_judgment_read_assessment_runtime import (
     SEARCH_JUDGMENT_READ_TRACE_KEY,
-    build_full_search_judgment_containment_projection,
 )
 from core.search_planner_model_adapter import SearchPlannerModelAdapter
 from core.search_planner_runtime import contract_ref_from_contract
@@ -341,7 +326,6 @@ from core.source_class_recovery_lifecycle import (
 from core.source_class_recovery_projection_handoff import (
     execute_post_final_source_class_projection_from_scope,
 )
-from core.source_class_recovery_runner import run_source_class_recovery_dispatch
 from core.source_classifier import source_domain_telemetry, source_tier_telemetry
 from core.source_recency import build_recency_author_notes
 from core.stage_ledger_mirror import record_stage_ledger_query_provider_facts
@@ -685,9 +669,6 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     or_api_key = config.or_api_key
     use_reasoning = config.use_reasoning
     run_authority_contract_smart_model = bool(config.run_authority_contract_smart_model)
-    run_authority_search_judgment_smart_model = bool(
-        config.run_authority_search_judgment_smart_model
-    )
     run_authority_sufficiency_smart_model = bool(
         config.run_authority_sufficiency_smart_model
     )
@@ -869,7 +850,6 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     run_contract_projection: dict[str, Any] = {}
     evidence_ledger_projection = run_kernel.state.evidence_ledger.to_projection().to_dict()
     provider_job_evidence_ledger_bridge_projection: dict[str, Any] = {}
-    search_judgment_projection: dict[str, Any] = {}
     sufficiency_judgment_projection: dict[str, Any] = {}
     answer_contract_projection: dict[str, Any] = {}
     active_source_class_recovery_lifecycle = source_class_recovery_lifecycle_defaults()
@@ -3454,84 +3434,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 locals(),
                 execute_selected_lane=False,
             )
-        _search_judgment_started = not searchos_slice_a_active
-        _search_judgment_input = (
-            None
-            if searchos_slice_a_active
-            else build_search_judgment_input_from_runtime(
-                contract_projection=run_contract_projection,
-                evidence_ledger_projection=(
-                    build_full_search_judgment_containment_projection(
-                        evidence_ledger_projection=evidence_ledger_projection,
-                        search_judgment_read_state=(run_kernel.state.search_judgment_read_state),
-                    )
-                ),
-                query_authority_trace=query_authority.to_trace_fragment(),
-                core_topic=core_topic,
-                primary_entity=primary_entity,
-                result_count=len(all_passages),
-                iterations_run=iterations_run,
-                source_tier_counts=_source_tier_recovery_lifecycle["source_tier_counts"],
-                source_domain_counts=_source_domain_recovery_lifecycle["source_domain_counts"],
-                top_source_domains=_source_domain_recovery_lifecycle["top_source_domains"],
-                provider_diagnostic_count=len(provider_diagnostics),
-                source_class_recovery_recommendation=(_source_class_recovery_lifecycle_recommendation),
-                source_class_observability=(_source_class_recovery_answer_contract_observability),
-                retrieval_stop_shadow_telemetry=retrieval_stop_shadow_telemetry,
-                retrieval_stop_active_telemetry=retrieval_stop_active_telemetry,
-                answer_contract_projection=_pre_recovery_answer_contract_projection,
-                max_iterations=max_iterations,
-                recovery_attempt_count=(_run_controller_mirror.state.active_source_class_recovery_attempt_count),
-                initial_answer_contract=run_kernel.state.initial_answer_contract,
-                component_coverage_history=run_kernel.state.component_coverage_history,
-                contract_amendment_admission_history=(run_kernel.state.contract_amendment_admission_history),
-            )
-        )
-        if searchos_slice_a_active:
-            search_judgment_projection = {
-                "schema_version": "searchos_legacy_authority_retirement_v1",
-                "owner": "RunKernel.SearchOSIterativeJudgment",
-                "status": "retired_from_forward_path",
-                "ag92b_full_search_judgment_invoked": False,
-                "component_gap_query_authority_created": False,
-            }
-        else:
-            _search_judgment_action = run_kernel.authorize_search_judgment(
-                inputs={
-                    "contract_id": run_contract_projection.get("contract_id"),
-                    "candidate_count": evidence_ledger_projection.get("candidate_count"),
-                    "requirement_count": evidence_ledger_projection.get("requirement_count"),
-                    "iteration": iterations_run,
-                    "max_iterations": max_iterations,
-                }
-            )
-            _search_judgment_result = execute_run_authority_search_judgment_action(
-                _search_judgment_action,
-                judgment_input=_search_judgment_input,
-                ask_model=(
-                    _cap_model_phase(ask_model, "search_judgment")
-                    if run_authority_search_judgment_smart_model
-                    else None
-                ),
-                clean_json_response=deps.clean_json_response,
-                smart_model_enabled=run_authority_search_judgment_smart_model,
-                provider=smart_provider,
-                model=smart_model,
-                base_url=local_url,
-                api_key=or_api_key,
-                effort=smart_reasoning_effort,
-                use_reasoning=use_reasoning,
-                measure_context_stage=_measure_context_stage,
-            )
-            run_kernel.reduce(_search_judgment_result.observation)
-            search_judgment_projection = dict(run_kernel.state.search_judgment_projection)
-            current_queries = query_authority.consume_search_judgment_component_gap_authority(
-                current_queries,
-                search_judgment_projection=search_judgment_projection,
-            )
     except Exception as exc:
-        if _search_judgment_started:
-            raise
         run_log.warning(
             "Non-fatal answer-contract source-class recovery trigger omitted: %s",
             exc,
@@ -3622,44 +3525,16 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         _retrieval_authority_stage.targeted_retrieval_lifecycle_trace
     )
     authorized_spine_action = _retrieval_authority_stage.authorized_spine_action
-
-    if searchos_slice_a_active:
-        authorized_spine_action = None
-        source_class_recovery_execution = {
-            "attempted": False,
-            "status": "retired_from_searchos_forward_path",
-        }
-    else:
-        source_class_recovery_result = run_source_class_recovery_dispatch(
-            source_class_recovery_context_from_scope(
-                locals(),
-                error_type=PipelineError,
-            )
-        )
-        source_class_recovery_execution = source_class_recovery_result.source_class_recovery_execution
-        discover_candidate_urls_admitted += source_class_recovery_result.total_urls_delta
-        total_chunks_embedded += source_class_recovery_result.total_chunks_delta
-
-    conflict_resolution_execution: dict[str, int | bool]
-    if not searchos_slice_a_active and authorized_spine_action == RESOLVE_CONFLICT:
-        if conflict_resolution_decision_for_checkpoint_gate is None:
-            raise PipelineError("conflict_resolution gate approved without decision")
-        conflict_resolution_execution = execute_conflict_resolution_from_scope(
-            locals(),
-            decision=conflict_resolution_decision_for_checkpoint_gate,
-            error_type=PipelineError,
-        )
-    else:
-        conflict_resolution_execution = {
-            "attempted": False,
-            "result_count": 0,
-            "new_url_count": 0,
-        }
-    if conflict_resolution_execution["attempted"]:
-        discover_candidate_urls_admitted += int(
-            conflict_resolution_execution["new_url_count"]
-        )
-        total_chunks_embedded += int(conflict_resolution_execution["result_count"])
+    authorized_spine_action = None
+    source_class_recovery_execution = {
+        "attempted": False,
+        "status": "retired_from_searchos_forward_path",
+    }
+    conflict_resolution_execution: dict[str, int | bool] = {
+        "attempted": False,
+        "result_count": 0,
+        "new_url_count": 0,
+    }
 
     final_evidence_handoff = build_final_evidence_runtime_handoff_from_scope(
         locals(),
@@ -4861,73 +4736,6 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     ) = _consume_final_material_runtime_handoff(initial_final_material_handoff)
 
     status.step("Judging final answer sufficiency...")
-    if not searchos_slice_a_active:
-        execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
-            run_kernel,
-            locals(),
-        )
-    _semantic_gap_search_judgment_input = (
-        build_search_judgment_input_from_runtime(
-            contract_projection=run_contract_projection,
-            evidence_ledger_projection=(
-                build_full_search_judgment_containment_projection(
-                    evidence_ledger_projection=evidence_ledger_projection,
-                    search_judgment_read_state=(run_kernel.state.search_judgment_read_state),
-                )
-            ),
-            query_authority_trace=query_authority.to_trace_fragment(),
-            core_topic=core_topic,
-            primary_entity=primary_entity,
-            result_count=len(all_passages),
-            iterations_run=iterations_run,
-            source_tier_counts=_source_tier_recovery_lifecycle["source_tier_counts"],
-            source_domain_counts=_source_domain_recovery_lifecycle["source_domain_counts"],
-            top_source_domains=_source_domain_recovery_lifecycle["top_source_domains"],
-            provider_diagnostic_count=len(provider_diagnostics),
-            source_class_recovery_recommendation=(_source_class_recovery_lifecycle_recommendation),
-            source_class_observability=(_source_class_recovery_answer_contract_observability),
-            retrieval_stop_shadow_telemetry=retrieval_stop_shadow_telemetry,
-            retrieval_stop_active_telemetry=retrieval_stop_active_telemetry,
-            answer_contract_projection=answer_contract_projection,
-            max_iterations=max_iterations,
-            recovery_attempt_count=(_run_controller_mirror.state.active_source_class_recovery_attempt_count),
-            initial_answer_contract=run_kernel.state.initial_answer_contract,
-            component_coverage_history=run_kernel.state.component_coverage_history,
-            contract_amendment_admission_history=(run_kernel.state.contract_amendment_admission_history),
-        )
-        if not searchos_slice_a_active
-        else None
-    )
-    if _semantic_gap_search_judgment_input is not None and _semantic_gap_search_judgment_input.helper_proposals.get(
-        "semantic_missing_assessments"
-    ):
-        _semantic_gap_search_judgment_action = run_kernel.authorize_search_judgment(
-            inputs={
-                "phase": "ag_gap_01_semantic_component_gap_projection",
-                "contract_id": run_contract_projection.get("contract_id"),
-                "candidate_count": evidence_ledger_projection.get("candidate_count"),
-                "requirement_count": evidence_ledger_projection.get(
-                    "requirement_count"
-                ),
-                "iteration": iterations_run,
-                "max_iterations": max_iterations,
-            }
-        )
-        _semantic_gap_search_judgment_result = (
-            execute_run_authority_search_judgment_action(
-                _semantic_gap_search_judgment_action,
-                judgment_input=_semantic_gap_search_judgment_input,
-                ask_model=None,
-                clean_json_response=deps.clean_json_response,
-                smart_model_enabled=False,
-            )
-        )
-        run_kernel.reduce(_semantic_gap_search_judgment_result.observation)
-        search_judgment_projection = dict(run_kernel.state.search_judgment_projection)
-        current_queries = query_authority.consume_search_judgment_component_gap_authority(
-            current_queries,
-            search_judgment_projection=search_judgment_projection,
-        )
     sufficiency_handoff = execute_sufficiency_judgment_handoff_from_scope(
         run_kernel,
         locals(),
@@ -4945,94 +4753,6 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     sufficiency_judgment_projection = sufficiency_handoff.projection
     if cap_policy is not None:
         cap_policy.note_product_stage("sufficiency_complete")
-
-    component_gap_recovery_handoff = None
-    component_gap_recovery_result = None
-    if not searchos_slice_a_active:
-        recovery_policy = resolve_component_gap_recovery_mode_policy(strategy)
-        component_gap_recovery_handoff = execute_component_gap_recovery(
-            inputs=ComponentGapRecoveryPipelineInputs(
-                run_kernel=run_kernel,
-                query_plan_trace=query_authority.to_trace_fragment(),
-                search_judgment_projection=search_judgment_projection,
-                evidence_ledger_projection=evidence_ledger_projection,
-                search_work_projection=None,
-                query=query,
-                intent=intent,
-                complexity=complexity,
-                search_depth=search_depth,
-                results_per_query=results_per_query,
-                all_passages=all_passages,
-            ),
-            policy=recovery_policy,
-            offline_recovery_adapter=deps.component_gap_recovery_adapter,
-            seen_urls=seen_urls,
-        )
-        component_gap_recovery_result = component_gap_recovery_handoff.result
-    if component_gap_recovery_handoff is not None and component_gap_recovery_handoff.recovered:
-        if not component_gap_recovery_handoff.all_passages:
-            raise PipelineError(
-                "recovered component-gap material is absent"
-            )
-        canonical_recovery_projection = (
-            run_kernel.state.evidence_ledger.to_projection().to_dict()
-        )
-        if dict(
-            component_gap_recovery_handoff.evidence_ledger_projection or {}
-        ) != canonical_recovery_projection:
-            raise PipelineError(
-                "recovered component-gap EvidenceLedger projection is stale"
-            )
-        all_passages = list(component_gap_recovery_handoff.all_passages)
-        recovered_final_material_handoff = (
-            build_final_material_runtime_handoff_from_scope(
-                _final_material_runtime_scope(),
-                filter_top_evidence=deps.filter_top_evidence,
-                is_plausible_domain=deps.is_plausible_domain,
-                recovered_evidence_visibility=(
-                    apply_controller_recovered_evidence_visibility
-                ),
-            )
-        )
-        (
-            final_evidence_handoff,
-            final_evidence_bundle,
-            final_top_evidence,
-            unique_source_urls,
-            ordered_sources,
-            evidence_ledger_projection,
-            evidence_block,
-            cached_prefix,
-            author_evidence,
-            author_evidence_block,
-            author_prompt,
-            author_notes,
-        ) = _consume_final_material_runtime_handoff(
-            recovered_final_material_handoff
-        )
-        current_evidence_ledger_projection = (
-            run_kernel.state.evidence_ledger.to_projection().to_dict()
-        )
-        if evidence_ledger_projection != current_evidence_ledger_projection:
-            raise PipelineError(
-                "shared final-material EvidenceLedger projection is stale"
-            )
-        evidence_ledger_projection = current_evidence_ledger_projection
-        sufficiency_handoff = execute_sufficiency_judgment_handoff_from_scope(
-            run_kernel,
-            locals(),
-            ask_model=ask_model if run_authority_sufficiency_smart_model else None,
-            clean_json_response=deps.clean_json_response,
-            smart_model_enabled=run_authority_sufficiency_smart_model,
-            provider=smart_provider,
-            model=smart_model,
-            base_url=local_url,
-            api_key=or_api_key,
-            effort=smart_reasoning_effort,
-            use_reasoning=use_reasoning,
-            measure_context_stage=_measure_context_stage,
-        )
-        sufficiency_judgment_projection = sufficiency_handoff.projection
 
     status.update("Writing final report...")
 

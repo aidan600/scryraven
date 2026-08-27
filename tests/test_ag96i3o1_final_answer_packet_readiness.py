@@ -462,8 +462,6 @@ def _observation_from_state(action: Any, state: dict[str, Any]) -> Observation:
 
 def _closed_surface_snapshot(kernel: RunKernel) -> dict[str, Any]:
     return {
-        "search_judgment": deepcopy(kernel.state.search_judgment),
-        "search_judgment_projection": deepcopy(kernel.state.search_judgment_projection),
         "final_answer_packet": deepcopy(kernel.state.final_answer_packet),
         "final_answer_authority_projection": deepcopy(
             kernel.state.final_answer_authority_projection

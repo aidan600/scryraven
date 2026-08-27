@@ -433,8 +433,6 @@ def test_intake_reducer_rejects_closed_surface_flags() -> None:
 def test_intake_does_not_activate_sufficiency_search_final_answer_author_or_citations() -> None:
     kernel = run_followup_through_execution(run_id=RUN_ID)
     before = {
-        "search_judgment": deepcopy(kernel.state.search_judgment),
-        "search_judgment_projection": deepcopy(kernel.state.search_judgment_projection),
         "sufficiency_judgment": deepcopy(kernel.state.sufficiency_judgment),
         "sufficiency_judgment_projection": deepcopy(
             kernel.state.sufficiency_judgment_projection
@@ -449,8 +447,6 @@ def test_intake_does_not_activate_sufficiency_search_final_answer_author_or_cita
 
     consume_followup_evidence_intake(kernel)
 
-    assert kernel.state.search_judgment == before["search_judgment"]
-    assert kernel.state.search_judgment_projection == before["search_judgment_projection"]
     assert kernel.state.sufficiency_judgment == before["sufficiency_judgment"]
     assert kernel.state.sufficiency_judgment_projection == (
         before["sufficiency_judgment_projection"]
@@ -463,7 +459,6 @@ def test_intake_does_not_activate_sufficiency_search_final_answer_author_or_cita
     assert kernel.state.final_answer_outcome == before["final_answer_outcome"]
     flags = kernel.state.followup_evidence_intake_state["behavior_boundary_flags"]
     assert flags["sufficiency_judgment_rechecked"] is False
-    assert flags["search_judgment_rerun"] is False
     assert flags["final_answer_packet_updated"] is False
     assert flags["citation_behavior_changed"] is False
 

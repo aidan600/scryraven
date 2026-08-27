@@ -650,59 +650,6 @@ def component_analyst_resume_input_packet(
     }
 
 
-def component_dprime_input_packet(
-    *,
-    analyst_artifact: Mapping[str, Any],
-    analyst_input_packet: Mapping[str, Any],
-    specialist_need_handoff: Mapping[str, Any] | None = None,
-) -> dict[str, Any]:
-    analyst = validate_multicomponent_role_artifact(
-        analyst_artifact,
-        expected_role=ROLE_COMPONENT_ANALYST,
-    )
-    exact_component_input = _safe_mapping(analyst_input_packet)
-    exact_component_input.pop(
-        "quantitative_specialist_proposal_contract", None
-    )
-    packet = {
-        "supported_query_class": (
-            "ordinary-bounded-multicomponent-factual-synthesis-v1"
-        ),
-        "analyst_artifact_ref": role_artifact_ref(analyst),
-        "nominated_claim": {
-            "claim_text": analyst["semantic_output"]["claim_text"],
-            "support_status": analyst["semantic_output"]["support_status"],
-            "caveats": list(analyst["semantic_output"].get("caveats") or ()),
-            "nonclaims": list(
-                analyst["semantic_output"].get("nonclaims") or ()
-            ),
-        },
-        "exact_component_and_evidence_input": exact_component_input,
-    }
-    if specialist_need_handoff:
-        from core.specialist_graph_runtime import (
-            specialist_need_handoff_packet,
-            validate_specialist_need_handoff,
-        )
-
-        handoff = validate_specialist_need_handoff(specialist_need_handoff)
-        target = _safe_mapping(handoff.get("canonical_target_ref"))
-        component_id = _safe_mapping(
-            analyst_input_packet.get("component_ref")
-        ).get("component_id")
-        if (
-            target.get("target_kind") != "component"
-            or target.get("target_key") != component_id
-        ):
-            raise ValueError(
-                "component D-prime Specialist handoff target mismatch"
-            )
-        packet["specialist_need_handoff"] = specialist_need_handoff_packet(
-            handoff
-        )
-    return packet
-
-
 def _typed_lane_custody_gap_exception_authorized(
     accepted_contract: Mapping[str, Any],
 ) -> bool:
@@ -1383,7 +1330,6 @@ __all__ = [
     "component_analyst_input_binding_mismatch_from_exception",
     "component_analyst_input_packet",
     "component_analyst_resume_input_packet",
-    "component_dprime_input_packet",
     "contract_authority_facts_from_run_kernel",
     "execute_multicomponent_component_admission",
     "independent_component_analyst_dispatch_input_digest",

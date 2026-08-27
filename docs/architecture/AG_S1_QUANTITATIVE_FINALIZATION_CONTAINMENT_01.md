@@ -125,9 +125,8 @@ and evidence-custody identity; it does not require FAP to re-prove literal
 signatures from prose. Installed Specialist capability/version, result and
 handoff identities/digests, canonical component target, exact claim-material
 binding, canonical `result_unit` and precision, and terminal consumption by the
-applicable Component Analyst case remain hard for derived numeric results (with
-retained historical component-D-prime records outside the ordinary component
-path). Generic D-prime admission alone remains nonauthority. The hardened packet
+applicable Component Analyst case remain hard for derived numeric results.
+Generic D-prime admission alone remains nonauthority. The hardened packet
 packages component entries only; it does not project synthesis entries and does
 not install a hardened synthesis sidecar.
 

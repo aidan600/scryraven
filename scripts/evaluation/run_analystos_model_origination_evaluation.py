@@ -54,7 +54,6 @@ MODEL_ROLES = frozenset({ROLE_SEARCH_PLANNER, *ANALYST_ROLES})
 EVALUATION_PASSES = frozenset({"planner_only", "analyst_only", "combined"})
 EXECUTION_MODES = frozenset({"plan_only", "execute"})
 DETERMINISTIC_DOWNSTREAM_OWNERS = (
-    "component_dprime",
     "synthesis_dprime",
     "searchos_fictional_acquisition_corpus",
     "runkernel_admission",
@@ -718,7 +717,6 @@ def build_call_manifest(
         for scenario_id in resolved.scenario_ids
     }
     deterministic = {
-        "component_dprime",
         "synthesis_dprime",
         "searchos_fictional_acquisition_corpus",
         "sufficiency",

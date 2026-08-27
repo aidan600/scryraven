@@ -1724,103 +1724,6 @@ def validate_search_judgment_read_custody_reduction(
     return state
 
 
-def build_full_search_judgment_containment_projection(
-    *,
-    evidence_ledger_projection: Mapping[str, Any],
-    search_judgment_read_state: Mapping[str, Any],
-) -> dict[str, Any]:
-    """Exclude only this phase's custody at the existing full-judgment seam."""
-
-    projection = _json_clone(evidence_ledger_projection)
-    state = _mapping(search_judgment_read_state)
-    registry = _mapping(state.get("custody_by_normalized_url"))
-    candidate_ids = {
-        str(_mapping(record).get("candidate_id") or "")
-        for record in registry.values()
-        if isinstance(record, Mapping)
-    }
-    candidate_ids.update(
-        str(_mapping(record).get("evidence_ledger_candidate_id") or "")
-        for record in registry.values()
-        if isinstance(record, Mapping)
-    )
-    candidate_ids.discard("")
-    packet_ids = {
-        str(
-            _mapping(_mapping(record).get("fetch_read_content_packet_ref")).get(
-                "packet_id"
-            )
-            or ""
-        )
-        for record in registry.values()
-        if isinstance(record, Mapping)
-    }
-    observation_ids = {
-        str(
-            _mapping(_mapping(record).get("evidence_ledger_observation_ref")).get(
-                "observation_id"
-            )
-            or ""
-        )
-        for record in registry.values()
-        if isinstance(record, Mapping)
-    }
-    candidates = [
-        _mapping(item)
-        for item in _sequence(projection.get("candidate_records"))
-        if str(_mapping(item).get("candidate_id") or "") not in candidate_ids
-    ]
-    projection["candidate_records"] = candidates
-    projection["candidate_count"] = len(candidates)
-    if "custody_gaps" in projection:
-        projection["custody_gaps"] = [
-            _mapping(item)
-            for item in _sequence(projection.get("custody_gaps"))
-            if str(_mapping(item).get("candidate_id") or "")
-            not in candidate_ids
-            and str(_mapping(item).get("observation_id") or "")
-            not in observation_ids
-        ]
-    custody = _mapping(projection.get("fetch_read_candidate_custody"))
-    records = [
-        _mapping(item)
-        for item in _sequence(custody.get("fetch_read_candidate_custody_records"))
-        if str(_mapping(item).get("candidate_id") or "") not in candidate_ids
-        and str(_mapping(item).get("fetch_read_content_packet_id") or "")
-        not in packet_ids
-    ]
-    if custody:
-        custody["fetch_read_candidate_custody_records"] = records
-        custody["candidate_content_custody_visible"] = bool(records)
-        custody["custody_record_count"] = len(records)
-        custody["readable_record_count"] = sum(
-            1 for item in records if item.get("fetch_read_status") == "readable"
-        )
-        custody["unreadable_record_count"] = sum(
-            1 for item in records if item.get("fetch_read_status") != "readable"
-        )
-        custody_gaps = [
-            _mapping(item)
-            for item in _sequence(custody.get("custody_gaps"))
-            if str(_mapping(item).get("candidate_id") or "") not in candidate_ids
-        ]
-        custody["custody_gaps"] = custody_gaps
-        custody["custody_gap_count"] = len(custody_gaps)
-        projection["fetch_read_candidate_custody"] = custody
-    observation_refs = [
-        _mapping(item)
-        for item in _sequence(projection.get("observation_refs"))
-        if not (
-            _mapping(item).get("source")
-            == "fetch_read_content_packet_candidate_custody"
-            and str(_mapping(item).get("observation_id") or "")
-            in observation_ids
-        )
-    ]
-    projection["observation_refs"] = observation_refs
-    return projection
-
-
 def _execute_one_acquisition_to_custody(
     *,
     run_kernel: RunKernel,
@@ -2669,7 +2572,6 @@ def _closed_runtime_projection(
             "same_url_custody_reuse_count": sum(
                 1 for item in events if _mapping(item).get("reused") is True
             ),
-            "legacy_full_search_judgment_flag_consulted": False,
             "ordinary_live_flag_consulted": False,
             "child_run_kernel_used": False,
             "deterministic_read_decision_used": False,
@@ -2743,7 +2645,6 @@ __all__ = [
     "SearchJudgmentReadRuntimeResult",
     "SelectedCandidateMaterialNeedBindingV1",
     "build_binding_backed_acquisition_need_proposal",
-    "build_full_search_judgment_containment_projection",
     "derive_selected_candidate_material_need_bindings",
     "execute_search_judgment_read_assessment_action",
     "execute_search_judgment_read_binding_action",

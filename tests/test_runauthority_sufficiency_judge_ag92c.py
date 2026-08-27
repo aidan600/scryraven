@@ -24,10 +24,6 @@ from core.final_answer_runtime_adapter import (
 )
 from core.run_authority_contract_runtime import execute_run_contract_synthesis_action
 from core.run_authority_contract_templates import build_deterministic_contract
-from core.run_authority_search_judgment import RunSearchJudgmentInput
-from core.run_authority_search_judgment_runtime import (
-    execute_run_authority_search_judgment_action,
-)
 from core.run_authority_sufficiency import (
     RunSufficiencyDecision,
     RunSufficiencyJudgmentInput,
@@ -127,8 +123,6 @@ def _input(
     contract: dict[str, Any],
     ledger: dict[str, Any],
     *,
-    search: dict[str, Any] | None = None,
-    search_history: list[dict[str, Any]] | None = None,
     answer_contract: dict[str, Any] | None = None,
     final_evidence_count: int = 1,
     conflict_facts: dict[str, Any] | None = None,
@@ -144,8 +138,6 @@ def _input(
     return RunSufficiencyJudgmentInput(
         contract_projection=contract,
         evidence_ledger_projection=ledger,
-        search_judgment_projection=search or {"decision": "defer_to_legacy_compatibility"},
-        search_judgment_history=search_history or [],
         answer_contract_projection=answer_contract or {},
         source_obligation_projection=ledger,
         final_evidence_facts={
@@ -250,7 +242,7 @@ def _typed_searchos_required_needs_block(
     return state, block
 
 
-def _kernel_with_contract_ledger_search(
+def _kernel_with_contract_ledger(
     *,
     satisfied: bool,
 ) -> tuple[RunKernel, dict[str, Any], dict[str, Any]]:
@@ -288,24 +280,11 @@ def _kernel_with_contract_ledger_search(
             },
         )
         kernel.reduce(candidate_result.observation)
-    ledger = kernel.state.evidence_ledger.to_projection().to_dict()
-
-    search_action = kernel.authorize_search_judgment(inputs={})
-    search_result = execute_run_authority_search_judgment_action(
-        search_action,
-        judgment_input=RunSearchJudgmentInput(
-            contract_projection=contract,
-            evidence_ledger_projection=ledger,
-            retrieval_observations={"result_count": ledger.get("candidate_count", 0)},
-            budget={"iteration": 1, "max_iterations": 3},
-        ),
-    )
-    kernel.reduce(search_result.observation)
     return kernel, contract, kernel.state.evidence_ledger.to_projection().to_dict()
 
 
 def test_run_kernel_authorizes_executes_and_reduces_sufficiency_judgment() -> None:
-    kernel, contract, ledger = _kernel_with_contract_ledger_search(satisfied=True)
+    kernel, contract, ledger = _kernel_with_contract_ledger(satisfied=True)
     action = kernel.authorize_sufficiency_judgment(inputs={"phase": "ag92c"})
 
     assert action.action_type is ActionType.SUFFICIENCY_JUDGMENT_DECIDE
@@ -316,12 +295,7 @@ def test_run_kernel_authorizes_executes_and_reduces_sufficiency_judgment() -> No
 
     result = execute_run_authority_sufficiency_judgment_action(
         action,
-        judgment_input=_input(
-            contract,
-            ledger,
-            search=kernel.state.search_judgment_projection,
-            search_history=kernel.state.search_judgment_history,
-        ),
+        judgment_input=_input(contract, ledger),
     )
     kernel.reduce(result.observation)
 
@@ -341,7 +315,7 @@ def test_run_kernel_authorizes_executes_and_reduces_sufficiency_judgment() -> No
 
 
 def test_sufficiency_executor_validates_authorized_action() -> None:
-    kernel, contract, ledger = _kernel_with_contract_ledger_search(satisfied=True)
+    kernel, contract, ledger = _kernel_with_contract_ledger(satisfied=True)
     wrong_action = kernel.authorize_route_request(inputs={"route": "wrong"})
     with pytest.raises(ValueError, match="authorized action type"):
         execute_run_authority_sufficiency_judgment_action(
@@ -358,7 +332,7 @@ def test_all_required_ledger_obligations_satisfied_ready_direct() -> None:
         links=_links(contract),
     )
     judgment = build_deterministic_sufficiency_judgment(
-        _input(contract, ledger, search={"decision": "stop_satisfied"})
+        _input(contract, ledger)
     )
 
     assert judgment.decision is RunSufficiencyDecision.READY_DIRECT
@@ -440,37 +414,6 @@ def test_lower_tier_stale_or_off_topic_evidence_cannot_satisfy_strong_obligation
     assert "do_not_treat_lower_tier_stale_or_off_topic_evidence_as_required_custody" in (
         judgment.prohibited_upgrades
     )
-
-
-def test_search_stop_insufficient_forces_insufficient_or_partial_posture() -> None:
-    contract = _contract("What is the current official filing fee?")
-    ledger = _ledger_projection(contract)
-    judgment = build_deterministic_sufficiency_judgment(
-        _input(
-            contract,
-            ledger,
-            search={"decision": "stop_insufficient"},
-            budget={"iteration": 3, "max_iterations": 3, "budget_exhausted": True},
-        )
-    )
-
-    assert judgment.decision is RunSufficiencyDecision.SOURCE_BOUND_NUMERIC_UNKNOWN
-    assert "search_judgment_stop_insufficient" in judgment.readiness_reasons
-    assert judgment.final_answer_posture in {
-        SufficiencyPosture.PARTIAL_ANSWER,
-        SufficiencyPosture.INSUFFICIENT_ANSWER,
-    }
-
-
-def test_search_stop_satisfied_plus_satisfied_ledger_ready() -> None:
-    contract = _contract("What is the current official filing fee?")
-    ledger = _ledger_projection(contract, candidates=[_candidate()], links=_links(contract))
-    judgment = build_deterministic_sufficiency_judgment(
-        _input(contract, ledger, search={"decision": "stop_satisfied"})
-    )
-
-    assert judgment.decision is RunSufficiencyDecision.READY_DIRECT
-    assert judgment.contract_fulfilled is True
 
 
 def test_ordinary_explainer_without_required_official_current_does_not_overblock() -> None:
@@ -634,7 +577,6 @@ def test_final_answer_packet_consumes_sufficiency_to_demote_legacy_missing_infer
     direct_projection = _sufficiency_projection(
         contract,
         ledger,
-        search={"decision": "stop_satisfied"},
     )
 
     legacy_packet = build_final_answer_packet(
@@ -695,9 +637,7 @@ def test_unreconciled_answer_contract_requirement_survives_unrelated_canonical_t
     """Unrelated AnswerContract gaps remain missing when topology exists."""
 
     contract, ledger = _docs_contract_and_satisfied_ledger()
-    baseline = build_deterministic_sufficiency_judgment(
-        _input(contract, ledger, search={"decision": "stop_satisfied"})
-    )
+    baseline = build_deterministic_sufficiency_judgment(_input(contract, ledger))
     component_requirement_id = "searchos-source-obligation:component:q1:official"
     ledger["source_requirements"].append(
         {
@@ -715,7 +655,6 @@ def test_unreconciled_answer_contract_requirement_survives_unrelated_canonical_t
         _input(
             contract,
             ledger,
-            search={"decision": "stop_satisfied"},
             answer_contract=answer_contract,
         )
     )
@@ -770,7 +709,6 @@ def test_exact_answer_contract_duplicate_does_not_reappear_when_canonical_satisf
         _input(
             contract,
             ledger,
-            search={"decision": "stop_satisfied"},
             answer_contract=answer_contract,
         )
     )
@@ -849,9 +787,7 @@ def test_same_source_class_does_not_reconcile_distinct_canonical_requirements() 
             },
         ]
     )
-    judgment = build_deterministic_sufficiency_judgment(
-        _input(contract, ledger, search={"decision": "stop_satisfied"})
-    )
+    judgment = build_deterministic_sufficiency_judgment(_input(contract, ledger))
     packet = build_final_answer_packet(
         run_id="ag92c-same-class-distinct-requirements",
         final_evidence=[_final_passage()],
@@ -915,7 +851,6 @@ def test_q1_two_canonical_documentation_obligations_do_not_recreate_reputable_se
         _input(
             contract,
             ledger,
-            search={"decision": "stop_satisfied"},
             answer_contract={"unfulfilled_source_classes": ["primary_source_documents"]},
         )
     )
@@ -989,10 +924,10 @@ def test_final_answer_packet_consumes_missing_sufficiency_projection() -> None:
 
 
 def test_smart_model_valid_json_may_adapt_posture_when_safe() -> None:
-    kernel, contract, ledger = _kernel_with_contract_ledger_search(satisfied=True)
+    kernel, contract, ledger = _kernel_with_contract_ledger(satisfied=True)
     action = kernel.authorize_sufficiency_judgment(inputs={})
     deterministic = build_deterministic_sufficiency_judgment(
-        _input(contract, ledger, search=kernel.state.search_judgment_projection)
+        _input(contract, ledger)
     ).to_projection()
     model_projection = deepcopy(deterministic)
     model_projection["decision"] = RunSufficiencyDecision.READY_WITH_CAVEATS.value
@@ -1008,11 +943,7 @@ def test_smart_model_valid_json_may_adapt_posture_when_safe() -> None:
 
     result = execute_run_authority_sufficiency_judgment_action(
         action,
-        judgment_input=_input(
-            contract,
-            ledger,
-            search=kernel.state.search_judgment_projection,
-        ),
+        judgment_input=_input(contract, ledger),
         ask_model=fake_ask_model,
         clean_json_response=lambda text: text,
         smart_model_enabled=True,
@@ -1032,7 +963,7 @@ def test_smart_model_valid_json_may_adapt_posture_when_safe() -> None:
 
 
 def test_invalid_smart_model_json_falls_back_to_deterministic_without_raw_storage() -> None:
-    kernel, contract, ledger = _kernel_with_contract_ledger_search(satisfied=True)
+    kernel, contract, ledger = _kernel_with_contract_ledger(satisfied=True)
     action = kernel.authorize_sufficiency_judgment(inputs={})
 
     result = execute_run_authority_sufficiency_judgment_action(
@@ -1053,7 +984,7 @@ def test_invalid_smart_model_json_falls_back_to_deterministic_without_raw_storag
 
 
 def test_smart_model_ready_direct_with_required_gaps_is_repaired() -> None:
-    kernel, contract, ledger = _kernel_with_contract_ledger_search(satisfied=False)
+    kernel, contract, ledger = _kernel_with_contract_ledger(satisfied=False)
     action = kernel.authorize_sufficiency_judgment(inputs={})
     unsafe = {
         "decision": RunSufficiencyDecision.READY_DIRECT.value,
@@ -1078,17 +1009,13 @@ def test_smart_model_ready_direct_with_required_gaps_is_repaired() -> None:
 
 
 def test_sufficiency_state_excludes_sensitive_raw_material() -> None:
-    kernel, contract, ledger = _kernel_with_contract_ledger_search(satisfied=True)
+    kernel, contract, ledger = _kernel_with_contract_ledger(satisfied=True)
     action = kernel.authorize_sufficiency_judgment(
         inputs={"raw_prompt": "should redact PRIVATE_SENTINEL_PAYLOAD"}
     )
     result = execute_run_authority_sufficiency_judgment_action(
         action,
-        judgment_input=_input(
-            contract,
-            ledger,
-            search=kernel.state.search_judgment_projection,
-        ),
+        judgment_input=_input(contract, ledger),
     )
     kernel.reduce(result.observation)
     serialized = json.dumps(kernel.to_trace_fragment(), sort_keys=True).casefold()

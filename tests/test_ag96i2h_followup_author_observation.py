@@ -358,8 +358,6 @@ def test_noncompliant_observation_is_accepted_without_product_activation() -> No
 def test_closed_surfaces_remain_closed_and_orchestrator_is_untouched() -> None:
     kernel = _through_packet()
     before = {
-        "search_judgment": deepcopy(kernel.state.search_judgment),
-        "search_judgment_projection": deepcopy(kernel.state.search_judgment_projection),
         "sufficiency_judgment_projection": deepcopy(
             kernel.state.sufficiency_judgment_projection
         ),
@@ -376,10 +374,6 @@ def test_closed_surfaces_remain_closed_and_orchestrator_is_untouched() -> None:
 
     _observe(kernel)
 
-    assert kernel.state.search_judgment == before["search_judgment"]
-    assert kernel.state.search_judgment_projection == before[
-        "search_judgment_projection"
-    ]
     assert kernel.state.sufficiency_judgment_projection == before[
         "sufficiency_judgment_projection"
     ]
@@ -400,7 +394,6 @@ def test_closed_surfaces_remain_closed_and_orchestrator_is_untouched() -> None:
     assert flags["author_prose_behavior_changed"] is False
     assert flags["citation_formatter_invoked"] is False
     assert flags["product_answer_behavior_changed"] is False
-    assert flags["search_judgment_rerun"] is False
     assert flags["sufficiency_judgment_rechecked"] is False
     assert flags["final_answer_packet_rebuilt"] is False
     assert flags["final_answer_packet_updated"] is False

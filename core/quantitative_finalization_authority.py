@@ -1184,7 +1184,6 @@ def specialist_quantitative_authority_ref_from_handoff(
 
     from core.specialist_graph_runtime import (
         VALIDATOR_COMPONENT_ANALYST,
-        VALIDATOR_COMPONENT_DPRIME,
         VALIDATOR_SYNTHESIS,
         VALIDATOR_TERMINAL,
         SpecialistGraphRuntimeError,
@@ -1212,12 +1211,6 @@ def specialist_quantitative_authority_ref_from_handoff(
         validator_ref = analyst_case_ref
         validator_route = "component_analyst"
         consumption_posture = "consumed_by_applicable_analyst_case"
-    elif target_kind == "component" and dprime_ref:
-        # Retained only for historical/out-of-scope component-D-prime records.
-        expected_consumption = VALIDATOR_COMPONENT_DPRIME
-        validator_ref = dprime_ref
-        validator_route = "component_dprime"
-        consumption_posture = "consumed_by_applicable_dprime"
     elif target_kind == "synthesis" and dprime_ref:
         expected_consumption = VALIDATOR_SYNTHESIS
         validator_ref = dprime_ref
@@ -1297,8 +1290,7 @@ def specialist_quantitative_authority_ref_from_handoff(
     }
     if analyst_case_ref:
         return {**authority, "applicable_analyst_case_ref": analyst_case_ref}
-    # Synthesis-D-prime and historical component-D-prime records retain this
-    # compatibility alias outside the new ordinary component path.
+    # Synthesis D-prime retains its established artifact alias.
     return {**authority, "applicable_dprime_ref": dprime_ref}
 
 def _normalized_result_unit(value: Any) -> str:
@@ -1328,8 +1320,8 @@ def _specialist_ref_is_complete(specialist_ref: Mapping[str, Any]) -> bool:
     if target_kind == "component" and analyst_case_ref:
         expected_route = "component_analyst"
         expected_posture = "consumed_by_applicable_analyst_case"
-    elif target_kind in {"component", "synthesis"}:
-        expected_route = f"{target_kind}_dprime"
+    elif target_kind == "synthesis":
+        expected_route = "synthesis_dprime"
         expected_posture = "consumed_by_applicable_dprime"
     else:
         return False

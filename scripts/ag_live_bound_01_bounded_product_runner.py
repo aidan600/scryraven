@@ -617,7 +617,6 @@ def _enrich_campaign_packet(
                         "specialist_spent": 0,
                     },
                     "two_hop_source_binding_proved": False,
-                    "component_dprime_consumed": False,
                     "synthesis_dprime_consumed": False,
                 }
             ),
@@ -699,7 +698,6 @@ def _build_live_run_config(context: Any, *, cap_policy: Any) -> Any:
         local_url=model_config["local_url"],
         or_api_key=os.getenv("OPENROUTER_API_KEY", ""),
         use_reasoning=True,
-        run_authority_search_judgment_smart_model=False,
         cap_policy=cap_policy,
     )
 

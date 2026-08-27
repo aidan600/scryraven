@@ -105,5 +105,3 @@ def test_ag_gap_01_offline_path_stops_at_searchos_slice_a_required_needs_block(
     assert searchos["expander_invoked_after_first_wave"] is False
     assert searchos["disambiguation_invoked_after_first_wave"] is False
     assert searchos["weak_corpus_recovery_invoked_after_first_wave"] is False
-    assert searchos["ag92b_full_search_judgment_invoked"] is False
-    assert harness.full_search_judgment_inputs == []

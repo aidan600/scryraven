@@ -18,7 +18,6 @@ import pytest
 import core.quantitative_finalization_authority as quantitative_evaluator
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
-    ROLE_COMPONENT_DPRIME,
     ROLE_CROSS_COMPONENT_ANALYST,
     ROLE_SYNTHESIS_DPRIME,
     ROLE_SYSTEM_PROMPTS,
@@ -169,7 +168,6 @@ def test_non_q1_ordinary_direct_source_numeric_fee_completes_offline(
     assert all(
         ROLE_SYSTEM_PROMPTS[role] not in harness.model_system_prompts
         for role in (
-            ROLE_COMPONENT_DPRIME,
             ROLE_CROSS_COMPONENT_ANALYST,
             ROLE_SYNTHESIS_DPRIME,
         )

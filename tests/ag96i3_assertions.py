@@ -6,8 +6,6 @@ from typing import Any
 
 def snapshot_o2_closed_surfaces(kernel: Any) -> dict[str, Any]:
     return {
-        "search_judgment": deepcopy(kernel.state.search_judgment),
-        "search_judgment_projection": deepcopy(kernel.state.search_judgment_projection),
         "final_answer_packet": deepcopy(kernel.state.final_answer_packet),
         "final_answer_authority_projection": deepcopy(
             kernel.state.final_answer_authority_projection
@@ -34,10 +32,6 @@ def assert_o2_closed_surfaces_unchanged(
     kernel: Any,
     before: dict[str, Any],
 ) -> None:
-    assert kernel.state.search_judgment == before["search_judgment"]
-    assert kernel.state.search_judgment_projection == before[
-        "search_judgment_projection"
-    ]
     assert kernel.state.final_answer_authority_projection == {}
     assert kernel.state.author_observation == before["author_observation"]
     assert kernel.state.final_answer_outcome == before["final_answer_outcome"]

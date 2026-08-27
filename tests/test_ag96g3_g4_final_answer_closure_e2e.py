@@ -586,7 +586,6 @@ def _spine(
         RunSufficiencyJudgmentInput(
             contract_projection=contract,
             evidence_ledger_projection=ledger,
-            search_judgment_projection={"decision": "stop_satisfied"},
             answer_contract_projection={},
             source_obligation_projection=ledger,
             semantic_state_facts=semantic_state_facts,

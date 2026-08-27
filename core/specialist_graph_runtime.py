@@ -42,13 +42,7 @@ PROPOSAL_UNSUPPORTED_TARGET = "unsupported_target"
 PROPOSAL_DENIED_POLICY = "denied_by_policy"
 
 VALIDATOR_PENDING = "pending_validator_consumption"
-# Component Specialist results return to the Component Analyst's bounded
-# self-audit rather than becoming an implicit second semantic vote. Keep the
-# legacy value accepted by validators only for retained historical/out-of-scope
-# records; no new ordinary component path may create it.
 VALIDATOR_COMPONENT_ANALYST = "consumed_by_component_analyst"
-VALIDATOR_COMPONENT_DPRIME = "consumed_by_component_dprime"
-VALIDATOR_COMPONENT = VALIDATOR_COMPONENT_DPRIME
 VALIDATOR_SYNTHESIS = "consumed_by_synthesis_dprime"
 VALIDATOR_REJECTED = "rejected_by_validator"
 VALIDATOR_CONTESTED = "contested_by_validator"
@@ -1428,8 +1422,6 @@ def validate_specialist_result_artifact(value: Mapping[str, Any]) -> dict[str, A
         not in {
             VALIDATOR_PENDING,
             VALIDATOR_COMPONENT_ANALYST,
-            VALIDATOR_COMPONENT_DPRIME,
-            VALIDATOR_COMPONENT,
             VALIDATOR_SYNTHESIS,
             VALIDATOR_CONTESTED,
             VALIDATOR_REJECTED,
@@ -1486,18 +1478,13 @@ def validate_specialist_result_artifact(value: Mapping[str, Any]) -> dict[str, A
 
 
 def _valid_specialist_validator_route(result: Mapping[str, Any]) -> bool:
-    """Accept current component routes and retained legacy records."""
+    """Require the selected component or synthesis validator route."""
 
     target_kind = str(
         _mapping(result.get("canonical_target_ref")).get("target_kind") or ""
     )
     expected = "component_analyst" if target_kind == "component" else "synthesis_dprime"
-    route = result.get("validator_route")
-    if route == expected:
-        return True
-    return route is None and result.get("dprime_route") == (
-        "component_dprime" if target_kind == "component" else "synthesis_dprime"
-    )
+    return result.get("validator_route") == expected
 
 
 def _identity_without_validator_lifecycle(
@@ -1669,8 +1656,6 @@ def validate_specialist_proposal_disposition(
         not in {
             VALIDATOR_PENDING,
             VALIDATOR_COMPONENT_ANALYST,
-            VALIDATOR_COMPONENT_DPRIME,
-            VALIDATOR_COMPONENT,
             VALIDATOR_SYNTHESIS,
             VALIDATOR_CONTESTED,
             VALIDATOR_REJECTED,
@@ -1783,8 +1768,6 @@ def validate_specialist_need_handoff(
         not in {
             VALIDATOR_PENDING,
             VALIDATOR_COMPONENT_ANALYST,
-            VALIDATOR_COMPONENT_DPRIME,
-            VALIDATOR_COMPONENT,
             VALIDATOR_SYNTHESIS,
             VALIDATOR_CONTESTED,
             VALIDATOR_REJECTED,
@@ -2094,8 +2077,6 @@ def mark_validator_consumption(
         lifecycle = VALIDATOR_REJECTED
     elif route == "component_analyst":
         lifecycle = VALIDATOR_COMPONENT_ANALYST
-    elif route == "component_dprime":
-        lifecycle = VALIDATOR_COMPONENT_DPRIME
     elif route == "synthesis_dprime":
         lifecycle = VALIDATOR_SYNTHESIS
     else:

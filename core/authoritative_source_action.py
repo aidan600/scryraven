@@ -55,9 +55,6 @@ from core.official_source_obligation_bridge import (
     OfficialSourceObligationBridgeResult,
     apply_official_source_obligation_bridge,
 )
-from core.run_authority_search_judgment_consumers import (
-    apply_search_judgment_to_source_class_recovery_recommendation,
-)
 from core.run_controller import RunController
 from core.source_class_authority_status_normalization import (
     status_only_strong_authority_missing_classes,
@@ -160,7 +157,6 @@ class AuthoritativeSourceActionFacts:
     recommendation: Mapping[str, Any] | None = None
     source_class_observability: Mapping[str, Any] | None = None
     source_class_evidence_signals: Mapping[str, Any] | None = None
-    run_search_judgment_projection: Mapping[str, Any] | None = None
     obligation_facts: Mapping[str, Any] | None = None
     answer_contract_family: str | None = None
     answer_contract_source_classes_missing: Sequence[Any] = ()
@@ -253,15 +249,7 @@ def build_authoritative_source_obligation_state_and_action(
     """Build authoritative-source obligation state and existing action readiness."""
 
     recommendation = _safe_mapping(facts.recommendation)
-    preexisting_source_gap_signal = _source_class_gap_signal_present(recommendation)
     observability = _safe_mapping(facts.source_class_observability)
-    recommendation = apply_search_judgment_to_source_class_recovery_recommendation(
-        recommendation,
-        search_judgment_projection=facts.run_search_judgment_projection,
-        query=facts.query,
-        core_topic=facts.core_topic,
-        primary_entity=facts.primary_entity,
-    )
     runtime_trace = _runtime_trace(facts, recommendation, observability)
 
     recommendation = _apply_answer_contract_gap_trigger(
@@ -269,19 +257,6 @@ def build_authoritative_source_obligation_state_and_action(
         facts=facts,
         logger=logger,
     )
-    recommendation = apply_search_judgment_to_source_class_recovery_recommendation(
-        recommendation,
-        search_judgment_projection=facts.run_search_judgment_projection,
-        query=facts.query,
-        core_topic=facts.core_topic,
-        primary_entity=facts.primary_entity,
-    )
-    recommendation = _suppress_promoted_recovery_for_owned_non_source_class_path(
-        recommendation=recommendation,
-        facts=facts,
-        preexisting_source_gap_signal=preexisting_source_gap_signal,
-    )
-
     bridge_trace: dict[str, Any] | None = None
     bridge_result = _try_bridge(
         recommendation=recommendation,
@@ -307,11 +282,6 @@ def build_authoritative_source_obligation_state_and_action(
                 "source_class_recovery_reason": pre_bridge_reason,
             }
         bridge_trace = bridge_result.trace
-    recommendation = _suppress_promoted_recovery_for_owned_non_source_class_path(
-        recommendation=recommendation,
-        facts=facts,
-        preexisting_source_gap_signal=preexisting_source_gap_signal,
-    )
     custody_sources = (facts.obligation_facts, bridge_trace)
 
     authority_arbitration = _authority_runtime_arbitration(
@@ -511,75 +481,6 @@ def _apply_answer_contract_gap_trigger(
             exc,
         )
         return dict(recommendation)
-
-
-def _source_class_gap_signal_present(recommendation: Mapping[str, Any]) -> bool:
-    return bool(
-        recommendation.get("source_class_recovery_recommended")
-        or recommendation.get("source_class_underfire_shadow")
-        or recommendation.get("source_class_gap_candidates")
-        or recommendation.get("missing_expected_source_classes")
-    )
-
-
-def _suppress_promoted_recovery_for_owned_non_source_class_path(
-    *,
-    recommendation: Mapping[str, Any],
-    facts: AuthoritativeSourceActionFacts,
-    preexisting_source_gap_signal: bool,
-) -> dict[str, Any]:
-    if preexisting_source_gap_signal:
-        return dict(recommendation)
-    if not recommendation.get("run_authority_search_judgment_promoted_recovery"):
-        return dict(recommendation)
-    blocker_reason: str | None = None
-    if facts.retrieve_to_anchor_recommended:
-        if _regulatory_authority_context(facts):
-            return dict(recommendation)
-        blocker_reason = "retrieve_to_anchor_recommendation"
-    elif facts.ordinary_continuation_path_active:
-        blocker_reason = "ordinary_continuation_path"
-    if blocker_reason is None:
-        return dict(recommendation)
-    out = dict(recommendation)
-    if not (
-        out.get("source_class_recovery_recommended")
-        or out.get("missing_expected_source_classes")
-        or out.get("source_class_recovery_queries")
-    ):
-        return out
-    out["source_class_recovery_recommended"] = False
-    out["missing_expected_source_classes"] = []
-    out["source_class_recovery_queries"] = []
-    out["source_class_recovery_query_count"] = 0
-    out["source_class_recovery_reason"] = None
-    out["authority_lifecycle_required_recovery_allowed"] = False
-    out["run_authority_search_judgment_recovery_blocked_by"] = blocker_reason
-    return _safe_value(out)
-
-
-def _regulatory_authority_context(facts: AuthoritativeSourceActionFacts) -> bool:
-    values = (
-        facts.intent,
-        facts.report_type,
-        facts.query_type,
-        facts.answer_contract_family,
-        facts.query,
-        facts.core_topic,
-    )
-    text = " ".join(str(value or "").casefold() for value in values)
-    return any(
-        marker in text
-        for marker in (
-            "regulatory",
-            "regulation",
-            "legal",
-            "statutory",
-            "statute",
-            " act ",
-            "current official rules",
-        )
-    )
 
 
 def _try_bridge(
@@ -798,9 +699,6 @@ def _runtime_trace(
             "weak_corpus_recovery_used": bool(facts.weak_corpus_recovery_used),
             "query_redundancy_skipped": bool(facts.query_redundancy_skipped),
             "terminal_stop_approved": bool(facts.terminal_stop_approved),
-            "run_authority_search_judgment": _search_judgment_trace_ref(
-                facts.run_search_judgment_projection
-            ),
             "candidate_query_previews": list(
                 _string_tuple(facts.answer_contract_recovery_query_candidates)
             ),
@@ -811,26 +709,6 @@ def _runtime_trace(
             ),
             **dict(recommendation),
             **dict(observability),
-        }
-    )
-
-
-def _search_judgment_trace_ref(
-    projection: Mapping[str, Any] | None,
-) -> dict[str, Any]:
-    payload = _safe_mapping(projection)
-    if payload.get("owner") != "RunKernel.RunAuthoritySearchJudgment":
-        return {}
-    return _safe_value(
-        {
-            "owner": payload.get("owner"),
-            "judgment_id": payload.get("judgment_id"),
-            "decision": payload.get("decision"),
-            "classifications": payload.get("classifications", []),
-            "target_source_classes": payload.get("target_source_classes", []),
-            "consumed_by": "authoritative_source_action",
-            "canonical_state": payload.get("canonical_state"),
-            "trace_only": payload.get("trace_only"),
         }
     )
 
@@ -1431,12 +1309,6 @@ def _action_trace(
                 ),
                 "source_class_recovery_reason": recommendation.get(
                     "source_class_recovery_reason"
-                ),
-                "run_authority_search_judgment_ref": recommendation.get(
-                    "run_authority_search_judgment_ref"
-                ),
-                "run_authority_search_judgment_consumed": recommendation.get(
-                    "run_authority_search_judgment_consumed"
                 ),
             },
             "adapter_traces_present": {

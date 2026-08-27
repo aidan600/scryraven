@@ -18,7 +18,6 @@ from tests.helpers.offline_ordinary_pipeline import (
 CHAIN_CLASSIFICATIONS = {
     "RunAuthorityContract": "canonical_and_consumed",
     "EvidenceLedger": "canonical_and_consumed",
-    "SearchJudgment": "canonical_and_consumed",
     "SufficiencyJudgment": "canonical_and_consumed",
     "FinalAnswerPacket": "canonical_and_consumed",
     "ordinary Author execution": "canonical_and_consumed",
@@ -112,7 +111,6 @@ def _classification_report(captured: dict[str, Any], outcome: Any) -> dict[str, 
         "authority_owners_observed": {
             "RunAuthorityContract": state.run_contract_projection.get("owner"),
             "EvidenceLedger": state.evidence_ledger.to_projection().to_dict().get("owner"),
-            "SearchJudgment": state.search_judgment_projection.get("owner"),
             "SufficiencyJudgment": state.sufficiency_judgment_projection.get("owner"),
             "FinalAnswerPacket": state.final_answer_authority_projection.get("owner"),
             "ordinary Author execution": state.final_answer_outcome.get("owner"),
@@ -178,9 +176,6 @@ def test_ag_check_01_offline_run_pipeline_consumes_packet_constrained_authority(
     assert ledger_projection["candidate_count"] > 0
     assert packet_scope["evidence_ledger_projection"]["owner"] == "RunKernel.EvidenceLedger"
 
-    assert state.search_judgment_projection["owner"] == "RunKernel.RunAuthoritySearchJudgment"
-    assert state.search_judgment_projection["canonical_state"] is True
-    assert state.search_judgment_projection["trace_only"] is False
     assert state.sufficiency_judgment_projection["owner"] == ("RunKernel.RunAuthoritySufficiencyJudgment")
     assert state.sufficiency_judgment_projection["canonical_state"] is True
     assert state.sufficiency_judgment_projection["trace_only"] is False

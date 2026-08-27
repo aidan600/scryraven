@@ -234,7 +234,6 @@ def execute_sufficiency_judgment_handoff_from_scope(
     )
 
     evidence_ledger_projection = runtime_scope["evidence_ledger_projection"]
-    search_judgment_projection = runtime_scope["search_judgment_projection"]
     run_contract_projection = runtime_scope["run_contract_projection"]
     final_top_evidence = runtime_scope["final_top_evidence"]
     scrutineer_flags = runtime_scope["scrutineer_flags"]
@@ -242,8 +241,6 @@ def execute_sufficiency_judgment_handoff_from_scope(
     judgment_input = build_sufficiency_judgment_input_from_runtime(
         contract_projection=run_contract_projection,
         evidence_ledger_projection=evidence_ledger_projection,
-        search_judgment_projection=search_judgment_projection,
-        search_judgment_history=run_kernel.state.search_judgment_history,
         answer_contract_projection=runtime_scope["answer_contract_projection"],
         final_evidence_count=len(final_top_evidence),
         author_evidence_count=len(runtime_scope["author_evidence"]),
@@ -298,7 +295,6 @@ def execute_sufficiency_judgment_handoff_from_scope(
             "requirement_count": evidence_ledger_projection.get(
                 "requirement_count"
             ),
-            "search_judgment_decision": search_judgment_projection.get("decision"),
             "final_evidence_count": len(final_top_evidence),
             "smart_model_enabled": bool(smart_model_enabled),
             "multicomponent_graph_digest": _safe_mapping(

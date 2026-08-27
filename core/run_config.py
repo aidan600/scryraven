@@ -8,7 +8,7 @@ RunOutcome — everything produced by a terminal pipeline execution.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping
 
 from core.acquisition_adapters import AcquisitionTransports
@@ -48,7 +48,6 @@ class RunConfig:
     or_api_key: str = ""
     use_reasoning: bool = True
     run_authority_contract_smart_model: bool = False
-    run_authority_search_judgment_smart_model: bool = False
     run_authority_sufficiency_smart_model: bool = False
 
     # Optional bounded planning-only context supplied alongside the utterance.
@@ -137,9 +136,6 @@ class RunDeps:
     # neither reads nor invokes this callable.
     run_economist_step: Callable[..., Any] | None = None
 
-    # Optional offline-only adapter for authorized component-gap recovery.
-    component_gap_recovery_adapter: Callable[..., Any] | None = None
-
     # Typed semantic-planning composition seam. Ordinary execution composes
     # the selected fast-model planner when no adapter is supplied; an injected
     # seam overrides it.
@@ -227,20 +223,3 @@ class RunOutcome:
     def __post_init__(self) -> None:
         if self.terminal_status not in {"blocked", "completed"}:
             raise ValueError("RunOutcome terminal_status must be blocked or completed")
-
-
-def compose_component_gap_recovery_deps(
-    deps: RunDeps,
-    *,
-    enabled: bool = False,
-    offline_recovery_adapter: Callable[..., Any] | None = None,
-) -> RunDeps:
-    """Return product dependencies with one-cycle recovery explicitly composed."""
-
-    if not enabled:
-        return replace(deps, component_gap_recovery_adapter=None)
-    if offline_recovery_adapter is None:
-        raise ValueError(
-            "component-gap recovery composition requires an offline adapter"
-        )
-    return replace(deps, component_gap_recovery_adapter=offline_recovery_adapter)

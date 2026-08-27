@@ -167,9 +167,6 @@ def build_authoritative_source_action_facts_from_orchestrator_state(
             source_tier_recovery_lifecycle=source_tier,
             source_domain_recovery_lifecycle=source_domain,
         ),
-        run_search_judgment_projection=_mapping(
-            orchestrator_state.get("search_judgment_projection")
-        ),
         answer_contract_family=_answer_contract_family(answer_contract_result),
         answer_contract_source_classes_missing=(
             _answer_contract_source_classes_missing(answer_contract_result)

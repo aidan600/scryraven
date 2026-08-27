@@ -176,7 +176,7 @@ def test_orchestrator_semantic_producer_callsites_are_bounded() -> None:
     source = _source(PIPELINE)
     assert "execute_ordinary_semantic_producer_handoff_from_scope(" not in source
     selector = "execute_ordinary_semantic_or_multicomponent_handoff_from_scope("
-    assert source.count(selector) == 4
+    assert source.count(selector) == 3
     assert "allow_searchos_component_receiver=True" in source
     assert (
         "if not run_kernel.state.initial_answer_contract:\n"

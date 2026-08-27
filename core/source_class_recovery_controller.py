@@ -556,7 +556,6 @@ def build_source_class_recovery_controller_input(
         ),
         run_authority_required_recovery_allowed=bool(
             telemetry.get("authority_lifecycle_required_recovery_allowed")
-            and telemetry.get("run_authority_search_judgment_consumed")
         ),
         provider_policy_reusable=bool(provider_policy_reusable),
         provider_swap_required=bool(provider_swap_required),
