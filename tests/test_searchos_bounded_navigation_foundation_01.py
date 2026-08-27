@@ -439,6 +439,23 @@ def test_relationship_label_scrubber_is_a_canonical_fixed_point(
     assert scrub_navigation_relationship_label(canonical) == canonical
 
 
+def test_truncation_at_space_yields_replay_stable_admissible_label() -> None:
+    raw_label = "x" * 159 + " " + "ordinary suffix"
+
+    canonical = scrub_navigation_relationship_label(raw_label)
+    assert canonical == "x" * 159
+    assert canonical == canonical.rstrip()
+    assert scrub_navigation_relationship_label(canonical) == canonical
+
+    state, summary, store = _admit(f"[{raw_label}](/child)")
+
+    assert summary["admitted_option_count"] == 1
+    assert store.committed_count == 1
+    [option_value] = state["navigation"]["options_by_id"].values()
+    assert option_value["bounded_relationship_context"]["relationship_label"] == canonical
+    assert NavigationOption.from_dict(option_value).disposition == "selectable"
+
+
 def test_truncation_created_locator_label_admits_as_privacy_fallback() -> None:
     raw_label = _truncation_boundary_label("example." + "a" * 64)
 

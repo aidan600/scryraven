@@ -410,7 +410,7 @@ def scrub_navigation_relationship_label(value: str) -> str:
     compact = " ".join(_CONTROL_RE.sub(" ", raw).split())
     if not compact or _relationship_label_is_unsafe(compact, had_control=had_control):
         return "linked page"
-    bounded = compact[:NAVIGATION_LABEL_LENGTH_LIMIT]
+    bounded = " ".join(compact[:NAVIGATION_LABEL_LENGTH_LIMIT].split())
     if _relationship_label_is_unsafe(bounded):
         return "linked page"
     return bounded
