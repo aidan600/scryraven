@@ -35,6 +35,7 @@ from core.searchos_iterative_judgment_runtime import (
 from core.searchos_navigation_runtime import (
     NAVIGATION_BINDING_UNAVAILABLE,
     NAVIGATION_EXTRACTION_LIMIT,
+    NAVIGATION_LABEL_LENGTH_LIMIT,
     NAVIGATION_PENDING_EXECUTION,
     NAVIGATION_SELECTION_ADMITTED,
     NAVIGATION_SELECTION_AUTHORITY_REJECTED,
@@ -400,6 +401,56 @@ def test_extraction_is_supported_ordered_bounded_and_query_safe() -> None:
 )
 def test_relationship_labels_use_fixed_fallback_for_locator_like_text(label: str) -> None:
     assert scrub_navigation_relationship_label(label) == "linked page"
+
+
+def _truncation_boundary_label(suffix: str) -> str:
+    """Create a one-character-over-limit label with a retained suffix boundary."""
+
+    return "x" * (NAVIGATION_LABEL_LENGTH_LIMIT - len(suffix)) + " " + suffix
+
+
+@pytest.mark.parametrize(
+    ("label", "expected"),
+    [
+        ("Section 12: Operating details", "Section 12: Operating details"),
+        ("https://example.com/private", "linked page"),
+        ("safe\x00control", "linked page"),
+        ("x" * NAVIGATION_LABEL_LENGTH_LIMIT, "x" * NAVIGATION_LABEL_LENGTH_LIMIT),
+        ("x" * (NAVIGATION_LABEL_LENGTH_LIMIT + 1), "x" * NAVIGATION_LABEL_LENGTH_LIMIT),
+        # The full suffix is not a hostname/IP; truncation used to turn it into one.
+        (
+            _truncation_boundary_label("example." + "a" * 64),
+            "linked page",
+        ),
+        (
+            _truncation_boundary_label("192.168.1.1234"),
+            "linked page",
+        ),
+        ("x" * 140 + " query?token=value", "linked page"),
+        ("x" * 140 + " private/path", "linked page"),
+    ],
+)
+def test_relationship_label_scrubber_is_a_canonical_fixed_point(
+    label: str,
+    expected: str,
+) -> None:
+    canonical = scrub_navigation_relationship_label(label)
+    assert canonical == expected
+    assert scrub_navigation_relationship_label(canonical) == canonical
+
+
+def test_truncation_created_locator_label_admits_as_privacy_fallback() -> None:
+    raw_label = _truncation_boundary_label("example." + "a" * 64)
+
+    state, summary, store = _admit(f"[{raw_label}](/child)")
+
+    assert summary["admitted_option_count"] == 1
+    assert store.committed_count == 1
+    [option_value] = state["navigation"]["options_by_id"].values()
+    assert option_value["bounded_relationship_context"]["relationship_label"] == (
+        "linked page"
+    )
+    assert NavigationOption.from_dict(option_value).disposition == "selectable"
 
 
 @pytest.mark.parametrize(
