@@ -68,4 +68,3 @@ def test_non_searchos_selected_lane_retains_legacy_selector(
         )
 
     assert selector_calls == 1
-
