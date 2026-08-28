@@ -807,11 +807,7 @@ def _qualify_searchos_read_material_after_component_analyst_case(
         or lineage.get("navigation_origin") is True
         and ledger_candidate_id != evidence_ref_id
         or any(
-            _safe_mapping(
-                current_custody.get("physical_evidence_ledger_custody_ref")
-                or current_custody.get("evidence_ledger_custody_ref")
-            ).get(key)
-            != value
+            _safe_mapping(current_custody.get("evidence_ledger_custody_ref")).get(key) != value
             for key, value in navigation_ref.items()
         )
         or any(

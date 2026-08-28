@@ -13,10 +13,7 @@ smoke test.
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import replace
 from typing import Any, Mapping, Sequence
-
-import pytest
 
 import core.searchos_slice_a_product_runtime as slice_runtime
 from core.acquisition_adapters import AcquisitionTransports
@@ -37,10 +34,7 @@ from core.query_plan_runtime_adapter import build_query_plan_runtime_adapter
 from core.run_kernel import Observation, ObservationType, RunKernel, RunStageStatus
 from core.search_executor_handoff_runtime import contract_ref_from_contract
 from core.search_judgment_read_assessment_runtime import (
-    SearchJudgmentReadAssessmentError,
-    SelectedCandidateMaterialNeedBindingV1,
     derive_selected_candidate_material_need_bindings,
-    rebind_searchos_physical_read_material_to_custody,
 )
 from core.search_planner_runtime import (
     SEARCH_PLANNER_SCHEMA_VERSION,
@@ -467,8 +461,14 @@ def _run_case(monkeypatch: Any, order: Sequence[str]) -> dict[str, Any]:
         for slot in kernel.state.searchos_state["slots_by_id"].values()
     }
     ledger = kernel.state.evidence_ledger.to_projection().to_dict()
-    assert NORMALIZED_SHARED_URL in (result.reusable_read_custody_by_url or {}), {
-        "reusable_urls": list((result.reusable_read_custody_by_url or {}).keys()),
+    custody_outcomes = {
+        str(binding_id): dict(outcome)
+        for binding_id, outcome in (result.reusable_read_custody_by_url or {}).items()
+    }
+    assert set(custody_outcomes) == {
+        str(item["binding_id"]) for item in binding_state["bindings"]
+    }, {
+        "custody_outcome_binding_ids": list(custody_outcomes),
         "slot_postures": {
             component_id: slot["posture"] for component_id, slot in slots.items()
         },
@@ -491,215 +491,143 @@ def _run_case(monkeypatch: Any, order: Sequence[str]) -> dict[str, Any]:
         "kernel": kernel,
         "candidate_packet": packet,
         "bindings": tuple(binding_state["bindings"]),
-        "reusable_physical_read_material": dict(
-            (result.reusable_read_custody_by_url or {})[NORMALIZED_SHARED_URL]
-        ),
+        "custody_outcomes": custody_outcomes,
     }
 
 
-def test_same_url_reuse_isolates_custody_authority_per_component_in_both_orders(
+def _assert_component_lane(case: Mapping[str, Any], name: str) -> dict[str, str]:
+    slug = name.lower()
+    component_id = f"component{slug}"
+    source_obligation_id = f"obligation{slug}"
+    slot = case["slots"][component_id]
+    custody = dict(slot["custody_refs"][0])
+
+    assert custody["same_normalized_url_reused"] is False
+    assert custody["slot_ref"]["component_id"] == component_id
+    assert custody["slot_ref"]["source_obligation_id"] == source_obligation_id
+    assert custody["normalized_url"] == NORMALIZED_SHARED_URL
+    assert "physical_evidence_ledger_custody_ref" not in custody
+    assert custody["support_admitted"] is False
+    assert custody["source_obligation_satisfied"] is False
+    assert custody["citation_eligible"] is False
+
+    authorization = case["kernel"].require_current_acquisition_custody_authorization(
+        custody["custody_authorization_ref"]
+    )
+    work_order = dict(
+        case["kernel"].state.acquisition_control_state["work_orders_by_id"][
+            authorization["work_order_ref"]["work_order_id"]
+        ]
+    )
+    assert work_order["component_ref"]["component_id"] == component_id
+    assert (
+        work_order["source_obligation_ref"]["source_obligation_id"]
+        == source_obligation_id
+    )
+
+    requirements = [
+        item
+        for item in case["ledger"]["source_requirements"]
+        if item["component_id"] == component_id
+        and item["source_obligation_id"] == source_obligation_id
+    ]
+    assert len(requirements) == 1
+    requirement_id = requirements[0]["requirement_id"]
+    exact_links = [
+        link
+        for link in case["ledger"]["requirement_links"]
+        if link["requirement_id"] == requirement_id
+        and link["candidate_id"] == custody["evidence_ledger_candidate_id"]
+    ]
+    assert len(exact_links) == 1
+    assert exact_links[0]["link_reason"] == (
+        "exact_searchos_read_custody_slot_binding"
+    )
+
+    ledger_ref = custody["evidence_ledger_custody_ref"]
+    assert ledger_ref["owner"] == case["ledger"]["owner"]
+    assert ledger_ref["schema_version"] == case["ledger"]["schema_version"]
+    records = case["ledger"]["fetch_read_candidate_custody"][
+        "fetch_read_candidate_custody_records"
+    ]
+    matching_records = [
+        item for item in records if item["reference_id"] == ledger_ref["reference_id"]
+    ]
+    assert len(matching_records) == 1
+    assert matching_records[0]["reference_digest"] == ledger_ref["reference_digest"]
+
+    binding = next(
+        item
+        for item in case["bindings"]
+        if item["component_ref"]["component_id"] == component_id
+    )
+    outcome = case["custody_outcomes"][binding["binding_id"]]
+    assert outcome["custody_record"]["custody_authorization_ref"] == (
+        custody["custody_authorization_ref"]
+    )
+    assert "physical_evidence_ledger_custody_ref" not in outcome["custody_record"]
+    assert outcome["custody_record"]["evidence_ledger_observation_ref"][
+        "observation_id"
+    ].endswith(custody["custody_authorization_ref"]["authorization_id"])
+
+    return {
+        "component_id": component_id,
+        "source_obligation_id": source_obligation_id,
+        "work_order_component_id": work_order["component_ref"]["component_id"],
+        "work_order_source_obligation_id": work_order["source_obligation_ref"][
+            "source_obligation_id"
+        ],
+        "ledger_schema_version": ledger_ref["schema_version"],
+    }
+
+
+def test_same_url_cross_component_custody_uses_independent_acquisition_lanes(
     monkeypatch: Any,
 ) -> None:
-    """One physical page may be reused, but A/B ledger authority may not."""
+    """Same-URL siblings use normal A/B READ lanes and retain their own authority."""
 
     a_then_b = _run_case(monkeypatch, ("A", "B"))
     b_then_a = _run_case(monkeypatch, ("B", "A"))
 
-    assert a_then_b["physical_read_count"] == 1
-    assert b_then_a["physical_read_count"] == 1
+    assert a_then_b["physical_read_count"] == 2
+    assert b_then_a["physical_read_count"] == 2
 
-    cases = {
-        "A_THEN_B": (a_then_b, ("A", "B")),
-        "B_THEN_A": (b_then_a, ("B", "A")),
-    }
-    missing_requirement_links: list[str] = []
-    authorities_by_case: dict[str, dict[str, Mapping[str, Any]]] = {}
-    for case_name, (case, order) in cases.items():
-        first_name, second_name = order
-        first_custody = case["slots"][
-            f"component{first_name.lower()}"
-        ]["custody_refs"][0]
-        second_custody = case["slots"][
-            f"component{second_name.lower()}"
-        ]["custody_refs"][0]
-        assert first_custody["same_normalized_url_reused"] is False
-        assert second_custody["same_normalized_url_reused"] is True
-        assert case["provider_calls_attempted"] == 1
-        assert case["provider_calls_completed"] == 1
-        assert (
-            second_custody["evidence_ledger_custody_ref"]["reference_id"]
-            != first_custody["evidence_ledger_custody_ref"]["reference_id"]
-        )
-        assert (
-            second_custody["physical_evidence_ledger_custody_ref"]
-            == first_custody["physical_evidence_ledger_custody_ref"]
-        )
-        assert (
-            second_custody["fetch_read_content_packet_ref"]
-            == first_custody["fetch_read_content_packet_ref"]
-        )
+    authority_shapes: dict[str, dict[str, dict[str, str]]] = {}
+    for case_name, case in {
+        "A_THEN_B": a_then_b,
+        "B_THEN_A": b_then_a,
+    }.items():
+        assert case["provider_calls_attempted"] == 2
+        assert case["provider_calls_completed"] == 2
+        assert len(case["custody_outcomes"]) == 2
 
-        physical_cache = case["reusable_physical_read_material"]
-        assert physical_cache["normalized_url"] == NORMALIZED_SHARED_URL
-        assert "custody_record" not in physical_cache
-        assert "candidate_id" not in physical_cache["sanitized_read_material"]
-        assert "candidate_digest" not in physical_cache["sanitized_read_material"]
-        physical_records = case["ledger"]["fetch_read_candidate_custody"][
-            "fetch_read_candidate_custody_records"
+        a_custody = case["slots"]["componenta"]["custody_refs"][0]
+        b_custody = case["slots"]["componentb"]["custody_refs"][0]
+        assert a_custody["custody_authorization_ref"] != b_custody[
+            "custody_authorization_ref"
         ]
-        assert len(physical_records) == 1
+        assert a_custody["terminal_receipt_ref"] != b_custody["terminal_receipt_ref"]
 
-        authorities_by_case[case_name] = {}
-        for name in ("A", "B"):
-            slug = name.lower()
-            slot = case["slots"][f"component{slug}"]
-            custody = slot["custody_refs"][0]
-            authorities_by_case[case_name][name] = dict(
-                custody["evidence_ledger_custody_ref"]
-            )
-            assert custody["slot_ref"]["component_id"] == f"component{slug}"
-            assert (
-                custody["slot_ref"]["source_obligation_id"]
-                == f"obligation{slug}"
-            )
-            assert custody["evidence_ledger_custody_ref"]["schema_version"] == (
-                "searchos_evidence_ledger_binding_custody_ref_v1"
-            )
-            assert custody["evidence_ledger_custody_ref"] != custody[
-                "physical_evidence_ledger_custody_ref"
-            ]
-            assert custody["support_admitted"] is False
-            assert custody["source_obligation_satisfied"] is False
-            assert custody["citation_eligible"] is False
-            requirements = [
-                item
-                for item in case["ledger"]["source_requirements"]
-                if item["component_id"] == f"component{slug}"
-                and item["source_obligation_id"] == f"obligation{slug}"
-            ]
-            assert len(requirements) == 1
-            requirement_id = requirements[0]["requirement_id"]
-            linked_candidate_ids = [
-                link["candidate_id"]
-                for link in case["ledger"]["requirement_links"]
-                if link["requirement_id"] == requirement_id
-            ]
-            exact_links = [
-                link
-                for link in case["ledger"]["requirement_links"]
-                if link["requirement_id"] == requirement_id
-                and link["candidate_id"]
-                == custody["evidence_ledger_candidate_id"]
-            ]
-            assert len(exact_links) == 1
-            assert exact_links[0]["link_reason"] == (
-                "exact_searchos_read_custody_slot_binding"
-            )
-            if custody["evidence_ledger_candidate_id"] not in linked_candidate_ids:
-                missing_requirement_links.append(
-                    f"{case_name}/{name}: "
-                    "custody.evidence_ledger_custody_ref.reference_id="
-                    f"{custody['evidence_ledger_custody_ref']['reference_id']}; "
-                    f"requirement_id={requirement_id}; "
-                    f"linked_candidate_ids={linked_candidate_ids}"
-                )
-
-    assert not missing_requirement_links, "\n".join(missing_requirement_links)
-    assert authorities_by_case["A_THEN_B"]["A"] == authorities_by_case[
-        "B_THEN_A"
-    ]["A"]
-    assert authorities_by_case["A_THEN_B"]["B"] == authorities_by_case[
-        "B_THEN_A"
-    ]["B"]
-
-
-def test_same_url_reuse_rejects_a_mismatched_consuming_binding(
-    monkeypatch: Any,
-) -> None:
-    """Cached bytes cannot mint custody for a binding outside their URL lineage."""
-
-    case = _run_case(monkeypatch, ("A", "B"))
-    binding = SelectedCandidateMaterialNeedBindingV1.from_dict(case["bindings"][0])
-    mismatched_binding = replace(
-        binding,
-        normalized_url="https://example.test/not-the-shared-official-rule",
-    )
-    ledger_before = deepcopy(
-        case["kernel"].state.evidence_ledger.to_projection().to_dict()
-    )
-
-    with pytest.raises(
-        SearchJudgmentReadAssessmentError,
-        match="physical_read_material_url_mismatch",
-    ):
-        rebind_searchos_physical_read_material_to_custody(
-            run_kernel=case["kernel"],
-            binding=mismatched_binding,
-            candidate_packet=case["candidate_packet"],
-            physical_read_material=case["reusable_physical_read_material"],
+        outcomes = case["custody_outcomes"]
+        a_binding = next(
+            item
+            for item in case["bindings"]
+            if item["component_ref"]["component_id"] == "componenta"
         )
-
-    assert case["physical_read_count"] == 1
-    assert case["kernel"].state.evidence_ledger.to_projection().to_dict() == ledger_before
-
-
-def test_same_url_reuse_rejects_a_stale_consuming_binding(
-    monkeypatch: Any,
-) -> None:
-    """Cached material cannot mint custody through a component outside the contract."""
-
-    case = _run_case(monkeypatch, ("A", "B"))
-    binding = SelectedCandidateMaterialNeedBindingV1.from_dict(case["bindings"][0])
-    stale_binding = replace(
-        binding,
-        component_ref={
-            **dict(binding.component_ref),
-            "component_id": "component-not-accepted",
-        },
-    )
-    ledger_before = deepcopy(
-        case["kernel"].state.evidence_ledger.to_projection().to_dict()
-    )
-
-    with pytest.raises(
-        SearchJudgmentReadAssessmentError,
-        match="proposal_component_stale",
-    ):
-        rebind_searchos_physical_read_material_to_custody(
-            run_kernel=case["kernel"],
-            binding=stale_binding,
-            candidate_packet=case["candidate_packet"],
-            physical_read_material=case["reusable_physical_read_material"],
+        b_binding = next(
+            item
+            for item in case["bindings"]
+            if item["component_ref"]["component_id"] == "componentb"
         )
+        assert outcomes[a_binding["binding_id"]]["custody_record"][
+            "evidence_ledger_observation_ref"
+        ] != outcomes[b_binding["binding_id"]]["custody_record"][
+            "evidence_ledger_observation_ref"
+        ]
 
-    assert case["physical_read_count"] == 1
-    assert case["kernel"].state.evidence_ledger.to_projection().to_dict() == ledger_before
+        authority_shapes[case_name] = {
+            "A": _assert_component_lane(case, "A"),
+            "B": _assert_component_lane(case, "B"),
+        }
 
-
-def test_same_binding_reuse_is_idempotent_without_another_physical_read(
-    monkeypatch: Any,
-) -> None:
-    """The already-lawful component/obligation binding remains safely reusable."""
-
-    case = _run_case(monkeypatch, ("A", "B"))
-    binding = SelectedCandidateMaterialNeedBindingV1.from_dict(case["bindings"][0])
-    expected_custody = case["slots"]["componenta"]["custody_refs"][0]
-    ledger_before = deepcopy(
-        case["kernel"].state.evidence_ledger.to_projection().to_dict()
-    )
-
-    rebound = rebind_searchos_physical_read_material_to_custody(
-        run_kernel=case["kernel"],
-        binding=binding,
-        candidate_packet=case["candidate_packet"],
-        physical_read_material=case["reusable_physical_read_material"],
-    )
-
-    assert case["physical_read_count"] == 1
-    assert rebound["custody_record"]["evidence_ledger_custody_ref"] == (
-        expected_custody["evidence_ledger_custody_ref"]
-    )
-    assert rebound["custody_record"]["fetch_read_content_packet_ref"] == (
-        expected_custody["fetch_read_content_packet_ref"]
-    )
-    assert case["kernel"].state.evidence_ledger.to_projection().to_dict() == ledger_before
+    assert authority_shapes["A_THEN_B"] == authority_shapes["B_THEN_A"]

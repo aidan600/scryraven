@@ -1764,10 +1764,6 @@ def build_searchos_read_custody_material_ref(
         custody.get("evidence_ledger_custody_ref"),
         "evidence_ledger_custody_ref",
     )
-    physical_ledger_ref = _required_ref(
-        custody.get("physical_evidence_ledger_custody_ref") or ledger_ref,
-        "physical_evidence_ledger_custody_ref",
-    )
     core = {
         "schema_version": "searchos_read_custody_material_ref_v1",
         "owner": SEARCHOS_OWNER,
@@ -1776,7 +1772,6 @@ def build_searchos_read_custody_material_ref(
         "normalized_url": normalized_url,
         "fetch_read_content_packet_ref": packet_ref,
         "evidence_ledger_custody_ref": ledger_ref,
-        "physical_evidence_ledger_custody_ref": physical_ledger_ref,
         "evidence_ledger_candidate_id": _token(
             custody.get("evidence_ledger_candidate_id"),
             "evidence_ledger_candidate_id",
