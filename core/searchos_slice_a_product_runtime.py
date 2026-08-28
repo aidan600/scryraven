@@ -38,6 +38,7 @@ from core.searchos_iterative_judgment_runtime import (
     SEARCHOS_NAVIGATION_JUDGMENT_DECISION_SCHEMA_VERSION,
     SEARCHOS_NAVIGATION_JUDGMENT_REQUEST_SCHEMA_VERSION,
     SEARCHOS_OWNER,
+    SEARCHOS_POST_READ_FAILURE_CAUSES,
     SEARCHOS_SEMANTIC_HANDOFF_SCHEMA_VERSION,
     SEARCHOS_SLICE_A_READINESS_SCHEMA_VERSION,
     SearchOSJudgmentAction,
@@ -1496,6 +1497,9 @@ def _execute_searchos_slice_a_iterative_judgment(
                     run_kernel.mark_searchos_slot_stale_or_invalid(
                         slot_id=slot_id,
                         reason="read_nomination_already_disposed",
+                        searchos_post_read_failure_cause=(
+                            "read_nomination_already_disposed"
+                        ),
                     )
                     continue
                 binding = _binding_for_option(
@@ -1517,6 +1521,9 @@ def _execute_searchos_slice_a_iterative_judgment(
                         run_kernel.mark_searchos_slot_stale_or_invalid(
                             slot_id=slot_id,
                             reason="candidate_packet_stale",
+                            searchos_post_read_failure_cause=(
+                                "candidate_packet_stale"
+                            ),
                         )
                         continue
                     before_attempted, before_completed = (
@@ -1539,9 +1546,15 @@ def _execute_searchos_slice_a_iterative_judgment(
                         )
                         provider_calls[0] += max(0, after_attempted - before_attempted)
                         provider_calls[1] += max(0, after_completed - before_completed)
+                        read_failure_reason = _read_failure_reason(exc)
                         run_kernel.mark_searchos_slot_stale_or_invalid(
                             slot_id=slot_id,
-                            reason=_read_failure_reason(exc),
+                            reason=read_failure_reason,
+                            searchos_post_read_failure_cause=(
+                                _closed_post_read_failure_cause_from_read_reason(
+                                    read_failure_reason
+                                )
+                            ),
                         )
                         continue
                     after_attempted, after_completed = (
@@ -3320,6 +3333,15 @@ def _read_failure_reason(exc: Exception) -> str:
     return f"{posture}:{code}"[:240]
 
 
+def _closed_post_read_failure_cause_from_read_reason(reason: str) -> str:
+    cause, separator, _detail = str(reason).partition(":")
+    if not separator or cause not in SEARCHOS_POST_READ_FAILURE_CAUSES:
+        raise SearchOSRuntimeError(
+            "SearchOS READ failure lacks an existing closed cause family"
+        )
+    return cause
+
+
 def _profile_name(value: str) -> str:
     token = str(value or "").strip().casefold()
     return {"fast": "Fast", "balanced": "Balanced", "deep": "Deep"}.get(
@@ -4266,6 +4288,24 @@ def _project_safe_model_output_invalid_subtype(*, posture: str, reason: Any) -> 
     return "other_safe"
 
 
+def _project_searchos_post_read_failure_cause(
+    *,
+    record: Mapping[str, Any],
+    canonical_posture: str,
+    last_searchjudgment_action: str,
+) -> str | None:
+    value = record.get("searchos_post_read_failure_cause")
+    if (
+        canonical_posture != SearchOSSlotPosture.STALE_OR_INVALID.value
+        or last_searchjudgment_action
+        != SearchOSJudgmentAction.REQUEST_READ_PAGE.value
+        or not isinstance(value, str)
+        or value not in SEARCHOS_POST_READ_FAILURE_CAUSES
+    ):
+        return None
+    return value
+
+
 def _nonnegative_int_or_none(value: Any) -> int | None:
     return (
         value
@@ -4383,6 +4423,13 @@ def _project_slot_summary(
         posture=final_posture,
         reason=reason,
     )
+    searchos_post_read_failure_cause = (
+        _project_searchos_post_read_failure_cause(
+            record=record,
+            canonical_posture=canonical_posture,
+            last_searchjudgment_action=last_searchjudgment_action,
+        )
+    )
     return {
         "slot_identity_digest": _opaque_identity_digest(slot_ref.get("slot_id")),
         "component_identity_digest": _opaque_identity_digest(slot_ref.get("component_id")),
@@ -4407,6 +4454,15 @@ def _project_slot_summary(
         "safe_model_output_invalid_subtype": _project_safe_model_output_invalid_subtype(
             posture=final_posture,
             reason=reason,
+        ),
+        **(
+            {
+                "searchos_post_read_failure_cause": (
+                    searchos_post_read_failure_cause
+                )
+            }
+            if searchos_post_read_failure_cause is not None
+            else {}
         ),
         "judgment_event_count": judgment_event_count,
         "judgment_failure_count": judgment_failure_count,

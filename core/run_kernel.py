@@ -8308,7 +8308,13 @@ class RunKernel:
             raise RunKernelTransitionError(str(exc)) from exc
         self.state.projections[SEARCHOS_JUDGMENT_STAGE] = deepcopy(self.state.searchos_state)
 
-    def mark_searchos_slot_stale_or_invalid(self, *, slot_id: str, reason: str) -> None:
+    def mark_searchos_slot_stale_or_invalid(
+        self,
+        *,
+        slot_id: str,
+        reason: str,
+        searchos_post_read_failure_cause: str | None = None,
+    ) -> None:
         from core.searchos_iterative_judgment_runtime import (
             mark_searchos_slot_stale_or_invalid,
         )
@@ -8318,6 +8324,9 @@ class RunKernel:
                 self.state.searchos_state,
                 slot_id=slot_id,
                 reason=reason,
+                searchos_post_read_failure_cause=(
+                    searchos_post_read_failure_cause
+                ),
             )
         except ValueError as exc:
             raise RunKernelTransitionError(str(exc)) from exc
