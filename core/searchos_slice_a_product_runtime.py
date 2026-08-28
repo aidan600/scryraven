@@ -61,6 +61,25 @@ from core.source_class_recovery import canonical_documentation_source_class
 from core.source_classifier import classify_source
 
 SEARCHOS_SLICE_A_TRACE_KEY = "searchos_slice_a"
+SEARCHOS_POST_READ_FAILURE_CAUSES = frozenset(
+    {
+        "read_nomination_already_disposed",
+        "candidate_packet_stale",
+        "read_transport_failure",
+        "read_unusable_or_invalid_material",
+        "read_authority_or_route_blocked",
+    }
+)
+_SEARCHOS_POST_READ_EXACT_FAILURE_CAUSES = frozenset(
+    {
+        "read_nomination_already_disposed",
+        "candidate_packet_stale",
+    }
+)
+_SEARCHOS_POST_READ_PREFIX_FAILURE_CAUSES = (
+    SEARCHOS_POST_READ_FAILURE_CAUSES
+    - _SEARCHOS_POST_READ_EXACT_FAILURE_CAUSES
+)
 SEARCHOS_JUDGMENT_MODEL_INPUT_SCHEMA_VERSION = (
     "searchos_judgment_model_input_v1"
 )
@@ -4266,6 +4285,29 @@ def _project_safe_model_output_invalid_subtype(*, posture: str, reason: Any) -> 
     return "other_safe"
 
 
+def _project_searchos_post_read_failure_cause(
+    *,
+    record: Mapping[str, Any],
+    canonical_posture: str,
+    last_searchjudgment_action: str,
+) -> str | None:
+    if (
+        canonical_posture != SearchOSSlotPosture.STALE_OR_INVALID.value
+        or last_searchjudgment_action
+        != SearchOSJudgmentAction.REQUEST_READ_PAGE.value
+    ):
+        return None
+    reason = record.get("latest_judgment_reason")
+    if not isinstance(reason, str):
+        return None
+    if reason in _SEARCHOS_POST_READ_EXACT_FAILURE_CAUSES:
+        return reason
+    cause, separator, _suffix = reason.partition(":")
+    if separator and cause in _SEARCHOS_POST_READ_PREFIX_FAILURE_CAUSES:
+        return cause
+    return None
+
+
 def _nonnegative_int_or_none(value: Any) -> int | None:
     return (
         value
@@ -4383,6 +4425,13 @@ def _project_slot_summary(
         posture=final_posture,
         reason=reason,
     )
+    searchos_post_read_failure_cause = (
+        _project_searchos_post_read_failure_cause(
+            record=record,
+            canonical_posture=canonical_posture,
+            last_searchjudgment_action=last_searchjudgment_action,
+        )
+    )
     return {
         "slot_identity_digest": _opaque_identity_digest(slot_ref.get("slot_id")),
         "component_identity_digest": _opaque_identity_digest(slot_ref.get("component_id")),
@@ -4407,6 +4456,15 @@ def _project_slot_summary(
         "safe_model_output_invalid_subtype": _project_safe_model_output_invalid_subtype(
             posture=final_posture,
             reason=reason,
+        ),
+        **(
+            {
+                "searchos_post_read_failure_cause": (
+                    searchos_post_read_failure_cause
+                )
+            }
+            if searchos_post_read_failure_cause is not None
+            else {}
         ),
         "judgment_event_count": judgment_event_count,
         "judgment_failure_count": judgment_failure_count,
