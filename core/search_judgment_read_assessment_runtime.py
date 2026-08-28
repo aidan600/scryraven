@@ -1847,7 +1847,7 @@ def _execute_one_acquisition_to_custody(
         fetch_read_content_packet=packet,
         observation_id=(
             f"{binding.run_id}:evidence-ledger:searchos-read-custody:"
-            f"{packet['packet_digest'][:16]}"
+            f"{custody_result.custody_authorization.authorization_id}"
         ),
         linked_requirement_ids=exact_requirement_ids,
     )
@@ -2426,6 +2426,9 @@ def _canonical_custody_record(
         raise SearchJudgmentReadAssessmentError(
             "ledger_candidate_record_missing"
         )
+    authorization_id = str(custody_authorization_ref.get("authorization_id") or "")
+    if not authorization_id:
+        raise SearchJudgmentReadAssessmentError("custody_authorization_id_missing")
     return {
         "normalized_url": binding.normalized_url,
         "candidate_id": binding.candidate_ref.get("candidate_id"),
@@ -2444,7 +2447,7 @@ def _canonical_custody_record(
         "evidence_ledger_observation_ref": {
             "observation_id": (
                 f"{binding.run_id}:evidence-ledger:searchos-read-custody:"
-                f"{packet['packet_digest'][:16]}"
+                f"{authorization_id}"
             ),
             "source": "fetch_read_content_packet_candidate_custody",
         },
