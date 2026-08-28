@@ -76,6 +76,7 @@ from core.multicomponent_role_runtime import (
     execute_multicomponent_role_call as _execute_multicomponent_role_transport,
 )
 from core.ordinary_semantic_producer_runtime import (
+    BindableFinalPassage,
     OrdinarySemanticProducerHandoffResult,
     build_component_coverage_proposal,
     build_sanitized_content_reference_from_passage,
@@ -114,6 +115,11 @@ class _ScheduledSemanticWorkBlocked(RuntimeError):
 
 def _safe_mapping(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _ref_fields(value: Any, *keys: str) -> dict[str, Any]:
+    safe = _safe_mapping(value)
+    return {key: safe.get(key) for key in keys}
 
 
 def _component_requires_direct_work(
@@ -991,6 +997,265 @@ def _current_searchos_read_handoff_for_component(
         if isinstance(item, Mapping)
     )
     return bool(current_handoff and current_custody)
+
+
+def _bind_searchos_handoff_materials_for_components(
+    *,
+    run_kernel: Any,
+    runtime_scope: Mapping[str, Any],
+    accepted: Mapping[str, Any],
+    component_refs: Sequence[Mapping[str, Any]],
+) -> dict[str, BindableFinalPassage]:
+    """Bind each component to its one exact current SearchOS handoff material.
+
+    SearchOS has already chosen the material.  This receiver therefore checks
+    only exact current identity, custody, and bounded-content integrity; it does
+    not score, rank, substitute, or compete passages across components.
+    """
+
+    from core.searchos_iterative_judgment_runtime import (
+        SearchOSRuntimeError,
+        searchos_semantic_handoff_ref,
+        validate_searchos_recorded_semantic_handoff_ref,
+    )
+
+    searchos_state = _safe_mapping(run_kernel.state.searchos_state)
+    answer_contract_ref = _safe_mapping(searchos_state.get("answer_contract_ref"))
+    if (
+        searchos_state.get("run_id") != run_kernel.state.run_id
+        or searchos_state.get("request_id") != run_kernel.state.request_id
+        or answer_contract_ref.get("contract_version")
+        != accepted.get("accepted_contract_version")
+        or answer_contract_ref.get("answer_contract_digest")
+        != accepted.get("accepted_contract_digest")
+    ):
+        raise OrdinaryMulticomponentRuntimeError(
+            "SearchOS component receiver run or contract identity is stale"
+        )
+
+    searchos_result = runtime_scope.get("searchos_slice_a_result")
+    semantic_handoffs = _matching_records(
+        getattr(searchos_result, "semantic_handoffs", ())
+    )
+    canonical_materials = _matching_records(
+        getattr(searchos_result, "searchos_semantic_material", ())
+    )
+    presented_materials = _matching_records(
+        runtime_scope.get("final_top_evidence")
+    )
+    if not semantic_handoffs or not canonical_materials:
+        raise OrdinaryMulticomponentRuntimeError(
+            "SearchOS component receiver lacks exact handed-off material"
+        )
+
+    ledger_projection = run_kernel.state.evidence_ledger.to_projection().to_dict()
+    candidate_records = _matching_records(
+        ledger_projection.get("candidate_records")
+    )
+    active_slot_ids = {
+        str(item) for item in searchos_state.get("active_slot_ids") or ()
+    }
+    active_slots = [
+        dict(slot)
+        for slot_id, slot in _safe_mapping(
+            searchos_state.get("slots_by_id")
+        ).items()
+        if str(slot_id) in active_slot_ids and isinstance(slot, Mapping)
+    ]
+    selected: dict[str, BindableFinalPassage] = {}
+
+    for raw_component_ref in component_refs:
+        component_ref = dict(raw_component_ref)
+        component_id = str(component_ref.get("component_id") or "")
+        component_identity = _ref_fields(
+            component_ref,
+            "component_id",
+            "component_revision",
+            "component_digest",
+        )
+        slot = _one_record(
+            active_slots,
+            "SearchOS component receiver requires one exact current handoff "
+            f"for {component_id}",
+            posture="semantically_handed_off",
+            component_ref=component_identity,
+        )
+        slot_ref = _safe_mapping(slot.get("slot_ref"))
+        if (
+            slot_ref.get("component_id") != component_id
+            or _safe_mapping(slot_ref.get("component_ref"))
+            != component_identity
+        ):
+            raise OrdinaryMulticomponentRuntimeError(
+                "SearchOS component receiver component lineage is stale"
+            )
+        recorded_handoff_ref = _one_record(
+            slot.get("semantic_handoff_refs"),
+            "SearchOS component receiver handoff identity is ambiguous",
+        )
+        try:
+            recorded_handoff_ref = validate_searchos_recorded_semantic_handoff_ref(
+                state=searchos_state,
+                semantic_handoff_ref=_ref_fields(
+                    recorded_handoff_ref,
+                    "semantic_handoff_id",
+                    "semantic_handoff_digest",
+                ),
+                expected_slot_ref=slot_ref,
+            )
+        except SearchOSRuntimeError as exc:
+            raise OrdinaryMulticomponentRuntimeError(
+                "SearchOS component receiver handoff identity is stale"
+            ) from exc
+
+        handoff = _one_record(
+            semantic_handoffs,
+            "SearchOS component receiver cannot resolve the exact current handoff",
+            semantic_handoff_id=recorded_handoff_ref.get(
+                "semantic_handoff_id"
+            ),
+            semantic_handoff_digest=recorded_handoff_ref.get(
+                "semantic_handoff_digest"
+            ),
+            slot_ref=slot_ref,
+        )
+        try:
+            if searchos_semantic_handoff_ref(handoff) != recorded_handoff_ref:
+                raise OrdinaryMulticomponentRuntimeError(
+                    "SearchOS component receiver handoff ref is altered"
+                )
+        except SearchOSRuntimeError as exc:
+            raise OrdinaryMulticomponentRuntimeError(
+                "SearchOS component receiver handoff integrity mismatch"
+            ) from exc
+        if (
+            handoff.get("run_id") != run_kernel.state.run_id
+            or handoff.get("request_id") != run_kernel.state.request_id
+            or _safe_mapping(handoff.get("answer_contract_ref"))
+            != answer_contract_ref
+            or handoff.get("material_authority") != "read_custody_material"
+            or handoff.get("support_admitted") is not False
+            or handoff.get("semantic_observation_admitted") is not False
+            or handoff.get("source_obligation_satisfied") is not False
+            or handoff.get("citation_eligible") is not False
+        ):
+            raise OrdinaryMulticomponentRuntimeError(
+                "SearchOS component receiver handoff scope or authority is invalid"
+            )
+
+        custody_ref = _one_record(
+            handoff.get("read_custody_material_refs"),
+            "SearchOS component receiver cannot forward multi-material handoff",
+        )
+        slot_custody_ref = _one_record(
+            slot.get("custody_refs"),
+            "SearchOS component receiver custody identity is missing or colliding",
+            read_custody_material_id=custody_ref.get(
+                "read_custody_material_id"
+            ),
+            read_custody_material_digest=custody_ref.get(
+                "read_custody_material_digest"
+            ),
+        )
+        if (
+            slot_custody_ref != custody_ref
+            or _safe_mapping(custody_ref.get("slot_ref")) != slot_ref
+            or custody_ref.get("material_authority") != "read_custody_material"
+            or custody_ref.get("readable") is not True
+            or custody_ref.get("stale") is not False
+            or custody_ref.get("support_admitted") is not False
+            or custody_ref.get("source_obligation_satisfied") is not False
+            or custody_ref.get("citation_eligible") is not False
+        ):
+            raise OrdinaryMulticomponentRuntimeError(
+                "SearchOS component receiver custody identity is stale or altered"
+            )
+
+        compact_handoff_ref = _ref_fields(
+            recorded_handoff_ref,
+            "semantic_handoff_id",
+            "semantic_handoff_digest",
+        )
+        material = _one_record(
+            canonical_materials,
+            "SearchOS component receiver material identity is missing or ambiguous",
+            searchos_semantic_handoff_ref=compact_handoff_ref,
+            searchos_slot_ref=slot_ref,
+        )
+        if sum(material == presented for presented in presented_materials) != 1:
+            raise OrdinaryMulticomponentRuntimeError(
+                "SearchOS component receiver exact material is missing or colliding"
+            )
+
+        lineage = _safe_mapping(material.get("searchos_qualification_lineage"))
+        lineage_custody_ref = _safe_mapping(lineage.get("read_custody_ref"))
+        lineage_packet_ref = _safe_mapping(lineage.get("fetch_read_content_packet"))
+        lineage_content_ref = _safe_mapping(
+            lineage.get("navigation_content_reference")
+        )
+        expected_custody_ref = _ref_fields(
+            custody_ref,
+            "read_custody_material_id",
+            "read_custody_material_digest",
+            "bounded_text_digest",
+        )
+        expected_packet_ref = _ref_fields(
+            custody_ref.get("fetch_read_content_packet_ref"),
+            "packet_id",
+            "packet_digest",
+        )
+        expected_content_ref = _ref_fields(
+            custody_ref.get("evidence_ledger_custody_ref"),
+            "reference_id",
+            "reference_digest",
+        )
+        evidence_ref_id = str(
+            custody_ref.get("evidence_ledger_candidate_id") or ""
+        )
+        bounded_text = _clean_text(material.get("text"), limit=6000)
+        bounded_text_digest = _clean_text(
+            material.get("bounded_text_digest"),
+            limit=128,
+        )
+        if (
+            not lineage
+            or material.get("_provider") != "searchos_read_custody"
+            or material.get("material_authority") != "read_custody_material"
+            or material.get("support_admitted") is not False
+            or _safe_mapping(material.get("searchos_slot_ref")) != slot_ref
+            or _safe_mapping(material.get("searchos_semantic_handoff_ref"))
+            != compact_handoff_ref
+            or _safe_mapping(lineage.get("slot_ref")) != slot_ref
+            or _safe_mapping(lineage.get("semantic_handoff_ref"))
+            != compact_handoff_ref
+            or lineage_custody_ref != expected_custody_ref
+            or lineage_packet_ref != expected_packet_ref
+            or lineage_content_ref != expected_content_ref
+            or lineage.get("canonical_candidate_id") != evidence_ref_id
+            or material.get("candidate_id") != evidence_ref_id
+            or material.get("searchos_evidence_ledger_candidate_id")
+            != evidence_ref_id
+            or not bounded_text
+            or bounded_text_digest != custody_ref.get("bounded_text_digest")
+            or bounded_text_digest
+            != safe_packet_digest({"bounded_text": bounded_text})
+        ):
+            raise OrdinaryMulticomponentRuntimeError(
+                "SearchOS component receiver material lineage or integrity mismatch"
+            )
+
+        candidate_record = _one_record(
+            candidate_records,
+            "SearchOS component receiver candidate identity is missing or colliding",
+            candidate_id=evidence_ref_id,
+        )
+        selected[component_id] = BindableFinalPassage(
+            passage=dict(material),
+            evidence_ref_id=evidence_ref_id,
+            candidate_record=candidate_record,
+        )
+
+    return selected
 
 
 def _execute_fresh_resynthesis(
@@ -3602,32 +3867,26 @@ def _execute_selected_lane(
     final_top_evidence = [
         dict(item) for item in runtime_scope.get("final_top_evidence") or () if isinstance(item, Mapping)
     ]
-    selected = select_bindable_final_passages_for_components(
-        final_top_evidence,
-        run_kernel.state.evidence_ledger.to_projection().to_dict(),
-        component_refs,
-        component_text_by_id=_accepted_component_text_by_id(accepted),
-        run_id=run_kernel.state.run_id,
-        request_id=run_kernel.state.request_id,
-        answer_contract_version=accepted["accepted_contract_version"],
-        answer_contract_digest=accepted["accepted_contract_digest"],
-    )
+    if allow_searchos_component_receiver:
+        selected = _bind_searchos_handoff_materials_for_components(
+            run_kernel=run_kernel,
+            runtime_scope=runtime_scope,
+            accepted=accepted,
+            component_refs=component_refs,
+        )
+    else:
+        selected = select_bindable_final_passages_for_components(
+            final_top_evidence,
+            run_kernel.state.evidence_ledger.to_projection().to_dict(),
+            component_refs,
+            component_text_by_id=_accepted_component_text_by_id(accepted),
+            run_id=run_kernel.state.run_id,
+            request_id=run_kernel.state.request_id,
+            answer_contract_version=accepted["accepted_contract_version"],
+            answer_contract_digest=accepted["accepted_contract_digest"],
+        )
     # Custody-gap exception is authorized only for the selected typed lane.
     typed_lane_custody_exception = True
-
-    def _searchos_read_custody_matches_component(component_id: str) -> bool:
-        if not allow_searchos_component_receiver or component_id not in selected:
-            return False
-        passage = _safe_mapping(selected[component_id].passage)
-        return (
-            passage.get("material_authority") == "read_custody_material"
-            and passage.get("_provider") == "searchos_read_custody"
-            and _current_searchos_read_handoff_for_component(
-                run_kernel=run_kernel,
-                passage=passage,
-                component_id=component_id,
-            )
-        )
 
     missing_component_reasons: dict[str, str] = {}
     for component_ref in component_refs:
@@ -3641,7 +3900,7 @@ def _execute_selected_lane(
         )
         if (
             has_obligations
-            and not _searchos_read_custody_matches_component(component_id)
+            and not allow_searchos_component_receiver
             and not source_requirement_ids_for_component_candidate(
                 run_kernel.state.evidence_ledger.to_projection().to_dict(),
                 evidence_ref_id=selected[component_id].evidence_ref_id,

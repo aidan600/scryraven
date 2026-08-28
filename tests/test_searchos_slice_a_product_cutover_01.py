@@ -13,6 +13,8 @@ state machine.
 from __future__ import annotations
 
 import json
+from copy import deepcopy
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -1323,6 +1325,127 @@ def test_two_components_use_one_shared_n_component_receiver(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from core import ordinary_multicomponent_synthesis_runtime as multicomponent
+    from core.ordinary_semantic_producer_runtime import (
+        select_bindable_final_passages_for_components as legacy_selector,
+    )
+
+    original_receiver = (
+        pipeline_orchestrator.execute_ordinary_semantic_or_multicomponent_handoff_from_scope
+    )
+    original_scheduler_initialize = RunKernel.initialize_multicomponent_graph_scheduler
+    packet_contexts: list[dict[str, dict[str, Any]]] = []
+    receiver_contexts: list[dict[str, Any]] = []
+
+    def capture_scheduler_initialization(self: Any, **kwargs: Any) -> Any:
+        result = original_scheduler_initialize(self, **kwargs)
+        packet_contexts.append(
+            {
+                str(key): deepcopy(dict(value))
+                for key, value in kwargs["component_analyst_input_packets"].items()
+            }
+        )
+        return result
+
+    def capture_direct_receiver(
+        run_kernel: Any,
+        runtime_scope: Mapping[str, Any],
+        **kwargs: Any,
+    ) -> Any:
+        if kwargs.get("allow_searchos_component_receiver") is not True:
+            return original_receiver(run_kernel, runtime_scope, **kwargs)
+        accepted = run_kernel.state.initial_answer_contract
+        component_refs = [
+            dict(item)
+            for item in accepted["accepted_answer_component_refs"]
+        ]
+        canonical_materials = [
+            deepcopy(dict(item))
+            for item in runtime_scope["searchos_slice_a_result"].searchos_semantic_material
+        ]
+        component_a = component_refs[0]
+        material_a = next(
+            item
+            for item in canonical_materials
+            if dict(item["searchos_slot_ref"])["component_id"]
+            == component_a["component_id"]
+        )
+        distractor = deepcopy(material_a)
+        for key in (
+            "searchos_evidence_ledger_candidate_id",
+            "searchos_qualification_lineage",
+            "searchos_semantic_handoff_ref",
+            "searchos_slot_ref",
+        ):
+            distractor.pop(key, None)
+        distractor.update(
+            {
+                "title": "Unhanded lexical distractor",
+                "text": " ".join(
+                    [str(component_a["user_facing_question"])] * 4
+                ),
+                "_provider": "generic_final_evidence",
+                "material_authority": "generic_ranked_passage",
+                "support_admitted": False,
+            }
+        )
+        distractor["bounded_text_digest"] = safe_packet_digest(
+            {"bounded_text": distractor["text"]}
+        )
+        presented_materials = [distractor, *reversed(canonical_materials)]
+        legacy_selected = legacy_selector(
+            presented_materials,
+            run_kernel.state.evidence_ledger.to_projection().to_dict(),
+            component_refs,
+            component_text_by_id={
+                str(item["component_id"]): str(item["user_facing_question"])
+                for item in component_refs
+            },
+            run_id=run_kernel.state.run_id,
+            request_id=run_kernel.state.request_id,
+            answer_contract_version=accepted["accepted_contract_version"],
+            answer_contract_digest=accepted["accepted_contract_digest"],
+        )
+        assert (
+            legacy_selected[component_a["component_id"]].passage["title"]
+            == "Unhanded lexical distractor"
+        )
+
+        def forbidden_receiver_selector(*_args: Any, **_kwargs: Any) -> Any:
+            raise AssertionError(
+                "SearchOS component receiver called the legacy passage selector"
+            )
+
+        monkeypatch.setattr(
+            multicomponent,
+            "select_bindable_final_passages_for_components",
+            forbidden_receiver_selector,
+        )
+        scoped_runtime = {
+            **dict(runtime_scope),
+            "final_top_evidence": presented_materials,
+        }
+        receiver_contexts.append(
+            {
+                "run_kernel": run_kernel,
+                "runtime_scope": scoped_runtime,
+                "component_refs": component_refs,
+                "canonical_materials": canonical_materials,
+                "distractor": distractor,
+            }
+        )
+        return original_receiver(run_kernel, scoped_runtime, **kwargs)
+
+    monkeypatch.setattr(
+        RunKernel,
+        "initialize_multicomponent_graph_scheduler",
+        capture_scheduler_initialization,
+    )
+    monkeypatch.setattr(
+        pipeline_orchestrator,
+        "execute_ordinary_semantic_or_multicomponent_handoff_from_scope",
+        capture_direct_receiver,
+    )
     _establish_official_current_qualification_truth(monkeypatch)
     outcome, harness = run_post_retirement_ordinary_pipeline(
         tmp_path,
@@ -1361,6 +1484,214 @@ def test_two_components_use_one_shared_n_component_receiver(
     assert ROLE_SYSTEM_PROMPTS[ROLE_SYNTHESIS_DPRIME] in prompts
     assert searchos["all_passages_iteration_append_count"] == 0
     assert len(harness.search_calls) == 1
+    assert len(packet_contexts) == len(receiver_contexts) == 1
+
+    context = receiver_contexts[0]
+
+    def component_local_binding(
+        component_refs: list[dict[str, Any]],
+        presented_materials: list[dict[str, Any]],
+    ) -> dict[str, dict[str, Any]]:
+        selected = multicomponent._bind_searchos_handoff_materials_for_components(
+            run_kernel=context["run_kernel"],
+            runtime_scope={
+                **context["runtime_scope"],
+                "final_top_evidence": presented_materials,
+            },
+            accepted=context["run_kernel"].state.initial_answer_contract,
+            component_refs=component_refs,
+        )
+        return {
+            component_id: {
+                "evidence_ref_id": bindable.evidence_ref_id,
+                "bounded_text": bindable.passage["text"],
+                "bounded_text_digest": bindable.passage["bounded_text_digest"],
+                "searchos_semantic_handoff_ref": deepcopy(
+                    bindable.passage["searchos_semantic_handoff_ref"]
+                ),
+                "searchos_slot_ref": deepcopy(
+                    bindable.passage["searchos_slot_ref"]
+                ),
+                "read_custody_ref": deepcopy(
+                    bindable.passage["searchos_qualification_lineage"][
+                        "read_custody_ref"
+                    ]
+                ),
+                "support_admitted": bindable.passage["support_admitted"],
+            }
+            for component_id, bindable in selected.items()
+        }
+
+    canonical_materials = context["canonical_materials"]
+    a_then_b = component_local_binding(
+        context["component_refs"],
+        [context["distractor"], *canonical_materials],
+    )
+    b_then_a = component_local_binding(
+        list(reversed(context["component_refs"])),
+        [context["distractor"], *reversed(canonical_materials)],
+    )
+    assert a_then_b == b_then_a
+    assert set(a_then_b) == {"component-1", "component-2"}
+    assert all(
+        binding["searchos_slot_ref"]["component_id"] == component_id
+        and binding["support_admitted"] is False
+        for component_id, binding in a_then_b.items()
+    )
+    assert a_then_b["component-1"]["evidence_ref_id"] != (
+        a_then_b["component-2"]["evidence_ref_id"]
+    )
+    assert a_then_b["component-1"]["bounded_text"] != (
+        a_then_b["component-2"]["bounded_text"]
+    )
+
+    analyst_packets = packet_contexts[0]
+    assert set(analyst_packets) == set(a_then_b)
+    for component_id, binding in a_then_b.items():
+        packet = analyst_packets[component_id]
+        assert packet["component_ref"]["component_id"] == component_id
+        assert packet["component_evidence"]["evidence_ref_id"] == (
+            binding["evidence_ref_id"]
+        )
+        assert packet["component_evidence"]["bounded_text"] == (
+            binding["bounded_text"]
+        )
+        assert packet["component_evidence"]["bounded_text_digest"] == (
+            binding["bounded_text_digest"]
+        )
+        assert packet["component_evidence"]["bounded_text"] != (
+            context["distractor"]["text"]
+        )
+
+
+@pytest.mark.parametrize(
+    "failure_case",
+    (
+        "wrong_component",
+        "foreign_handoff",
+        "mismatched_handoff",
+        "slot_lineage_mismatch",
+        "custody_lineage_mismatch",
+        "altered_bounded_digest",
+        "missing_exact_material",
+        "duplicate_material_identity",
+    ),
+)
+def test_searchos_receiver_rejects_nonexact_material_before_component_analyst(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_case: str,
+) -> None:
+    from core import ordinary_multicomponent_synthesis_runtime as multicomponent
+
+    original_receiver = (
+        pipeline_orchestrator.execute_ordinary_semantic_or_multicomponent_handoff_from_scope
+    )
+    receiver_calls = 0
+
+    def reject_if_selector_runs(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError(
+            "SearchOS component receiver called the legacy passage selector"
+        )
+
+    def mutate_receiver_input(
+        run_kernel: Any,
+        runtime_scope: Mapping[str, Any],
+        **kwargs: Any,
+    ) -> Any:
+        nonlocal receiver_calls
+        if kwargs.get("allow_searchos_component_receiver") is not True:
+            return original_receiver(run_kernel, runtime_scope, **kwargs)
+        receiver_calls += 1
+        result = runtime_scope["searchos_slice_a_result"]
+        materials = [
+            deepcopy(dict(item)) for item in result.searchos_semantic_material
+        ]
+        assert len(materials) == 2
+        if failure_case == "wrong_component":
+            materials[0]["searchos_slot_ref"] = deepcopy(
+                materials[1]["searchos_slot_ref"]
+            )
+        elif failure_case == "foreign_handoff":
+            materials[0]["searchos_semantic_handoff_ref"] = {
+                "semantic_handoff_id": "searchos-semantic-handoff:foreign",
+                "semantic_handoff_digest": "f" * 64,
+            }
+        elif failure_case == "mismatched_handoff":
+            materials[0]["searchos_semantic_handoff_ref"] = deepcopy(
+                materials[1]["searchos_semantic_handoff_ref"]
+            )
+        elif failure_case == "slot_lineage_mismatch":
+            lineage = deepcopy(materials[0]["searchos_qualification_lineage"])
+            lineage["slot_ref"] = deepcopy(materials[1]["searchos_slot_ref"])
+            materials[0]["searchos_qualification_lineage"] = lineage
+        elif failure_case == "custody_lineage_mismatch":
+            lineage = deepcopy(materials[0]["searchos_qualification_lineage"])
+            lineage["read_custody_ref"]["read_custody_material_digest"] = (
+                "e" * 64
+            )
+            materials[0]["searchos_qualification_lineage"] = lineage
+        elif failure_case == "altered_bounded_digest":
+            materials[0]["bounded_text_digest"] = "d" * 64
+        elif failure_case == "missing_exact_material":
+            materials = materials[1:]
+        elif failure_case == "duplicate_material_identity":
+            materials.append(deepcopy(materials[0]))
+        else:  # pragma: no cover - parameter list is closed above
+            raise AssertionError(f"unknown failure case {failure_case}")
+
+        scoped_result = replace(
+            result,
+            searchos_semantic_material=tuple(deepcopy(materials)),
+        )
+        scoped_runtime = {
+            **dict(runtime_scope),
+            "searchos_slice_a_result": scoped_result,
+            "final_top_evidence": deepcopy(materials),
+        }
+        if failure_case == "missing_exact_material":
+            scoped_runtime["searchos_slice_a_result"] = result
+        monkeypatch.setattr(
+            multicomponent,
+            "select_bindable_final_passages_for_components",
+            reject_if_selector_runs,
+        )
+        return original_receiver(run_kernel, scoped_runtime, **kwargs)
+
+    monkeypatch.setattr(
+        pipeline_orchestrator,
+        "execute_ordinary_semantic_or_multicomponent_handoff_from_scope",
+        mutate_receiver_input,
+    )
+    outcome, harness = run_post_retirement_ordinary_pipeline(
+        tmp_path,
+        monkeypatch,
+        mode="Balanced",
+        query="Compare Alpha and Beta current official operating rates.",
+        core_topic="Alpha and Beta operating rates",
+        primary_entity="Alpha",
+        query_type="comparison",
+        router_entities=("Alpha", "Beta"),
+        researcher_queries=[
+            "Alpha current official operating rate",
+            "Beta current official operating rate",
+        ],
+    )
+
+    assert receiver_calls == 1
+    searchos = dict(outcome.execution_trace["searchos_slice_a"])
+    assert searchos["component_receiver_failure"] == (
+        "OrdinaryMulticomponentRuntimeError"
+    )
+    assert searchos["component_receiver_failure_reason"].startswith(
+        "SearchOS component receiver"
+    )
+    assert ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST] not in (
+        harness.model_system_prompts
+    )
+    assert not harness.run_kernel.state.projections.get(
+        "multicomponent_component_admission"
+    )
 
 
 def _required_causal_slot(projection: dict[str, Any]) -> dict[str, Any]:
@@ -1374,6 +1705,18 @@ def test_bounded_searchos_n1_causal_projection_successful_path(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from core import ordinary_multicomponent_synthesis_runtime as multicomponent
+
+    def forbidden_receiver_selector(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError(
+            "N=1 SearchOS component receiver called the legacy passage selector"
+        )
+
+    monkeypatch.setattr(
+        multicomponent,
+        "select_bindable_final_passages_for_components",
+        forbidden_receiver_selector,
+    )
     scheduler_initializations: list[dict[str, Any]] = []
     packet_contexts: list[dict[str, Any]] = []
     original_scheduler_initialize = RunKernel.initialize_multicomponent_graph_scheduler
