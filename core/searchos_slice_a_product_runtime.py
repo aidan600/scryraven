@@ -27,6 +27,7 @@ from core.search_judgment_read_assessment_runtime import (
     SelectedCandidateMaterialNeedBindingV1,
     derive_selected_candidate_material_need_bindings,
     execute_searchos_candidate_read_to_custody,
+    rebind_searchos_physical_read_material_to_custody,
 )
 from core.search_result_candidate_packet import (
     search_result_candidate_packet_ref_from_packet,
@@ -1290,7 +1291,7 @@ def _execute_searchos_slice_a_iterative_judgment(
             else ()
         )
     }
-    custody_by_url: dict[str, dict[str, Any]] = {
+    physical_read_material_by_url: dict[str, dict[str, Any]] = {
         str(url): deepcopy(dict(outcome))
         for url, outcome in (
             (prior_result.reusable_read_custody_by_url or {}).items()
@@ -1524,20 +1525,27 @@ def _execute_searchos_slice_a_iterative_judgment(
                     option_ref=option_ref,
                     options=options,
                 )
-                prior = custody_by_url.get(binding.normalized_url)
+                packet_id = binding.candidate_packet_ref["packet_id"]
+                packet = packets_by_id.get(packet_id)
+                if not packet:
+                    run_kernel.mark_searchos_slot_stale_or_invalid(
+                        slot_id=slot_id,
+                        reason="candidate_packet_stale",
+                    )
+                    continue
+                prior = physical_read_material_by_url.get(binding.normalized_url)
                 navigation_source: Any = None
                 if prior:
-                    custody_outcome = prior
+                    custody_outcome = (
+                        rebind_searchos_physical_read_material_to_custody(
+                            run_kernel=run_kernel,
+                            binding=binding,
+                            candidate_packet=packet,
+                            physical_read_material=prior,
+                        )
+                    )
                     reused = True
                 else:
-                    packet_id = binding.candidate_packet_ref["packet_id"]
-                    packet = packets_by_id.get(packet_id)
-                    if not packet:
-                        run_kernel.mark_searchos_slot_stale_or_invalid(
-                            slot_id=slot_id,
-                            reason="candidate_packet_stale",
-                        )
-                        continue
                     before_attempted, before_completed = (
                         _acquisition_provider_call_totals(run_kernel)
                     )
@@ -1606,7 +1614,9 @@ def _execute_searchos_slice_a_iterative_judgment(
                         markdown_text=navigation_source, locator_store=locator_store,
                     )[0]
                 if not reused:
-                    custody_by_url[binding.normalized_url] = custody_outcome
+                    physical_read_material_by_url[binding.normalized_url] = dict(
+                        custody_outcome["physical_read_material"]
+                    )
                 dispositions[option_id] = "custodied"
                 packet_by_custody_id[custody_ref["read_custody_material_id"]] = custody_outcome[
                     "fetch_read_content_packet"
@@ -1957,7 +1967,7 @@ def _execute_searchos_slice_a_iterative_judgment(
         ),
         reusable_read_custody_by_url={
             url: deepcopy(dict(outcome))
-            for url, outcome in custody_by_url.items()
+            for url, outcome in physical_read_material_by_url.items()
         },
     )
 
@@ -3162,7 +3172,11 @@ def _build_read_custody_judgment_materials(
         ledger_custody_ref = dict(
             custody.get("evidence_ledger_custody_ref") or {}
         )
-        reference_id = str(ledger_custody_ref.get("reference_id") or "")
+        physical_ledger_custody_ref = dict(
+            custody.get("physical_evidence_ledger_custody_ref")
+            or ledger_custody_ref
+        )
+        reference_id = str(physical_ledger_custody_ref.get("reference_id") or "")
         references = [
             dict(item)
             for item in packet.get("reference_records") or ()
@@ -3210,7 +3224,10 @@ def _build_read_custody_judgment_materials(
                 ),
                 "read_custody_ref": custody,
                 "fetch_read_content_packet_ref": packet_ref,
-                "evidence_ledger_custody_ref": ledger_custody_ref,
+                "evidence_ledger_custody_ref": physical_ledger_custody_ref,
+                "physical_evidence_ledger_custody_ref": (
+                    physical_ledger_custody_ref
+                ),
                 "normalized_url": url,
                 "title": _bounded_judgment_text(
                     reference.get("content_title"),

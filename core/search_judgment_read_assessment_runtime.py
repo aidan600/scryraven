@@ -92,6 +92,12 @@ SEARCH_JUDGMENT_READ_PRODUCER_SURFACE = (
 SEARCH_JUDGMENT_READ_SLOT_BUDGET_EXCEEDED = (
     "search_judgment_read_assessment_slot_budget_exceeded"
 )
+SEARCHOS_PHYSICAL_READ_MATERIAL_SCHEMA_VERSION = (
+    "searchos_physical_read_material_v1"
+)
+SEARCHOS_EVIDENCE_LEDGER_BINDING_CUSTODY_REF_SCHEMA_VERSION = (
+    "searchos_evidence_ledger_binding_custody_ref_v1"
+)
 
 _BOUNDED_SELECTION_GUIDANCE_STOP_WORDS = frozenset(
     {
@@ -1781,83 +1787,22 @@ def _execute_one_acquisition_to_custody(
         required_or_preferred_anchors=selection_anchors,
         expected_value_token_kinds=expected_value_token_kinds,
     )
-    packet = validate_fetch_read_content_packet(
-        build_fetch_read_content_packet_from_candidate_packet(
-            candidate_packet,
-            [material],
-            selected_candidate_ids=[str(binding.candidate_ref["candidate_id"])],
-        )
-    )
-    component_id = str(binding.component_ref.get("component_id") or "")
-    source_obligation_id = str(
-        binding.source_obligation_ref.get("source_obligation_id") or ""
-    )
-    component_identity = component_id.replace("-", "_")
-    exact_requirement_ids = [
-        str(item["requirement_id"])
-        for item in run_kernel.state.evidence_ledger.to_projection().to_dict().get(
-            "source_requirements"
-        )
-        or ()
-        if isinstance(item, Mapping)
-        and str(item.get("component_id") or "").replace("-", "_")
-        == component_identity
-        and item.get("source_obligation_id") == source_obligation_id
-        and item.get("requirement_id")
-    ]
-    recovery_cycle_ref = _mapping(
-        run_kernel.state.searchos_state.get(
-            "active_existing_gap_recovery_cycle_ref"
-        )
-    )
-    recovery_slot_ref = _mapping(
-        recovery_cycle_ref.get("recovery_slot_ref")
-    )
-    if (
-        recovery_cycle_ref
-        and str(recovery_slot_ref.get("component_id") or "").replace(
-            "-", "_"
-        )
-        == component_identity
-        and recovery_slot_ref.get("source_obligation_id")
-        == source_obligation_id
-    ):
-        semantic_requirement_id = (
-            "searchos_semantic_requirement:"
-            + source_obligation_id.split(":", 1)[-1]
-            .casefold()
-            .replace("-", "_")
-            .replace(" ", "_")
-            + ":"
-            + stable_json_digest(
-                {
-                    "slot_id": recovery_slot_ref.get("slot_id"),
-                    "component_id": component_id,
-                    "source_obligation_id": source_obligation_id,
-                }
-            )[:24]
-        )
-        exact_requirement_ids = list(
-            dict.fromkeys(
-                [*exact_requirement_ids, semantic_requirement_id]
-            )
-        )
-    ledger_projection = reduce_fetch_read_content_packet_into_evidence_ledger(
-        run_kernel=run_kernel,
-        fetch_read_content_packet=packet,
-        observation_id=(
-            f"{binding.run_id}:evidence-ledger:searchos-read-custody:"
-            f"{packet['packet_digest'][:16]}"
-        ),
-        linked_requirement_ids=exact_requirement_ids,
-    )
-    custody_record = _canonical_custody_record(
+    physical_read_material = _searchos_physical_read_material(
         binding=binding,
-        packet=packet,
-        ledger_projection=ledger_projection,
+        sanitized_read_material=material,
         terminal_receipt_ref=acquisition["terminal_receipt"].ref(),
         custody_authorization_ref=custody_result.custody_authorization.ref(),
     )
+    custody_outcome = rebind_searchos_physical_read_material_to_custody(
+        run_kernel=run_kernel,
+        binding=binding,
+        candidate_packet=candidate_packet,
+        physical_read_material=physical_read_material,
+    )
+    physical_read_material["fetch_read_content_packet"] = _json_clone(
+        custody_outcome["fetch_read_content_packet"]
+    )
+    custody_record = custody_outcome["custody_record"]
     if register_legacy_event:
         event = _custody_event(
             binding=binding,
@@ -1869,8 +1814,8 @@ def _execute_one_acquisition_to_custody(
         event_action = run_kernel.authorize_search_judgment_read_custody_event(event=event)
         run_kernel.reduce(_custody_event_observation(event_action))
     return {
-        "fetch_read_content_packet": packet,
-        "custody_record": custody_record,
+        **custody_outcome,
+        "physical_read_material": physical_read_material,
         "navigation_source_markdown": artifact.retained_text,
         "provider_calls_attempted": execution.provider_calls_attempted,
         "provider_calls_completed": execution.provider_calls_completed,
@@ -1907,6 +1852,190 @@ def execute_searchos_candidate_read_to_custody(
         acquisition_transports=acquisition_transports,
         before_transport=before_transport,
         register_legacy_event=False,
+    )
+
+
+def rebind_searchos_physical_read_material_to_custody(
+    *,
+    run_kernel: RunKernel,
+    binding: SelectedCandidateMaterialNeedBindingV1,
+    candidate_packet: Mapping[str, Any],
+    physical_read_material: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Bind cached physical READ material to one current SearchOS binding.
+
+    This performs no acquisition.  It rebuilds the binding-local fetch/read
+    packet and reduces its exact EvidenceLedger requirement link, leaving the
+    cached bounded page material as reusable physical input only.
+    """
+
+    physical = _mapping(physical_read_material)
+    if physical.get("schema_version") != SEARCHOS_PHYSICAL_READ_MATERIAL_SCHEMA_VERSION:
+        raise SearchJudgmentReadAssessmentError("physical_read_material_schema_invalid")
+    normalized_url = normalize_discovery_result_url(
+        str(physical.get("normalized_url") or "")
+    )
+    if normalized_url != binding.normalized_url:
+        raise SearchJudgmentReadAssessmentError("physical_read_material_url_mismatch")
+    candidate_packet_ref = search_result_candidate_packet_ref_from_packet(
+        candidate_packet
+    )
+    if any(
+        candidate_packet_ref.get(key) != binding.candidate_packet_ref.get(key)
+        for key in ("packet_id", "packet_digest")
+    ):
+        raise SearchJudgmentReadAssessmentError("physical_read_binding_packet_stale")
+    build_binding_backed_acquisition_need_proposal(
+        run_kernel=run_kernel,
+        binding=binding,
+    )
+    cached_material = _mapping(physical.get("sanitized_read_material"))
+    if not cached_material:
+        raise SearchJudgmentReadAssessmentError("physical_read_material_missing")
+    custody_authorization_ref = _mapping(physical.get("custody_authorization_ref"))
+    if not custody_authorization_ref:
+        raise SearchJudgmentReadAssessmentError("physical_read_material_lineage_missing")
+    run_kernel.require_current_acquisition_custody_authorization(
+        custody_authorization_ref
+    )
+    rebound_material = {
+        **_json_clone(cached_material),
+        "candidate_id": binding.candidate_ref.get("candidate_id"),
+        "candidate_digest": binding.candidate_ref.get("candidate_digest"),
+    }
+    packet = validate_fetch_read_content_packet(
+        build_fetch_read_content_packet_from_candidate_packet(
+            candidate_packet,
+            [rebound_material],
+            selected_candidate_ids=[str(binding.candidate_ref["candidate_id"])],
+        )
+    )
+    exact_requirement_ids = _exact_requirement_ids_for_binding(
+        run_kernel=run_kernel,
+        binding=binding,
+    )
+    observation_id = _searchos_read_custody_observation_id(
+        binding=binding,
+        packet=packet,
+    )
+    ledger_projection = reduce_fetch_read_content_packet_into_evidence_ledger(
+        run_kernel=run_kernel,
+        fetch_read_content_packet=packet,
+        observation_id=observation_id,
+        linked_requirement_ids=exact_requirement_ids,
+    )
+    custody_record = _canonical_custody_record(
+        binding=binding,
+        packet=packet,
+        ledger_projection=ledger_projection,
+        terminal_receipt_ref=_mapping(physical.get("terminal_receipt_ref")),
+        custody_authorization_ref=custody_authorization_ref,
+        exact_requirement_ids=exact_requirement_ids,
+        evidence_ledger_observation_id=observation_id,
+    )
+    return {
+        "fetch_read_content_packet": packet,
+        "custody_record": custody_record,
+    }
+
+
+def _searchos_physical_read_material(
+    *,
+    binding: SelectedCandidateMaterialNeedBindingV1,
+    sanitized_read_material: Mapping[str, Any],
+    terminal_receipt_ref: Mapping[str, Any],
+    custody_authorization_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Keep only reusable physical READ facts in the same-URL cache."""
+
+    physical_material = {
+        key: _json_clone(value)
+        for key, value in _mapping(sanitized_read_material).items()
+        if key not in {"candidate_id", "candidate_digest"}
+    }
+    if not physical_material:
+        raise SearchJudgmentReadAssessmentError("physical_read_material_missing")
+    attempted_url = normalize_discovery_result_url(
+        str(physical_material.get("attempted_url") or "")
+    )
+    if attempted_url != binding.normalized_url:
+        raise SearchJudgmentReadAssessmentError("physical_read_material_url_mismatch")
+    terminal_ref = _mapping(terminal_receipt_ref)
+    authorization_ref = _mapping(custody_authorization_ref)
+    if not terminal_ref or not authorization_ref:
+        raise SearchJudgmentReadAssessmentError("physical_read_material_lineage_missing")
+    return {
+        "schema_version": SEARCHOS_PHYSICAL_READ_MATERIAL_SCHEMA_VERSION,
+        "normalized_url": binding.normalized_url,
+        "sanitized_read_material": physical_material,
+        "terminal_receipt_ref": _json_clone(terminal_ref),
+        "custody_authorization_ref": _json_clone(authorization_ref),
+    }
+
+
+def _exact_requirement_ids_for_binding(
+    *,
+    run_kernel: RunKernel,
+    binding: SelectedCandidateMaterialNeedBindingV1,
+) -> list[str]:
+    component_id = str(binding.component_ref.get("component_id") or "")
+    source_obligation_id = str(
+        binding.source_obligation_ref.get("source_obligation_id") or ""
+    )
+    component_identity = component_id.replace("-", "_")
+    exact_requirement_ids = [
+        str(item["requirement_id"])
+        for item in run_kernel.state.evidence_ledger.to_projection().to_dict().get(
+            "source_requirements"
+        )
+        or ()
+        if isinstance(item, Mapping)
+        and str(item.get("component_id") or "").replace("-", "_")
+        == component_identity
+        and item.get("source_obligation_id") == source_obligation_id
+        and item.get("requirement_id")
+    ]
+    recovery_cycle_ref = _mapping(
+        run_kernel.state.searchos_state.get(
+            "active_existing_gap_recovery_cycle_ref"
+        )
+    )
+    recovery_slot_ref = _mapping(recovery_cycle_ref.get("recovery_slot_ref"))
+    if (
+        recovery_cycle_ref
+        and str(recovery_slot_ref.get("component_id") or "").replace("-", "_")
+        == component_identity
+        and recovery_slot_ref.get("source_obligation_id") == source_obligation_id
+    ):
+        semantic_requirement_id = (
+            "searchos_semantic_requirement:"
+            + source_obligation_id.split(":", 1)[-1]
+            .casefold()
+            .replace("-", "_")
+            .replace(" ", "_")
+            + ":"
+            + stable_json_digest(
+                {
+                    "slot_id": recovery_slot_ref.get("slot_id"),
+                    "component_id": component_id,
+                    "source_obligation_id": source_obligation_id,
+                }
+            )[:24]
+        )
+        exact_requirement_ids = list(
+            dict.fromkeys([*exact_requirement_ids, semantic_requirement_id])
+        )
+    return exact_requirement_ids
+
+
+def _searchos_read_custody_observation_id(
+    *,
+    binding: SelectedCandidateMaterialNeedBindingV1,
+    packet: Mapping[str, Any],
+) -> str:
+    return (
+        f"{binding.run_id}:evidence-ledger:searchos-read-custody:"
+        f"{binding.binding_digest[:16]}:{packet['packet_digest'][:16]}"
     )
 
 
@@ -2384,6 +2513,8 @@ def _canonical_custody_record(
     ledger_projection: Mapping[str, Any],
     terminal_receipt_ref: Mapping[str, Any],
     custody_authorization_ref: Mapping[str, Any],
+    exact_requirement_ids: Sequence[str],
+    evidence_ledger_observation_id: str,
 ) -> dict[str, Any]:
     custody = _mapping(ledger_projection.get("fetch_read_candidate_custody"))
     record = next(
@@ -2426,6 +2557,20 @@ def _canonical_custody_record(
         raise SearchJudgmentReadAssessmentError(
             "ledger_candidate_record_missing"
         )
+    physical_evidence_ledger_custody_ref = {
+        "owner": ledger_projection.get("owner"),
+        "schema_version": ledger_projection.get("schema_version"),
+        "reference_id": record.get("reference_id"),
+        "reference_digest": record.get("reference_digest"),
+    }
+    evidence_ledger_custody_ref = _binding_scoped_evidence_ledger_custody_ref(
+        binding=binding,
+        ledger_projection=ledger_projection,
+        ledger_candidate_id=ledger_candidate_id,
+        exact_requirement_ids=exact_requirement_ids,
+        normalized_url=binding.normalized_url,
+        bounded_text_digest=bounded_text_digest,
+    )
     return {
         "normalized_url": binding.normalized_url,
         "candidate_id": binding.candidate_ref.get("candidate_id"),
@@ -2435,17 +2580,12 @@ def _canonical_custody_record(
         "fetch_read_content_packet_ref": (
             fetch_read_content_packet_ref_from_packet(packet)
         ),
-        "evidence_ledger_custody_ref": {
-            "owner": ledger_projection.get("owner"),
-            "schema_version": ledger_projection.get("schema_version"),
-            "reference_id": record.get("reference_id"),
-            "reference_digest": record.get("reference_digest"),
-        },
+        "evidence_ledger_custody_ref": evidence_ledger_custody_ref,
+        "physical_evidence_ledger_custody_ref": (
+            physical_evidence_ledger_custody_ref
+        ),
         "evidence_ledger_observation_ref": {
-            "observation_id": (
-                f"{binding.run_id}:evidence-ledger:searchos-read-custody:"
-                f"{packet['packet_digest'][:16]}"
-            ),
+            "observation_id": evidence_ledger_observation_id,
             "source": "fetch_read_content_packet_candidate_custody",
         },
         "terminal_receipt_ref": _json_clone(terminal_receipt_ref),
@@ -2454,6 +2594,68 @@ def _canonical_custody_record(
         "bounded_content_present": record.get("bounded_content_present") is True,
         "semantic_support_created": False,
         "source_obligation_satisfied": False,
+    }
+
+
+def _binding_scoped_evidence_ledger_custody_ref(
+    *,
+    binding: SelectedCandidateMaterialNeedBindingV1,
+    ledger_projection: Mapping[str, Any],
+    ledger_candidate_id: str,
+    exact_requirement_ids: Sequence[str],
+    normalized_url: str,
+    bounded_text_digest: str,
+) -> dict[str, Any]:
+    """Reference exact ledger links when present, else the lawful binding only."""
+
+    requirement_ids = sorted(
+        {str(value) for value in exact_requirement_ids if str(value)}
+    )
+    if requirement_ids:
+        links_by_requirement = {
+            str(link.get("requirement_id") or ""): link
+            for link in (
+                _mapping(value)
+                for value in _sequence(ledger_projection.get("requirement_links"))
+            )
+            if str(link.get("candidate_id") or "") == ledger_candidate_id
+            and str(link.get("requirement_id") or "") in requirement_ids
+        }
+        if set(links_by_requirement) != set(requirement_ids):
+            raise SearchJudgmentReadAssessmentError(
+                "evidence_ledger_requirement_link_missing"
+            )
+    owner = str(ledger_projection.get("owner") or "")
+    if not owner:
+        raise SearchJudgmentReadAssessmentError("evidence_ledger_owner_missing")
+    component_id = str(binding.component_ref.get("component_id") or "")
+    source_obligation_id = str(
+        binding.source_obligation_ref.get("source_obligation_id") or ""
+    )
+    if not component_id or not source_obligation_id:
+        raise SearchJudgmentReadAssessmentError("evidence_ledger_binding_identity_missing")
+    core = {
+        "schema_version": SEARCHOS_EVIDENCE_LEDGER_BINDING_CUSTODY_REF_SCHEMA_VERSION,
+        "owner": owner,
+        "evidence_ledger_schema_version": ledger_projection.get("schema_version"),
+        "run_id": binding.run_id,
+        "request_id": binding.request_id,
+        "component_id": component_id,
+        "component_revision": binding.component_ref.get("component_revision"),
+        "source_obligation_id": source_obligation_id,
+        "requirement_ids": requirement_ids,
+        "search_requirement_id": binding.search_requirement_ref.get(
+            "requirement_id"
+        ),
+        "normalized_url": normalized_url,
+        "bounded_text_digest": bounded_text_digest,
+    }
+    digest = stable_json_digest(core)
+    return {
+        "owner": owner,
+        "schema_version": SEARCHOS_EVIDENCE_LEDGER_BINDING_CUSTODY_REF_SCHEMA_VERSION,
+        "reference_id": f"evidence-ledger-binding-custody:{digest[:24]}",
+        "reference_digest": digest,
     }
 
 
@@ -2650,6 +2852,7 @@ __all__ = [
     "execute_search_judgment_read_binding_action",
     "execute_search_judgment_read_source_and_custody",
     "execute_searchos_candidate_read_to_custody",
+    "rebind_searchos_physical_read_material_to_custody",
     "validate_binding_backed_acquisition_need_proposal",
     "validate_search_judgment_read_assessment_reduction",
     "validate_search_judgment_read_binding_reduction",
