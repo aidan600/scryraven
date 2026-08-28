@@ -3,8 +3,9 @@
 Proof class: PRODUCT-supporting structural proof. Validation bucket:
 phase_focus. Surface guarded: the existing REQUEST_READ_PAGE failure reducer,
 Slice A readiness, and bounded PRODUCT causal projection. Runtime/product path
-guarded: ordinary SearchOS records one closed cause without changing selection,
-READ, custody, or recovery behavior. Expected cost: milliseconds per node.
+guarded: the bounded projection derives one closed cause from the existing
+canonical reason without changing selection, READ, custody, or recovery
+behavior. Expected cost: milliseconds per node.
 Promotion posture: remain phase_focus unless this closed diagnostic becomes a
 durable product contract. Why not fast_pr: this is phase-detail observability,
 while existing compact-selection and SearchOS lane sentinels own behavior.
@@ -12,10 +13,9 @@ while existing compact-selection and SearchOS lane sentinels own behavior.
 
 from __future__ import annotations
 
-import ast
 import inspect
 import json
-import textwrap
+from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -25,9 +25,9 @@ import pytest
 import core.pipeline as pipeline
 import core.searchos_slice_a_product_runtime as product_runtime
 from core.acquisition_adapters import AcquisitionTransports
+from core.run_kernel import RunKernel
 from core.searchos_iterative_judgment_runtime import (
     SEARCHOS_OWNER,
-    SEARCHOS_POST_READ_FAILURE_CAUSES,
     begin_searchos_judgment_round,
     build_candidate_use_options_v1,
     build_candidate_use_window_v1,
@@ -41,7 +41,7 @@ from core.searchos_iterative_judgment_runtime import (
     validate_searchos_judgment_model_output,
 )
 from core.searchos_slice_a_product_runtime import (
-    _closed_post_read_failure_cause_from_read_reason,
+    SEARCHOS_POST_READ_FAILURE_CAUSES,
     _read_failure_reason,
     build_bounded_searchos_n1_causal_projection,
 )
@@ -167,23 +167,34 @@ def test_all_closed_post_read_causes_flow_from_slot_to_bounded_projection(
         _awaiting_read_state(),
         slot_id="slot-1",
         reason=reason,
-        searchos_post_read_failure_cause=cause,
     )
     slot = stale["slots_by_id"]["slot-1"]
-    assert slot["searchos_post_read_failure_cause"] == cause
+    assert slot["latest_reason"] == reason
+    assert "searchos_post_read_failure_cause" not in slot
+    canonical_state_before_projection = deepcopy(stale)
 
     readiness = build_searchos_slice_a_readiness_v1(
         state=stale,
         semantic_outcomes_by_slot={"slot-1": {}},
     )
-    assert readiness["slot_records"][0][
-        "searchos_post_read_failure_cause"
-    ] == cause
+    readiness_slot = readiness["slot_records"][0]
+    assert readiness_slot["latest_judgment_reason"] == reason
+    assert "searchos_post_read_failure_cause" not in readiness_slot
 
     projection = _bounded_projection_for_state(stale)
     projected_slot = projection["slots"][0]
+    assert stale == canonical_state_before_projection
     assert projected_slot["searchos_post_read_failure_cause"] == cause
     assert _PRIVATE_REASON_CANARY not in json.dumps(projection, sort_keys=True)
+
+
+def test_closed_cause_is_not_part_of_canonical_state_contract() -> None:
+    assert "searchos_post_read_failure_cause" not in inspect.signature(
+        mark_searchos_slot_stale_or_invalid
+    ).parameters
+    assert "searchos_post_read_failure_cause" not in inspect.signature(
+        RunKernel.mark_searchos_slot_stale_or_invalid
+    ).parameters
 
 
 def test_successful_read_custody_has_no_post_read_failure_cause() -> None:
@@ -208,22 +219,19 @@ def test_non_read_stale_transition_is_not_falsely_labeled() -> None:
     assert "searchos_post_read_failure_cause" not in projection["slots"][0]
 
 
-def test_post_read_cause_contract_rejects_open_or_mismatched_values() -> None:
-    state = _awaiting_read_state()
-    with pytest.raises(ValueError, match="outside the closed vocabulary"):
-        mark_searchos_slot_stale_or_invalid(
-            state,
-            slot_id="slot-1",
-            reason="private_free_text",
-            searchos_post_read_failure_cause="private_free_text",
-        )
-    with pytest.raises(ValueError, match="conflicts with canonical reason family"):
-        mark_searchos_slot_stale_or_invalid(
-            state,
-            slot_id="slot-1",
-            reason="candidate_packet_stale",
-            searchos_post_read_failure_cause="read_transport_failure",
-        )
+def test_unknown_post_read_reason_is_not_projected() -> None:
+    reason = f"open_post_read_failure:{_PRIVATE_REASON_CANARY}"
+    stale = mark_searchos_slot_stale_or_invalid(
+        _awaiting_read_state(),
+        slot_id="slot-1",
+        reason=reason,
+    )
+
+    assert stale["slots_by_id"]["slot-1"]["latest_reason"] == reason
+    projection = _bounded_projection_for_state(stale)
+
+    assert "searchos_post_read_failure_cause" not in projection["slots"][0]
+    assert _PRIVATE_REASON_CANARY not in json.dumps(projection, sort_keys=True)
 
 
 @pytest.mark.parametrize(
@@ -234,7 +242,7 @@ def test_post_read_cause_contract_rejects_open_or_mismatched_values() -> None:
         ("provider_route_blocked", "read_authority_or_route_blocked"),
     ),
 )
-def test_existing_read_exception_classification_maps_to_closed_cause(
+def test_existing_read_exception_classification_projects_closed_cause(
     code: str,
     expected: str,
 ) -> None:
@@ -244,42 +252,18 @@ def test_existing_read_exception_classification_maps_to_closed_cause(
             self.code = code
 
     reason = _read_failure_reason(CodedReadFailure())
+    stale = mark_searchos_slot_stale_or_invalid(
+        _awaiting_read_state(),
+        slot_id="slot-1",
+        reason=reason,
+    )
+    projection = _bounded_projection_for_state(stale)
 
-    assert _closed_post_read_failure_cause_from_read_reason(reason) == expected
+    assert reason.startswith(expected + ":")
     assert expected in SEARCHOS_POST_READ_FAILURE_CAUSES
     assert _PRIVATE_REASON_CANARY not in reason
-
-
-def test_existing_literal_post_read_branches_record_their_exact_closed_cause() -> None:
-    source = textwrap.dedent(
-        inspect.getsource(
-            product_runtime._execute_searchos_slice_a_iterative_judgment
-        )
-    )
-    tree = ast.parse(source)
-    literal_pairs: set[tuple[str, str]] = set()
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        if not (
-            isinstance(node.func, ast.Attribute)
-            and node.func.attr == "mark_searchos_slot_stale_or_invalid"
-        ):
-            continue
-        keywords = {item.arg: item.value for item in node.keywords if item.arg}
-        reason = keywords.get("reason")
-        cause = keywords.get("searchos_post_read_failure_cause")
-        if isinstance(reason, ast.Constant) and isinstance(cause, ast.Constant):
-            if isinstance(reason.value, str) and isinstance(cause.value, str):
-                literal_pairs.add((reason.value, cause.value))
-
-    assert literal_pairs >= {
-        (
-            "read_nomination_already_disposed",
-            "read_nomination_already_disposed",
-        ),
-        ("candidate_packet_stale", "candidate_packet_stale"),
-    }
+    assert projection["slots"][0]["searchos_post_read_failure_cause"] == expected
+    assert _PRIVATE_REASON_CANARY not in json.dumps(projection, sort_keys=True)
 
 
 def test_candidate_packet_stale_product_branch_projects_closed_cause(
@@ -391,7 +375,6 @@ def test_bounded_product_packet_support_reuses_the_closed_projection_owner() -> 
         _awaiting_read_state(),
         slot_id="slot-1",
         reason="candidate_packet_stale",
-        searchos_post_read_failure_cause="candidate_packet_stale",
     )
 
     projection = _bounded_projection_for_state(stale)

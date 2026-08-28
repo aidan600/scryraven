@@ -38,7 +38,6 @@ from core.searchos_iterative_judgment_runtime import (
     SEARCHOS_NAVIGATION_JUDGMENT_DECISION_SCHEMA_VERSION,
     SEARCHOS_NAVIGATION_JUDGMENT_REQUEST_SCHEMA_VERSION,
     SEARCHOS_OWNER,
-    SEARCHOS_POST_READ_FAILURE_CAUSES,
     SEARCHOS_SEMANTIC_HANDOFF_SCHEMA_VERSION,
     SEARCHOS_SLICE_A_READINESS_SCHEMA_VERSION,
     SearchOSJudgmentAction,
@@ -62,6 +61,25 @@ from core.source_class_recovery import canonical_documentation_source_class
 from core.source_classifier import classify_source
 
 SEARCHOS_SLICE_A_TRACE_KEY = "searchos_slice_a"
+SEARCHOS_POST_READ_FAILURE_CAUSES = frozenset(
+    {
+        "read_nomination_already_disposed",
+        "candidate_packet_stale",
+        "read_transport_failure",
+        "read_unusable_or_invalid_material",
+        "read_authority_or_route_blocked",
+    }
+)
+_SEARCHOS_POST_READ_EXACT_FAILURE_CAUSES = frozenset(
+    {
+        "read_nomination_already_disposed",
+        "candidate_packet_stale",
+    }
+)
+_SEARCHOS_POST_READ_PREFIX_FAILURE_CAUSES = (
+    SEARCHOS_POST_READ_FAILURE_CAUSES
+    - _SEARCHOS_POST_READ_EXACT_FAILURE_CAUSES
+)
 SEARCHOS_JUDGMENT_MODEL_INPUT_SCHEMA_VERSION = (
     "searchos_judgment_model_input_v1"
 )
@@ -1497,9 +1515,6 @@ def _execute_searchos_slice_a_iterative_judgment(
                     run_kernel.mark_searchos_slot_stale_or_invalid(
                         slot_id=slot_id,
                         reason="read_nomination_already_disposed",
-                        searchos_post_read_failure_cause=(
-                            "read_nomination_already_disposed"
-                        ),
                     )
                     continue
                 binding = _binding_for_option(
@@ -1521,9 +1536,6 @@ def _execute_searchos_slice_a_iterative_judgment(
                         run_kernel.mark_searchos_slot_stale_or_invalid(
                             slot_id=slot_id,
                             reason="candidate_packet_stale",
-                            searchos_post_read_failure_cause=(
-                                "candidate_packet_stale"
-                            ),
                         )
                         continue
                     before_attempted, before_completed = (
@@ -1546,15 +1558,9 @@ def _execute_searchos_slice_a_iterative_judgment(
                         )
                         provider_calls[0] += max(0, after_attempted - before_attempted)
                         provider_calls[1] += max(0, after_completed - before_completed)
-                        read_failure_reason = _read_failure_reason(exc)
                         run_kernel.mark_searchos_slot_stale_or_invalid(
                             slot_id=slot_id,
-                            reason=read_failure_reason,
-                            searchos_post_read_failure_cause=(
-                                _closed_post_read_failure_cause_from_read_reason(
-                                    read_failure_reason
-                                )
-                            ),
+                            reason=_read_failure_reason(exc),
                         )
                         continue
                     after_attempted, after_completed = (
@@ -3333,15 +3339,6 @@ def _read_failure_reason(exc: Exception) -> str:
     return f"{posture}:{code}"[:240]
 
 
-def _closed_post_read_failure_cause_from_read_reason(reason: str) -> str:
-    cause, separator, _detail = str(reason).partition(":")
-    if not separator or cause not in SEARCHOS_POST_READ_FAILURE_CAUSES:
-        raise SearchOSRuntimeError(
-            "SearchOS READ failure lacks an existing closed cause family"
-        )
-    return cause
-
-
 def _profile_name(value: str) -> str:
     token = str(value or "").strip().casefold()
     return {"fast": "Fast", "balanced": "Balanced", "deep": "Deep"}.get(
@@ -4294,16 +4291,21 @@ def _project_searchos_post_read_failure_cause(
     canonical_posture: str,
     last_searchjudgment_action: str,
 ) -> str | None:
-    value = record.get("searchos_post_read_failure_cause")
     if (
         canonical_posture != SearchOSSlotPosture.STALE_OR_INVALID.value
         or last_searchjudgment_action
         != SearchOSJudgmentAction.REQUEST_READ_PAGE.value
-        or not isinstance(value, str)
-        or value not in SEARCHOS_POST_READ_FAILURE_CAUSES
     ):
         return None
-    return value
+    reason = record.get("latest_judgment_reason")
+    if not isinstance(reason, str):
+        return None
+    if reason in _SEARCHOS_POST_READ_EXACT_FAILURE_CAUSES:
+        return reason
+    cause, separator, _suffix = reason.partition(":")
+    if separator and cause in _SEARCHOS_POST_READ_PREFIX_FAILURE_CAUSES:
+        return cause
+    return None
 
 
 def _nonnegative_int_or_none(value: Any) -> int | None:

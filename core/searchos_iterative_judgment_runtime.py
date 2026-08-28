@@ -76,15 +76,6 @@ CANDIDATE_USE_WINDOW_SIZE = 12
 MAX_FOLLOWUP_QUERY_CHARS = 300
 MAX_UNRESOLVED_REASON_CHARS = 240
 COMPLETED_CANDIDATE_OPTION_DISPOSITIONS = frozenset({"custodied", "read_insufficient", "invalid", "declined"})
-SEARCHOS_POST_READ_FAILURE_CAUSES = frozenset(
-    {
-        "read_nomination_already_disposed",
-        "candidate_packet_stale",
-        "read_transport_failure",
-        "read_unusable_or_invalid_material",
-        "read_authority_or_route_blocked",
-    }
-)
 
 
 class SearchOSRuntimeError(ValueError):
@@ -1486,37 +1477,15 @@ def mark_searchos_slot_unresolved(state: Mapping[str, Any], *, slot_id: str, rea
     return _refresh_state(candidate)
 
 
-def mark_searchos_slot_stale_or_invalid(
-    state: Mapping[str, Any],
-    *,
-    slot_id: str,
-    reason: str,
-    searchos_post_read_failure_cause: str | None = None,
-) -> dict[str, Any]:
+def mark_searchos_slot_stale_or_invalid(state: Mapping[str, Any], *, slot_id: str, reason: str) -> dict[str, Any]:
     candidate = _validated_state_copy(state)
     slots = _mutable_mapping(candidate["slots_by_id"])
     token = _token(slot_id, "slot_id")
     if token not in slots:
         raise SearchOSRuntimeError("stale nomination references inactive slot")
     slot = deepcopy(slots[token])
-    bounded_reason = _bounded_reason(reason)
-    if searchos_post_read_failure_cause is not None:
-        closed_cause = _searchos_post_read_failure_cause(
-            searchos_post_read_failure_cause
-        )
-        if slot.get("posture") != SearchOSSlotPosture.AWAITING_READ.value:
-            raise SearchOSRuntimeError(
-                "post-READ failure cause requires an awaiting-read slot"
-            )
-        if bounded_reason != closed_cause and not bounded_reason.startswith(
-            closed_cause + ":"
-        ):
-            raise SearchOSRuntimeError(
-                "post-READ failure cause conflicts with canonical reason family"
-            )
-        slot["searchos_post_read_failure_cause"] = closed_cause
     slot["posture"] = SearchOSSlotPosture.STALE_OR_INVALID.value
-    slot["latest_reason"] = bounded_reason
+    slot["latest_reason"] = _bounded_reason(reason)
     slot["action_history"].append(
         {
             "event": "stale_or_invalid",
@@ -4594,12 +4563,6 @@ def build_searchos_slice_a_readiness_v1(
             "satisfaction_claimed_by_readiness": False,
             "coverage_upgrade_claimed_by_readiness": False,
         }
-        if "searchos_post_read_failure_cause" in slot:
-            record["searchos_post_read_failure_cause"] = (
-                _searchos_post_read_failure_cause(
-                    slot["searchos_post_read_failure_cause"]
-                )
-            )
         slot_records.append(record)
         if required and not ready:
             unresolved.append(
@@ -5520,15 +5483,6 @@ def _bounded_reason(value: Any) -> str:
     return reason
 
 
-def _searchos_post_read_failure_cause(value: Any) -> str:
-    cause = _token(value, "searchos_post_read_failure_cause", limit=80)
-    if cause not in SEARCHOS_POST_READ_FAILURE_CAUSES:
-        raise SearchOSRuntimeError(
-            "SearchOS post-READ failure cause is outside the closed vocabulary"
-        )
-    return cause
-
-
 def _reason_code(value: Any) -> str:
     code = _token(value, "reason_code", limit=80)
     if any(character not in "abcdefghijklmnopqrstuvwxyz0123456789_.:-" for character in code):
@@ -5617,7 +5571,6 @@ __all__ = [
     "SEARCHOS_INTERPRETATION_BINDING_SCHEMA_VERSION",
     "SEARCHOS_NAVIGATION_JUDGMENT_DECISION_SCHEMA_VERSION",
     "SEARCHOS_NAVIGATION_JUDGMENT_REQUEST_SCHEMA_VERSION",
-    "SEARCHOS_POST_READ_FAILURE_CAUSES",
     "SEARCHOS_REQUIRED_NEEDS_BLOCK_SCHEMA_VERSION",
     "SEARCHOS_SLICE_A_REQUIRED_NEEDS_UNRESOLVED",
     "SearchOSJudgmentAction",
