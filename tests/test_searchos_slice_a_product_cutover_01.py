@@ -1392,9 +1392,21 @@ def test_two_components_use_one_shared_n_component_receiver(
         distractor["bounded_text_digest"] = safe_packet_digest(
             {"bounded_text": distractor["text"]}
         )
-        presented_materials = [distractor, *reversed(canonical_materials)]
+        distractor_z = deepcopy(distractor)
+        distractor_z.update(
+            {
+                "candidate_id": "generic-final-evidence:z",
+                "source_id": "generic-final-evidence:z",
+                "title": "Irrelevant generic material Z",
+                "text": "Generic material unrelated to either SearchOS handoff.",
+            }
+        )
+        distractor_z["bounded_text_digest"] = safe_packet_digest(
+            {"bounded_text": distractor_z["text"]}
+        )
+        selector_candidates = [distractor, *reversed(canonical_materials)]
         legacy_selected = legacy_selector(
-            presented_materials,
+            selector_candidates,
             run_kernel.state.evidence_ledger.to_projection().to_dict(),
             component_refs,
             component_text_by_id={
@@ -1423,7 +1435,7 @@ def test_two_components_use_one_shared_n_component_receiver(
         )
         scoped_runtime = {
             **dict(runtime_scope),
-            "final_top_evidence": presented_materials,
+            "final_top_evidence": [distractor],
         }
         receiver_contexts.append(
             {
@@ -1432,6 +1444,7 @@ def test_two_components_use_one_shared_n_component_receiver(
                 "component_refs": component_refs,
                 "canonical_materials": canonical_materials,
                 "distractor": distractor,
+                "distractor_z": distractor_z,
             }
         )
         return original_receiver(run_kernel, scoped_runtime, **kwargs)
@@ -1523,13 +1536,35 @@ def test_two_components_use_one_shared_n_component_receiver(
         }
 
     canonical_materials = context["canonical_materials"]
-    a_then_b = component_local_binding(
-        context["component_refs"],
-        [context["distractor"], *canonical_materials],
+    assert context["runtime_scope"]["final_top_evidence"] == [
+        context["distractor"]
+    ]
+    assert all(
+        material not in context["runtime_scope"]["final_top_evidence"]
+        for material in canonical_materials
     )
+
+    final_top_evidence_variants = (
+        [],
+        [context["distractor"]],
+        [context["distractor"], context["distractor_z"]],
+        [canonical_materials[0], context["distractor"]],
+        [context["distractor"], *canonical_materials],
+        [*reversed(canonical_materials), context["distractor_z"]],
+    )
+    invariant_bindings = [
+        component_local_binding(context["component_refs"], variant)
+        for variant in final_top_evidence_variants
+    ]
+    assert all(
+        binding == invariant_bindings[0]
+        for binding in invariant_bindings[1:]
+    )
+
+    a_then_b = component_local_binding(context["component_refs"], [])
     b_then_a = component_local_binding(
         list(reversed(context["component_refs"])),
-        [context["distractor"], *reversed(canonical_materials)],
+        [context["distractor_z"], context["distractor"]],
     )
     assert a_then_b == b_then_a
     assert set(a_then_b) == {"component-1", "component-2"}
@@ -1649,8 +1684,6 @@ def test_searchos_receiver_rejects_nonexact_material_before_component_analyst(
             "searchos_slice_a_result": scoped_result,
             "final_top_evidence": deepcopy(materials),
         }
-        if failure_case == "missing_exact_material":
-            scoped_runtime["searchos_slice_a_result"] = result
         monkeypatch.setattr(
             multicomponent,
             "select_bindable_final_passages_for_components",

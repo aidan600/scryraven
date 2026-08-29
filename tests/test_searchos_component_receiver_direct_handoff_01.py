@@ -11,12 +11,21 @@ this is a narrow implementation-detail sentinel.
 
 from __future__ import annotations
 
+import inspect
 from typing import Any
 
 import pytest
 
 from core import ordinary_multicomponent_synthesis_runtime as multicomponent
 from core.run_kernel import RunKernel
+
+
+def test_searchos_direct_binder_does_not_consult_final_top_evidence() -> None:
+    binder_source = inspect.getsource(
+        multicomponent._bind_searchos_handoff_materials_for_components
+    )
+
+    assert "final_top_evidence" not in binder_source
 
 
 def test_non_searchos_selected_lane_retains_legacy_selector(

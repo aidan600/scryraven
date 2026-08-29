@@ -1040,9 +1040,6 @@ def _bind_searchos_handoff_materials_for_components(
     canonical_materials = _matching_records(
         getattr(searchos_result, "searchos_semantic_material", ())
     )
-    presented_materials = _matching_records(
-        runtime_scope.get("final_top_evidence")
-    )
     if not semantic_handoffs or not canonical_materials:
         raise OrdinaryMulticomponentRuntimeError(
             "SearchOS component receiver lacks exact handed-off material"
@@ -1182,10 +1179,6 @@ def _bind_searchos_handoff_materials_for_components(
             searchos_semantic_handoff_ref=compact_handoff_ref,
             searchos_slot_ref=slot_ref,
         )
-        if sum(material == presented for presented in presented_materials) != 1:
-            raise OrdinaryMulticomponentRuntimeError(
-                "SearchOS component receiver exact material is missing or colliding"
-            )
 
         lineage = _safe_mapping(material.get("searchos_qualification_lineage"))
         lineage_custody_ref = _safe_mapping(lineage.get("read_custody_ref"))
@@ -3864,9 +3857,6 @@ def _execute_selected_lane(
     ):
         raise OrdinaryMulticomponentRuntimeError("accepted contract lost typed multi-component qualification")
 
-    final_top_evidence = [
-        dict(item) for item in runtime_scope.get("final_top_evidence") or () if isinstance(item, Mapping)
-    ]
     if allow_searchos_component_receiver:
         selected = _bind_searchos_handoff_materials_for_components(
             run_kernel=run_kernel,
@@ -3875,6 +3865,11 @@ def _execute_selected_lane(
             component_refs=component_refs,
         )
     else:
+        final_top_evidence = [
+            dict(item)
+            for item in runtime_scope.get("final_top_evidence") or ()
+            if isinstance(item, Mapping)
+        ]
         selected = select_bindable_final_passages_for_components(
             final_top_evidence,
             run_kernel.state.evidence_ledger.to_projection().to_dict(),
