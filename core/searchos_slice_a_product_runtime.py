@@ -4101,6 +4101,32 @@ def _action_history_items(record: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     return [item for item in history_value if isinstance(item, Mapping)]
 
 
+def _project_searchjudgment_action_sequence(
+    record: Mapping[str, Any],
+) -> list[str] | None:
+    """Project the complete safe SearchJudgment action sequence, if valid."""
+
+    history_value = record.get("action_history")
+    if not isinstance(history_value, Sequence) or isinstance(
+        history_value,
+        (str, bytes),
+    ):
+        return None
+    actions: list[str] = []
+    for item in history_value:
+        if not isinstance(item, Mapping) or "action" not in item:
+            continue
+        action = item.get("action")
+        if (
+            not isinstance(action, str)
+            or not action
+            or action not in _SAFE_SEARCHJUDGMENT_ACTIONS
+        ):
+            return None
+        actions.append(action)
+    return actions
+
+
 def _last_searchjudgment_action(record: Mapping[str, Any]) -> str:
     for item in reversed(_action_history_items(record)):
         action = item.get("action")
@@ -4330,6 +4356,224 @@ def _mapping_or_empty(value: Any) -> dict[str, Any]:
         return {}
 
 
+_CANDIDATE_WINDOW_HISTORY_EVENTS = frozenset(
+    {
+        "candidate_window_exposed",
+        "candidate_window_snapshot_advanced",
+    }
+)
+
+
+def _canonical_digest_or_none(value: Any) -> str | None:
+    return value.strip() if _is_canonical_digest_token(value) else None
+
+
+def _safe_digest_refs(
+    value: Any,
+    *,
+    digest_key: str,
+) -> list[str] | None:
+    """Return only complete canonical digest members, never their enclosing refs."""
+
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return None
+    digests: list[str] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            return None
+        digest = _canonical_digest_or_none(item.get(digest_key))
+        if digest is None:
+            return None
+        digests.append(digest)
+    return digests
+
+
+def _logical_component_ordinals(
+    records: Sequence[Mapping[str, Any]],
+) -> dict[str, int]:
+    """Recover accepted component order from canonical slot lineage only.
+
+    SearchOS active slots are created by walking the accepted component refs and
+    retain that order in canonical ``active_slot_ids``.  The readiness records
+    preserve that canonical order.  Repeated physical source-obligation slots
+    for one component therefore share an ordinal; a non-contiguous component
+    sequence or conflicting digest fails closed instead of guessing from a
+    physical slot ordinal.
+    """
+
+    ordinals: dict[str, int] = {}
+    component_by_digest: dict[str, str] = {}
+    digest_by_component: dict[str, str] = {}
+    closed_components: set[str] = set()
+    previous_digest: str | None = None
+    for record in records:
+        slot_ref = _mapping_or_empty(record.get("slot_ref"))
+        component_ref = _mapping_or_empty(slot_ref.get("component_ref"))
+        component_id = str(component_ref.get("component_id") or "").strip()
+        direct_component_id = str(slot_ref.get("component_id") or "").strip()
+        component_digest = _canonical_digest_or_none(
+            component_ref.get("component_digest")
+        )
+        if (
+            not component_id
+            or direct_component_id != component_id
+            or component_digest is None
+        ):
+            return {}
+        if component_by_digest.get(component_digest, component_id) != component_id:
+            return {}
+        if digest_by_component.get(component_id, component_digest) != component_digest:
+            return {}
+        component_by_digest[component_digest] = component_id
+        digest_by_component[component_id] = component_digest
+        if component_digest not in ordinals:
+            if component_digest in closed_components:
+                return {}
+            if previous_digest is not None:
+                closed_components.add(previous_digest)
+            ordinals[component_digest] = len(ordinals) + 1
+        previous_digest = component_digest
+    return ordinals
+
+
+def _project_slot_transition_facts(
+    *,
+    record: Mapping[str, Any],
+    component_ordinal: int | None,
+    handoff_present: bool,
+    recorded_handoff_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Project bounded per-component lifecycle facts from readiness state."""
+
+    slot_ref = _mapping_or_empty(record.get("slot_ref"))
+    component_ref = _mapping_or_empty(slot_ref.get("component_ref"))
+    facts: dict[str, Any] = {}
+    component_digest = _canonical_digest_or_none(
+        component_ref.get("component_digest")
+    )
+    if component_digest is not None:
+        facts["component_digest"] = component_digest
+        if component_ordinal is not None:
+            facts["component_ordinal"] = component_ordinal
+
+    source_obligation_ref = _mapping_or_empty(
+        slot_ref.get("source_obligation_ref")
+    )
+    source_obligation_digest = _canonical_digest_or_none(
+        source_obligation_ref.get("source_obligation_digest")
+    )
+    if source_obligation_digest is not None:
+        facts["source_obligation_digest"] = source_obligation_digest
+
+    query_plan_refs = record.get("current_query_plan_item_refs")
+    query_plan_digests = _safe_digest_refs(
+        query_plan_refs,
+        digest_key="query_plan_item_digest",
+    )
+    if query_plan_digests is not None:
+        facts["query_plan_item_count"] = len(query_plan_digests)
+        facts["query_plan_item_digests"] = query_plan_digests
+
+    candidate_state_ref = _mapping_or_empty(record.get("candidate_state_ref"))
+    candidate_state_digest = next(
+        (
+            digest
+            for key in (
+                "candidate_state_digest",
+                "iteration_candidate_set_digest",
+            )
+            if (digest := _canonical_digest_or_none(candidate_state_ref.get(key)))
+            is not None
+        ),
+        None,
+    )
+    if candidate_state_digest is not None:
+        facts["candidate_state_digest"] = candidate_state_digest
+    zero_useful_result = candidate_state_ref.get("zero_useful_result")
+    if not isinstance(zero_useful_result, bool):
+        zero_result_ref = _mapping_or_empty(
+            candidate_state_ref.get("zero_result_discover_wave_ref")
+        )
+        zero_useful_result = zero_result_ref.get("zero_useful_result")
+    if isinstance(zero_useful_result, bool):
+        facts["candidate_zero_useful_result"] = zero_useful_result
+
+    history_value = record.get("action_history")
+    history_is_sequence = isinstance(history_value, Sequence) and not isinstance(
+        history_value,
+        (str, bytes),
+    )
+    history = _action_history_items(record)
+    if history_is_sequence:
+        facts["read_nomination_count"] = sum(
+            item.get("action") == SearchOSJudgmentAction.REQUEST_READ_PAGE.value
+            for item in history
+        )
+        window_digests: list[str] = []
+        option_set_digests: list[str] = []
+        window_ordinals: list[int] = []
+        window_facts_valid = True
+        for item in history:
+            if item.get("event") not in _CANDIDATE_WINDOW_HISTORY_EVENTS:
+                continue
+            window_ref = _mapping_or_empty(item.get("candidate_use_window_ref"))
+            window_digest = _canonical_digest_or_none(
+                window_ref.get("candidate_use_window_digest")
+            )
+            option_set_digest = _canonical_digest_or_none(
+                window_ref.get("full_eligible_option_digest")
+            )
+            window_ordinal = _nonnegative_int_or_none(
+                window_ref.get("window_ordinal")
+            )
+            if (
+                window_digest is None
+                or option_set_digest is None
+                or window_ordinal is None
+                or window_ordinal <= 0
+            ):
+                window_facts_valid = False
+                break
+            if window_digest not in window_digests:
+                window_digests.append(window_digest)
+            if option_set_digest not in option_set_digests:
+                option_set_digests.append(option_set_digest)
+            window_ordinals.append(window_ordinal)
+        if window_facts_valid:
+            facts["candidate_window_count"] = max(window_ordinals, default=0)
+            facts["candidate_window_digests"] = window_digests
+            facts["full_eligible_option_digests"] = option_set_digests
+
+    judgment_actions = _project_searchjudgment_action_sequence(record)
+    if judgment_actions is not None:
+        facts["judgment_actions"] = judgment_actions
+
+    custody_refs = record.get("custody_refs")
+    custody_digests = _safe_digest_refs(
+        custody_refs,
+        digest_key="read_custody_material_digest",
+    )
+    bounded_digests = _safe_digest_refs(
+        custody_refs,
+        digest_key="bounded_text_digest",
+    )
+    if custody_digests is not None and bounded_digests is not None:
+        facts["custody_count"] = len(custody_digests)
+        facts["custody_material_digests"] = custody_digests
+        facts["bounded_material_digests"] = bounded_digests
+
+    handoff_digest = _canonical_digest_or_none(
+        recorded_handoff_ref.get("semantic_handoff_digest")
+    )
+    if handoff_present and handoff_digest is not None:
+        facts["semantic_handoff_count"] = 1
+        facts["semantic_handoff_digests"] = [handoff_digest]
+    else:
+        facts["semantic_handoff_count"] = 0
+        facts["semantic_handoff_digests"] = []
+    return facts
+
+
 def _project_component_analyst_failure(
     value: Any,
     *,
@@ -4372,6 +4616,7 @@ def _project_slot_summary(
     outcome: Mapping[str, Any],
     required: bool,
     handoff_authorization_attempted_slot_ids: frozenset[str],
+    component_ordinals: Mapping[str, int],
 ) -> dict[str, Any]:
     slot_ref = _mapping_or_empty(record.get("slot_ref"))
     admission_ref = _mapping_or_empty(outcome.get("semantic_admission_outcome_ref"))
@@ -4421,6 +4666,11 @@ def _project_slot_summary(
             last_searchjudgment_action=last_searchjudgment_action,
         )
     )
+    component_digest = _canonical_digest_or_none(
+        _mapping_or_empty(slot_ref.get("component_ref")).get(
+            "component_digest"
+        )
+    )
     return {
         "slot_identity_digest": _opaque_identity_digest(slot_ref.get("slot_id")),
         "component_identity_digest": _opaque_identity_digest(slot_ref.get("component_id")),
@@ -4467,6 +4717,16 @@ def _project_slot_summary(
             "admitted" if admission_status in {"admitted", "admitted_with_caveats"} else admission_status
         ),
         "component_coverage_satisfied": coverage_satisfied,
+        **_project_slot_transition_facts(
+            record=record,
+            component_ordinal=(
+                component_ordinals.get(component_digest)
+                if component_digest is not None
+                else None
+            ),
+            handoff_present=handoff_present,
+            recorded_handoff_ref=recorded_handoff_ref,
+        ),
     }
 
 
@@ -4877,6 +5137,7 @@ def build_bounded_searchos_n1_causal_projection(
         for record in slot_records
         if str(record.get("requirement_posture") or "") == "optional"
     ]
+    component_ordinals = _logical_component_ordinals(slot_records)
 
     def _outcome_for_slot(slot_id: str) -> dict[str, Any]:
         outcome_value = outcomes.get(slot_id)
@@ -4896,6 +5157,7 @@ def build_bounded_searchos_n1_causal_projection(
                 handoff_authorization_attempted_slot_ids=(
                     handoff_authorization_attempted_slot_ids
                 ),
+                component_ordinals=component_ordinals,
             )
         )
     optional_slots: list[dict[str, Any]] = []
@@ -4912,6 +5174,7 @@ def build_bounded_searchos_n1_causal_projection(
                 handoff_authorization_attempted_slot_ids=(
                     handoff_authorization_attempted_slot_ids
                 ),
+                component_ordinals=component_ordinals,
             )
         )
     all_slot_summaries = slots + optional_slots
