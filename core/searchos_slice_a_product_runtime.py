@@ -1440,12 +1440,6 @@ def _execute_searchos_slice_a_iterative_judgment(
                         },
                     )
                 )
-                if _invalid_or_stale_nomination(exc):
-                    run_kernel.mark_searchos_slot_stale_or_invalid(
-                        slot_id=slot_id,
-                        reason=failure_reason,
-                    )
-                    continue
                 if (
                     recovery_cycle_ref is not None
                     and is_searchos_recoverable_judgment_output_failure_reason(
@@ -3297,20 +3291,6 @@ def _failure_reason(exc: Exception) -> str:
         detail = str(exc).strip().casefold().replace(" ", "_")
         return ("model_output_invalid:" + detail)[:240]
     return f"model_transport_failed:{type(exc).__name__}"
-
-
-def _invalid_or_stale_nomination(exc: Exception) -> bool:
-    if not isinstance(exc, SearchOSRuntimeError):
-        return False
-    detail = str(exc).casefold()
-    return any(
-        token in detail
-        for token in (
-            "nomination",
-            "outside current candidate window",
-            "stale or altered",
-        )
-    )
 
 
 def _read_failure_reason(exc: Exception) -> str:

@@ -266,15 +266,21 @@ def test_mandatory_no_read_call_ignores_legacy_full_judgment_flag(
 
 
 @pytest.mark.parametrize(
-    ("decision", "expected_failure", "expected_posture"),
+    ("decision", "expected_failure", "expected_posture", "expected_calls_per_slot"),
     [
-        ("MODEL_FAILURE", "model_transport_failed:AssertionError", "judgment_failed"),
-        ("MALFORMED", "model_output_malformed", "judgment_failed"),
-        ("WRAPPED_JSON", "model_output_malformed", "judgment_failed"),
+        (
+            "MODEL_FAILURE",
+            "model_transport_failed:AssertionError",
+            "judgment_failed",
+            1,
+        ),
+        ("MALFORMED", "model_output_malformed", "judgment_failed", 1),
+        ("WRAPPED_JSON", "model_output_malformed", "judgment_failed", 1),
         (
             "INVALID_NOMINATION",
             "model_output_invalid:read_nomination_is_outside_current_candidate_window",
-            "stale_or_invalid",
+            "budget_exhausted",
+            3,
         ),
     ],
 )
@@ -284,6 +290,7 @@ def test_assessment_failure_is_typed_closed_without_fallback_or_acquisition(
     decision: str,
     expected_failure: str,
     expected_posture: str,
+    expected_calls_per_slot: int,
 ) -> None:
     _install_response_only_discovery(monkeypatch)
     outcome, harness = run_post_retirement_ordinary_pipeline(
@@ -303,10 +310,15 @@ def test_assessment_failure_is_typed_closed_without_fallback_or_acquisition(
     projection = trace["searchos_slice_a"]
     state = _kernel_trace(harness)["searchos_state"]
     slots = _searchos_slots(harness)
-    assert len(harness.read_assessment_calls) == len(slots)
-    assert state["budget"]["failed_logical_judgment_calls"] == len(slots)
+    assert len(harness.read_assessment_calls) == len(slots) * expected_calls_per_slot
+    assert state["budget"]["failed_logical_judgment_calls"] == len(slots) * expected_calls_per_slot
     assert all(slot["posture"] == expected_posture for slot in slots)
-    assert all(slot["latest_reason"] == expected_failure for slot in slots)
+    expected_latest_reason = (
+        "judgment_call_budget_exhausted"
+        if decision == "INVALID_NOMINATION"
+        else expected_failure
+    )
+    assert all(slot["latest_reason"] == expected_latest_reason for slot in slots)
     assert all(slot["custody_refs"] == [] for slot in slots)
     assert projection["provider_calls_attempted"] == 0
     assert projection["provider_calls_completed"] == 0
