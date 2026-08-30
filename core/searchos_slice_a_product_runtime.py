@@ -4101,6 +4101,32 @@ def _action_history_items(record: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     return [item for item in history_value if isinstance(item, Mapping)]
 
 
+def _project_searchjudgment_action_sequence(
+    record: Mapping[str, Any],
+) -> list[str] | None:
+    """Project the complete safe SearchJudgment action sequence, if valid."""
+
+    history_value = record.get("action_history")
+    if not isinstance(history_value, Sequence) or isinstance(
+        history_value,
+        (str, bytes),
+    ):
+        return None
+    actions: list[str] = []
+    for item in history_value:
+        if not isinstance(item, Mapping) or "action" not in item:
+            continue
+        action = item.get("action")
+        if (
+            not isinstance(action, str)
+            or not action
+            or action not in _SAFE_SEARCHJUDGMENT_ACTIONS
+        ):
+            return None
+        actions.append(action)
+    return actions
+
+
 def _last_searchjudgment_action(record: Mapping[str, Any]) -> str:
     for item in reversed(_action_history_items(record)):
         action = item.get("action")
@@ -4517,6 +4543,10 @@ def _project_slot_transition_facts(
             facts["candidate_window_count"] = max(window_ordinals, default=0)
             facts["candidate_window_digests"] = window_digests
             facts["full_eligible_option_digests"] = option_set_digests
+
+    judgment_actions = _project_searchjudgment_action_sequence(record)
+    if judgment_actions is not None:
+        facts["judgment_actions"] = judgment_actions
 
     custody_refs = record.get("custody_refs")
     custody_digests = _safe_digest_refs(

@@ -6,7 +6,7 @@ Validation bucket: phase_focus.
 Surface guarded: bounded SearchOS causal projection and packet privacy.
 High-custody or closed-this-phase surface: SearchOS runtime authority is closed.
 Runtime/product path guarded: deterministic projection fixture only; no live path.
-Expected cost: five sub-second deterministic tests.
+Expected cost: eight sub-second deterministic tests.
 Promotion posture: remain phase_focus; not a permanent lane sentinel.
 Demotion/retirement condition: retire when the bounded projection is replaced
 or these component-transition facts move to a canonical durable test owner.
@@ -104,6 +104,7 @@ def _slot_record(
     component: str,
     *,
     admitted: bool,
+    judgment_actions: tuple[str, ...] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     slot_ref = _slot_ref(component)
     component_digest = str(slot_ref["component_ref"]["component_digest"])
@@ -120,6 +121,15 @@ def _slot_record(
         {"candidate_options": component}
     )
     handoff = _safe_handoff(component)
+    if judgment_actions is None:
+        judgment_actions = (
+            (
+                "REQUEST_READ_PAGE",
+                "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION",
+            )
+            if admitted
+            else ("REQUEST_READ_PAGE",)
+        )
     history: list[dict[str, Any]] = [
         {
             "event": "candidate_window_exposed",
@@ -130,21 +140,17 @@ def _slot_record(
             },
             "normalized_url": PRIVATE_URL,
         },
+    ]
+    history.extend(
         {
             "event": "judgment_decided",
-            "action": "REQUEST_READ_PAGE",
+            "action": action,
             "reason": PRIVATE_CANARY,
             "title": PRIVATE_CANARY,
-        },
-    ]
+        }
+        for action in judgment_actions
+    )
     if admitted:
-        history.append(
-            {
-                "event": "judgment_decided",
-                "action": "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION",
-                "reason": PRIVATE_CANARY,
-            }
-        )
         posture = "semantically_handed_off"
         reason = "read_custody_selected_for_semantic_evaluation"
         custody_refs = [_safe_custody(component)]
@@ -186,7 +192,7 @@ def _slot_record(
         "support_kind": "official_current",
         "latest_judgment_posture": posture,
         "latest_judgment_reason": reason,
-        "judgment_call_count": 2,
+        "judgment_call_count": len(judgment_actions),
         "action_history": history,
         "candidate_state_ref": {
             "candidate_state_id": f"searchos-state:{candidate_state_digest[:24]}",
@@ -215,6 +221,7 @@ def _projection(
     *,
     admitted_components: frozenset[str],
     processing_order: tuple[str, str] = ("A", "B"),
+    judgment_actions_by_component: Mapping[str, tuple[str, ...]] | None = None,
 ) -> dict[str, Any]:
     records_by_component: dict[str, dict[str, Any]] = {}
     outcomes_by_component: dict[str, dict[str, Any]] = {}
@@ -222,6 +229,11 @@ def _projection(
         record, outcome = _slot_record(
             component,
             admitted=component in admitted_components,
+            judgment_actions=(
+                judgment_actions_by_component.get(component)
+                if judgment_actions_by_component is not None
+                else None
+            ),
         )
         records_by_component[component] = record
         outcomes_by_component[component] = outcome
@@ -350,6 +362,95 @@ def test_success_fixture_keeps_two_logical_components_independently_correlatable
         slot["final_posture"] == "semantically_handed_off"
         for slot in (component_a, component_b)
     )
+
+
+def test_same_summary_counts_still_expose_different_searchjudgment_paths() -> None:
+    projection = build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=_projection(
+            admitted_components=frozenset({"A", "B"}),
+            judgment_actions_by_component={
+                "A": (
+                    "REQUEST_READ_PAGE",
+                    "REQUEST_NAVIGATE_BREADCRUMB",
+                    "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION",
+                ),
+                "B": (
+                    "REQUEST_READ_PAGE",
+                    "PROPOSE_FOLLOWUP_QUERY",
+                    "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION",
+                ),
+            },
+        ),
+        expected_run_id=RUN_ID,
+        expected_request_id=REQUEST_ID,
+    )
+    assert projection is not None
+    by_component = _projected_by_component(projection)
+    component_a = by_component[_component_digest("A")]
+    component_b = by_component[_component_digest("B")]
+
+    assert component_a["judgment_event_count"] == component_b["judgment_event_count"]
+    assert component_a["judgment_failure_count"] == component_b["judgment_failure_count"]
+    assert component_a["read_nomination_count"] == component_b["read_nomination_count"]
+    assert component_a["last_searchjudgment_action"] == component_b[
+        "last_searchjudgment_action"
+    ]
+    assert component_a["judgment_actions"] == [
+        "REQUEST_READ_PAGE",
+        "REQUEST_NAVIGATE_BREADCRUMB",
+        "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION",
+    ]
+    assert component_b["judgment_actions"] == [
+        "REQUEST_READ_PAGE",
+        "PROPOSE_FOLLOWUP_QUERY",
+        "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION",
+    ]
+    assert component_a["judgment_actions"] != component_b["judgment_actions"]
+
+
+def test_searchjudgment_action_order_and_repetition_are_preserved() -> None:
+    expected_actions = [
+        "REQUEST_READ_PAGE",
+        "PROPOSE_FOLLOWUP_QUERY",
+        "REQUEST_READ_PAGE",
+        "HANDOFF_CURRENT_MATERIAL_FOR_SEMANTIC_EVALUATION",
+    ]
+    projection = build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=_projection(
+            admitted_components=frozenset({"A", "B"}),
+            judgment_actions_by_component={"A": tuple(expected_actions)},
+        ),
+        expected_run_id=RUN_ID,
+        expected_request_id=REQUEST_ID,
+    )
+    assert projection is not None
+    component_a = _projected_by_component(projection)[_component_digest("A")]
+
+    assert component_a["judgment_actions"] == expected_actions
+    assert component_a["judgment_actions"].count("REQUEST_READ_PAGE") == 2
+    assert component_a["last_searchjudgment_action"] == expected_actions[-1]
+
+
+def test_unknown_searchjudgment_action_omits_whole_sequence_and_private_canary() -> None:
+    fixture = _projection(admitted_components=frozenset({"A", "B"}))
+    fixture["readiness_projection"]["slot_records"][0]["action_history"].insert(
+        2,
+        {
+            "event": "judgment_decided",
+            "action": PRIVATE_CANARY,
+            "reason": PRIVATE_CANARY,
+        },
+    )
+    projection = build_bounded_searchos_n1_causal_projection(
+        searchos_slice_a_projection=fixture,
+        expected_run_id=RUN_ID,
+        expected_request_id=REQUEST_ID,
+    )
+    assert projection is not None
+    component_a = _projected_by_component(projection)[_component_digest("A")]
+
+    assert "judgment_actions" not in component_a
+    assert PRIVATE_CANARY not in json.dumps(projection, sort_keys=True)
 
 
 def test_reverse_processing_order_does_not_swap_component_records() -> None:
