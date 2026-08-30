@@ -2968,7 +2968,11 @@ def _consume_scheduler_selected_artifact(
                 requested_synthesis_directive=str(packet.get("requested_synthesis_directive") or ""),
                 component_nodes=component_nodes,
                 cross_component_artifact=artifact,
-                component_analyst_input_packets=_safe_mapping(drive_context.get("component_analyst_input_packets")),
+                component_analyst_input_packets=_safe_mapping(
+                    _safe_mapping(
+                        run_kernel.state.multicomponent_scheduler_context
+                    ).get("component_analyst_input_packets")
+                ),
                 transient_cross_input_packet=packet,
                 additional_scrutineer_trigger_reasons=tuple(
                     drive_context.get("additional_scrutineer_trigger_reasons") or ()
@@ -3538,7 +3542,6 @@ def _drive_run_kernel_selected_semantic_work(
     run_kernel: Any,
     runtime_scope: Mapping[str, Any],
     selected_bindables: Mapping[str, Any],
-    component_analyst_input_packets: Mapping[str, Mapping[str, Any]],
     query: str,
 ) -> None:
     """Drive qualifying semantic work exclusively from RunKernel leases."""
@@ -3549,9 +3552,6 @@ def _drive_run_kernel_selected_semantic_work(
     drive_context: dict[str, Any] = {
         "runtime_scope": runtime_scope,
         "selected_bindables": dict(selected_bindables),
-        "component_analyst_input_packets": {
-            str(key): _safe_mapping(value) for key, value in component_analyst_input_packets.items()
-        },
         "query": query,
         "cost_recorded_child_action_ids": set(),
         "additional_scrutineer_trigger_reasons": (
@@ -3969,7 +3969,6 @@ def _execute_selected_lane(
             run_kernel=run_kernel,
             runtime_scope=runtime_scope,
             selected_bindables=selected,
-            component_analyst_input_packets=analyst_inputs,
             query=query,
         )
     finally:
