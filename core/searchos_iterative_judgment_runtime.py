@@ -1357,11 +1357,12 @@ def record_searchos_judgment_failure(
 _RECOVERABLE_JUDGMENT_OUTPUT_FAILURE_PREFIX = "model_output_invalid:"
 _RECOVERABLE_JUDGMENT_OUTPUT_FAILURE_DETAILS = (
     "post-read_action_requires_exact_read_insufficient_assessments",
+    "read_nomination_is_outside_current_candidate_window",
 )
 
 
 def is_searchos_recoverable_judgment_output_failure_reason(reason: Any) -> bool:
-    """True for the post-READ assessment miss, not stale or pre-READ malformed output."""
+    """True for closed model-output rejections that preserve current state."""
 
     text = str(reason or "").strip().casefold()
     if not text.startswith(_RECOVERABLE_JUDGMENT_OUTPUT_FAILURE_PREFIX):

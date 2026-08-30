@@ -998,7 +998,7 @@ def test_judgment_failure_is_typed_closed_without_read_or_fallback(
     readiness = dict(searchos["readiness_projection"])
     assert readiness["all_required_slots_slice_a_ready"] is False
     expected_posture = (
-        "stale_or_invalid"
+        "budget_exhausted"
         if decision == "INVALID_NOMINATION"
         else "judgment_failed"
     )
@@ -1008,19 +1008,19 @@ def test_judgment_failure_is_typed_closed_without_read_or_fallback(
     )
     assert searchos["required_needs_block_ref"]["block_type"] == (SEARCHOS_SLICE_A_REQUIRED_NEEDS_UNRESOLVED)
     assert trace["blocked_fap_terminal"]["author_called"] is False
-    assert "validation_failure" in {
-        item["blocker_class"]
-        for item in harness.run_kernel.state.projections[
-            "searchos_required_needs_block"
-        ]["blocker_facts"]
-    }
-    assert {
-        item["interpretation"]
-        for item in harness.run_kernel.state.projections[
-            "searchos_required_needs_block"
-        ]["blocker_facts"]
-        if item["blocker_class"] == "validation_failure"
-    } == {"structural_or_validation_blocker"}
+    blocker_facts = harness.run_kernel.state.projections[
+        "searchos_required_needs_block"
+    ]["blocker_facts"]
+    blocker_classes = {item["blocker_class"] for item in blocker_facts}
+    if decision == "INVALID_NOMINATION":
+        assert "recovery_policy_closed" in blocker_classes
+    else:
+        assert "validation_failure" in blocker_classes
+        assert {
+            item["interpretation"]
+            for item in blocker_facts
+            if item["blocker_class"] == "validation_failure"
+        } == {"structural_or_validation_blocker"}
     assert harness.run_kernel.state.sufficiency_judgment_history
     assert (
         harness.run_kernel.state.sufficiency_judgment_history[-1][
@@ -1031,7 +1031,9 @@ def test_judgment_failure_is_typed_closed_without_read_or_fallback(
     assert harness.run_kernel.state.sufficiency_judgment_history[-1][
         "searchos_required_needs_block_consumption"
     ]["final_blocker_interpretation"] == (
-        "structural_or_validation_blocker"
+        "lawful_recovery_exhaustion"
+        if decision == "INVALID_NOMINATION"
+        else "structural_or_validation_blocker"
     )
     assert harness.read_transport_calls == []
     assert len(harness.search_calls) == 1
@@ -2552,9 +2554,9 @@ def test_n1_partial_anchor_read_does_not_launder_semantic_support(
         ("WRAPPED_JSON", "judgment_failed", "model_output_malformed", "none"),
         (
             "INVALID_NOMINATION",
-            "stale_or_invalid",
-            "stale_or_invalid",
-            "read_nomination_outside_window",
+            "budget_exhausted",
+            "budget_exhausted",
+            "none",
         ),
         (
             "ALTERED_NOMINATION_REF",
