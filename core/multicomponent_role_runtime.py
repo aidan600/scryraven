@@ -736,6 +736,48 @@ def _normalize_semantic_output(
     raise MulticomponentRoleRuntimeError(f"unknown semantic role: {role}")
 
 
+def _bind_cross_component_inputs_to_current_packet(
+    semantic_output: Mapping[str, Any],
+    *,
+    input_packet: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Resolve deterministic local component aliases to current component IDs."""
+
+    component_ids = [
+        _clean_text(_safe_mapping(item).get("component_id"), limit=160)
+        for item in _safe_sequence(input_packet.get("component_nodes"))
+    ]
+    if (
+        not component_ids
+        or any(not component_id for component_id in component_ids)
+        or len(component_ids) != len(set(component_ids))
+    ):
+        return deepcopy(dict(semantic_output))
+    canonical_ids = set(component_ids)
+    aliases = {
+        f"component_{index:02d}": component_id
+        for index, component_id in enumerate(component_ids, start=1)
+    }
+    bound = deepcopy(dict(semantic_output))
+    proposals: list[dict[str, Any]] = []
+    for raw_proposal in _safe_sequence(bound.get("synthesis_proposals")):
+        proposal = dict(_safe_mapping(raw_proposal))
+        proposal["component_inputs"] = [
+            (
+                component_input
+                if component_input in canonical_ids
+                else aliases.get(component_input, component_input)
+            )
+            for component_input in _text_list(
+                proposal.get("component_inputs"),
+                limit=160,
+            )
+        ]
+        proposals.append(proposal)
+    bound["synthesis_proposals"] = proposals
+    return bound
+
+
 def validate_multicomponent_role_artifact(
     value: Mapping[str, Any],
     *,
@@ -964,6 +1006,11 @@ def execute_prepared_multicomponent_transport(
                 parsed_output,
                 output_schema_variant=prepared.output_schema_variant,
             )
+            if prepared.role == ROLE_CROSS_COMPONENT_ANALYST:
+                normalized = _bind_cross_component_inputs_to_current_packet(
+                    normalized,
+                    input_packet=prepared.input_packet,
+                )
             failure_kind = None
     except RunCapExceeded:
         raise
@@ -1354,6 +1401,11 @@ def execute_multicomponent_role_call(
             ),
             output_schema_variant=schema_variant,
         )
+        if normalized_role == ROLE_CROSS_COMPONENT_ANALYST:
+            semantic_output = _bind_cross_component_inputs_to_current_packet(
+                semantic_output,
+                input_packet=safe_input,
+            )
     except RunCapExceeded:
         raise
     except Exception as exc:
