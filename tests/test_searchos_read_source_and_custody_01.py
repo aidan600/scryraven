@@ -856,8 +856,16 @@ def test_provider_failure_ends_after_one_attempt_without_fallback(
     failed_read_slot = next(
         slot for slot in slots if slot["read_nomination_count"] == 1
     )
-    assert failed_read_slot["latest_reason"] == (
-        "read_transport_failure:selected_provider_transport_failed"
+    assert failed_read_slot["posture"] == "unresolved_handoff"
+    assert any(
+        item.get("event") == "read_transport_failure"
+        and item.get("reason")
+        == "read_transport_failure:selected_provider_transport_failed"
+        for item in failed_read_slot["action_history"]
+    )
+    assert all(
+        item.get("event") != "stale_or_invalid"
+        for item in failed_read_slot["action_history"]
     )
     assert all(slot["custody_refs"] == [] for slot in slots)
     assert projection["semantic_handoff_refs"] == []

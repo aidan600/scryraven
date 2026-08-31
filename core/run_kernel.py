@@ -8323,6 +8323,25 @@ class RunKernel:
             raise RunKernelTransitionError(str(exc)) from exc
         self.state.projections[SEARCHOS_JUDGMENT_STAGE] = deepcopy(self.state.searchos_state)
 
+    def record_searchos_read_transport_failure(
+        self, *, slot_id: str, reason: str
+    ) -> None:
+        from core.searchos_iterative_judgment_runtime import (
+            record_searchos_read_transport_failure,
+        )
+
+        try:
+            self.state.searchos_state = record_searchos_read_transport_failure(
+                self.state.searchos_state,
+                slot_id=slot_id,
+                reason=reason,
+            )
+        except ValueError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        self.state.projections[SEARCHOS_JUDGMENT_STAGE] = deepcopy(
+            self.state.searchos_state
+        )
+
     def record_searchos_followup_acquisition_failed(
         self, *, slot_id: str, reason: str
     ) -> None:

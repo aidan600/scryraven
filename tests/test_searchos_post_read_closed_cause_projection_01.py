@@ -319,7 +319,7 @@ def test_candidate_packet_stale_product_branch_projects_closed_cause(
     )
 
 
-def test_read_transport_product_branch_projects_only_closed_cause(
+def test_read_transport_product_branch_preserves_judgment_loop(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -364,9 +364,8 @@ def test_read_transport_product_branch_projects_only_closed_cause(
     )
 
     assert projection is not None
-    assert projection["slots"][0]["searchos_post_read_failure_cause"] == (
-        "read_transport_failure"
-    )
+    assert projection["slots"][0]["final_posture"] == "unresolved_handoff"
+    assert "searchos_post_read_failure_cause" not in projection["slots"][0]
     assert _PRIVATE_REASON_CANARY not in json.dumps(projection, sort_keys=True)
 
 
