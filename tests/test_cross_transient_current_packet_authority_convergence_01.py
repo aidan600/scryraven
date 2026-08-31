@@ -1,6 +1,6 @@
 """Offline proof for the initial Cross packet authority convergence.
 
-Test path/node id: this module's two tests
+Test path/node id: this module's three tests
 Proof class: offline_product_path_projection_proof
 Validation bucket: phase_focus
 Surface guarded: initial Cross packet binding and Graph V1 currentness
@@ -16,6 +16,7 @@ full ordinary multi-component synthesis setup.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +32,7 @@ from core.component_work_graph_v1 import (
 from core.cost_accounting import CostAccumulator
 from core.multicomponent_role_runtime import (
     ROLE_CROSS_COMPONENT_ANALYST,
+    ROLE_SYSTEM_PROMPTS,
     safe_packet_digest,
 )
 from core.protocols import NullStatusWriter
@@ -241,3 +243,66 @@ def test_initial_cross_remains_fail_closed_when_canonical_packet_changes(
         match="Cross input reconstruction component packet binding mismatch",
     ):
         _run_northstar(harness=harness, monkeypatch=monkeypatch)
+
+
+def test_initial_cross_binds_deterministic_component_aliases_to_current_nodes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness = NorthstarHarness(tmp_path)
+    original_ask_model = harness.ask_model
+
+    def ask_model_with_local_component_aliases(
+        prompt: str,
+        system_prompt: str,
+        **kwargs: Any,
+    ) -> str:
+        if system_prompt != ROLE_SYSTEM_PROMPTS[ROLE_CROSS_COMPONENT_ANALYST]:
+            return original_ask_model(prompt, system_prompt, **kwargs)
+        payload = json.loads(prompt)
+        harness.role_input_packets.append(
+            {"system_prompt": system_prompt, "input_packet": payload}
+        )
+        harness.model_calls.append(
+            {
+                "system_prompt": system_prompt,
+                "stream": bool(kwargs.get("stream")),
+                "provider": kwargs.get("provider"),
+                "model": kwargs.get("model"),
+                "use_reasoning": kwargs.get("use_reasoning"),
+            }
+        )
+        return json.dumps(
+            {
+                "synthesis_proposals": [
+                    {
+                        "synthesis_key": "S",
+                        "claim_text": (
+                            "The first two requested Northstar facts are both "
+                            "established by their admitted components."
+                        ),
+                        "relationship_type": "bounded_comparison",
+                        "component_inputs": ["component_01", "component_02"],
+                        "synthesis_inputs": [],
+                        "caveats": [],
+                        "nonclaims": [],
+                        "blockers": [],
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr(harness, "ask_model", ask_model_with_local_component_aliases)
+
+    captured, _outcome = _run_northstar(harness=harness, monkeypatch=monkeypatch)
+
+    graph = captured["semantic_run_kernel"].state.projections[
+        graph_runtime.COMPONENT_WORK_GRAPH_V1_STAGE
+    ]
+    component_node_ids = [
+        item["node_id"] for item in graph["component_nodes"][:2]
+    ]
+    synthesis_node = graph["synthesis_nodes"][0]
+    assert [
+        item["node_id"] for item in synthesis_node["input_node_refs"]
+    ] == component_node_ids
