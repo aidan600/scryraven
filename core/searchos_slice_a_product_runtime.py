@@ -52,6 +52,7 @@ from core.searchos_iterative_judgment_runtime import (
     build_searchos_revision_1_candidate_state_v1,
     candidate_use_option_ref,
     is_searchos_followup_acquisition_failure_reason,
+    is_searchos_read_transport_failure_reason,
     is_searchos_recoverable_judgment_output_failure_reason,
     searchos_revision_1_candidate_state_ref,
     validate_searchos_append_only_lineage,
@@ -1540,10 +1541,19 @@ def _execute_searchos_slice_a_iterative_judgment(
                     )
                     provider_calls[0] += max(0, after_attempted - before_attempted)
                     provider_calls[1] += max(0, after_completed - before_completed)
-                    run_kernel.mark_searchos_slot_stale_or_invalid(
-                        slot_id=slot_id,
-                        reason=_read_failure_reason(exc),
-                    )
+                    read_failure_reason = _read_failure_reason(exc)
+                    if is_searchos_read_transport_failure_reason(
+                        read_failure_reason
+                    ):
+                        run_kernel.record_searchos_read_transport_failure(
+                            slot_id=slot_id,
+                            reason=read_failure_reason,
+                        )
+                    else:
+                        run_kernel.mark_searchos_slot_stale_or_invalid(
+                            slot_id=slot_id,
+                            reason=read_failure_reason,
+                        )
                     continue
                 after_attempted, after_completed = (
                     _acquisition_provider_call_totals(run_kernel)

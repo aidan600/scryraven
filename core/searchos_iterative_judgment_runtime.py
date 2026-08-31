@@ -1500,6 +1500,76 @@ def mark_searchos_slot_stale_or_invalid(state: Mapping[str, Any], *, slot_id: st
     return _refresh_state(candidate)
 
 
+READ_TRANSPORT_FAILURE_REASON_PREFIX = "read_transport_failure"
+
+
+def is_searchos_read_transport_failure_reason(reason: Any) -> bool:
+    """True when a failed physical READ is transport, not lineage staleness."""
+
+    text = str(reason or "").strip().casefold()
+    return bool(
+        text
+        and (
+            text == READ_TRANSPORT_FAILURE_REASON_PREFIX
+            or text.startswith(READ_TRANSPORT_FAILURE_REASON_PREFIX + ":")
+            or text.startswith(READ_TRANSPORT_FAILURE_REASON_PREFIX + "_")
+        )
+    )
+
+
+def record_searchos_read_transport_failure(
+    state: Mapping[str, Any], *, slot_id: str, reason: str
+) -> dict[str, Any]:
+    """Return a failed physical READ to judgment without staling the slot.
+
+    The READ nomination and provider attempt have already been charged by the
+    preceding transitions. This helper records only the failed attempt and
+    preserves the canonical candidate, window, and any earlier READ custody so
+    another SearchJudgment round can use the existing policy budget.
+    """
+
+    candidate = _validated_state_copy(state)
+    slots = _mutable_mapping(candidate["slots_by_id"])
+    token = _token(slot_id, "slot_id")
+    if token not in slots:
+        raise SearchOSRuntimeError(
+            "READ transport failure references an inactive slot"
+        )
+    bounded = _bounded_reason(reason)
+    if not is_searchos_read_transport_failure_reason(bounded):
+        raise SearchOSRuntimeError(
+            "READ transport failure reason is not a transport failure"
+        )
+    slot = deepcopy(slots[token])
+    if slot.get("posture") != SearchOSSlotPosture.AWAITING_READ.value:
+        raise SearchOSRuntimeError(
+            "READ transport failure does not follow REQUEST_READ_PAGE"
+        )
+    custody_before = deepcopy(list(slot.get("custody_refs") or ()))
+    if any(_mapping(item).get("stale") is True for item in custody_before):
+        raise SearchOSRuntimeError(
+            "READ transport failure cannot taint stale READ custody"
+        )
+    slot["posture"] = SearchOSSlotPosture.ACTIVE_UNJUDGED.value
+    slot["latest_reason"] = bounded
+    slot["action_history"].append(
+        {
+            "event": "read_transport_failure",
+            "reason": bounded,
+            "satisfaction_claimed": False,
+            "support_admitted": False,
+            "auto_handoff": False,
+        }
+    )
+    if deepcopy(list(slot.get("custody_refs") or ())) != custody_before:
+        raise SearchOSRuntimeError(
+            "READ transport failure mutated READ custody"
+        )
+    slots[token] = _refresh_slot(slot)
+    candidate["slots_by_id"] = slots
+    return _refresh_state(candidate)
+
+
 FOLLOWUP_ACQUISITION_FAILURE_REASON_PREFIXES = (
     "followup_acquisition_failed",
     "followup_discover_failed",
@@ -5602,8 +5672,11 @@ __all__ = [
     "mark_searchos_slot_budget_exhausted",
     "mark_searchos_slot_stale_or_invalid",
     "mark_searchos_slot_unresolved",
+    "READ_TRANSPORT_FAILURE_REASON_PREFIX",
+    "is_searchos_read_transport_failure_reason",
     "is_searchos_followup_acquisition_failure_reason",
     "is_searchos_recoverable_judgment_output_failure_reason",
+    "record_searchos_read_transport_failure",
     "record_searchos_followup_acquisition_failed",
     "record_searchos_candidate_window",
     "record_searchos_judgment_failure",
