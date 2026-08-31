@@ -48,6 +48,10 @@ from core.cap_enforcement import (
     TokenUsage,
     is_cap_aware,
 )
+from core.component_semantic_frontier_projection import (
+    COMPONENT_SEMANTIC_FRONTIER_TRACE_KEY,
+    component_semantic_frontier_from_exception,
+)
 from core.conflict_resolution_controller import (
     ConflictResolutionDecision,
     conflict_resolution_lifecycle_defaults,
@@ -847,6 +851,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     searchos_component_receiver_selected = False
     searchos_component_receiver_completed = False
     searchos_component_receiver_failure_reason: str | None = None
+    component_semantic_frontier_projection: dict[str, Any] = {}
     run_contract_projection: dict[str, Any] = {}
     evidence_ledger_projection = run_kernel.state.evidence_ledger.to_projection().to_dict()
     provider_job_evidence_ledger_bridge_projection: dict[str, Any] = {}
@@ -3643,10 +3648,15 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         if all_required_material_handed:
             searchos_component_receiver_selected = True
             try:
-                execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
-                    run_kernel,
-                    locals(),
-                    allow_searchos_component_receiver=True,
+                multicomponent_result = (
+                    execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
+                        run_kernel,
+                        locals(),
+                        allow_searchos_component_receiver=True,
+                    )
+                )
+                component_semantic_frontier_projection = dict(
+                    multicomponent_result.component_semantic_frontier or {}
                 )
                 searchos_component_receiver_completed = True
                 if cap_policy is not None:
@@ -3654,6 +3664,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                         "searchos_component_receiver_complete"
                     )
             except OrdinaryMulticomponentRuntimeError as exc:
+                component_semantic_frontier_projection = (
+                    component_semantic_frontier_from_exception(exc)
+                )
                 searchos_component_receiver_failure_reason = (
                     "searchos_component_receiver_failure"
                 )
@@ -3669,9 +3682,14 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 ] = str(exc)[:240]
     elif ordinary_multicomponent_path_selected(run_kernel):
         searchos_component_receiver_selected = True
-        execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
-            run_kernel,
-            locals(),
+        multicomponent_result = (
+            execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
+                run_kernel,
+                locals(),
+            )
+        )
+        component_semantic_frontier_projection = dict(
+            multicomponent_result.component_semantic_frontier or {}
         )
         searchos_component_receiver_completed = True
 
@@ -5087,6 +5105,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         code_version_metadata_builder=current_code_version_metadata,
     )
     execution_trace = post_author_output_packaging.execution_trace
+    if component_semantic_frontier_projection:
+        execution_trace[COMPONENT_SEMANTIC_FRONTIER_TRACE_KEY] = dict(
+            component_semantic_frontier_projection
+        )
     execution_trace["provider_plan"] = provider_plan.to_trace()
     discovery_result_telemetry = discovery_result_store.telemetry()
     discovery_result_telemetry.update(

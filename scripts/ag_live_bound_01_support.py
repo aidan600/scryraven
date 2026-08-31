@@ -9,6 +9,11 @@ from pathlib import Path
 from typing import Any
 
 from core.cap_enforcement import RunCapPolicy
+from core.component_semantic_frontier_projection import (
+    COMPONENT_SEMANTIC_FRONTIER_TRACE_KEY,
+    component_semantic_frontier_from_exception,
+    sanitize_component_semantic_frontier_v1,
+)
 from core.multicomponent_component_admission import (
     component_analyst_input_binding_mismatch_from_exception,
     project_component_analyst_input_binding_mismatch_v1,
@@ -875,6 +880,13 @@ def build_failure_observability(
         observability["component_analyst_input_binding_mismatch_v1"] = (
             mismatch_diagnostic
         )
+    component_semantic_frontier = component_semantic_frontier_from_exception(
+        exc
+    )
+    if component_semantic_frontier:
+        observability["component_semantic_frontier"] = (
+            component_semantic_frontier
+        )
     return observability
 
 
@@ -1382,6 +1394,17 @@ def build_live_failure_packet(
         sanitized_projection_summaries[
             "component_analyst_input_binding_mismatch_v1"
         ] = mismatch_diagnostic
+    component_semantic_frontier = (
+        sanitize_component_semantic_frontier_v1(
+            failure_observability.get("component_semantic_frontier")
+        )
+        if failure_observability is not None
+        else {}
+    )
+    if component_semantic_frontier:
+        sanitized_projection_summaries["component_semantic_frontier"] = (
+            component_semantic_frontier
+        )
     packet = {
         **_live_packet_base(context, cap_policy=cap_policy),
         "success_classification": classification,
@@ -1658,7 +1681,7 @@ def _cited_urls(outcome: Any, cited_source_ids: Sequence[str]) -> list[str]:
 
 def _sanitized_projection_summaries(trace: Mapping[str, Any]) -> dict[str, Any]:
     packet = _mapping_or_empty(trace.get("final_answer_packet"))
-    return {
+    summaries = {
         "component_binding": _component_binding_summary(packet),
         "component_coverage": _component_coverage_summary(packet),
         "sufficiency": _sufficiency_summary(trace, packet),
@@ -1666,6 +1689,14 @@ def _sanitized_projection_summaries(trace: Mapping[str, Any]) -> dict[str, Any]:
         "final_answer_packet": _final_answer_packet_summary(packet),
         "author_posture": _author_posture_summary(trace, packet),
     }
+    component_semantic_frontier = sanitize_component_semantic_frontier_v1(
+        trace.get(COMPONENT_SEMANTIC_FRONTIER_TRACE_KEY)
+    )
+    if component_semantic_frontier:
+        summaries["component_semantic_frontier"] = (
+            component_semantic_frontier
+        )
+    return summaries
 
 
 def _source_obligation_topology_summary(packet: Mapping[str, Any]) -> dict[str, Any]:

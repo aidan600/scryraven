@@ -26,6 +26,11 @@ from core.cap_enforcement import RunCapExceeded
 from core.component_coverage_reduction_runtime import (
     ledger_qualification_blockers_for_satisfied_coverage,
 )
+from core.component_semantic_frontier_projection import (
+    attach_component_semantic_frontier_to_exception,
+    component_semantic_frontier_from_exception,
+    safely_build_component_semantic_frontier_from_run_kernel,
+)
 from core.component_work_graph_v1 import (
     COMPONENT_WORK_GRAPH_V1_STAGE,
     admit_synthesis_node_via_runkernel,
@@ -103,6 +108,7 @@ class OrdinaryMulticomponentStatus(str, Enum):
 class OrdinaryMulticomponentResult:
     status: OrdinaryMulticomponentStatus
     direct_handoff: OrdinarySemanticProducerHandoffResult | None = None
+    component_semantic_frontier: Mapping[str, Any] | None = None
 
 
 class OrdinaryMulticomponentRuntimeError(RuntimeError):
@@ -3837,7 +3843,7 @@ def _execute_selected_lane(
     runtime_scope: Mapping[str, Any],
     requested_synthesis_directive: str,
     allow_searchos_component_receiver: bool = False,
-) -> None:
+) -> dict[str, Any]:
     accepted = run_kernel.state.initial_answer_contract
     if not _selected_multicomponent_contract(
         accepted,
@@ -3944,9 +3950,24 @@ def _execute_selected_lane(
                 component_refs=component_refs,
                 query=query,
             )
+            return safely_build_component_semantic_frontier_from_run_kernel(
+                run_kernel,
+                searchos_result=runtime_scope.get("searchos_slice_a_result"),
+            )
+        except Exception as exc:
+            attach_component_semantic_frontier_to_exception(
+                exc,
+                safely_build_component_semantic_frontier_from_run_kernel(
+                    run_kernel,
+                    searchos_result=runtime_scope.get(
+                        "searchos_slice_a_result"
+                    ),
+                    exc=exc,
+                ),
+            )
+            raise
         finally:
             run_kernel.release_multicomponent_scheduler_transient_context()
-        return
     run_kernel.initialize_multicomponent_graph_scheduler(
         component_analyst_input_packets=analyst_inputs,
         requested_synthesis_directive=requested_synthesis_directive,
@@ -3971,6 +3992,20 @@ def _execute_selected_lane(
             selected_bindables=selected,
             query=query,
         )
+        return safely_build_component_semantic_frontier_from_run_kernel(
+            run_kernel,
+            searchos_result=runtime_scope.get("searchos_slice_a_result"),
+        )
+    except Exception as exc:
+        attach_component_semantic_frontier_to_exception(
+            exc,
+            safely_build_component_semantic_frontier_from_run_kernel(
+                run_kernel,
+                searchos_result=runtime_scope.get("searchos_slice_a_result"),
+                exc=exc,
+            ),
+        )
+        raise
     finally:
         run_kernel.release_multicomponent_scheduler_transient_context()
 
@@ -4139,13 +4174,16 @@ def execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
                 requested_synthesis_directive = "single_component_direct_admission"
             assert requested_synthesis_directive is not None
             try:
-                _execute_selected_lane(
+                component_semantic_frontier = _execute_selected_lane(
                     run_kernel=run_kernel,
                     runtime_scope=runtime_scope,
                     requested_synthesis_directive=requested_synthesis_directive,
                     allow_searchos_component_receiver=(allow_searchos_component_receiver),
                 )
             except _ScheduledSemanticWorkBlocked as exc:
+                component_semantic_frontier = (
+                    component_semantic_frontier_from_exception(exc)
+                )
                 # The ordinary bounded lane keeps canonical blockage as FAP
                 # readiness input. The separately licensed SearchOS receiver
                 # must expose the blockage at its orchestrator boundary;
@@ -4155,7 +4193,10 @@ def execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
                         "SearchOS component receiver did not complete: "
                         + str(exc)[:240]
                     ) from exc
-            return OrdinaryMulticomponentResult(status=OrdinaryMulticomponentStatus.COMPLETED)
+            return OrdinaryMulticomponentResult(
+                status=OrdinaryMulticomponentStatus.COMPLETED,
+                component_semantic_frontier=component_semantic_frontier,
+            )
         return direct_or_deferred()
 
     return direct_or_deferred()
