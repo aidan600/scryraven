@@ -995,6 +995,11 @@ def reconstruct_specialist_bounded_input(
                 target_key
             )
         )
+        component_evidence_set = _mapping(
+            _mapping(context.get("component_analyst_evidence_sets")).get(
+                target_key
+            )
+        )
         analyst = _completed_artifact(
             state, ROLE_COMPONENT_ANALYST, target_key
         )
@@ -1012,6 +1017,7 @@ def reconstruct_specialist_bounded_input(
         )
         if (
             not analyst_input
+            or not component_evidence_set
             or not analyst
             or not component_ref
             or component_ref.get("component_revision")
@@ -1047,9 +1053,7 @@ def reconstruct_specialist_bounded_input(
             packet["quantitative_source_catalog"] = (
                 build_component_quantitative_source_catalog(
                     component_ref=_mapping(analyst_input.get("component_ref")),
-                    evidence_input=_mapping(
-                        analyst_input.get("component_evidence")
-                    ),
+                    component_evidence_set=component_evidence_set,
                     include_material=True,
                 )
             )
@@ -1136,6 +1140,9 @@ def reconstruct_specialist_bounded_input(
                     ),
                     component_analyst_input_packets=_mapping(
                         context.get("component_analyst_input_packets")
+                    ),
+                    component_analyst_evidence_sets=_mapping(
+                        context.get("component_analyst_evidence_sets")
                     ),
                     include_material=True,
                 )
@@ -1283,6 +1290,52 @@ def derive_ready_work(state: Any, *, allow_active_lease: bool = False) -> list[d
         for item in all_component_refs
         if "direct" in list(item.get("allowed_support_kinds") or ("direct",))
     ]
+    evidence_sets = {
+        str(key): _mapping(value)
+        for key, value in _mapping(
+            context.get("component_analyst_evidence_sets")
+        ).items()
+    }
+    expected_component_ids = {
+        str(item.get("component_id") or "") for item in component_refs
+    }
+    if (
+        not expected_component_ids
+        or set(packets) != expected_component_ids
+        or set(evidence_sets) != expected_component_ids
+    ):
+        raise MulticomponentGraphSchedulingError(
+            "scheduler component inputs lack one exact evidence set per current component"
+        )
+    from core.component_analyst_evidence_set import (
+        ComponentAnalystEvidenceSetError,
+        validate_component_analyst_evidence_set,
+    )
+    from core.multicomponent_component_admission import (
+        component_analyst_input_packet,
+    )
+
+    for component_ref in component_refs:
+        component_id = str(component_ref.get("component_id") or "")
+        try:
+            evidence_set = validate_component_analyst_evidence_set(
+                evidence_sets[component_id]
+            )
+        except ComponentAnalystEvidenceSetError as exc:
+            raise MulticomponentGraphSchedulingError(
+                "scheduler component evidence set is stale or malformed"
+            ) from exc
+        expected_packet = component_analyst_input_packet(
+            run_id=state.run_id,
+            request_id=state.request_id,
+            accepted_contract=contract,
+            component_ref=component_ref,
+            component_evidence_set=evidence_set,
+        )
+        if packets[component_id] != expected_packet:
+            raise MulticomponentGraphSchedulingError(
+                "scheduler component packet does not reconstruct from the exact evidence set"
+            )
     admissions = _component_admissions(state)
     specialist_state = _mapping(
         state.projections.get("specialist_work_plane")
@@ -1320,7 +1373,13 @@ def derive_ready_work(state: Any, *, allow_active_lease: bool = False) -> list[d
     for index, component_ref in enumerate(component_refs):
         component_id = str(component_ref.get("component_id") or "")
         analyst_input = packets.get(component_id, {})
-        if not component_id or not analyst_input or component_id in admissions:
+        component_evidence_set = evidence_sets.get(component_id, {})
+        if (
+            not component_id
+            or not analyst_input
+            or not component_evidence_set
+            or component_id in admissions
+        ):
             continue
         recovery = _mapping(recovery_bindings.get(component_id))
         analyst = _completed_artifact(state, ROLE_COMPONENT_ANALYST, component_id)
@@ -1346,6 +1405,11 @@ def derive_ready_work(state: Any, *, allow_active_lease: bool = False) -> list[d
                         prerequisite_refs=(
                             _contract_ref(contract),
                             {"component_input_packet_digest": safe_packet_digest(analyst_input)},
+                            {
+                                "component_evidence_set_digest": component_evidence_set.get(
+                                    "evidence_set_digest"
+                                )
+                            },
                         ),
                         recovery_binding=recovery,
                     ),
@@ -1392,6 +1456,7 @@ def derive_ready_work(state: Any, *, allow_active_lease: bool = False) -> list[d
                     resume_input = component_analyst_resume_input_packet(
                         analyst_artifact=analyst,
                         analyst_input_packet=analyst_input,
+                        component_evidence_set=component_evidence_set,
                         specialist_need_handoff=specialist_handoff,
                     )
                     ready.append(
@@ -1470,6 +1535,7 @@ def derive_ready_work(state: Any, *, allow_active_lease: bool = False) -> list[d
                 context.get("requested_synthesis_directive") or ""
             ),
             component_analyst_input_packets=packets,
+            component_analyst_evidence_sets=evidence_sets,
             accepted_component_refs=all_component_refs,
             requested_mode=str(context.get("requested_mode") or "Balanced"),
         )
@@ -1539,6 +1605,7 @@ def derive_ready_work(state: Any, *, allow_active_lease: bool = False) -> list[d
             packet = current_graph_reconciliation_input_packet(
                 graph,
                 component_analyst_input_packets=packets,
+                component_analyst_evidence_sets=evidence_sets,
                 requested_mode=str(
                     context.get("requested_mode") or "Balanced"
                 ),
@@ -2824,11 +2891,16 @@ def _canonical_authority_ref(state: Any, transition: str) -> dict[str, Any]:
     if transition == _AUTHORITY_TRANSITION_RECOVERY_CONTEXT:
         context = _mapping(state.multicomponent_scheduler_context)
         packets = _mapping(context.get("component_analyst_input_packets"))
+        evidence_sets = _mapping(context.get("component_analyst_evidence_sets"))
         recoveries = _mapping(context.get("recovery_bindings"))
         return {
             "component_input_packet_digests": {
                 str(key): safe_packet_digest(_mapping(value))
                 for key, value in sorted(packets.items())
+            },
+            "component_evidence_set_digests": {
+                str(key): str(_mapping(value).get("evidence_set_digest") or "")
+                for key, value in sorted(evidence_sets.items())
             },
             "recovery_component_ids": sorted(str(key) for key in recoveries),
         }

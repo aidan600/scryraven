@@ -237,6 +237,22 @@ class BoundaryBOrdinaryHarness(OfflineOrdinaryPipelineHarness):
                 return dict(item)
         raise AssertionError(f"missing accepted component {component_id}")
 
+    @staticmethod
+    def _supporting_evidence_aliases(payload: Mapping[str, Any]) -> list[str]:
+        aliases = [
+            str(dict(member).get("local_evidence_alias") or "")
+            for member in (
+                dict(payload.get("component_evidence_set") or {}).get(
+                    "members"
+                )
+                or ()
+            )
+            if str(dict(member).get("local_evidence_alias") or "")
+        ]
+        if not aliases:
+            raise AssertionError("Component Analyst fixture requires safe evidence aliases")
+        return aliases
+
     def ask_model(
         self,
         prompt: str,
@@ -260,6 +276,9 @@ class BoundaryBOrdinaryHarness(OfflineOrdinaryPipelineHarness):
                 return json.dumps(
                     {
                         "case_posture": "supported",
+                        "supporting_evidence_aliases": self._supporting_evidence_aliases(
+                            payload
+                        ),
                         "claim_text": claim,
                         "evidence_analysis": (
                             "The exact dedicated source supports only this "
@@ -1014,6 +1033,9 @@ class FastInferenceOrdinaryHarness(OfflineOrdinaryPipelineHarness):
                 return json.dumps(
                     {
                         "case_posture": "supported",
+                        "supporting_evidence_aliases": BoundaryBOrdinaryHarness._supporting_evidence_aliases(
+                            payload
+                        ),
                         "claim_text": (f"Direct {component_id} is established."),
                         "evidence_analysis": (
                             "The exact dedicated source supports only this "

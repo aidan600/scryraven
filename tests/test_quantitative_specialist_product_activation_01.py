@@ -31,6 +31,9 @@ import core.ordinary_multicomponent_synthesis_runtime as ordinary_runtime
 import core.pipeline_orchestrator as orchestrator
 import core.quantitative_specialist_product_activation as quantitative_product
 import core.specialist_source_bound_calculation_runtime as legacy_calculation
+from core.component_analyst_evidence_set import (
+    component_analyst_evidence_member_code_evidence,
+)
 from core.component_work_graph_v1 import (
     COMPONENT_WORK_GRAPH_V1_STAGE,
     cross_component_input_packet,
@@ -118,6 +121,9 @@ from core.specialist_graph_runtime import (
 )
 from core.specialist_source_bound_calculation_runtime import (
     evaluate_source_bound_calculation,
+)
+from tests.fixtures.component_analyst_evidence_sets import (
+    component_analyst_evidence_set_fixture,
 )
 from tests.helpers.offline_ordinary_pipeline import (
     HANDOFF_AUTHOR,
@@ -262,12 +268,18 @@ def _evidence(text: str, **overrides: Any) -> dict[str, Any]:
     return payload
 
 
+def _evidence_set(*evidence_members: Mapping[str, Any]) -> dict[str, Any]:
+    """Build the same canonical exact set consumed by production code."""
+
+    return component_analyst_evidence_set_fixture(*evidence_members)
+
+
 def _operand(
     key: str,
     literal: str,
     role: str,
     *,
-    source: str = "component_evidence",
+    source: str = "component_evidence_01",
     occurrence: int | None = None,
     pair_key: str | None = None,
 ) -> dict[str, Any]:
@@ -325,7 +337,7 @@ def _component_transient(
     evidence = _evidence(evidence_text, **dict(evidence_overrides or {}))
     catalog = build_component_quantitative_source_catalog(
         component_ref=_component_ref(),
-        evidence_input=evidence,
+        component_evidence_set=_evidence_set(evidence),
         include_material=True,
     )
     return {
@@ -358,6 +370,22 @@ def _synthesis_transient(
     first_evidence_overrides: Mapping[str, Any] | None = None,
     second_evidence_overrides: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
+    first_evidence = _evidence(
+        "Evidence A reports 10 USD.",
+        evidence_ref_id="evidence:a",
+        candidate_custody_ref={"candidate_id": "evidence:a"},
+        **dict(first_evidence_overrides or {}),
+    )
+    second_evidence = _evidence(
+        "Evidence B reports 20 USD.",
+        evidence_ref_id="evidence:b",
+        candidate_custody_ref={"candidate_id": "evidence:b"},
+        **dict(second_evidence_overrides or {}),
+    )
+    evidence_sets = {
+        "component:a": _evidence_set(first_evidence),
+        "component:b": _evidence_set(second_evidence),
+    }
     nodes = [
         {
             "component_id": "component:a",
@@ -374,7 +402,12 @@ def _synthesis_transient(
                 "claim_digest": "claim-a-digest",
                 "claim_text": "Component A reports 10 USD.",
             },
-            "evidence_refs": [{"content_digest": "content-a"}],
+            "evidence_refs": [
+                {
+                    "evidence_ref_id": "evidence:a",
+                    "content_digest": "content-a",
+                }
+            ],
         },
         {
             "component_id": "component:b",
@@ -395,28 +428,19 @@ def _synthesis_transient(
                     else "Component B reports 20 USD."
                 ),
             },
-            "evidence_refs": [{"content_digest": "content-b"}],
+            "evidence_refs": [
+                {
+                    "evidence_ref_id": "evidence:b",
+                    "content_digest": "content-b",
+                }
+            ],
         },
     ]
-    packets = {
-        "component:a": {
-            "component_evidence": _evidence(
-                "Evidence A reports 10 USD.",
-                **dict(first_evidence_overrides or {}),
-            )
-        },
-        "component:b": {
-            "component_evidence": _evidence(
-                "Evidence B reports 20 USD.",
-                evidence_ref_id="evidence:b",
-                candidate_custody_ref={"candidate_id": "evidence:b"},
-                **dict(second_evidence_overrides or {}),
-            )
-        },
-    }
+    packets = {component_id: {} for component_id in evidence_sets}
     catalog = build_synthesis_quantitative_source_catalog(
         component_nodes=nodes,
         component_analyst_input_packets=packets,
+        component_analyst_evidence_sets=evidence_sets,
         include_material=True,
     )
     second_literal = "999 USD" if claim_only_literal else "20 USD"
@@ -475,6 +499,20 @@ def test_product_registry_policy_composition_and_closed_defaults() -> None:
 
 
 def _ordinary_cross_packet_for_contract() -> dict[str, Any]:
+    evidence_sets = {
+        f"component:{index}": _evidence_set(
+            _evidence(
+                f"Evidence {index} reports {index * 10} USD.",
+                evidence_ref_id=f"evidence:{index}",
+                candidate_custody_ref={
+                    "candidate_id": f"evidence:{index}",
+                    "source_class": "current_primary_or_official",
+                    "source_tier": "official",
+                },
+            )
+        )
+        for index in (1, 2)
+    }
     nodes = [
         {
             "component_id": f"component:{index}",
@@ -492,29 +530,23 @@ def _ordinary_cross_packet_for_contract() -> dict[str, Any]:
                 "claim_digest": f"claim-digest:{index}",
                 "claim_text": f"Component {index} reports {index * 10} USD.",
             },
-            "evidence_refs": [{"content_digest": f"content:{index}"}],
+            "evidence_refs": [
+                {
+                    "evidence_ref_id": f"evidence:{index}",
+                    "content_digest": f"content:{index}",
+                }
+            ],
         }
         for index in (1, 2)
     ]
-    packets = {
-        f"component:{index}": {
-            "component_evidence": _evidence(
-                f"Evidence {index} reports {index * 10} USD.",
-                evidence_ref_id=f"evidence:{index}",
-                candidate_custody_ref={
-                    "candidate_id": f"evidence:{index}",
-                    "source_class": "current_primary_or_official",
-                    "source_tier": "official",
-                },
-            )
-        }
-        for index in (1, 2)
-    }
     return cross_component_input_packet(
         component_nodes=nodes,
         accepted_contract_ref={"accepted_contract_digest": "contract-digest"},
         requested_synthesis_directive="Compare the exact values.",
-        component_analyst_input_packets=packets,
+        component_analyst_input_packets={
+            component_id: {} for component_id in evidence_sets
+        },
+        component_analyst_evidence_sets=evidence_sets,
     )
 
 
@@ -527,7 +559,9 @@ def test_versioned_proposal_contract_is_shared_by_component_and_cross_inputs() -
             "accepted_contract_digest": "contract-digest",
         },
         component_ref=_component_ref(),
-        evidence_input=_evidence("Values are 10 USD and 20 USD."),
+        component_evidence_set=_evidence_set(
+            _evidence("Values are 10 USD and 20 USD.")
+        ),
     )
     cross_packet = _ordinary_cross_packet_for_contract()
     component = component_packet["quantitative_specialist_proposal_contract"]
@@ -551,7 +585,7 @@ def test_versioned_proposal_contract_is_shared_by_component_and_cross_inputs() -
         "target_kind": "component",
         "target_key": _component_ref()["component_id"],
     }
-    assert component["allowed_source_local_keys"] == ["component_evidence"]
+    assert component["allowed_source_local_keys"] == ["component_evidence_01"]
     assert "quantitative_source_catalog" not in component_packet
     assert cross["target_contract"] == {
         "target_kind": "synthesis",
@@ -600,10 +634,10 @@ def test_contract_schema_fields_policies_and_generic_bounds_are_runtime_owned() 
 
 def test_contract_digest_is_deterministic_and_schema_drift_fails_closed() -> None:
     one = build_quantitative_specialist_proposal_contract(
-        "component", "component:one", ("component_evidence",)
+        "component", "component:one", ("component_evidence_01",)
     )
     two = build_quantitative_specialist_proposal_contract(
-        "component", "component:one", ("component_evidence",)
+        "component", "component:one", ("component_evidence_01",)
     )
     assert one == two
     assert one["instance_digest"] == two["instance_digest"]
@@ -727,17 +761,21 @@ def test_component_catalog_selector_exact_binding_and_repeated_occurrence() -> N
             "accepted_contract_digest": "contract-digest",
         },
         component_ref=_component_ref(),
-        evidence_input=_evidence("10 USD then 10 USD and 20 USD."),
+        component_evidence_set=_evidence_set(
+            _evidence("10 USD then 10 USD and 20 USD.")
+        ),
     )
     assert "quantitative_source_catalog" not in packet
     catalog = build_component_quantitative_source_catalog(
         component_ref=_component_ref(),
-        evidence_input=_evidence("10 USD then 10 USD and 20 USD."),
+        component_evidence_set=_evidence_set(
+            _evidence("10 USD then 10 USD and 20 USD.")
+        ),
         include_material=True,
     )
-    entry = catalog["component_evidence"]
-    assert entry["source_local_key"] == "component_evidence"
-    assert entry["source_binding_kind"] == "component_evidence"
+    entry = catalog["component_evidence_01"]
+    assert entry["source_local_key"] == "component_evidence_01"
+    assert entry["source_binding_kind"] == "component_evidence_member"
     assert entry["allowed_source_field"] == "bounded_text"
     assert entry["source_material"]["bounded_text"] == "10 USD then 10 USD and 20 USD."
     ambiguous = _adapter_result(
@@ -801,7 +839,12 @@ def test_ordinary_evidence_bridge_preserves_safe_candidate_facts_with_precedence
             "canonical_currency_unit": "USD",
         },
     )
-    bridged = ordinary_runtime._evidence_input(bindable)
+    canonical_set = ordinary_runtime._component_evidence_set_from_bindables(
+        (bindable,)
+    )
+    bridged = component_analyst_evidence_member_code_evidence(
+        canonical_set["members"][0]
+    )
     assert bridged["source_class"] == "current_primary_or_official"
     assert bridged["source_tier"] == "official"
     assert bridged["currentness"] == "current"
@@ -834,9 +877,9 @@ def test_missing_evidence_metadata_stays_unknown_without_favorable_defaults() ->
         "candidate_custody_ref": {"candidate_id": "candidate:one"},
     }
     catalog = build_component_quantitative_source_catalog(
-        component_ref=_component_ref(), evidence_input=evidence
+        component_ref=_component_ref(), component_evidence_set=_evidence_set(evidence)
     )
-    entry = catalog["component_evidence"]
+    entry = catalog["component_evidence_01"]
     assert entry["source_class"] == "unknown"
     assert entry["source_tier"] == "unknown"
     assert entry["currentness_posture"] == "unknown"
@@ -861,9 +904,9 @@ def test_missing_evidence_metadata_stays_unknown_without_favorable_defaults() ->
 def test_model_and_execution_catalogs_share_posture_but_only_execution_has_material() -> None:
     cross_packet = _ordinary_cross_packet_for_contract()
     nodes = cross_packet["component_nodes"]
-    packets = {
-        f"component:{index}": {
-            "component_evidence": _evidence(
+    evidence_sets = {
+        f"component:{index}": _evidence_set(
+            _evidence(
                 f"Evidence {index} reports {index * 10} USD.",
                 evidence_ref_id=f"evidence:{index}",
                 candidate_custody_ref={
@@ -872,16 +915,22 @@ def test_model_and_execution_catalogs_share_posture_but_only_execution_has_mater
                     "source_tier": "official",
                 },
             )
-        }
+        )
         for index in (1, 2)
     }
     model_catalog = build_synthesis_quantitative_source_catalog(
         component_nodes=nodes,
-        component_analyst_input_packets=packets,
+        component_analyst_input_packets={
+            component_id: {} for component_id in evidence_sets
+        },
+        component_analyst_evidence_sets=evidence_sets,
     )
     execution_catalog = build_synthesis_quantitative_source_catalog(
         component_nodes=nodes,
-        component_analyst_input_packets=packets,
+        component_analyst_input_packets={
+            component_id: {} for component_id in evidence_sets
+        },
+        component_analyst_evidence_sets=evidence_sets,
         include_material=True,
     )
     assert model_catalog["posture_digest"] == execution_catalog["posture_digest"]
@@ -964,10 +1013,13 @@ def test_current_primary_official_source_completes_and_missing_lineage_blocks() 
         item["source_quality_posture"] == "authoritative_current_clear"
         for item in completed["bounded_result"]["input_refs"]
     )
-    blocked = _adapter_result(
-        evidence_overrides={"candidate_custody_ref": {}}
-    )
-    assert blocked["execution_posture"] == EXECUTION_BLOCKED
+    malformed_set = _evidence_set(_evidence("Values are 10 USD and 20 USD."))
+    malformed_set["members"][0]["code_binding"]["candidate_custody_ref"] = {}
+    with pytest.raises(quantitative_product.QuantitativeSpecialistProductError):
+        build_component_quantitative_source_catalog(
+            component_ref=_component_ref(),
+            component_evidence_set=malformed_set,
+        )
 
 
 def test_synthesis_inherits_weak_underlying_evidence_without_admission_upgrade() -> None:
@@ -1201,13 +1253,19 @@ def test_unit_precision_denominator_and_lineage_fail_closed() -> None:
     )
     assert stale["execution_posture"] == EXECUTION_CONTESTED
     weak = _adapter_result(
-        evidence_overrides={"source_class_posture": "weak_secondary"}
+        evidence_overrides={
+            "source_class": "weak_secondary",
+            "source_class_posture": "weak_secondary",
+        }
     )
     assert weak["execution_posture"] == EXECUTION_CONTESTED
-    missing = _adapter_result(
-        evidence_overrides={"candidate_custody_ref": {}}
-    )
-    assert missing["execution_posture"] == EXECUTION_BLOCKED
+    malformed_set = _evidence_set(_evidence("Inputs are 10 USD and 20 USD."))
+    malformed_set["members"][0]["code_binding"]["candidate_custody_ref"] = {}
+    with pytest.raises(quantitative_product.QuantitativeSpecialistProductError):
+        build_component_quantitative_source_catalog(
+            component_ref=_component_ref(),
+            component_evidence_set=malformed_set,
+        )
 
 
 @pytest.mark.parametrize(
@@ -1300,7 +1358,7 @@ def test_prompt_contracts_activate_quantitative_roles_but_not_scrutineer() -> No
     component_resume = prompts[ROLE_COMPONENT_ANALYST_RESUME]
     cross = prompts["cross_component_analyst"]
     synthesis_dprime = prompts["synthesis_dprime"]
-    assert "component_evidence" in component
+    assert "component_evidence_set" in component
     assert "quantitative_specialist_proposal_contract" in component
     assert "conforming exactly" in component
     assert "supplied fixed capability and schema values exactly" in component
@@ -1460,12 +1518,16 @@ def _contract_driven_quantitative_proposal(
     if target_contract.get("target_kind") == "component":
         selected_target = str(target_contract["target_key"])
         source_material = {
-            "component_evidence": str(
-                dict(role_packet.get("component_evidence") or {}).get(
-                    "bounded_text"
-                )
-                or ""
+            str(member.get("local_evidence_alias") or ""): str(
+                member.get("bounded_text") or ""
             )
+            for member in list(
+                dict(role_packet.get("component_evidence_set") or {}).get(
+                    "members"
+                )
+                or ()
+            )
+            if str(member.get("local_evidence_alias") or "")
         }
     else:
         assert target_contract.get("target_key_rule")
@@ -1619,11 +1681,14 @@ class QuantitativeComponentNorthstarHarness(SpecialistNorthstarHarness):
         requirement: str,
     ) -> dict[str, Any]:
         del hint, posture, requirement, target_kind
-        evidence_text = str(
-            dict(self._active_role_packet.get("component_evidence") or {}).get(
-                "bounded_text"
+        evidence_text = "\n".join(
+            str(member.get("bounded_text") or "")
+            for member in list(
+                dict(
+                    self._active_role_packet.get("component_evidence_set") or {}
+                ).get("members")
+                or ()
             )
-            or ""
         )
         literals = re.findall(r"\b\d+(?:\.\d+)? USD\b", evidence_text)
         assert literals[:2] == ["1200 USD", "300 USD"]
@@ -1634,8 +1699,8 @@ class QuantitativeComponentNorthstarHarness(SpecialistNorthstarHarness):
             posture=self.component_posture,
             calculation_kind="sum",
             operand_specs=[
-                ("base", literals[0], "term", "component_evidence"),
-                ("supplement", literals[1], "term", "component_evidence"),
+                ("base", literals[0], "term", "component_evidence_01"),
+                ("supplement", literals[1], "term", "component_evidence_01"),
             ],
             proposed_result_literal=proposed,
             expected_result_unit="USD",
@@ -1963,7 +2028,7 @@ def test_quantitative_instance_validator_rejects_noncurrent_contract_and_target(
     component_contract = build_quantitative_specialist_proposal_contract(
         target_kind="component",
         target_key_or_rule="component:current",
-        allowed_source_local_keys=("component_evidence",),
+        allowed_source_local_keys=("component_evidence_01",),
     )
     component_proposal = _product_proposal(
         target_kind="component",
@@ -2310,33 +2375,45 @@ def _execute_product_run(
     )
     setattr(harness, "_quantitative_test_capture", captured)
     if getattr(harness, "fixture_preserves_clear_conflict_posture", False):
-        original_evidence_input = ordinary_runtime._evidence_input
+        original_component_evidence_set = (
+            ordinary_runtime._component_evidence_set_from_bindables
+        )
 
-        def fixture_evidence_input(bindable: Any | None) -> dict[str, Any]:
-            evidence = original_evidence_input(bindable)
-            if not str(evidence.get("source_url") or "").startswith(
-                "https://northstar.example/"
-            ):
-                return evidence
-            # The controlled discovery fixture declares these sources
-            # uncontested. Its bounded READ fake retains text only, so restore
-            # that fixture-owned fact before the ordinary Analyst input is made.
-            custody = dict(evidence.get("candidate_custody_ref") or {})
-            return {
-                **evidence,
-                "conflict_posture": "none",
-                "contradictory": False,
-                "candidate_custody_ref": {
-                    **custody,
-                    "conflict_posture": "none",
-                    "contradictory": False,
-                },
-            }
+        def fixture_component_evidence_set(
+            bindables: Any,
+        ) -> dict[str, Any]:
+            adjusted = []
+            for bindable in bindables:
+                passage = dict(bindable.passage)
+                if not str(passage.get("url") or "").startswith(
+                    "https://northstar.example/"
+                ):
+                    adjusted.append(bindable)
+                    continue
+                # The controlled discovery fixture declares these sources
+                # uncontested. Its bounded READ fake retains text only, so restore
+                # that fixture-owned fact before the ordinary Analyst input is made.
+                adjusted.append(
+                    ordinary_runtime.BindableFinalPassage(
+                        passage={
+                            **passage,
+                            "conflict_posture": "none",
+                            "contradictory": False,
+                        },
+                        evidence_ref_id=bindable.evidence_ref_id,
+                        candidate_record={
+                            **dict(bindable.candidate_record),
+                            "conflict_posture": "none",
+                            "contradictory": False,
+                        },
+                    )
+                )
+            return original_component_evidence_set(adjusted)
 
         monkeypatch.setattr(
             ordinary_runtime,
-            "_evidence_input",
-            fixture_evidence_input,
+            "_component_evidence_set_from_bindables",
+            fixture_component_evidence_set,
         )
     base_deps = harness.deps()
     deps = (
@@ -2562,10 +2639,10 @@ def test_component_origin_product_path_and_paired_final_answer_delta(
     material_catalog = captured_specialist_inputs[0][
         "quantitative_source_catalog"
     ]
-    assert material_catalog["component_evidence"][
+    assert material_catalog["component_evidence_01"][
         "source_quality_posture"
     ] == "authoritative_current_clear"
-    assert material_catalog["component_evidence"]["source_material"][
+    assert material_catalog["component_evidence_01"]["source_material"][
         "bounded_text"
     ] == (
         "The Northstar record reports a base amount of 1200 USD and a "

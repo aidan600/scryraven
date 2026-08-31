@@ -24,6 +24,9 @@ from core.multicomponent_role_runtime import (
 from core.prompts import DEFAULT_SYSTEM
 from core.protocols import NullStatusWriter
 from core.run_kernel import ActionType, RunKernel
+from tests.fixtures.component_analyst_evidence_sets import (
+    component_analyst_evidence_set_fixture,
+)
 from tests.helpers.offline_ordinary_pipeline import (
     HANDOFF_AUTHOR,
     HANDOFF_PACKET,
@@ -132,9 +135,20 @@ class NorthstarHarness(OfflineOrdinaryPipelineHarness):
             if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST]:
                 question = str(payload.get("component_ref", {}).get("user_facing_question") or "").casefold()
                 claim = self._component_claim(question)
+                aliases = [
+                    str(dict(member).get("local_evidence_alias") or "")
+                    for member in (
+                        dict(payload.get("component_evidence_set") or {}).get(
+                            "members"
+                        )
+                        or ()
+                    )
+                    if str(dict(member).get("local_evidence_alias") or "")
+                ]
                 return json.dumps(
                     {
                         "case_posture": "supported",
+                        "supporting_evidence_aliases": aliases[:1],
                         "claim_text": claim,
                         "evidence_analysis": (
                             "The exact bounded component evidence supports this claim."
@@ -925,12 +939,15 @@ def test_component_admission_rejects_forged_role_artifacts_and_claim_drift() -> 
         "bounded_text": "Fact 1 is supported.",
         "candidate_custody_ref": {"candidate_id": "cand-1"},
     }
+    component_evidence_set = component_analyst_evidence_set_fixture(
+        evidence_input
+    )
     analyst_input = component_analyst_input_packet(
         run_id=run_id,
         request_id=request_id,
         accepted_contract=accepted,
         component_ref=component_ref,
-        evidence_input=evidence_input,
+        component_evidence_set=component_evidence_set,
     )
 
     def _artifact(role: str, semantic_output: dict, input_packet: dict) -> dict:
@@ -967,6 +984,7 @@ def test_component_admission_rejects_forged_role_artifacts_and_claim_drift() -> 
         {
             "case_posture": "supported",
             "support_status": "supported",
+            "supporting_evidence_aliases": ["component_evidence_01"],
             "claim_text": "Fact 1 is supported.",
             "evidence_analysis": "The exact bounded evidence supports Fact 1.",
             "self_audit": "The case does not extend beyond Fact 1.",
@@ -999,6 +1017,7 @@ def test_component_admission_rejects_forged_role_artifacts_and_claim_drift() -> 
             component_id=component_id,
             analyst_artifact=analyst,
             analyst_input_packet=analyst_input,
+            component_evidence_set=component_evidence_set,
             semantic_observation=observation,
             sanitized_content_references=[
                 {
@@ -1025,6 +1044,7 @@ def test_component_admission_rejects_forged_role_artifacts_and_claim_drift() -> 
             component_id=component_id,
             analyst_artifact=analyst,
             analyst_input_packet=analyst_input,
+            component_evidence_set=component_evidence_set,
             semantic_observation=None,
             sanitized_content_references=[],
             component_coverage_record=None,

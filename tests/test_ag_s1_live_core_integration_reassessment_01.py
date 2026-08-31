@@ -133,13 +133,13 @@ def _valid_component_proposal() -> dict:
             "operands": [
                 {
                     "local_operand_key": "a",
-                    "source_local_key": "component_evidence",
+                    "source_local_key": "component_evidence_01",
                     "source_numeric_literal": "100 km",
                     "operand_role": "minuend",
                 },
                 {
                     "local_operand_key": "b",
-                    "source_local_key": "component_evidence",
+                    "source_local_key": "component_evidence_01",
                     "source_numeric_literal": "60 km",
                     "operand_role": "subtrahend",
                 },
@@ -166,6 +166,7 @@ def test_exact_top_level_proposal_is_extracted_before_artifact_normalization_and
             "The exact supplied source literals support only this difference."
         ),
         "self_audit": "The case does not extend beyond the supplied literals.",
+        "supporting_evidence_aliases": ["component_evidence_01"],
         "caveats": [],
         "nonclaims": [],
         "blockers": [],

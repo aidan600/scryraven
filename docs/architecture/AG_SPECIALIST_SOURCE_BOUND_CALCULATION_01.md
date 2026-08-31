@@ -84,8 +84,9 @@ The fixed proposal facts are schema `specialist_need_proposal_v1`, requirement
 `specialist.source_bound_calculation.result.v1`, recursion depth `0`, and null
 Specialist parent. For S1 the capability hint is required and exact, not
 advisory. Component Analyst receives the contract at the top level of
-its ordinary input packet, bound to the exact component target and sole
-`component_evidence` alias. It may return at most one sibling
+its ordinary input packet, bound to the exact component target and the supplied
+ordered `component_evidence_set` local aliases (`component_evidence_01`,
+`component_evidence_02`, ...). It may return at most one sibling
 `specialist_need_proposal` alongside the ordinary component fields.
 Cross-Component Analyst receives the same contract at the top level, bound to
 the rule that the target equal a `synthesis_key` proposed in the same artifact
@@ -114,7 +115,8 @@ validators.
 
 For a component proposal, the exact target must equal the current accepted
 component, the contract target, and the current Component Analyst input; every
-operand alias must be `component_evidence`. For a synthesis proposal, the key
+operand alias must be one supplied `component_evidence_01`,
+`component_evidence_02`, ... local alias. For a synthesis proposal, the key
 must be unique in the same Cross-Component Analyst artifact, the graph node must
 have been created from that artifact at the current revision, and every operand
 alias must be in that exact artifact's current `component_01`, `component_02`,
@@ -153,11 +155,13 @@ code. The bridge copies only those safe structured facts and the bounded
 passage projection; it does not copy a complete candidate, provider payload,
 full page, private artifact, raw prompt, or response.
 
-Component Analyst receives a `component_evidence` alias with bounded source
-posture, evidence/custody refs, lineage completeness, and a digest of the
-bounded material. Its initial and resume packets do not contain a
-`quantitative_source_catalog`; after an accepted component proposal, Specialist
-dispatch reconstructs the material catalog from that exact current evidence.
+Component Analyst receives an exact bounded `component_evidence_set` whose
+members have safe packet-local aliases and bounded source posture. It receives
+no canonical evidence/custody refs, lineage identities, or material digests.
+Its initial and resume packets do not contain a `quantitative_source_catalog`;
+after an accepted component proposal, Specialist dispatch reconstructs the
+material catalog from that exact current evidence set, with one source-local
+key per member.
 Cross-Component Analyst receives deterministic `component_01`,
 `component_02`, and later aliases for current admitted component claims. Its
 model catalog and the later execution catalog are built from the same underlying

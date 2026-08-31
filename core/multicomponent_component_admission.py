@@ -5,6 +5,14 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Mapping, Sequence
 
+from core.component_analyst_evidence_set import (
+    ComponentAnalystEvidenceSetError,
+    component_analyst_evidence_member_code_evidence,
+    component_analyst_evidence_set_local_aliases,
+    component_analyst_evidence_set_members_for_aliases,
+    component_analyst_evidence_set_model_projection,
+    validate_component_analyst_evidence_set,
+)
 from core.component_coverage_reduction_runtime import (
     ComponentCoverageReductionError,
     build_component_coverage_reduction_projection,
@@ -51,7 +59,7 @@ _FIRST_DIVERGENT_SECTION_VALUES = frozenset(
     {
         "run_binding",
         "component_ref",
-        "component_evidence",
+        "component_evidence_set",
         "quantitative_source_catalog",
         "quantitative_specialist_proposal_contract",
         "other",
@@ -64,7 +72,7 @@ _ACCEPTED_AUTHORITY_SOURCE_VALUES = frozenset(
 _KNOWN_PACKET_SECTIONS = (
     "run_binding",
     "component_ref",
-    "component_evidence",
+    "component_evidence_set",
     "quantitative_source_catalog",
     "quantitative_specialist_proposal_contract",
 )
@@ -415,7 +423,7 @@ def build_component_analyst_input_binding_mismatch_v1(
         and component_ref_matches_accepted_component
         and section_fields["run_binding_equal"] is True
         and section_fields["component_ref_equal"] is True
-        and section_fields["component_evidence_equal"] is True
+        and section_fields["component_evidence_set_equal"] is True
         and not supplied_equals_reconstructed
     )
     if dispatch_present and not supplied_equals_dispatch:
@@ -510,12 +518,18 @@ def component_analyst_input_packet(
     request_id: str,
     accepted_contract: Mapping[str, Any],
     component_ref: Mapping[str, Any],
-    evidence_input: Mapping[str, Any],
+    component_evidence_set: Mapping[str, Any],
 ) -> dict[str, Any]:
     from core.quantitative_specialist_product_activation import (
         build_quantitative_specialist_proposal_contract,
     )
 
+    try:
+        canonical_evidence_set = validate_component_analyst_evidence_set(
+            component_evidence_set
+        )
+    except ComponentAnalystEvidenceSetError as exc:
+        raise MulticomponentComponentAdmissionError(str(exc)) from exc
     packet = {
         "supported_query_class": (
             "ordinary-bounded-multicomponent-factual-synthesis-v1"
@@ -543,13 +557,17 @@ def component_analyst_input_packet(
                 component_ref.get("prohibited_upgrades") or ()
             ),
         },
-        "component_evidence": _safe_mapping(evidence_input),
+        "component_evidence_set": component_analyst_evidence_set_model_projection(
+            canonical_evidence_set
+        ),
     }
     packet["quantitative_specialist_proposal_contract"] = (
         build_quantitative_specialist_proposal_contract(
             target_kind="component",
             target_key_or_rule=str(packet["component_ref"]["component_id"]),
-            allowed_source_local_keys=("component_evidence",),
+            allowed_source_local_keys=component_analyst_evidence_set_local_aliases(
+                canonical_evidence_set
+            ),
         )
     )
     return packet
@@ -559,6 +577,7 @@ def component_analyst_resume_input_packet(
     *,
     analyst_artifact: Mapping[str, Any],
     analyst_input_packet: Mapping[str, Any],
+    component_evidence_set: Mapping[str, Any],
     specialist_need_handoff: Mapping[str, Any],
 ) -> dict[str, Any]:
     """Build the exact, model-safe input for one component Analyst resumption."""
@@ -576,7 +595,6 @@ def component_analyst_resume_input_packet(
     supplied_input = _safe_mapping(analyst_input_packet)
     run_binding = _safe_mapping(supplied_input.get("run_binding"))
     component_ref = _safe_mapping(supplied_input.get("component_ref"))
-    evidence_input = _safe_mapping(supplied_input.get("component_evidence"))
     run_id = _clean_text(run_binding.get("run_id"), limit=200)
     request_id = _clean_text(run_binding.get("request_id"), limit=200)
     accepted_contract_version = _clean_text(
@@ -608,7 +626,7 @@ def component_analyst_resume_input_packet(
             "accepted_contract_digest": accepted_contract_digest,
         },
         component_ref=component_ref,
-        evidence_input=evidence_input,
+        component_evidence_set=component_evidence_set,
     )
     if (
         supplied_input != exact_input
@@ -676,6 +694,7 @@ def _exact_component_analyst_input_for_admission(
     request_id: str,
     accepted_contract: Mapping[str, Any],
     component: Mapping[str, Any],
+    component_evidence_set: Mapping[str, Any],
     evaluation_key: str,
     specialist_need_handoff: Mapping[str, Any] | None,
     independent_dispatch_input_digest: str | None = None,
@@ -700,7 +719,7 @@ def _exact_component_analyst_input_for_admission(
         request_id=request_id,
         accepted_contract=accepted_contract,
         component_ref=component,
-        evidence_input=_safe_mapping(base_input.get("component_evidence")),
+        component_evidence_set=component_evidence_set,
     )
     if analyst_role == ROLE_COMPONENT_ANALYST:
         if analyst.get("input_packet_digest") != safe_packet_digest(
@@ -798,6 +817,7 @@ def stage_multicomponent_component_admission(
     component_id: str,
     analyst_artifact: Mapping[str, Any],
     analyst_input_packet: Mapping[str, Any],
+    component_evidence_set: Mapping[str, Any],
     semantic_observation: Mapping[str, Any] | None,
     sanitized_content_references: Sequence[Mapping[str, Any]],
     component_coverage_record: Mapping[str, Any] | None,
@@ -812,6 +832,12 @@ def stage_multicomponent_component_admission(
 
     accepted = _safe_mapping(accepted_contract)
     component = _accepted_component(accepted, component_id)
+    try:
+        canonical_evidence_set = validate_component_analyst_evidence_set(
+            component_evidence_set
+        )
+    except ComponentAnalystEvidenceSetError as exc:
+        raise MulticomponentComponentAdmissionError(str(exc)) from exc
     analyst = validate_multicomponent_role_artifact(analyst_artifact)
     analyst_role = str(analyst.get("role") or "")
     if analyst_role not in {
@@ -833,22 +859,19 @@ def stage_multicomponent_component_admission(
         raise MulticomponentComponentAdmissionError(
             "component Analyst logical evaluation key mismatch"
         )
-    exact_component_input = _exact_component_analyst_input_for_admission(
+    _exact_component_analyst_input_for_admission(
         analyst=analyst,
         analyst_input_packet=analyst_input_packet,
         run_id=run_id,
         request_id=request_id,
         accepted_contract=accepted,
         component=component,
+        component_evidence_set=canonical_evidence_set,
         evaluation_key=evaluation_key,
         specialist_need_handoff=specialist_need_handoff,
         independent_dispatch_input_digest=independent_dispatch_input_digest,
         contract_authority_facts=contract_authority_facts,
     )
-    evidence_input = _safe_mapping(
-        exact_component_input.get("component_evidence")
-    )
-
     case_posture = str(analyst["semantic_output"]["case_posture"])
     supported = case_posture in COMPONENT_ANALYST_SUPPORTING_CASE_POSTURES
     observation_payload = _safe_mapping(semantic_observation)
@@ -874,17 +897,37 @@ def stage_multicomponent_component_admission(
             "SemanticObservation claim must equal the Analyst-nominated claim"
         )
     if supported:
-        expected_evidence_ref = evidence_input.get("evidence_ref_id")
+        try:
+            selected_support_members = (
+                component_analyst_evidence_set_members_for_aliases(
+                    canonical_evidence_set,
+                    analyst["semantic_output"].get(
+                        "supporting_evidence_aliases"
+                    )
+                    or (),
+                )
+            )
+        except ComponentAnalystEvidenceSetError as exc:
+            raise MulticomponentComponentAdmissionError(str(exc)) from exc
+        expected_evidence_refs = [
+            component_analyst_evidence_member_code_evidence(item).get(
+                "evidence_ref_id"
+            )
+            for item in selected_support_members
+        ]
         observation_evidence = [
             item for item in observation_payload.get("evidence_refs") or () if item
         ]
         if (
-            not expected_evidence_ref
-            or observation_evidence != [expected_evidence_ref]
+            not expected_evidence_refs
+            or any(not item for item in expected_evidence_refs)
+            or observation_evidence != expected_evidence_refs
             or any(
-                item.get("evidence_ref_id") != expected_evidence_ref
+                item.get("evidence_ref_id") not in set(expected_evidence_refs)
                 for item in content_refs
             )
+            or [item.get("evidence_ref_id") for item in content_refs]
+            != expected_evidence_refs
         ):
             raise MulticomponentComponentAdmissionError(
                 "component admission evidence bindings must match Analyst input evidence"
@@ -1160,6 +1203,7 @@ def execute_multicomponent_component_admission(
     component_id: str,
     analyst_artifact: Mapping[str, Any],
     analyst_input_packet: Mapping[str, Any],
+    component_evidence_set: Mapping[str, Any],
     semantic_observation: Mapping[str, Any] | None,
     sanitized_content_references: Sequence[Mapping[str, Any]],
     component_coverage_record: Mapping[str, Any] | None,
@@ -1217,6 +1261,7 @@ def execute_multicomponent_component_admission(
         component_id=component_id,
         analyst_artifact=analyst,
         analyst_input_packet=analyst_input_packet,
+        component_evidence_set=component_evidence_set,
         semantic_observation=semantic_observation,
         sanitized_content_references=sanitized_content_references,
         component_coverage_record=component_coverage_record,

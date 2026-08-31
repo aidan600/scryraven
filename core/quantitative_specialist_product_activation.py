@@ -18,6 +18,11 @@ from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 from typing import Any, Mapping, Sequence
 
+from core.component_analyst_evidence_set import (
+    ComponentAnalystEvidenceSetError,
+    component_analyst_evidence_member_code_evidence,
+    validate_component_analyst_evidence_set,
+)
 from core.evidence_ledger import source_taxonomy_quality_facts
 from core.specialist_graph_runtime import (
     EXECUTION_BLOCKED,
@@ -706,60 +711,138 @@ def _evidence_posture(evidence: Mapping[str, Any]) -> dict[str, Any]:
 def build_component_quantitative_source_catalog(
     *,
     component_ref: Mapping[str, Any],
-    evidence_input: Mapping[str, Any],
+    component_evidence_set: Mapping[str, Any],
     include_material: bool = False,
 ) -> dict[str, Any]:
-    """Build the stable component_evidence selector from current role input."""
+    """Build one bounded local selector for every exact component member."""
 
     component = _safe_mapping(component_ref)
-    evidence = _safe_mapping(evidence_input)
-    bounded_text = str(evidence.get("bounded_text") or "")
-    posture = _evidence_posture(evidence)
+    try:
+        evidence_set = validate_component_analyst_evidence_set(
+            component_evidence_set
+        )
+    except ComponentAnalystEvidenceSetError as exc:
+        raise QuantitativeSpecialistProductError(
+            "invalid_component_evidence_set", str(exc)
+        ) from exc
     component_lineage_ref = {
         key: component.get(key)
         for key in ("component_id", "component_revision", "component_digest")
         if component.get(key) is not None
     }
-    entry: dict[str, Any] = {
-        "source_local_key": "component_evidence",
-        "source_binding_kind": "component_evidence",
-        "allowed_source_field": "bounded_text",
-        "bounded_field_digest": _text_digest(bounded_text),
-        "bounded_field_present": bool(bounded_text),
-        "currentness_posture": posture["currentness_posture"],
-        "source_class_posture": posture["source_class_posture"],
-        "source_class": posture["source_class"],
-        "source_tier": posture["source_tier"],
-        "source_class_strength": posture["source_class_strength"],
-        "source_tier_strength": posture["source_tier_strength"],
-        "fact_disposition": posture["fact_disposition"],
-        "readability_posture": posture["readability_posture"],
-        "conflict_posture": posture["conflict_posture"],
-        "contradictory": posture["contradictory"],
-        "source_quality_posture": posture["source_quality_posture"],
-        "source_quality_reasons": posture["source_quality_reasons"],
-        "component_lineage_ref": component_lineage_ref,
-        "evidence_ref": posture["evidence_ref"],
-        "lineage_complete": bool(component_lineage_ref)
-        and posture["evidence_lineage_complete"],
-    }
-    if posture["canonical_currency_unit"]:
-        entry["canonical_currency_unit"] = posture["canonical_currency_unit"]
     catalog = {
         "schema_version": QUANTITATIVE_SOURCE_CATALOG_SCHEMA,
         "catalog_kind": "component_quantitative_sources",
-        "component_evidence": entry,
     }
+    for member in evidence_set["members"]:
+        evidence = component_analyst_evidence_member_code_evidence(member)
+        bounded_text = str(evidence.get("bounded_text") or "")
+        posture = _evidence_posture(evidence)
+        alias = str(member["local_evidence_alias"])
+        entry: dict[str, Any] = {
+            "source_local_key": alias,
+            "source_binding_kind": "component_evidence_member",
+            "allowed_source_field": "bounded_text",
+            "bounded_field_digest": _text_digest(bounded_text),
+            "bounded_field_present": bool(bounded_text),
+            "currentness_posture": posture["currentness_posture"],
+            "source_class_posture": posture["source_class_posture"],
+            "source_class": posture["source_class"],
+            "source_tier": posture["source_tier"],
+            "source_class_strength": posture["source_class_strength"],
+            "source_tier_strength": posture["source_tier_strength"],
+            "fact_disposition": posture["fact_disposition"],
+            "readability_posture": posture["readability_posture"],
+            "conflict_posture": posture["conflict_posture"],
+            "contradictory": posture["contradictory"],
+            "source_quality_posture": posture["source_quality_posture"],
+            "source_quality_reasons": posture["source_quality_reasons"],
+            "component_lineage_ref": component_lineage_ref,
+            "evidence_ref": posture["evidence_ref"],
+            "lineage_complete": bool(component_lineage_ref)
+            and posture["evidence_lineage_complete"],
+        }
+        if posture["canonical_currency_unit"]:
+            entry["canonical_currency_unit"] = posture[
+                "canonical_currency_unit"
+            ]
+        if include_material:
+            entry["source_material"] = {"bounded_text": bounded_text}
+        catalog[alias] = entry
     catalog["posture_digest"] = _digest(catalog)
-    if include_material:
-        entry["source_material"] = {"bounded_text": bounded_text}
     return catalog
+
+
+def _combined_evidence_posture(
+    evidence_members: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Mechanically preserve one or more admitted evidence postures.
+
+    A synthesis source remains the admitted component claim. When that claim
+    is bound to more than one Analyst-nominated member, this function does not
+    choose a member: it retains exact per-member refs and reports only shared
+    scalar facts. A non-shared fact is ``unknown`` rather than a new source,
+    currentness, or quality classification.
+    """
+
+    postures = [_evidence_posture(item) for item in evidence_members]
+    if not postures:
+        raise QuantitativeSpecialistProductError(
+            "missing_component_evidence",
+            "admitted component claim lacks exact nominated evidence",
+        )
+    if len(postures) == 1:
+        return postures[0]
+
+    def common(key: str, *, unknown: Any = "unknown") -> Any:
+        values = [item.get(key) for item in postures]
+        return values[0] if all(value == values[0] for value in values) else unknown
+
+    reasons: list[str] = []
+    for posture in postures:
+        for reason in posture.get("source_quality_reasons") or ():
+            token = str(reason)
+            if token and token not in reasons:
+                reasons.append(token)
+    return {
+        "evidence_status": common("evidence_status"),
+        "currentness_posture": common("currentness_posture"),
+        "source_class_posture": common("source_class_posture"),
+        "source_class": common("source_class"),
+        "source_tier": common("source_tier"),
+        "source_class_strength": common("source_class_strength"),
+        "source_tier_strength": common("source_tier_strength"),
+        "fact_disposition": common("fact_disposition"),
+        "readability_posture": common("readability_posture"),
+        "conflict_posture": common("conflict_posture"),
+        "contradictory": any(
+            posture.get("contradictory") is True for posture in postures
+        ),
+        "source_quality_posture": common(
+            "source_quality_posture",
+            unknown="contested_source_posture",
+        ),
+        "source_quality_reasons": reasons,
+        "evidence_lineage_complete": all(
+            posture.get("evidence_lineage_complete") is True
+            for posture in postures
+        ),
+        "canonical_currency_unit": common(
+            "canonical_currency_unit", unknown=None
+        ),
+        "evidence_ref": {},
+        "evidence_refs": [
+            deepcopy(_safe_mapping(posture.get("evidence_ref")))
+            for posture in postures
+        ],
+    }
 
 
 def build_synthesis_quantitative_source_catalog(
     *,
     component_nodes: Sequence[Mapping[str, Any]],
     component_analyst_input_packets: Mapping[str, Mapping[str, Any]],
+    component_analyst_evidence_sets: Mapping[str, Mapping[str, Any]],
     include_material: bool = False,
 ) -> dict[str, Any]:
     """Build component_01.. aliases in exact current component order."""
@@ -768,6 +851,22 @@ def build_synthesis_quantitative_source_catalog(
         str(key): _safe_mapping(value)
         for key, value in component_analyst_input_packets.items()
     }
+    try:
+        evidence_sets = {
+            str(component_id): validate_component_analyst_evidence_set(
+                _safe_mapping(evidence_set)
+            )
+            for component_id, evidence_set in component_analyst_evidence_sets.items()
+        }
+    except ComponentAnalystEvidenceSetError as exc:
+        raise QuantitativeSpecialistProductError(
+            "invalid_component_evidence_set", str(exc)
+        ) from exc
+    if set(packets) != set(evidence_sets):
+        raise QuantitativeSpecialistProductError(
+            "component_evidence_set_packet_mismatch",
+            "synthesis source catalog requires the same current component packet and evidence-set targets",
+        )
     catalog: dict[str, Any] = {
         "schema_version": QUANTITATIVE_SOURCE_CATALOG_SCHEMA,
         "catalog_kind": "synthesis_quantitative_sources",
@@ -780,13 +879,60 @@ def build_synthesis_quantitative_source_catalog(
         raw_claim_text = claim.get("claim_text") or node.get("claim_text")
         claim_text = str(raw_claim_text) if raw_claim_text is not None else None
         claim_material = claim_text or ""
-        packet = packets.get(component_id, {})
-        evidence = _safe_mapping(packet.get("component_evidence"))
-        evidence_text = str(evidence.get("bounded_text") or "")
-        posture = _evidence_posture(evidence)
         graph_evidence_refs = [
             _safe_mapping(item) for item in node.get("evidence_refs") or ()
         ]
+        evidence_set = evidence_sets.get(component_id)
+        has_exact_component_evidence = bool(
+            evidence_set and graph_evidence_refs
+        )
+        if has_exact_component_evidence:
+            selected_evidence_ref_ids = [
+                str(item.get("evidence_ref_id") or "")
+                for item in graph_evidence_refs
+            ]
+            members_by_evidence_ref = {
+                str(
+                    component_analyst_evidence_member_code_evidence(member).get(
+                        "evidence_ref_id"
+                    )
+                    or ""
+                ): member
+                for member in evidence_set["members"]
+            }
+            if (
+                not selected_evidence_ref_ids
+                or any(
+                    not evidence_ref_id
+                    or evidence_ref_id not in members_by_evidence_ref
+                    for evidence_ref_id in selected_evidence_ref_ids
+                )
+                or len(selected_evidence_ref_ids)
+                != len(set(selected_evidence_ref_ids))
+            ):
+                raise QuantitativeSpecialistProductError(
+                    "component_evidence_binding_mismatch",
+                    "admitted component claim evidence is not an exact set member",
+                )
+            selected_evidence = [
+                component_analyst_evidence_member_code_evidence(
+                    members_by_evidence_ref[evidence_ref_id]
+                )
+                for evidence_ref_id in selected_evidence_ref_ids
+            ]
+            evidence_texts = [
+                str(evidence.get("bounded_text") or "")
+                for evidence in selected_evidence
+            ]
+            posture = _combined_evidence_posture(selected_evidence)
+        else:
+            # Cross can be called before an admitted component has an
+            # evidence-reference binding (for example, while it is still
+            # proposal-only). Preserve the established claim-only catalog in
+            # that pre-admission state; it has no evidence-member selector and
+            # cannot stand in for the exact-set path above.
+            evidence_texts = []
+            posture = _evidence_posture({})
         component_lineage_ref = {
             key: node.get(key)
             for key in (
@@ -806,8 +952,8 @@ def build_synthesis_quantitative_source_catalog(
             "bounded_field_digest": _text_digest(claim_material),
             "bounded_field_present": bool(claim_text),
             "underlying_evidence_field_digest": (
-                _text_digest(evidence_text)
-                if evidence_text
+                _text_digest("\n".join(evidence_texts))
+                if evidence_texts
                 else next(
                     (
                         str(item.get("content_digest"))
@@ -818,8 +964,8 @@ def build_synthesis_quantitative_source_catalog(
                 )
             ),
             "underlying_evidence_present": (
-                bool(evidence_text) or bool(graph_evidence_refs)
-            ),
+                bool(evidence_texts) and all(evidence_texts)
+            ) or (not has_exact_component_evidence and bool(graph_evidence_refs)),
             "admission_status": node.get("admission_status"),
             "current": node.get("current") is True,
             "stale": node.get("stale") is True,
@@ -851,7 +997,7 @@ def build_synthesis_quantitative_source_catalog(
         if include_material:
             entry["source_material"] = {
                 "claim_text": claim_material,
-                "underlying_evidence_text": evidence_text,
+                "underlying_evidence_texts": evidence_texts,
             }
         catalog[alias] = entry
     nonmaterial_catalog = deepcopy(catalog)
@@ -1007,7 +1153,7 @@ def _bind_operand_literal(
     source_text = str(
         (
             material.get("bounded_text")
-            if binding_kind == "component_evidence"
+            if binding_kind == "component_evidence_member"
             else material.get("claim_text")
         )
         or ""
@@ -1031,15 +1177,28 @@ def _bind_operand_literal(
     underlying_posture = "not_applicable"
     underlying_digest = None
     if binding_kind == "admitted_component_claim":
-        evidence_text = str(material.get("underlying_evidence_text") or "")
-        underlying_matches = _literal_occurrences(evidence_text, literal)
-        if not underlying_matches:
+        evidence_texts = [
+            str(item)
+            for item in material.get("underlying_evidence_texts") or ()
+            if str(item)
+        ]
+        matching_evidence_texts = [
+            evidence_text
+            for evidence_text in evidence_texts
+            if _literal_occurrences(evidence_text, literal)
+        ]
+        if not matching_evidence_texts:
             raise QuantitativeSpecialistProductError(
                 "claim_only_numeric_invention",
                 "synthesis literal is absent from underlying component evidence",
             )
+        if len(matching_evidence_texts) != 1:
+            raise QuantitativeSpecialistProductError(
+                "ambiguous_underlying_evidence_member",
+                "synthesis literal occurs in more than one exact component evidence member",
+            )
         underlying_posture = "exact_literal_found_in_underlying_evidence"
-        underlying_digest = _text_digest(evidence_text)
+        underlying_digest = _text_digest(matching_evidence_texts[0])
     parsed = parse_source_bound_numeric_literal(
         literal,
         canonical_currency_unit=_canonical_currency(
@@ -1524,7 +1683,7 @@ def _evaluate_quantitative_request(transient: Mapping[str, Any]) -> dict[str, An
             "missing_source_catalog", "current quantitative source catalog is unavailable"
         )
     expected_binding = (
-        "component_evidence"
+        "component_evidence_member"
         if target_kind == "component"
         else "admitted_component_claim"
         if target_kind == "synthesis"
