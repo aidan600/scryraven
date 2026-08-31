@@ -31,6 +31,8 @@ from core.component_analyst_evidence_set import (
     ComponentAnalystEvidenceSetError,
     build_component_analyst_evidence_set,
     component_analyst_evidence_set_members_for_aliases,
+    component_analyst_evidence_set_model_projection,
+    validate_component_analyst_evidence_set,
 )
 from core.evidence_ledger import EvidenceCandidate
 from core.multicomponent_component_admission import component_analyst_input_packet
@@ -105,7 +107,7 @@ def _run_mixed_cardinality_case(
     *,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    support_mode: Literal["first", "both", "unknown"],
+    support_mode: Literal["first", "both", "reverse_both", "unknown"],
     receiver_mutation: Literal["missing", "extra", "stale", "cross"] | None = None,
 ) -> tuple[
     Any,
@@ -155,6 +157,8 @@ def _run_mixed_cardinality_case(
                 result["supporting_evidence_aliases"] = (
                     aliases
                     if support_mode == "both"
+                    else list(reversed(aliases))
+                    if support_mode == "reverse_both"
                     else ["component_evidence_unknown"]
                     if support_mode == "unknown"
                     else [aliases[0]]
@@ -370,7 +374,36 @@ def test_component_analyst_can_nominate_both_exact_members(
     ] == expected_refs
 
 
-def test_component_analyst_support_aliases_cannot_reorder_exact_input() -> None:
+def test_reversed_lawful_support_aliases_reach_admission_in_canonical_order(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _outcome, _harness, packet_contexts, admission_calls = (
+        _run_mixed_cardinality_case(
+            tmp_path=tmp_path,
+            monkeypatch=monkeypatch,
+            support_mode="reverse_both",
+        )
+    )
+
+    component_two_set = packet_contexts[0]["evidence_sets"]["component-2"]
+    expected_refs = [
+        member["code_binding"]["evidence_ref_id"]
+        for member in component_two_set["members"]
+    ]
+    component_two_admission = next(
+        item for item in admission_calls if item["component_id"] == "component-2"
+    )
+    assert component_two_admission["semantic_observation"]["evidence_refs"] == (
+        expected_refs
+    )
+    assert [
+        item["evidence_ref_id"]
+        for item in component_two_admission["sanitized_content_references"]
+    ] == expected_refs
+
+
+def test_reversed_lawful_support_aliases_rebind_in_canonical_member_order() -> None:
     _kernel, _packets, evidence_sets, _contract = (
         _scheduler_inputs_with_exact_sets()
     )
@@ -380,13 +413,35 @@ def test_component_analyst_support_aliases_cannot_reorder_exact_input() -> None:
         for member in component_two_set["members"]
     ]
 
-    with pytest.raises(
-        ComponentAnalystEvidenceSetError,
-        match="preserve supplied canonical order",
-    ):
+    selected = component_analyst_evidence_set_members_for_aliases(
+        component_two_set,
+        list(reversed(aliases)),
+    )
+    assert [member["local_evidence_alias"] for member in selected] == aliases
+
+
+@pytest.mark.parametrize(
+    ("aliases", "message"),
+    (
+        (["component_evidence_unknown"], "unknown supplied member"),
+        (
+            ["component_evidence_01", "component_evidence_01"],
+            "repeat one supplied member",
+        ),
+        ([], "aliases are missing"),
+    ),
+)
+def test_component_analyst_support_alias_membership_rejects_unknown_duplicate_and_empty(
+    aliases: list[str],
+    message: str,
+) -> None:
+    _kernel, _packets, evidence_sets, _contract = (
+        _scheduler_inputs_with_exact_sets()
+    )
+    with pytest.raises(ComponentAnalystEvidenceSetError, match=message):
         component_analyst_evidence_set_members_for_aliases(
-            component_two_set,
-            list(reversed(aliases)),
+            evidence_sets["component-2"],
+            aliases,
         )
 
 
@@ -508,6 +563,66 @@ def _scheduler_inputs_with_exact_sets() -> tuple[
     return kernel, packets, evidence_sets, contract
 
 
+def _rebuild_evidence_set_with_candidate_fact(
+    evidence_set: Mapping[str, Any],
+    *,
+    member_index: int,
+    field: str,
+    value: Any,
+) -> dict[str, Any]:
+    """Create one newly valid exact set with a changed retained snapshot fact."""
+
+    sources: list[dict[str, Any]] = []
+    for index, member in enumerate(evidence_set["members"]):
+        candidate_record = deepcopy(member["candidate_record"])
+        if index == member_index:
+            candidate_record[field] = value
+        sources.append(
+            {
+                "evidence_ref_id": member["code_binding"]["evidence_ref_id"],
+                "passage": deepcopy(member["passage"]),
+                "candidate_record": candidate_record,
+            }
+        )
+    return build_component_analyst_evidence_set(sources)
+
+
+def test_retained_qualification_fact_mutation_rejects_before_scheduler_dispatch(
+) -> None:
+    """Reject a real later qualification input before Analyst support dispatch.
+
+    ``eligible_for_stronger_obligation`` is consumed after Analyst support by
+    the SearchOS custody qualification reducer.  The pre-repair base accepted
+    this mutation because its digest did not include the retained candidate
+    snapshot.  It must now fail at the evidence-set boundary.
+    """
+
+    kernel, packets, evidence_sets, _contract = _scheduler_inputs_with_exact_sets()
+    component_two_set = evidence_sets["component-2"]
+    base_digest = component_two_set["evidence_set_digest"]
+
+    component_two_set["members"][0]["candidate_record"][
+        "eligible_for_stronger_obligation"
+    ] = True
+
+    assert component_two_set["evidence_set_digest"] == base_digest
+    with pytest.raises(
+        ComponentAnalystEvidenceSetError,
+        match="canonical order or identity is altered",
+    ):
+        validate_component_analyst_evidence_set(component_two_set)
+    with pytest.raises(
+        RunKernelTransitionError,
+        match="canonical order or identity is altered",
+    ):
+        kernel.initialize_multicomponent_graph_scheduler(
+            component_analyst_input_packets=packets,
+            component_analyst_evidence_sets=evidence_sets,
+            requested_synthesis_directive="Relate the exact components.",
+        )
+    assert "multicomponent_graph_scheduler" not in kernel.state.projections
+
+
 def test_scheduler_reconstruction_preserves_exact_order_and_rejects_reorder(
 ) -> None:
     kernel, packets, evidence_sets, _contract = _scheduler_inputs_with_exact_sets()
@@ -543,6 +658,55 @@ def test_scheduler_reconstruction_preserves_exact_order_and_rejects_reorder(
             component_analyst_evidence_sets=reordered_sets,
             requested_synthesis_directive="Relate the exact components.",
         )
+
+
+def test_digest_coverage_keeps_model_projection_and_n1_shape_unchanged() -> None:
+    _kernel, packets, evidence_sets, contract = _scheduler_inputs_with_exact_sets()
+    original_set = evidence_sets["component-2"]
+    changed_set = _rebuild_evidence_set_with_candidate_fact(
+        original_set,
+        member_index=0,
+        field="eligible_for_stronger_obligation",
+        value=True,
+    )
+    assert changed_set["evidence_set_digest"] != original_set["evidence_set_digest"]
+    assert (
+        component_analyst_evidence_set_model_projection(changed_set)
+        == component_analyst_evidence_set_model_projection(original_set)
+    )
+    changed_packet = component_analyst_input_packet(
+        run_id=packets["component-2"]["run_binding"]["run_id"],
+        request_id=packets["component-2"]["run_binding"]["request_id"],
+        accepted_contract=contract,
+        component_ref=contract["accepted_answer_component_refs"][1],
+        component_evidence_set=changed_set,
+    )
+    assert changed_packet == packets["component-2"]
+    model_projection = changed_packet["component_evidence_set"]
+    assert "evidence_set_digest" not in model_projection
+    assert all(
+        not {"evidence_ref_id", "candidate_record", "passage"}.intersection(member)
+        for member in model_projection["members"]
+    )
+    model_safe_text = json.dumps(model_projection, sort_keys=True)
+    assert all(
+        internal_name not in model_safe_text
+        for internal_name in (
+            "candidate_custody_ref",
+            "code_binding",
+            "evidence_ref_id",
+            "evidence_set_digest",
+            "bounded_text_digest",
+            "candidate_record",
+            "passage",
+        )
+    )
+
+    one_member_set = evidence_sets["component-1"]
+    assert validate_component_analyst_evidence_set(one_member_set) == one_member_set
+    assert component_analyst_evidence_set_model_projection(one_member_set)[
+        "member_count"
+    ] == 1
 
 
 def test_specialist_component_aliases_bind_each_exact_member_and_reject_unknown(

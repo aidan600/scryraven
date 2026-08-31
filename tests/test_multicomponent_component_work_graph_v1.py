@@ -7,6 +7,10 @@ from copy import deepcopy
 
 import pytest
 
+from core.component_analyst_evidence_set import (
+    build_component_analyst_evidence_set,
+    validate_component_analyst_evidence_set,
+)
 from core.component_work_graph_v1 import (
     ComponentWorkGraphV1Error,
     admit_synthesis_node_via_runkernel,
@@ -23,6 +27,7 @@ from core.component_work_graph_v1 import (
     synthesis_dprime_input_packet,
 )
 from core.component_work_node import component_work_node_v1_from_admitted_component
+from core.evidence_ledger import EvidenceCandidate
 from core.final_answer_runtime_adapter import (
     build_final_answer_packet,
     derive_author_input_payload,
@@ -806,6 +811,77 @@ def test_runkernel_reproof_uses_only_current_scheduler_packets() -> None:
     assert "quantitative_specialist_proposal_contract" not in retained
     assert "quantitative_source_catalog" not in retained
     assert "Evidence 1 reports" not in retained
+
+
+def test_scheduler_reproof_rejects_recomputed_retained_evidence_set_digest() -> None:
+    nodes, accepted_ref, directive, packets, evidence_sets, cross_input, cross = (
+        _cross_input_reproof_fixture()
+    )
+    candidate = component_work_graph_v1_from_cross_component_artifact(
+        run_id=RUN_ID,
+        request_id=REQUEST_ID,
+        accepted_contract_ref=accepted_ref,
+        requested_synthesis_directive=directive,
+        component_nodes=nodes,
+        cross_component_artifact=cross,
+        transient_cross_input_packet=cross_input,
+    )
+    kernel = RunKernel.start(run_id=RUN_ID, request_id=REQUEST_ID)
+    _seed_component_admission(
+        kernel,
+        nodes,
+        cross_artifact=cross,
+        requested_synthesis_directive=directive,
+        component_packets=packets,
+        component_evidence_sets=evidence_sets,
+    )
+    kernel.state.initial_answer_contract["question_meaning_metadata"] = {
+        "requested_synthesis_directive": directive,
+    }
+    for evidence_set in evidence_sets.values():
+        for member in evidence_set["members"]:
+            evidence_ref_id = member["code_binding"]["evidence_ref_id"]
+            kernel.state.evidence_ledger.candidates[evidence_ref_id] = EvidenceCandidate(
+                candidate_id=evidence_ref_id,
+                readable_status="readable",
+            )
+    kernel.initialize_multicomponent_graph_scheduler(
+        component_analyst_input_packets=packets,
+        component_analyst_evidence_sets=evidence_sets,
+        requested_synthesis_directive=directive,
+    )
+
+    component_id = nodes[1]["component_id"]
+    original_set = evidence_sets[component_id]
+    replacement_sources = []
+    for index, member in enumerate(original_set["members"]):
+        candidate_record = deepcopy(member["candidate_record"])
+        if index == 0:
+            candidate_record["eligible_for_stronger_obligation"] = True
+        replacement_sources.append(
+            {
+                "evidence_ref_id": member["code_binding"]["evidence_ref_id"],
+                "passage": deepcopy(member["passage"]),
+                "candidate_record": candidate_record,
+            }
+        )
+    replacement_set = build_component_analyst_evidence_set(replacement_sources)
+    assert validate_component_analyst_evidence_set(replacement_set) == replacement_set
+    assert replacement_set["evidence_set_digest"] != original_set["evidence_set_digest"]
+
+    kernel.state.multicomponent_scheduler_context[
+        "component_analyst_evidence_sets"
+    ][component_id] = replacement_set
+    with pytest.raises(
+        RunKernelTransitionError,
+        match="Graph V1 structure reproof component packets do not match scheduler authority",
+    ):
+        reduce_component_work_graph_v1(
+            run_kernel=kernel,
+            operation="structure",
+            graph_candidate=candidate,
+        )
+    assert "multicomponent_component_work_graph_v1" not in kernel.state.projections
 
 
 @pytest.mark.parametrize("corruption", ["missing", "cross_run"])

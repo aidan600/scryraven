@@ -318,20 +318,14 @@ def build_component_analyst_evidence_set(
         "schema_version": COMPONENT_ANALYST_EVIDENCE_SET_SCHEMA_VERSION,
         "members": built,
     }
-    identity_core = {
-        "schema_version": COMPONENT_ANALYST_EVIDENCE_SET_SCHEMA_VERSION,
-        "members": [
-            {
-                "local_evidence_alias": item["local_evidence_alias"],
-                "code_binding": item["code_binding"],
-                "model_evidence": item["model_evidence"],
-            }
-            for item in built
-        ],
-    }
+    # ``passage`` and ``candidate_record`` remain in the canonical object for
+    # later SearchOS qualification and sanitized content binding.  The one
+    # scheduler/currentness digest must therefore commit to their complete
+    # normalized snapshots as well as the derived bindings and safe model
+    # projection.  No separate snapshot authority is introduced here.
     return {
         **core,
-        "evidence_set_digest": safe_packet_digest(identity_core),
+        "evidence_set_digest": safe_packet_digest(core),
     }
 
 
@@ -499,14 +493,15 @@ def component_analyst_evidence_set_members_for_aliases(
         raise ComponentAnalystEvidenceSetError(
             "component support aliases include an unknown supplied member"
         )
-    canonical_selected_order = [
-        alias for alias in by_alias if alias in set(normalized)
+    # The Analyst authorizes semantic membership only.  It may provide lawful
+    # aliases in any order; code rebinds that subset in the already-authorized
+    # canonical SearchOS order for mechanical admission and reconstruction.
+    requested = set(normalized)
+    return [
+        deepcopy(item)
+        for item in safe["members"]
+        if str(item["local_evidence_alias"]) in requested
     ]
-    if normalized != canonical_selected_order:
-        raise ComponentAnalystEvidenceSetError(
-            "component support aliases must preserve supplied canonical order"
-        )
-    return [deepcopy(by_alias[str(alias)]) for alias in normalized]
 
 
 def component_analyst_evidence_member_code_evidence(
