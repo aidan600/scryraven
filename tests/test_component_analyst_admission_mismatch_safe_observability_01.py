@@ -43,6 +43,9 @@ from core.multicomponent_component_admission import (
     stage_multicomponent_component_admission,
 )
 from core.multicomponent_role_runtime import ROLE_COMPONENT_ANALYST, safe_packet_digest
+from tests.fixtures.component_analyst_evidence_sets import (
+    component_analyst_evidence_set_fixture,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -84,7 +87,7 @@ CANARIES = (
 KNOWN_SECTIONS = (
     "run_binding",
     "component_ref",
-    "component_evidence",
+    "component_evidence_set",
     "quantitative_source_catalog",
     "quantitative_specialist_proposal_contract",
 )
@@ -92,7 +95,7 @@ FROZEN_COMPONENT_ANALYST_PACKET_SECTIONS = {
     "supported_query_class",
     "run_binding",
     "component_ref",
-    "component_evidence",
+    "component_evidence_set",
     "quantitative_specialist_proposal_contract",
 }
 _DIGEST_A = "a" * 64
@@ -233,7 +236,9 @@ def _packet(
         request_id=str(contract["request_id"]),
         accepted_contract=contract,
         component_ref=ref,
-        evidence_input=evidence_input or _evidence_input(),
+        component_evidence_set=component_analyst_evidence_set_fixture(
+            evidence_input or _evidence_input()
+        ),
     )
 
 
@@ -258,6 +263,7 @@ def _semantic_output(*, supported: bool = False) -> dict[str, Any]:
             "nonclaims": [],
             "contradictions": [],
             "blockers": [],
+            "supporting_evidence_aliases": ["component_evidence_01"],
         }
     return {
         "case_posture": "unsupported",
@@ -312,6 +318,7 @@ def _stage_kwargs(
     accepted: dict[str, Any] | None = None,
     analyst_input: dict[str, Any] | None = None,
     artifact: dict[str, Any] | None = None,
+    component_evidence_set: dict[str, Any] | None = None,
     independent_dispatch_input_digest: str | None = None,
     contract_authority_facts: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -328,6 +335,10 @@ def _stage_kwargs(
         "component_id": "component:1",
         "analyst_artifact": artifact or _artifact(packet),
         "analyst_input_packet": packet,
+        "component_evidence_set": (
+            component_evidence_set
+            or component_analyst_evidence_set_fixture(_evidence_input())
+        ),
         "semantic_observation": None,
         "sanitized_content_references": [],
         "component_coverage_record": None,
@@ -438,7 +449,12 @@ def test_direct_nonnumeric_component_packet_is_catalog_free_and_admits() -> None
     assert set(packet) == FROZEN_COMPONENT_ANALYST_PACKET_SECTIONS
     assert "quantitative_source_catalog" not in packet
     assert "quantitative_specialist_proposal_contract" in packet
-    staged = stage_multicomponent_component_admission(**_stage_kwargs(analyst_input=packet))
+    staged = stage_multicomponent_component_admission(
+        **_stage_kwargs(
+            analyst_input=packet,
+            component_evidence_set=component_analyst_evidence_set_fixture(evidence),
+        )
+    )
     assert staged["component_admission_ref"]["admission_status"] == "unsupported"
     assert "component_analyst_input_binding_mismatch_v1" not in json.dumps(
         staged, sort_keys=True
@@ -453,7 +469,10 @@ def test_source_stated_numeric_packet_is_catalog_free_without_specialist_work() 
     assert "quantitative_source_catalog" not in packet
     assert "quantitative_specialist_proposal_contract" in packet
     staged = stage_multicomponent_component_admission(
-        **_stage_kwargs(analyst_input=packet)
+        **_stage_kwargs(
+            analyst_input=packet,
+            component_evidence_set=component_analyst_evidence_set_fixture(evidence),
+        )
     )
     assert staged["component_admission_ref"]["admission_status"] == "unsupported"
     assert staged["component_admission_ref"][
@@ -531,16 +550,16 @@ def test_first_divergent_section_from_accepted_component_ref_change() -> None:
     _assert_digest_only(diagnostic)
 
 
-def test_first_divergent_section_from_non_mapping_component_evidence() -> None:
+def test_first_divergent_section_from_non_mapping_component_evidence_set() -> None:
     original = _packet()
     supplied = deepcopy(original)
-    supplied["component_evidence"] = CANARY_EVIDENCE
+    supplied["component_evidence_set"] = CANARY_EVIDENCE
     diagnostic = _diagnostic_from(
         analyst_input=supplied,
         artifact=_artifact(original),
     )
-    assert diagnostic["first_divergent_section"] == "component_evidence"
-    assert diagnostic["component_evidence_equal"] is False
+    assert diagnostic["first_divergent_section"] == "component_evidence_set"
+    assert diagnostic["component_evidence_set_equal"] is False
     _assert_digest_only(diagnostic)
 
 
@@ -578,12 +597,12 @@ def test_first_divergent_section_for_rebuilt_packet_sections(
     _assert_digest_only(diagnostic)
 
 
-def test_builder_reports_component_evidence_section_without_contents() -> None:
+def test_builder_reports_component_evidence_set_section_without_contents() -> None:
     original = _packet()
     reconstructed = deepcopy(original)
     supplied = deepcopy(original)
-    supplied["component_evidence"] = {
-        **deepcopy(original["component_evidence"]),
+    supplied["component_evidence_set"] = {
+        **deepcopy(original["component_evidence_set"]),
         "bounded_text": CANARY_EVIDENCE + "-mutated",
     }
     diagnostic = build_component_analyst_input_binding_mismatch_v1(
@@ -593,8 +612,8 @@ def test_builder_reports_component_evidence_section_without_contents() -> None:
         accepted_contract=_accepted_contract(),
         accepted_component=_component_ref(),
     )
-    assert diagnostic["first_divergent_section"] == "component_evidence"
-    assert diagnostic["component_evidence_equal"] is False
+    assert diagnostic["first_divergent_section"] == "component_evidence_set"
+    assert diagnostic["component_evidence_set_equal"] is False
     _assert_digest_only(diagnostic)
 
 
@@ -851,16 +870,21 @@ def test_searchos_n1_success_path_keeps_identical_a_g_digest(
         run_post_retirement_ordinary_pipeline,
     )
 
-    scheduler_packets: list[dict[str, Any]] = []
+    scheduler_contexts: list[dict[str, Any]] = []
     original_packet_install = RunKernel.install_multicomponent_graph_reproof_packet_context
 
     def capture_packet_install(self: Any, **kwargs: Any) -> Any:
         result = original_packet_install(self, **kwargs)
-        packets = {
-            str(key): dict(value)
-            for key, value in kwargs["component_analyst_input_packets"].items()
-        }
-        scheduler_packets.append(packets)
+        scheduler_contexts.append(
+            {
+                "packets": deepcopy(
+                    dict(kwargs["component_analyst_input_packets"])
+                ),
+                "evidence_sets": deepcopy(
+                    dict(kwargs["component_analyst_evidence_sets"])
+                ),
+            }
+        )
         return result
 
     monkeypatch.setattr(
@@ -904,8 +928,10 @@ def test_searchos_n1_success_path_keeps_identical_a_g_digest(
     )
 
     assert captured["mismatch"] is None
-    assert len(scheduler_packets) == 1
-    [dispatch_packet] = scheduler_packets[0].values()
+    assert len(scheduler_contexts) == 1
+    [dispatch_context] = scheduler_contexts
+    [dispatch_packet] = dispatch_context["packets"].values()
+    [dispatch_evidence_set] = dispatch_context["evidence_sets"].values()
     supplied = captured["analyst_input_packet"]
     artifact = captured["analyst_artifact"]
     accepted = (
@@ -918,7 +944,7 @@ def test_searchos_n1_success_path_keeps_identical_a_g_digest(
         request_id=harness.run_kernel.state.request_id,
         accepted_contract=accepted,
         component_ref=dict(accepted["accepted_answer_component_refs"][0]),
-        evidence_input=dict(supplied["component_evidence"]),
+        component_evidence_set=dispatch_evidence_set,
     )
     digest = safe_packet_digest(dispatch_packet)
     assert safe_packet_digest(supplied) == digest

@@ -709,10 +709,32 @@ class OfflineOrdinaryPipelineHarness:
             ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST_RESUME],
         }:
             payload = json.loads(prompt)
+            exact_component_input = (
+                payload
+                if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST]
+                else dict(payload.get("exact_component_and_evidence_input") or {})
+            )
+            evidence_aliases = [
+                str(dict(member).get("local_evidence_alias") or "")
+                for member in (
+                    dict(exact_component_input.get("component_evidence_set") or {}).get(
+                        "members"
+                    )
+                    or ()
+                )
+                if str(dict(member).get("local_evidence_alias") or "")
+            ]
+            if not evidence_aliases:
+                raise AssertionError(
+                    "offline Component Analyst requires supplied local evidence aliases"
+                )
             prior_case = dict(payload.get("prior_component_case") or {})
             prior_claim = str(prior_case.get("claim_text") or "").strip()
             question = str(
-                dict(payload.get("component_ref") or {}).get("user_facing_question") or self.core_topic
+                dict(exact_component_input.get("component_ref") or {}).get(
+                    "user_facing_question"
+                )
+                or self.core_topic
             )
             claim_text = (
                 prior_claim
@@ -723,6 +745,7 @@ class OfflineOrdinaryPipelineHarness:
                 {
                     "claim_text": claim_text,
                     "case_posture": "supported",
+                    "supporting_evidence_aliases": [evidence_aliases[0]],
                     "evidence_analysis": (
                         "The exact bounded READ material supplied for this "
                         "component supports the stated offline finding."

@@ -7,6 +7,10 @@ from copy import deepcopy
 
 import pytest
 
+from core.component_analyst_evidence_set import (
+    build_component_analyst_evidence_set,
+    validate_component_analyst_evidence_set,
+)
 from core.component_work_graph_v1 import (
     ComponentWorkGraphV1Error,
     admit_synthesis_node_via_runkernel,
@@ -23,6 +27,7 @@ from core.component_work_graph_v1 import (
     synthesis_dprime_input_packet,
 )
 from core.component_work_node import component_work_node_v1_from_admitted_component
+from core.evidence_ledger import EvidenceCandidate
 from core.final_answer_runtime_adapter import (
     build_final_answer_packet,
     derive_author_input_payload,
@@ -53,11 +58,90 @@ from core.run_kernel import (
 from core.strict_one_shot_model_transport import (
     wrap_text_callable_as_strict_one_shot_transport,
 )
+from tests.fixtures.component_analyst_evidence_sets import (
+    component_analyst_evidence_set_fixture,
+)
 
 RUN_ID = "run:multicomponent-graph-v1-test"
 REQUEST_ID = "request:multicomponent-graph-v1-test"
 COMPONENT_ADMISSION_STAGE = "multicomponent_component_admission"
 COMPONENT_ADMISSION_OWNER = "RunKernel.MulticomponentComponentAdmission"
+
+
+def _fixture_component_evidence(index: int) -> dict:
+    return {
+        "evidence_status": "available",
+        "evidence_ref_id": f"evidence:{index}",
+        "bounded_text": f"Evidence {index} reports {index * 10} USD.",
+        "currentness_signal": "current",
+        "source_class": "current_primary_or_official",
+        "source_tier": "official",
+        "fact_disposition": "supported",
+        "readability_posture": "readable",
+        "conflict_posture": "none",
+        "contradictory": False,
+    }
+
+
+def _component_packets_and_evidence_sets(
+    *,
+    accepted_contract: dict,
+    component_refs: list[dict],
+) -> tuple[dict[str, dict], dict[str, dict]]:
+    evidence_sets: dict[str, dict] = {}
+    packets: dict[str, dict] = {}
+    for index, component_ref in enumerate(component_refs, start=1):
+        component_id = str(component_ref["component_id"])
+        evidence_set = component_analyst_evidence_set_fixture(
+            _fixture_component_evidence(index)
+        )
+        evidence_sets[component_id] = evidence_set
+        packets[component_id] = component_analyst_input_packet(
+            run_id=RUN_ID,
+            request_id=REQUEST_ID,
+            accepted_contract=accepted_contract,
+            component_ref=component_ref,
+            component_evidence_set=evidence_set,
+        )
+    return packets, evidence_sets
+
+
+def _component_refs_from_nodes(nodes: list[dict]) -> list[dict]:
+    return [
+        {
+            "component_id": str(node["component_id"]),
+            "component_revision": node["component_revision"],
+            "component_digest": node["component_digest"],
+            "user_facing_label": node["component_label"],
+            "user_facing_question": node["component_question"],
+            "mandatory_caveats": list(node.get("required_caveats") or ()),
+            "prohibited_upgrades": [],
+        }
+        for node in nodes
+    ]
+
+
+def _cross_input_with_exact_evidence(
+    *,
+    nodes: list[dict],
+    accepted_contract_ref: dict,
+    directive: str,
+) -> tuple[dict, dict[str, dict], dict[str, dict]]:
+    packets, evidence_sets = _component_packets_and_evidence_sets(
+        accepted_contract=accepted_contract_ref,
+        component_refs=_component_refs_from_nodes(nodes),
+    )
+    return (
+        cross_component_input_packet(
+            component_nodes=nodes,
+            accepted_contract_ref=accepted_contract_ref,
+            requested_synthesis_directive=directive,
+            component_analyst_input_packets=packets,
+            component_analyst_evidence_sets=evidence_sets,
+        ),
+        packets,
+        evidence_sets,
+    )
 
 
 def _role_artifact(
@@ -195,6 +279,7 @@ def _seed_component_admission(
     cross_artifact: dict | None = None,
     requested_synthesis_directive: str = "Explain the combined result.",
     component_packets: dict[str, dict] | None = None,
+    component_evidence_sets: dict[str, dict] | None = None,
 ) -> None:
     accepted_refs = []
     admission_refs = []
@@ -254,19 +339,16 @@ def _seed_component_admission(
         "accepted_contract_digest": "accepted-contract-digest",
         "component_admission_refs": admission_refs,
     }
-    packets = component_packets or {
-        str(component_ref["component_id"]): component_analyst_input_packet(
-            run_id=RUN_ID,
-            request_id=REQUEST_ID,
-            accepted_contract=kernel.state.initial_answer_contract,
-            component_ref=component_ref,
-            evidence_input={},
-        )
-        for component_ref in accepted_refs
-    }
+    default_packets, default_evidence_sets = _component_packets_and_evidence_sets(
+        accepted_contract=kernel.state.initial_answer_contract,
+        component_refs=accepted_refs,
+    )
+    packets = component_packets or default_packets
+    evidence_sets = component_evidence_sets or default_evidence_sets
     kernel.state.multicomponent_scheduler_context = {
         "requested_synthesis_directive": requested_synthesis_directive,
         "component_analyst_input_packets": deepcopy(packets),
+        "component_analyst_evidence_sets": deepcopy(evidence_sets),
     }
     if cross_artifact is not None:
         kernel.state.projections[
@@ -285,10 +367,12 @@ def _structured_graph() -> tuple[RunKernel, dict]:
         "accepted_contract_digest": "accepted-contract-digest",
     }
     directive = "Explain the combined filing sequence."
-    cross_input = cross_component_input_packet(
-        component_nodes=nodes,
-        accepted_contract_ref=accepted_ref,
-        requested_synthesis_directive=directive,
+    cross_input, component_packets, component_evidence_sets = (
+        _cross_input_with_exact_evidence(
+            nodes=nodes,
+            accepted_contract_ref=accepted_ref,
+            directive=directive,
+        )
     )
     cross = _role_artifact(
         ROLE_CROSS_COMPONENT_ANALYST,
@@ -336,6 +420,8 @@ def _structured_graph() -> tuple[RunKernel, dict]:
         nodes,
         cross_artifact=cross,
         requested_synthesis_directive=directive,
+        component_packets=component_packets,
+        component_evidence_sets=component_evidence_sets,
     )
     graph = reduce_component_work_graph_v1(
         run_kernel=kernel,
@@ -356,10 +442,12 @@ def _flat_graph(*, caveats: tuple[str, ...] = ()) -> tuple[RunKernel, dict]:
         "accepted_contract_digest": "accepted-contract-digest",
     }
     directive = "Explain the combined result."
-    cross_input = cross_component_input_packet(
-        component_nodes=nodes,
-        accepted_contract_ref=accepted_ref,
-        requested_synthesis_directive=directive,
+    cross_input, component_packets, component_evidence_sets = (
+        _cross_input_with_exact_evidence(
+            nodes=nodes,
+            accepted_contract_ref=accepted_ref,
+            directive=directive,
+        )
     )
     cross = _role_artifact(
         ROLE_CROSS_COMPONENT_ANALYST,
@@ -397,6 +485,8 @@ def _flat_graph(*, caveats: tuple[str, ...] = ()) -> tuple[RunKernel, dict]:
         nodes,
         cross_artifact=cross,
         requested_synthesis_directive=directive,
+        component_packets=component_packets,
+        component_evidence_sets=component_evidence_sets,
     )
     graph = reduce_component_work_graph_v1(
         run_kernel=kernel,
@@ -433,10 +523,12 @@ def _single_synthesis_candidate(
         "accepted_contract_digest": "accepted-contract-digest",
     }
     directive = "Explain the combined result."
-    cross_input = cross_component_input_packet(
-        component_nodes=nodes,
-        accepted_contract_ref=accepted_ref,
-        requested_synthesis_directive=directive,
+    cross_input, component_packets, component_evidence_sets = (
+        _cross_input_with_exact_evidence(
+            nodes=nodes,
+            accepted_contract_ref=accepted_ref,
+            directive=directive,
+        )
     )
     cross = _role_artifact(
         ROLE_CROSS_COMPONENT_ANALYST,
@@ -456,13 +548,36 @@ def _single_synthesis_candidate(
         },
         cross_input,
     )
-    return accepted_ref, cross, directive, cross_input
+    return (
+        accepted_ref,
+        cross,
+        directive,
+        cross_input,
+        component_packets,
+        component_evidence_sets,
+    )
 
 
 def _cross_input_reproof_fixture() -> tuple[
-    list[dict], dict, str, dict[str, dict], dict, dict
+    list[dict], dict, str, dict[str, dict], dict[str, dict], dict, dict
 ]:
-    nodes = [_component_node(1), _component_node(2)]
+    nodes = [
+        _component_node(
+            index,
+            admission_overrides={
+                "evidence_refs": [
+                    {
+                        "evidence_ref_id": f"evidence:{index}",
+                        "content_ref_id": f"content:{index}",
+                        "content_digest": safe_packet_digest(
+                            {"evidence_ref_id": f"evidence:{index}"}
+                        ),
+                    }
+                ]
+            },
+        )
+        for index in (1, 2)
+    ]
     accepted_ref = {
         "owner": "RunKernel.InitialAnswerContract",
         "canonical_state": True,
@@ -472,50 +587,12 @@ def _cross_input_reproof_fixture() -> tuple[
         "accepted_contract_digest": "accepted-contract-digest",
     }
     directive = "Reprove the exact combined result."
-    component_packets: dict[str, dict] = {}
-    for index, node in enumerate(nodes, start=1):
-        component_id = str(node["component_id"])
-        component_packets[component_id] = component_analyst_input_packet(
-            run_id=RUN_ID,
-            request_id=REQUEST_ID,
-            accepted_contract=accepted_ref,
-            component_ref={
-                "component_id": component_id,
-                "component_revision": node["component_revision"],
-                "component_digest": node["component_digest"],
-                "user_facing_label": node["component_label"],
-                "user_facing_question": node["component_question"],
-                "mandatory_caveats": list(node.get("required_caveats") or ()),
-                "prohibited_upgrades": [],
-            },
-            evidence_input={
-                "evidence_status": "available",
-                "evidence_ref_id": f"evidence:{index}",
-                "bounded_text": f"Evidence {index} reports {index * 10} USD.",
-                "currentness_signal": "current",
-                "source_class": "current_primary_or_official",
-                "source_tier": "official",
-                "fact_disposition": "supported",
-                "readability_posture": "readable",
-                "conflict_posture": "none",
-                "contradictory": False,
-                "candidate_custody_ref": {
-                    "candidate_id": f"evidence:{index}",
-                    "currentness_signal": "current",
-                    "source_class": "current_primary_or_official",
-                    "source_tier": "official",
-                    "fact_disposition": "supported",
-                    "readable_status": "readable",
-                    "conflict_posture": "none",
-                    "contradictory": False,
-                },
-            },
+    cross_input, component_packets, component_evidence_sets = (
+        _cross_input_with_exact_evidence(
+            nodes=nodes,
+            accepted_contract_ref=accepted_ref,
+            directive=directive,
         )
-    cross_input = cross_component_input_packet(
-        component_nodes=nodes,
-        accepted_contract_ref=accepted_ref,
-        requested_synthesis_directive=directive,
-        component_analyst_input_packets=component_packets,
     )
     cross = _role_artifact(
         ROLE_CROSS_COMPONENT_ANALYST,
@@ -535,7 +612,15 @@ def _cross_input_reproof_fixture() -> tuple[
         },
         cross_input,
     )
-    return nodes, accepted_ref, directive, component_packets, cross_input, cross
+    return (
+        nodes,
+        accepted_ref,
+        directive,
+        component_packets,
+        component_evidence_sets,
+        cross_input,
+        cross,
+    )
 
 
 def _redigest_role_artifact(artifact: dict) -> dict:
@@ -546,7 +631,7 @@ def _redigest_role_artifact(artifact: dict) -> dict:
 
 
 def test_cross_input_reproof_accepts_both_exact_authority_routes() -> None:
-    nodes, accepted_ref, directive, packets, cross_input, cross = (
+    nodes, accepted_ref, directive, packets, evidence_sets, cross_input, cross = (
         _cross_input_reproof_fixture()
     )
     assert all("quantitative_source_catalog" not in packet for packet in packets.values())
@@ -567,13 +652,14 @@ def test_cross_input_reproof_accepts_both_exact_authority_routes() -> None:
         component_nodes=nodes,
         cross_component_artifact=cross,
         component_analyst_input_packets=packets,
+        component_analyst_evidence_sets=evidence_sets,
     )
     assert supplied == reconstructed
 
 
 @pytest.mark.parametrize("authority", ["supplied", "reconstructed"])
 def test_cross_input_reproof_rejects_forged_artifact_digest(authority: str) -> None:
-    nodes, accepted_ref, directive, packets, cross_input, cross = (
+    nodes, accepted_ref, directive, packets, evidence_sets, cross_input, cross = (
         _cross_input_reproof_fixture()
     )
     forged = deepcopy(cross)
@@ -582,7 +668,10 @@ def test_cross_input_reproof_rejects_forged_artifact_digest(authority: str) -> N
     kwargs = (
         {"transient_cross_input_packet": cross_input}
         if authority == "supplied"
-        else {"component_analyst_input_packets": packets}
+        else {
+            "component_analyst_input_packets": packets,
+            "component_analyst_evidence_sets": evidence_sets,
+        }
     )
     with pytest.raises(ComponentWorkGraphV1Error, match="input binding mismatch"):
         component_work_graph_v1_from_cross_component_artifact(
@@ -597,7 +686,7 @@ def test_cross_input_reproof_rejects_forged_artifact_digest(authority: str) -> N
 
 
 def test_cross_input_reproof_rejects_missing_or_incomplete_authority() -> None:
-    nodes, accepted_ref, directive, packets, _cross_input, cross = (
+    nodes, accepted_ref, directive, packets, evidence_sets, _cross_input, cross = (
         _cross_input_reproof_fixture()
     )
     with pytest.raises(ComponentWorkGraphV1Error, match="authority is missing"):
@@ -619,6 +708,7 @@ def test_cross_input_reproof_rejects_missing_or_incomplete_authority() -> None:
             component_nodes=nodes,
             cross_component_artifact=cross,
             component_analyst_input_packets=packets,
+            component_analyst_evidence_sets=evidence_sets,
         )
 
 
@@ -629,7 +719,7 @@ def test_cross_input_reproof_rejects_missing_or_incomplete_authority() -> None:
 def test_supplied_cross_input_reproof_rejects_stale_structure(
     stale_input: str,
 ) -> None:
-    nodes, accepted_ref, directive, _packets, cross_input, cross = (
+    nodes, accepted_ref, directive, _packets, _evidence_sets, cross_input, cross = (
         _cross_input_reproof_fixture()
     )
     supplied = deepcopy(cross_input)
@@ -662,7 +752,7 @@ def test_supplied_cross_input_reproof_rejects_stale_structure(
 def test_supplied_cross_input_reproof_rejects_malformed_catalog(
     catalog_mutation: str,
 ) -> None:
-    nodes, accepted_ref, directive, _packets, cross_input, cross = (
+    nodes, accepted_ref, directive, _packets, _evidence_sets, cross_input, cross = (
         _cross_input_reproof_fixture()
     )
     supplied = deepcopy(cross_input)
@@ -690,7 +780,7 @@ def test_supplied_cross_input_reproof_rejects_malformed_catalog(
 
 
 def test_runkernel_reproof_uses_only_current_scheduler_packets() -> None:
-    nodes, accepted_ref, directive, packets, cross_input, cross = (
+    nodes, accepted_ref, directive, packets, evidence_sets, cross_input, cross = (
         _cross_input_reproof_fixture()
     )
     candidate = component_work_graph_v1_from_cross_component_artifact(
@@ -709,6 +799,7 @@ def test_runkernel_reproof_uses_only_current_scheduler_packets() -> None:
         cross_artifact=cross,
         requested_synthesis_directive=directive,
         component_packets=packets,
+        component_evidence_sets=evidence_sets,
     )
     graph = reduce_component_work_graph_v1(
         run_kernel=kernel,
@@ -722,11 +813,8 @@ def test_runkernel_reproof_uses_only_current_scheduler_packets() -> None:
     assert "Evidence 1 reports" not in retained
 
 
-@pytest.mark.parametrize("corruption", ["missing", "cross_run"])
-def test_runkernel_reproof_fails_without_exact_scheduler_packets(
-    corruption: str,
-) -> None:
-    nodes, accepted_ref, directive, packets, cross_input, cross = (
+def test_scheduler_reproof_rejects_recomputed_retained_evidence_set_digest() -> None:
+    nodes, accepted_ref, directive, packets, evidence_sets, cross_input, cross = (
         _cross_input_reproof_fixture()
     )
     candidate = component_work_graph_v1_from_cross_component_artifact(
@@ -745,6 +833,81 @@ def test_runkernel_reproof_fails_without_exact_scheduler_packets(
         cross_artifact=cross,
         requested_synthesis_directive=directive,
         component_packets=packets,
+        component_evidence_sets=evidence_sets,
+    )
+    kernel.state.initial_answer_contract["question_meaning_metadata"] = {
+        "requested_synthesis_directive": directive,
+    }
+    for evidence_set in evidence_sets.values():
+        for member in evidence_set["members"]:
+            evidence_ref_id = member["code_binding"]["evidence_ref_id"]
+            kernel.state.evidence_ledger.candidates[evidence_ref_id] = EvidenceCandidate(
+                candidate_id=evidence_ref_id,
+                readable_status="readable",
+            )
+    kernel.initialize_multicomponent_graph_scheduler(
+        component_analyst_input_packets=packets,
+        component_analyst_evidence_sets=evidence_sets,
+        requested_synthesis_directive=directive,
+    )
+
+    component_id = nodes[1]["component_id"]
+    original_set = evidence_sets[component_id]
+    replacement_sources = []
+    for index, member in enumerate(original_set["members"]):
+        candidate_record = deepcopy(member["candidate_record"])
+        if index == 0:
+            candidate_record["eligible_for_stronger_obligation"] = True
+        replacement_sources.append(
+            {
+                "evidence_ref_id": member["code_binding"]["evidence_ref_id"],
+                "passage": deepcopy(member["passage"]),
+                "candidate_record": candidate_record,
+            }
+        )
+    replacement_set = build_component_analyst_evidence_set(replacement_sources)
+    assert validate_component_analyst_evidence_set(replacement_set) == replacement_set
+    assert replacement_set["evidence_set_digest"] != original_set["evidence_set_digest"]
+
+    kernel.state.multicomponent_scheduler_context[
+        "component_analyst_evidence_sets"
+    ][component_id] = replacement_set
+    with pytest.raises(
+        RunKernelTransitionError,
+        match="Graph V1 structure reproof component packets do not match scheduler authority",
+    ):
+        reduce_component_work_graph_v1(
+            run_kernel=kernel,
+            operation="structure",
+            graph_candidate=candidate,
+        )
+    assert "multicomponent_component_work_graph_v1" not in kernel.state.projections
+
+
+@pytest.mark.parametrize("corruption", ["missing", "cross_run"])
+def test_runkernel_reproof_fails_without_exact_scheduler_packets(
+    corruption: str,
+) -> None:
+    nodes, accepted_ref, directive, packets, evidence_sets, cross_input, cross = (
+        _cross_input_reproof_fixture()
+    )
+    candidate = component_work_graph_v1_from_cross_component_artifact(
+        run_id=RUN_ID,
+        request_id=REQUEST_ID,
+        accepted_contract_ref=accepted_ref,
+        requested_synthesis_directive=directive,
+        component_nodes=nodes,
+        cross_component_artifact=cross,
+        transient_cross_input_packet=cross_input,
+    )
+    kernel = RunKernel.start(run_id=RUN_ID, request_id=REQUEST_ID)
+    _seed_component_admission(
+        kernel,
+        nodes,
+        cross_artifact=cross,
+        requested_synthesis_directive=directive,
+        component_packets=packets,
+        component_evidence_sets=evidence_sets,
     )
     if corruption == "missing":
         kernel.state.multicomponent_scheduler_context.pop(
@@ -767,7 +930,7 @@ def test_runkernel_reproof_fails_without_exact_scheduler_packets(
 
 
 def test_forged_cross_input_fails_before_graph_reduction_authority() -> None:
-    nodes, accepted_ref, directive, packets, _cross_input, cross = (
+    nodes, accepted_ref, directive, packets, evidence_sets, _cross_input, cross = (
         _cross_input_reproof_fixture()
     )
     forged = deepcopy(cross)
@@ -784,6 +947,7 @@ def test_forged_cross_input_fails_before_graph_reduction_authority() -> None:
             component_nodes=nodes,
             cross_component_artifact=forged,
             component_analyst_input_packets=packets,
+            component_analyst_evidence_sets=evidence_sets,
         )
     assert len(kernel.state.issued_actions) == issued_action_count
     assert kernel.state.observations == []
@@ -933,7 +1097,14 @@ def test_component_node_v1_rejects_noncanonical_admission_projection() -> None:
 
 def test_graph_rejects_synthesis_proposal_over_blocked_component() -> None:
     nodes = [_component_node(1), _blocked_component_node(2)]
-    accepted_ref, cross, directive, cross_input = _single_synthesis_candidate(
+    (
+        accepted_ref,
+        cross,
+        directive,
+        cross_input,
+        _component_packets,
+        _component_evidence_sets,
+    ) = _single_synthesis_candidate(
         nodes,
         component_inputs=[node["component_id"] for node in nodes],
     )
@@ -952,7 +1123,14 @@ def test_graph_rejects_synthesis_proposal_over_blocked_component() -> None:
 
 def test_graph_with_admitted_synthesis_but_blocked_component_is_partial() -> None:
     nodes = [_component_node(1), _component_node(2), _blocked_component_node(3)]
-    accepted_ref, cross, directive, cross_input = _single_synthesis_candidate(
+    (
+        accepted_ref,
+        cross,
+        directive,
+        cross_input,
+        component_packets,
+        component_evidence_sets,
+    ) = _single_synthesis_candidate(
         nodes,
         component_inputs=[node["component_id"] for node in nodes[:2]],
     )
@@ -971,6 +1149,8 @@ def test_graph_with_admitted_synthesis_but_blocked_component_is_partial() -> Non
         nodes,
         cross_artifact=cross,
         requested_synthesis_directive=directive,
+        component_packets=component_packets,
+        component_evidence_sets=component_evidence_sets,
     )
     graph = reduce_component_work_graph_v1(
         run_kernel=kernel,
@@ -1024,6 +1204,7 @@ def test_role_transport_rejects_authority_claims_before_reduction() -> None:
                         "claim_text": "The evidence supports the component.",
                         "evidence_analysis": "The exact bounded evidence supports the component.",
                         "self_audit": "The case does not extend beyond the supplied evidence.",
+                        "supporting_evidence_aliases": ["component_evidence_01"],
                         "caveats": [],
                         "nonclaims": [],
                         "blockers": [],
@@ -1091,6 +1272,7 @@ def test_component_analyst_resume_cannot_reopen_specialist_need() -> None:
                         "claim_text": "A resumed bounded claim.",
                         "evidence_analysis": "The exact specialist handoff was reassessed.",
                         "self_audit": "The resumed case makes no unsupported extension.",
+                        "supporting_evidence_aliases": ["component_evidence_01"],
                         "caveats": [],
                         "nonclaims": [],
                         "blockers": [],
@@ -1144,6 +1326,7 @@ _MODERN_SUPPORTING_ANALYST_CASE = {
     "nonclaims": [],
     "contradictions": [],
     "blockers": [],
+    "supporting_evidence_aliases": ["component_evidence_01"],
 }
 
 
@@ -1366,10 +1549,12 @@ def test_graph_v1_rejects_synthesis_cycle_before_runkernel_admission() -> None:
         "accepted_contract_digest": "accepted-contract-digest",
     }
     directive = "Explain their relationship."
-    cross_input = cross_component_input_packet(
-        component_nodes=nodes,
-        accepted_contract_ref=accepted_ref,
-        requested_synthesis_directive=directive,
+    cross_input, component_packets, component_evidence_sets = (
+        _cross_input_with_exact_evidence(
+            nodes=nodes,
+            accepted_contract_ref=accepted_ref,
+            directive=directive,
+        )
     )
     cross = _role_artifact(
         ROLE_CROSS_COMPONENT_ANALYST,
@@ -1915,10 +2100,12 @@ def _independent_admitted_graph() -> tuple[RunKernel, dict]:
         "accepted_contract_digest": "accepted-contract-digest",
     }
     directive = "Explain two independent combined results."
-    cross_input = cross_component_input_packet(
-        component_nodes=nodes,
-        accepted_contract_ref=accepted_ref,
-        requested_synthesis_directive=directive,
+    cross_input, component_packets, component_evidence_sets = (
+        _cross_input_with_exact_evidence(
+            nodes=nodes,
+            accepted_contract_ref=accepted_ref,
+            directive=directive,
+        )
     )
     proposals = []
     for key, component_ids in (
@@ -1957,6 +2144,8 @@ def _independent_admitted_graph() -> tuple[RunKernel, dict]:
         nodes,
         cross_artifact=cross,
         requested_synthesis_directive=directive,
+        component_packets=component_packets,
+        component_evidence_sets=component_evidence_sets,
     )
     graph = reduce_component_work_graph_v1(
         run_kernel=kernel,

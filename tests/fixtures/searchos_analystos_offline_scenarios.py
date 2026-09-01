@@ -1174,13 +1174,23 @@ class SearchOSAnalystOSHarness(OfflineOrdinaryPipelineHarness):
                             )
                         },
                         "accepted_contract_ref": dict(payload.get("accepted_contract_ref") or {}),
-                        "evidence_ref_id": dict(payload.get("component_evidence") or {}).get("evidence_ref_id"),
+                        "evidence_aliases": [
+                            str(dict(member).get("local_evidence_alias") or "")
+                            for member in (
+                                dict(payload.get("component_evidence_set") or {}).get(
+                                    "members"
+                                )
+                                or ()
+                            )
+                            if str(dict(member).get("local_evidence_alias") or "")
+                        ],
                     }
                 )
                 return json.dumps(
                     {
                         "claim_text": f"Direct fictional source support is current for {component.get('user_facing_label')}.",
                         "case_posture": "supported",
+                        "supporting_evidence_aliases": ["component_evidence_01"],
                         "evidence_analysis": (
                             "The exact current fictional source establishes "
                             "only the stated direct component premise."
@@ -1201,6 +1211,7 @@ class SearchOSAnalystOSHarness(OfflineOrdinaryPipelineHarness):
                     {
                         "claim_text": semantic.get("claim_text") or "Offline resumed finding.",
                         "case_posture": "supported",
+                        "supporting_evidence_aliases": ["component_evidence_01"],
                         "evidence_analysis": (
                             "The exact bounded Specialist handoff and current "
                             "component evidence support only the resumed finding."

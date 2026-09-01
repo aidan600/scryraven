@@ -1093,13 +1093,19 @@ def build_component_coverage_proposal(
     *,
     accepted_contract: Mapping[str, Any],
     observation: SemanticObservation,
-    content_ref: SanitizedContentReference,
+    content_ref: SanitizedContentReference | None = None,
+    content_refs: Sequence[SanitizedContentReference] = (),
     evidence_ledger_projection: Mapping[str, Any],
     run_id: str,
     request_id: str,
     query: str,
     ignore_satisfied_provider_job_historical_gaps: bool = False,
 ) -> ComponentCoverageRecord | None:
+    exact_content_refs = tuple(content_refs) or (
+        (content_ref,) if content_ref is not None else ()
+    )
+    if not exact_content_refs:
+        return None
     component_ref = _accepted_component_ref(
         accepted_contract,
         observation.answer_component_id,
@@ -1120,22 +1126,28 @@ def build_component_coverage_proposal(
     if has_source_obligations:
         if not observation.evidence_refs:
             return None
-        source_requirement_ids = _exact_owned_source_requirement_ids_for_candidate(
-            evidence_ledger_projection,
-            evidence_ref_id=observation.evidence_refs[0],
-            component_id=component_ref["component_id"],
-            source_obligation_candidate_ids=source_obligation_candidate_ids,
-            run_id=run_id,
-            request_id=request_id,
-            answer_contract_version=accepted_contract[
-                "accepted_contract_version"
-            ],
-            answer_contract_digest=accepted_contract[
-                "accepted_contract_digest"
-            ],
-            ignore_satisfied_provider_job_historical_gaps=(
-                ignore_satisfied_provider_job_historical_gaps
-            ),
+        source_requirement_ids = tuple(
+            dict.fromkeys(
+                requirement_id
+                for evidence_ref_id in observation.evidence_refs
+                for requirement_id in _exact_owned_source_requirement_ids_for_candidate(
+                    evidence_ledger_projection,
+                    evidence_ref_id=evidence_ref_id,
+                    component_id=component_ref["component_id"],
+                    source_obligation_candidate_ids=source_obligation_candidate_ids,
+                    run_id=run_id,
+                    request_id=request_id,
+                    answer_contract_version=accepted_contract[
+                        "accepted_contract_version"
+                    ],
+                    answer_contract_digest=accepted_contract[
+                        "accepted_contract_digest"
+                    ],
+                    ignore_satisfied_provider_job_historical_gaps=(
+                        ignore_satisfied_provider_job_historical_gaps
+                    ),
+                )
+            )
         )
         if not source_requirement_ids:
             return None
@@ -1160,11 +1172,14 @@ def build_component_coverage_proposal(
             component_contract_digest=component_ref["component_digest"],
             support_status="supports",
             support_posture=SupportPosture.DIRECT,
-            content_refs=(content_ref.content_ref_id,),
+            content_refs=tuple(item.content_ref_id for item in exact_content_refs),
             accepted=True,
         ),
     )
-    content_binding = ContentReferenceCoverageBinding.from_content_reference(content_ref)
+    content_bindings = tuple(
+        ContentReferenceCoverageBinding.from_content_reference(item)
+        for item in exact_content_refs
+    )
     ledger_binding = EvidenceLedgerSnapshotBinding(
         ledger_snapshot_id=f"evidence-ledger:{run_id}:{ledger_digest[:32]}",
         ledger_schema_version=EVIDENCE_LEDGER_SCHEMA_VERSION,
@@ -1198,7 +1213,7 @@ def build_component_coverage_proposal(
         evidence_custody_status=EvidenceCustodyStatus.CUSTODIED,
         version_validity=VersionValidity.VALID,
         accepted_observation_refs=observation_refs,
-        content_reference_bindings=(content_binding,),
+        content_reference_bindings=content_bindings,
         evidence_basis=(
             EvidenceBasis.SEMANTIC_OBSERVATION,
             EvidenceBasis.ANSWER_BEARING_CONTENT,

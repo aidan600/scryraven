@@ -43,7 +43,7 @@ SELECTIVE_CROSS_COMPONENT_ANALYST_SYSTEM_PROMPT = (
 ROLE_SYSTEM_PROMPTS = {
     ROLE_COMPONENT_ANALYST: (
         "You are ScryRaven's component Analyst. Use only the supplied bounded "
-        "component evidence, quantitative_source_catalog, and "
+        "component evidence set, quantitative_source_catalog, and "
         "quantitative_specialist_proposal_contract. Return exactly one top-level "
         "JSON object. For a supporting case, the minimal schema is: case_posture "
         "as one allowed string; claim_text as a string; evidence_analysis or "
@@ -57,6 +57,11 @@ ROLE_SYSTEM_PROMPTS = {
         "or bounded_calculation_needed. Do not return legacy support_status; it is "
         "offline-fixture compatibility only. Explain what evidence establishes and, "
         "when material, what it does not establish; self_audit must check overreach. "
+        "The component_evidence_set is an exact bounded supplied set. Its local "
+        "evidence aliases identify only supplied members; for a supporting case, "
+        "return supporting_evidence_aliases as a nonempty array of only the "
+        "supplied aliases you nominate as support. You may reason across the set, "
+        "but do not invent aliases or treat every supplied member as support. "
         "Outside optional proposal namespaces, never return code-owned IDs, refs, "
         "revisions, digests, URLs, field paths, runtime bindings, authority claims, "
         "or raw/private material; code binds mechanics deterministically. "
@@ -68,8 +73,8 @@ ROLE_SYSTEM_PROMPTS = {
         "specialist_need_proposal conforming exactly to the supplied contract. "
         "Include the supplied specialist_need_proposal_v1 schema_version; do "
         "not omit, default, alias, or add proposal fields. Copy all supplied "
-        "fixed capability and schema values exactly, use only "
-        "source_local_key component_evidence and exact supplied "
+        "fixed capability and schema values exactly, use only exact supplied "
+        "source_local_key aliases and exact supplied "
         "source_numeric_literal text, and omit the proposal when the contract "
         "cannot be satisfied. Include "
         "the proposed derived literal in claim_text, but it has no authority until "
@@ -92,7 +97,10 @@ ROLE_SYSTEM_PROMPTS = {
         "unresolved_need, calculation_need, blockers, and self_audit. "
         "case_posture must be exactly supported, supported_with_caveats, "
         "unsupported, blocked, unresolved, missing_premise, or "
-        "bounded_calculation_needed. The supplied handoff is not automatic "
+        "bounded_calculation_needed. The exact component_evidence_set remains "
+        "the only supplied evidence set; for a supporting case return a nonempty "
+        "supporting_evidence_aliases array containing only supplied local aliases. "
+        "The supplied handoff is not automatic "
         "support: reassess its exact bounded result and state what it does not "
         "establish where material. self_audit must check overreach. Do not "
         "return legacy support_status; it is offline-fixture compatibility only. "
@@ -500,6 +508,21 @@ def _normalize_component_analyst_case(
     self_audit = _clean_text(
         payload.get("self_audit") or payload.get("overreach_check"), limit=1200
     )
+    raw_support_aliases = payload.get("supporting_evidence_aliases")
+    if raw_support_aliases is None:
+        support_aliases: list[str] = []
+    elif isinstance(raw_support_aliases, str | bytes) or not isinstance(
+        raw_support_aliases, Sequence
+    ):
+        raise MulticomponentRoleRuntimeError(
+            "supporting_evidence_aliases must be an array of local aliases"
+        )
+    else:
+        support_aliases = [_local_key(item) for item in raw_support_aliases]
+        if len(support_aliases) != len(set(support_aliases)):
+            raise MulticomponentRoleRuntimeError(
+                "supporting_evidence_aliases cannot repeat a supplied member"
+            )
 
     if case_posture in COMPONENT_ANALYST_SUPPORTING_CASE_POSTURES:
         if not claim_text:
@@ -514,6 +537,14 @@ def _normalize_component_analyst_case(
             raise MulticomponentRoleRuntimeError(
                 "supporting component Analyst case requires self_audit"
             )
+        if not support_aliases:
+            raise MulticomponentRoleRuntimeError(
+                "supporting component Analyst case requires supporting_evidence_aliases"
+            )
+    elif raw_support_aliases is not None:
+        raise MulticomponentRoleRuntimeError(
+            "non-supporting component Analyst case cannot nominate supporting evidence"
+        )
 
     contradictions = list(
         dict.fromkeys(
@@ -550,6 +581,8 @@ def _normalize_component_analyst_case(
     for key, value in semantic_text_fields:
         if value:
             normalized[key] = value
+    if support_aliases:
+        normalized["supporting_evidence_aliases"] = support_aliases
     if resume and "specialist_need_proposal" in payload:
         raise MulticomponentRoleRuntimeError(
             "component Analyst resume cannot propose another Specialist need"

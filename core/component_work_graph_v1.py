@@ -356,6 +356,7 @@ def cross_component_input_packet(
     accepted_contract_ref: Mapping[str, Any],
     requested_synthesis_directive: str,
     component_analyst_input_packets: Mapping[str, Mapping[str, Any]] | None = None,
+    component_analyst_evidence_sets: Mapping[str, Mapping[str, Any]] | None = None,
     accepted_component_refs: Sequence[Mapping[str, Any]] | None = None,
     requested_mode: str | None = None,
 ) -> dict[str, Any]:
@@ -414,6 +415,9 @@ def cross_component_input_packet(
             component_nodes=component_nodes,
             component_analyst_input_packets=(
                 component_analyst_input_packets or {}
+            ),
+            component_analyst_evidence_sets=(
+                component_analyst_evidence_sets or {}
             ),
         )
     )
@@ -511,6 +515,9 @@ def current_graph_reconciliation_input_packet(
     component_analyst_input_packets: (
         Mapping[str, Mapping[str, Any]] | None
     ) = None,
+    component_analyst_evidence_sets: (
+        Mapping[str, Mapping[str, Any]] | None
+    ) = None,
     requested_mode: str | None = None,
 ) -> dict[str, Any]:
     """Project one fresh whole-case Cross input from exact current Graph V1."""
@@ -530,6 +537,9 @@ def current_graph_reconciliation_input_packet(
         ),
         component_analyst_input_packets=(
             component_analyst_input_packets
+        ),
+        component_analyst_evidence_sets=(
+            component_analyst_evidence_sets
         ),
         accepted_component_refs=current.get("accepted_component_refs")
         or (),
@@ -1245,6 +1255,7 @@ def component_work_graph_v1_from_cross_component_artifact(
     component_nodes: Sequence[Mapping[str, Any]],
     cross_component_artifact: Mapping[str, Any],
     component_analyst_input_packets: Mapping[str, Mapping[str, Any]] | None = None,
+    component_analyst_evidence_sets: Mapping[str, Mapping[str, Any]] | None = None,
     transient_cross_input_packet: Mapping[str, Any] | None = None,
     additional_scrutineer_trigger_reasons: Sequence[str] = (),
     accepted_component_refs: Sequence[Mapping[str, Any]] | None = None,
@@ -1267,23 +1278,34 @@ def component_work_graph_v1_from_cross_component_artifact(
     if cross.get("run_id") != run_id or cross.get("request_id") != request_id:
         raise ComponentWorkGraphV1Error("Cross-Component Analyst cross-run artifact")
     validated_component_packets: dict[str, dict[str, Any]] | None = None
+    validated_component_evidence_sets: dict[str, dict[str, Any]] | None = None
     if component_analyst_input_packets is not None:
-        if not isinstance(component_analyst_input_packets, Mapping):
+        if (
+            not isinstance(component_analyst_input_packets, Mapping)
+            or not isinstance(component_analyst_evidence_sets, Mapping)
+        ):
             raise ComponentWorkGraphV1Error(
-                "Cross input reconstruction requires component Analyst packets"
+                "Cross input reconstruction requires component Analyst packets and exact evidence sets"
             )
         expected_component_ids = {item["component_id"] for item in components}
         if not component_analyst_input_packets or {
             str(key) for key in component_analyst_input_packets
+        } != expected_component_ids or {
+            str(key) for key in component_analyst_evidence_sets
         } != expected_component_ids:
             raise ComponentWorkGraphV1Error(
-                "Cross input reconstruction requires one current packet per component"
+                "Cross input reconstruction requires one current packet and evidence set per component"
             )
+        from core.component_analyst_evidence_set import (
+            ComponentAnalystEvidenceSetError,
+            validate_component_analyst_evidence_set,
+        )
         from core.multicomponent_component_admission import (
             component_analyst_input_packet,
         )
 
         validated_component_packets = {}
+        validated_component_evidence_sets = {}
         for component in components:
             component_id = str(component["component_id"])
             raw_packet = component_analyst_input_packets.get(component_id)
@@ -1292,6 +1314,15 @@ def component_work_graph_v1_from_cross_component_artifact(
                     "Cross input reconstruction component packet is malformed"
                 )
             packet = dict(raw_packet)
+            raw_evidence_set = component_analyst_evidence_sets.get(component_id)
+            try:
+                component_evidence_set = validate_component_analyst_evidence_set(
+                    _safe_mapping(raw_evidence_set)
+                )
+            except ComponentAnalystEvidenceSetError as exc:
+                raise ComponentWorkGraphV1Error(
+                    "Cross input reconstruction component evidence set is malformed"
+                ) from exc
             binding = _safe_mapping(packet.get("run_binding"))
             packet_component = _safe_mapping(packet.get("component_ref"))
             if (
@@ -1318,13 +1349,14 @@ def component_work_graph_v1_from_cross_component_artifact(
                     ),
                 },
                 component_ref=packet_component,
-                evidence_input=_safe_mapping(packet.get("component_evidence")),
+                component_evidence_set=component_evidence_set,
             )
             if packet != independently_rebuilt_packet:
                 raise ComponentWorkGraphV1Error(
                     "Cross input reconstruction component packet is malformed"
                 )
             validated_component_packets[component_id] = packet
+            validated_component_evidence_sets[component_id] = component_evidence_set
 
     supplied_cross_input = _safe_mapping(transient_cross_input_packet)
     if transient_cross_input_packet is not None and not supplied_cross_input:
@@ -1334,6 +1366,10 @@ def component_work_graph_v1_from_cross_component_artifact(
             component_nodes=components,
             accepted_contract_ref=accepted_contract_ref,
             requested_synthesis_directive=requested_synthesis_directive,
+            component_analyst_input_packets=validated_component_packets,
+            component_analyst_evidence_sets=(
+                validated_component_evidence_sets
+            ),
             accepted_component_refs=accepted_component_refs,
             requested_mode=requested_mode,
         )
@@ -1421,6 +1457,9 @@ def component_work_graph_v1_from_cross_component_artifact(
                 accepted_contract_ref=accepted_contract_ref,
                 requested_synthesis_directive=requested_synthesis_directive,
                 component_analyst_input_packets=validated_component_packets,
+                component_analyst_evidence_sets=(
+                    validated_component_evidence_sets
+                ),
                 accepted_component_refs=accepted_component_refs,
                 requested_mode=requested_mode,
             )
@@ -1439,6 +1478,9 @@ def component_work_graph_v1_from_cross_component_artifact(
             accepted_contract_ref=accepted_contract_ref,
             requested_synthesis_directive=requested_synthesis_directive,
             component_analyst_input_packets=validated_component_packets,
+            component_analyst_evidence_sets=(
+                validated_component_evidence_sets
+            ),
             accepted_component_refs=accepted_component_refs,
             requested_mode=requested_mode,
         )
@@ -2552,6 +2594,7 @@ def component_work_graph_v1_resynthesis_from_cross_component_artifact(
     accepted_contract_ref: Mapping[str, Any],
     cross_component_artifact: Mapping[str, Any],
     component_analyst_input_packets: Mapping[str, Mapping[str, Any]] | None = None,
+    component_analyst_evidence_sets: Mapping[str, Mapping[str, Any]] | None = None,
     transient_cross_input_packet: Mapping[str, Any] | None = None,
     additional_scrutineer_trigger_reasons: Sequence[str] = (),
     accepted_component_refs: Sequence[Mapping[str, Any]] | None = None,
@@ -2585,6 +2628,7 @@ def component_work_graph_v1_resynthesis_from_cross_component_artifact(
         component_nodes=current["component_nodes"],
         cross_component_artifact=cross_component_artifact,
         component_analyst_input_packets=component_analyst_input_packets,
+        component_analyst_evidence_sets=component_analyst_evidence_sets,
         transient_cross_input_packet=transient_cross_input_packet,
         additional_scrutineer_trigger_reasons=(
             *(

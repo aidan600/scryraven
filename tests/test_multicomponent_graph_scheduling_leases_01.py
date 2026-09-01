@@ -68,6 +68,9 @@ from core.run_kernel import (
 from core.strict_one_shot_model_transport import (
     wrap_text_callable_as_strict_one_shot_transport,
 )
+from tests.fixtures.component_analyst_evidence_sets import (
+    component_analyst_evidence_set_fixture,
+)
 from tests.helpers.offline_ordinary_pipeline import (
     HANDOFF_AUTHOR,
     HANDOFF_PACKET,
@@ -191,25 +194,35 @@ def _scheduler_kernel() -> tuple[RunKernel, dict[str, dict[str, Any]]]:
             candidate_id=candidate_id,
             readable_status="readable",
         )
-    packets = {
-        str(component["component_id"]): component_analyst_input_packet(
+    evidence_sets: dict[str, dict[str, Any]] = {}
+    packets: dict[str, dict[str, Any]] = {}
+    for component in (
+        item
+        for item in contract["accepted_answer_component_refs"]
+        if "direct" in list(item.get("allowed_support_kinds") or ("direct",))
+    ):
+        component_id = str(component["component_id"])
+        evidence_set = component_analyst_evidence_set_fixture(
+            {
+                "evidence_status": "available",
+                "evidence_ref_id": f"evidence:{component_id}",
+                "bounded_text": "A bounded fixture fact.",
+                "candidate_custody_ref": {
+                    "candidate_id": f"evidence:{component_id}"
+                },
+            }
+        )
+        evidence_sets[component_id] = evidence_set
+        packets[component_id] = component_analyst_input_packet(
             run_id=kernel.state.run_id,
             request_id=kernel.state.request_id,
             accepted_contract=contract,
             component_ref=component,
-            evidence_input={
-                "evidence_status": "available",
-                "evidence_ref_id": f"evidence:{component['component_id']}",
-                "bounded_text": "A bounded fixture fact.",
-                "candidate_custody_ref": {
-                    "candidate_id": f"evidence:{component['component_id']}"
-                },
-            },
+            component_evidence_set=evidence_set,
         )
-        for component in contract["accepted_answer_component_refs"]
-    }
     kernel.initialize_multicomponent_graph_scheduler(
         component_analyst_input_packets=packets,
+        component_analyst_evidence_sets=evidence_sets,
         requested_synthesis_directive="Explain how these facts relate.",
     )
     return kernel, packets
@@ -236,7 +249,12 @@ def _initialize_existing_graph_scheduler(
     else:
         kernel.state.initial_answer_contract = contract
     packets: dict[str, dict[str, Any]] = {}
-    for component in contract["accepted_answer_component_refs"]:
+    evidence_sets: dict[str, dict[str, Any]] = {}
+    for component in (
+        item
+        for item in contract["accepted_answer_component_refs"]
+        if "direct" in list(item.get("allowed_support_kinds") or ("direct",))
+    ):
         component_id = str(component["component_id"])
         candidate = EvidenceCandidate(
             candidate_id=(
@@ -247,20 +265,25 @@ def _initialize_existing_graph_scheduler(
         )
         candidate_id = candidate.candidate_id
         kernel.state.evidence_ledger.candidates[candidate_id] = candidate
+        evidence_set = component_analyst_evidence_set_fixture(
+            {
+                "evidence_status": "available",
+                "evidence_ref_id": candidate_id,
+                "bounded_text": "A bounded scheduler authority fixture fact.",
+                "candidate_custody_ref": {"candidate_id": candidate_id},
+            }
+        )
+        evidence_sets[component_id] = evidence_set
         packets[component_id] = component_analyst_input_packet(
             run_id=kernel.state.run_id,
             request_id=kernel.state.request_id,
             accepted_contract=contract,
             component_ref=component,
-            evidence_input={
-                "evidence_status": "available",
-                "evidence_ref_id": candidate_id,
-                "bounded_text": "A bounded scheduler authority fixture fact.",
-                "candidate_custody_ref": {"candidate_id": candidate_id},
-            },
+            component_evidence_set=evidence_set,
         )
     kernel.initialize_multicomponent_graph_scheduler(
         component_analyst_input_packets=packets,
+        component_analyst_evidence_sets=evidence_sets,
         requested_synthesis_directive=requested_synthesis_directive,
     )
     return packets
@@ -411,6 +434,7 @@ def test_08_atomic_role_admission_and_lease_completion() -> None:
             ask_model=lambda *_args, **_kwargs: json.dumps(
                 {
                     "case_posture": "supported",
+                    "supporting_evidence_aliases": ["component_evidence_01"],
                     "claim_text": "A bounded claim.",
                     "evidence_analysis": "The bounded evidence directly supports the claim.",
                     "self_audit": "The claim stays within the bounded evidence.",
@@ -559,6 +583,7 @@ def test_prepared_component_analyst_worker_accepts_modern_supporting_case() -> N
     _kernel, _action, result = _prepared_component_analyst_worker_result(
         {
             "case_posture": "supported",
+            "supporting_evidence_aliases": ["component_evidence_01"],
             "claim_text": "A bounded claim.",
             "evidence_analysis": "The bounded evidence directly supports the claim.",
             "self_audit": "The claim stays within the bounded evidence.",
@@ -642,6 +667,7 @@ def test_12_postdispatch_staleness_rejects_result_and_keeps_spend() -> None:
         kernel.state.initial_answer_contract = changed
         return json.dumps({
             "case_posture": "supported",
+            "supporting_evidence_aliases": ["component_evidence_01"],
             "claim_text": "Late claim.",
             "evidence_analysis": "The bounded evidence directly supports the claim.",
             "self_audit": "The claim stays within the bounded evidence.",
@@ -795,7 +821,8 @@ def test_19_scheduler_trace_is_sanitized(ordinary_product) -> None:
         "cache_row_value",
     ):
         assert forbidden not in rendered
-    assert "component_evidence" not in rendered
+    assert '"component_evidence_set":' not in rendered
+    assert '"component_evidence_set_digest"' in rendered
     assert "sanitized_excerpt" not in rendered
 
 

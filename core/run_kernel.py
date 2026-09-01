@@ -1120,6 +1120,24 @@ def _safe_mapping(value: Mapping[str, Any] | None) -> dict[str, Any]:
     return dict(safe) if isinstance(safe, Mapping) else {}
 
 
+def _exact_component_analyst_mapping(value: Any) -> dict[str, dict[str, Any]]:
+    """Copy retained Analyst inputs without trace-sanitizing their identity.
+
+    Component Analyst evidence sets include bounded text and deeply nested
+    custody facts whose digests are mechanically verified.  They are internal
+    execution authority, not safe trace payloads, so generic trace redaction
+    must not rewrite them before exact-input reconstruction.
+    """
+
+    if not isinstance(value, Mapping):
+        return {}
+    return {
+        str(key): deepcopy(dict(item))
+        for key, item in value.items()
+        if isinstance(item, Mapping)
+    }
+
+
 def _graph_safe_mapping(value: Mapping[str, Any] | None) -> dict[str, Any]:
     """Preserve the bounded nested proposal/contract lineage carried by Graph V1."""
 
@@ -4147,6 +4165,7 @@ class RunKernel:
         self,
         *,
         component_analyst_input_packets: Mapping[str, Mapping[str, Any]],
+        component_analyst_evidence_sets: Mapping[str, Mapping[str, Any]],
         requested_synthesis_directive: str,
         configured_provider: str = "OpenAI",
         specialist_capability_registry: Any | None = None,
@@ -4156,6 +4175,14 @@ class RunKernel:
     ) -> dict[str, Any]:
         """Initialize the qualifying lane's RunKernel-owned V2/V3 scheduler."""
 
+        from core.component_analyst_evidence_set import (
+            ComponentAnalystEvidenceSetError,
+            component_analyst_evidence_member_code_evidence,
+            validate_component_analyst_evidence_sets,
+        )
+        from core.multicomponent_component_admission import (
+            component_analyst_input_packet,
+        )
         from core.multicomponent_graph_scheduling import (
             MULTICOMPONENT_SCHEDULER_STAGE,
             derive_multicomponent_transport_profile,
@@ -4168,8 +4195,13 @@ class RunKernel:
 
         if self.state.projections.get(MULTICOMPONENT_SCHEDULER_STAGE):
             raise RunKernelTransitionError("multi-component scheduler already exists")
+        # Snapshot the authority current at scheduler initialization.  The
+        # resulting exact packets and evidence sets are retained below, so
+        # later admission bookkeeping cannot retroactively rewrite Analyst
+        # input.
         contract = _safe_mapping(
-            self.state.current_answer_contract or self.state.initial_answer_contract
+            self.state.current_answer_contract
+            or self.state.initial_answer_contract
         )
         all_component_refs = [
             _safe_mapping(item)
@@ -4183,13 +4215,22 @@ class RunKernel:
         component_by_id = {
             str(item.get("component_id") or ""): item for item in component_refs
         }
-        packets = {
-            str(key): _safe_mapping(value)
-            for key, value in component_analyst_input_packets.items()
-        }
-        if not component_by_id or set(packets) != set(component_by_id):
+        packets = _exact_component_analyst_mapping(
+            component_analyst_input_packets
+        )
+        try:
+            evidence_sets = validate_component_analyst_evidence_sets(
+                _exact_component_analyst_mapping(component_analyst_evidence_sets)
+            )
+        except ComponentAnalystEvidenceSetError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        if (
+            not component_by_id
+            or set(packets) != set(component_by_id)
+            or set(evidence_sets) != set(component_by_id)
+        ):
             raise RunKernelTransitionError(
-                "scheduler initialization requires one exact packet per accepted component"
+                "scheduler initialization requires one exact evidence set and packet per accepted component"
             )
         ledger_candidate_ids = {
             str(_safe_mapping(item).get("candidate_id") or "")
@@ -4201,9 +4242,24 @@ class RunKernel:
         for component_id, packet in packets.items():
             binding = _safe_mapping(packet.get("run_binding"))
             packet_component = _safe_mapping(packet.get("component_ref"))
-            evidence = _safe_mapping(packet.get("component_evidence"))
-            custody = _safe_mapping(evidence.get("candidate_custody_ref"))
             accepted_component = component_by_id[component_id]
+            component_evidence_set = evidence_sets[component_id]
+            expected_packet = component_analyst_input_packet(
+                run_id=self.state.run_id,
+                request_id=self.state.request_id,
+                accepted_contract=contract,
+                component_ref=accepted_component,
+                component_evidence_set=component_evidence_set,
+            )
+            evidence_ref_ids = {
+                str(
+                    component_analyst_evidence_member_code_evidence(member).get(
+                        "evidence_ref_id"
+                    )
+                    or ""
+                )
+                for member in component_evidence_set["members"]
+            }
             if (
                 binding.get("run_id") != self.state.run_id
                 or binding.get("request_id") != self.state.request_id
@@ -4216,9 +4272,10 @@ class RunKernel:
                 != accepted_component.get("component_revision")
                 or packet_component.get("component_digest")
                 != accepted_component.get("component_digest")
-                or evidence.get("evidence_status") != "available"
-                or evidence.get("evidence_ref_id") not in ledger_candidate_ids
-                or custody.get("candidate_id") != evidence.get("evidence_ref_id")
+                or packet != expected_packet
+                or not evidence_ref_ids
+                or "" in evidence_ref_ids
+                or not evidence_ref_ids.issubset(ledger_candidate_ids)
             ):
                 raise RunKernelTransitionError(
                     "scheduler component packet is not current canonical input"
@@ -4270,6 +4327,7 @@ class RunKernel:
         self.state.multicomponent_scheduler_context = {
             "requested_synthesis_directive": directive,
             "component_analyst_input_packets": deepcopy(packets),
+            "component_analyst_evidence_sets": deepcopy(evidence_sets),
             "recovery_bindings": {},
             "configured_provider_class": derive_multicomponent_transport_profile(
                 configured_provider
@@ -4289,6 +4347,10 @@ class RunKernel:
             inputs={
                 "component_input_packet_digests": {
                     key: safe_packet_digest(value) for key, value in packets.items()
+                },
+                "component_evidence_set_digests": {
+                    key: str(value.get("evidence_set_digest") or "")
+                    for key, value in evidence_sets.items()
                 },
                 "requested_synthesis_directive_digest": safe_packet_digest(
                     {"requested_synthesis_directive": directive}
@@ -4322,6 +4384,7 @@ class RunKernel:
         self,
         *,
         component_analyst_input_packets: Mapping[str, Mapping[str, Any]],
+        component_analyst_evidence_sets: Mapping[str, Mapping[str, Any]],
         requested_synthesis_directive: str,
         configured_provider: str = "OpenAI",
         requested_mode: str = "Balanced",
@@ -4333,6 +4396,14 @@ class RunKernel:
         initialize, lease, or drive the multi-component scheduler.
         """
 
+        from core.component_analyst_evidence_set import (
+            ComponentAnalystEvidenceSetError,
+            component_analyst_evidence_member_code_evidence,
+            validate_component_analyst_evidence_sets,
+        )
+        from core.multicomponent_component_admission import (
+            component_analyst_input_packet,
+        )
         from core.multicomponent_graph_scheduling import (
             MULTICOMPONENT_SCHEDULER_STAGE,
             derive_multicomponent_transport_profile,
@@ -4342,6 +4413,9 @@ class RunKernel:
             raise RunKernelTransitionError(
                 "graph reproof packet context cannot install beside an active scheduler"
             )
+        # The ordinary caller provides a packet made from the current accepted
+        # contract; the exact evidence-set reconstruction below verifies that
+        # contract binding without introducing another evidence selector.
         contract = _safe_mapping(
             self.state.current_answer_contract or self.state.initial_answer_contract
         )
@@ -4357,13 +4431,22 @@ class RunKernel:
         component_by_id = {
             str(item.get("component_id") or ""): item for item in component_refs
         }
-        packets = {
-            str(key): _safe_mapping(value)
-            for key, value in component_analyst_input_packets.items()
-        }
-        if not component_by_id or set(packets) != set(component_by_id):
+        packets = _exact_component_analyst_mapping(
+            component_analyst_input_packets
+        )
+        try:
+            evidence_sets = validate_component_analyst_evidence_sets(
+                _exact_component_analyst_mapping(component_analyst_evidence_sets)
+            )
+        except ComponentAnalystEvidenceSetError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        if (
+            not component_by_id
+            or set(packets) != set(component_by_id)
+            or set(evidence_sets) != set(component_by_id)
+        ):
             raise RunKernelTransitionError(
-                "graph reproof packet context requires one exact packet per accepted component"
+                "graph reproof packet context requires one exact evidence set and packet per accepted component"
             )
         ledger_candidate_ids = {
             str(_safe_mapping(item).get("candidate_id") or "")
@@ -4375,9 +4458,24 @@ class RunKernel:
         for component_id, packet in packets.items():
             binding = _safe_mapping(packet.get("run_binding"))
             packet_component = _safe_mapping(packet.get("component_ref"))
-            evidence = _safe_mapping(packet.get("component_evidence"))
-            custody = _safe_mapping(evidence.get("candidate_custody_ref"))
             accepted_component = component_by_id[component_id]
+            component_evidence_set = evidence_sets[component_id]
+            expected_packet = component_analyst_input_packet(
+                run_id=self.state.run_id,
+                request_id=self.state.request_id,
+                accepted_contract=contract,
+                component_ref=accepted_component,
+                component_evidence_set=component_evidence_set,
+            )
+            evidence_ref_ids = {
+                str(
+                    component_analyst_evidence_member_code_evidence(member).get(
+                        "evidence_ref_id"
+                    )
+                    or ""
+                )
+                for member in component_evidence_set["members"]
+            }
             if (
                 binding.get("run_id") != self.state.run_id
                 or binding.get("request_id") != self.state.request_id
@@ -4390,9 +4488,10 @@ class RunKernel:
                 != accepted_component.get("component_revision")
                 or packet_component.get("component_digest")
                 != accepted_component.get("component_digest")
-                or evidence.get("evidence_status") != "available"
-                or evidence.get("evidence_ref_id") not in ledger_candidate_ids
-                or custody.get("candidate_id") != evidence.get("evidence_ref_id")
+                or packet != expected_packet
+                or not evidence_ref_ids
+                or "" in evidence_ref_ids
+                or not evidence_ref_ids.issubset(ledger_candidate_ids)
             ):
                 raise RunKernelTransitionError(
                     "graph reproof component packet is not current canonical input"
@@ -4405,6 +4504,7 @@ class RunKernel:
         self.state.multicomponent_scheduler_context = {
             "requested_synthesis_directive": directive,
             "component_analyst_input_packets": deepcopy(packets),
+            "component_analyst_evidence_sets": deepcopy(evidence_sets),
             "recovery_bindings": {},
             "configured_provider_class": derive_multicomponent_transport_profile(
                 configured_provider
@@ -4496,7 +4596,8 @@ class RunKernel:
             raise RunKernelTransitionError(
                 "Specialist proposal binding requires injected registry and policy"
             )
-        context = _safe_mapping(self.state.multicomponent_scheduler_context)
+        raw_context = self.state.multicomponent_scheduler_context
+        context = _safe_mapping(raw_context)
         registry_projection = specialist_capability_registry.projection()
         policy_projection = specialist_execution_policy.projection()
         if (
@@ -4593,8 +4694,15 @@ class RunKernel:
                     QUANTITATIVE_PROPOSAL_CONTRACT_DIGEST
                 )
                 role = str(artifact.get("role") or "")
-                context_packets = _safe_mapping(
-                    context.get("component_analyst_input_packets")
+                context_packets = _exact_component_analyst_mapping(
+                    raw_context.get("component_analyst_input_packets")
+                    if isinstance(raw_context, Mapping)
+                    else None
+                )
+                context_evidence_sets = _exact_component_analyst_mapping(
+                    raw_context.get("component_analyst_evidence_sets")
+                    if isinstance(raw_context, Mapping)
+                    else None
                 )
                 if role == ROLE_COMPONENT_ANALYST:
                     from core.multicomponent_component_admission import (
@@ -4619,15 +4727,16 @@ class RunKernel:
                         request_id=self.state.request_id,
                         accepted_contract=contract,
                         component_ref=component_ref,
-                        evidence_input=_safe_mapping(
-                            transient_input.get("component_evidence")
+                        component_evidence_set=deepcopy(
+                            context_evidence_sets.get(component_id) or {}
                         ),
                     )
                     if (
                         not component_ref
                         or transient_input != rebuilt_input
                         or transient_input
-                        != _safe_mapping(context_packets.get(component_id))
+                        != deepcopy(context_packets.get(component_id) or {})
+                        or not context_evidence_sets.get(component_id)
                         or canonical_target.get("target_revision")
                         != component_ref.get("component_revision")
                         or canonical_target.get("target_digest")
@@ -4651,6 +4760,7 @@ class RunKernel:
                             or ""
                         ),
                         component_analyst_input_packets=context_packets,
+                        component_analyst_evidence_sets=context_evidence_sets,
                         accepted_component_refs=contract.get(
                             "accepted_answer_component_refs"
                         )
@@ -5832,18 +5942,30 @@ class RunKernel:
 
         from core.multicomponent_role_runtime import safe_packet_digest
 
-        context = _safe_mapping(self.state.multicomponent_scheduler_context)
+        raw_context = self.state.multicomponent_scheduler_context
+        context = _safe_mapping(raw_context)
         if not context:
             return
         packet_digests = {
-            str(key): safe_packet_digest(_safe_mapping(value))
-            for key, value in _safe_mapping(
-                context.get("component_analyst_input_packets")
+            str(key): safe_packet_digest(value)
+            for key, value in _exact_component_analyst_mapping(
+                raw_context.get("component_analyst_input_packets")
+                if isinstance(raw_context, Mapping)
+                else None
+            ).items()
+        }
+        evidence_set_digests = {
+            str(key): str(value.get("evidence_set_digest") or "")
+            for key, value in _exact_component_analyst_mapping(
+                raw_context.get("component_analyst_evidence_sets")
+                if isinstance(raw_context, Mapping)
+                else None
             ).items()
         }
         self.state.multicomponent_scheduler_context = {
             "transient_context_released": True,
             "component_input_packet_digests": packet_digests,
+            "component_evidence_set_digests": evidence_set_digests,
             "specialist_scheduler_enabled": (
                 context.get("specialist_scheduler_enabled") is True
             ),
@@ -20537,21 +20659,31 @@ class RunKernel:
                 ),
                 expected_role=ROLE_COMPONENT_ANALYST,
             )
-            scheduler_context = _safe_mapping(
-                self.state.multicomponent_scheduler_context
+            scheduler_context = self.state.multicomponent_scheduler_context
+            analyst_input = deepcopy(
+                _exact_component_analyst_mapping(
+                    scheduler_context.get("component_analyst_input_packets")
+                    if isinstance(scheduler_context, Mapping)
+                    else None
+                ).get(target_key)
+                or {}
             )
-            analyst_input = _safe_mapping(
-                scheduler_context.get("component_analyst_input_packets", {}).get(
-                    target_key
-                )
+            component_evidence_set = deepcopy(
+                _exact_component_analyst_mapping(
+                    scheduler_context.get("component_analyst_evidence_sets")
+                    if isinstance(scheduler_context, Mapping)
+                    else None
+                ).get(target_key)
+                or {}
             )
-            if not analyst_input:
+            if not analyst_input or not component_evidence_set:
                 raise RunKernelTransitionError(
-                    "Component Analyst resume requires the exact retained Analyst input"
+                    "Component Analyst resume requires the exact retained Analyst evidence set and input"
                 )
             packet = component_analyst_resume_input_packet(
                 analyst_artifact=initial_analyst,
                 analyst_input_packet=analyst_input,
+                component_evidence_set=component_evidence_set,
                 specialist_need_handoff=handoff,
             )
             reconstructed_packet_digest = safe_packet_digest(packet)
@@ -20758,11 +20890,25 @@ class RunKernel:
                 initialize_specialist_work_plane_from_projections,
             )
 
-            context = _safe_mapping(self.state.multicomponent_scheduler_context)
-            packets = _safe_mapping(context.get("component_analyst_input_packets"))
+            raw_context = self.state.multicomponent_scheduler_context
+            context = _safe_mapping(raw_context)
+            packets = _exact_component_analyst_mapping(
+                raw_context.get("component_analyst_input_packets")
+                if isinstance(raw_context, Mapping)
+                else None
+            )
+            evidence_sets = _exact_component_analyst_mapping(
+                raw_context.get("component_analyst_evidence_sets")
+                if isinstance(raw_context, Mapping)
+                else None
+            )
             expected_digests = {
-                key: safe_packet_digest(_safe_mapping(value))
+                key: safe_packet_digest(value)
                 for key, value in packets.items()
+            }
+            expected_evidence_set_digests = {
+                key: str(value.get("evidence_set_digest") or "")
+                for key, value in evidence_sets.items()
             }
             directive = str(context.get("requested_synthesis_directive") or "")
             specialist_enabled = context.get("specialist_scheduler_enabled") is True
@@ -20775,6 +20921,8 @@ class RunKernel:
             if (
                 action.inputs.get("component_input_packet_digests")
                 != expected_digests
+                or action.inputs.get("component_evidence_set_digests")
+                != expected_evidence_set_digests
                 or action.inputs.get("requested_synthesis_directive_digest")
                 != safe_packet_digest({"requested_synthesis_directive": directive})
                 or action.inputs.get("configured_provider_class")
@@ -21607,7 +21755,7 @@ class RunKernel:
                 *,
                 component_nodes: Sequence[Mapping[str, Any]],
                 requested_synthesis_directive: str,
-            ) -> dict[str, Any]:
+            ) -> tuple[dict[str, Any], dict[str, Any]]:
                 raw_context = self.state.multicomponent_scheduler_context
                 if not isinstance(raw_context, Mapping):
                     raise RunKernelTransitionError(
@@ -21615,8 +21763,16 @@ class RunKernel:
                     )
                 context = _safe_mapping(raw_context)
                 raw_packets = raw_context.get("component_analyst_input_packets")
-                packets = _safe_mapping(
+                packets = _exact_component_analyst_mapping(
                     raw_packets if isinstance(raw_packets, Mapping) else None
+                )
+                raw_evidence_sets = raw_context.get(
+                    "component_analyst_evidence_sets"
+                )
+                evidence_sets = _exact_component_analyst_mapping(
+                    raw_evidence_sets
+                    if isinstance(raw_evidence_sets, Mapping)
+                    else None
                 )
                 component_ids = {
                     str(_safe_mapping(item).get("component_id") or "")
@@ -21624,13 +21780,23 @@ class RunKernel:
                 }
                 if (
                     not packets
+                    or not evidence_sets
                     or not component_ids
                     or set(packets) != component_ids
+                    or set(evidence_sets) != component_ids
                     or any(
                         not isinstance(value, Mapping)
                         for value in (
                             raw_packets.values()
                             if isinstance(raw_packets, Mapping)
+                            else ()
+                        )
+                    )
+                    or any(
+                        not isinstance(value, Mapping)
+                        for value in (
+                            raw_evidence_sets.values()
+                            if isinstance(raw_evidence_sets, Mapping)
                             else ()
                         )
                     )
@@ -21647,6 +21813,7 @@ class RunKernel:
                 )
                 if scheduler:
                     expected_packet_digests: dict[str, Any] = {}
+                    expected_evidence_set_digests: dict[str, Any] = {}
                     recovery_transitions = [
                         _safe_mapping(item)
                         for item in scheduler.get("transition_history") or ()
@@ -21659,6 +21826,11 @@ class RunKernel:
                                 "authority_ref"
                             )
                         ).get("component_input_packet_digests", {})
+                        expected_evidence_set_digests = _safe_mapping(
+                            _safe_mapping(recovery_transitions[-1]).get(
+                                "authority_ref"
+                            )
+                        ).get("component_evidence_set_digests", {})
                     else:
                         initialization_actions = [
                             issued
@@ -21670,19 +21842,29 @@ class RunKernel:
                             expected_packet_digests = _safe_mapping(
                                 initialization_actions[0].inputs
                             ).get("component_input_packet_digests", {})
+                            expected_evidence_set_digests = _safe_mapping(
+                                initialization_actions[0].inputs
+                            ).get("component_evidence_set_digests", {})
                     current_packet_digests = {
-                        str(key): safe_packet_digest(_safe_mapping(value))
+                        str(key): safe_packet_digest(value)
                         for key, value in packets.items()
+                    }
+                    current_evidence_set_digests = {
+                        str(key): str(value.get("evidence_set_digest") or "")
+                        for key, value in evidence_sets.items()
                     }
                     if (
                         not isinstance(expected_packet_digests, Mapping)
                         or current_packet_digests
                         != dict(expected_packet_digests)
+                        or not isinstance(expected_evidence_set_digests, Mapping)
+                        or current_evidence_set_digests
+                        != dict(expected_evidence_set_digests)
                     ):
                         raise RunKernelTransitionError(
                             "Graph V1 structure reproof component packets do not match scheduler authority"
                         )
-                return deepcopy(packets)
+                return deepcopy(packets), deepcopy(evidence_sets)
 
             operation = action.inputs.get("operation")
             if operation == "selective_closure":
@@ -21967,9 +22149,13 @@ class RunKernel:
                         raise RunKernelTransitionError(
                             "Graph V1 structure must exactly consume current RunKernel component admission"
                         )
-                    component_packets = current_component_packets_for_graph_reproof(
-                        component_nodes=expected_component_nodes,
-                        requested_synthesis_directive=str(graph.get("requested_synthesis_directive") or ""),
+                    component_packets, component_evidence_sets = (
+                        current_component_packets_for_graph_reproof(
+                            component_nodes=expected_component_nodes,
+                            requested_synthesis_directive=str(
+                                graph.get("requested_synthesis_directive") or ""
+                            ),
+                        )
                     )
                     if (
                         len(expected_component_nodes) == 1
@@ -22008,6 +22194,7 @@ class RunKernel:
                             component_nodes=expected_component_nodes,
                             cross_component_artifact=current_cross_artifact,
                             component_analyst_input_packets=component_packets,
+                            component_analyst_evidence_sets=component_evidence_sets,
                             accepted_component_refs=(
                                 self.state.initial_answer_contract.get(
                                     "accepted_answer_component_refs",
@@ -22329,7 +22516,7 @@ class RunKernel:
                             "Graph V1 resynthesis lacks completed Cross-Component Analyst"
                         )
                     try:
-                        component_packets = (
+                        component_packets, component_evidence_sets = (
                             current_component_packets_for_graph_reproof(
                                 component_nodes=current_graph.get(
                                     "component_nodes", []
@@ -22349,6 +22536,7 @@ class RunKernel:
                             ),
                             cross_component_artifact=role_artifact,
                             component_analyst_input_packets=component_packets,
+                            component_analyst_evidence_sets=component_evidence_sets,
                         )
                     except RunKernelTransitionError:
                         raise

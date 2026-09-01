@@ -294,28 +294,33 @@ work remains nonblocking; required work reaches the Specialist-specific blocked
 terminal before ordinary sanitized blocked finalization.
 
 Component Analyst input packets include the repository-owned model-visible
-quantitative proposal contract and bounded `component_evidence`, but never a
-`quantitative_source_catalog`. Ordinary Cross-Component Analyst input includes
-the same contract plus its own transient source catalog. The component contract
-binds the exact component target and `component_evidence`; the synthesis
-contract binds the same-artifact `synthesis_key` rule and exact `component_01`,
-`component_02`, ... aliases. The proposal is a sibling of ordinary component
-fields or `synthesis_proposals`, never nested. Component requests bind exact
-literals to bounded component evidence. Synthesis requests use deterministic
-component aliases and require two-hop proof from each admitted component claim
-to the same literal in its underlying current evidence. Candidate-primary
-source facts and exact passage fallbacks remain unknown when absent; graph
-admission does not upgrade them. After an accepted component proposal,
-Specialist dispatch reconstructs the material component catalog from that exact
-current `component_evidence`; the original Component Analyst packet and its
-resume binding stay catalog-free. Model and execution Cross catalogs share the
-same nonmaterial posture and digest, while source material exists only in the
-execution catalog. The contract and transient source material are reconstructed
-only for their scoped consumers and are not retained in canonical graph,
-scheduler, work, result, log, or trace projections. Deterministic
-Decimal arithmetic, units, precision, and exact claim alignment flow through
-the existing unified handoff; the current Component Analyst case, retained
-synthesis D-prime, and RunKernel retain their respective validation and admission authority.
+quantitative proposal contract and bounded ordered `component_evidence_set`,
+but never a `quantitative_source_catalog`. Each model-visible member has only a
+packet-local alias such as `component_evidence_01`; canonical evidence, custody,
+and digest identity remain code-owned. Ordinary Cross-Component Analyst input
+includes the same contract plus its own transient source catalog. The component
+contract binds the exact component target and the exact ordered
+`component_evidence_set`; the Analyst may nominate only supplied local aliases
+as semantic support, while RunKernel binds those aliases mechanically. The
+synthesis contract binds the same-artifact `synthesis_key` rule and exact
+`component_01`, `component_02`, ... aliases. The proposal is a sibling of
+ordinary component fields or `synthesis_proposals`, never nested. Component
+requests bind exact literals to bounded evidence members. Synthesis requests
+use deterministic component aliases and require two-hop proof from each
+admitted component claim to the same literal in its underlying current
+evidence. Candidate-primary source facts and exact passage fallbacks remain
+unknown when absent; graph admission does not upgrade them. After an accepted
+component proposal, Specialist dispatch reconstructs the material component
+catalog from that exact current evidence set, with one local source key per
+member; the original Component Analyst packet and its resume binding stay
+catalog-free. Model and execution Cross catalogs share the same nonmaterial
+posture and digest, while source material exists only in the execution catalog.
+The contract and transient source material are reconstructed only for their
+scoped consumers and are not retained in canonical graph, scheduler, work,
+result, log, or trace projections. Deterministic Decimal arithmetic, units,
+precision, and exact claim alignment flow through the existing unified handoff;
+the current Component Analyst case, retained synthesis D-prime, and RunKernel
+retain their respective validation and admission authority.
 
 Cross input binding is reproofed unconditionally before initial graph
 construction and whole-graph resynthesis. The ordinary consumer may provide
@@ -323,11 +328,12 @@ the exact transient Cross packet, whose structural facts, proposal contract,
 aliases, nonmaterial catalog, and absence of source material are validated.
 RunKernel supplies no caller-authored proof: it reads the current scheduler-
 owned component Analyst mapping, checks the existing initialization or recovery
-packet-digest authority, independently reconstructs the complete Cross packet,
-and requires the artifact `input_packet_digest` to match. Missing, incomplete,
-malformed, cross-run, stale, or inconsistent authority fails before reduction.
-No packet, contract, catalog, source text, claim text, or complete candidate is
-newly retained or exported.
+packet-digest and exact evidence-set-digest authority, independently
+reconstructs the complete Cross packet, and requires the artifact
+`input_packet_digest` to match. Missing, incomplete, malformed, cross-run,
+stale, reordered, or inconsistent authority fails before reduction. No packet,
+contract, catalog, source text, claim text, or complete candidate is newly
+retained or exported.
 
 The compatibility envelope is the sum of the shared role caps. Every work item
 has an exact budget/work lease bound to current contract, graph, input packet,

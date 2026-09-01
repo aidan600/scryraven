@@ -1343,8 +1343,18 @@ def test_two_components_use_one_shared_n_component_receiver(
         result = original_scheduler_initialize(self, **kwargs)
         packet_contexts.append(
             {
-                str(key): deepcopy(dict(value))
-                for key, value in kwargs["component_analyst_input_packets"].items()
+                "packets": {
+                    str(key): deepcopy(dict(value))
+                    for key, value in kwargs[
+                        "component_analyst_input_packets"
+                    ].items()
+                },
+                "evidence_sets": {
+                    str(key): deepcopy(dict(value))
+                    for key, value in kwargs[
+                        "component_analyst_evidence_sets"
+                    ].items()
+                },
             }
         )
         return result
@@ -1518,23 +1528,33 @@ def test_two_components_use_one_shared_n_component_receiver(
         )
         return {
             component_id: {
-                "evidence_ref_id": bindable.evidence_ref_id,
-                "bounded_text": bindable.passage["text"],
-                "bounded_text_digest": bindable.passage["bounded_text_digest"],
-                "searchos_semantic_handoff_ref": deepcopy(
-                    bindable.passage["searchos_semantic_handoff_ref"]
-                ),
-                "searchos_slot_ref": deepcopy(
-                    bindable.passage["searchos_slot_ref"]
-                ),
-                "read_custody_ref": deepcopy(
-                    bindable.passage["searchos_qualification_lineage"][
-                        "read_custody_ref"
-                    ]
-                ),
-                "support_admitted": bindable.passage["support_admitted"],
+                "members": [
+                    {
+                        "local_evidence_alias": member["local_evidence_alias"],
+                        "evidence_ref_id": member["code_binding"][
+                            "evidence_ref_id"
+                        ],
+                        "bounded_text": member["passage"]["text"],
+                        "bounded_text_digest": member["code_binding"][
+                            "bounded_text_digest"
+                        ],
+                        "searchos_semantic_handoff_ref": deepcopy(
+                            member["passage"]["searchos_semantic_handoff_ref"]
+                        ),
+                        "searchos_slot_ref": deepcopy(
+                            member["passage"]["searchos_slot_ref"]
+                        ),
+                        "read_custody_ref": deepcopy(
+                            member["passage"]["searchos_qualification_lineage"][
+                                "read_custody_ref"
+                            ]
+                        ),
+                        "support_admitted": member["passage"]["support_admitted"],
+                    }
+                    for member in evidence_set["members"]
+                ]
             }
-            for component_id, bindable in selected.items()
+            for component_id, evidence_set in selected.items()
         }
 
     canonical_materials = context["canonical_materials"]
@@ -1571,33 +1591,42 @@ def test_two_components_use_one_shared_n_component_receiver(
     assert a_then_b == b_then_a
     assert set(a_then_b) == {"component-1", "component-2"}
     assert all(
-        binding["searchos_slot_ref"]["component_id"] == component_id
-        and binding["support_admitted"] is False
+        len(binding["members"]) == 1
+        and binding["members"][0]["searchos_slot_ref"]["component_id"]
+        == component_id
+        and binding["members"][0]["support_admitted"] is False
         for component_id, binding in a_then_b.items()
     )
-    assert a_then_b["component-1"]["evidence_ref_id"] != (
-        a_then_b["component-2"]["evidence_ref_id"]
+    assert a_then_b["component-1"]["members"][0]["evidence_ref_id"] != (
+        a_then_b["component-2"]["members"][0]["evidence_ref_id"]
     )
-    assert a_then_b["component-1"]["bounded_text"] != (
-        a_then_b["component-2"]["bounded_text"]
+    assert a_then_b["component-1"]["members"][0]["bounded_text"] != (
+        a_then_b["component-2"]["members"][0]["bounded_text"]
     )
 
-    analyst_packets = packet_contexts[0]
+    analyst_packets = packet_contexts[0]["packets"]
+    analyst_evidence_sets = packet_contexts[0]["evidence_sets"]
     assert set(analyst_packets) == set(a_then_b)
     for component_id, binding in a_then_b.items():
         packet = analyst_packets[component_id]
+        [expected_member] = binding["members"]
+        [model_member] = packet["component_evidence_set"]["members"]
+        [canonical_member] = analyst_evidence_sets[component_id]["members"]
         assert packet["component_ref"]["component_id"] == component_id
-        assert packet["component_evidence"]["evidence_ref_id"] == (
-            binding["evidence_ref_id"]
-        )
-        assert packet["component_evidence"]["bounded_text"] == (
-            binding["bounded_text"]
-        )
-        assert packet["component_evidence"]["bounded_text_digest"] == (
-            binding["bounded_text_digest"]
-        )
-        assert packet["component_evidence"]["bounded_text"] != (
+        assert model_member["local_evidence_alias"] == expected_member[
+            "local_evidence_alias"
+        ]
+        assert model_member["bounded_text"] == expected_member["bounded_text"]
+        assert model_member["bounded_text"] != (
             context["distractor"]["text"]
+        )
+        assert "evidence_ref_id" not in model_member
+        assert "bounded_text_digest" not in model_member
+        assert canonical_member["code_binding"]["evidence_ref_id"] == (
+            expected_member["evidence_ref_id"]
+        )
+        assert canonical_member["code_binding"]["bounded_text_digest"] == (
+            expected_member["bounded_text_digest"]
         )
 
 
@@ -1765,6 +1794,12 @@ def test_bounded_searchos_n1_causal_projection_successful_path(
                     str(key): dict(value)
                     for key, value in kwargs["component_analyst_input_packets"].items()
                 },
+                "evidence_sets": {
+                    str(key): deepcopy(dict(value))
+                    for key, value in kwargs[
+                        "component_analyst_evidence_sets"
+                    ].items()
+                },
                 "ready_work": self.derive_current_multicomponent_ready_work(),
             }
         )
@@ -1777,6 +1812,12 @@ def test_bounded_searchos_n1_causal_projection_successful_path(
                 "packets": {
                     str(key): dict(value)
                     for key, value in kwargs["component_analyst_input_packets"].items()
+                },
+                "evidence_sets": {
+                    str(key): deepcopy(dict(value))
+                    for key, value in kwargs[
+                        "component_analyst_evidence_sets"
+                    ].items()
                 },
                 "directive": kwargs["requested_synthesis_directive"],
                 "scheduler_stage": self.state.projections.get(
@@ -1827,11 +1868,17 @@ def test_bounded_searchos_n1_causal_projection_successful_path(
     assert run_binding["request_id"] == outcome.session_id
     assert run_binding["accepted_contract_version"] == contract["accepted_contract_version"]
     assert run_binding["accepted_contract_digest"] == contract["accepted_contract_digest"]
-    evidence = dict(analyst_packet["component_evidence"])
-    custody = dict(evidence["candidate_custody_ref"])
+    [evidence] = analyst_packet["component_evidence_set"]["members"]
+    [canonical_evidence_set] = initialization["evidence_sets"].values()
+    [canonical_evidence] = canonical_evidence_set["members"]
+    custody = dict(canonical_evidence["code_binding"]["candidate_custody_ref"])
     assert evidence["evidence_status"] == "available"
-    assert evidence["evidence_ref_id"]
-    assert custody["candidate_id"] == evidence["evidence_ref_id"]
+    assert canonical_evidence["code_binding"]["evidence_ref_id"]
+    assert custody["candidate_id"] == canonical_evidence["code_binding"][
+        "evidence_ref_id"
+    ]
+    assert "evidence_ref_id" not in evidence
+    assert "candidate_custody_ref" not in evidence
     assert harness.run_kernel.state.projections.get("multicomponent_graph_scheduler") is None
     graph = dict(harness.run_kernel.state.projections["multicomponent_component_work_graph_v1"])
     assert graph["dependency_posture"] == "single_component_direct_admission"
@@ -2050,10 +2097,18 @@ def test_n1_plural_semantic_slots_share_one_current_read_and_one_analyst(
     def capture_packet_install(self: Any, **kwargs: Any) -> Any:
         packet_contexts.append(
             {
-                str(key): dict(value)
-                for key, value in kwargs[
-                    "component_analyst_input_packets"
-                ].items()
+                "packets": {
+                    str(key): dict(value)
+                    for key, value in kwargs[
+                        "component_analyst_input_packets"
+                    ].items()
+                },
+                "evidence_sets": {
+                    str(key): deepcopy(dict(value))
+                    for key, value in kwargs[
+                        "component_analyst_evidence_sets"
+                    ].items()
+                },
             }
         )
         return original_packet_install(self, **kwargs)
@@ -2165,11 +2220,16 @@ def test_n1_plural_semantic_slots_share_one_current_read_and_one_analyst(
     [semantic_handoff] = harness.searchos_product_result.semantic_handoffs
     [handoff_custody] = semantic_handoff["read_custody_material_refs"]
     assert handoff_custody["bounded_text_digest"] == bounded_digest
-    [analyst_packets] = packet_contexts
+    [packet_context] = packet_contexts
+    analyst_packets = packet_context["packets"]
+    analyst_evidence_sets = packet_context["evidence_sets"]
     [analyst_packet] = analyst_packets.values()
-    assert analyst_packet["component_evidence"][
-        "bounded_text_digest"
-    ] == bounded_digest
+    [model_evidence] = analyst_packet["component_evidence_set"]["members"]
+    [canonical_evidence_set] = analyst_evidence_sets.values()
+    [canonical_evidence] = canonical_evidence_set["members"]
+    assert canonical_evidence["code_binding"]["bounded_text_digest"] == bounded_digest
+    assert model_evidence["bounded_text"] == semantic_material["text"]
+    assert "bounded_text_digest" not in model_evidence
     [admission_payload] = admission_payloads
     [content_ref] = admission_payload["sanitized_content_references"]
     assert content_ref["bounded_text"] == semantic_material["text"]

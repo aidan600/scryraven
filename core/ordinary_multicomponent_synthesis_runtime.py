@@ -23,6 +23,13 @@ from core.analyst_query_resolution_proposal import (
     selected_proposals_for_role_artifact,
 )
 from core.cap_enforcement import RunCapExceeded
+from core.component_analyst_evidence_set import (
+    ComponentAnalystEvidenceSetError,
+    build_component_analyst_evidence_set,
+    component_analyst_evidence_member_code_evidence,
+    component_analyst_evidence_set_members_for_aliases,
+    validate_component_analyst_evidence_set,
+)
 from core.component_coverage_reduction_runtime import (
     ledger_qualification_blockers_for_satisfied_coverage,
 )
@@ -374,94 +381,40 @@ def _exact_currency_fact(*, candidate: Mapping[str, Any], passage: Mapping[str, 
     return None
 
 
-def _evidence_input(bindable: Any | None) -> dict[str, Any]:
-    if bindable is None:
-        return {
-            "evidence_status": "missing",
-            "bounded_text": None,
-            "candidate_custody_ref": {},
-        }
-    passage = bindable.passage
-    candidate = _safe_mapping(bindable.candidate_record)
-    bounded_text = _clean_text(passage.get("text"), limit=6000)
-    bounded_text_digest = _clean_text(
-        passage.get("bounded_text_digest"),
-        limit=128,
-    )
-    if bounded_text_digest and bounded_text_digest != safe_packet_digest(
-        {"bounded_text": bounded_text}
-    ):
-        raise OrdinaryMulticomponentRuntimeError(
-            "component Analyst evidence bounded-text digest mismatch"
+def _component_evidence_set_from_bindables(
+    bindables: Sequence[BindableFinalPassage],
+) -> dict[str, Any]:
+    """Adapt one or more exact code-owned passages to the canonical set."""
+
+    try:
+        return build_component_analyst_evidence_set(
+            [
+                {
+                    "evidence_ref_id": item.evidence_ref_id,
+                    "passage": item.passage,
+                    "candidate_record": item.candidate_record,
+                }
+                for item in bindables
+            ]
         )
-    source_class = _structured_evidence_fact(
-        candidate=candidate,
-        passage=passage,
-        candidate_keys=("source_class",),
-        passage_keys=("source_class",),
+    except ComponentAnalystEvidenceSetError as exc:
+        raise OrdinaryMulticomponentRuntimeError(str(exc)) from exc
+
+
+def _component_evidence_set_is_searchos_read_custody(
+    component_evidence_set: Mapping[str, Any],
+) -> bool:
+    try:
+        canonical = validate_component_analyst_evidence_set(component_evidence_set)
+    except ComponentAnalystEvidenceSetError as exc:
+        raise OrdinaryMulticomponentRuntimeError(str(exc)) from exc
+    return bool(canonical["members"]) and all(
+        _safe_mapping(item.get("passage")).get("material_authority")
+        == "read_custody_material"
+        and _safe_mapping(item.get("passage")).get("_provider")
+        == "searchos_read_custody"
+        for item in canonical["members"]
     )
-    source_tier = _structured_evidence_fact(
-        candidate=candidate,
-        passage=passage,
-        candidate_keys=("source_tier",),
-        passage_keys=("source_tier",),
-    )
-    currentness = _structured_evidence_fact(
-        candidate=candidate,
-        passage=passage,
-        candidate_keys=("currentness_signal", "currentness"),
-        passage_keys=("currentness_signal", "currentness"),
-    )
-    fact_disposition = _structured_evidence_fact(
-        candidate=candidate,
-        passage=passage,
-        candidate_keys=("fact_disposition", "disposition"),
-        passage_keys=("fact_disposition", "disposition"),
-        limit=80,
-    )
-    readability = _structured_evidence_fact(
-        candidate=candidate,
-        passage=passage,
-        candidate_keys=("readable_status", "readability_status"),
-        passage_keys=("readable_status", "readability_status"),
-        limit=80,
-    )
-    canonical_currency = _exact_currency_fact(candidate=candidate, passage=passage)
-    conflict, contradictory = _exact_conflict_facts(candidate=candidate, passage=passage)
-    custody = {
-        key: candidate.get(key)
-        for key in (
-            "candidate_id",
-            "source_class",
-            "source_tier",
-            "fact_disposition",
-            "readable_status",
-            "currentness_signal",
-            "conflict_posture",
-            "contradictory",
-            "canonical_currency_unit",
-        )
-        if candidate.get(key) is not None
-    }
-    result = {
-        "evidence_status": "available",
-        "evidence_ref_id": bindable.evidence_ref_id,
-        "source_title": _clean_text(passage.get("title"), limit=240),
-        "source_url": _clean_text(passage.get("url"), limit=500),
-        "bounded_text": bounded_text,
-        "bounded_text_digest": bounded_text_digest,
-        "currentness": currentness,
-        "source_class": source_class,
-        "source_tier": source_tier,
-        "fact_disposition": fact_disposition,
-        "readability_posture": readability,
-        "conflict_posture": conflict,
-        "canonical_currency_unit": canonical_currency,
-        "candidate_custody_ref": custody,
-    }
-    if contradictory is not None:
-        result["contradictory"] = contradictory
-    return result
 
 
 def _component_analyst_case_posture(analyst_artifact: Mapping[str, Any]) -> str:
@@ -494,7 +447,7 @@ def _semantic_material(
     *,
     run_kernel: Any,
     component_ref: Mapping[str, Any],
-    bindable: Any | None,
+    component_evidence_set: Mapping[str, Any],
     analyst_artifact: Mapping[str, Any],
     query: str,
     searchos_recovery_cycle_ref: Mapping[str, Any] | None = None,
@@ -502,27 +455,61 @@ def _semantic_material(
     analyst_output = _safe_mapping(analyst_artifact.get("semantic_output"))
     if not _component_analyst_case_supports_admission(analyst_artifact):
         return None, [], None
-    if bindable is None:
-        raise OrdinaryMulticomponentRuntimeError("component Analyst case claimed support without bounded evidence")
+    try:
+        canonical_evidence_set = validate_component_analyst_evidence_set(
+            component_evidence_set
+        )
+        supporting_members = component_analyst_evidence_set_members_for_aliases(
+            canonical_evidence_set,
+            analyst_output.get("supporting_evidence_aliases") or (),
+        )
+    except ComponentAnalystEvidenceSetError as exc:
+        raise OrdinaryMulticomponentRuntimeError(str(exc)) from exc
     accepted = run_kernel.state.current_answer_contract or run_kernel.state.initial_answer_contract
     component_id = str(component_ref["component_id"])
     recovery_cycle_id = str(_safe_mapping(searchos_recovery_cycle_ref).get("cycle_id") or "")
     recovery_suffix = ":" + recovery_cycle_id if recovery_cycle_id else ""
-    evidence_ref_id = _qualify_searchos_read_material_after_component_analyst_case(
-        run_kernel=run_kernel,
-        component_ref=component_ref,
-        bindable=bindable,
-        analyst_artifact=analyst_artifact,
-    ) or str(bindable.evidence_ref_id)
-    content_ref = build_sanitized_content_reference_from_passage(
-        passage=bindable.passage,
-        evidence_ref_id=evidence_ref_id,
-        accepted_contract=accepted,
-        component_ref=component_ref,
-        content_ref_id=(f"content:{component_id}:{evidence_ref_id}{recovery_suffix}"),
-    )
+    evidence_ref_ids: list[str] = []
+    content_refs = []
+    for member in supporting_members:
+        code_evidence = component_analyst_evidence_member_code_evidence(member)
+        evidence_ref_id = str(code_evidence.get("evidence_ref_id") or "")
+        bindable = BindableFinalPassage(
+            passage=deepcopy(_safe_mapping(member.get("passage"))),
+            evidence_ref_id=evidence_ref_id,
+            candidate_record=deepcopy(_safe_mapping(member.get("candidate_record"))),
+        )
+        qualified_evidence_ref_id = (
+            _qualify_searchos_read_material_after_component_analyst_case(
+                run_kernel=run_kernel,
+                component_ref=component_ref,
+                bindable=bindable,
+                analyst_artifact=analyst_artifact,
+            )
+            or evidence_ref_id
+        )
+        evidence_ref_ids.append(qualified_evidence_ref_id)
+        content_refs.append(
+            build_sanitized_content_reference_from_passage(
+                passage=bindable.passage,
+                evidence_ref_id=qualified_evidence_ref_id,
+                accepted_contract=accepted,
+                component_ref=component_ref,
+                content_ref_id=(
+                    f"content:{component_id}:{qualified_evidence_ref_id}"
+                    f"{recovery_suffix}"
+                ),
+            )
+        )
+    if not evidence_ref_ids:
+        raise OrdinaryMulticomponentRuntimeError(
+            "component Analyst case claimed support without nominated evidence"
+        )
+    evidence_identity = safe_packet_digest({"evidence_refs": evidence_ref_ids})[:24]
     observation = SemanticObservation(
-        observation_id=(f"observation:{component_id}:{bindable.evidence_ref_id}{recovery_suffix}"),
+        observation_id=(
+            f"observation:{component_id}:{evidence_identity}{recovery_suffix}"
+        ),
         observation_kind=ObservationKind.SUPPORT,
         question_meaning_record_id=accepted["parent_question_meaning_record_id"],
         question_meaning_record_digest=accepted["parent_question_meaning_record_digest"],
@@ -531,8 +518,8 @@ def _semantic_material(
         answer_component_id=component_id,
         component_revision=str(component_ref["component_revision"]),
         component_contract_digest=str(component_ref["component_digest"]),
-        evidence_refs=(evidence_ref_id,),
-        content_refs=(content_ref.content_ref_id,),
+        evidence_refs=tuple(evidence_ref_ids),
+        content_refs=tuple(item.content_ref_id for item in content_refs),
         support_kind=SupportDirectness.DIRECT,
         directness=SupportDirectness.DIRECT,
         support_status=SupportStatus.SUPPORTS,
@@ -552,7 +539,7 @@ def _semantic_material(
     coverage = build_component_coverage_proposal(
         accepted_contract=accepted,
         observation=observation,
-        content_ref=content_ref,
+        content_refs=tuple(content_refs),
         evidence_ledger_projection=(run_kernel.state.evidence_ledger.to_projection().to_dict()),
         run_id=run_kernel.state.run_id,
         request_id=run_kernel.state.request_id,
@@ -574,33 +561,42 @@ def _semantic_material(
             or component_ref.get("source_obligation_candidate_refs")
             or ()
         )
-        qualified_requirement_ids = source_requirement_ids_for_component_candidate(
-            run_kernel.state.evidence_ledger.to_projection().to_dict(),
-            evidence_ref_id=evidence_ref_id,
-            component_id=component_id,
-            source_obligation_candidate_ids=tuple(obligation_ids),
-            run_id=run_kernel.state.run_id,
-            request_id=run_kernel.state.request_id,
-            answer_contract_version=accepted["accepted_contract_version"],
-            answer_contract_digest=accepted["accepted_contract_digest"],
-            ignore_satisfied_provider_job_historical_gaps=True,
+        qualified_requirement_ids = tuple(
+            dict.fromkeys(
+                requirement_id
+                for evidence_ref_id in evidence_ref_ids
+                for requirement_id in source_requirement_ids_for_component_candidate(
+                    run_kernel.state.evidence_ledger.to_projection().to_dict(),
+                    evidence_ref_id=evidence_ref_id,
+                    component_id=component_id,
+                    source_obligation_candidate_ids=tuple(obligation_ids),
+                    run_id=run_kernel.state.run_id,
+                    request_id=run_kernel.state.request_id,
+                    answer_contract_version=accepted["accepted_contract_version"],
+                    answer_contract_digest=accepted["accepted_contract_digest"],
+                    ignore_satisfied_provider_job_historical_gaps=True,
+                )
+            )
         )
         qualification_blockers = ledger_qualification_blockers_for_satisfied_coverage(
             coverage={
                 "coverage_state": "satisfied",
-                "content_reference_bindings": [{"evidence_ref_id": evidence_ref_id}],
+                "content_reference_bindings": [
+                    {"evidence_ref_id": evidence_ref_id}
+                    for evidence_ref_id in evidence_ref_ids
+                ],
                 "evidence_ledger_binding": {"source_requirement_ids": list(qualified_requirement_ids)},
                 "source_obligation_status": "satisfied",
             },
             evidence_ledger_projection=(run_kernel.state.evidence_ledger.to_projection().to_dict()),
             accepted_component=component_ref,
-            extra_evidence_refs=(evidence_ref_id,),
+            extra_evidence_refs=tuple(evidence_ref_ids),
         )
         raise OrdinaryMulticomponentRuntimeError(
             "component Analyst case support could not satisfy canonical coverage for "
             + component_id
-            + " (evidence_ref="
-            + evidence_ref_id
+            + " (evidence_refs="
+            + ",".join(evidence_ref_ids)
             + ", obligations="
             + ",".join(str(item) for item in obligation_ids)
             + ", qualified_requirements="
@@ -609,7 +605,7 @@ def _semantic_material(
             + ",".join(str(item.get("code") or "unknown") for item in qualification_blockers)
             + ")"
         )
-    return observation.to_dict(), [content_ref.to_dict()], coverage.to_dict()
+    return observation.to_dict(), [item.to_dict() for item in content_refs], coverage.to_dict()
 
 
 def _qualify_searchos_read_material_after_component_analyst_case(
@@ -1005,8 +1001,8 @@ def _bind_searchos_handoff_materials_for_components(
     runtime_scope: Mapping[str, Any],
     accepted: Mapping[str, Any],
     component_refs: Sequence[Mapping[str, Any]],
-) -> dict[str, BindableFinalPassage]:
-    """Bind each component to its one exact current SearchOS handoff material.
+) -> dict[str, dict[str, Any]]:
+    """Bind every exact ordered SearchOS handoff member for each component.
 
     SearchOS has already chosen the material.  This receiver therefore checks
     only exact current identity, custody, and bounded-content integrity; it does
@@ -1059,7 +1055,7 @@ def _bind_searchos_handoff_materials_for_components(
         ).items()
         if str(slot_id) in active_slot_ids and isinstance(slot, Mapping)
     ]
-    selected: dict[str, BindableFinalPassage] = {}
+    selected: dict[str, dict[str, Any]] = {}
 
     for raw_component_ref in component_refs:
         component_ref = dict(raw_component_ref)
@@ -1140,113 +1136,174 @@ def _bind_searchos_handoff_materials_for_components(
                 "SearchOS component receiver handoff scope or authority is invalid"
             )
 
-        custody_ref = _one_record(
-            handoff.get("read_custody_material_refs"),
-            "SearchOS component receiver cannot forward multi-material handoff",
-        )
-        slot_custody_ref = _one_record(
-            slot.get("custody_refs"),
-            "SearchOS component receiver custody identity is missing or colliding",
-            read_custody_material_id=custody_ref.get(
-                "read_custody_material_id"
-            ),
-            read_custody_material_digest=custody_ref.get(
-                "read_custody_material_digest"
-            ),
-        )
-        if (
-            slot_custody_ref != custody_ref
-            or _safe_mapping(custody_ref.get("slot_ref")) != slot_ref
-            or custody_ref.get("material_authority") != "read_custody_material"
-            or custody_ref.get("readable") is not True
-            or custody_ref.get("stale") is not False
-            or custody_ref.get("support_admitted") is not False
-            or custody_ref.get("source_obligation_satisfied") is not False
-            or custody_ref.get("citation_eligible") is not False
-        ):
-            raise OrdinaryMulticomponentRuntimeError(
-                "SearchOS component receiver custody identity is stale or altered"
-            )
-
         compact_handoff_ref = _ref_fields(
             recorded_handoff_ref,
             "semantic_handoff_id",
             "semantic_handoff_digest",
         )
-        material = _one_record(
+        custody_refs = handoff.get("read_custody_material_refs")
+        if isinstance(custody_refs, str | bytes) or not isinstance(
+            custody_refs, Sequence
+        ):
+            raise OrdinaryMulticomponentRuntimeError(
+                "SearchOS component receiver handoff material set is malformed"
+            )
+        exact_custody_refs = [
+            dict(item) for item in custody_refs if isinstance(item, Mapping)
+        ]
+        if len(exact_custody_refs) != len(custody_refs) or not exact_custody_refs:
+            raise OrdinaryMulticomponentRuntimeError(
+                "SearchOS component receiver handoff material set is missing"
+            )
+        custody_ids = [
+            str(item.get("read_custody_material_id") or "")
+            for item in exact_custody_refs
+        ]
+        candidate_ids = [
+            str(item.get("evidence_ledger_candidate_id") or "")
+            for item in exact_custody_refs
+        ]
+        if (
+            any(not item for item in custody_ids)
+            or any(not item for item in candidate_ids)
+            or len(custody_ids) != len(set(custody_ids))
+            or len(candidate_ids) != len(set(candidate_ids))
+        ):
+            raise OrdinaryMulticomponentRuntimeError(
+                "SearchOS component receiver handoff material identities collide"
+            )
+        handoff_materials = _matching_records(
             canonical_materials,
-            "SearchOS component receiver material identity is missing or ambiguous",
             searchos_semantic_handoff_ref=compact_handoff_ref,
             searchos_slot_ref=slot_ref,
         )
-
-        lineage = _safe_mapping(material.get("searchos_qualification_lineage"))
-        lineage_custody_ref = _safe_mapping(lineage.get("read_custody_ref"))
-        lineage_packet_ref = _safe_mapping(lineage.get("fetch_read_content_packet"))
-        lineage_content_ref = _safe_mapping(
-            lineage.get("navigation_content_reference")
-        )
-        expected_custody_ref = _ref_fields(
-            custody_ref,
-            "read_custody_material_id",
-            "read_custody_material_digest",
-            "bounded_text_digest",
-        )
-        expected_packet_ref = _ref_fields(
-            custody_ref.get("fetch_read_content_packet_ref"),
-            "packet_id",
-            "packet_digest",
-        )
-        expected_content_ref = _ref_fields(
-            custody_ref.get("evidence_ledger_custody_ref"),
-            "reference_id",
-            "reference_digest",
-        )
-        evidence_ref_id = str(
-            custody_ref.get("evidence_ledger_candidate_id") or ""
-        )
-        bounded_text = _clean_text(material.get("text"), limit=6000)
-        bounded_text_digest = _clean_text(
-            material.get("bounded_text_digest"),
-            limit=128,
-        )
-        if (
-            not lineage
-            or material.get("_provider") != "searchos_read_custody"
-            or material.get("material_authority") != "read_custody_material"
-            or material.get("support_admitted") is not False
-            or _safe_mapping(material.get("searchos_slot_ref")) != slot_ref
-            or _safe_mapping(material.get("searchos_semantic_handoff_ref"))
-            != compact_handoff_ref
-            or _safe_mapping(lineage.get("slot_ref")) != slot_ref
-            or _safe_mapping(lineage.get("semantic_handoff_ref"))
-            != compact_handoff_ref
-            or lineage_custody_ref != expected_custody_ref
-            or lineage_packet_ref != expected_packet_ref
-            or lineage_content_ref != expected_content_ref
-            or lineage.get("canonical_candidate_id") != evidence_ref_id
-            or material.get("candidate_id") != evidence_ref_id
-            or material.get("searchos_evidence_ledger_candidate_id")
-            != evidence_ref_id
-            or not bounded_text
-            or bounded_text_digest != custody_ref.get("bounded_text_digest")
-            or bounded_text_digest
-            != safe_packet_digest({"bounded_text": bounded_text})
-        ):
+        if len(handoff_materials) != len(exact_custody_refs):
             raise OrdinaryMulticomponentRuntimeError(
-                "SearchOS component receiver material lineage or integrity mismatch"
+                "SearchOS component receiver material membership is missing or extra"
             )
-
-        candidate_record = _one_record(
-            candidate_records,
-            "SearchOS component receiver candidate identity is missing or colliding",
-            candidate_id=evidence_ref_id,
-        )
-        selected[component_id] = BindableFinalPassage(
-            passage=dict(material),
-            evidence_ref_id=evidence_ref_id,
-            candidate_record=candidate_record,
-        )
+        members: list[BindableFinalPassage] = []
+        matched_material_custody_ids: set[str] = set()
+        for custody_ref in exact_custody_refs:
+            slot_custody_ref = _one_record(
+                slot.get("custody_refs"),
+                "SearchOS component receiver custody identity is missing or colliding",
+                read_custody_material_id=custody_ref.get(
+                    "read_custody_material_id"
+                ),
+                read_custody_material_digest=custody_ref.get(
+                    "read_custody_material_digest"
+                ),
+            )
+            if (
+                slot_custody_ref != custody_ref
+                or _safe_mapping(custody_ref.get("slot_ref")) != slot_ref
+                or custody_ref.get("material_authority") != "read_custody_material"
+                or custody_ref.get("readable") is not True
+                or custody_ref.get("stale") is not False
+                or custody_ref.get("support_admitted") is not False
+                or custody_ref.get("source_obligation_satisfied") is not False
+                or custody_ref.get("citation_eligible") is not False
+            ):
+                raise OrdinaryMulticomponentRuntimeError(
+                    "SearchOS component receiver custody identity is stale or altered"
+                )
+            expected_custody_ref = _ref_fields(
+                custody_ref,
+                "read_custody_material_id",
+                "read_custody_material_digest",
+                "bounded_text_digest",
+            )
+            expected_packet_ref = _ref_fields(
+                custody_ref.get("fetch_read_content_packet_ref"),
+                "packet_id",
+                "packet_digest",
+            )
+            expected_content_ref = _ref_fields(
+                custody_ref.get("evidence_ledger_custody_ref"),
+                "reference_id",
+                "reference_digest",
+            )
+            evidence_ref_id = str(
+                custody_ref.get("evidence_ledger_candidate_id") or ""
+            )
+            matching_materials = []
+            for material in handoff_materials:
+                lineage = _safe_mapping(
+                    material.get("searchos_qualification_lineage")
+                )
+                if (
+                    _safe_mapping(lineage.get("read_custody_ref"))
+                    == expected_custody_ref
+                    and lineage.get("canonical_candidate_id") == evidence_ref_id
+                ):
+                    matching_materials.append(material)
+            if len(matching_materials) != 1:
+                raise OrdinaryMulticomponentRuntimeError(
+                    "SearchOS component receiver material identity is missing or ambiguous"
+                )
+            material = matching_materials[0]
+            lineage = _safe_mapping(material.get("searchos_qualification_lineage"))
+            lineage_custody_ref = _safe_mapping(lineage.get("read_custody_ref"))
+            lineage_packet_ref = _safe_mapping(
+                lineage.get("fetch_read_content_packet")
+            )
+            lineage_content_ref = _safe_mapping(
+                lineage.get("navigation_content_reference")
+            )
+            bounded_text = _clean_text(material.get("text"), limit=6000)
+            bounded_text_digest = _clean_text(
+                material.get("bounded_text_digest"),
+                limit=128,
+            )
+            if (
+                not lineage
+                or material.get("_provider") != "searchos_read_custody"
+                or material.get("material_authority") != "read_custody_material"
+                or material.get("support_admitted") is not False
+                or _safe_mapping(material.get("searchos_slot_ref")) != slot_ref
+                or _safe_mapping(material.get("searchos_semantic_handoff_ref"))
+                != compact_handoff_ref
+                or _safe_mapping(lineage.get("slot_ref")) != slot_ref
+                or _safe_mapping(lineage.get("semantic_handoff_ref"))
+                != compact_handoff_ref
+                or lineage_custody_ref != expected_custody_ref
+                or lineage_packet_ref != expected_packet_ref
+                or lineage_content_ref != expected_content_ref
+                or lineage.get("canonical_candidate_id") != evidence_ref_id
+                or material.get("candidate_id") != evidence_ref_id
+                or material.get("searchos_evidence_ledger_candidate_id")
+                != evidence_ref_id
+                or not bounded_text
+                or bounded_text_digest != custody_ref.get("bounded_text_digest")
+                or bounded_text_digest
+                != safe_packet_digest({"bounded_text": bounded_text})
+            ):
+                raise OrdinaryMulticomponentRuntimeError(
+                    "SearchOS component receiver material lineage or integrity mismatch"
+                )
+            custody_id = str(custody_ref.get("read_custody_material_id") or "")
+            if custody_id in matched_material_custody_ids:
+                raise OrdinaryMulticomponentRuntimeError(
+                    "SearchOS component receiver material membership collides"
+                )
+            matched_material_custody_ids.add(custody_id)
+            candidate_record = _one_record(
+                candidate_records,
+                "SearchOS component receiver candidate identity is missing or colliding",
+                candidate_id=evidence_ref_id,
+            )
+            members.append(
+                BindableFinalPassage(
+                    passage=dict(material),
+                    evidence_ref_id=evidence_ref_id,
+                    candidate_record=candidate_record,
+                )
+            )
+        if len(matched_material_custody_ids) != len(handoff_materials):
+            raise OrdinaryMulticomponentRuntimeError(
+                "SearchOS component receiver material collection has extra membership"
+            )
+        selected[component_id] = _component_evidence_set_from_bindables(members)
 
     return selected
 
@@ -1265,13 +1322,19 @@ def _execute_fresh_resynthesis(
     component_packets = _safe_mapping(
         _safe_mapping(run_kernel.state.multicomponent_scheduler_context).get("component_analyst_input_packets")
     )
-    if not component_packets:
+    component_evidence_sets = _safe_mapping(
+        _safe_mapping(run_kernel.state.multicomponent_scheduler_context).get(
+            "component_analyst_evidence_sets"
+        )
+    )
+    if not component_packets or not component_evidence_sets:
         raise OrdinaryMulticomponentRuntimeError("fresh resynthesis requires current scheduler-owned component packets")
     cross_input = cross_component_input_packet(
         component_nodes=graph["component_nodes"],
         accepted_contract_ref=contract_ref,
         requested_synthesis_directive=requested_synthesis_directive,
         component_analyst_input_packets=component_packets,
+        component_analyst_evidence_sets=component_evidence_sets,
         accepted_component_refs=current_contract.get("accepted_answer_component_refs") or (),
         requested_mode=str(
             _safe_mapping(run_kernel.state.multicomponent_scheduler_context).get("requested_mode") or "Balanced"
@@ -1294,6 +1357,7 @@ def _execute_fresh_resynthesis(
         accepted_contract_ref=contract_ref,
         cross_component_artifact=cross_artifact,
         component_analyst_input_packets=component_packets,
+        component_analyst_evidence_sets=component_evidence_sets,
         transient_cross_input_packet=cross_input,
         accepted_component_refs=current_contract.get("accepted_answer_component_refs") or (),
         requested_mode=str(
@@ -1509,6 +1573,9 @@ def _execute_current_graph_reconciliation(
     packet = current_graph_reconciliation_input_packet(
         current,
         component_analyst_input_packets=_safe_mapping(context.get("component_analyst_input_packets")),
+        component_analyst_evidence_sets=_safe_mapping(
+            context.get("component_analyst_evidence_sets")
+        ),
         requested_mode=str(context.get("requested_mode") or "Balanced"),
     )
     evaluation_key = f"current-graph-reconciliation:graph-revision:{current['graph_revision']}"
@@ -1667,6 +1734,12 @@ def _scheduler_work_input_packet(*, run_kernel: Any, work: Mapping[str, Any]) ->
         str(key): _safe_mapping(value)
         for key, value in _safe_mapping(context.get("component_analyst_input_packets")).items()
     }
+    evidence_sets = {
+        str(key): _safe_mapping(value)
+        for key, value in _safe_mapping(
+            context.get("component_analyst_evidence_sets")
+        ).items()
+    }
     if work.get("work_kind") == "specialist_capability":
         from core.multicomponent_graph_scheduling import (
             reconstruct_specialist_input_for_work,
@@ -1701,9 +1774,15 @@ def _scheduler_work_input_packet(*, run_kernel: Any, work: Mapping[str, Any]) ->
             component_analyst_resume_input_packet(
                 analyst_artifact=initial_analyst,
                 analyst_input_packet=analyst_input,
+                component_evidence_set=evidence_sets.get(component_id, {}),
                 specialist_need_handoff=specialist_handoff,
             )
-            if initial_analyst and analyst_input and specialist_handoff
+            if (
+                initial_analyst
+                and analyst_input
+                and evidence_sets.get(component_id)
+                and specialist_handoff
+            )
             else {}
         )
     else:
@@ -1741,6 +1820,7 @@ def _scheduler_work_input_packet(*, run_kernel: Any, work: Mapping[str, Any]) ->
                     accepted_contract_ref=_accepted_contract_ref(accepted),
                     requested_synthesis_directive=str(context.get("requested_synthesis_directive") or ""),
                     component_analyst_input_packets=analyst_inputs,
+                    component_analyst_evidence_sets=evidence_sets,
                     accepted_component_refs=accepted.get("accepted_answer_component_refs") or (),
                     requested_mode=str(context.get("requested_mode") or "Balanced"),
                 )
@@ -1759,6 +1839,7 @@ def _scheduler_work_input_packet(*, run_kernel: Any, work: Mapping[str, Any]) ->
                     packet = current_graph_reconciliation_input_packet(
                         graph,
                         component_analyst_input_packets=analyst_inputs,
+                        component_analyst_evidence_sets=evidence_sets,
                         requested_mode=str(context.get("requested_mode") or "Balanced"),
                     )
             elif role == ROLE_SYNTHESIS_DPRIME and synthesis_key:
@@ -2837,13 +2918,17 @@ def _consume_scheduler_selected_artifact(
                 raise _ScheduledSemanticWorkBlocked(
                     "non-completed Specialist result cannot support component Analyst admission"
                 )
-        bindable = drive_context["selected_bindables"].get(component_id)
-        if bindable is None:
+        component_evidence_set = _safe_mapping(
+            _safe_mapping(drive_context.get("component_analyst_evidence_sets")).get(
+                component_id
+            )
+        )
+        if not component_evidence_set:
             raise OrdinaryMulticomponentRuntimeError("scheduler-selected component lost its evidence binding")
         observation, content_refs, coverage = _semantic_material(
             run_kernel=run_kernel,
             component_ref=component_ref,
-            bindable=bindable,
+            component_evidence_set=component_evidence_set,
             analyst_artifact=analyst_artifact,
             query=str(drive_context["query"]),
         )
@@ -2877,14 +2962,16 @@ def _consume_scheduler_selected_artifact(
             component_id=component_id,
             analyst_artifact=analyst_artifact,
             analyst_input_packet=analyst_input,
+            component_evidence_set=component_evidence_set,
             semantic_observation=observation,
             sanitized_content_references=content_refs,
             component_coverage_record=coverage,
             specialist_need_handoff=specialist_handoff or None,
             logical_evaluation_key=evaluation_key or None,
             allow_searchos_semantic_requirement_historical_gap_exception=(
-                _safe_mapping(bindable.passage).get("material_authority") == "read_custody_material"
-                and _safe_mapping(bindable.passage).get("_provider") == "searchos_read_custody"
+                _component_evidence_set_is_searchos_read_custody(
+                    component_evidence_set
+                )
             ),
         )
         if work.get("recovery_authorization_ref"):
@@ -2973,6 +3060,11 @@ def _consume_scheduler_selected_artifact(
                         run_kernel.state.multicomponent_scheduler_context
                     ).get("component_analyst_input_packets")
                 ),
+                component_analyst_evidence_sets=_safe_mapping(
+                    _safe_mapping(
+                        run_kernel.state.multicomponent_scheduler_context
+                    ).get("component_analyst_evidence_sets")
+                ),
                 transient_cross_input_packet=packet,
                 additional_scrutineer_trigger_reasons=tuple(
                     drive_context.get("additional_scrutineer_trigger_reasons") or ()
@@ -3053,11 +3145,17 @@ def _consume_scheduler_selected_artifact(
             component_packets = _safe_mapping(
                 _safe_mapping(run_kernel.state.multicomponent_scheduler_context).get("component_analyst_input_packets")
             )
+            component_evidence_sets = _safe_mapping(
+                _safe_mapping(run_kernel.state.multicomponent_scheduler_context).get(
+                    "component_analyst_evidence_sets"
+                )
+            )
             candidate = component_work_graph_v1_resynthesis_from_cross_component_artifact(
                 graph,
                 accepted_contract_ref=_accepted_contract_ref(run_kernel.state.current_answer_contract),
                 cross_component_artifact=artifact,
                 component_analyst_input_packets=component_packets,
+                component_analyst_evidence_sets=component_evidence_sets,
                 transient_cross_input_packet=input_packet,
             )
             reduce_component_work_graph_v1(
@@ -3541,7 +3639,7 @@ def _drive_run_kernel_selected_semantic_work(
     *,
     run_kernel: Any,
     runtime_scope: Mapping[str, Any],
-    selected_bindables: Mapping[str, Any],
+    component_analyst_evidence_sets: Mapping[str, Mapping[str, Any]],
     query: str,
 ) -> None:
     """Drive qualifying semantic work exclusively from RunKernel leases."""
@@ -3551,7 +3649,10 @@ def _drive_run_kernel_selected_semantic_work(
     mode = str(runtime_scope.get("strategy") or runtime_scope.get("mode") or "")
     drive_context: dict[str, Any] = {
         "runtime_scope": runtime_scope,
-        "selected_bindables": dict(selected_bindables),
+        "component_analyst_evidence_sets": {
+            str(key): deepcopy(dict(value))
+            for key, value in component_analyst_evidence_sets.items()
+        },
         "query": query,
         "cost_recorded_child_action_ids": set(),
         "additional_scrutineer_trigger_reasons": (
@@ -3668,7 +3769,7 @@ def _execute_first_pass_n1_component_analyst(
     run_kernel: Any,
     runtime_scope: Mapping[str, Any],
     requested_synthesis_directive: str,
-    selected_bindables: Mapping[str, Any],
+    component_analyst_evidence_sets: Mapping[str, Mapping[str, Any]],
     component_analyst_input_packets: Mapping[str, Mapping[str, Any]],
     component_refs: Sequence[Mapping[str, Any]],
     query: str,
@@ -3699,8 +3800,10 @@ def _execute_first_pass_n1_component_analyst(
     component_ref = _safe_mapping(component_refs[0])
     component_id = str(component_ref.get("component_id") or "")
     analyst_input = _safe_mapping(component_analyst_input_packets.get(component_id))
-    bindable = selected_bindables.get(component_id)
-    if not component_id or not analyst_input:
+    component_evidence_set = _safe_mapping(
+        component_analyst_evidence_sets.get(component_id)
+    )
+    if not component_id or not analyst_input or not component_evidence_set:
         raise OrdinaryMulticomponentRuntimeError(
             "first-pass N1 Analyst lost its exact component packet"
         )
@@ -3730,7 +3833,7 @@ def _execute_first_pass_n1_component_analyst(
     observation, content_refs, coverage = _semantic_material(
         run_kernel=run_kernel,
         component_ref=component_ref,
-        bindable=bindable,
+        component_evidence_set=component_evidence_set,
         analyst_artifact=analyst_artifact,
         query=query,
     )
@@ -3747,15 +3850,15 @@ def _execute_first_pass_n1_component_analyst(
         component_id=component_id,
         analyst_artifact=analyst_artifact,
         analyst_input_packet=analyst_input,
+        component_evidence_set=component_evidence_set,
         semantic_observation=observation,
         sanitized_content_references=content_refs,
         component_coverage_record=coverage,
         logical_evaluation_key=component_id,
         allow_searchos_semantic_requirement_historical_gap_exception=(
-            _safe_mapping(getattr(bindable, "passage", None)).get("material_authority")
-            == "read_custody_material"
-            and _safe_mapping(getattr(bindable, "passage", None)).get("_provider")
-            == "searchos_read_custody"
+            _component_evidence_set_is_searchos_read_custody(
+                component_evidence_set
+            )
         ),
     )
     _note_bounded_product_stage(
@@ -3764,6 +3867,7 @@ def _execute_first_pass_n1_component_analyst(
     )
     run_kernel.install_multicomponent_graph_reproof_packet_context(
         component_analyst_input_packets=component_analyst_input_packets,
+        component_analyst_evidence_sets=component_analyst_evidence_sets,
         requested_synthesis_directive=requested_synthesis_directive,
         configured_provider=str(runtime_scope.get("smart_provider") or ""),
         requested_mode=str(runtime_scope.get("mode") or runtime_scope.get("strategy") or "Balanced"),
@@ -3816,7 +3920,10 @@ def _execute_first_pass_n1_component_analyst(
         run_kernel=run_kernel,
         drive_context={
             "runtime_scope": runtime_scope,
-            "selected_bindables": dict(selected_bindables),
+            "component_analyst_evidence_sets": {
+                str(key): deepcopy(dict(value))
+                for key, value in component_analyst_evidence_sets.items()
+            },
             "component_analyst_input_packets": {
                 str(key): _safe_mapping(value)
                 for key, value in component_analyst_input_packets.items()
@@ -3858,7 +3965,7 @@ def _execute_selected_lane(
         raise OrdinaryMulticomponentRuntimeError("accepted contract lost typed multi-component qualification")
 
     if allow_searchos_component_receiver:
-        selected = _bind_searchos_handoff_materials_for_components(
+        component_analyst_evidence_sets = _bind_searchos_handoff_materials_for_components(
             run_kernel=run_kernel,
             runtime_scope=runtime_scope,
             accepted=accepted,
@@ -3870,7 +3977,7 @@ def _execute_selected_lane(
             for item in runtime_scope.get("final_top_evidence") or ()
             if isinstance(item, Mapping)
         ]
-        selected = select_bindable_final_passages_for_components(
+        selected_bindables = select_bindable_final_passages_for_components(
             final_top_evidence,
             run_kernel.state.evidence_ledger.to_projection().to_dict(),
             component_refs,
@@ -3880,13 +3987,20 @@ def _execute_selected_lane(
             answer_contract_version=accepted["accepted_contract_version"],
             answer_contract_digest=accepted["accepted_contract_digest"],
         )
+        component_analyst_evidence_sets = {
+            component_id: _component_evidence_set_from_bindables([bindable])
+            for component_id, bindable in selected_bindables.items()
+        }
     # Custody-gap exception is authorized only for the selected typed lane.
     typed_lane_custody_exception = True
 
     missing_component_reasons: dict[str, str] = {}
     for component_ref in component_refs:
         component_id = str(component_ref["component_id"])
-        if component_id not in selected:
+        component_evidence_set = _safe_mapping(
+            component_analyst_evidence_sets.get(component_id)
+        )
+        if not component_evidence_set:
             missing_component_reasons[component_id] = "no_bindable_passage"
             continue
         has_obligations = bool(
@@ -3896,20 +4010,32 @@ def _execute_selected_lane(
         if (
             has_obligations
             and not allow_searchos_component_receiver
-            and not source_requirement_ids_for_component_candidate(
-                run_kernel.state.evidence_ledger.to_projection().to_dict(),
-                evidence_ref_id=selected[component_id].evidence_ref_id,
-                component_id=component_id,
-                source_obligation_candidate_ids=tuple(
-                    component_ref.get("source_obligation_candidate_ids")
-                    or component_ref.get("source_obligation_candidate_refs")
-                    or ()
-                ),
-                run_id=run_kernel.state.run_id,
-                request_id=run_kernel.state.request_id,
-                answer_contract_version=accepted["accepted_contract_version"],
-                answer_contract_digest=accepted["accepted_contract_digest"],
-                ignore_satisfied_provider_job_historical_gaps=(typed_lane_custody_exception),
+            and not any(
+                source_requirement_ids_for_component_candidate(
+                    run_kernel.state.evidence_ledger.to_projection().to_dict(),
+                    evidence_ref_id=str(
+                        component_analyst_evidence_member_code_evidence(member).get(
+                            "evidence_ref_id"
+                        )
+                        or ""
+                    ),
+                    component_id=component_id,
+                    source_obligation_candidate_ids=tuple(
+                        component_ref.get("source_obligation_candidate_ids")
+                        or component_ref.get("source_obligation_candidate_refs")
+                        or ()
+                    ),
+                    run_id=run_kernel.state.run_id,
+                    request_id=run_kernel.state.request_id,
+                    answer_contract_version=accepted["accepted_contract_version"],
+                    answer_contract_digest=accepted["accepted_contract_digest"],
+                    ignore_satisfied_provider_job_historical_gaps=(
+                        typed_lane_custody_exception
+                    ),
+                )
+                for member in validate_component_analyst_evidence_set(
+                    component_evidence_set
+                )["members"]
             )
         ):
             missing_component_reasons[component_id] = "source_obligation_custody_not_current"
@@ -3929,7 +4055,11 @@ def _execute_selected_lane(
             request_id=run_kernel.state.request_id,
             accepted_contract=accepted,
             component_ref=component_ref,
-            evidence_input=_evidence_input(selected.get(str(component_ref["component_id"]))),
+            component_evidence_set=_safe_mapping(
+                component_analyst_evidence_sets.get(
+                    str(component_ref["component_id"])
+                )
+            ),
         )
         for component_ref in component_refs
     }
@@ -3939,7 +4069,7 @@ def _execute_selected_lane(
                 run_kernel=run_kernel,
                 runtime_scope=runtime_scope,
                 requested_synthesis_directive=requested_synthesis_directive,
-                selected_bindables=selected,
+                component_analyst_evidence_sets=component_analyst_evidence_sets,
                 component_analyst_input_packets=analyst_inputs,
                 component_refs=component_refs,
                 query=query,
@@ -3949,6 +4079,7 @@ def _execute_selected_lane(
         return
     run_kernel.initialize_multicomponent_graph_scheduler(
         component_analyst_input_packets=analyst_inputs,
+        component_analyst_evidence_sets=component_analyst_evidence_sets,
         requested_synthesis_directive=requested_synthesis_directive,
         configured_provider=str(runtime_scope.get("smart_provider") or ""),
         specialist_capability_registry=getattr(
@@ -3968,7 +4099,7 @@ def _execute_selected_lane(
         _drive_run_kernel_selected_semantic_work(
             run_kernel=run_kernel,
             runtime_scope=runtime_scope,
-            selected_bindables=selected,
+            component_analyst_evidence_sets=component_analyst_evidence_sets,
             query=query,
         )
     finally:
@@ -4035,12 +4166,13 @@ def execute_searchos_recovery_component_admission_from_scope(
         or passage_slot_ref.get("recovery_cycle_id") != exact_cycle_ref.get("cycle_id")
     ):
         raise OrdinaryMulticomponentRuntimeError("recovery component admission requires exact cycle READ material")
+    component_evidence_set = _component_evidence_set_from_bindables([bindable])
     analyst_input = component_analyst_input_packet(
         run_id=run_kernel.state.run_id,
         request_id=run_kernel.state.request_id,
         accepted_contract=accepted,
         component_ref=component_ref,
-        evidence_input=_evidence_input(bindable),
+        component_evidence_set=component_evidence_set,
     )
     evaluation_key = f"{component_id}@{exact_cycle_ref['cycle_id']}"
     role_kwargs = _role_runtime_kwargs(runtime_scope)
@@ -4055,7 +4187,7 @@ def execute_searchos_recovery_component_admission_from_scope(
     observation, content_refs, coverage = _semantic_material(
         run_kernel=run_kernel,
         component_ref=component_ref,
-        bindable=bindable,
+        component_evidence_set=component_evidence_set,
         analyst_artifact=analyst_artifact,
         query=str(runtime_scope.get("query") or ""),
         searchos_recovery_cycle_ref=exact_cycle_ref,
@@ -4065,6 +4197,7 @@ def execute_searchos_recovery_component_admission_from_scope(
         component_id=component_id,
         analyst_artifact=analyst_artifact,
         analyst_input_packet=analyst_input,
+        component_evidence_set=component_evidence_set,
         semantic_observation=observation,
         sanitized_content_references=content_refs,
         component_coverage_record=coverage,
