@@ -151,6 +151,14 @@ def _role_artifact(
     *,
     logical_evaluation_key: str | None = None,
 ) -> dict:
+    if role == ROLE_CROSS_COMPONENT_ANALYST and "self_audit" not in semantic_output:
+        semantic_output = {
+            **semantic_output,
+            "self_audit": (
+                "The offline fixture stays within its supplied current components "
+                "and retains its declared caveats, nonclaims, and blockers."
+            ),
+        }
     core = {
         "schema_version": "multicomponent_semantic_role_artifact_v1",
         "role": role,

@@ -401,7 +401,7 @@ def _component_evidence_set_from_bindables(
         raise OrdinaryMulticomponentRuntimeError(str(exc)) from exc
 
 
-def _component_evidence_set_is_searchos_read_custody(
+def component_analyst_evidence_set_is_searchos_read_custody(
     component_evidence_set: Mapping[str, Any],
 ) -> bool:
     try:
@@ -443,7 +443,7 @@ def _note_bounded_product_stage(
         cap_policy.note_product_stage(stage)
 
 
-def _semantic_material(
+def build_component_analyst_admission_semantic_material(
     *,
     run_kernel: Any,
     component_ref: Mapping[str, Any],
@@ -2925,7 +2925,7 @@ def _consume_scheduler_selected_artifact(
         )
         if not component_evidence_set:
             raise OrdinaryMulticomponentRuntimeError("scheduler-selected component lost its evidence binding")
-        observation, content_refs, coverage = _semantic_material(
+        observation, content_refs, coverage = build_component_analyst_admission_semantic_material(
             run_kernel=run_kernel,
             component_ref=component_ref,
             component_evidence_set=component_evidence_set,
@@ -2969,7 +2969,7 @@ def _consume_scheduler_selected_artifact(
             specialist_need_handoff=specialist_handoff or None,
             logical_evaluation_key=evaluation_key or None,
             allow_searchos_semantic_requirement_historical_gap_exception=(
-                _component_evidence_set_is_searchos_read_custody(
+                component_analyst_evidence_set_is_searchos_read_custody(
                     component_evidence_set
                 )
             ),
@@ -3830,7 +3830,7 @@ def _execute_first_pass_n1_component_analyst(
         run_kernel=run_kernel,
         artifact=analyst_artifact,
     )
-    observation, content_refs, coverage = _semantic_material(
+    observation, content_refs, coverage = build_component_analyst_admission_semantic_material(
         run_kernel=run_kernel,
         component_ref=component_ref,
         component_evidence_set=component_evidence_set,
@@ -3856,7 +3856,7 @@ def _execute_first_pass_n1_component_analyst(
         component_coverage_record=coverage,
         logical_evaluation_key=component_id,
         allow_searchos_semantic_requirement_historical_gap_exception=(
-            _component_evidence_set_is_searchos_read_custody(
+            component_analyst_evidence_set_is_searchos_read_custody(
                 component_evidence_set
             )
         ),
@@ -4184,7 +4184,7 @@ def execute_searchos_recovery_component_admission_from_scope(
         searchos_recovery_cycle_ref=exact_cycle_ref,
         **role_kwargs,
     )
-    observation, content_refs, coverage = _semantic_material(
+    observation, content_refs, coverage = build_component_analyst_admission_semantic_material(
         run_kernel=run_kernel,
         component_ref=component_ref,
         component_evidence_set=component_evidence_set,
@@ -4307,6 +4307,8 @@ __all__ = [
     "OrdinaryMulticomponentRuntimeError",
     "OrdinaryMulticomponentStatus",
     "authorize_searched_premise_recovery_from_analyst_proposals",
+    "build_component_analyst_admission_semantic_material",
+    "component_analyst_evidence_set_is_searchos_read_custody",
     "execute_ordinary_semantic_or_multicomponent_handoff_from_scope",
     "execute_searchos_recovery_component_admission_from_scope",
     "execute_searchos_recovery_graph_reproof_from_scope",

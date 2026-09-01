@@ -113,13 +113,17 @@ ROLE_SYSTEM_PROMPTS = {
         "relationships and synthesis from the supplied current component refs, "
         "deterministic component_01/component_02/... quantitative source aliases, "
         "quantitative_specialist_proposal_contract, and request directive. Return "
-        "one top-level object containing synthesis_proposals, optional "
+        "one top-level object containing synthesis_proposals, one bounded "
+        "nonempty self_audit, optional "
         "query_resolution_proposals, and, only when needed, "
         "one sibling specialist_need_proposal conforming exactly to the supplied "
         "contract. The Specialist proposal is not nested inside a synthesis "
         "proposal. Include the supplied specialist_need_proposal_v1 "
         "schema_version; do not omit, default, alias, or add proposal fields. "
         "Copy all supplied fixed capability and schema values exactly. "
+        "synthesis_proposals may be empty when the supplied current components "
+        "establish no lawful relationship proposal; do not invent a replacement "
+        "relationship or infer whole-answer consequences from an empty array. "
         "Each synthesis proposal has a "
         "local synthesis_key, claim_text, relationship_type, component_inputs, "
         "synthesis_inputs, caveats, nonclaims, and blockers. You may add one "
@@ -132,7 +136,11 @@ ROLE_SYSTEM_PROMPTS = {
         "only when synthesis cannot be validated without it and optional only for "
         "nonessential precision or explanation. Omit the Specialist proposal when "
         "the supplied contract cannot be satisfied. Do not validate or admit your "
-        "proposals, authorize search, dispatch research, or write final prose."
+        "proposals, authorize search, dispatch research, or write final prose. "
+        "self_audit must check whether you overreached beyond the exact admitted "
+        "components, invented an unsupported relationship, dropped a material "
+        "caveat, nonclaim, or blocker, or claimed more than those components "
+        "establish. It is semantic material, not approval or runtime authority."
     ),
     ROLE_SYNTHESIS_DPRIME: (
         "You are ScryRaven's synthesis D-prime. Validate only the nominated "
@@ -622,8 +630,26 @@ def _normalize_semantic_output(
             "blockers": _text_list(payload.get("blockers")),
         }
     if role == ROLE_CROSS_COMPONENT_ANALYST:
+        selective = output_schema_variant == SELECTIVE_CROSS_COMPONENT_SCHEMA
+        raw_self_audit = payload.get("self_audit")
+        self_audit = (
+            _clean_text(raw_self_audit, limit=1200)
+            if isinstance(raw_self_audit, str)
+            else None
+        )
+        if not selective and not self_audit:
+            raise MulticomponentRoleRuntimeError(
+                "Cross-Component Analyst requires self_audit"
+            )
+        raw_proposals = payload.get("synthesis_proposals")
+        if isinstance(raw_proposals, str | bytes) or not isinstance(
+            raw_proposals, Sequence
+        ):
+            raise MulticomponentRoleRuntimeError(
+                "Cross-Component Analyst synthesis_proposals must be an array"
+            )
         proposals: list[dict[str, Any]] = []
-        for raw_proposal in _safe_sequence(payload.get("synthesis_proposals")):
+        for raw_proposal in raw_proposals:
             proposal = _safe_mapping(raw_proposal)
             key = _local_key(proposal.get("synthesis_key"))
             claim_text = _clean_text(proposal.get("claim_text"), limit=1200)
@@ -692,15 +718,20 @@ def _normalize_semantic_output(
             else:
                 normalized_proposal["synthesis_inputs"] = synthesis_inputs
             proposals.append(normalized_proposal)
-        if not 1 <= len(proposals) <= 4:
+        if (selective and not 1 <= len(proposals) <= 4) or (
+            not selective and len(proposals) > 4
+        ):
             raise MulticomponentRoleRuntimeError(
-                "Cross-Component Analyst must propose one to four synthesis nodes"
+                "Cross-Component Analyst proposal count is outside its licensed bound"
             )
         if len({item["synthesis_key"] for item in proposals}) != len(proposals):
             raise MulticomponentRoleRuntimeError("duplicate synthesis_key")
         return _with_specialist_need(
             _with_query_resolution_candidates(
-                {"synthesis_proposals": proposals},
+                {
+                    "synthesis_proposals": proposals,
+                    **({"self_audit": self_audit} if not selective else {}),
+                },
                 payload,
             ),
             payload,
