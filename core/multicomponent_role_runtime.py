@@ -992,8 +992,15 @@ def _bounded_worker_usage_facts(transport_result: Any) -> dict[str, Any]:
 
 def execute_prepared_multicomponent_transport(
     prepared: PreparedMulticomponentTransportCall,
+    *,
+    raise_on_validation_exception: bool = False,
 ) -> SafeMulticomponentWorkerResult:
-    """Execute transport plus pure parsing/normalization with bounded failures."""
+    """Execute transport plus pure parsing/normalization with bounded failures.
+
+    Scheduler workers retain the default bounded failure result. The opt-in
+    exception path exists only so an unscheduled direct caller can preserve its
+    established detailed fail-closed errors while reusing this worker channel.
+    """
 
     from core.multicomponent_graph_scheduling import (
         MULTICOMPONENT_SAFE_WORKER_RESULT_SCHEMA_VERSION,
@@ -1079,6 +1086,8 @@ def execute_prepared_multicomponent_transport(
     except RunCapExceeded:
         raise
     except Exception as exc:
+        if raise_on_validation_exception:
+            raise
         normalized = None
         failure_kind = (
             "output_validation_failure"
@@ -1347,8 +1356,17 @@ def execute_multicomponent_role_call(
     lease_id: str | None = None,
     searchos_recovery_cycle_ref: Mapping[str, Any] | None = None,
     effort: str = "medium",
+    pre_reduction_worker_result_check: (
+        Callable[[SafeMulticomponentWorkerResult], None] | None
+    ) = None,
 ) -> dict[str, Any]:
-    """Authorize, execute, parse, bind, and reduce one semantic role call."""
+    """Authorize, execute, parse, bind, and reduce one semantic role call.
+
+    The optional worker-result check is an unscheduled-only fail-closed seam.
+    It receives the existing safe transient result before any retained semantic
+    role artifact is built or reduced. Default scheduler and recovery behaviors
+    do not use this seam and remain unchanged.
+    """
 
     from core.strict_one_shot_model_transport import (
         StrictOneShotModelTransportResult,
@@ -1392,6 +1410,14 @@ def execute_multicomponent_role_call(
         and not bool(searchos_recovery_cycle_ref)
     )
     recovery_active = bool(searchos_recovery_cycle_ref)
+    if pre_reduction_worker_result_check is not None and (
+        not callable(pre_reduction_worker_result_check)
+        or scheduler_active
+        or recovery_active
+    ):
+        raise MulticomponentRoleRuntimeError(
+            "pre-reduction worker-result checks are limited to unscheduled role calls"
+        )
     if searchos_recovery_cycle_ref:
         if lease_id:
             raise MulticomponentRoleRuntimeError(
@@ -1436,46 +1462,96 @@ def execute_multicomponent_role_call(
     )
     from core.run_kernel import Observation, RunStageStatus
 
+    pre_reduction_check_failed = False
     try:
-        transport_result = strict_one_shot_transport(
-            json.dumps(safe_input, sort_keys=True),
-            system_prompt,
-            provider=canonical_provider,
-            model=model,
-            effort=effort,
-            require_json=True,
-            use_reasoning=use_reasoning,
-        )
-        if not isinstance(transport_result, StrictOneShotModelTransportResult):
-            raise MulticomponentRoleRuntimeError(
-                "strict one-shot transport returned an invalid result type"
+        if pre_reduction_worker_result_check is not None:
+            from core.multicomponent_graph_scheduling import (
+                MULTICOMPONENT_PREPARED_TRANSPORT_CALL_SCHEMA_VERSION,
             )
-        if (
-            normalize_canonical_model_provider(transport_result.canonical_provider)
-            != canonical_provider
-        ):
-            raise MulticomponentRoleRuntimeError("provider_identity_mismatch")
-        if transport_result.return_code != 0:
-            raise MulticomponentRoleRuntimeError("model_transport_failure")
-        semantic_output = _normalize_semantic_output(
-            normalized_role,
-            _parse_role_output(
-                transport_result.output_text,
+
+            # Scheduler lineage is honestly absent for this transient direct call.
+            # These empty fields are never reduced or retained as scheduler state.
+            prepared = PreparedMulticomponentTransportCall(
+                schema_version=MULTICOMPONENT_PREPARED_TRANSPORT_CALL_SCHEMA_VERSION,
+                batch_index=-1,
+                batch_id="",
+                batch_digest="",
+                work_id="",
+                work_digest="",
+                lease_id="",
+                lease_digest="",
+                action_id=str(action.action_id),
+                action_sequence=int(action.sequence),
+                role=normalized_role,
+                logical_evaluation_key=logical_evaluation_key,
+                input_packet=deepcopy(dict(safe_input)),
+                input_packet_digest=input_digest,
+                output_schema_variant=schema_variant,
+                provider=canonical_provider,
+                model=str(model or ""),
+                use_reasoning=bool(use_reasoning),
+                strict_one_shot_transport=strict_one_shot_transport,
                 clean_json_response=clean_json_response,
-            ),
-            output_schema_variant=schema_variant,
-        )
-        if normalized_role == ROLE_CROSS_COMPONENT_ANALYST:
-            semantic_output = _bind_cross_component_inputs_to_current_packet(
-                semantic_output,
-                input_packet=safe_input,
+                effort=str(effort or "medium"),
             )
+            worker_result = execute_prepared_multicomponent_transport(
+                prepared,
+                raise_on_validation_exception=True,
+            )
+            try:
+                pre_reduction_worker_result_check(worker_result)
+            except Exception:
+                pre_reduction_check_failed = True
+                raise
+            if worker_result.failure_kind:
+                raise MulticomponentRoleRuntimeError(worker_result.failure_kind)
+            semantic_output = deepcopy(
+                dict(worker_result.normalized_semantic_output or {})
+            )
+        else:
+            transport_result = strict_one_shot_transport(
+                json.dumps(safe_input, sort_keys=True),
+                system_prompt,
+                provider=canonical_provider,
+                model=model,
+                effort=effort,
+                require_json=True,
+                use_reasoning=use_reasoning,
+            )
+            if not isinstance(transport_result, StrictOneShotModelTransportResult):
+                raise MulticomponentRoleRuntimeError(
+                    "strict one-shot transport returned an invalid result type"
+                )
+            if (
+                normalize_canonical_model_provider(
+                    transport_result.canonical_provider
+                )
+                != canonical_provider
+            ):
+                raise MulticomponentRoleRuntimeError("provider_identity_mismatch")
+            if transport_result.return_code != 0:
+                raise MulticomponentRoleRuntimeError("model_transport_failure")
+            semantic_output = _normalize_semantic_output(
+                normalized_role,
+                _parse_role_output(
+                    transport_result.output_text,
+                    clean_json_response=clean_json_response,
+                ),
+                output_schema_variant=schema_variant,
+            )
+            if normalized_role == ROLE_CROSS_COMPONENT_ANALYST:
+                semantic_output = _bind_cross_component_inputs_to_current_packet(
+                    semantic_output,
+                    input_packet=safe_input,
+                )
     except RunCapExceeded:
         raise
     except Exception as exc:
         unscheduled_ordinary = not scheduler_active and not recovery_active
         if scheduler_active or recovery_active or unscheduled_ordinary:
-            if str(exc) == "provider_identity_mismatch":
+            if pre_reduction_check_failed:
+                failure_kind = "pre_reduction_worker_result_check_failed"
+            elif str(exc) == "provider_identity_mismatch":
                 failure_kind = "provider_identity_mismatch"
             elif str(exc) == "model_transport_failure":
                 failure_kind = "model_transport_failure"

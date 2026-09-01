@@ -33,6 +33,7 @@ from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
     ROLE_CROSS_COMPONENT_ANALYST,
     MulticomponentRoleRuntimeError,
+    SafeMulticomponentWorkerResult,
     execute_multicomponent_role_call,
     role_artifact_ref,
     safe_packet_digest,
@@ -56,6 +57,17 @@ _GRAPH_V1_STAGE = "multicomponent_component_work_graph_v1"
 
 class OrdinaryDirectSemanticCorridorError(ValueError):
     """Raised when the experimental direct corridor loses exact mechanics."""
+
+
+def _stop_on_unserviceable_direct_specialist_need(
+    result: SafeMulticomponentWorkerResult,
+) -> None:
+    """Acknowledge one explicit transient Specialist need without interpreting it."""
+
+    if result.specialist_need_proposal_present:
+        raise OrdinaryDirectSemanticCorridorError(
+            "direct corridor Specialist execution is not licensed/implemented"
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -743,6 +755,9 @@ def execute_ordinary_direct_semantic_corridor_with_context(
         "model": model,
         "use_reasoning": use_reasoning,
         "effort": effort,
+        "pre_reduction_worker_result_check": (
+            _stop_on_unserviceable_direct_specialist_need
+        ),
     }
     for component_ref in component_refs:
         component_id = str(component_ref["component_id"])

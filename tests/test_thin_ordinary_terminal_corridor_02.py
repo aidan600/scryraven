@@ -27,6 +27,7 @@ import pytest
 
 import core.component_work_graph_v1 as graph_runtime
 import core.multicomponent_graph_scheduling as scheduler_runtime
+import core.ordinary_direct_semantic_corridor as direct_runtime
 import core.ordinary_multicomponent_synthesis_runtime as ordinary_runtime
 from core.component_analyst_evidence_set import (
     build_component_analyst_evidence_set,
@@ -52,6 +53,7 @@ from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
     ROLE_CROSS_COMPONENT_ANALYST,
     ROLE_SYSTEM_PROMPTS,
+    SafeMulticomponentWorkerResult,
     safe_packet_digest,
 )
 from core.ordinary_direct_semantic_corridor import (
@@ -67,6 +69,10 @@ from core.run_kernel import (
     ObservationType,
     RunKernel,
     RunKernelTransitionError,
+)
+from core.specialist_graph_runtime import (
+    SPECIALIST_NEED_SCHEMA_VERSION,
+    validate_specialist_need_proposal_candidate,
 )
 from core.strict_one_shot_model_transport import (
     wrap_text_callable_as_strict_one_shot_transport,
@@ -245,6 +251,7 @@ def _semantic_transport(
     captured: list[dict[str, Any]],
     component_postures: Mapping[str, str] | None = None,
     component_two_first_only: bool = False,
+    specialist_need_target: tuple[str, str] | None = None,
 ) -> Any:
     postures = dict(component_postures or {})
 
@@ -269,26 +276,34 @@ def _semantic_transport(
             aliases = [str(item["local_evidence_alias"]) for item in packet["component_evidence_set"]["members"]]
             if component_id == "component-2" and component_two_first_only:
                 aliases = aliases[:1]
-            return json.dumps(
-                {
-                    "case_posture": "supported",
-                    "claim_text": "The exact supplied material supports its component.",
-                    "evidence_analysis": "The selected bounded material supports the claim.",
-                    "self_audit": "The component claim stays within selected evidence.",
-                    "supporting_evidence_aliases": aliases,
-                    "caveats": [],
-                    "nonclaims": [],
-                    "contradictions": [],
-                    "blockers": [],
-                }
-            )
+            output = {
+                "case_posture": "supported",
+                "claim_text": "The exact supplied material supports its component.",
+                "evidence_analysis": "The selected bounded material supports the claim.",
+                "self_audit": "The component claim stays within selected evidence.",
+                "supporting_evidence_aliases": aliases,
+                "caveats": [],
+                "nonclaims": [],
+                "contradictions": [],
+                "blockers": [],
+            }
+            if specialist_need_target == ("component", component_id):
+                output["specialist_need_proposal"] = _lawful_specialist_need(
+                    target_kind="component",
+                    target_key=component_id,
+                )
+            return json.dumps(output)
         if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_CROSS_COMPONENT_ANALYST]:
-            return json.dumps(
-                {
-                    "synthesis_proposals": cross_proposals,
-                    "self_audit": SELF_AUDIT,
-                }
-            )
+            output = {
+                "synthesis_proposals": cross_proposals,
+                "self_audit": SELF_AUDIT,
+            }
+            if specialist_need_target and specialist_need_target[0] == "synthesis":
+                output["specialist_need_proposal"] = _lawful_specialist_need(
+                    target_kind="synthesis",
+                    target_key=specialist_need_target[1],
+                )
+            return json.dumps(output)
         raise AssertionError(f"unexpected semantic role prompt: {system_prompt}")
 
     return wrap_text_callable_as_strict_one_shot_transport(
@@ -340,6 +355,7 @@ def _direct_result(
     captured: list[dict[str, Any]],
     component_postures: Mapping[str, str] | None = None,
     component_two_first_only: bool = False,
+    specialist_need_target: tuple[str, str] | None = None,
 ) -> Any:
     return execute_ordinary_direct_semantic_corridor_with_context(
         run_kernel=kernel,
@@ -354,6 +370,7 @@ def _direct_result(
             captured=captured,
             component_postures=component_postures,
             component_two_first_only=component_two_first_only,
+            specialist_need_target=specialist_need_target,
         ),
         clean_json_response=lambda value: value,
         provider="OpenAI",
@@ -395,6 +412,54 @@ def _one_relationship(component_ids: list[str]) -> list[dict[str, Any]]:
             "blockers": [],
         }
     ]
+
+
+def _lawful_specialist_need(
+    *,
+    target_kind: str,
+    target_key: str,
+) -> dict[str, Any]:
+    proposal = {
+        "schema_version": SPECIALIST_NEED_SCHEMA_VERSION,
+        "local_need_id": "direct-signal-need",
+        "capability_requirement": "bounded_test_capability",
+        "candidate_capability_hint": "specialist.test_signal",
+        "bounded_question": "Apply one bounded Specialist operation.",
+        "target": {
+            "target_kind": target_kind,
+            "target_key": target_key,
+        },
+        "posture": "required",
+        "input_schema_ref": "generic.specialist.input.v1",
+        "expected_output_schema_ref": "generic.specialist.output.v1",
+        "input_artifact_refs": [],
+        "assumptions": [],
+        "caveats": [],
+        "nonclaims": ["The proposal is not Specialist authority."],
+        "advisory_budget_posture": "one bounded unit",
+        "recursion_depth": 0,
+        "specialist_parent_ref": None,
+    }
+    assert validate_specialist_need_proposal_candidate(proposal) == proposal
+    return proposal
+
+
+def _capture_safe_worker_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[SafeMulticomponentWorkerResult]:
+    observed: list[SafeMulticomponentWorkerResult] = []
+    original = direct_runtime._stop_on_unserviceable_direct_specialist_need
+
+    def capture(result: SafeMulticomponentWorkerResult) -> None:
+        observed.append(result)
+        original(result)
+
+    monkeypatch.setattr(
+        direct_runtime,
+        "_stop_on_unserviceable_direct_specialist_need",
+        capture,
+    )
+    return observed
 
 
 def _assert_old_path_absent(kernel: RunKernel) -> None:
@@ -562,6 +627,150 @@ def test_n3_one_cross_call_receives_all_components_and_terminal_path_completes(
     assert terminal.author_handoff is not None
     assert len(author_calls) == 1
     _assert_author_mechanical_finalization(kernel, terminal)
+    _assert_old_path_absent(kernel)
+
+
+def test_component_specialist_need_stops_before_component_admission(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _forbid_old_path(monkeypatch)
+    observed = _capture_safe_worker_results(monkeypatch)
+    kernel, evidence_sets, _contract = _fixture(component_count=2)
+    captured: list[dict[str, Any]] = []
+
+    with pytest.raises(
+        OrdinaryDirectSemanticCorridorError,
+        match="direct corridor Specialist execution is not licensed/implemented",
+    ):
+        _direct_result(
+            kernel=kernel,
+            evidence_sets=evidence_sets,
+            cross_proposals=_one_relationship(["component-1", "component-2"]),
+            captured=captured,
+            specialist_need_target=("component", "component-2"),
+        )
+
+    signaled = [
+        result for result in observed if result.specialist_need_proposal_present
+    ]
+    assert len(signaled) == 1
+    assert isinstance(signaled[0], SafeMulticomponentWorkerResult)
+    assert signaled[0].role == ROLE_COMPONENT_ANALYST
+    assert signaled[0].logical_evaluation_key == "component-2"
+    assert signaled[0].specialist_need_proposal_candidate == (
+        _lawful_specialist_need(
+            target_kind="component",
+            target_key="component-2",
+        )
+    )
+    assert signaled[0].raw_prompt_retained is False
+    assert signaled[0].raw_model_response_retained is False
+    assert signaled[0].raw_provider_payload_retained is False
+
+    admission_projection = kernel.state.projections[
+        MULTICOMPONENT_COMPONENT_ADMISSION_STAGE
+    ]
+    assert [
+        item["component_id"]
+        for item in admission_projection["component_admission_refs"]
+    ] == ["component-1"]
+    failed_role_projection = kernel.state.projections[
+        f"multicomponent_role:{ROLE_COMPONENT_ANALYST}:component-2"
+    ]
+    assert failed_role_projection["schema_version"] == (
+        "multicomponent_semantic_role_failure_v1"
+    )
+    assert failed_role_projection["semantic_artifact_admitted"] is False
+    assert failed_role_projection["raw_model_response_retained"] is False
+    assert failed_role_projection["raw_provider_payload_retained"] is False
+    assert "semantic_output" not in failed_role_projection
+    assert "specialist_need_proposal" not in failed_role_projection
+    assert len(kernel.state.semantic_observation_admission_history) == 1
+    assert kernel.state.semantic_observation_admission_history[0][
+        "answer_component_id"
+    ] == "component-1"
+    assert len(kernel.state.component_coverage_history) == 1
+    assert kernel.state.component_coverage_history[0]["answer_component_id"] == (
+        "component-1"
+    )
+    assert [item["system_prompt"] for item in captured].count(
+        ROLE_SYSTEM_PROMPTS[ROLE_CROSS_COMPONENT_ANALYST]
+    ) == 0
+    assert not kernel.state.sufficiency_judgment_projection
+    assert not kernel.state.final_answer_packet
+    assert not kernel.state.author_observation
+    _assert_old_path_absent(kernel)
+
+
+def test_cross_specialist_need_stops_before_direct_sufficiency_consumption(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _forbid_old_path(monkeypatch)
+    observed = _capture_safe_worker_results(monkeypatch)
+    kernel, evidence_sets, _contract = _fixture(component_count=2)
+    captured: list[dict[str, Any]] = []
+
+    with pytest.raises(
+        OrdinaryDirectSemanticCorridorError,
+        match="direct corridor Specialist execution is not licensed/implemented",
+    ):
+        _direct_result(
+            kernel=kernel,
+            evidence_sets=evidence_sets,
+            cross_proposals=_one_relationship(["component-1", "component-2"]),
+            captured=captured,
+            specialist_need_target=("synthesis", "bounded_relation"),
+        )
+
+    signaled = [
+        result for result in observed if result.specialist_need_proposal_present
+    ]
+    assert len(signaled) == 1
+    assert isinstance(signaled[0], SafeMulticomponentWorkerResult)
+    assert signaled[0].role == ROLE_CROSS_COMPONENT_ANALYST
+    assert signaled[0].specialist_need_proposal_candidate == (
+        _lawful_specialist_need(
+            target_kind="synthesis",
+            target_key="bounded_relation",
+        )
+    )
+    assert signaled[0].normalized_semantic_output == {
+        "synthesis_proposals": _one_relationship(
+            ["component-1", "component-2"]
+        ),
+        "self_audit": SELF_AUDIT,
+    }
+    assert signaled[0].raw_prompt_retained is False
+    assert signaled[0].raw_model_response_retained is False
+    assert signaled[0].raw_provider_payload_retained is False
+
+    admissions = kernel.state.projections[
+        MULTICOMPONENT_COMPONENT_ADMISSION_STAGE
+    ]["component_admission_refs"]
+    assert [item["component_id"] for item in admissions] == [
+        "component-1",
+        "component-2",
+    ]
+    assert all(item["current"] is True for item in admissions)
+    assert all(item["stale"] is False for item in admissions)
+    failed_role_projection = kernel.state.projections[
+        f"multicomponent_role:{ROLE_CROSS_COMPONENT_ANALYST}:"
+        "thin-ordinary-direct-cross"
+    ]
+    assert failed_role_projection["schema_version"] == (
+        "multicomponent_semantic_role_failure_v1"
+    )
+    assert failed_role_projection["semantic_artifact_admitted"] is False
+    assert failed_role_projection["raw_model_response_retained"] is False
+    assert failed_role_projection["raw_provider_payload_retained"] is False
+    assert "semantic_output" not in failed_role_projection
+    assert "specialist_need_proposal" not in failed_role_projection
+    assert [item["system_prompt"] for item in captured].count(
+        ROLE_SYSTEM_PROMPTS[ROLE_CROSS_COMPONENT_ANALYST]
+    ) == 1
+    assert not kernel.state.sufficiency_judgment_projection
+    assert not kernel.state.final_answer_packet
+    assert not kernel.state.author_observation
     _assert_old_path_absent(kernel)
 
 
