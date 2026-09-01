@@ -21,10 +21,12 @@ from core.component_analyst_evidence_set import (
 )
 from core.component_work_graph_v1 import MAX_SYNTHESIS_DEPTH
 from core.multicomponent_component_admission import (
-    MULTICOMPONENT_COMPONENT_ADMISSION_OWNER,
     MULTICOMPONENT_COMPONENT_ADMISSION_STAGE,
+    SUPPORTING_COMPONENT_ADMISSION_STATUSES,
+    MulticomponentComponentAdmissionError,
     component_analyst_input_packet,
     execute_multicomponent_component_admission,
+    validate_current_multicomponent_component_admissions,
 )
 from core.multicomponent_graph_scheduling import (
     canonical_multicomponent_contract_ref,
@@ -32,7 +34,6 @@ from core.multicomponent_graph_scheduling import (
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
     ROLE_CROSS_COMPONENT_ANALYST,
-    MulticomponentRoleRuntimeError,
     SafeMulticomponentWorkerResult,
     execute_multicomponent_role_call,
     role_artifact_ref,
@@ -267,160 +268,34 @@ def _current_component_admissions(
     projection = _safe_mapping(
         run_kernel.state.projections.get(MULTICOMPONENT_COMPONENT_ADMISSION_STAGE)
     )
-    refs = [
-        deepcopy(dict(item))
-        for item in projection.get("component_admission_refs") or ()
-        if isinstance(item, Mapping)
-    ]
-    projection_core = {
-        key: deepcopy(value)
-        for key, value in projection.items()
-        if key != "projection_digest"
-    }
-    expected_projection_fields = {
-        "schema_version",
-        "owner",
-        "canonical_state",
-        "trace_only",
-        "storage_only",
-        "run_id",
-        "request_id",
-        "accepted_contract_version",
-        "accepted_contract_digest",
-        "component_admission_refs",
-        "component_count",
-        "admitted_component_count",
-        "blocked_component_count",
-        "logical_component_analyst_evaluations",
-        "physical_component_analyst_calls",
-        "latest_action_id",
-        "projection_digest",
-    }
-    if (
-        set(projection) != expected_projection_fields
-        or projection.get("schema_version")
-        != "multicomponent_component_admission_projection_v1"
-        or projection.get("owner") != MULTICOMPONENT_COMPONENT_ADMISSION_OWNER
-        or projection.get("trace_only") is not False
-        or projection.get("storage_only") is not False
-        or projection.get("projection_digest")
-        != safe_packet_digest(projection_core)
-        or projection.get("component_count") != len(refs)
-        or projection.get("admitted_component_count")
-        != sum(
-            item.get("admission_status")
-            in {"admitted", "admitted_with_caveats"}
-            for item in refs
+    try:
+        validated = validate_current_multicomponent_component_admissions(
+            accepted_contract=contract,
+            component_admission_projection=projection,
+            role_projections=run_kernel.state.projections,
+            expected_run_id=run_kernel.state.run_id,
+            expected_request_id=run_kernel.state.request_id,
+            expected_logical_evaluation_keys={
+                str(item["component_id"]): str(item["component_id"])
+                for item in component_refs
+            },
+            expected_component_analyst_role=ROLE_COMPONENT_ANALYST,
         )
-        or projection.get("blocked_component_count")
-        != sum(
-            item.get("admission_status")
-            not in {"admitted", "admitted_with_caveats"}
-            for item in refs
-        )
-        or projection.get("logical_component_analyst_evaluations")
-        != sum(
-            int(item.get("logical_component_analyst_evaluations") or 0)
-            for item in refs
-        )
-        or projection.get("physical_component_analyst_calls")
-        != sum(
-            int(item.get("physical_component_analyst_calls") or 0)
-            for item in refs
-        )
-        or not refs
-        or projection.get("latest_action_id") != refs[-1].get("action_id")
-    ):
+    except MulticomponentComponentAdmissionError as exc:
+        if str(exc).startswith("component admission projection"):
+            raise OrdinaryDirectSemanticCorridorError(
+                "direct corridor component admission projection lost canonical integrity"
+            ) from exc
         raise OrdinaryDirectSemanticCorridorError(
-            "direct corridor component admission projection lost canonical integrity"
-        )
-    component_ids = [str(item.get("component_id") or "") for item in component_refs]
-    by_id = {str(item.get("component_id") or ""): item for item in refs}
-    if (
-        projection.get("canonical_state") is not True
-        or projection.get("run_id") != run_kernel.state.run_id
-        or projection.get("request_id") != run_kernel.state.request_id
-        or projection.get("accepted_contract_version")
-        != contract.get("accepted_contract_version")
-        or projection.get("accepted_contract_digest")
-        != contract.get("accepted_contract_digest")
-        or len(refs) != len(component_refs)
-        or set(by_id) != set(component_ids)
-    ):
+            "direct corridor component admission is stale or incomplete"
+        ) from exc
+    if [item.get("component_id") for item in validated] != [
+        item.get("component_id") for item in component_refs
+    ]:
         raise OrdinaryDirectSemanticCorridorError(
             "direct corridor component admissions are not the exact current set"
         )
-    ordered: list[dict[str, Any]] = []
-    canonical_terminal_statuses = {
-        "admitted",
-        "admitted_with_caveats",
-        "unsupported",
-        "blocked",
-    }
-    support_bearing_statuses = {"admitted", "admitted_with_caveats"}
-    support_ref_fields = (
-        "admitted_claim_ref",
-        "semantic_observation_ref",
-        "component_coverage_ref",
-    )
-    for component in component_refs:
-        component_id = str(component["component_id"])
-        admission = by_id[component_id]
-        admission_status = admission.get("admission_status")
-        case_ref = admission.get("component_analyst_case_ref")
-        completed_case = _safe_mapping(
-            run_kernel.state.projections.get(
-                f"multicomponent_role:{ROLE_COMPONENT_ANALYST}:{component_id}"
-            )
-        )
-        try:
-            expected_case_ref = role_artifact_ref(completed_case)
-        except MulticomponentRoleRuntimeError:
-            expected_case_ref = {}
-        support_refs_are_mappings = all(
-            field in admission and isinstance(admission.get(field), Mapping)
-            for field in support_ref_fields
-        )
-        support_refs = tuple(
-            _safe_mapping(admission.get(field)) for field in support_ref_fields
-        )
-        if (
-            admission.get("schema_version")
-            != "multicomponent_component_admission_ref_v1"
-            or admission.get("owner") != MULTICOMPONENT_COMPONENT_ADMISSION_OWNER
-            or admission.get("canonical_state") is not True
-            or admission.get("run_id") != run_kernel.state.run_id
-            or admission.get("request_id") != run_kernel.state.request_id
-            or admission.get("accepted_contract_version")
-            != contract.get("accepted_contract_version")
-            or admission.get("accepted_contract_digest")
-            != contract.get("accepted_contract_digest")
-            or admission.get("component_id") != component_id
-            or admission.get("logical_evaluation_key") != component_id
-            or admission.get("component_revision")
-            != component.get("component_revision")
-            or admission.get("component_digest") != component.get("component_digest")
-            or admission_status not in canonical_terminal_statuses
-            or admission.get("current") is not True
-            or admission.get("stale") is not False
-            or not isinstance(case_ref, Mapping)
-            or not case_ref
-            or dict(case_ref) != expected_case_ref
-            or not support_refs_are_mappings
-            or (
-                admission_status in support_bearing_statuses
-                and not all(support_refs)
-            )
-            or (
-                admission_status not in support_bearing_statuses
-                and any(support_refs)
-            )
-        ):
-            raise OrdinaryDirectSemanticCorridorError(
-                f"direct corridor component admission is stale or incomplete: {component_id}"
-            )
-        ordered.append(admission)
-    return ordered
+    return [deepcopy(item) for item in validated]
 
 
 def _admitted_component_view(
@@ -489,7 +364,7 @@ def _build_direct_cross_input_packet(
     )
     if any(
         admission.get("admission_status")
-        not in {"admitted", "admitted_with_caveats"}
+        not in SUPPORTING_COMPONENT_ADMISSION_STATUSES
         for admission in admissions
     ):
         raise OrdinaryDirectSemanticCorridorError(
@@ -651,7 +526,7 @@ def _validate_direct_cross_result_binding(
     )
     if any(
         admission.get("admission_status")
-        not in {"admitted", "admitted_with_caveats"}
+        not in SUPPORTING_COMPONENT_ADMISSION_STATUSES
         for admission in admissions
     ):
         raise OrdinaryDirectSemanticCorridorError(
@@ -817,7 +692,7 @@ def execute_ordinary_direct_semantic_corridor_with_context(
         )
     if any(
         admission.get("admission_status")
-        not in {"admitted", "admitted_with_caveats"}
+        not in SUPPORTING_COMPONENT_ADMISSION_STATUSES
         for admission in current_admissions
     ):
         return OrdinaryDirectSemanticCorridorResult(
@@ -942,7 +817,8 @@ def _reprove_direct_semantic_result(
             )
 
     all_supporting = all(
-        item.get("admission_status") in {"admitted", "admitted_with_caveats"}
+        item.get("admission_status")
+        in SUPPORTING_COMPONENT_ADMISSION_STATUSES
         for item in admissions
     )
     cross_artifact: dict[str, Any] | None = None

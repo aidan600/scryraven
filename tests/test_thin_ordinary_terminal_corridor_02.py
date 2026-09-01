@@ -33,6 +33,7 @@ from core.component_analyst_evidence_set import (
     build_component_analyst_evidence_set,
 )
 from core.direct_semantic_sufficiency_consumption_runtime import (
+    DirectSemanticSufficiencyConsumptionError,
     build_direct_semantic_sufficiency_consumption,
     direct_semantic_provenance_envelope_digest,
     direct_semantic_sufficiency_consumption_digest,
@@ -48,9 +49,11 @@ from core.evidence_ledger import (
 from core.multicomponent_component_admission import (
     MULTICOMPONENT_COMPONENT_ADMISSION_STAGE,
     component_analyst_input_packet,
+    validate_current_multicomponent_component_admissions,
 )
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
+    ROLE_COMPONENT_ANALYST_RESUME,
     ROLE_CROSS_COMPONENT_ANALYST,
     ROLE_SYSTEM_PROMPTS,
     SafeMulticomponentWorkerResult,
@@ -630,6 +633,102 @@ def test_n3_one_cross_call_receives_all_components_and_terminal_path_completes(
     _assert_old_path_absent(kernel)
 
 
+def test_shared_component_admission_validator_accepts_support_and_non_support(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _forbid_old_path(monkeypatch)
+    kernel, evidence_sets, contract = _fixture(component_count=2)
+    direct = _direct_result(
+        kernel=kernel,
+        evidence_sets=evidence_sets,
+        cross_proposals=[],
+        captured=[],
+        component_postures={"component-2": "unsupported"},
+    )
+    projection = kernel.state.projections[
+        MULTICOMPONENT_COMPONENT_ADMISSION_STAGE
+    ]
+
+    validated = validate_current_multicomponent_component_admissions(
+        accepted_contract=contract,
+        component_admission_projection=projection,
+        role_projections=kernel.state.projections,
+        expected_run_id=kernel.state.run_id,
+        expected_request_id=kernel.state.request_id,
+        expected_logical_evaluation_keys={
+            "component-1": "component-1",
+            "component-2": "component-2",
+        },
+    )
+
+    assert list(validated) == projection["component_admission_refs"]
+    assert tuple(validated) == direct.component_admission_refs
+    assert direct.cross_artifact is None
+    assert direct.cross_input_packet is None
+    assert all(
+        validated[0][field]
+        for field in (
+            "admitted_claim_ref",
+            "semantic_observation_ref",
+            "component_coverage_ref",
+        )
+    )
+    assert validated[1]["admission_status"] == "unsupported"
+    assert validated[1]["component_analyst_case_ref"]
+    assert all(
+        validated[1][field] == {}
+        for field in (
+            "admitted_claim_ref",
+            "semantic_observation_ref",
+            "component_coverage_ref",
+        )
+    )
+    _assert_old_path_absent(kernel)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "evaluation_count"),
+    (
+        ("artifact_id", 7, 1),
+        ("role", ROLE_COMPONENT_ANALYST_RESUME, 2),
+    ),
+)
+def test_direct_sufficiency_shared_admission_validation_preserves_strict_case_contract(
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    value: Any,
+    evaluation_count: int,
+) -> None:
+    _forbid_old_path(monkeypatch)
+    kernel, evidence_sets, contract = _fixture(component_count=1)
+    direct = _direct_result(
+        kernel=kernel,
+        evidence_sets=evidence_sets,
+        cross_proposals=[],
+        captured=[],
+    )
+    admission = deepcopy(direct.component_admission_refs[0])
+    case_ref = deepcopy(admission["component_analyst_case_ref"])
+    case_ref[field] = value
+    admission["component_analyst_case_ref"] = case_ref
+    admission["analyst_finding_ref"] = deepcopy(case_ref)
+    admission["logical_component_analyst_evaluations"] = evaluation_count
+    admission["physical_component_analyst_calls"] = evaluation_count
+
+    with pytest.raises(
+        DirectSemanticSufficiencyConsumptionError,
+        match="not exact current canonical state",
+    ):
+        build_direct_semantic_sufficiency_consumption(
+            accepted_contract=contract,
+            component_admission_refs=[admission],
+            cross_component_artifact=None,
+            requested_synthesis_directive="",
+        )
+
+    _assert_old_path_absent(kernel)
+
+
 def test_component_specialist_need_stops_before_component_admission(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1012,6 +1111,81 @@ def test_public_sufficiency_handoff_rejects_forged_admission_projection_surface(
         )
 
     assert not kernel.state.sufficiency_judgment_projection
+    _assert_old_path_absent(kernel)
+
+
+def test_public_sufficiency_handoff_rejects_wrong_current_analyst_case_binding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _forbid_old_path(monkeypatch)
+    kernel, evidence_sets, contract = _fixture(component_count=2)
+    direct = _direct_result(
+        kernel=kernel,
+        evidence_sets=evidence_sets,
+        cross_proposals=_one_relationship(["component-1", "component-2"]),
+        captured=[],
+    )
+    consumption = build_direct_semantic_sufficiency_consumption(
+        accepted_contract=contract,
+        component_admission_refs=direct.component_admission_refs,
+        cross_component_artifact=direct.cross_artifact,
+        requested_synthesis_directive=DIRECTIVE,
+    )
+    projection = deepcopy(
+        kernel.state.projections[MULTICOMPONENT_COMPONENT_ADMISSION_STAGE]
+    )
+    forged_case_ref = deepcopy(
+        projection["component_admission_refs"][0][
+            "component_analyst_case_ref"
+        ]
+    )
+    forged_case_ref["artifact_digest"] = "0" * 64
+    projection["component_admission_refs"][0][
+        "component_analyst_case_ref"
+    ] = forged_case_ref
+    projection["component_admission_refs"][0]["analyst_finding_ref"] = deepcopy(
+        forged_case_ref
+    )
+    projection["projection_digest"] = safe_packet_digest(
+        {
+            key: value
+            for key, value in projection.items()
+            if key != "projection_digest"
+        }
+    )
+    kernel.state.projections[
+        MULTICOMPONENT_COMPONENT_ADMISSION_STAGE
+    ] = projection
+    scope = _runtime_scope()
+    scope.update(
+        {
+            "evidence_ledger_projection": (
+                kernel.state.evidence_ledger.to_projection().to_dict()
+            ),
+            "run_contract_projection": deepcopy(
+                kernel.state.run_contract_projection
+            ),
+            "answer_contract_projection": deepcopy(contract),
+            "final_top_evidence": [],
+            "author_evidence": [],
+            "unique_source_urls": {},
+            "direct_semantic_consumption": consumption,
+        }
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="current component admission authority",
+    ):
+        execute_sufficiency_judgment_handoff_from_scope(
+            kernel,
+            scope,
+            smart_model_enabled=False,
+        )
+
+    assert not kernel.state.sufficiency_judgment_projection
+    assert not kernel.state.final_answer_packet
+    assert not kernel.state.author_observation
     _assert_old_path_absent(kernel)
 
 

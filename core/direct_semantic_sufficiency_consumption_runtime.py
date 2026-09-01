@@ -13,12 +13,16 @@ from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from typing import Any
 
+from core.multicomponent_component_admission import (
+    SUPPORTING_COMPONENT_ADMISSION_STATUSES,
+    MulticomponentComponentAdmissionError,
+    validate_current_multicomponent_component_admissions,
+)
 from core.multicomponent_graph_scheduling import (
     canonical_multicomponent_contract_ref,
 )
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
-    ROLE_COMPONENT_ANALYST_RESUME,
     ROLE_CROSS_COMPONENT_ANALYST,
     role_artifact_ref,
     safe_packet_digest,
@@ -28,42 +32,6 @@ from core.multicomponent_role_runtime import (
 DIRECT_SEMANTIC_SUFFICIENCY_CONSUMPTION_SCHEMA_VERSION = "direct_semantic_sufficiency_consumption_v1"
 DIRECT_SEMANTIC_PROVENANCE_ENVELOPE_SCHEMA_VERSION = "direct_semantic_sufficiency_provenance_envelope_v1"
 
-_CANONICAL_TERMINAL_ADMISSION_STATUSES = frozenset(
-    {
-        "admitted",
-        "admitted_with_caveats",
-        "unsupported",
-        "blocked",
-    }
-)
-_MULTICOMPONENT_COMPONENT_ADMISSION_OWNER = "RunKernel.MulticomponentComponentAdmission"
-_MULTICOMPONENT_COMPONENT_ADMISSION_PROJECTION_FIELDS = frozenset(
-    {
-        "schema_version",
-        "owner",
-        "canonical_state",
-        "trace_only",
-        "storage_only",
-        "run_id",
-        "request_id",
-        "accepted_contract_version",
-        "accepted_contract_digest",
-        "component_admission_refs",
-        "component_count",
-        "admitted_component_count",
-        "blocked_component_count",
-        "logical_component_analyst_evaluations",
-        "physical_component_analyst_calls",
-        "latest_action_id",
-        "projection_digest",
-    }
-)
-_SUPPORTING_ADMISSION_STATUSES = frozenset({"admitted", "admitted_with_caveats"})
-_SUPPORT_REF_FIELDS = (
-    "admitted_claim_ref",
-    "semantic_observation_ref",
-    "component_coverage_ref",
-)
 _LOCAL_SYNTHESIS_KEY = re.compile(r"[A-Za-z][A-Za-z0-9_-]{0,39}\Z")
 
 
@@ -193,133 +161,6 @@ def _validate_contract(
             "direct Sufficiency consumption requires one exact accepted contract"
         )
     return contract, component_refs, contract_ref
-
-
-def _validate_analyst_case_ref(
-    case_ref: Mapping[str, Any],
-    *,
-    run_id: str,
-    request_id: str,
-    logical_evaluation_key: str,
-) -> None:
-    action_ref = _mapping(case_ref.get("authorized_action_ref"))
-    if (
-        case_ref.get("schema_version") != "multicomponent_semantic_role_artifact_v1"
-        or case_ref.get("role") not in {ROLE_COMPONENT_ANALYST, ROLE_COMPONENT_ANALYST_RESUME}
-        or case_ref.get("run_id") != run_id
-        or case_ref.get("request_id") != request_id
-        or case_ref.get("logical_evaluation_key") != logical_evaluation_key
-        or case_ref.get("logical_evaluations") != 1
-        or case_ref.get("physical_calls") != 1
-        or not _clean_text(case_ref.get("artifact_id"), limit=180)
-        or not _clean_text(case_ref.get("artifact_digest"), limit=180)
-        or not _clean_text(case_ref.get("input_packet_digest"), limit=180)
-        or not _clean_text(action_ref.get("action_id"), limit=180)
-        or not _clean_text(action_ref.get("observation_type"), limit=180)
-    ):
-        raise DirectSemanticSufficiencyConsumptionError("component admission has an invalid Component Analyst case ref")
-
-
-def validate_direct_component_admission_refs(
-    *,
-    accepted_contract: Mapping[str, Any],
-    component_admission_refs: Sequence[Mapping[str, Any]],
-) -> tuple[dict[str, Any], ...]:
-    """Validate exact order and terminal mechanics of canonical admission refs."""
-
-    contract, component_refs, _contract_ref = _validate_contract(accepted_contract)
-    admissions = _mapping_list(
-        component_admission_refs,
-        field="component_admission_refs",
-    )
-    if len(admissions) != len(component_refs):
-        raise DirectSemanticSufficiencyConsumptionError(
-            "component admissions do not match accepted component cardinality"
-        )
-
-    run_id = str(contract["run_id"])
-    request_id = str(contract["request_id"])
-    for component, admission in zip(component_refs, admissions, strict=True):
-        component_id = str(component["component_id"])
-        status = admission.get("admission_status")
-        case_ref = _mapping(admission.get("component_analyst_case_ref"))
-        support_refs_are_mappings = all(
-            field in admission and isinstance(admission.get(field), Mapping) for field in _SUPPORT_REF_FIELDS
-        )
-        support_refs = tuple(_mapping(admission.get(field)) for field in _SUPPORT_REF_FIELDS)
-        if (
-            admission.get("schema_version") != "multicomponent_component_admission_ref_v1"
-            or admission.get("owner") != _MULTICOMPONENT_COMPONENT_ADMISSION_OWNER
-            or admission.get("canonical_state") is not True
-            or admission.get("run_id") != run_id
-            or admission.get("request_id") != request_id
-            or admission.get("accepted_contract_version") != contract.get("accepted_contract_version")
-            or admission.get("accepted_contract_digest") != contract.get("accepted_contract_digest")
-            or admission.get("component_id") != component_id
-            or admission.get("logical_evaluation_key") != component_id
-            or admission.get("component_revision") != component.get("component_revision")
-            or admission.get("component_digest") != component.get("component_digest")
-            or status not in _CANONICAL_TERMINAL_ADMISSION_STATUSES
-            or admission.get("current") is not True
-            or admission.get("stale") is not False
-            or not case_ref
-            or not support_refs_are_mappings
-            or (status in _SUPPORTING_ADMISSION_STATUSES and not all(support_refs))
-            or (status not in _SUPPORTING_ADMISSION_STATUSES and any(support_refs))
-        ):
-            raise DirectSemanticSufficiencyConsumptionError(
-                f"component admission is not exact current canonical state: {component_id}"
-            )
-        _validate_analyst_case_ref(
-            case_ref,
-            run_id=run_id,
-            request_id=request_id,
-            logical_evaluation_key=component_id,
-        )
-        analyst_alias = admission.get("analyst_finding_ref")
-        if analyst_alias is not None and _mapping(analyst_alias) != case_ref:
-            raise DirectSemanticSufficiencyConsumptionError("component admission Analyst compatibility ref diverged")
-
-        claim_ref, observation_ref, coverage_ref = support_refs
-        evidence_refs = _mapping_list(
-            admission.get("evidence_refs", ()),
-            field=f"component_admission_refs[{component_id}].evidence_refs",
-        )
-        if status in _SUPPORTING_ADMISSION_STATUSES:
-            claim_text = _clean_text(claim_ref.get("claim_text"), limit=1200)
-            if (
-                not _clean_text(claim_ref.get("claim_id"), limit=180)
-                or not claim_text
-                or not _clean_text(claim_ref.get("claim_digest"), limit=180)
-                or not _clean_text(observation_ref.get("observation_id"), limit=180)
-                or not _clean_text(observation_ref.get("observation_digest"), limit=180)
-                or not _clean_text(coverage_ref.get("coverage_record_id"), limit=180)
-                or not _clean_text(coverage_ref.get("coverage_record_digest"), limit=180)
-            ):
-                raise DirectSemanticSufficiencyConsumptionError(
-                    "supporting component admission has malformed support refs"
-                )
-            coverage_bindings = {
-                "run_id": run_id,
-                "request_id": request_id,
-                "answer_component_id": component_id,
-                "component_revision": component.get("component_revision"),
-                "component_digest": component.get("component_digest"),
-                "accepted_contract_version": contract.get("accepted_contract_version"),
-                "accepted_contract_digest": contract.get("accepted_contract_digest"),
-            }
-            if any(
-                key in coverage_ref and coverage_ref.get(key) != expected for key, expected in coverage_bindings.items()
-            ):
-                raise DirectSemanticSufficiencyConsumptionError(
-                    "component coverage ref is bound to foreign canonical state"
-                )
-        elif evidence_refs:
-            raise DirectSemanticSufficiencyConsumptionError(
-                "non-supporting component admission cannot carry evidence refs"
-            )
-
-    return tuple(admissions)
 
 
 def _proposal_payload_from_entry(entry: Mapping[str, Any]) -> dict[str, Any]:
@@ -635,7 +476,8 @@ def _validate_direct_component_entries(
     supporting_refs = [
         deepcopy(dict(item))
         for item in component_admission_refs
-        if item.get("admission_status") in _SUPPORTING_ADMISSION_STATUSES
+        if item.get("admission_status")
+        in SUPPORTING_COMPONENT_ADMISSION_STATUSES
     ]
     component_by_id = {
         str(item.get("component_id") or ""): deepcopy(dict(item))
@@ -738,10 +580,18 @@ def build_direct_semantic_sufficiency_consumption(
     """Build transient direct semantic material for the existing Sufficiency owner."""
 
     contract, component_refs, contract_ref = _validate_contract(accepted_contract)
-    admissions = validate_direct_component_admission_refs(
-        accepted_contract=contract,
-        component_admission_refs=component_admission_refs,
-    )
+    try:
+        admissions = validate_current_multicomponent_component_admissions(
+            accepted_contract=contract,
+            component_admission_refs=component_admission_refs,
+            expected_logical_evaluation_keys={
+                str(item["component_id"]): str(item["component_id"])
+                for item in component_refs
+            },
+            expected_component_analyst_role=ROLE_COMPONENT_ANALYST,
+        )
+    except MulticomponentComponentAdmissionError as exc:
+        raise DirectSemanticSufficiencyConsumptionError(str(exc)) from exc
     component_ids = [str(item["component_id"]) for item in component_refs]
     directive = _clean_text(requested_synthesis_directive, limit=360)
     contract_directive = _clean_text(
@@ -754,7 +604,9 @@ def build_direct_semantic_sufficiency_consumption(
         )
 
     all_components_supporting = all(
-        item.get("admission_status") in _SUPPORTING_ADMISSION_STATUSES for item in admissions
+        item.get("admission_status")
+        in SUPPORTING_COMPONENT_ADMISSION_STATUSES
+        for item in admissions
     )
     if cross_component_artifact is None:
         if len(component_refs) >= 2 and all_components_supporting:
@@ -814,7 +666,8 @@ def build_direct_semantic_sufficiency_consumption(
             admission_ref=admission,
         )
         for component, admission in zip(component_refs, admissions, strict=True)
-        if admission.get("admission_status") in _SUPPORTING_ADMISSION_STATUSES
+        if admission.get("admission_status")
+        in SUPPORTING_COMPONENT_ADMISSION_STATUSES
     )
     relationship_entries_digest = cross_relationship_entries_digest(cross_entries)
     envelope_core = {
@@ -863,41 +716,24 @@ def rebind_direct_semantic_sufficiency_consumption_to_current_state(
     """Rebuild one supplied packet solely from existing current owners."""
 
     supplied = validate_direct_semantic_sufficiency_consumption(supplied_consumption)
-    contract = deepcopy(dict(accepted_contract))
-    admission_projection = _mapping(component_admission_projection)
-    admission_refs = _mapping_list(
-        admission_projection.get("component_admission_refs"),
-        field="current component_admission_refs",
-    )
-    projection_core = {
-        key: deepcopy(value) for key, value in admission_projection.items() if key != "projection_digest"
-    }
-    if (
-        set(admission_projection) != _MULTICOMPONENT_COMPONENT_ADMISSION_PROJECTION_FIELDS
-        or admission_projection.get("schema_version") != "multicomponent_component_admission_projection_v1"
-        or admission_projection.get("owner") != _MULTICOMPONENT_COMPONENT_ADMISSION_OWNER
-        or admission_projection.get("canonical_state") is not True
-        or admission_projection.get("trace_only") is not False
-        or admission_projection.get("storage_only") is not False
-        or admission_projection.get("run_id") != contract.get("run_id")
-        or admission_projection.get("request_id") != contract.get("request_id")
-        or admission_projection.get("accepted_contract_version") != contract.get("accepted_contract_version")
-        or admission_projection.get("accepted_contract_digest") != contract.get("accepted_contract_digest")
-        or admission_projection.get("component_count") != len(admission_refs)
-        or admission_projection.get("projection_digest") != safe_packet_digest(projection_core)
-        or admission_projection.get("admitted_component_count")
-        != sum(item.get("admission_status") in _SUPPORTING_ADMISSION_STATUSES for item in admission_refs)
-        or admission_projection.get("blocked_component_count")
-        != sum(item.get("admission_status") not in _SUPPORTING_ADMISSION_STATUSES for item in admission_refs)
-        or admission_projection.get("logical_component_analyst_evaluations")
-        != sum(int(item.get("logical_component_analyst_evaluations") or 0) for item in admission_refs)
-        or admission_projection.get("physical_component_analyst_calls")
-        != sum(int(item.get("physical_component_analyst_calls") or 0) for item in admission_refs)
-        or (admission_refs and admission_projection.get("latest_action_id") != admission_refs[-1].get("action_id"))
-    ):
+    contract, component_refs, _contract_ref = _validate_contract(accepted_contract)
+    try:
+        admission_refs = list(
+            validate_current_multicomponent_component_admissions(
+                accepted_contract=contract,
+                component_admission_projection=component_admission_projection,
+                role_projections=role_projections,
+                expected_logical_evaluation_keys={
+                    str(item["component_id"]): str(item["component_id"])
+                    for item in component_refs
+                },
+                expected_component_analyst_role=ROLE_COMPONENT_ANALYST,
+            )
+        )
+    except MulticomponentComponentAdmissionError as exc:
         raise DirectSemanticSufficiencyConsumptionError(
             "direct semantic consumption requires current component admission authority"
-        )
+        ) from exc
 
     provenance = _mapping(supplied.get("direct_semantic_provenance"))
     artifact_ref = _mapping(provenance.get("cross_component_artifact_ref"))
@@ -949,7 +785,6 @@ __all__ = [
     "direct_semantic_sufficiency_consumption_digest",
     "rebind_direct_semantic_sufficiency_consumption_to_current_state",
     "validate_cross_relationship_entries",
-    "validate_direct_component_admission_refs",
     "validate_direct_semantic_provenance_and_relationship_entries",
     "validate_direct_semantic_provenance_envelope",
     "validate_direct_semantic_sufficiency_consumption",

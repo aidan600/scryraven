@@ -22,12 +22,10 @@ from core.multicomponent_role_runtime import (
     COMPONENT_ANALYST_SUPPORTING_CASE_POSTURES,
     ROLE_COMPONENT_ANALYST,
     ROLE_COMPONENT_ANALYST_RESUME,
+    MulticomponentRoleRuntimeError,
     role_artifact_ref,
     safe_packet_digest,
     validate_multicomponent_role_artifact,
-)
-from core.quantitative_finalization_authority import (
-    specialist_quantitative_authority_ref_from_handoff,
 )
 from core.semantic_observation_admission_runtime import (
     SemanticObservationAdmissionError,
@@ -38,6 +36,49 @@ from core.semantic_observation_admission_runtime import (
 MULTICOMPONENT_COMPONENT_ADMISSION_STAGE = "multicomponent_component_admission"
 MULTICOMPONENT_COMPONENT_ADMISSION_OWNER = (
     "RunKernel.MulticomponentComponentAdmission"
+)
+MULTICOMPONENT_COMPONENT_ADMISSION_REF_SCHEMA_VERSION = (
+    "multicomponent_component_admission_ref_v1"
+)
+MULTICOMPONENT_COMPONENT_ADMISSION_PROJECTION_SCHEMA_VERSION = (
+    "multicomponent_component_admission_projection_v1"
+)
+MULTICOMPONENT_COMPONENT_ADMISSION_TERMINAL_STATUSES = frozenset(
+    {
+        "admitted",
+        "admitted_with_caveats",
+        "unsupported",
+        "blocked",
+    }
+)
+SUPPORTING_COMPONENT_ADMISSION_STATUSES = frozenset(
+    {"admitted", "admitted_with_caveats"}
+)
+_MULTICOMPONENT_COMPONENT_ADMISSION_PROJECTION_FIELDS = frozenset(
+    {
+        "schema_version",
+        "owner",
+        "canonical_state",
+        "trace_only",
+        "storage_only",
+        "run_id",
+        "request_id",
+        "accepted_contract_version",
+        "accepted_contract_digest",
+        "component_admission_refs",
+        "component_count",
+        "admitted_component_count",
+        "blocked_component_count",
+        "logical_component_analyst_evaluations",
+        "physical_component_analyst_calls",
+        "latest_action_id",
+        "projection_digest",
+    }
+)
+_COMPONENT_ADMISSION_SUPPORT_REF_FIELDS = (
+    "admitted_claim_ref",
+    "semantic_observation_ref",
+    "component_coverage_ref",
 )
 COMPONENT_ANALYST_INPUT_BINDING_MISMATCH_SCHEMA_VERSION = (
     "component_analyst_input_binding_mismatch_v1"
@@ -102,6 +143,13 @@ def _clean_text(value: Any, *, limit: int = 1000) -> str | None:
     if value is None or isinstance(value, Mapping | list | tuple | set | frozenset):
         return None
     text = " ".join(str(value).strip().split())
+    return text[:limit] if text else None
+
+
+def _canonical_text(value: Any, *, limit: int) -> str | None:
+    if not isinstance(value, str):
+        return None
+    text = " ".join(value.strip().split())
     return text[:limit] if text else None
 
 
@@ -510,6 +558,390 @@ def _accepted_component(
     raise MulticomponentComponentAdmissionError(
         f"component admission references unknown component {component_id!r}"
     )
+
+
+def _component_admission_mapping_sequence(
+    value: Any,
+    *,
+    field: str,
+) -> list[dict[str, Any]]:
+    if isinstance(value, str | bytes) or not isinstance(value, Sequence):
+        raise MulticomponentComponentAdmissionError(
+            f"{field} must be an exact ordered array"
+        )
+    items = list(value)
+    if any(not isinstance(item, Mapping) for item in items):
+        raise MulticomponentComponentAdmissionError(
+            f"{field} must contain only mappings"
+        )
+    return [deepcopy(dict(item)) for item in items]
+
+
+def validate_current_multicomponent_component_admissions(
+    *,
+    accepted_contract: Mapping[str, Any],
+    component_admission_projection: Mapping[str, Any] | None = None,
+    component_admission_refs: Sequence[Mapping[str, Any]] | None = None,
+    role_projections: Mapping[str, Any] | None = None,
+    expected_run_id: str | None = None,
+    expected_request_id: str | None = None,
+    expected_logical_evaluation_keys: Mapping[str, str] | None = None,
+    expected_component_analyst_role: str | None = None,
+) -> tuple[dict[str, Any], ...]:
+    """Validate exact current canonical component-admission authority.
+
+    The aggregate projection and its refs are one RunKernel-owned mechanical
+    contract. Callers that already hold only the ordered refs may omit the
+    aggregate; callers with current role projections additionally receive exact
+    Component Analyst artifact binding. This function creates no state.
+    """
+
+    contract = _safe_mapping(accepted_contract)
+    accepted_components = _component_admission_mapping_sequence(
+        contract.get("accepted_answer_component_refs"),
+        field="accepted_answer_component_refs",
+    )
+    component_ids = [
+        _canonical_text(item.get("component_id"), limit=200) or ""
+        for item in accepted_components
+    ]
+    run_id = _canonical_text(contract.get("run_id"), limit=200)
+    request_id = _canonical_text(contract.get("request_id"), limit=200)
+    contract_version = _canonical_text(
+        contract.get("accepted_contract_version"), limit=200
+    )
+    contract_digest = _canonical_text(
+        contract.get("accepted_contract_digest"), limit=128
+    )
+    if (
+        contract.get("canonical_state") is not True
+        or not _canonical_text(contract.get("owner"), limit=200)
+        or not run_id
+        or not request_id
+        or not contract_version
+        or not contract_digest
+        or not accepted_components
+        or _closed_count(contract.get("accepted_answer_component_count"))
+        != len(accepted_components)
+        or any(not item for item in component_ids)
+        or len(component_ids) != len(set(component_ids))
+        or any(
+            not _canonical_text(item.get("component_revision"), limit=200)
+            or not _canonical_text(item.get("component_digest"), limit=128)
+            for item in accepted_components
+        )
+        or (expected_run_id is not None and run_id != expected_run_id)
+        or (expected_request_id is not None and request_id != expected_request_id)
+    ):
+        raise MulticomponentComponentAdmissionError(
+            "component admission accepted contract is not exact current authority"
+        )
+    if role_projections is not None and not isinstance(role_projections, Mapping):
+        raise MulticomponentComponentAdmissionError(
+            "component admission current role projections must be one mapping"
+        )
+    if expected_logical_evaluation_keys is not None and not isinstance(
+        expected_logical_evaluation_keys, Mapping
+    ):
+        raise MulticomponentComponentAdmissionError(
+            "component admission expected logical keys must be one mapping"
+        )
+    if expected_component_analyst_role is not None and (
+        expected_component_analyst_role
+        not in {ROLE_COMPONENT_ANALYST, ROLE_COMPONENT_ANALYST_RESUME}
+    ):
+        raise MulticomponentComponentAdmissionError(
+            "component admission expected Component Analyst role is invalid"
+        )
+    expected_logical_keys = (
+        {
+            _canonical_text(key, limit=200) or "": (
+                _canonical_text(value, limit=200) or ""
+            )
+            for key, value in expected_logical_evaluation_keys.items()
+        }
+        if expected_logical_evaluation_keys is not None
+        else None
+    )
+    if expected_logical_keys is not None and (
+        set(expected_logical_keys) != set(component_ids)
+        or any(not value for value in expected_logical_keys.values())
+    ):
+        raise MulticomponentComponentAdmissionError(
+            "component admission expected logical keys do not match accepted components"
+        )
+
+    if (component_admission_projection is None) == (
+        component_admission_refs is None
+    ):
+        raise MulticomponentComponentAdmissionError(
+            "component admission validation requires exactly one canonical ref source"
+        )
+
+    projection: dict[str, Any] | None = None
+    if component_admission_projection is not None:
+        projection = _safe_mapping(component_admission_projection)
+        refs = _component_admission_mapping_sequence(
+            projection.get("component_admission_refs"),
+            field="component_admission_refs",
+        )
+        projection_core = {
+            key: deepcopy(value)
+            for key, value in projection.items()
+            if key != "projection_digest"
+        }
+        logical_counts = [
+            _closed_count(item.get("logical_component_analyst_evaluations"))
+            for item in refs
+        ]
+        physical_counts = [
+            _closed_count(item.get("physical_component_analyst_calls"))
+            for item in refs
+        ]
+        if any(item is None for item in (*logical_counts, *physical_counts)):
+            raise MulticomponentComponentAdmissionError(
+                "component admission projection lost canonical integrity"
+            )
+        logical_evaluations = sum(
+            item for item in logical_counts if item is not None
+        )
+        physical_calls = sum(
+            item for item in physical_counts if item is not None
+        )
+        if (
+            set(projection)
+            != _MULTICOMPONENT_COMPONENT_ADMISSION_PROJECTION_FIELDS
+            or projection.get("schema_version")
+            != MULTICOMPONENT_COMPONENT_ADMISSION_PROJECTION_SCHEMA_VERSION
+            or projection.get("owner")
+            != MULTICOMPONENT_COMPONENT_ADMISSION_OWNER
+            or projection.get("canonical_state") is not True
+            or projection.get("trace_only") is not False
+            or projection.get("storage_only") is not False
+            or projection.get("run_id") != run_id
+            or projection.get("request_id") != request_id
+            or projection.get("accepted_contract_version") != contract_version
+            or projection.get("accepted_contract_digest") != contract_digest
+            or _closed_count(projection.get("component_count")) != len(refs)
+            or _closed_count(projection.get("admitted_component_count"))
+            != sum(
+                item.get("admission_status")
+                in SUPPORTING_COMPONENT_ADMISSION_STATUSES
+                for item in refs
+            )
+            or _closed_count(projection.get("blocked_component_count"))
+            != sum(
+                item.get("admission_status")
+                not in SUPPORTING_COMPONENT_ADMISSION_STATUSES
+                for item in refs
+            )
+            or _closed_count(
+                projection.get("logical_component_analyst_evaluations")
+            )
+            != logical_evaluations
+            or _closed_count(
+                projection.get("physical_component_analyst_calls")
+            )
+            != physical_calls
+            or not refs
+            or not _canonical_text(
+                projection.get("latest_action_id"), limit=200
+            )
+            or projection.get("latest_action_id")
+            != refs[-1].get("action_id")
+            or projection.get("projection_digest")
+            != safe_packet_digest(projection_core)
+        ):
+            raise MulticomponentComponentAdmissionError(
+                "component admission projection lost canonical integrity"
+            )
+    else:
+        refs = _component_admission_mapping_sequence(
+            component_admission_refs,
+            field="component_admission_refs",
+        )
+
+    if (
+        len(refs) != len(accepted_components)
+        or [str(item.get("component_id") or "") for item in refs]
+        != component_ids
+    ):
+        raise MulticomponentComponentAdmissionError(
+            "component admissions are not the exact ordered accepted-component set"
+        )
+
+    current_roles = role_projections
+    for component, admission in zip(accepted_components, refs, strict=True):
+        component_id = str(component["component_id"])
+        status = admission.get("admission_status")
+        logical_evaluation_key = _canonical_text(
+            admission.get("logical_evaluation_key"), limit=200
+        )
+        case_ref = _safe_mapping(admission.get("component_analyst_case_ref"))
+        expected_evaluation_count = (
+            2
+            if case_ref.get("role") == ROLE_COMPONENT_ANALYST_RESUME
+            else 1
+        )
+        action_ref = _safe_mapping(case_ref.get("authorized_action_ref"))
+        support_refs_are_mappings = all(
+            field in admission and isinstance(admission.get(field), Mapping)
+            for field in _COMPONENT_ADMISSION_SUPPORT_REF_FIELDS
+        )
+        support_refs = tuple(
+            _safe_mapping(admission.get(field))
+            for field in _COMPONENT_ADMISSION_SUPPORT_REF_FIELDS
+        )
+        if (
+            admission.get("schema_version")
+            != MULTICOMPONENT_COMPONENT_ADMISSION_REF_SCHEMA_VERSION
+            or admission.get("owner")
+            != MULTICOMPONENT_COMPONENT_ADMISSION_OWNER
+            or admission.get("canonical_state") is not True
+            or admission.get("run_id") != run_id
+            or admission.get("request_id") != request_id
+            or admission.get("accepted_contract_version") != contract_version
+            or admission.get("accepted_contract_digest") != contract_digest
+            or admission.get("component_id") != component_id
+            or not _canonical_text(admission.get("action_id"), limit=200)
+            or not logical_evaluation_key
+            or (
+                expected_logical_keys is not None
+                and logical_evaluation_key
+                != expected_logical_keys.get(component_id)
+            )
+            or admission.get("component_revision")
+            != component.get("component_revision")
+            or admission.get("component_digest")
+            != component.get("component_digest")
+            or status not in MULTICOMPONENT_COMPONENT_ADMISSION_TERMINAL_STATUSES
+            or admission.get("current") is not True
+            or admission.get("stale") is not False
+            or _closed_count(
+                admission.get("logical_component_analyst_evaluations")
+            )
+            != expected_evaluation_count
+            or _closed_count(
+                admission.get("physical_component_analyst_calls")
+            )
+            != expected_evaluation_count
+            or not case_ref
+            or case_ref.get("schema_version")
+            != "multicomponent_semantic_role_artifact_v1"
+            or case_ref.get("role")
+            not in {ROLE_COMPONENT_ANALYST, ROLE_COMPONENT_ANALYST_RESUME}
+            or (
+                expected_component_analyst_role is not None
+                and case_ref.get("role")
+                != expected_component_analyst_role
+            )
+            or case_ref.get("run_id") != run_id
+            or case_ref.get("request_id") != request_id
+            or case_ref.get("logical_evaluation_key")
+            != logical_evaluation_key
+            or case_ref.get("logical_evaluations") != 1
+            or case_ref.get("physical_calls") != 1
+            or not _canonical_text(case_ref.get("artifact_id"), limit=200)
+            or not _canonical_text(case_ref.get("artifact_digest"), limit=128)
+            or not _canonical_text(
+                case_ref.get("input_packet_digest"), limit=128
+            )
+            or not _canonical_text(action_ref.get("action_id"), limit=200)
+            or not _canonical_text(
+                action_ref.get("observation_type"), limit=200
+            )
+            or not support_refs_are_mappings
+            or (
+                status in SUPPORTING_COMPONENT_ADMISSION_STATUSES
+                and not all(support_refs)
+            )
+            or (
+                status not in SUPPORTING_COMPONENT_ADMISSION_STATUSES
+                and any(support_refs)
+            )
+        ):
+            raise MulticomponentComponentAdmissionError(
+                "component admission is not exact current canonical state: "
+                f"{component_id}"
+            )
+
+        analyst_alias = admission.get("analyst_finding_ref")
+        if analyst_alias is not None and _safe_mapping(analyst_alias) != case_ref:
+            raise MulticomponentComponentAdmissionError(
+                "component admission Analyst compatibility ref diverged"
+            )
+
+        if current_roles is not None:
+            role_key = (
+                f"multicomponent_role:{case_ref['role']}:"
+                f"{logical_evaluation_key}"
+            )
+            completed_case = _safe_mapping(current_roles.get(role_key))
+            try:
+                expected_case_ref = role_artifact_ref(completed_case)
+            except MulticomponentRoleRuntimeError as exc:
+                raise MulticomponentComponentAdmissionError(
+                    "component admission Component Analyst case is not exact "
+                    f"current role authority: {component_id}"
+                ) from exc
+            if case_ref != expected_case_ref:
+                raise MulticomponentComponentAdmissionError(
+                    "component admission Component Analyst case is not exact "
+                    f"current role authority: {component_id}"
+                )
+
+        claim_ref, observation_ref, coverage_ref = support_refs
+        evidence_refs = _component_admission_mapping_sequence(
+            admission.get("evidence_refs", ()),
+            field=f"component_admission_refs[{component_id}].evidence_refs",
+        )
+        if status in SUPPORTING_COMPONENT_ADMISSION_STATUSES:
+            if (
+                not _canonical_text(claim_ref.get("claim_id"), limit=200)
+                or not _canonical_text(
+                    claim_ref.get("claim_text"), limit=1200
+                )
+                or not _canonical_text(
+                    claim_ref.get("claim_digest"), limit=128
+                )
+                or not _canonical_text(
+                    observation_ref.get("observation_id"), limit=200
+                )
+                or not _canonical_text(
+                    observation_ref.get("observation_digest"), limit=128
+                )
+                or not _canonical_text(
+                    coverage_ref.get("coverage_record_id"), limit=200
+                )
+                or not _canonical_text(
+                    coverage_ref.get("coverage_record_digest"), limit=128
+                )
+            ):
+                raise MulticomponentComponentAdmissionError(
+                    "supporting component admission has malformed support refs"
+                )
+            coverage_bindings = {
+                "run_id": run_id,
+                "request_id": request_id,
+                "answer_component_id": component_id,
+                "component_revision": component.get("component_revision"),
+                "component_digest": component.get("component_digest"),
+                "accepted_contract_version": contract_version,
+                "accepted_contract_digest": contract_digest,
+            }
+            if any(
+                key in coverage_ref and coverage_ref.get(key) != expected
+                for key, expected in coverage_bindings.items()
+            ):
+                raise MulticomponentComponentAdmissionError(
+                    "component coverage ref is bound to foreign canonical state"
+                )
+        elif evidence_refs:
+            raise MulticomponentComponentAdmissionError(
+                "non-supporting component admission cannot carry evidence refs"
+            )
+
+    return tuple(deepcopy(item) for item in refs)
 
 
 def component_analyst_input_packet(
@@ -1056,6 +1488,10 @@ def stage_multicomponent_component_admission(
         else "blocked"
     )
     analyst_case_ref = role_artifact_ref(analyst)
+    from core.quantitative_finalization_authority import (
+        specialist_quantitative_authority_ref_from_handoff,
+    )
+
     specialist_quantitative_authority_ref = (
         specialist_quantitative_authority_ref_from_handoff(
             specialist_need_handoff,
@@ -1070,7 +1506,9 @@ def stage_multicomponent_component_admission(
         "coverage_state": coverage_state,
         "coverage_projection": coverage_projection,
         "component_admission_ref": {
-            "schema_version": "multicomponent_component_admission_ref_v1",
+            "schema_version": (
+                MULTICOMPONENT_COMPONENT_ADMISSION_REF_SCHEMA_VERSION
+            ),
             "owner": MULTICOMPONENT_COMPONENT_ADMISSION_OWNER,
             "canonical_state": True,
             "run_id": run_id,
@@ -1308,7 +1746,9 @@ def execute_multicomponent_component_admission(
         )
     refs = [*prior_refs, component_ref]
     aggregate_core = {
-        "schema_version": "multicomponent_component_admission_projection_v1",
+        "schema_version": (
+            MULTICOMPONENT_COMPONENT_ADMISSION_PROJECTION_SCHEMA_VERSION
+        ),
         "owner": MULTICOMPONENT_COMPONENT_ADMISSION_OWNER,
         "canonical_state": True,
         "trace_only": False,
@@ -1324,11 +1764,13 @@ def execute_multicomponent_component_admission(
         "component_admission_refs": refs,
         "component_count": len(refs),
         "admitted_component_count": sum(
-            item.get("admission_status") in {"admitted", "admitted_with_caveats"}
+            item.get("admission_status")
+            in SUPPORTING_COMPONENT_ADMISSION_STATUSES
             for item in refs
         ),
         "blocked_component_count": sum(
-            item.get("admission_status") not in {"admitted", "admitted_with_caveats"}
+            item.get("admission_status")
+            not in SUPPORTING_COMPONENT_ADMISSION_STATUSES
             for item in refs
         ),
         "logical_component_analyst_evaluations": sum(
@@ -1369,8 +1811,12 @@ __all__ = [
     "COMPONENT_ANALYST_EXACT_INPUT_BINDING_MISMATCH",
     "COMPONENT_ANALYST_INPUT_BINDING_MISMATCH_SCHEMA_VERSION",
     "MULTICOMPONENT_COMPONENT_ADMISSION_OWNER",
+    "MULTICOMPONENT_COMPONENT_ADMISSION_PROJECTION_SCHEMA_VERSION",
+    "MULTICOMPONENT_COMPONENT_ADMISSION_REF_SCHEMA_VERSION",
     "MULTICOMPONENT_COMPONENT_ADMISSION_STAGE",
+    "MULTICOMPONENT_COMPONENT_ADMISSION_TERMINAL_STATUSES",
     "MulticomponentComponentAdmissionError",
+    "SUPPORTING_COMPONENT_ADMISSION_STATUSES",
     "build_component_analyst_input_binding_mismatch_v1",
     "component_analyst_input_binding_mismatch_from_exception",
     "component_analyst_input_packet",
@@ -1380,4 +1826,5 @@ __all__ = [
     "independent_component_analyst_dispatch_input_digest",
     "project_component_analyst_input_binding_mismatch_v1",
     "stage_multicomponent_component_admission",
+    "validate_current_multicomponent_component_admissions",
 ]
