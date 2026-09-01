@@ -288,7 +288,11 @@ def test_initial_cross_binds_deterministic_component_aliases_to_current_nodes(
                         "nonclaims": [],
                         "blockers": [],
                     }
-                ]
+                ],
+                "self_audit": (
+                    "The offline comparison stays within the exact current "
+                    "Northstar component cases."
+                ),
             }
         )
 

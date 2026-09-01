@@ -1270,6 +1270,11 @@ class SearchOSAnalystOSHarness(OfflineOrdinaryPipelineHarness):
                     call_index=len(self.cross_contexts),
                     selective=selective,
                 )
+                if not selective:
+                    response["self_audit"] = (
+                        "The offline Cross result stays within the exact current "
+                        "components and retains its caveats and nonclaims."
+                    )
                 return json.dumps(response)
             if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_SYNTHESIS_DPRIME]:
                 nominated = dict(payload.get("nominated_synthesis") or {})

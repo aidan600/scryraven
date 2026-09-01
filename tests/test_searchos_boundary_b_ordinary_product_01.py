@@ -313,6 +313,10 @@ class BoundaryBOrdinaryHarness(OfflineOrdinaryPipelineHarness):
                                 "blockers": [],
                             }
                         ],
+                        "self_audit": (
+                            "The offline recovery proposal stays within the exact "
+                            "current premise and target component cases."
+                        ),
                         "query_resolution_proposals": [
                             {
                                 "classification": "searched_premise",
@@ -718,6 +722,10 @@ class DeepSerialBoundaryBOrdinaryHarness(BoundaryBOrdinaryHarness):
                             "blockers": [],
                         },
                     ],
+                    "self_audit": (
+                        "The offline serial proposals stay within the exact current "
+                        "premise and target component cases."
+                    ),
                     "query_resolution_proposals": [
                         self._searched_candidate(
                             target=target_e,
@@ -1093,6 +1101,10 @@ class FastInferenceOrdinaryHarness(OfflineOrdinaryPipelineHarness):
                                 "blockers": [],
                             }
                         ],
+                        "self_audit": (
+                            "The offline inferred relationship stays within the exact "
+                            "current admitted premise components."
+                        ),
                         "query_resolution_proposals": [
                             {
                                 "classification": "inferred_conclusion",

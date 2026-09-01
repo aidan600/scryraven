@@ -197,7 +197,11 @@ class NorthstarHarness(OfflineOrdinaryPipelineHarness):
                                 "nonclaims": [],
                                 "blockers": [],
                             },
-                        ]
+                        ],
+                        "self_audit": (
+                            "The offline filing relationships stay within the exact "
+                            "admitted component cases and retain their limitations."
+                        ),
                     }
                 )
             if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_SYNTHESIS_DPRIME]:

@@ -779,7 +779,11 @@ class OfflineOrdinaryPipelineHarness:
                             "nonclaims": [],
                             "blockers": [],
                         }
-                    ]
+                    ],
+                    "self_audit": (
+                        "The offline relationship stays within the exact admitted "
+                        "components and retains their caveats and nonclaims."
+                    ),
                 }
             )
         if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_SYNTHESIS_DPRIME]:

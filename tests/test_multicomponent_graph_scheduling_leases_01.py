@@ -1135,7 +1135,11 @@ def test_31_no_scrutiny_graph_reaches_deterministic_completion(
                             "nonclaims": [],
                             "blockers": [],
                         }
-                    ]
+                    ],
+                    "self_audit": (
+                        "The offline summary stays within the exact admitted "
+                        "Northstar components."
+                    ),
                 }
             )
         return original(self, prompt, system_prompt, **kwargs)

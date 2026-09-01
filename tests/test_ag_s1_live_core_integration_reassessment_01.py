@@ -247,7 +247,10 @@ def test_nested_cross_proposal_is_absent_from_normalized_role_artifact() -> None
                 "blockers": [],
                 "specialist_need_proposal": proposal,
             }
-        ]
+        ],
+        "self_audit": (
+            "The offline relationship stays within the two supplied components."
+        ),
     }
     normalized = _normalize_semantic_output(ROLE_CROSS_COMPONENT_ANALYST, output)
     assert "specialist_need_proposal" not in normalized

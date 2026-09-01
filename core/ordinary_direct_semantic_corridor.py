@@ -18,6 +18,7 @@ from core.component_analyst_evidence_set import (
 )
 from core.component_work_graph_v1 import MAX_SYNTHESIS_DEPTH
 from core.multicomponent_component_admission import (
+    MULTICOMPONENT_COMPONENT_ADMISSION_OWNER,
     MULTICOMPONENT_COMPONENT_ADMISSION_STAGE,
     component_analyst_input_packet,
     execute_multicomponent_component_admission,
@@ -149,6 +150,25 @@ def _validated_evidence_sets(
         if _safe_mapping(item).get("candidate_id")
     }
     for component_id in component_ids:
+        member_component_bindings = [
+            str(
+                _safe_mapping(
+                    _safe_mapping(
+                        _safe_mapping(member).get("code_binding")
+                    ).get("material_identity")
+                ).get("searchos_slot_identity", {})
+                .get("component_id")
+                or ""
+            )
+            for member in evidence_sets[component_id]["members"]
+        ]
+        if any(member_component_bindings) and (
+            any(not item for item in member_component_bindings)
+            or set(member_component_bindings) != {component_id}
+        ):
+            raise OrdinaryDirectSemanticCorridorError(
+                "direct corridor evidence member has a cross-component binding"
+            )
         evidence_ref_ids = {
             str(
                 component_analyst_evidence_member_code_evidence(member).get(
@@ -183,6 +203,68 @@ def _current_component_admissions(
         for item in projection.get("component_admission_refs") or ()
         if isinstance(item, Mapping)
     ]
+    projection_core = {
+        key: deepcopy(value)
+        for key, value in projection.items()
+        if key != "projection_digest"
+    }
+    expected_projection_fields = {
+        "schema_version",
+        "owner",
+        "canonical_state",
+        "trace_only",
+        "storage_only",
+        "run_id",
+        "request_id",
+        "accepted_contract_version",
+        "accepted_contract_digest",
+        "component_admission_refs",
+        "component_count",
+        "admitted_component_count",
+        "blocked_component_count",
+        "logical_component_analyst_evaluations",
+        "physical_component_analyst_calls",
+        "latest_action_id",
+        "projection_digest",
+    }
+    if (
+        set(projection) != expected_projection_fields
+        or projection.get("schema_version")
+        != "multicomponent_component_admission_projection_v1"
+        or projection.get("owner") != MULTICOMPONENT_COMPONENT_ADMISSION_OWNER
+        or projection.get("trace_only") is not False
+        or projection.get("storage_only") is not False
+        or projection.get("projection_digest")
+        != safe_packet_digest(projection_core)
+        or projection.get("component_count") != len(refs)
+        or projection.get("admitted_component_count")
+        != sum(
+            item.get("admission_status")
+            in {"admitted", "admitted_with_caveats"}
+            for item in refs
+        )
+        or projection.get("blocked_component_count")
+        != sum(
+            item.get("admission_status")
+            not in {"admitted", "admitted_with_caveats"}
+            for item in refs
+        )
+        or projection.get("logical_component_analyst_evaluations")
+        != sum(
+            int(item.get("logical_component_analyst_evaluations") or 0)
+            for item in refs
+        )
+        or projection.get("physical_component_analyst_calls")
+        != sum(
+            int(item.get("physical_component_analyst_calls") or 0)
+            for item in refs
+        )
+        or not refs
+        or projection.get("latest_action_id") != refs[-1].get("action_id")
+    ):
+        raise OrdinaryDirectSemanticCorridorError(
+            "direct corridor component admission projection lost canonical integrity"
+        )
     component_ids = [str(item.get("component_id") or "") for item in component_refs]
     by_id = {str(item.get("component_id") or ""): item for item in refs}
     if (
@@ -279,7 +361,7 @@ def _admitted_component_view(
     }
 
 
-def build_direct_cross_input_packet(
+def _build_direct_cross_input_packet(
     *,
     run_kernel: Any,
     component_analyst_input_packets: Mapping[str, Mapping[str, Any]],
@@ -408,30 +490,33 @@ def _validate_cross_proposal_mechanics(
         dependencies[key] = synthesis_inputs
 
     visiting: set[str] = set()
-    visited: set[str] = set()
+    depths: dict[str, int] = {}
 
-    def visit(key: str, depth: int) -> None:
+    def semantic_depth(key: str) -> int:
         if key in visiting:
             raise OrdinaryDirectSemanticCorridorError(
                 "direct Cross proposal dependencies contain a cycle"
             )
+        if key in depths:
+            return depths[key]
+        visiting.add(key)
+        depth = 1 + max(
+            (semantic_depth(parent) for parent in dependencies.get(key, ())),
+            default=0,
+        )
+        visiting.remove(key)
         if depth > MAX_SYNTHESIS_DEPTH:
             raise OrdinaryDirectSemanticCorridorError(
                 "direct Cross proposal dependency depth exceeds the installed bound"
             )
-        if key in visited:
-            return
-        visiting.add(key)
-        for parent in dependencies.get(key, ()):
-            visit(parent, depth + 1)
-        visiting.remove(key)
-        visited.add(key)
+        depths[key] = depth
+        return depth
 
     for proposal_key in proposal_keys:
-        visit(proposal_key, 0)
+        semantic_depth(proposal_key)
 
 
-def validate_direct_cross_result_binding(
+def _validate_direct_cross_result_binding(
     *,
     run_kernel: Any,
     cross_input_packet: Mapping[str, Any],
@@ -600,7 +685,7 @@ def execute_ordinary_direct_semantic_corridor(
     if len(component_refs) == 1:
         return tuple(current_admissions), None
 
-    cross_input = build_direct_cross_input_packet(
+    cross_input = _build_direct_cross_input_packet(
         run_kernel=run_kernel,
         component_analyst_input_packets=packets,
         component_analyst_evidence_sets=evidence_sets,
@@ -614,7 +699,7 @@ def execute_ordinary_direct_semantic_corridor(
         logical_evaluation_key=DIRECT_CROSS_LOGICAL_EVALUATION_KEY,
         **role_kwargs,
     )
-    bound_cross = validate_direct_cross_result_binding(
+    bound_cross = _validate_direct_cross_result_binding(
         run_kernel=run_kernel,
         cross_input_packet=cross_input,
         cross_artifact=cross_artifact,
@@ -625,7 +710,5 @@ def execute_ordinary_direct_semantic_corridor(
 __all__ = [
     "DIRECT_CROSS_LOGICAL_EVALUATION_KEY",
     "OrdinaryDirectSemanticCorridorError",
-    "build_direct_cross_input_packet",
     "execute_ordinary_direct_semantic_corridor",
-    "validate_direct_cross_result_binding",
 ]

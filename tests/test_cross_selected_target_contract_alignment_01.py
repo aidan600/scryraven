@@ -27,6 +27,7 @@ from core.multicomponent_role_runtime import (
     _normalize_semantic_output,
     execute_multicomponent_role_call,
     safe_packet_digest,
+    validate_multicomponent_role_artifact,
 )
 from core.run_kernel import RunKernel
 from core.strict_one_shot_model_transport import (
@@ -126,6 +127,13 @@ def test_one_and_multiple_proposals_retain_required_self_audit() -> None:
     assert multiple["self_audit"] == SELF_AUDIT
     assert "uncertainty" not in one
 
+    bounded = _normalize_semantic_output(
+        ROLE_CROSS_COMPONENT_ANALYST,
+        {**_payload([_proposal("S1")]), "self_audit": "a" * 1400},
+    )
+    assert isinstance(bounded["self_audit"], str)
+    assert len(bounded["self_audit"]) == 1200
+
 
 @pytest.mark.parametrize("audit", [None, "", "   \n\t  ", True, 7, {}])
 def test_missing_blank_or_non_string_self_audit_fails_closed(audit: Any) -> None:
@@ -210,6 +218,10 @@ def test_self_audit_prose_cannot_mint_runtime_authority() -> None:
     packet = _cross_packet()
 
     artifact = _execute(payload, packet=deepcopy(packet))
+    replayed = validate_multicomponent_role_artifact(
+        artifact,
+        expected_role=ROLE_CROSS_COMPONENT_ANALYST,
+    )
     semantic_output = artifact["semantic_output"]
 
     assert artifact["input_packet_digest"] == safe_packet_digest(packet)
@@ -218,8 +230,20 @@ def test_self_audit_prose_cannot_mint_runtime_authority() -> None:
         "component:B",
     ]
     assert set(semantic_output) == {"synthesis_proposals", "self_audit"}
+    assert replayed["semantic_output"]["self_audit"] == payload["self_audit"]
     assert not {
         "artifact_id",
         "graph_ref",
         "input_packet_digest",
     } & set(semantic_output)
+
+
+def test_structured_self_audit_authority_claim_still_fails_safe_output_hygiene() -> None:
+    payload = _payload([_proposal("S")])
+    payload["graph_ref"] = {"graph_id": "model-authored-graph"}
+
+    with pytest.raises(
+        MulticomponentRoleRuntimeError,
+        match="claimed repository authority",
+    ):
+        _execute(payload)
