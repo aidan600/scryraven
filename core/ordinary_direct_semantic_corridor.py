@@ -1,14 +1,17 @@
-"""Experimental thin direct Component Analyst-to-Cross composition.
+"""Experimental thin ordinary semantic and terminal corridors.
 
-This branch-only corridor composes existing semantic-role and RunKernel
-authorities.  It deliberately creates no scheduler, lease, batch, Graph V1,
-synthesis relation, D-prime, Scrutineer, Sufficiency, FAP, or Author state.
+Phase 1 composes Component Analyst, canonical RunKernel component admission,
+and Cross without installing scheduler or Graph authority.  Phase 2 carries
+those exact transient results through the existing Sufficiency, FinalAnswerPacket,
+and Author owners.  Neither path creates scheduler, lease, batch, Graph V1,
+D-prime, or Scrutineer state.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
+from dataclasses import dataclass
 from typing import Any
 
 from core.component_analyst_evidence_set import (
@@ -55,6 +58,31 @@ class OrdinaryDirectSemanticCorridorError(ValueError):
     """Raised when the experimental direct corridor loses exact mechanics."""
 
 
+@dataclass(frozen=True, slots=True)
+class OrdinaryDirectSemanticCorridorResult:
+    """Transient exact Phase-1 result; never a canonical runtime authority."""
+
+    component_admission_refs: tuple[Mapping[str, Any], ...]
+    cross_artifact: Mapping[str, Any] | None
+    cross_input_packet: Mapping[str, Any] | None
+    component_analyst_input_packets: Mapping[str, Mapping[str, Any]]
+    component_evidence_sets: Mapping[str, Mapping[str, Any]]
+    query: str
+    requested_synthesis_directive: str
+
+
+@dataclass(frozen=True, slots=True)
+class OrdinaryDirectTerminalCorridorResult:
+    """Existing-owner handoffs returned by the transient Phase-2 coordinator."""
+
+    direct_result: OrdinaryDirectSemanticCorridorResult
+    direct_semantic_consumption: Mapping[str, Any]
+    selected_evidence_passages: tuple[Mapping[str, Any], ...]
+    sufficiency_handoff: Any
+    final_answer_packet_handoff: Any
+    author_handoff: Any | None
+
+
 def _safe_mapping(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
 
@@ -64,6 +92,34 @@ def _clean_text(value: Any, *, limit: int = 400) -> str | None:
         return None
     text = " ".join(value.strip().split())
     return text[:limit] if text else None
+
+
+def _exact_requested_synthesis_directive(
+    contract: Mapping[str, Any],
+    supplied: str,
+    *,
+    component_count: int,
+) -> str:
+    """Bind the transient directive to accepted question-meaning authority."""
+
+    canonical = _clean_text(
+        _safe_mapping(contract.get("question_meaning_metadata")).get(
+            "requested_synthesis_directive"
+        ),
+        limit=360,
+    )
+    requested = _clean_text(supplied, limit=360)
+    if canonical:
+        if requested != canonical:
+            raise OrdinaryDirectSemanticCorridorError(
+                "direct corridor synthesis directive is not current contract authority"
+            )
+        return canonical
+    if component_count >= 2 or requested:
+        raise OrdinaryDirectSemanticCorridorError(
+            "direct corridor requires an exact contract-authored synthesis directive"
+        )
+    return ""
 
 
 def _active_contract(run_kernel: Any) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -650,7 +706,7 @@ def _validate_direct_cross_result_binding(
     return artifact
 
 
-def execute_ordinary_direct_semantic_corridor(
+def execute_ordinary_direct_semantic_corridor_with_context(
     *,
     run_kernel: Any,
     component_evidence_sets: Mapping[str, Mapping[str, Any]],
@@ -663,11 +719,16 @@ def execute_ordinary_direct_semantic_corridor(
     model: str,
     use_reasoning: bool,
     effort: str = "medium",
-) -> tuple[tuple[dict[str, Any], ...], dict[str, Any] | None]:
-    """Execute the Phase-1 direct corridor without installing another owner."""
+) -> OrdinaryDirectSemanticCorridorResult:
+    """Execute Phase 1 and retain only the transient exact inputs Phase 2 needs."""
 
     _require_direct_boundary(run_kernel)
     contract, component_refs = _active_contract(run_kernel)
+    exact_directive = _exact_requested_synthesis_directive(
+        contract,
+        requested_synthesis_directive,
+        component_count=len(component_refs),
+    )
     evidence_sets = _validated_evidence_sets(
         run_kernel,
         component_refs=component_refs,
@@ -744,15 +805,31 @@ def execute_ordinary_direct_semantic_corridor(
         not in {"admitted", "admitted_with_caveats"}
         for admission in current_admissions
     ):
-        return tuple(current_admissions), None
+        return OrdinaryDirectSemanticCorridorResult(
+            component_admission_refs=tuple(deepcopy(current_admissions)),
+            cross_artifact=None,
+            cross_input_packet=None,
+            component_analyst_input_packets=deepcopy(packets),
+            component_evidence_sets=deepcopy(evidence_sets),
+            query=str(query),
+            requested_synthesis_directive=exact_directive,
+        )
     if len(component_refs) == 1:
-        return tuple(current_admissions), None
+        return OrdinaryDirectSemanticCorridorResult(
+            component_admission_refs=tuple(deepcopy(current_admissions)),
+            cross_artifact=None,
+            cross_input_packet=None,
+            component_analyst_input_packets=deepcopy(packets),
+            component_evidence_sets=deepcopy(evidence_sets),
+            query=str(query),
+            requested_synthesis_directive=exact_directive,
+        )
 
     cross_input = _build_direct_cross_input_packet(
         run_kernel=run_kernel,
         component_analyst_input_packets=packets,
         component_analyst_evidence_sets=evidence_sets,
-        requested_synthesis_directive=requested_synthesis_directive,
+        requested_synthesis_directive=exact_directive,
         requested_mode=requested_mode,
     )
     cross_artifact = execute_multicomponent_role_call(
@@ -767,11 +844,405 @@ def execute_ordinary_direct_semantic_corridor(
         cross_input_packet=cross_input,
         cross_artifact=cross_artifact,
     )
-    return tuple(current_admissions), bound_cross
+    return OrdinaryDirectSemanticCorridorResult(
+        component_admission_refs=tuple(deepcopy(current_admissions)),
+        cross_artifact=deepcopy(bound_cross),
+        cross_input_packet=deepcopy(cross_input),
+        component_analyst_input_packets=deepcopy(packets),
+        component_evidence_sets=deepcopy(evidence_sets),
+        query=str(query),
+        requested_synthesis_directive=exact_directive,
+    )
+
+
+def _reprove_direct_semantic_result(
+    *,
+    run_kernel: Any,
+    direct_result: OrdinaryDirectSemanticCorridorResult,
+) -> tuple[
+    dict[str, Any],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    dict[str, dict[str, Any]],
+    dict[str, Any] | None,
+]:
+    """Rebind the transient Phase-1 result to current RunKernel state."""
+
+    _require_direct_boundary(run_kernel)
+    contract, component_refs = _active_contract(run_kernel)
+    admissions = _current_component_admissions(
+        run_kernel,
+        contract=contract,
+        component_refs=component_refs,
+    )
+    supplied_admissions = [
+        deepcopy(dict(item)) for item in direct_result.component_admission_refs
+    ]
+    if supplied_admissions != admissions:
+        raise OrdinaryDirectSemanticCorridorError(
+            "terminal corridor component admissions are not exact current refs"
+        )
+    directive = _exact_requested_synthesis_directive(
+        contract,
+        direct_result.requested_synthesis_directive,
+        component_count=len(component_refs),
+    )
+    evidence_sets = _validated_evidence_sets(
+        run_kernel,
+        component_refs=component_refs,
+        component_evidence_sets=direct_result.component_evidence_sets,
+    )
+    packets = {
+        str(key): deepcopy(dict(value))
+        for key, value in direct_result.component_analyst_input_packets.items()
+        if isinstance(value, Mapping)
+    }
+    component_ids = [str(item["component_id"]) for item in component_refs]
+    admissions_by_id = {
+        str(item.get("component_id") or ""): item for item in admissions
+    }
+    if set(packets) != set(component_ids):
+        raise OrdinaryDirectSemanticCorridorError(
+            "terminal corridor requires every exact Component Analyst input"
+        )
+    for component in component_refs:
+        component_id = str(component["component_id"])
+        expected_packet = component_analyst_input_packet(
+            run_id=run_kernel.state.run_id,
+            request_id=run_kernel.state.request_id,
+            accepted_contract=contract,
+            component_ref=component,
+            component_evidence_set=evidence_sets[component_id],
+        )
+        current_case_ref = _safe_mapping(
+            admissions_by_id[component_id].get("component_analyst_case_ref")
+        )
+        if (
+            packets[component_id] != expected_packet
+            or current_case_ref.get("input_packet_digest")
+            != safe_packet_digest(expected_packet)
+        ):
+            raise OrdinaryDirectSemanticCorridorError(
+                "terminal corridor Component Analyst input is not exact current input"
+            )
+
+    all_supporting = all(
+        item.get("admission_status") in {"admitted", "admitted_with_caveats"}
+        for item in admissions
+    )
+    cross_artifact: dict[str, Any] | None = None
+    if len(component_refs) >= 2 and all_supporting:
+        if not isinstance(direct_result.cross_input_packet, Mapping) or not isinstance(
+            direct_result.cross_artifact,
+            Mapping,
+        ):
+            raise OrdinaryDirectSemanticCorridorError(
+                "terminal corridor requires the exact completed Cross result"
+            )
+        cross_artifact = _validate_direct_cross_result_binding(
+            run_kernel=run_kernel,
+            cross_input_packet=direct_result.cross_input_packet,
+            cross_artifact=direct_result.cross_artifact,
+        )
+        if (
+            _clean_text(
+                _safe_mapping(direct_result.cross_input_packet).get(
+                    "requested_synthesis_directive"
+                ),
+                limit=360,
+            )
+            != directive
+        ):
+            raise OrdinaryDirectSemanticCorridorError(
+                "terminal corridor Cross directive is not current contract authority"
+            )
+    elif direct_result.cross_artifact is not None or direct_result.cross_input_packet is not None:
+        raise OrdinaryDirectSemanticCorridorError(
+            "terminal corridor received Cross state without lawful supporting inputs"
+        )
+    return contract, component_refs, admissions, evidence_sets, cross_artifact
+
+
+def _selected_direct_evidence_passages(
+    *,
+    admissions: Sequence[Mapping[str, Any]],
+    evidence_sets: Mapping[str, Mapping[str, Any]],
+) -> tuple[dict[str, Any], ...]:
+    """Select only exact Analyst-used passages for FAP/citation mechanics."""
+
+    selected: list[dict[str, Any]] = []
+    seen_evidence_ids: set[str] = set()
+    for admission in admissions:
+        component_id = str(admission.get("component_id") or "")
+        evidence_set = _safe_mapping(evidence_sets.get(component_id))
+        members = [
+            deepcopy(dict(item))
+            for item in evidence_set.get("members") or ()
+            if isinstance(item, Mapping)
+        ]
+        by_evidence_id = {
+            str(
+                component_analyst_evidence_member_code_evidence(member).get(
+                    "evidence_ref_id"
+                )
+                or ""
+            ): member
+            for member in members
+        }
+        for evidence_ref in admission.get("evidence_refs") or ():
+            ref = _safe_mapping(evidence_ref)
+            evidence_id = str(ref.get("evidence_ref_id") or "")
+            member = by_evidence_id.get(evidence_id)
+            if not evidence_id or member is None:
+                raise OrdinaryDirectSemanticCorridorError(
+                    "terminal corridor evidence selection lost Analyst binding"
+                )
+            if evidence_id in seen_evidence_ids:
+                continue
+            passage = _safe_mapping(member.get("passage"))
+            if not passage or str(passage.get("candidate_id") or evidence_id) != evidence_id:
+                raise OrdinaryDirectSemanticCorridorError(
+                    "terminal corridor selected passage identity is malformed"
+                )
+            seen_evidence_ids.add(evidence_id)
+            selected.append(deepcopy(passage))
+    return tuple(selected)
+
+
+def execute_ordinary_direct_terminal_corridor_from_result(
+    *,
+    run_kernel: Any,
+    direct_result: OrdinaryDirectSemanticCorridorResult,
+    runtime_scope: Mapping[str, Any],
+    default_system: Mapping[str, str],
+    author_ask_model: Callable[..., Any],
+    author_system_prompt_registry: Mapping[str, str],
+    base_url: str | None = None,
+    api_key: str | None = None,
+    stream_display: Callable[[Any], Any] | None = None,
+) -> OrdinaryDirectTerminalCorridorResult:
+    """Carry an exact Phase-1 result through existing terminal product owners."""
+
+    from core.author_execution_runtime import execute_author_handoff_from_scope
+    from core.direct_semantic_sufficiency_consumption_runtime import (
+        DirectSemanticSufficiencyConsumptionError,
+        build_direct_semantic_sufficiency_consumption,
+    )
+    from core.final_answer_packet_runtime import (
+        prepare_final_answer_packet_author_handoff_from_scope,
+    )
+    from core.run_authority_sufficiency_runtime import (
+        execute_sufficiency_judgment_handoff_from_scope,
+    )
+
+    contract, _component_refs, admissions, evidence_sets, cross_artifact = (
+        _reprove_direct_semantic_result(
+            run_kernel=run_kernel,
+            direct_result=direct_result,
+        )
+    )
+    if runtime_scope.get("scrutineer_flags"):
+        raise OrdinaryDirectSemanticCorridorError(
+            "terminal corridor does not execute routine Scrutineer policy"
+        )
+    supplied_query = str(runtime_scope.get("query") or "")
+    if supplied_query and supplied_query != direct_result.query:
+        raise OrdinaryDirectSemanticCorridorError(
+            "terminal corridor query does not match the Phase-1 execution"
+        )
+    try:
+        direct_consumption = build_direct_semantic_sufficiency_consumption(
+            accepted_contract=contract,
+            component_admission_refs=admissions,
+            cross_component_artifact=cross_artifact,
+            requested_synthesis_directive=(
+                direct_result.requested_synthesis_directive
+            ),
+        )
+    except DirectSemanticSufficiencyConsumptionError as exc:
+        raise OrdinaryDirectSemanticCorridorError(str(exc)) from exc
+
+    selected_passages = _selected_direct_evidence_passages(
+        admissions=admissions,
+        evidence_sets=evidence_sets,
+    )
+    exact_scope = dict(runtime_scope)
+    exact_scope.update(
+        {
+            "run_id": run_kernel.state.run_id,
+            "query": direct_result.query,
+            "evidence_ledger_projection": (
+                run_kernel.state.evidence_ledger.to_projection().to_dict()
+            ),
+            "run_contract_projection": deepcopy(
+                _safe_mapping(run_kernel.state.run_contract_projection)
+            ),
+            "answer_contract_projection": deepcopy(contract),
+            "accepted_answer_contract_projection": deepcopy(contract),
+            "direct_semantic_consumption": deepcopy(direct_consumption),
+            "final_top_evidence": [deepcopy(item) for item in selected_passages],
+            "author_evidence": [deepcopy(item) for item in selected_passages],
+            "ordered_sources": [
+                str(item.get("source_id") or item.get("url") or "")
+                for item in selected_passages
+                if item.get("source_id") or item.get("url")
+            ],
+            "unique_source_urls": {
+                str(item["url"]): item.get("source_id")
+                for item in selected_passages
+                if item.get("url")
+            },
+            "scrutineer_flags": [],
+            "synth_was_insufficient": False,
+        }
+    )
+    if not exact_scope["run_contract_projection"]:
+        raise OrdinaryDirectSemanticCorridorError(
+            "terminal corridor requires the existing RunContract authority"
+        )
+
+    sufficiency_handoff = execute_sufficiency_judgment_handoff_from_scope(
+        run_kernel,
+        exact_scope,
+        smart_model_enabled=False,
+    )
+    _require_direct_boundary(run_kernel)
+    exact_scope["sufficiency_judgment_projection"] = deepcopy(
+        sufficiency_handoff.projection
+    )
+    final_answer_packet_handoff = (
+        prepare_final_answer_packet_author_handoff_from_scope(
+            run_kernel,
+            exact_scope,
+            default_system=default_system,
+        )
+    )
+    _require_direct_boundary(run_kernel)
+    author_handoff = None
+    if not final_answer_packet_handoff.author_input_blocked:
+        if final_answer_packet_handoff.author_payload is None:
+            raise OrdinaryDirectSemanticCorridorError(
+                "terminal corridor FAP did not produce Author input"
+            )
+        exact_scope["final_answer_packet_action"] = (
+            final_answer_packet_handoff.action
+        )
+        exact_scope["final_answer_author_payload"] = (
+            final_answer_packet_handoff.author_payload
+        )
+        author_handoff = execute_author_handoff_from_scope(
+            run_kernel,
+            exact_scope,
+            ask_model=author_ask_model,
+            system_prompt_registry=author_system_prompt_registry,
+            base_url=base_url,
+            api_key=api_key,
+            stream_display=stream_display,
+        )
+        _require_direct_boundary(run_kernel)
+    return OrdinaryDirectTerminalCorridorResult(
+        direct_result=direct_result,
+        direct_semantic_consumption=deepcopy(direct_consumption),
+        selected_evidence_passages=tuple(
+            deepcopy(item) for item in selected_passages
+        ),
+        sufficiency_handoff=sufficiency_handoff,
+        final_answer_packet_handoff=final_answer_packet_handoff,
+        author_handoff=author_handoff,
+    )
+
+
+def execute_ordinary_direct_terminal_corridor(
+    *,
+    run_kernel: Any,
+    component_evidence_sets: Mapping[str, Mapping[str, Any]],
+    query: str,
+    requested_synthesis_directive: str,
+    requested_mode: str,
+    strict_one_shot_transport: Callable[..., Any],
+    clean_json_response: Callable[[str], str] | None,
+    provider: str,
+    model: str,
+    use_reasoning: bool,
+    runtime_scope: Mapping[str, Any],
+    default_system: Mapping[str, str],
+    author_ask_model: Callable[..., Any],
+    author_system_prompt_registry: Mapping[str, str],
+    effort: str = "medium",
+    base_url: str | None = None,
+    api_key: str | None = None,
+    stream_display: Callable[[Any], Any] | None = None,
+) -> OrdinaryDirectTerminalCorridorResult:
+    """Execute the branch-only Phase-1 + Phase-2 ordinary corridor."""
+
+    direct_result = execute_ordinary_direct_semantic_corridor_with_context(
+        run_kernel=run_kernel,
+        component_evidence_sets=component_evidence_sets,
+        query=query,
+        requested_synthesis_directive=requested_synthesis_directive,
+        requested_mode=requested_mode,
+        strict_one_shot_transport=strict_one_shot_transport,
+        clean_json_response=clean_json_response,
+        provider=provider,
+        model=model,
+        use_reasoning=use_reasoning,
+        effort=effort,
+    )
+    return execute_ordinary_direct_terminal_corridor_from_result(
+        run_kernel=run_kernel,
+        direct_result=direct_result,
+        runtime_scope=runtime_scope,
+        default_system=default_system,
+        author_ask_model=author_ask_model,
+        author_system_prompt_registry=author_system_prompt_registry,
+        base_url=base_url,
+        api_key=api_key,
+        stream_display=stream_display,
+    )
+
+
+def execute_ordinary_direct_semantic_corridor(
+    *,
+    run_kernel: Any,
+    component_evidence_sets: Mapping[str, Mapping[str, Any]],
+    query: str,
+    requested_synthesis_directive: str,
+    requested_mode: str,
+    strict_one_shot_transport: Callable[..., Any],
+    clean_json_response: Callable[[str], str] | None,
+    provider: str,
+    model: str,
+    use_reasoning: bool,
+    effort: str = "medium",
+) -> tuple[tuple[dict[str, Any], ...], dict[str, Any] | None]:
+    """Preserve the Phase-1 tuple API while retaining no additional authority."""
+
+    result = execute_ordinary_direct_semantic_corridor_with_context(
+        run_kernel=run_kernel,
+        component_evidence_sets=component_evidence_sets,
+        query=query,
+        requested_synthesis_directive=requested_synthesis_directive,
+        requested_mode=requested_mode,
+        strict_one_shot_transport=strict_one_shot_transport,
+        clean_json_response=clean_json_response,
+        provider=provider,
+        model=model,
+        use_reasoning=use_reasoning,
+        effort=effort,
+    )
+    return (
+        tuple(deepcopy(dict(item)) for item in result.component_admission_refs),
+        deepcopy(dict(result.cross_artifact)) if result.cross_artifact else None,
+    )
 
 
 __all__ = [
     "DIRECT_CROSS_LOGICAL_EVALUATION_KEY",
+    "OrdinaryDirectSemanticCorridorResult",
     "OrdinaryDirectSemanticCorridorError",
+    "OrdinaryDirectTerminalCorridorResult",
     "execute_ordinary_direct_semantic_corridor",
+    "execute_ordinary_direct_semantic_corridor_with_context",
+    "execute_ordinary_direct_terminal_corridor",
+    "execute_ordinary_direct_terminal_corridor_from_result",
 ]

@@ -1274,6 +1274,12 @@ def prepare_final_answer_packet_author_handoff_from_scope(
 ) -> FinalAnswerPacketAuthorHandoff:
     """Authorize, execute, and reduce the FinalAnswerPacket Author handoff."""
 
+    canonical_sufficiency_projection = dict(
+        getattr(run_kernel.state, "sufficiency_judgment_projection", {}) or {}
+    )
+    direct_semantic_consumption = dict(
+        canonical_sufficiency_projection.get("direct_semantic_consumption") or {}
+    )
     action = run_kernel.authorize_final_answer_packet_prepare(
         inputs={
             "candidate_count": len(runtime_scope["final_top_evidence"]),
@@ -1286,11 +1292,14 @@ def prepare_final_answer_packet_author_handoff_from_scope(
                 "contract_id"
             ),
             "sufficiency_judgment_available": bool(
-                runtime_scope.get("sufficiency_judgment_projection")
+                canonical_sufficiency_projection
             ),
-            "sufficiency_decision": runtime_scope[
-                "sufficiency_judgment_projection"
-            ].get("decision"),
+            "sufficiency_decision": canonical_sufficiency_projection.get(
+                "decision"
+            ),
+            "direct_semantic_consumption_digest": (
+                direct_semantic_consumption.get("consumption_digest")
+            ),
         }
     )
     accepted_answer_contract_projection = (
@@ -1303,6 +1312,9 @@ def prepare_final_answer_packet_author_handoff_from_scope(
     )
     canonical_runtime_scope["run_contract_projection"] = dict(
         run_kernel.state.run_contract_projection
+    )
+    canonical_runtime_scope["sufficiency_judgment_projection"] = (
+        canonical_sufficiency_projection
     )
     preparation = execute_final_answer_packet_prepare_action_from_scope(
         action,

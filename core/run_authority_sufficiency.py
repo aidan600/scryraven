@@ -329,6 +329,7 @@ class RunSufficiencyJudgmentInput:
     weak_failure_facts: Mapping[str, Any] = field(default_factory=dict)
     budget: Mapping[str, Any] = field(default_factory=dict)
     semantic_state_facts: Mapping[str, Any] = field(default_factory=dict)
+    direct_semantic_consumption: Mapping[str, Any] = field(default_factory=dict)
     component_readiness_projection: Mapping[str, Any] = field(default_factory=dict)
     multicomponent_graph_state: Mapping[str, Any] = field(default_factory=dict)
     multicomponent_scheduler_state: Mapping[str, Any] = field(default_factory=dict)
@@ -399,6 +400,7 @@ class RunSufficiencyJudgmentInput:
             "weak_failure_facts": _safe_mapping(self.weak_failure_facts),
             "budget": _safe_mapping(self.budget),
             "semantic_state_ref": self._semantic_state_model_ref(),
+            "direct_semantic_ref": self._direct_semantic_model_ref(),
             "component_readiness_ref": self._component_readiness_model_ref(),
             "multicomponent_graph_ref": self._multicomponent_graph_model_ref(),
             "multicomponent_scheduler_ref": self._multicomponent_scheduler_model_ref(),
@@ -414,6 +416,32 @@ class RunSufficiencyJudgmentInput:
                     _safe_mapping(self.run_identity).get("request_id")
                 ),
             },
+        }
+
+    def _direct_semantic_model_ref(self) -> dict[str, Any]:
+        consumption = _safe_mapping(self.direct_semantic_consumption)
+        provenance = _safe_mapping(consumption.get("direct_semantic_provenance"))
+        return {
+            "schema_version": clean_token(consumption.get("schema_version")),
+            "consumption_digest": clean_token(
+                consumption.get("consumption_digest"), limit=128
+            ),
+            "component_count": consumption.get("component_count", 0),
+            "direct_component_entry_count": len(
+                _list(consumption.get("direct_component_entries"))
+            ),
+            "cross_relationship_entry_count": len(
+                _list(consumption.get("cross_relationship_entries"))
+            ),
+            "query_resolution_proposal_count": len(
+                _list(consumption.get("query_resolution_proposals"))
+            ),
+            "cross_artifact_present": bool(
+                provenance.get("cross_component_artifact_ref")
+            ),
+            "requested_synthesis_directive_present": bool(
+                clean_text(provenance.get("requested_synthesis_directive"), limit=360)
+            ),
         }
 
     def _multicomponent_scheduler_model_ref(self) -> dict[str, Any]:
@@ -622,6 +650,7 @@ class RunSufficiencyJudgment:
     model_identity: Mapping[str, Any] = field(default_factory=dict)
     semantic_consumption: Mapping[str, Any] = field(default_factory=dict)
     component_readiness: Mapping[str, Any] = field(default_factory=dict)
+    direct_semantic_consumption: Mapping[str, Any] = field(default_factory=dict)
     multicomponent_graph_consumption: Mapping[str, Any] = field(
         default_factory=dict
     )
@@ -740,6 +769,11 @@ class RunSufficiencyJudgment:
             "multicomponent_graph_consumption",
             _safe_mapping(self.multicomponent_graph_consumption),
         )
+        object.__setattr__(
+            self,
+            "direct_semantic_consumption",
+            _safe_mapping(self.direct_semantic_consumption),
+        )
 
     @classmethod
     def from_mapping(cls, payload: Mapping[str, Any]) -> "RunSufficiencyJudgment":
@@ -802,6 +836,9 @@ class RunSufficiencyJudgment:
                 payload.get("semantic_consumption")
             ),
             component_readiness=_safe_mapping(payload.get("component_readiness")),
+            direct_semantic_consumption=_safe_mapping(
+                payload.get("direct_semantic_consumption")
+            ),
             multicomponent_graph_consumption=_safe_mapping(
                 payload.get("multicomponent_graph_consumption")
             ),
@@ -974,6 +1011,9 @@ class RunSufficiencyJudgment:
                 "model_identity": dict(self.model_identity),
                 "semantic_consumption": dict(self.semantic_consumption),
                 "component_readiness": dict(self.component_readiness),
+                "direct_semantic_consumption": dict(
+                    self.direct_semantic_consumption
+                ),
                 "multicomponent_graph_consumption": dict(
                     self.multicomponent_graph_consumption
                 ),

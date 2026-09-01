@@ -8881,8 +8881,8 @@ class RunKernel:
                 "multicomponent_component_work_graph_v1"
             )
         )
+        sufficiency = _safe_mapping(self.state.sufficiency_judgment_projection)
         if graph:
-            sufficiency = _safe_mapping(self.state.sufficiency_judgment_projection)
             consumption = _safe_mapping(
                 sufficiency.get("multicomponent_graph_consumption")
             )
@@ -8894,6 +8894,27 @@ class RunKernel:
             ):
                 raise RunKernelTransitionError(
                     "FinalAnswerPacket requires ordinary Sufficiency consumption of current Graph V1"
+                )
+        direct_consumption = _safe_mapping(
+            sufficiency.get("direct_semantic_consumption")
+        )
+        if direct_consumption:
+            supplied_digest = _safe_mapping(inputs).get(
+                "direct_semantic_consumption_digest"
+            )
+            final_packet_inputs = _safe_mapping(
+                sufficiency.get("final_packet_inputs")
+            )
+            if (
+                sufficiency.get("owner")
+                != "RunKernel.RunAuthoritySufficiencyJudgment"
+                or not direct_consumption.get("consumption_digest")
+                or supplied_digest != direct_consumption.get("consumption_digest")
+                or final_packet_inputs.get("direct_semantic_provenance")
+                != direct_consumption.get("direct_semantic_provenance")
+            ):
+                raise RunKernelTransitionError(
+                    "FinalAnswerPacket requires exact direct semantic Sufficiency consumption"
                 )
         return self.authorize(
             stage=FINAL_ANSWER_PACKET_STAGE,
@@ -17667,6 +17688,49 @@ class RunKernel:
                 raise RunKernelTransitionError(
                     "sufficiency judgment observation requires judgment_projection"
                 )
+            direct_consumption = _safe_mapping(
+                judgment_projection.get("direct_semantic_consumption")
+            )
+            authorized_direct_consumption_digest = action.inputs.get(
+                "direct_semantic_consumption_digest"
+            )
+            if bool(direct_consumption) != bool(
+                authorized_direct_consumption_digest
+            ):
+                raise RunKernelTransitionError(
+                    "Sufficiency reduction lost direct semantic authority"
+                )
+            if direct_consumption:
+                from core.direct_semantic_sufficiency_consumption_runtime import (
+                    DirectSemanticSufficiencyConsumptionError,
+                    rebind_direct_semantic_sufficiency_consumption_to_current_state,
+                )
+
+                try:
+                    rebound_direct_consumption = (
+                        rebind_direct_semantic_sufficiency_consumption_to_current_state(
+                            direct_consumption,
+                            accepted_contract=(
+                                self.state.current_answer_contract
+                                or self.state.initial_answer_contract
+                            ),
+                            component_admission_projection=self.state.projections.get(
+                                "multicomponent_component_admission",
+                                {},
+                            ),
+                            role_projections=self.state.projections,
+                        )
+                    )
+                except DirectSemanticSufficiencyConsumptionError as exc:
+                    raise RunKernelTransitionError(str(exc)) from exc
+                if (
+                    rebound_direct_consumption != direct_consumption
+                    or authorized_direct_consumption_digest
+                    != direct_consumption.get("consumption_digest")
+                ):
+                    raise RunKernelTransitionError(
+                        "Sufficiency reduction lost exact direct semantic binding"
+                    )
             validation = _safe_mapping(observation.payload.get("validation"))
             self.state.sufficiency_judgment = judgment_projection
             self.state.sufficiency_judgment_projection = (
@@ -17968,7 +18032,12 @@ class RunKernel:
                     "multicomponent_component_work_graph_v1"
                 )
             )
-            if graph:
+            direct_consumption = _safe_mapping(
+                self.state.sufficiency_judgment_projection.get(
+                    "direct_semantic_consumption"
+                )
+            )
+            if graph or direct_consumption:
                 sufficiency_inputs = _safe_mapping(
                     self.state.sufficiency_judgment_projection.get(
                         "final_packet_inputs"
@@ -17983,6 +18052,10 @@ class RunKernel:
                     != sufficiency_inputs.get("multicomponent_graph_readiness")
                     or packet_projection.get("multicomponent_limitations", [])
                     != sufficiency_inputs.get("multicomponent_limitations", [])
+                    or packet_projection.get("cross_relationship_entries", [])
+                    != sufficiency_inputs.get("cross_relationship_entries", [])
+                    or packet_projection.get("direct_semantic_provenance", {})
+                    != sufficiency_inputs.get("direct_semantic_provenance", {})
                 ):
                     raise RunKernelTransitionError(
                         "FinalAnswerPacket multi-component content must come from ordinary Sufficiency"
@@ -18031,6 +18104,12 @@ class RunKernel:
                 "admitted_synthesis_entry_count": len(
                     packet_projection.get("admitted_synthesis_entries", []) or []
                 ),
+                "cross_relationship_entry_count": len(
+                    packet_projection.get("cross_relationship_entries", []) or []
+                ),
+                "direct_semantic_provenance_digest": _safe_mapping(
+                    packet_projection.get("direct_semantic_provenance")
+                ).get("provenance_digest"),
                 "multicomponent_graph_readiness": packet_projection.get(
                     "multicomponent_graph_readiness"
                 ),
@@ -23175,6 +23254,10 @@ def _canonical_sufficiency_judgment_projection(
             {},
         ),
         "component_readiness": judgment_projection.get("component_readiness", {}),
+        "direct_semantic_consumption": judgment_projection.get(
+            "direct_semantic_consumption",
+            {},
+        ),
         "multicomponent_graph_consumption": judgment_projection.get(
             "multicomponent_graph_consumption",
             {},

@@ -20,6 +20,9 @@ from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 from typing import Any, Mapping, Sequence
 
+from core.direct_semantic_sufficiency_consumption_runtime import (
+    validate_direct_semantic_provenance_and_relationship_entries,
+)
 from core.quantitative_specialist_product_activation import (
     QUANTITATIVE_CAPABILITY_ID,
     QUANTITATIVE_CAPABILITY_VERSION,
@@ -1584,12 +1587,18 @@ def build_quantitative_finalization_authority_bundle(
     source_fap_ref: Mapping[str, Any],
     direct_component_entries: Sequence[Mapping[str, Any]] = (),
     admitted_synthesis_entries: Sequence[Mapping[str, Any]] = (),
+    cross_relationship_entries: Sequence[Mapping[str, Any]] = (),
+    direct_semantic_provenance: Mapping[str, Any] | None = None,
     semantic_author_materialization: Mapping[str, Any] | None = None,
     component_packet_entries: Sequence[Mapping[str, Any]] = (),
 ) -> dict[str, Any]:
     """Build the safe manifest plus transient exact renderings for Author input."""
 
-    _ = semantic_author_materialization
+    _ = (
+        semantic_author_materialization,
+        cross_relationship_entries,
+        direct_semantic_provenance,
+    )
     claims = _claim_sources(
         direct_component_entries=direct_component_entries,
         admitted_synthesis_entries=admitted_synthesis_entries,
@@ -1686,6 +1695,7 @@ def _structured_numeric_claim_requirements(
     *,
     direct_component_entries: Sequence[Mapping[str, Any]],
     admitted_synthesis_entries: Sequence[Mapping[str, Any]],
+    cross_relationship_entries: Sequence[Mapping[str, Any]],
     component_packet_entries: Sequence[Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
     """Return FAP-selected claims that still need a mechanical or Specialist check.
@@ -1703,6 +1713,7 @@ def _structured_numeric_claim_requirements(
         claim_ref: Mapping[str, Any],
         claim_kind: str,
         integrity_reason: str | None,
+        product_gate: str = "direct_source_mechanical_lineage",
     ) -> None:
         requirements.append(
             {
@@ -1713,7 +1724,7 @@ def _structured_numeric_claim_requirements(
                 "literal_signatures": Counter(),
                 "integrity_reason": integrity_reason,
                 "specialist_declared": False,
-                "product_gate": "direct_source_mechanical_lineage",
+                "product_gate": product_gate,
             }
         )
 
@@ -1825,6 +1836,26 @@ def _structured_numeric_claim_requirements(
             integrity_reason=integrity_reason,
         )
 
+    for index, raw in enumerate(cross_relationship_entries, start=1):
+        entry = _mapping(raw)
+        claim_text = _clean_text(entry.get("claim_text"), limit=2_000)
+        if not claim_text or not any(character.isdigit() for character in claim_text):
+            continue
+        proposal_digest = entry.get("proposal_digest")
+        claim_ref = {
+            "claim_id": entry.get("synthesis_key") or f"cross-{index}",
+            "claim_digest": proposal_digest or _text_digest(claim_text),
+            "synthesis_key": entry.get("synthesis_key"),
+            "proposal_digest": proposal_digest,
+        }
+        add_mechanical_requirement(
+            claim_text=claim_text,
+            claim_ref=claim_ref,
+            claim_kind="cross_relationship",
+            integrity_reason=None,
+            product_gate="exact_bound_cross_mechanical_lineage",
+        )
+
     for raw in component_packet_entries:
         entry = _mapping(raw)
         if (
@@ -1869,6 +1900,8 @@ def build_quantitative_fap_authority_preflight(
     source_fap_ref: Mapping[str, Any],
     direct_component_entries: Sequence[Mapping[str, Any]] = (),
     admitted_synthesis_entries: Sequence[Mapping[str, Any]] = (),
+    cross_relationship_entries: Sequence[Mapping[str, Any]] = (),
+    direct_semantic_provenance: Mapping[str, Any] | None = None,
     semantic_author_materialization: Mapping[str, Any] | None = None,
     component_packet_entries: Sequence[Mapping[str, Any]] = (),
 ) -> dict[str, Any]:
@@ -1880,10 +1913,21 @@ def build_quantitative_fap_authority_preflight(
     semantic verdict from admitted prose.
     """
 
+    cross_integrity_reason: str | None = None
+    try:
+        validate_direct_semantic_provenance_and_relationship_entries(
+            direct_semantic_provenance=direct_semantic_provenance or {},
+            cross_relationship_entries=cross_relationship_entries,
+        )
+    except ValueError:
+        cross_integrity_reason = "cross_relationship_provenance_mismatch"
+
     bundle = build_quantitative_finalization_authority_bundle(
         source_fap_ref=source_fap_ref,
         direct_component_entries=direct_component_entries,
         admitted_synthesis_entries=admitted_synthesis_entries,
+        cross_relationship_entries=cross_relationship_entries,
+        direct_semantic_provenance=direct_semantic_provenance,
         semantic_author_materialization=semantic_author_materialization,
         component_packet_entries=component_packet_entries,
     )
@@ -1900,6 +1944,7 @@ def build_quantitative_fap_authority_preflight(
     requirements = _structured_numeric_claim_requirements(
         direct_component_entries=direct_component_entries,
         admitted_synthesis_entries=admitted_synthesis_entries,
+        cross_relationship_entries=cross_relationship_entries,
         component_packet_entries=component_packet_entries,
     )
     admitted_by_canonical_claim_key = {
@@ -1911,6 +1956,25 @@ def build_quantitative_fap_authority_preflight(
         )
     }
     reasons: list[dict[str, Any]] = []
+    if cross_integrity_reason:
+        reasons.append(
+            {
+                "claim_kind": "cross_relationship_provenance",
+                "claim_ref_digest": _digest(
+                    {
+                        "direct_semantic_provenance": _safe_ref(
+                            direct_semantic_provenance
+                        ),
+                        "cross_relationship_entries": _safe_value(
+                            cross_relationship_entries
+                        ),
+                    }
+                ),
+                "literal_count": 0,
+                "reason_code": cross_integrity_reason,
+                "specialist_declared": False,
+            }
+        )
     for requirement in requirements:
         reason_code = requirement["integrity_reason"]
         canonical_claim_key = _canonical_claim_ref_digest(
@@ -1927,6 +1991,8 @@ def build_quantitative_fap_authority_preflight(
                     reason_code = _direct_source_mechanical_lineage_reason(
                         admitted, materials
                     )
+        elif product_gate == "exact_bound_cross_mechanical_lineage":
+            pass
         else:
             matching_signatures = Counter(
                 "|".join(

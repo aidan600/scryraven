@@ -94,6 +94,19 @@ def execute_run_authority_sufficiency_judgment_action(
         stage=SUFFICIENCY_JUDGMENT_STAGE,
         expected_observation_type=ObservationType.SUFFICIENCY_JUDGMENT_DECIDED,
     )
+    direct_consumption = _safe_mapping(
+        judgment_input.direct_semantic_consumption
+    )
+    supplied_direct_digest = _safe_mapping(action.inputs).get(
+        "direct_semantic_consumption_digest"
+    )
+    if (
+        (direct_consumption and supplied_direct_digest != direct_consumption.get("consumption_digest"))
+        or (not direct_consumption and supplied_direct_digest not in (None, ""))
+    ):
+        raise ValueError(
+            "Sufficiency action is not bound to the exact direct semantic consumption"
+        )
     deterministic_judgment = build_deterministic_sufficiency_judgment(judgment_input)
     committed = deterministic_judgment
     prompt_hash = None
@@ -229,6 +242,10 @@ def execute_sufficiency_judgment_handoff_from_scope(
 ) -> RunSufficiencyJudgmentHandoff:
     """Build, authorize, execute, and reduce final-answer sufficiency judgment."""
 
+    from core.direct_semantic_sufficiency_consumption_runtime import (
+        DirectSemanticSufficiencyConsumptionError,
+        rebind_direct_semantic_sufficiency_consumption_to_current_state,
+    )
     from core.run_authority_sufficiency_adapter import (
         build_sufficiency_judgment_input_from_runtime,
     )
@@ -238,6 +255,28 @@ def execute_sufficiency_judgment_handoff_from_scope(
     final_top_evidence = runtime_scope["final_top_evidence"]
     scrutineer_flags = runtime_scope["scrutineer_flags"]
     corpus_weak = bool(runtime_scope["corpus_weak"])
+    supplied_direct_consumption = _safe_mapping(
+        runtime_scope.get("direct_semantic_consumption")
+    )
+    direct_semantic_consumption: dict[str, Any] = {}
+    if supplied_direct_consumption:
+        try:
+            direct_semantic_consumption = (
+                rebind_direct_semantic_sufficiency_consumption_to_current_state(
+                    supplied_direct_consumption,
+                    accepted_contract=(
+                        run_kernel.state.current_answer_contract
+                        or run_kernel.state.initial_answer_contract
+                    ),
+                    component_admission_projection=run_kernel.state.projections.get(
+                        "multicomponent_component_admission",
+                        {},
+                    ),
+                    role_projections=run_kernel.state.projections,
+                )
+            )
+        except DirectSemanticSufficiencyConsumptionError as exc:
+            raise ValueError(str(exc)) from exc
     judgment_input = build_sufficiency_judgment_input_from_runtime(
         contract_projection=run_contract_projection,
         evidence_ledger_projection=evidence_ledger_projection,
@@ -268,6 +307,7 @@ def execute_sufficiency_judgment_handoff_from_scope(
         contract_amendment_admission_history=(
             run_kernel.state.contract_amendment_admission_history
         ),
+        direct_semantic_consumption=direct_semantic_consumption,
         answer_contract_authority_map_projection=run_kernel.state.projections.get(
             ANSWER_CONTRACT_AUTHORITY_MAP_STAGE,
         ),
@@ -302,6 +342,9 @@ def execute_sufficiency_judgment_handoff_from_scope(
                     "multicomponent_component_work_graph_v1"
                 )
             ).get("graph_digest"),
+            "direct_semantic_consumption_digest": _safe_mapping(
+                direct_semantic_consumption
+            ).get("consumption_digest"),
         }
     )
     result = execute_run_authority_sufficiency_judgment_action(

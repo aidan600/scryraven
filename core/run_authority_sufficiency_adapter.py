@@ -263,6 +263,7 @@ def build_sufficiency_judgment_input_from_runtime(
     current_answer_contract: Mapping[str, Any] | None = None,
     component_coverage_history: Sequence[Mapping[str, Any]] = (),
     contract_amendment_admission_history: Sequence[Mapping[str, Any]] = (),
+    direct_semantic_consumption: Mapping[str, Any] | None = None,
     answer_contract_authority_map_projection: Mapping[str, Any] | None = None,
     multicomponent_graph_state: Mapping[str, Any] | None = None,
     multicomponent_scheduler_state: Mapping[str, Any] | None = None,
@@ -320,6 +321,7 @@ def build_sufficiency_judgment_input_from_runtime(
             "budget_exhausted": iterations_run >= max_iterations,
         },
         semantic_state_facts=semantic_state_facts,
+        direct_semantic_consumption=_mapping(direct_semantic_consumption),
         component_readiness_projection=build_component_readiness_input_projection(
             answer_contract_authority_map_projection=(
                 answer_contract_authority_map_projection

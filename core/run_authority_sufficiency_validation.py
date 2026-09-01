@@ -5,6 +5,9 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any, Mapping, Sequence
 
+from core.direct_semantic_sufficiency_consumption_runtime import (
+    validate_direct_semantic_sufficiency_consumption,
+)
 from core.multicomponent_sufficiency_consumption_runtime import (
     build_multicomponent_graph_consumption,
 )
@@ -1785,7 +1788,7 @@ def _component_readiness_assessments(
         ):
             readiness_status = "satisfied_component"
             assessment_status = "satisfied"
-            reason = "current_ready_component_work_graph_v1"
+            reason = "current_canonical_component_support_ready"
             readiness_blockers = ()
         source_class = None
         source_obligation_id = None
@@ -2501,6 +2504,17 @@ def build_deterministic_sufficiency_judgment(
         current_contract_version=semantic_state.get("accepted_contract_version"),
         current_contract_digest=semantic_state.get("accepted_contract_digest"),
     )
+    direct_semantic_consumption = (
+        validate_direct_semantic_sufficiency_consumption(
+            judgment_input.direct_semantic_consumption
+        )
+        if judgment_input.direct_semantic_consumption
+        else {}
+    )
+    if direct_semantic_consumption and multicomponent_consumption:
+        raise ValueError(
+            "Sufficiency cannot combine direct semantic and Graph consumption"
+        )
     graph_ready_component_ids = frozenset(
         {
             *{
@@ -2544,6 +2558,15 @@ def build_deterministic_sufficiency_judgment(
             },
         }
         - {None}
+    )
+    direct_ready_component_ids = frozenset(
+        clean_token(item.get("component_id"))
+        for item in _mapping_tuple(
+            direct_semantic_consumption.get("component_admission_refs")
+        )
+        if clean_token(item.get("component_id"))
+        and clean_token(item.get("admission_status"))
+        in {"admitted", "admitted_with_caveats"}
     )
 
     ledger_requirements = _ledger_requirements(ledger)
@@ -2721,6 +2744,7 @@ def build_deterministic_sufficiency_judgment(
         authoritative_ready_component_ids=frozenset(
             {
                 *graph_ready_component_ids,
+                *direct_ready_component_ids,
                 *(
                     (terminal_component_id,)
                     if terminal_component_ready
@@ -2987,6 +3011,124 @@ def build_deterministic_sufficiency_judgment(
             posture = SufficiencyPosture.BLOCKED
             final_allowed = False
             rationale = "multicomponent_graph_has_no_admitted_direct_output"
+    direct_readiness_reasons: list[str] = []
+    direct_mandatory_caveats: list[str] = []
+    direct_preserved_nonclaims: list[str] = []
+    if direct_semantic_consumption:
+        direct_admissions = list(
+            direct_semantic_consumption.get("component_admission_refs") or ()
+        )
+        direct_entries = list(
+            direct_semantic_consumption.get("direct_component_entries") or ()
+        )
+        relationship_entries = list(
+            direct_semantic_consumption.get("cross_relationship_entries") or ()
+        )
+        direct_provenance = _mapping(
+            direct_semantic_consumption.get("direct_semantic_provenance")
+        )
+        component_count = int(
+            direct_semantic_consumption.get("component_count") or 0
+        )
+        relationship_required = bool(
+            component_count >= 2
+            and clean_text(
+                direct_provenance.get("requested_synthesis_directive"),
+                limit=360,
+            )
+        )
+        all_components_supporting = bool(
+            direct_admissions
+            and len(direct_entries) == len(direct_admissions)
+            and all(
+                clean_token(item.get("admission_status"))
+                in {"admitted", "admitted_with_caveats"}
+                for item in direct_admissions
+            )
+        )
+        direct_mandatory_caveats.extend(
+            caveat
+            for entry in direct_entries
+            for caveat in _string_list(entry.get("required_caveats"))
+        )
+        direct_mandatory_caveats.extend(
+            caveat
+            for entry in relationship_entries
+            for caveat in _string_list(entry.get("caveats"))
+        )
+        direct_preserved_nonclaims.extend(
+            nonclaim
+            for entry in direct_entries
+            for nonclaim in _string_list(entry.get("preserved_nonclaims"))
+        )
+        direct_preserved_nonclaims.extend(
+            nonclaim
+            for entry in relationship_entries
+            for nonclaim in _string_list(entry.get("nonclaims"))
+        )
+        relationship_blockers = [
+            blocker
+            for entry in relationship_entries
+            for blocker in _string_list(entry.get("blockers"))
+        ]
+        if not all_components_supporting:
+            if decision not in {
+                RunSufficiencyDecision.BLOCK_FINALIZATION,
+                RunSufficiencyDecision.CONFLICT_BLOCKED,
+            }:
+                decision = RunSufficiencyDecision.INSUFFICIENT_EVIDENCE
+                posture = SufficiencyPosture.INSUFFICIENT_ANSWER
+                rationale = "direct_required_component_support_unavailable"
+            final_allowed = False
+            direct_readiness_reasons.append(
+                "required_direct_component_support_unavailable"
+            )
+        elif direct_semantic_consumption.get("query_resolution_proposals"):
+            if decision not in {
+                RunSufficiencyDecision.BLOCK_FINALIZATION,
+                RunSufficiencyDecision.CONFLICT_BLOCKED,
+            }:
+                decision = RunSufficiencyDecision.BLOCK_FINALIZATION
+                posture = SufficiencyPosture.BLOCKED
+                rationale = (
+                    "direct_cross_query_resolution_requires_authorized_resolution"
+                )
+            final_allowed = False
+            direct_readiness_reasons.append(
+                "direct_cross_query_resolution_unresolved"
+            )
+        elif relationship_blockers:
+            if decision not in {
+                RunSufficiencyDecision.BLOCK_FINALIZATION,
+                RunSufficiencyDecision.CONFLICT_BLOCKED,
+            }:
+                decision = RunSufficiencyDecision.BLOCK_FINALIZATION
+                posture = SufficiencyPosture.BLOCKED
+                rationale = "direct_cross_relationship_blocked"
+            final_allowed = False
+            direct_readiness_reasons.append("direct_cross_relationship_blocked")
+            direct_mandatory_caveats.extend(relationship_blockers)
+        elif relationship_required and all_components_supporting and not relationship_entries:
+            if decision not in {
+                RunSufficiencyDecision.BLOCK_FINALIZATION,
+                RunSufficiencyDecision.CONFLICT_BLOCKED,
+            }:
+                decision = RunSufficiencyDecision.INSUFFICIENT_EVIDENCE
+                posture = SufficiencyPosture.INSUFFICIENT_ANSWER
+                rationale = "direct_cross_authored_no_required_relationship"
+            final_allowed = False
+            direct_readiness_reasons.append(
+                "required_direct_cross_relationship_missing"
+            )
+        elif (
+            final_allowed
+            and all_components_supporting
+            and direct_mandatory_caveats
+            and decision is RunSufficiencyDecision.READY_DIRECT
+        ):
+            decision = RunSufficiencyDecision.READY_WITH_CAVEATS
+            posture = SufficiencyPosture.ANSWER_WITH_CAVEATS
+            rationale = "direct_semantic_material_ready_with_caveats"
     if scheduler_required_work_blocked:
         decision = RunSufficiencyDecision.BLOCK_FINALIZATION
         posture = SufficiencyPosture.BLOCKED
@@ -3137,6 +3279,7 @@ def build_deterministic_sufficiency_judgment(
                     if multicomponent_consumption
                     else ()
                 ),
+                *direct_readiness_reasons,
             )
         )
     )
@@ -3152,7 +3295,13 @@ def build_deterministic_sufficiency_judgment(
         failure_card_reason=failure_reason,
     )
     mandatory = tuple(
-        dict.fromkeys((*mandatory, *semantic_overlay.mandatory_caveats))
+        dict.fromkeys(
+            (
+                *mandatory,
+                *semantic_overlay.mandatory_caveats,
+                *direct_mandatory_caveats,
+            )
+        )
     )
     if multicomponent_consumption:
         mandatory = tuple(
@@ -3186,7 +3335,13 @@ def build_deterministic_sufficiency_judgment(
         failure_card=failure_card,
     )
     prohibited = tuple(
-        dict.fromkeys((*prohibited, *semantic_overlay.prohibited_upgrades))
+        dict.fromkeys(
+            (
+                *prohibited,
+                *semantic_overlay.prohibited_upgrades,
+                *direct_preserved_nonclaims,
+            )
+        )
     )
     if multicomponent_consumption:
         prohibited = tuple(
@@ -3256,6 +3411,8 @@ def build_deterministic_sufficiency_judgment(
         "provider_or_acquisition_blocker",
     }:
         required_satisfied = False
+    if direct_semantic_consumption and not final_allowed:
+        required_satisfied = False
     semantic_consumption = build_semantic_consumption_summary(
         judgment_input.semantic_state_facts,
         overlay=semantic_overlay,
@@ -3287,6 +3444,7 @@ def build_deterministic_sufficiency_judgment(
         semantic_consumption=semantic_consumption,
         component_readiness=component_readiness,
         multicomponent_graph_consumption=multicomponent_consumption,
+        direct_semantic_consumption=direct_semantic_consumption,
         searchos_existing_gap_recovery_terminal_consumption=(
             searchos_recovery_terminal_consumption
         ),
@@ -3348,6 +3506,34 @@ def build_deterministic_sufficiency_judgment(
                     )
                 ),
                 "multicomponent_limitations": fap_limitations,
+            }
+        )
+    if direct_semantic_consumption:
+        final_packet_inputs.update(
+            {
+                "direct_semantic_provenance": dict(
+                    direct_semantic_consumption.get(
+                        "direct_semantic_provenance"
+                    )
+                    or {}
+                ),
+                "direct_component_entries": (
+                    list(
+                        direct_semantic_consumption.get(
+                            "direct_component_entries", ()
+                        )
+                    )
+                    if final_allowed
+                    else []
+                ),
+                "cross_relationship_entries": (
+                    list(
+                        direct_semantic_consumption.get(
+                            "cross_relationship_entries", ()
+                        )
+                    )
+                ),
+                "admitted_synthesis_entries": [],
             }
         )
     return replace(judgment, final_packet_inputs=final_packet_inputs)
@@ -3673,10 +3859,11 @@ def preserve_multicomponent_sufficiency_authority(
     *,
     deterministic_judgment: RunSufficiencyJudgment,
 ) -> RunSufficiencyJudgment:
-    """Prevent model adaptation from dropping canonical Graph V1 readiness."""
+    """Prevent model adaptation from dropping canonical terminal authority."""
 
     if (
         not deterministic_judgment.multicomponent_graph_consumption
+        and not deterministic_judgment.direct_semantic_consumption
         and not deterministic_judgment.searchos_existing_gap_recovery_terminal_consumption
         and not deterministic_judgment.searchos_required_needs_block_consumption
     ):
@@ -3719,6 +3906,9 @@ def preserve_multicomponent_sufficiency_authority(
         component_readiness=deterministic_judgment.component_readiness,
         multicomponent_graph_consumption=(
             deterministic_judgment.multicomponent_graph_consumption
+        ),
+        direct_semantic_consumption=(
+            deterministic_judgment.direct_semantic_consumption
         ),
         searchos_existing_gap_recovery_terminal_consumption=(
             deterministic_judgment.searchos_existing_gap_recovery_terminal_consumption

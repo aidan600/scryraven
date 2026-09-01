@@ -2294,6 +2294,14 @@ def build_final_answer_packet(
         sufficiency_judgment_projection,
         "admitted_synthesis_entries",
     )
+    cross_relationship_entries = _sufficiency_packet_mappings(
+        sufficiency_judgment_projection,
+        "cross_relationship_entries",
+    )
+    direct_semantic_provenance = _sufficiency_packet_mapping(
+        sufficiency_judgment_projection,
+        "direct_semantic_provenance",
+    )
     multicomponent_graph_readiness = _sufficiency_packet_text(
         sufficiency_judgment_projection,
         "multicomponent_graph_readiness",
@@ -2382,6 +2390,8 @@ def build_final_answer_packet(
         semantic_packet_evidence_bindings=semantic_packet_evidence_bindings,
         direct_component_entries=direct_component_entries,
         admitted_synthesis_entries=admitted_synthesis_entries,
+        cross_relationship_entries=cross_relationship_entries,
+        direct_semantic_provenance=direct_semantic_provenance,
         multicomponent_graph_readiness=multicomponent_graph_readiness,
         multicomponent_limitations=multicomponent_limitations,
     )

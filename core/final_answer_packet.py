@@ -14,6 +14,10 @@ from enum import Enum
 from hashlib import sha256
 from typing import Any, Mapping, Sequence
 
+from core.direct_semantic_sufficiency_consumption_runtime import (
+    direct_semantic_relationship_entries_digest,
+    validate_direct_semantic_provenance_and_relationship_entries,
+)
 from core.quantitative_finalization_authority import (
     build_quantitative_author_instruction_block,
     build_quantitative_fap_authority_preflight,
@@ -732,6 +736,8 @@ class FinalAnswerAuthorInputPayload:
     )
     direct_component_entries: tuple[Mapping[str, Any], ...] = ()
     admitted_synthesis_entries: tuple[Mapping[str, Any], ...] = ()
+    cross_relationship_entries: tuple[Mapping[str, Any], ...] = ()
+    direct_semantic_provenance: Mapping[str, Any] = field(default_factory=dict)
     multicomponent_graph_readiness: str | None = None
     multicomponent_limitations: tuple[str, ...] = ()
     quantitative_finalization_authority_manifest: Mapping[str, Any] = field(
@@ -743,6 +749,10 @@ class FinalAnswerAuthorInputPayload:
         if status not in {item.value for item in AuthorInputStatus}:
             raise ValueError(f"unknown author input status: {status}")
         object.__setattr__(self, "status", AuthorInputStatus(status))
+        validate_direct_semantic_provenance_and_relationship_entries(
+            direct_semantic_provenance=self.direct_semantic_provenance,
+            cross_relationship_entries=self.cross_relationship_entries,
+        )
 
     def to_trace_ref(self) -> dict[str, Any]:
         quantitative_trace_ref = _quantitative_authority_manifest_trace_ref(
@@ -760,16 +770,38 @@ class FinalAnswerAuthorInputPayload:
                 "admitted_synthesis_entry_count",
                 "admitted_synthesis_entries_digest",
             ),
+            (
+                "cross_relationship_entries",
+                "cross_relationship_entry_count",
+                "cross_relationship_entries_digest",
+            ),
         ):
             entries = trace_authority_payload.pop(entry_key, None)
             if isinstance(entries, Sequence) and not isinstance(
                 entries, (str, bytes)
             ):
                 trace_authority_payload[count_key] = len(entries)
-                trace_authority_payload[digest_key] = _stable_safe_json_digest(
-                    entries
+                trace_authority_payload[digest_key] = (
+                    direct_semantic_relationship_entries_digest(entries)
+                    if entry_key == "cross_relationship_entries"
+                    else _stable_safe_json_digest(entries)
                 )
-        if self.direct_component_entries or self.admitted_synthesis_entries:
+        trace_direct_semantic_provenance = trace_authority_payload.pop(
+            "direct_semantic_provenance",
+            None,
+        )
+        if isinstance(trace_direct_semantic_provenance, Mapping):
+            trace_authority_payload["direct_semantic_provenance_digest"] = (
+                trace_direct_semantic_provenance.get("provenance_digest")
+            )
+            trace_authority_payload["direct_semantic_component_count"] = (
+                trace_direct_semantic_provenance.get("component_count")
+            )
+        if (
+            self.direct_component_entries
+            or self.admitted_synthesis_entries
+            or self.cross_relationship_entries
+        ):
             trace_authority_payload["full_multicomponent_entries_included"] = False
         if "quantitative_finalization_authority_manifest" in trace_authority_payload:
             trace_authority_payload[
@@ -810,6 +842,8 @@ class FinalAnswerAuthorInputPayload:
             self.multicomponent_graph_readiness
             or self.direct_component_entries
             or self.admitted_synthesis_entries
+            or self.cross_relationship_entries
+            or self.direct_semantic_provenance
             or self.multicomponent_limitations
         ):
             payload.update(
@@ -819,6 +853,24 @@ class FinalAnswerAuthorInputPayload:
                     ),
                     "admitted_synthesis_entry_count": len(
                         self.admitted_synthesis_entries
+                    ),
+                    "cross_relationship_entry_count": len(
+                        self.cross_relationship_entries
+                    ),
+                    "cross_relationship_entries_digest": (
+                        direct_semantic_relationship_entries_digest(
+                            self.cross_relationship_entries
+                        )
+                    ),
+                    "direct_semantic_provenance_digest": (
+                        self.direct_semantic_provenance.get("provenance_digest")
+                        if self.direct_semantic_provenance
+                        else None
+                    ),
+                    "direct_semantic_component_count": (
+                        self.direct_semantic_provenance.get("component_count")
+                        if self.direct_semantic_provenance
+                        else 0
                     ),
                     "multicomponent_graph_readiness": _clean_text(
                         self.multicomponent_graph_readiness,
@@ -968,6 +1020,8 @@ class FinalAnswerPacket:
     semantic_packet_evidence_bindings: tuple[Mapping[str, Any], ...] = ()
     direct_component_entries: tuple[Mapping[str, Any], ...] = ()
     admitted_synthesis_entries: tuple[Mapping[str, Any], ...] = ()
+    cross_relationship_entries: tuple[Mapping[str, Any], ...] = ()
+    direct_semantic_provenance: Mapping[str, Any] = field(default_factory=dict)
     multicomponent_graph_readiness: str | None = None
     multicomponent_limitations: tuple[str, ...] = ()
     schema_version: str = FINAL_ANSWER_PACKET_SCHEMA_VERSION
@@ -989,6 +1043,10 @@ class FinalAnswerPacket:
         )
         self._validate_semantic_packet_evidence_bindings()
         self._validate_multicomponent_entries()
+        validate_direct_semantic_provenance_and_relationship_entries(
+            direct_semantic_provenance=self.direct_semantic_provenance,
+            cross_relationship_entries=self.cross_relationship_entries,
+        )
 
     def _validate_multicomponent_entries(self) -> None:
         for raw_entry in self.direct_component_entries:
@@ -1395,6 +1453,8 @@ class FinalAnswerPacket:
             self.multicomponent_graph_readiness
             or self.direct_component_entries
             or self.admitted_synthesis_entries
+            or self.cross_relationship_entries
+            or self.direct_semantic_provenance
             or self.multicomponent_limitations
         ):
             payload.update(
@@ -1404,6 +1464,12 @@ class FinalAnswerPacket:
                     ),
                     "admitted_synthesis_entries": _safe_json(
                         self.admitted_synthesis_entries
+                    ),
+                    "cross_relationship_entries": _safe_json(
+                        self.cross_relationship_entries
+                    ),
+                    "direct_semantic_provenance": _safe_json(
+                        self.direct_semantic_provenance
                     ),
                     "multicomponent_graph_readiness": _clean_text(
                         self.multicomponent_graph_readiness,
@@ -1434,6 +1500,8 @@ class FinalAnswerPacket:
             },
             direct_component_entries=self.direct_component_entries,
             admitted_synthesis_entries=self.admitted_synthesis_entries,
+            cross_relationship_entries=self.cross_relationship_entries,
+            direct_semantic_provenance=self.direct_semantic_provenance,
             semantic_author_materialization=(
                 semantic_author_materialization
                 if semantic_author_materialization is not None
@@ -1461,6 +1529,8 @@ class FinalAnswerPacket:
             },
             direct_component_entries=self.direct_component_entries,
             admitted_synthesis_entries=self.admitted_synthesis_entries,
+            cross_relationship_entries=self.cross_relationship_entries,
+            direct_semantic_provenance=self.direct_semantic_provenance,
             semantic_author_materialization=(
                 semantic_author_materialization
                 if semantic_author_materialization is not None
@@ -1652,6 +1722,12 @@ class FinalAnswerPacket:
             direct_component_entries=tuple(self.direct_component_entries),
             admitted_synthesis_entries=tuple(
                 self.admitted_synthesis_entries
+            ),
+            cross_relationship_entries=tuple(
+                self.cross_relationship_entries
+            ),
+            direct_semantic_provenance=dict(
+                self.direct_semantic_provenance
             ),
             multicomponent_graph_readiness=(
                 self.multicomponent_graph_readiness
@@ -2425,6 +2501,43 @@ class FinalAnswerPacket:
                     + ": "
                     + str(entry.get("claim_text") or "")
                 )
+        if self.cross_relationship_entries:
+            lines.append(
+                "- Cross-authored relationship material selected by Sufficiency "
+                "(do not describe it as admitted, approved, or independently cited):"
+            )
+            for entry in self.cross_relationship_entries:
+                lines.append(
+                    "  - "
+                    + str(entry.get("synthesis_key") or "relationship")
+                    + " ["
+                    + str(entry.get("relationship_type") or "relationship")
+                    + "]: "
+                    + str(entry.get("claim_text") or "")
+                )
+                component_inputs = list(entry.get("component_inputs") or ())
+                synthesis_inputs = list(entry.get("synthesis_inputs") or ())
+                if component_inputs:
+                    lines.append(
+                        "    Exact component inputs: "
+                        + ", ".join(str(item) for item in component_inputs)
+                    )
+                if synthesis_inputs:
+                    lines.append(
+                        "    Exact synthesis inputs: "
+                        + ", ".join(str(item) for item in synthesis_inputs)
+                    )
+                for label, field_name in (
+                    ("Caveats", "caveats"),
+                    ("Nonclaims", "nonclaims"),
+                    ("Blockers", "blockers"),
+                ):
+                    values = list(entry.get(field_name) or ())
+                    if values:
+                        lines.append(
+                            f"    {label}: "
+                            + "; ".join(str(item) for item in values)
+                        )
         if self.multicomponent_graph_readiness:
             lines.append(
                 "- Multi-component graph readiness: "
@@ -2498,6 +2611,8 @@ class FinalAnswerPacket:
             self.multicomponent_graph_readiness
             or self.direct_component_entries
             or self.admitted_synthesis_entries
+            or self.cross_relationship_entries
+            or self.direct_semantic_provenance
             or self.multicomponent_limitations
         ):
             payload.update(
@@ -2507,6 +2622,12 @@ class FinalAnswerPacket:
                     ),
                     "admitted_synthesis_entries": _safe_json(
                         self.admitted_synthesis_entries
+                    ),
+                    "cross_relationship_entries": _safe_json(
+                        self.cross_relationship_entries
+                    ),
+                    "direct_semantic_provenance": _safe_json(
+                        self.direct_semantic_provenance
                     ),
                     "multicomponent_graph_readiness": _clean_text(
                         self.multicomponent_graph_readiness,
