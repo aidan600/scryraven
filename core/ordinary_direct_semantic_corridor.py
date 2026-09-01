@@ -29,6 +29,7 @@ from core.multicomponent_graph_scheduling import (
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
     ROLE_CROSS_COMPONENT_ANALYST,
+    MulticomponentRoleRuntimeError,
     execute_multicomponent_role_call,
     role_artifact_ref,
     safe_packet_digest,
@@ -282,12 +283,43 @@ def _current_component_admissions(
             "direct corridor component admissions are not the exact current set"
         )
     ordered: list[dict[str, Any]] = []
+    canonical_terminal_statuses = {
+        "admitted",
+        "admitted_with_caveats",
+        "unsupported",
+        "blocked",
+    }
+    support_bearing_statuses = {"admitted", "admitted_with_caveats"}
+    support_ref_fields = (
+        "admitted_claim_ref",
+        "semantic_observation_ref",
+        "component_coverage_ref",
+    )
     for component in component_refs:
         component_id = str(component["component_id"])
         admission = by_id[component_id]
+        admission_status = admission.get("admission_status")
+        case_ref = admission.get("component_analyst_case_ref")
+        completed_case = _safe_mapping(
+            run_kernel.state.projections.get(
+                f"multicomponent_role:{ROLE_COMPONENT_ANALYST}:{component_id}"
+            )
+        )
+        try:
+            expected_case_ref = role_artifact_ref(completed_case)
+        except MulticomponentRoleRuntimeError:
+            expected_case_ref = {}
+        support_refs_are_mappings = all(
+            field in admission and isinstance(admission.get(field), Mapping)
+            for field in support_ref_fields
+        )
+        support_refs = tuple(
+            _safe_mapping(admission.get(field)) for field in support_ref_fields
+        )
         if (
-            admission.get("owner")
-            != "RunKernel.MulticomponentComponentAdmission"
+            admission.get("schema_version")
+            != "multicomponent_component_admission_ref_v1"
+            or admission.get("owner") != MULTICOMPONENT_COMPONENT_ADMISSION_OWNER
             or admission.get("canonical_state") is not True
             or admission.get("run_id") != run_kernel.state.run_id
             or admission.get("request_id") != run_kernel.state.request_id
@@ -295,17 +327,26 @@ def _current_component_admissions(
             != contract.get("accepted_contract_version")
             or admission.get("accepted_contract_digest")
             != contract.get("accepted_contract_digest")
+            or admission.get("component_id") != component_id
+            or admission.get("logical_evaluation_key") != component_id
             or admission.get("component_revision")
             != component.get("component_revision")
             or admission.get("component_digest") != component.get("component_digest")
-            or admission.get("admission_status")
-            not in {"admitted", "admitted_with_caveats"}
+            or admission_status not in canonical_terminal_statuses
             or admission.get("current") is not True
-            or admission.get("stale") is True
-            or not _safe_mapping(admission.get("component_analyst_case_ref"))
-            or not _safe_mapping(admission.get("admitted_claim_ref"))
-            or not _safe_mapping(admission.get("semantic_observation_ref"))
-            or not _safe_mapping(admission.get("component_coverage_ref"))
+            or admission.get("stale") is not False
+            or not isinstance(case_ref, Mapping)
+            or not case_ref
+            or dict(case_ref) != expected_case_ref
+            or not support_refs_are_mappings
+            or (
+                admission_status in support_bearing_statuses
+                and not all(support_refs)
+            )
+            or (
+                admission_status not in support_bearing_statuses
+                and any(support_refs)
+            )
         ):
             raise OrdinaryDirectSemanticCorridorError(
                 f"direct corridor component admission is stale or incomplete: {component_id}"
@@ -378,6 +419,14 @@ def _build_direct_cross_input_packet(
         contract=contract,
         component_refs=component_refs,
     )
+    if any(
+        admission.get("admission_status")
+        not in {"admitted", "admitted_with_caveats"}
+        for admission in admissions
+    ):
+        raise OrdinaryDirectSemanticCorridorError(
+            "direct Cross requires support-bearing canonical component admissions"
+        )
     component_ids = [str(item["component_id"]) for item in component_refs]
     packets = {
         str(key): deepcopy(dict(value))
@@ -532,6 +581,14 @@ def _validate_direct_cross_result_binding(
         contract=contract,
         component_refs=component_refs,
     )
+    if any(
+        admission.get("admission_status")
+        not in {"admitted", "admitted_with_caveats"}
+        for admission in admissions
+    ):
+        raise OrdinaryDirectSemanticCorridorError(
+            "direct Cross requires support-bearing canonical component admissions"
+        )
     packet = deepcopy(dict(cross_input_packet))
     expected_views = [
         _admitted_component_view(component, admission)
@@ -682,6 +739,12 @@ def execute_ordinary_direct_semantic_corridor(
         raise OrdinaryDirectSemanticCorridorError(
             "direct corridor admission return lost current RunKernel binding"
         )
+    if any(
+        admission.get("admission_status")
+        not in {"admitted", "admitted_with_caveats"}
+        for admission in current_admissions
+    ):
+        return tuple(current_admissions), None
     if len(component_refs) == 1:
         return tuple(current_admissions), None
 

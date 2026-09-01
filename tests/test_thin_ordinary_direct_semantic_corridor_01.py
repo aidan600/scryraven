@@ -34,6 +34,7 @@ from core.evidence_ledger import (
     CandidateDisposition,
 )
 from core.multicomponent_component_admission import (
+    MULTICOMPONENT_COMPONENT_ADMISSION_STAGE,
     MulticomponentComponentAdmissionError,
 )
 from core.multicomponent_role_runtime import (
@@ -41,6 +42,7 @@ from core.multicomponent_role_runtime import (
     ROLE_CROSS_COMPONENT_ANALYST,
     ROLE_SYSTEM_PROMPTS,
     MulticomponentRoleRuntimeError,
+    role_artifact_ref,
     safe_packet_digest,
 )
 from core.ordinary_direct_semantic_corridor import (
@@ -304,6 +306,113 @@ def test_n2_mixed_cardinality_direct_admissions_then_one_bound_cross(
     assert [
         item["component_id"] for item in captured[-1]["packet"]["component_nodes"]
     ] == ["component-1", "component-2"]
+    _assert_old_path_absent(kernel)
+
+
+@pytest.mark.parametrize(
+    "non_support_posture",
+    ("unsupported", "blocked"),
+)
+def test_n2_current_non_support_admission_survives_and_suppresses_cross(
+    monkeypatch: pytest.MonkeyPatch,
+    non_support_posture: str,
+) -> None:
+    build_calls = 0
+    original_build = direct_runtime._build_direct_cross_input_packet
+
+    def counted_build(**kwargs: Any) -> dict[str, Any]:
+        nonlocal build_calls
+        build_calls += 1
+        return original_build(**kwargs)
+
+    def make_component_two_non_support(
+        role: str,
+        packet: dict[str, Any],
+        response: dict[str, Any],
+    ) -> dict[str, Any]:
+        if (
+            role != ROLE_COMPONENT_ANALYST
+            or packet["component_ref"]["component_id"] != "component-2"
+        ):
+            return response
+        return {
+            "case_posture": non_support_posture,
+            "evidence_analysis": (
+                "The supplied current materials do not establish component support."
+            ),
+            "self_audit": "No admitted component claim is asserted.",
+            "caveats": [],
+            "nonclaims": ["No supported component claim is asserted."],
+            "contradictions": [],
+            "blockers": (
+                []
+                if non_support_posture == "unsupported"
+                else ["The component remains blocked on its supplied materials."]
+            ),
+        }
+
+    monkeypatch.setattr(
+        direct_runtime,
+        "_build_direct_cross_input_packet",
+        counted_build,
+    )
+    kernel, admissions, cross, captured = _execute(
+        monkeypatch,
+        cross_proposals=_one_relationship_proposal(),
+        response_mutator=make_component_two_non_support,
+    )
+
+    projection = kernel.state.projections[
+        MULTICOMPONENT_COMPONENT_ADMISSION_STAGE
+    ]
+    assert admissions == tuple(projection["component_admission_refs"])
+    assert [item["component_id"] for item in admissions] == [
+        "component-1",
+        "component-2",
+    ]
+    assert [item["admission_status"] for item in admissions] == [
+        "admitted",
+        non_support_posture,
+    ]
+    assert admissions[0]["admitted_claim_ref"]
+    assert admissions[0]["semantic_observation_ref"]
+    assert admissions[0]["component_coverage_ref"]
+
+    non_support = admissions[1]
+    assert non_support["case_posture"] == non_support_posture
+    assert non_support["current"] is True
+    assert non_support["stale"] is False
+    assert non_support["component_analyst_case_ref"] == role_artifact_ref(
+        kernel.state.projections[
+            f"multicomponent_role:{ROLE_COMPONENT_ANALYST}:component-2"
+        ]
+    )
+    assert non_support["admitted_claim_ref"] == {}
+    assert non_support["semantic_observation_ref"] == {}
+    assert non_support["component_coverage_ref"] == {}
+    assert non_support["evidence_refs"] == []
+
+    assert projection["component_count"] == 2
+    assert projection["admitted_component_count"] == 1
+    assert projection["blocked_component_count"] == 1
+    assert projection["projection_digest"] == safe_packet_digest(
+        {key: value for key, value in projection.items() if key != "projection_digest"}
+    )
+    assert len(kernel.state.semantic_observation_admission_history) == 1
+    assert kernel.state.semantic_observation_admission_history[0][
+        "answer_component_id"
+    ] == "component-1"
+    assert len(kernel.state.component_coverage_history) == 1
+    assert kernel.state.component_coverage_history[0][
+        "answer_component_id"
+    ] == "component-1"
+
+    assert cross is None
+    assert [item["system_prompt"] for item in captured] == [
+        ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST],
+        ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST],
+    ]
+    assert build_calls == 0
     _assert_old_path_absent(kernel)
 
 
@@ -621,6 +730,7 @@ def test_stale_component_result_is_rejected_before_cross_call(
     ("mutation", "message"),
     (
         ("stale_component", "stale or incomplete"),
+        ("missing_admitted_support_ref", "stale or incomplete"),
         ("mutated_projection", "lost canonical integrity"),
         ("component_substitution", "input is stale"),
         ("wrong_cross_digest", "exact-input binding mismatch"),
@@ -644,6 +754,14 @@ def test_direct_cross_exact_current_binding_rejects_stale_substituted_and_forged
         )
         projection["component_admission_refs"][1]["current"] = False
         projection["component_admission_refs"][1]["stale"] = True
+        kernel.state.projections["multicomponent_component_admission"] = (
+            _projection_with_refreshed_digest(projection)
+        )
+    elif mutation == "missing_admitted_support_ref":
+        projection = deepcopy(
+            kernel.state.projections["multicomponent_component_admission"]
+        )
+        projection["component_admission_refs"][0].pop("admitted_claim_ref")
         kernel.state.projections["multicomponent_component_admission"] = (
             _projection_with_refreshed_digest(projection)
         )
