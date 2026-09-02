@@ -14,6 +14,10 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any
 
+from core.analyst_query_resolution_proposal import (
+    CLASS_SEARCHED_PREMISE,
+    selected_proposals_for_role_artifact,
+)
 from core.component_analyst_evidence_set import (
     ComponentAnalystEvidenceSetError,
     component_analyst_evidence_member_code_evidence,
@@ -43,6 +47,7 @@ from core.multicomponent_role_runtime import (
 from core.ordinary_multicomponent_synthesis_runtime import (
     build_component_analyst_admission_semantic_material,
     component_analyst_evidence_set_is_searchos_read_custody,
+    record_analyst_query_resolution_candidates,
 )
 from core.quantitative_specialist_product_activation import (
     QUANTITATIVE_SYNTHESIS_TARGET_KEY_RULE,
@@ -68,6 +73,36 @@ def _stop_on_unserviceable_direct_specialist_need(
     if result.specialist_need_proposal_present:
         raise OrdinaryDirectSemanticCorridorError(
             "direct corridor Specialist execution is not licensed/implemented"
+        )
+
+
+def _stop_on_unserviceable_direct_component_query_resolution(
+    *,
+    run_kernel: Any,
+    analyst_artifact: Mapping[str, Any],
+) -> None:
+    """Preserve owner-selected searched-premise work before component admission."""
+
+    registry = record_analyst_query_resolution_candidates(
+        run_kernel=run_kernel,
+        artifact=analyst_artifact,
+    )
+    lifecycle = _safe_mapping(registry.get("proposal_lifecycle"))
+    selected_searched_premise_proposals = selected_proposals_for_role_artifact(
+        registry=registry,
+        role_artifact=analyst_artifact,
+        classification=CLASS_SEARCHED_PREMISE,
+    )
+    if any(
+        _safe_mapping(lifecycle.get(str(proposal.get("proposal_id") or ""))).get(
+            "status"
+        )
+        == "pending"
+        for proposal in selected_searched_premise_proposals
+    ):
+        raise OrdinaryDirectSemanticCorridorError(
+            "direct Component Analyst query resolution is not licensed/implemented "
+            "by this experimental corridor"
         )
 
 
@@ -651,6 +686,10 @@ def execute_ordinary_direct_semantic_corridor_with_context(
             input_packet=packet,
             logical_evaluation_key=component_id,
             **role_kwargs,
+        )
+        _stop_on_unserviceable_direct_component_query_resolution(
+            run_kernel=run_kernel,
+            analyst_artifact=analyst_artifact,
         )
         observation, content_refs, coverage = (
             build_component_analyst_admission_semantic_material(

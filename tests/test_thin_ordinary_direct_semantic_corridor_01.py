@@ -27,6 +27,12 @@ import core.component_work_graph_v1 as graph_runtime
 import core.multicomponent_graph_scheduling as scheduler_runtime
 import core.ordinary_direct_semantic_corridor as direct_runtime
 import core.ordinary_multicomponent_synthesis_runtime as ordinary_runtime
+from core.analyst_query_resolution_proposal import (
+    ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY,
+    CLASS_EXISTING_COMPONENT_GAP,
+    CLASS_SEARCHED_PREMISE,
+    selected_proposals_for_role_artifact,
+)
 from core.component_analyst_evidence_set import build_component_analyst_evidence_set
 from core.evidence_ledger import (
     CandidateCustodyKind,
@@ -227,6 +233,67 @@ def _one_relationship_proposal() -> list[dict[str, Any]]:
     ]
 
 
+def _searched_premise_query_resolution_candidate(
+    component_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Return one valid normalized-Role-runtime candidate fixture."""
+
+    exact_component_ref = deepcopy(dict(component_ref))
+    component_id = str(exact_component_ref["component_id"])
+    return {
+        "classification": CLASS_SEARCHED_PREMISE,
+        "local_proposal_key": "recover_missing_premise",
+        "local_target_key": component_id,
+        "normalized_premise_identity": "offline missing searched premise",
+        "answer_target_refs": [exact_component_ref],
+        "parent_component_refs": [exact_component_ref],
+        "current_dependency_component_refs": [],
+        "premise_semantics": "A bounded premise still requires source-grounded resolution.",
+        "user_facing_label": "Offline missing premise",
+        "user_facing_question": "Which bounded source establishes the missing premise?",
+        "acceptance_criteria": ["Verify the missing premise from an authoritative source."],
+        "requirement_posture": "required",
+        "materiality": "material",
+        "partial_answer_policy": "qualify_visible_gap",
+        "mandatory_caveats": [],
+        "source_obligation_specification": {
+            "candidate_id": "obligation:offline-missing-premise",
+            "obligation_kind": "authoritative_direct_support",
+            "strictness": "required",
+        },
+        "necessity_rationale": "The exact component remains contingent on the premise.",
+        "why_current_premises_insufficient": "The exact supplied evidence does not resolve it.",
+        "searchability_material_need_posture": "material_and_searchable",
+        "recovery_generation": {"parent_ref": "generation:0", "depth": 1},
+        "assumptions": [],
+        "caveats": [],
+        "prohibited_upgrades": ["Do not infer the missing premise."],
+    }
+
+
+def _existing_component_gap_query_resolution_candidate(
+    component_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Return a valid proposal which is not searched-premise recovery work."""
+
+    exact_component_ref = deepcopy(dict(component_ref))
+    return {
+        "classification": CLASS_EXISTING_COMPONENT_GAP,
+        "local_proposal_key": "existing_component_gap",
+        "local_target_key": str(exact_component_ref["component_id"]),
+        "current_component_ref": exact_component_ref,
+        "affected_answer_target_refs": [exact_component_ref],
+        "source_obligation_ref": {"requirement_id": "offline-existing-gap"},
+        "current_coverage_or_gap_ref": {"coverage_state": "gap"},
+        "why_no_new_component_required": (
+            "The existing component can be reconsidered without a searched premise."
+        ),
+        "assumptions": [],
+        "caveats": [],
+        "prohibited_upgrades": ["Do not infer a replacement component."],
+    }
+
+
 def _assert_old_path_absent(kernel: Any) -> None:
     assert "multicomponent_graph_scheduler" not in kernel.state.projections
     assert "multicomponent_component_work_graph_v1" not in kernel.state.projections
@@ -236,6 +303,12 @@ def _assert_old_path_absent(kernel: Any) -> None:
     assert "scrutineer" not in roles
     assert all("lease" not in action.action_type.value for action in kernel.state.issued_actions.values())
     assert all("batch" not in action.action_type.value for action in kernel.state.issued_actions.values())
+
+
+def _assert_terminal_owners_absent(kernel: Any) -> None:
+    assert not getattr(kernel.state, "sufficiency_judgment_projection", None)
+    assert not getattr(kernel.state, "final_answer_packet", None)
+    assert not getattr(kernel.state, "author_observation", None)
 
 
 def test_n1_direct_component_analyst_and_admission_without_cross(
@@ -253,6 +326,192 @@ def test_n1_direct_component_analyst_and_admission_without_cross(
     assert [item["system_prompt"] for item in captured] == [
         ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST]
     ]
+    _assert_old_path_absent(kernel)
+
+
+def test_n1_selected_searched_premise_stops_before_component_admission(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_kernels: list[Any] = []
+    captured: list[dict[str, Any]] = []
+
+    def capture_kernel(
+        kernel: Any,
+        _evidence_sets: dict[str, dict[str, Any]],
+        _contract: dict[str, Any],
+    ) -> None:
+        captured_kernels.append(kernel)
+
+    def add_selected_searched_premise(
+        role: str,
+        packet: dict[str, Any],
+        response: dict[str, Any],
+    ) -> dict[str, Any]:
+        if role == ROLE_COMPONENT_ANALYST:
+            response["query_resolution_proposals"] = [
+                _searched_premise_query_resolution_candidate(packet["component_ref"])
+            ]
+        return response
+
+    with pytest.raises(
+        OrdinaryDirectSemanticCorridorError,
+        match="direct Component Analyst query resolution is not licensed/implemented",
+    ):
+        _execute(
+            monkeypatch,
+            cross_proposals=[],
+            n1=True,
+            fixture_mutator=capture_kernel,
+            response_mutator=add_selected_searched_premise,
+            capture_sink=captured,
+        )
+
+    kernel = captured_kernels[0]
+    artifact = kernel.state.projections[
+        f"multicomponent_role:{ROLE_COMPONENT_ANALYST}:component-1"
+    ]
+    registry = kernel.state.projections[ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY]
+    selected = selected_proposals_for_role_artifact(
+        registry=registry,
+        role_artifact=artifact,
+        classification=CLASS_SEARCHED_PREMISE,
+    )
+
+    assert artifact["semantic_output"]["query_resolution_proposals"]
+    assert registry["owner"] == "RunKernel.AnalystQueryResolutionProposalRegistry"
+    assert registry["canonical_state"] is False
+    assert registry["proposal_only"] is True
+    assert registry["raw_private_retained"] is False
+    assert len(selected) == 1
+    assert registry["proposal_lifecycle"][selected[0]["proposal_id"]]["status"] == "pending"
+    assert MULTICOMPONENT_COMPONENT_ADMISSION_STAGE not in kernel.state.projections
+    assert kernel.state.semantic_observation_admission_history == []
+    assert kernel.state.component_coverage_history == []
+    assert [item["system_prompt"] for item in captured] == [
+        ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST]
+    ]
+    _assert_terminal_owners_absent(kernel)
+    _assert_old_path_absent(kernel)
+
+
+def test_n2_selected_searched_premise_preserves_prior_admission_and_stops_before_cross(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_kernels: list[Any] = []
+    captured: list[dict[str, Any]] = []
+
+    def capture_kernel(
+        kernel: Any,
+        _evidence_sets: dict[str, dict[str, Any]],
+        _contract: dict[str, Any],
+    ) -> None:
+        captured_kernels.append(kernel)
+
+    def add_component_two_selected_searched_premise(
+        role: str,
+        packet: dict[str, Any],
+        response: dict[str, Any],
+    ) -> dict[str, Any]:
+        if (
+            role == ROLE_COMPONENT_ANALYST
+            and packet["component_ref"]["component_id"] == "component-2"
+        ):
+            response["query_resolution_proposals"] = [
+                _searched_premise_query_resolution_candidate(packet["component_ref"])
+            ]
+        return response
+
+    with pytest.raises(
+        OrdinaryDirectSemanticCorridorError,
+        match="direct Component Analyst query resolution is not licensed/implemented",
+    ):
+        _execute(
+            monkeypatch,
+            cross_proposals=_one_relationship_proposal(),
+            fixture_mutator=capture_kernel,
+            response_mutator=add_component_two_selected_searched_premise,
+            capture_sink=captured,
+        )
+
+    kernel = captured_kernels[0]
+    projection = kernel.state.projections[MULTICOMPONENT_COMPONENT_ADMISSION_STAGE]
+    admissions = projection["component_admission_refs"]
+    component_two_artifact = kernel.state.projections[
+        f"multicomponent_role:{ROLE_COMPONENT_ANALYST}:component-2"
+    ]
+    registry = kernel.state.projections[ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY]
+    selected = selected_proposals_for_role_artifact(
+        registry=registry,
+        role_artifact=component_two_artifact,
+        classification=CLASS_SEARCHED_PREMISE,
+    )
+
+    assert [item["component_id"] for item in admissions] == ["component-1"]
+    assert admissions[0]["current"] is True
+    assert admissions[0]["stale"] is False
+    assert admissions[0]["component_analyst_case_ref"] == role_artifact_ref(
+        kernel.state.projections[
+            f"multicomponent_role:{ROLE_COMPONENT_ANALYST}:component-1"
+        ]
+    )
+    assert component_two_artifact["semantic_output"]["query_resolution_proposals"]
+    assert len(selected) == 1
+    assert registry["proposal_lifecycle"][selected[0]["proposal_id"]]["status"] == "pending"
+    assert projection["component_count"] == 1
+    assert projection["admitted_component_count"] == 1
+    assert projection["blocked_component_count"] == 0
+    assert projection["projection_digest"] == safe_packet_digest(
+        {key: value for key, value in projection.items() if key != "projection_digest"}
+    )
+    assert len(kernel.state.semantic_observation_admission_history) == 1
+    assert len(kernel.state.component_coverage_history) == 1
+    assert all(item["component_id"] != "component-2" for item in admissions)
+    assert [item["system_prompt"] for item in captured] == [
+        ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST],
+        ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST],
+    ]
+    _assert_terminal_owners_absent(kernel)
+    _assert_old_path_absent(kernel)
+
+
+def test_n1_nonsearched_resolution_proposal_does_not_blindly_block(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def add_existing_component_gap(
+        role: str,
+        packet: dict[str, Any],
+        response: dict[str, Any],
+    ) -> dict[str, Any]:
+        if role == ROLE_COMPONENT_ANALYST:
+            response["query_resolution_proposals"] = [
+                _existing_component_gap_query_resolution_candidate(packet["component_ref"])
+            ]
+        return response
+
+    kernel, admissions, cross, _captured = _execute(
+        monkeypatch,
+        cross_proposals=[],
+        n1=True,
+        response_mutator=add_existing_component_gap,
+    )
+
+    artifact = kernel.state.projections[
+        f"multicomponent_role:{ROLE_COMPONENT_ANALYST}:component-1"
+    ]
+    registry = kernel.state.projections[ANALYST_QUERY_RESOLUTION_PROPOSAL_TRACE_KEY]
+    assert artifact["semantic_output"]["query_resolution_proposals"]
+    assert selected_proposals_for_role_artifact(
+        registry=registry,
+        role_artifact=artifact,
+        classification=CLASS_EXISTING_COMPONENT_GAP,
+    )
+    assert not selected_proposals_for_role_artifact(
+        registry=registry,
+        role_artifact=artifact,
+        classification=CLASS_SEARCHED_PREMISE,
+    )
+    assert [item["admission_status"] for item in admissions] == ["admitted"]
+    assert cross is None
     _assert_old_path_absent(kernel)
 
 
