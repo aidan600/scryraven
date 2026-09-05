@@ -1,6 +1,11 @@
 # Validation Buckets
 
-Status: Codex-visible reference for choosing validation scope.
+Status: retained v1 validation reference; non-authoritative for current work.
+
+This document is retained for deliberate inspection of the v1 repository state
+and its cross-referenced operational history. It is not mandatory routing,
+workflow, product, architecture, test, validation, or publication doctrine.
+For current work, follow AGENTS.md, PRODUCT.md, and CURRENT.md.
 
 ScryRaven validation is tiered so ordinary pull requests stay fast while
 high-custody phases can still request broader proof explicitly. Choose the

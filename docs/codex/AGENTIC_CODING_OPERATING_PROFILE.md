@@ -1,6 +1,11 @@
 # Agentic Coding Operating Profile
 
-Status: Canonical vendor-neutral execution-profile doctrine.
+Status: retained v1 execution-profile reference; non-authoritative for current work.
+
+This document is retained for deliberate inspection of the v1 repository state
+and its cross-referenced operational history. It is not mandatory routing,
+workflow, product, architecture, test, validation, or publication doctrine.
+For current work, follow AGENTS.md, PRODUCT.md, and CURRENT.md.
 
 This document helps a human operator choose an execution profile. Profiles
 describe task shape and recommended attention; they do not grant authority.

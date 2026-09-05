@@ -1,7 +1,11 @@
 # Test Classification Library
 
-Status: Codex-visible reference for classifying new tests before they enter
-permanent validation surfaces.
+Status: retained v1 test-classification reference; non-authoritative for current work.
+
+This document is retained for deliberate inspection of the v1 repository state
+and its cross-referenced operational history. It is not mandatory routing,
+workflow, product, architecture, test, validation, or publication doctrine.
+For current work, follow AGENTS.md, PRODUCT.md, and CURRENT.md.
 
 Use this with [VALIDATION_BUCKETS.md](VALIDATION_BUCKETS.md) whenever a phase
 adds, promotes, demotes, or retires tests.

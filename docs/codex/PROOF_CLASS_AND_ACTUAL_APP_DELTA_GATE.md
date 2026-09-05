@@ -1,7 +1,13 @@
 # Proof Class and Actual App Delta Gate
 
-Status: Codex-facing implementation guardrail.
-Use when: drafting Codex phase briefs, implementing authority/custody/semantic/provider/Author phases, reviewing final bundles, or distinguishing product-path work from component harness work.
+Status: retained v1 proof/reference material; non-authoritative for current work.
+
+This document is retained for deliberate inspection of the v1 repository state
+and its cross-referenced operational history. It is not mandatory routing,
+workflow, product, architecture, test, validation, or publication doctrine.
+For current work, follow AGENTS.md, PRODUCT.md, and CURRENT.md.
+
+Historical use: drafting Codex phase briefs, implementing authority/custody/semantic/provider/Author phases, reviewing final bundles, or distinguishing product-path work from component harness work.
 
 ## Purpose
 
