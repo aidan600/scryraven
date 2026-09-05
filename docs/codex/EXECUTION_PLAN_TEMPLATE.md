@@ -1,6 +1,12 @@
 # Codex Multi-Step Execution Plan Template
 
-Status: Recommended compact template for bundled phases
+Status: retained v1 execution-plan reference; non-authoritative for current work.
+
+This document is retained for deliberate inspection of the v1 repository state
+and its cross-referenced operational history. It is not mandatory routing,
+workflow, product, architecture, test, validation, or publication doctrine.
+For current work, follow AGENTS.md, PRODUCT.md, and CURRENT.md.
+
 Suggested repo path: `docs/codex/EXECUTION_PLAN_TEMPLATE.md`
 
 Use this template when a phase is larger than a tiny slice but still bounded by

@@ -1,8 +1,13 @@
 # Coding Agent Guidance Map
 
-Status: current
-Authority: canonical:task-routing
-Default-read: yes
+Status: retained v1 routing/reference index; non-authoritative for current work
+Authority: none
+Default-read: no
+
+This document is retained for deliberate inspection of the v1 repository state
+and its cross-referenced operational history. It is not mandatory routing,
+workflow, product, architecture, test, validation, or publication doctrine.
+For current work, follow AGENTS.md, PRODUCT.md, and CURRENT.md.
 
 Root `AGENTS.md` is the always-loaded vendor-neutral contract. This map is a
 router, not an installed-state summary, roadmap, architecture body, or phase

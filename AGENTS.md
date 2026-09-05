@@ -1,161 +1,362 @@
-# ScryRaven Coding Agent Contract
+# ScryRaven Repository Working-Agent Contract
 
-Status: Active vendor-neutral standing guidance for every repository task.
-Use `docs/codex/CODEX_GUIDANCE_MAP.md` to route to task-specific procedures.
+Status: canonical vendor-neutral standing guidance for repository-working coding agents
 
-## Project and repository boundary
+This file governs Codex and other coding agents, including tools such as Cursor where they honor repository instructions.
 
-ScryRaven is the public project name. Existing compatibility names such as
-`proplex`, `python -m proplex`, `PROPLEX_*`, `proplex.db`, and `proplex_*` state
-keys remain supported unless a phase explicitly changes them.
+Do not create a separate duplicate operating constitution for each coding tool. Tool-specific configuration should remain minimal and point toward this contract where practical.
 
-Use repository-visible files and the current task prompt. Do not treat external
-project sources or private workspace material as repository files unless their
-content is supplied in the prompt or committed here.
+## 1. Start from current truth
 
-## Safety and human authority
-
-No live ScryRaven/proplex provider, model, search, fetch/read, or retrieval call
-is authorized by default. Do not access secrets, `.env`, API keys, raw provider
-or model payloads, raw prompts, database rows, private logs, caches, full raw
-traces, local output packets, or private artifacts unless a phase explicitly
-licenses safe, bounded, redacted access.
-
-Proceed autonomously through repository inspection, scoped implementation,
-focused offline validation, in-scope fixes, caused cross-link or formatting
-repairs, complete-diff review, and final reporting. Stop for a product decision,
-unresolved architecture fork, unlicensed or closed surface, live-call authority,
-private data, destructive Git, merge/rebase/force-push, broad scope expansion,
-or a failing check whose repair would change the phase's meaning.
-
-The human operator selects the actual model and reasoning or intelligence level.
-Repository recommendations are advisory and must not force or silently escalate
-that selection. Reasoning level never expands scope, permissions, publication
-authority, live-call authority, or private-data access.
-
-## Product-path rule
-
-Prefer reuse and ordinary product-path consumption over new parallel machinery.
-Before changing a mature capability or authority surface, inventory the current
-owner and consumer and classify the intended action as `REUSE`, `ADAPT`,
-`UPGRADE`, `RETIRE`, or `REPLACE`. Do not add a shadow answer path, authority,
-harness, proof, packet, projection, or registry without a named ordinary
-consumer or a named blocker it removes.
-
-Product-facing work must reach the ordinary consumer named by the phase. New
-authority is incomplete until that consumer uses it and the old authority is
-deleted, demoted, bypassed, subordinated, or explicitly scheduled for
-retirement. Trace-, storage-, wrapper-, prompt-, or test-only adoption is not
-runtime consumption.
-
-Supported-product evidence sets implementation cadence. No more than three
-consecutive merged implementation PRs may produce no supported-product evidence
-unless the maintainer explicitly approves an exception naming the blocker and
-the next product pulse. After one non-product infrastructure PR, its immediate
-successor should consume that infrastructure unless an architectural review
-explicitly changes the sequence.
-
-Two failed attempts in the same preparation, authorization, launcher,
-workspace, or harness-consumption layer--without reaching the intended product
-or component boundary--require architectural review before a third attempt.
-Bounded fixes may continue inside one tracked phase while failures remain in one
-causal cluster. This rule prevents a third near-identical phase; it does not stop
-ordinary in-phase debugging.
-
-Detailed proof classes, harness requirements, and exception leashes are owned by
-`docs/codex/PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md` and
-`docs/codex/PHASE_BRIEF_ADDENDA.md`.
-
-## Build / Proof / Repair gate
-
-Every phase declares exactly one mode:
+Before substantive work, read:
 
 ```text
-Mode: BUILD | PROOF | REPAIR
+PRODUCT.md
+CURRENT.md
 ```
 
-BUILD is the default and delivers a coherent product-moving outcome through an
-ordinary user, CLI, API, or app consumer. PROOF is a bounded exception that
-answers one named blocker, states nonproofs, and names the mandatory next Build
-checkpoint. REPAIR removes a named integrity defect in product behavior or the
-repo-visible operating system and adds a practical regression guard when useful.
-Repo-doc Repair may target `NO-BUT-JUSTIFIED` only when it identifies the
-product-moving failure prevented and the next product checkpoint protected.
+`PRODUCT.md` owns approved product intent.
 
-## Outcome-based phase sizing
+`CURRENT.md` owns mutable factual project state.
 
-A PR may be large when it implements one coherent product outcome through its
-ordinary consumer. Do not split solely because the outcome crosses several
-files, modules, authority seams, or internal implementation milestones.
+Inspect current code, tests, Git state, and relevant evidence as needed.
 
-Split when work contains independent product decisions, unrelated consumers,
-materially different risk classes, or incompatible rollback boundaries. Small
-PRs remain valid and desirable when they are the natural coherent unit.
+Historical architecture and prior implementation are not requirements merely because they exist.
 
-## Substantial-task contract
+## 2. Work from a human-approved outcome
 
-Express substantial work as:
+Substantial work must have one coherent approved outcome or consequential engineering question.
+
+Prefer:
 
 ```text
-Outcome:
-Constraints:
-Verification:
+one unresolved outcome
+-> implementation
+-> verification
+-> ordinary PRODUCT observation when applicable
+-> in-scope repair
+-> one final review bundle
 ```
 
-Inspect the repository, form a compact internal plan, and proceed through related
-milestones without waiting for approval. During focused implementation, stop on
-divergence, unrelated scope expansion, or architectural uncertainty; do not stop
-merely because tests remain red while failures decrease within one causal cluster
-and the next correction is bounded and directly implied. Create coherent local
-checkpoint commits at milestones and before expensive validation. Complete the
-ordinary consumer endpoint, review the entire diff against the base, rerun
-affected validation, and return one final bundle. Details are owned by the
-operating profile and playbook.
+over:
 
-The default final bundle is: outcome and scope; material changes; verification
-evidence; self-review findings and fixes; risks and nonproofs; Git/PR status; and
-recommended next action. Add specialized appendices only when applicable.
+```text
+one seam
+-> one artifact
+-> one PR
+-> another prerequisite phase
+```
 
-## Validation and review
+A coherent work item may contain multiple local commits, tests, diagnoses, and repairs.
 
-Use the smallest valid offline validation bucket and classify new tests before
-adding them to permanent manifests. Do not run live or secrets-backed checks
-unless explicitly licensed. Review the complete branch diff for correctness,
-authority boundaries, regressions, unnecessary machinery, stale-path retirement,
-security, and private-data exposure. Substantial BUILD phases also require the
-full implementation and skeptical-maintainer loop in the playbook.
+Do not stop for ordinary debugging while the next correction is in scope and directly serves the approved outcome.
 
-## Git and publication
+## 3. Implementation autonomy
 
-Preserve user changes and avoid destructive operations. Do not merge, rebase,
-force-push, delete branches, destructively clean, or mutate `main`. Commit,
-push, or create a pull request only when the phase or user explicitly authorizes
-publication. If the known publication path fails, report the exact failure; do
-not repair authentication, ACLs, SSH, OAuth, or sandbox configuration during an
-implementation phase.
+Within an existing approved responsibility, choose ordinary implementation details autonomously.
 
-The canonical Windows sandbox and GitHub publication compatibility contract is
-`docs/codex/CODEX_LOCAL_WINDOWS_SANDBOX_PUBLICATION_RULE.md`.
+You may:
 
-The ordinary local implementation path uses the clean current `main` branch in
-`C:\Users\aidan\ScryRaven`, creates one feature branch in that same checkout,
-and, when authorized after external merge review, returns the checkout to
-updated clean `main`.
-Dedicated worktrees are opt-in exceptions that require explicit phase license.
-Generated, private, and transient data must still use the existing external
-output and temporary-data controls. Branch deletion is never automatic and
-requires explicit maintainer authorization.
+- inspect relevant repository state;
+- refactor locally;
+- add or remove private helpers;
+- modify implementation-specific structures;
+- write focused tests;
+- delete obsolete implementation-specific tests;
+- create local checkpoint commits;
+- perform authorized ordinary PRODUCT observations;
+- make bounded in-scope repairs;
+- update `CURRENT.md` with factual state.
 
-## Guidance routes
+Do not ask the human to decide routine engineering details.
 
-- `docs/codex/CODEX_GUIDANCE_MAP.md` — task-to-owner routing
-- `docs/codex/ARCHITECTURE_GROOVE_PLAYBOOK.md` — phase workflow and review loop
-- `docs/codex/AGENTIC_CODING_OPERATING_PROFILE.md` — advisory execution profiles
-- `docs/codex/PHASE_BRIEF_TEMPLATE.md` — compact phase contract
-- `docs/codex/PHASE_BRIEF_ADDENDA.md` — conditional proof/live/harness/migration/delegation fields
-- `docs/codex/EXECUTION_PLAN_TEMPLATE.md` — optional multi-milestone plan
-- `docs/codex/PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md` — proof/product claims
-- `docs/codex/TEST_CLASSIFICATION_LIBRARY.md` and `docs/codex/VALIDATION_BUCKETS.md` — test scope
-- `docs/codex/RUNAUTHORITY_IMPLEMENTATION_GUIDE.md` — RunAuthority migrations
-- `docs/architecture/ANALYSTOS_OPERATING_MODEL.md` — selected AnalystOS target topology and semantic-role policy (installed D-prime paths remain until convergence)
-- `docs/architecture/MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md` — installed bounded multi-component runtime architecture
+## 4. Architecture STOP boundary
+
+STOP before introducing a new critical-path:
+
+- responsibility;
+- independent decision-maker;
+- mandatory restriction;
+- persistent lifecycle;
+- authority boundary;
+- alternate product path.
+
+Also STOP when resolution would:
+
+- materially change the promised outcome;
+- violate an explicit exclusion;
+- require a consequential product trade-off;
+- require unlicensed private-data or credential access;
+- require destructive or otherwise unauthorized Git behavior;
+- exhaust the reasonable authorized execution envelope without reaching a decision.
+
+"Cleaner," "more extensible," "more correct architecture," or possible future usefulness is not sufficient authority.
+
+Explain the blocking fact and the simplest alternatives.
+
+## 5. Development boundaries are not product states
+
+Do not turn workflow conditions such as:
+
+```text
+not licensed in this work item
+future work
+not implemented yet
+testing permission
+review required
+```
+
+into permanent product:
+
+- runtime gates;
+- state fields;
+- user-facing blockers;
+- schemas;
+- authority objects;
+- tested contracts.
+
+A work item may simply stop with functionality not yet implemented.
+
+Product restrictions require product justification and authority.
+
+## 6. Tests protect surviving promises
+
+Tests protect approved product and safety behavior.
+
+They do not grant permanence to implementation shape.
+
+When an authorized simplification or deletion breaks a test, ask:
+
+```text
+What surviving approved promise does this test protect?
+```
+
+If no surviving promise exists, update or delete the test with the implementation.
+
+Do not create process tests whose main purpose is preserving exact governance wording.
+
+Use focused tests where they materially reduce implementation risk.
+
+## 7. Explicit REMOVE
+
+`REMOVE` creates a removal obligation.
+
+Remove applicable:
+
+- runtime code;
+- callers;
+- compatibility machinery existing solely for the removed behavior;
+- obsolete tests;
+- obsolete configuration;
+- current documentation.
+
+Do not substitute:
+
+- deprecation;
+- bypass;
+- feature flags;
+- dormant compatibility;
+- "keep just in case."
+
+If any intended removal remains, the final bundle must say:
+
+```text
+REMOVAL INCOMPLETE
+```
+
+and identify exactly what remains and why.
+
+## 8. Proof versus PRODUCT evidence
+
+Harnesses, mocks, fixtures, and offline proofs may diagnose and accelerate development.
+
+They cannot complete a PRODUCT obligation that claims behavior through the ordinary product.
+
+A product-path test must not secretly perform the production owner's missing work.
+
+For product-facing work, final completion evidence normally exercises:
+
+```text
+ordinary entrypoint
+-> actual production path
+-> real downstream consumer
+-> claimed product result
+```
+
+at the level appropriate to the approved outcome.
+
+Offline proof remains appropriate for deterministic mechanics, regressions, and fast iteration.
+
+## 9. Live PRODUCT execution
+
+A coherent critical-path work item includes enough pre-authorized ordinary PRODUCT execution to investigate, repair, and decide the promised outcome without repeatedly returning to the human for permission.
+
+The work-item brief controls the actual finite runway.
+
+When an explicitly live-authorized work item does not state another finite runway, **up to five ordinary PRODUCT runs may be used as an optional operational starting default**.
+
+Five runs is:
+
+- not constitutional law;
+- not an acceptance threshold;
+- not a target to consume;
+- not automatically renewed by renaming or continuing the work item;
+- not an automatic ceiling when the work-item brief explicitly authorizes a different finite runway.
+
+Use fewer when sufficient.
+
+Do not invent:
+
+- per-provider accounting bureaucracy;
+- token-budget systems;
+- dollar-cost accounting for ordinary development queries;
+- artificial model/search/read caps that prevent the authorized product test itself.
+
+After a deterministic failure, normally make a reasoned correction and relevant offline checks before another PRODUCT run.
+
+Same-code repetition is appropriate only for an authorized variability check or plausible transient external failure.
+
+## 10. Credential and privacy boundary
+
+For agent-operated commands requiring repository credentials or private environment values, use the existing repository credential-broker / doorman mechanism.
+
+The broker's job is secret custody and process plumbing.
+
+It must not become product architecture or decide:
+
+- product semantics;
+- model/provider policy;
+- search policy;
+- retries;
+- evidence authority;
+- answer policy.
+
+The controlling agent must not read or expose:
+
+- `.env` contents;
+- API keys or credentials;
+- unapproved private data.
+
+Use approved sanitized outputs for review.
+
+Do not invent a new credential system during ordinary feature work.
+
+## 11. Git and publication
+
+Default local repository:
+
+```text
+C:\Users\aidan\ScryRaven
+```
+
+Default workflow is one ordinary checkout and one work-item branch.
+
+Worktrees are opt-in exceptions.
+
+Preserve unrelated user work.
+
+Do not:
+
+- merge;
+- rebase;
+- force-push;
+- destructively reset;
+- destructively clean;
+- alter `main`;
+- delete branches;
+
+without explicit authority for that operation.
+
+Local checkpoint commits are allowed when the work-item brief permits implementation.
+
+Push and PR creation require publication authority from the work item or human.
+
+A PR is a review surface, not merge authority.
+
+Do not create a new PR merely because an internal milestone completed.
+
+## 12. `CURRENT.md` delivery obligation
+
+A PR that materially changes any fact owned by `CURRENT.md` must update `CURRENT.md` in the same PR.
+
+This includes material changes to:
+
+- product behavior;
+- active product path;
+- implemented versus demonstrated capability;
+- representative success/failure frontier;
+- active work state that must survive handoff;
+- an in-force architectural decision.
+
+Do not churn `CURRENT.md` for changes that alter none of its facts.
+
+During branch work, repository-working agents may record implementation and execution facts in `CURRENT.md`.
+
+Before review, make the branch version describe the state that would be true after merge.
+
+Do not invent a future merge SHA.
+
+ChatGPT checks `CURRENT.md` claims against available evidence during review.
+
+The human retains product-intent and consequential-decision authority.
+
+Replace stale facts; do not append chronology.
+
+Git and PR history preserve chronology.
+
+Writing a claim into `CURRENT.md` does not authorize that claim.
+
+## 13. Final bundle
+
+Lead with whether the requested outcome actually happened.
+
+Use:
+
+```text
+OUTCOME:
+Met / not met / inconclusive.
+
+EVIDENCE:
+Before -> after.
+Tested revision.
+Ordinary PRODUCT evidence where required.
+Relevant focused checks.
+Material final-code changes not covered by that evidence.
+
+SCOPE AND REMOVAL:
+Responsibilities or restrictions added/deleted and their authorization.
+Explicit removal: complete or REMOVAL INCOMPLETE.
+
+CURRENT TRUTH AND LIMITS:
+Whether CURRENT.md was updated.
+Remaining failures, uncertainty, and unproved claims.
+
+HANDOFF:
+Branch/head/PR state.
+Specific review or human decision required.
+```
+
+Do not use test count, code volume, or architectural sophistication as the headline.
+
+Do not recommend an automatic next phase.
+
+## 14. Post-merge local aftercare
+
+When the human has approved the merge and aftercare is explicitly authorized, the local coding agent may:
+
+- verify that the reviewed change was merged;
+- preserve unrelated and uncommitted work;
+- return the ordinary checkout to the approved updated baseline using safe Git operations;
+- remove the exact completed local branch only if branch deletion was explicitly authorized;
+- report final repository status.
+
+STOP if the checkout is dirty in an unexplained way, has unrelated divergence, or cannot be reconciled safely.
+
+Do not use aftercare to:
+
+- reset away work;
+- force anything;
+- rebase without authority;
+- delete unrelated branches;
+- clean unrelated files;
+- start the next work item.

@@ -1,6 +1,11 @@
 # Compact Phase Brief Template
 
-Status: Canonical core template. Fill only phase-specific facts.
+Status: retained v1 phase-brief reference; non-authoritative for current work.
+
+This document is retained for deliberate inspection of the v1 repository state
+and its cross-referenced operational history. It is not mandatory routing,
+workflow, product, architecture, test, validation, or publication doctrine.
+For current work, follow AGENTS.md, PRODUCT.md, and CURRENT.md.
 
 Read `CODEX_GUIDANCE_MAP.md`, `ARCHITECTURE_GROOVE_PLAYBOOK.md`, and the routed
 owner documents relevant to the work. Add only applicable sections from
