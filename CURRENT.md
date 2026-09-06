@@ -1,6 +1,6 @@
 # ScryRaven Current Truth
 
-Status: Part B product decision complete; repository reset prepared for review
+Status: Part B product decision complete; active v1 tree reset complete
 Repository: aidan600/scryraven
 Preferred local checkout: C:\Users\aidan\ScryRaven
 
