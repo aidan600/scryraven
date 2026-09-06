@@ -1,85 +1,170 @@
 # ScryRaven Current Truth
 
-Status: transitional current state before Part B  
-Repository: `aidan600/scryraven`  
+Status: Part B product decision complete; repository reset pending
+Repository: `aidan600/scryraven`
 Preferred local checkout: `C:\Users\aidan\ScryRaven`
 
-## Current repository state
+## Current product state
 
-Part A installation baseline / final v1 implementation baseline:
+Part B has established the initial ScryRaven product promise and selected the first walking-skeleton design sufficiently for implementation preparation.
+
+The walking skeleton is **not yet implemented**.
+
+The existing v1 application remains physically present in the repository until the separately reviewed repository-reset work is completed. Its presence does not make it current product architecture.
+
+`PRODUCT.md` owns the approved product behavior.
+
+## Selected first-slice responsibility boundary
+
+The selected initial design has three semantic responsibilities:
 
 ```text
-bdefe506ffb58df491e31156771f4e0712e3dd2b
+Research
+→ Analyst
+→ Author
 ```
 
-This is the final v1 implementation baseline from which the Development Operating System transition is being installed.
+with bounded feedback from Analyst back to Research when acquired evidence reveals a consequential unresolved information need.
 
-The ScryRaven v1 application implementation remains physically present in the active repository tree.
+### Research
 
-Part A changes repository governance and current-truth surfaces only. It does not redesign, replace, or remove the application.
+Research decides how to investigate the current information need.
 
-The authoritative current repository revision is the Git revision containing this file.
+It may form or revise searches, inspect discovery clues semantically, select candidates for direct reading, reject poor leads, and investigate a specific semantic gap identified by Analyst.
 
-Do not maintain a hard-coded "current main SHA" here; Git owns that fact.
+Poor discovery remains inside Research.
 
-No repository clean-room reset has been authorized.
+Discovery-result material guides navigation but is not final answer evidence.
 
-No v2 implementation has begun.
+### Analyst
 
-## Current architectural posture
+Analyst semantically interprets acquired source material in the context of the original question.
 
-The v1 implementation lineage has been retired as the presumptive architecture for future ScryRaven development.
+It determines answer-relevant findings, preserves material qualifications and conflicts, identifies supporting evidence, may identify evidence still useful for continued analysis, and may state a specific unresolved semantic information need for Research.
 
-This retirement does **not** currently mean deleting the implementation.
+Analyst authors the semantic gap.
 
-The repository remains available for deliberate inspection during Part B.
+Research authors the research action.
 
-> **v1 is currently available as evidence for deliberate inspection; it is not ambient architectural authority.**
+There is no separate Sufficiency owner or mandatory semantic reviewer in the selected first-slice design.
 
-Historical implementation, tests, architecture documents, closed PRs, Git commits, and repository history may be consulted when a specific question makes them relevant.
+### Author
 
-Their existence does not create a preservation requirement for the rebuild.
+Author receives the original question, answer-relevant finding or limitation, the explanation needed for faithful writing, and selected acquired supporting material with source identity.
 
-## Recent experiment
+Author explains the supported result.
 
-The recent thin-corridor / strangler experiment was closed without merge.
+It does not normally receive discovery snippets, research history, rejected pages, or the complete Analyst corpus, and it does not perform a second research process.
 
-It established some offline feasibility but did not establish sufficient repeatable ordinary PRODUCT evidence to justify adopting the experimental architecture.
+Ordinary deterministic application code sequences these responsibilities and resolves evidence references and citations mechanically.
 
-The experiment therefore does not define the future ScryRaven architecture.
+## First supported scope
 
-## Current authorization boundary
+The first supported scope is a single-component factual research question answerable through public web research.
 
-No active-tree reset, donor selection, ScryRaven v2 architecture, or ScryRaven v2 implementation is currently authorized.
+The intended first product demonstrations are:
+```text
+STRAIGHT
+discover
+→ useful lead
+→ direct read
+→ supported Analyst finding
+→ selected Author material
+→ cited answer
+```
+```text
+ADAPTIVE
+poor discovery or inadequate acquired evidence
+→ revised research or Analyst-requested follow-up
+→ new acquired evidence
+→ supported answer
+```
+```text
+UNSUPPORTED
+reasonable bounded research
+→ acquired evidence still does not establish the answer
+→ honest limitation
+```
 
-`PRODUCT.md` is intentionally transitional until Part B establishes the initial future product promise.
+The demonstrations should cover more than one ordinary factual topic. The bowling-ball maximum-weight question remains a reasonable canonical straight-path example.
 
-## Current objective
+These are product behaviors to demonstrate, not a new evaluation framework.
 
-The current transition sequence is:
+## Provisional implementation hypotheses
 
-1. install the new Development Operating System and remove v1 workflow/architecture material from ambient authority;
-2. conduct Part B: a first-principles ScryRaven product/MVP review, with the old implementation available for deliberate inspection;
-3. only after Part B, decide what repository reset, active-tree cleanup, donor selection, reuse, or rebuild should occur.
+The following are current implementation hypotheses, not product invariants:
 
-The transition boundary is:
+- use an ordinary sequential bounded research loop;
+- keep small per-run research information in ordinary in-memory application data if that makes the loop clearer;
+- try the FAST configuration for search/query/navigation work;
+- try the SMART configuration for evidence interpretation;
+- try FAST with low or no deep reasoning for answer writing;
+- initially use narrow Linkup discovery and direct-fetch mechanics carried forward from v1;
+- represent successful direct acquisition as immutable local evidence snapshots with stable local and source identity;
+- let Analyst distinguish answer-support references from evidence that remains useful for another analysis pass;
+- build a small explicit Author handoff from Analyst-selected supporting evidence;
+- keep candidate counts, read sizes, navigation limits, exact reference shapes, prompts, model assignments, and model-call counts easy to change.
 
-> **Part A removes v1's ambient authority.**
+None of those choices is protected architecture merely because it is tried first.
 
-> **Part B deliberately reviews the product and decides the future MVP.**
+## Retained infrastructure and donors
 
-> **Only afterward may a separately authorized repository reset/rebuild remove or reuse v1 implementation.**
+The general credential broker / doorman remains retained infrastructure for running approved credentialed local commands without exposing the private environment to the controlling coding agent. It is not product reasoning architecture.
 
-Do not collapse those steps.
+The selected v1 code donors are limited to narrow mechanical behavior from:
 
-## Current uncertainty
+- Linkup standard discovery/search-result request and response handling; and
+- Linkup direct Fetch request, response, and selected-URL read handling.
 
-The future MVP boundary, walking skeleton, active product path, architecture, and donor set remain intentionally undecided.
+The surrounding v1 search, routing, authorization, retry-budget, custody, and control-plane systems are not donors by association.
 
-Those are Part B decisions.
+Tavily search/extract and other provider implementations are not selected active donors for the first implementation and remain available through Git history if later evidence justifies reconsideration.
 
-Git and PR history preserve implementation chronology.
+## Ideas selected for simple reimplementation
 
-This file preserves current truth.
+The following concepts survive, but their v1 implementations do not:
 
-Replace stale facts rather than accumulating historical layers.
+- adaptive question-directed research and semantic candidate triage;
+- FAST / SMART as simple configurable model-role concepts;
+- model-based Analyst evidence interpretation;
+- separate answer writing from evidence interpretation;
+- immutable acquired evidence with simple source/provenance continuity;
+- answer-support references and active-analysis evidence references;
+- a small explicit Analyst-to-Author material handoff; and
+- finite ordinary application control for adaptive research.
+
+## v1 mechanisms not carried forward
+
+The future active product tree does not carry forward the v1 implementations of:
+
+- SearchOS, SearchPlanner, QueryPlan, SearchWorkPlan, and their authority/state machinery;
+- EvidenceLedger custody/admission/lifecycle machinery;
+- FinalAnswerPacket and associated readiness, eligibility, authority, and materialization machinery;
+- RunKernel / RunAuthority and controller/reducer/checkpoint architecture;
+- graphs, schedulers, leases, grants, reservations, and component-work machinery;
+- D-prime;
+- Cross / the v1 multi-component runtime;
+- separate Sufficiency machinery;
+- Scrutineer;
+- source-class and generalized recovery/control-plane systems;
+- architecture-level pricing, token, cost, and attempt-authorization systems;
+- obsolete v1 alternate product, dogfood, compatibility, and runtime paths; or
+- tests, configuration, and active documentation whose only purpose is preserving retired v1 architecture.
+
+Git history, not a dormant active-tree fallback, preserves that implementation history.
+
+## Deferred next product capability
+
+Multi-component research remains the immediate next product capability after the single-component walking skeleton works.
+
+It is not implemented or prebuilt during the repository reset.
+
+## Next authorized repository work
+
+After this Part B `PRODUCT.md` / `CURRENT.md` decision is reviewed and merged, the next authorized repository work is a repository reset and preparation work item.
+
+That reset should retire the old v1 active-tree application estate, preserve the Part A operating system and explicitly selected infrastructure/donors, preserve Git history and an immutable final-v1 tag, and leave a small coherent foundation for walking-skeleton implementation.
+
+The reset must not perform live ScryRaven/provider/model/search calls and must not begin substantive implementation of the walking skeleton.
+
+Walking-skeleton implementation is a later work item, only after the reset has been reviewed and merged.
