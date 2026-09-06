@@ -1,8 +1,1 @@
-streamlit
 requests
-httpx
-numpy
-openai
-python-dotenv
-exa-py==2.12.1
-pypdf>=5.0,<7

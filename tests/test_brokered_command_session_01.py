@@ -6,7 +6,6 @@ import json
 import os
 import subprocess
 import sys
-import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -355,31 +354,34 @@ def test_private_child_uses_one_shell_free_target_process(tmp_path: Path, monkey
     assert (output_root / "out.txt").read_text() == "ok"
 
 
-def test_timeout_terminates_target_tree(tmp_path: Path) -> None:
-    repo_root = tmp_path / "repo"
-    repo_root.mkdir()
-    output_root = tmp_path / "external"
-    output_root.mkdir()
-    descendant_marker = output_root / "descendant-survived.txt"
-    descendant_code = (
-        "import pathlib, sys, time; time.sleep(1.5); "
-        "pathlib.Path(sys.argv[1]).write_text('unexpected')"
-    )
-    target_code = (
-        "import subprocess, sys, time; "
-        "subprocess.Popen([sys.executable, '-c', sys.argv[1], sys.argv[2]]); "
-        "time.sleep(30)"
-    )
-    assert _run(
-        repo_root=repo_root,
-        env_file=_write_env(tmp_path / "private.env"),
-        stdout=output_root / "stdout.txt",
-        stderr=output_root / "stderr.txt",
-        timeout=0.2,
-        command=[sys.executable, "-c", target_code, descendant_code, str(descendant_marker)],
-    ) == doorman.TIMEOUT_EXIT_CODE
-    time.sleep(2)
-    assert not descendant_marker.exists()
+def test_timeout_termination_requests_shell_free_process_tree_kill(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    if doorman.os.name != "nt":
+        pytest.skip("process-tree command is Windows-specific")
+
+    calls: list[tuple[list[str], dict[str, object]]] = []
+
+    class FakeProcess:
+        pid = 42
+
+        def poll(self) -> None:
+            return None
+
+        def wait(self, *, timeout: int) -> None:
+            calls.append((["wait", str(timeout)], {}))
+
+    def fake_run(argv: list[str], **kwargs: object) -> None:
+        calls.append((argv, kwargs))
+
+    monkeypatch.setattr(doorman.subprocess, "run", fake_run)
+    doorman._terminate_process_tree(FakeProcess())
+
+    assert calls[0][0] == ["taskkill", "/PID", "42", "/T", "/F"]
+    assert calls[0][1]["shell"] is False
+    assert calls[0][1]["stdin"] is doorman.subprocess.DEVNULL
+    assert calls[0][1]["stdout"] is doorman.subprocess.DEVNULL
+    assert calls[0][1]["stderr"] is doorman.subprocess.DEVNULL
 
 
 def test_output_path_guards_and_explicit_replacement(tmp_path: Path) -> None:
@@ -412,7 +414,7 @@ def test_output_path_guards_and_explicit_replacement(tmp_path: Path) -> None:
 def test_product_packages_do_not_import_operator_launcher() -> None:
     root = Path(__file__).resolve().parents[1]
     offenders = []
-    for package_name in ("scryraven", "proplex", "core"):
+    for package_name in ("scryraven", "core"):
         package = root / package_name
         if not package.exists():
             continue

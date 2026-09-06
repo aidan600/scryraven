@@ -341,7 +341,7 @@ def _parent_parser() -> argparse.ArgumentParser:
     environment_sources = parser.add_mutually_exclusive_group(required=True)
     environment_sources.add_argument(
         "--env-file",
-        help="Legacy explicit private environment-file path.",
+        help="Explicit private environment-file path.",
     )
     environment_sources.add_argument(
         "--repo-env",

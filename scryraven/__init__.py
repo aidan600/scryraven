@@ -1,1 +1,4 @@
-"""ScryRaven public compatibility package."""
+"""ScryRaven namespace foundation.
+
+The walking-skeleton application is intentionally not implemented yet.
+"""

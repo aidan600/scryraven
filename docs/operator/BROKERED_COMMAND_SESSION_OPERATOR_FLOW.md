@@ -1,290 +1,70 @@
 # Brokered Command Session Operator Flow
 
 Status: current operator guidance for the credentialed local-command doorman.
-This document does not authorize a live provider, model, search, or product
-call. It does not inspect or paste private environment-file contents.
 
-## Durable Purpose Of The Broker / Doorman
+## Purpose
 
-When used without a more specific qualifier, "broker" and "doorman" mean
-operator-side secret-custody infrastructure for cases where an LLM-controlled
-process must run trusted ScryRaven work without receiving private credentials
-in its controlling context.
+The doorman is operator infrastructure for one human-approved local command.
+It privately reads the selected environment file, starts one shell-free child
+with the exact target argv, captures stdout and stderr, redacts configured
+secret values, and writes sanitized output outside the repository.
 
-The doorman is not part of the ScryRaven product runtime. Product modules do
-not import or call it.
+The doorman owns environment-file custody, process plumbing, timeout handling,
+and output redaction. It does not choose providers or models, decide search or
+answer policy, interpret evidence, or become part of the product runtime.
+Product and test code must not import it.
 
-Normal human local use needs no doorman:
+## When to use it
 
-```text
-human invokes normal ScryRaven
--> ScryRaven loads its normal local configuration
--> ScryRaven selects providers/models/routes
--> ScryRaven performs its own calls
-```
+Normal local work that does not need private environment values can run
+directly.
 
-LLM-controlled whole-product use:
+Use the doorman when a human has approved a credentialed command and its
+complete argv. The target command remains responsible for its own behavior.
+The doorman does not add retries, routing, budgets, or application policy.
 
-```text
-human approves one exact argv
--> operator doorman privately supplies the environment
--> the same normal ScryRaven CLI runs unchanged
--> ScryRaven performs its own normal product behavior
-```
+## Standard invocation
 
-LLM-controlled component, test, or evaluation use:
+From the repository root, prepare output paths outside the repository:
 
-```text
-human approves one exact component/test/evaluator argv
--> operator doorman privately supplies the environment
--> that trusted command runs normally
-```
+    $stdout = 'C:\tmp\broker.stdout.txt'
+    $stderr = 'C:\tmp\broker.stderr.txt'
+    $status = 'C:\tmp\broker.status.json'
 
-Running subcomponents this way is an intentional part of the doorman's purpose.
-It must not require launching the entire product merely to give a component the
-ordinary environment it would otherwise receive.
+Run one command with the repository-local private environment:
 
-This credentialed-command session is the general/default operator mechanism
-when an LLM-controlled process needs to run an ordinary trusted repository
-command with the private environment.
+    .\.venv\Scripts\python.exe scripts\run_brokered_command_once.py --repo-root C:\Users\aidan\ScryRaven --repo-env --stdout $stdout --stderr $stderr --status $status --replace-output --timeout-seconds 90 --target-current-python -- <exact-target> <exact-argv> <tokens>
 
-The doorman owns private environment-file custody, private child environment
-construction, keeping credential values out of the controlling LLM
-process/context, exact structured command execution where applicable,
-secret-safe return/output handling, and process cleanup.
+Everything after the required separator is the exact target argv. The
+separator prevents option ambiguity and the child is launched with shell=False.
+Use --env-file followed by a privately supplied path instead of --repo-env only
+when that is the approved environment source.
 
-The doorman does not own provider selection, model selection, provider
-availability, search or READ selection, route selection, query policy, test
-policy, module policy, command policy, retry/fallback policy, attempt/token/
-dollar budgets, product authorization, SearchOS, AnalystOS, RunKernel, evidence
-custody, source authority, FAP, Author, or answer authority. It does not write
-or check an allowlist. It does not decide who is allowed through the door. The
-human/operator or the launched ScryRaven/test/evaluation command owns whatever
-authorization and policy applies to that work.
+Output files must be absolute, must have existing parents, and must be outside
+the repository. Existing output requires explicit --replace-output authority.
+The optional status file contains only sanitized lifecycle fields and safe
+failure codes.
 
-The doorman is a credential-custody boundary, not a general sandbox against
-malicious code. `shell=False` and exact-value redaction do not create such a
-sandbox and must not be described as one.
+## Custody sequence
 
-The explicit-provider RPC surface in
-[Generic Provider-Execution Broker Operator Flow](GENERIC_PROVIDER_PROXY_BROKER_OPERATOR_FLOW.md)
-is a specialized sibling mechanism for one versioned provider operation. Its
-provider matrix, operations, request fuse, and route attestations apply only
-to that RPC mechanism. They do not define this general doorman, restrict which
-credentials may exist in the private environment used here, or constrain which
-providers, models, searches, reads, embeddings, or other operations ordinary
-ScryRaven may choose through installed product routing.
+1. The public parent validates paths and argv but never opens or parses the
+   environment file.
+2. The private child receives a one-session nonce and the private file path.
+3. The private child parses the file, builds the target environment, and removes
+   its own session variables before launch.
+4. The target receives the constructed environment, exact argv, and repository
+   working directory.
+5. Captured output is normalized and exact secret values from secret-shaped
+   environment names are replaced before sanitized files are written.
+6. The private child clears in-memory environment mappings before exit.
 
-## Active Boundary
+The parent does not receive raw target output. A timeout terminates the target
+process tree and records a structural timeout status. A target launch failure
+records a safe launch-failure status without exposing an operating-system error.
 
-The operator-only launcher is:
+## Review boundary
 
-```text
-scripts/run_brokered_command_once.py
-```
-
-The doorman is not imported or called by ScryRaven. There is no provider,
-executable, module, or command allowlist. The human approves the exact
-structured argv.
-
-Prefer this document for whole-product, pytest, evaluation, or component
-commands that need ordinary environment access. Prefer
-[Generic Provider-Execution Broker Operator Flow](GENERIC_PROVIDER_PROXY_BROKER_OPERATOR_FLOW.md)
-only when the licensed work is one explicit provider-RPC operation through the
-tracked loopback broker.
-
-## Bounded Whole-Product Launch Warning
-
-When an LLM-controlled bounded ScryRaven command depends on credentials stored
-in the repository's private `.env`, launch it through the canonical repository
-environment mode:
-
-```powershell
-.\.venv\Scripts\python.exe scripts\run_brokered_command_once.py `
-  --repo-root <REPO-ROOT> `
-  --repo-env `
-  --status <ABSOLUTE-EXTERNAL-STATUS> `
-  ... `
-  -- `
-  <exact> <argv> <tokens>...
-```
-
-`--repo-env` means the normalized repository root's `.env`, resolved inside the
-approved operator-context doorman process. The legacy `--env-file <PRIVATE-ENV-FILE>`
-form remains available for existing operator callers, but the Codex workflow
-must use `--repo-env` and must not discover, stat, or pass an environment-file
-path from the controlling Workspace Write process.
-
-For ScryRaven repository commands, the broker itself must be launched with the
-repository virtual-environment interpreter:
-`.\.venv\Scripts\python.exe`. Before a credentialed run, if that executable
-is absent or cannot be launched, stop with a mechanical interpreter/setup
-failure; do not fall back to `py`, a global `python`, or dependency
-installation. `--target-current-python` then makes the private target inherit
-the interpreter running the broker. Therefore the broker's interpreter, not
-the target flag alone, determines whether project dependencies are available.
-
-For an authorized credentialed command, Codex prepares the complete exact
-broker-plus-target argv, requests one exact command-level escalation, and then
-executes that command after the user approves it in the normal permission UI.
-The user should approve the command in Codex; they should not be asked to open
-PowerShell, run the broker manually, or paste its result back into the session.
-
-For a Python target in a bounded validation lane, pass
-`--target-current-python` explicitly and place the target script and its exact
-arguments after `--`. The private child then prepends its own `sys.executable`;
-the broker never silently rewrites an arbitrary target command or relies on a
-literal `python` lookup from the private target `PATH`.
-
-The bounded AG-LIVE target uses the stdlib-only bootstrap so interpreter or
-runner import failures can produce a minimal structural terminal packet:
-
-```powershell
-.\.venv\Scripts\python.exe scripts\run_brokered_command_once.py `
-  --repo-root <REPO-ROOT> `
-  --repo-env `
-  --stdout <ABSOLUTE-EXTERNAL-STDOUT> `
-  --stderr <ABSOLUTE-EXTERNAL-STDERR> `
-  --status <ABSOLUTE-EXTERNAL-STATUS> `
-  --timeout-seconds <SECONDS> `
-  --target-current-python `
-  -- `
-  scripts\ag_live_bound_01_target_bootstrap.py `
-  --profile AG-LIVE-SMOKE `
-  --query <EXACT-QUERY> `
-  --mode Balanced `
-  --include-domains docs.python.org `
-  --output <ABSOLUTE-SANCTIONED-PACKET> `
-  --external-output-root <ABSOLUTE-EXTERNAL-PACKET-DIR>
-```
-
-When the bootstrap cannot import or enter the bounded runner, its fallback
-packet may include only the safe exception class, a bounded dotted
-`missing_module` identifier for `ModuleNotFoundError` (otherwise `null`), and
-the enum `interpreter_origin` (`repo_venv` or
-`non_repo_venv_or_global`). It never includes exception text, paths,
-tracebacks, `sys.path`, environment values, prompts, provider material, or
-READ content.
-
-Do not directly invoke:
-
-```powershell
-python -m scryraven --bounded-run-authorization ...
-```
-
-unless required provider credentials are already intentionally present in the
-target process environment and the phase explicitly licenses direct execution.
-Bounded CLI intentionally does not make the controlling agent parse or load the
-private `.env`. Missing provider prerequisites caused by bypassing the broker
-are operator/configuration failures, not PRODUCT evidence. This warning changes
-launch posture only; the doorman remains responsible for secret custody and
-process plumbing, not provider, route, token, attempt, dollar, or product
-policy.
-
-## Parent And Private-Child Graph
-
-```text
-operator
-  -> public parent
-       resolves/stats the canonical repo-root/.env (or legacy --env-file)
-       without opening or parsing it
-       validates absolute external output paths
-       launches one private child with shell=False
-  -> private child environment
-       SCRYRAVEN_DOORMAN_ENV_FILE_PATH
-       SCRYRAVEN_DOORMAN_NONCE
-       mechanical PATH/temp roots only
-  -> private child
-       parses the dotenv file
-       builds the ordinary target environment
-       launches the exact argv, or explicit current-Python + exact argv,
-       with shell=False
-       redacts exact secret values from captured output
-       writes sanitized stdout/stderr and the generic status receipt outside
-       the repository
-  -> target command
-       receives constructed environment, exact argv, and repo cwd
-```
-
-The public parent never opens the environment file and never receives raw
-target stdout or stderr. Raw captured bytes exist only inside the private child
-until exact-value redaction completes.
-
-## Public Command Shape
-
-The canonical Codex/operator shape uses the repository-local `.env`; do not
-paste its contents or supply its path from an unprivileged preflight.
-
-```powershell
-.\.venv\Scripts\python.exe scripts\run_brokered_command_once.py `
-  --repo-root <REPO-ROOT> `
-  --repo-env `
-  --stdout <ABSOLUTE-EXTERNAL-STDOUT> `
-  --stderr <ABSOLUTE-EXTERNAL-STDERR> `
-  --status <ABSOLUTE-EXTERNAL-STATUS> `
-  --timeout-seconds <SECONDS> `
-  [--target-current-python] `
-  [--replace-output] `
-  -- `
-  <exact> <argv> <tokens>...
-```
-
-The backwards-compatible operator-only alternative is the same shape with
-`--env-file <PRIVATE-ENV-FILE>` in place of `--repo-env`. Exactly one of those
-two environment sources is required.
-
-Rules:
-
-- `--` is required. Everything after it is the exact target argv.
-- Every subprocess launch uses `shell=False`.
-- `--stdout` and `--stderr` must be distinct absolute paths outside the
-  repository. Existing files require `--replace-output`.
-- When supplied, `--status` must be a distinct absolute path outside the
-  repository. It contains only structural launch, exit, timeout, sanitized
-  output-write, and safe-error-code facts; it never contains argv, environment
-  values, prompts, provider/model material, captured output, exception text, or
-  tracebacks. Existing status files require `--replace-output`.
-- `--target-current-python` is an explicit Python-target mechanism. It prepends
-  the private child's `sys.executable` to the exact target argv after `--`.
-- The parent returns the target exit code, `124` on bounded timeout, `125` on
-  controlled target-launch failure, `126` when the requested status or
-  sanitized output cannot be written, or `2` on sanitized configuration
-  failure.
-- On timeout, the private child terminates the Windows target process tree and
-  still writes redacted captured output when available.
-
-The broker status receipt uses `broker_status_v1` and classifies terminal
-mechanics as `target_completed`, `target_launch_failed`, `target_timeout`, or
-`private_child_configuration_failed`. A missing target executable is reported
-as `target_executable_unavailable`; other launch errors are reported as
-`target_launch_os_error`. The status receipt does not claim that PRODUCT ran.
-
-## Credential Custody
-
-The parent resolves and stats the canonical normalized-repository `.env` (or
-the legacy `--env-file` path) but never opens or parses it. The path crosses the
-parent/child boundary only through the private child environment variable
-`SCRYRAVEN_DOORMAN_ENV_FILE_PATH`. A one-session nonce is supplied only through
-`SCRYRAVEN_DOORMAN_NONCE`.
-
-The private child alone parses simple dotenv assignments and constructs the
-target environment. Private launcher variables are removed before the target
-starts. Exact values from secret-shaped names (`KEY`, `TOKEN`, `SECRET`,
-`PASSWORD`, `PASSWD`, `CREDENTIAL`, `AUTH`) of sufficient length are redacted
-from captured output as `[REDACTED]`. Non-secret text is preserved. Redaction
-replaces exact unchanged values only; it is not a sandbox against a
-deliberately malicious target.
-
-## Fail-Closed Rules
-
-Stop without launching the target when:
-
-- the repository root or selected environment file is unavailable;
-- the target argv separator or argv is missing;
-- an output path is relative, inside the repository, identical for stdout and
-  stderr/status, or would overwrite without `--replace-output`;
-- the private child is started without the private session environment;
-- timeout seconds are not positive.
-
-Do not inspect the real private environment file, paste credentials into chat,
-or route this launcher through product packages.
+The doorman is a credential-custody boundary, not a general sandbox and not an
+authorization system. Exact command approval remains with the human operator.
+Keep private environment files, keys, raw provider responses, prompts, logs,
+and generated private material out of controller output and source control.
