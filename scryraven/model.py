@@ -94,8 +94,10 @@ class OpenAIModel:
             # Intermediate assistant updates are not part of a structured final
             # response. Never concatenate commentary with the final JSON object.
             messages = [item for item in data["output"] if item.get("type") == "message"]
-            final = [item for item in messages if item.get("phase") != "commentary"]
-            parts = [part for item in final for part in item["content"]]
+            final = [item for item in messages if item.get("phase") == "final_answer"]
+            if not final:
+                final = [item for item in messages if item.get("phase") != "commentary"]
+            parts = final[-1]["content"] if final else []
             if any(part.get("type") == "refusal" for part in parts):
                 raise ModelError("model_refused")
             output = "".join(

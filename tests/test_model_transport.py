@@ -21,7 +21,8 @@ class Response:
         return self.data
 
 
-def test_roles_structured_request_and_visible_output_only(monkeypatch):
+@pytest.mark.parametrize("phase", [None, "final_answer"])
+def test_roles_structured_request_and_final_message_only(monkeypatch, phase):
     monkeypatch.setenv("OPENAI_API_KEY", "offline-test-value")
     calls = []
 
@@ -30,7 +31,8 @@ def test_roles_structured_request_and_visible_output_only(monkeypatch):
         return Response({"status": "completed", "output": [
             {"type": "reasoning", "summary": []},
             {"type": "message", "phase": "commentary", "content": [{"type": "output_text", "text": "An intermediate update"}]},
-            {"type": "message", "phase": "final_answer", "content": [{"type": "output_text", "text": '{"answer":"ok"}'}]},
+            {"type": "message", "content": [{"type": "output_text", "text": '{"intermediate":"update"}'}]},
+            {"type": "message", "phase": phase, "content": [{"type": "output_text", "text": '{"answer":"ok"}'}]},
         ]})
 
     config = ModelConfig(ModelRole("small-configured-model", "low"), ModelRole("strong-configured-model", "medium"))
