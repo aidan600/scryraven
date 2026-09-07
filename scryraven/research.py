@@ -128,15 +128,28 @@ T = TypeVar("T", bound=_Output)
 
 
 def _ask(model: ModelCall, stage: str, prompt: str, material: dict, shape: type[T], trace: list[dict]) -> T:
-    trace.append({"stage": stage, "action": "model_started"})
-    try:
-        raw = model(stage, prompt, material, shape.model_json_schema())
-    except ModelError as exc:
-        raise RunError(stage, str(exc), trace) from None
-    try:
-        return shape.model_validate_json(raw)
-    except ValidationError:
-        raise RunError(stage, "malformed_model_response", trace) from None
+    for attempt in range(2):
+        trace.append({"stage": stage, "action": "model_started"})
+        try:
+            raw = model(stage, prompt, material, shape.model_json_schema())
+        except ModelError as exc:
+            raise RunError(stage, str(exc), trace) from None
+        try:
+            return shape.model_validate_json(raw)
+        except ValidationError as exc:
+            # Only error types and known schema field names, never rejected values,
+            # validation messages, model output, or provider payloads.
+            issues = [{
+                "type": error["type"],
+                "field": next((str(part) for part in error["loc"] if part in shape.model_fields), "response"),
+            } for error in exc.errors(include_input=False, include_context=False, include_url=False)[:3]]
+            trace.append({"stage": stage, "action": "response_rejected", "issues": issues})
+            if attempt == 0:
+                material = {**material, "output_correction": {
+                    "instruction": "Return only a JSON object matching the supplied schema. Correct these shape errors.",
+                    "issues": issues,
+                }}
+    raise RunError(stage, "malformed_model_response", trace) from None
 
 
 def _public_url(url: str) -> bool:
@@ -246,7 +259,8 @@ def _cite(draft: str, selected: list[Evidence], trace: list[dict]) -> tuple[str,
         return f"[{title}]({url})"
 
     # Do not let an Author-supplied link bypass reference resolution.
-    if re.search(r"https?://|\]\s*\(|\]\s*\[|\[[^\]]+\]:", draft, re.IGNORECASE):
+    prose = re.sub(r"\[\[([^\[\]]+)\]\]", "", draft)
+    if re.search(r"https?://|\]\s*\(|\]\s*\[|\[[^\]]+\]:|!\[", prose, re.IGNORECASE):
         raise RunError("citations", "unresolved_author_link", trace)
     answer = re.sub(r"\[\[([^\[\]]+)\]\]", replace, draft)
     if "[[" in answer or "]]" in answer:

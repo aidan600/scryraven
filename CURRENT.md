@@ -52,8 +52,9 @@ yet been demonstrated on this implementation.
 - Full fetched text is kept in memory and sent to Analyst; large corpora can
   exceed model context. No semantic reduction or persistent evidence system exists.
 - Provider failures and malformed model/reference responses are reported with
-  safe stage/code errors. Research can choose another search/read within its loop;
-  there is no general retry/fallback/recovery system.
+  safe stage/code errors. Malformed structured output gets one local retry with
+  safe schema-field diagnostics. Research can choose another search/read within
+  its loop; there is no general retry/fallback/recovery system.
 - Source interpretation and faithful writing remain model judgments. Offline
   mechanics alone do not establish broad live answer quality.
 - Multi-component research, scheduling, parallel research, persistent sessions,

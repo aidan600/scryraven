@@ -187,6 +187,23 @@ def test_operational_bound_preserves_unresolved_analysis_in_author_handoff():
     assert any(event["action"] == "navigation_bound" for event in result.trace)
 
 
+def test_malformed_output_can_be_repaired_without_exposing_values_and_adjacent_citations_resolve():
+    model = Model(
+        search_for(), read("C1", "C2"), ("analyst", {"decision": "private rejected value"}),
+        analysis(refs=("E1", "E2")), author("16 pounds. [[E1]] [[E2]]"),
+    )
+    result = run(QUESTION, model=model, search=lambda q: [
+        *discover(q), DiscoveryCandidate("Second rules", URL + "2", "clue"),
+    ], fetch=fetch)
+    assert result.posture == "supported"
+    assert f"[Official rules]({URL})" in result.answer
+    assert f"[Second rules]({URL}2)" in result.answer
+    rejected = next(event for event in result.trace if event["action"] == "response_rejected")
+    assert rejected["stage"] == "analyst" and rejected["issues"]
+    assert "private rejected value" not in json.dumps(result.trace)
+    assert "private rejected value" not in json.dumps(model.calls)
+
+
 @pytest.mark.parametrize("kind,stage,code", [
     ("support", "analyst", "invalid_evidence_reference"),
     ("active", "analyst", "invalid_evidence_reference"),
@@ -211,7 +228,7 @@ def test_invalid_references_and_model_failures_are_clear_and_stage_local(kind, s
         "missing": "16 pounds.", "raw_link": "16 pounds. [invented](https://not-acquired.test)",
     }.get(kind, "16 pounds. [[E1]]")
     final = ("author", ModelError("model_transport_failed")) if kind == "author" else author(output)
-    model = Model(search_for(), read("C1", "C2"), verdict, final)
+    model = Model(search_for(), read("C1", "C2"), verdict, *([verdict] if kind == "malformed" else []), final)
     with pytest.raises(RunError) as captured:
         run(QUESTION, model=model, search=lambda q: [*discover(q), DiscoveryCandidate("Other", URL + "2", "clue")], fetch=fetch)
     error = captured.value
