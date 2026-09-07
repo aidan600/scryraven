@@ -40,7 +40,8 @@ yet been demonstrated on this implementation.
 ## Provisional implementation choices and limitations
 
 - One OpenAI Responses transport with configurable FAST and SMART model roles;
-  defaults are gpt-5.4-mini/low for Research and Author, gpt-5.4/medium for Analyst.
+  defaults are gpt-4.1-mini without a reasoning option for Research and Author,
+  and gpt-5.4/medium for Analyst.
 - Small responsibility prompts, Pydantic structured-response parsing, and ordinary
   sequential functions. Three research passes and six navigation actions per pass
   are provisional local defaults, not product restrictions or acceptance criteria.

@@ -35,7 +35,7 @@ def test_roles_structured_request_and_final_message_only(monkeypatch, phase):
             {"type": "message", "phase": phase, "content": [{"type": "output_text", "text": '{"answer":"ok"}'}]},
         ]})
 
-    config = ModelConfig(ModelRole("small-configured-model", "low"), ModelRole("strong-configured-model", "medium"))
+    config = ModelConfig(ModelRole("small-configured-model", ""), ModelRole("strong-configured-model", "medium"))
     model = OpenAIModel(config, post=post)
     schema = {"type": "object", "additionalProperties": False, "properties": {}, "required": []}
     for stage in ("research", "analyst", "author"):
@@ -49,6 +49,10 @@ def test_roles_structured_request_and_final_message_only(monkeypatch, phase):
         assert payload["text"]["format"]["strict"] is True
         assert payload["store"] is False
         assert "tools" not in payload
+        if payload["model"] == config.fast.model:
+            assert "reasoning" not in payload
+        else:
+            assert payload["reasoning"] == {"effort": config.smart.reasoning}
 
 
 @pytest.mark.parametrize("data,code", [

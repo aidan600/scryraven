@@ -19,7 +19,7 @@ class ModelRole:
 
 @dataclass(frozen=True)
 class ModelConfig:
-    fast: ModelRole = ModelRole("gpt-5.4-mini", "low")
+    fast: ModelRole = ModelRole("gpt-4.1-mini", "")
     smart: ModelRole = ModelRole("gpt-5.4", "medium")
 
     @classmethod

@@ -23,8 +23,8 @@ It does not load `.env` itself. Optional role configuration:
 
 | Variable | Default |
 | --- | --- |
-| `SCRYRAVEN_FAST_MODEL` | `gpt-5.4-mini` (Research and Author) |
-| `SCRYRAVEN_FAST_REASONING` | `low` |
+| `SCRYRAVEN_FAST_MODEL` | `gpt-4.1-mini` (Research and Author) |
+| `SCRYRAVEN_FAST_REASONING` | empty (omitted) |
 | `SCRYRAVEN_SMART_MODEL` | `gpt-5.4` (Analyst) |
 | `SCRYRAVEN_SMART_REASONING` | `medium` |
 
