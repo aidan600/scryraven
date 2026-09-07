@@ -144,6 +144,10 @@ class RunError(RuntimeError):
 ORIENTATION_PROMPT = """You are Research. Before searching, interpret the original question
 into a compact provisional list of distinct answer-relevant needs. Do not answer it.
 Use as many needs as the actual question warrants, without splitting trivial clauses.
+For ordinary unspecified context, choose a reasonable scope that can be stated in
+the answer. Do not expand a simple question into comparisons across every possible
+ruleset, jurisdiction or use. Investigate such distinctions only when the question
+requests them or evidence makes them material to answering it correctly.
 For each need, identify who or what would have direct or institutional authority,
 and what material would establish it. Give concise source expectations, not private
 reasoning. Authority is claim-specific: prefer responsible first-hand/official
@@ -278,6 +282,12 @@ retain meaningful partial findings. Never call the whole question supported mere
 because some portions are established. An unresolved portion needs a clear limitation.
 Review previous_analysis against the current actual evidence: preserve its supported
 findings unless new evidence warrants revision, and reassess the whole question.
+Do not invent new answer obligations from merely possible contexts. A directly
+supported answer with a clear reasonable scope can satisfy an ordinary unspecified
+question; unrequested comparisons or hypothetical exceptions are not automatically
+gaps. Do not seek another current document solely to endorse an otherwise applicable
+governing source. Additional confirmation must resolve a concrete material doubt
+raised by the question or evidence, not an absence of explicit freshness metadata.
 Select active_evidence_refs for context still useful to analysis, including conflicts.
 Consider whether evidence has appropriate authority for each claim. Authoritative
 confirmation may be a useful semantic gap when owned facts have only weak summaries
