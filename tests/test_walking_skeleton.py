@@ -28,6 +28,8 @@ class Model:
         assert stage == expected_stage
         if isinstance(reply, Exception):
             raise reply
+        if isinstance(reply, str):
+            return reply
         return json.dumps(reply)
 
 
@@ -190,7 +192,7 @@ def test_operational_bound_preserves_unresolved_analysis_in_author_handoff():
 def test_malformed_output_can_be_repaired_without_exposing_values_and_adjacent_citations_resolve():
     model = Model(
         search_for(), read("C1", "C2"), ("analyst", {"decision": "private rejected value"}),
-        analysis(refs=("E1", "E2")), author("16 pounds. [[E1]] [[E2]]"),
+        analysis(refs=("E1", "E2")), ("author", '```json\n{"answer":"16 pounds. [[E1]] [[E2]]"}\n```'),
     )
     result = run(QUESTION, model=model, search=lambda q: [
         *discover(q), DiscoveryCandidate("Second rules", URL + "2", "clue"),

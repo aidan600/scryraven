@@ -29,7 +29,8 @@ def test_roles_structured_request_and_visible_output_only(monkeypatch):
         calls.append((url, kwargs))
         return Response({"status": "completed", "output": [
             {"type": "reasoning", "summary": []},
-            {"type": "message", "content": [{"type": "output_text", "text": '{"answer":"ok"}'}]},
+            {"type": "message", "phase": "commentary", "content": [{"type": "output_text", "text": "An intermediate update"}]},
+            {"type": "message", "phase": "final_answer", "content": [{"type": "output_text", "text": '{"answer":"ok"}'}]},
         ]})
 
     config = ModelConfig(ModelRole("small-configured-model", "low"), ModelRole("strong-configured-model", "medium"))

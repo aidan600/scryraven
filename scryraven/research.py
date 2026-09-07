@@ -134,6 +134,10 @@ def _ask(model: ModelCall, stage: str, prompt: str, material: dict, shape: type[
             raw = model(stage, prompt, material, shape.model_json_schema())
         except ModelError as exc:
             raise RunError(stage, str(exc), trace) from None
+        # A complete JSON code fence is presentation, not part of the value.
+        wrapped = re.fullmatch(r"\s*```(?:json)?\s*\n(.*?)\n```\s*", raw, re.DOTALL | re.IGNORECASE)
+        if wrapped:
+            raw = wrapped.group(1)
         try:
             return shape.model_validate_json(raw)
         except ValidationError as exc:
@@ -143,7 +147,10 @@ def _ask(model: ModelCall, stage: str, prompt: str, material: dict, shape: type[
                 "type": error["type"],
                 "field": next((str(part) for part in error["loc"] if part in shape.model_fields), "response"),
             } for error in exc.errors(include_input=False, include_context=False, include_url=False)[:3]]
-            trace.append({"stage": stage, "action": "response_rejected", "issues": issues})
+            trace.append({
+                "stage": stage, "action": "response_rejected", "issues": issues,
+                "format": "object" if raw.lstrip().startswith("{") else "non_object",
+            })
             if attempt == 0:
                 material = {**material, "output_correction": {
                     "instruction": "Return only a JSON object matching the supplied schema. Correct these shape errors.",

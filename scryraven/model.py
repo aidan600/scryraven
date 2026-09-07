@@ -57,7 +57,7 @@ class OpenAIModel:
         role = self.config.smart if stage == "analyst" else self.config.fast
         payload = {
             "model": role.model,
-            "instructions": instructions,
+            "instructions": instructions + "\nReturn only JSON matching the response schema, with no Markdown or commentary.",
             "input": json.dumps(material, ensure_ascii=False),
             "store": False,
             "max_output_tokens": 12000,
@@ -91,11 +91,11 @@ class OpenAIModel:
         try:
             if data.get("status") != "completed":
                 raise ModelError("model_response_incomplete")
-            parts = [
-                part
-                for item in data["output"] if item.get("type") == "message"
-                for part in item["content"]
-            ]
+            # Intermediate assistant updates are not part of a structured final
+            # response. Never concatenate commentary with the final JSON object.
+            messages = [item for item in data["output"] if item.get("type") == "message"]
+            final = [item for item in messages if item.get("phase") != "commentary"]
+            parts = [part for item in final for part in item["content"]]
             if any(part.get("type") == "refusal" for part in parts):
                 raise ModelError("model_refused")
             output = "".join(
