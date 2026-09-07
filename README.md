@@ -7,9 +7,9 @@ selects support, and can send an unresolved semantic need back to Research.
 Author writes from the selected findings and evidence; code resolves citations.
 Discovery snippets never become answer evidence.
 
-The walking skeleton is implemented, but its required two-topic live acceptance
-is incomplete. See `CURRENT.md` for the demonstrated frontier and the final
-citation repair that has only offline verification.
+The walking skeleton has completed ordinary chess and bowling questions with
+supported cited answers on the same final runtime code. See `CURRENT.md` for the
+demonstrated behavior, offline coverage, and remaining limitations.
 
 ## Run
 
@@ -45,8 +45,9 @@ rejected pattern, position, and evidence aliases without retaining the rejected
 answer. Invalid Research selections report the validation cause and current valid
 candidate aliases. Research gets one local correction opportunity before a repeated
 invalid selection terminates the run; rejected selections never reach Fetch.
-The trace omits raw prompts, provider payloads, source bodies, credentials, and hidden model reasoning. Trace text can
-contain the user's question and source URLs; use public questions for observations.
+The trace omits raw prompts, provider payloads, source bodies, credentials, and
+hidden model reasoning. Trace text can contain the user's question and source URLs;
+use public questions for observations.
 
 For completed-run support inspection, `--trace-evidence` includes the exact acquired
 text of Analyst-selected sources in stderr diagnostics. It uses the same run and

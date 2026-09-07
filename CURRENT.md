@@ -1,6 +1,6 @@
 # ScryRaven Current Truth
 
-Status: first single-component walking skeleton implemented; live acceptance incomplete
+Status: first single-component walking skeleton implemented; two-topic live completion demonstrated
 Repository: aidan600/scryraven
 Preferred local checkout: C:\Users\aidan\ScryRaven
 
@@ -36,68 +36,63 @@ honest limitations, execution bounds, invalid references, model failures, and CL
 use of the same application with real Linkup adapters and injected external calls.
 The retained doorman and Linkup transport tests pass.
 
-The required two-topic live acceptance condition has not been met. Ten ordinary
-CLI invocations used the retained doorman with sanitized output outside the repo:
-the original eight and both separately authorized continuation runs. That live
-allowance was exhausted. A subsequent completion continuation authorizes up to
-five additional ordinary invocations, starting with chess and then a transfer
-topic on the same final code. This is work-item accounting, not a product subsystem.
+Two different questions completed the ordinary CLI on the same final runtime
+revision, d969088577206421b931231cd331183af4f1f40d, using real model calls,
+Linkup discovery, and Fetch through the retained doorman. Both exited 0 with
+posture supported, Analyst-selected acquired material reaching Author, successful
+deterministic citation resolution, and a user-visible cited answer. Subsequent
+publication changes are factual documentation only.
 
-The final PRODUCT observation tested e93f0e9699a12eb8ad3ceada40a6ce7bb2de877e
-with the chess promotion question. Research stopped at invalid_candidate_reference
-after discovery returned six candidates. No direct read occurred, no acquired
-evidence was created, and Analyst, Author, and citation resolution were not reached.
-The CLI exited 1 with no user-facing answer. The final citation repair therefore
-remains unverified through PRODUCT execution. Publication has not proceeded.
+- Chess: "When a pawn reaches the farthest rank in chess, what pieces may it
+  promote to?" Research selected C2, C3, and C6 and acquired three sources.
+  Analyst selected E1, E2, and E3; Author cited all three for queen, rook, bishop,
+  or knight of the same color. The acquired passages visibly support this rule
+  and the answer's additional promotion/underpromotion explanation.
+  E1: https://grokipedia.com/page/Promotion_(chess)
+  E2: https://kingdomofchess.com/pawn-promotion-in-chess/
+  E3: https://greenchess.net/rules.php?item=promotion
+- Bowling: "What is the maximum allowed weight of a ten-pin bowling ball?"
+  A failed C1 read created no evidence; C2, C3, and C4 produced E1, E2, and E3.
+  Analyst selected all three, and Author emitted a cited 16-pound (7.26 kg)
+  maximum. The acquired passages support the limit and the answer's additional
+  historical/rationale claims. Those extra claims are secondary-source material,
+  not a demonstration of primary-source quality.
+  E1: https://bigleagueshirts.com/blogs/resources/how-do-you-choose-the-best-bowling-ball-weight
+  E2: https://www.flybowling.com/blog/the-ultimate-guide-to-bowling-ball-dimensions-in-2026.html
+  E3: https://efx.co/blogs/news/what-is-the-heaviest-bowling-ball-weight-guide
 
-The candidate-selection repair is implemented and covered offline. Research
-receives explicit local aliases; malformed or unknown read selections are rejected
-before any Fetch. One local correction request supplies the current valid aliases
-to Research. Repeated invalid selection fails clearly. Code neither guesses a
-replacement candidate nor chooses semantic relevance. Safe diagnostics distinguish
-empty, malformed, and unknown aliases without retaining rejected model output.
+Evidence aliases are local to each run. Every rendered citation matched a directly
+acquired, selected source URL; no unresolved alias remained. The selected acquired
+snapshots were inspected from sanitized --trace-evidence output outside the repo,
+without additional source requests. Neither final run needed Analyst follow-up or
+candidate-selection correction. The current citation repair is now exercised live.
 
-Earlier demonstrated live behavior:
+Research rejects malformed or unknown read selections before any Fetch and supplies
+current valid aliases for one local correction by Research. Repeated invalid
+selection fails clearly. Code does not guess replacement candidates or judge
+relevance. Correction, repeated failure, and stale aliases from an earlier discovery
+set are covered offline through the actual application; correction was not needed
+in the final live observations. Safe diagnostics distinguish empty, malformed, and
+unknown aliases without retaining rejected model output.
 
-- Bowling on 512a3bb2683f3fb6eed10b03aa57ef2ff9a09227 completed with a cited
-  16-pound maximum from three directly acquired
-  secondary sources (Big League Shirts, Flybowling, and EFX). Analyst selected
-  all three; a failed fourth read created no evidence. No Analyst follow-up was
-  needed. The answer also included secondary-source historical/rationale claims
-  beyond the question. Independent reading of the cited EFX page confirms those
-  claims are present there; that does not establish their primary-source quality.
-- Chess on 1584b766da77eed566af371f484695b431bb1251 acquired ppqty.com (E1)
-  and greenchess.net (E2); another selected Fetch failed without becoming evidence.
-  Analyst returned supported and selected both snapshots. Author ran, but citation
-  resolution failed with malformed_citation_reference. No user-facing answer was
-  emitted. This run included the earlier bracket-title citation repair and an
-  optional acquired-evidence diagnostic flag. A successful cited transfer-topic
-  answer has not been demonstrated.
+Earlier ordinary live evidence demonstrated a natural Analyst -> Research adaptive
+cycle on bowling: Analyst requested the total-weight rule after seeing static-weight
+material, Research read USBC manuals, and Author cited the selected support. That
+observation used 5b62ff13364db1e625f22074a82b1bc4b2465871, before the final FAST-role
+configuration. Final offline adaptive coverage preserves the original question and
+acquired snapshots across follow-up and includes correction of a stale candidate
+alias. These observations do not establish broad live reliability.
 
-Earlier live evidence demonstrated a complete natural Analyst -> Research adaptive
-cycle on bowling: initial material concerned static weight, Analyst requested the
-total-weight rule, Research directly read USBC manuals, and Author cited selected
-support. That observation used 5b62ff13364db1e625f22074a82b1bc4b2465871, before the
-final Research prompt/FAST-role change. A separate earlier chess run returned an
-honest run-bounded limitation after Research prematurely stopped without reads.
-Those observations do not establish the final configuration's reliability.
+The whole-system review retained three semantic responsibilities and ordinary
+run-local mechanics. The explicit citation grammar validates selected IDs before
+rendering source metadata; offline adversarial coverage includes grouped and
+malformed aliases, bracketed titles/prose, and invalid link/code presentation.
+The offline suite, Ruff, pre-commit, and production import/parse checks pass.
 
-Whole-path offline review found additional deterministic citation defects: grouped
-aliases were rejected, malformed single-bracket aliases could survive beside a
-valid citation, and link/code presentation could prevent a resolved alias from
-being a user citation. The resolver now uses an explicit bracketed-alias grammar,
-validates every referenced selected ID, and checks malformed aliases before source
-metadata is rendered. Failure diagnostics identify patterns, positions, and aliases
-without retaining the rejected answer. The relevant offline suite, Ruff,
-pre-commit, and import/parse checks pass. The final live run did not reach this
-resolver. The exact token responsible for the preceding live citation failure is
-unknown because that run did not retain token diagnostics.
-
-Two independent source checks were used: the USBC manual confirms the 16.00-pound
-rule; the cited EFX article supports the bowling answer's secondary-source claims.
-Neither check was inserted into product evidence. Pulse files remain outside the
-repository. Final relevant PRODUCT evidence remains outstanding. No next phase has
-begun.
+Completion used two of the five newly authorized PRODUCT invocations, bringing the
+historical work-item total to twelve. Live execution stopped after both topics
+succeeded. No live accounting subsystem or next capability was added. Pulse files
+remain outside the repository.
 
 ## Provisional implementation choices and limitations
 
@@ -118,10 +113,13 @@ begun.
   exceed model context. No semantic reduction or persistent evidence system exists.
 - Provider failures and malformed model/reference responses are reported with
   safe stage/code errors. Malformed structured output gets one local retry with
-  safe schema-field diagnostics. Research can choose another search/read within
+  safe schema-field diagnostics; invalid read selections get one local correction
+  with current candidate aliases. Research can choose another search/read within
   its loop; there is no general retry/fallback/recovery system.
 - Source interpretation and faithful writing remain model judgments. Offline
-  mechanics alone do not establish broad live answer quality.
+  mechanics and two successful live topics do not establish broad answer quality.
+  Both final runs used secondary sources, and answers can include more explanation
+  than the narrow question requires.
 - Multi-component research, scheduling, parallel research, persistent sessions,
   resumability, UI, provider routing, and generalized recovery are unimplemented.
 
