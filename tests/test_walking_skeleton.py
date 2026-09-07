@@ -217,12 +217,22 @@ def test_json_syntax_repair_has_safe_location_diagnostics():
     assert result.posture == "supported"
 
 
+def test_source_title_brackets_are_display_text_not_unresolved_citations():
+    model = Model(search_for(), read("C1"), analysis(), author())
+    result = run(QUESTION, model=model, search=lambda query: [
+        DiscoveryCandidate("Official rules [edition]", URL, "clue"),
+    ], fetch=fetch)
+    assert result.posture == "supported"
+    assert result.answer == "The maximum weight is 16 pounds. [Official rules \\[edition\\]](" + URL + ")"
+
+
 @pytest.mark.parametrize("kind,stage,code", [
     ("support", "analyst", "invalid_evidence_reference"),
     ("active", "analyst", "invalid_evidence_reference"),
     ("citation", "citations", "invalid_citation_reference"),
     ("unselected", "citations", "invalid_citation_reference"),
     ("missing", "citations", "missing_citation"),
+    ("broken_marker", "citations", "malformed_citation_reference"),
     ("raw_link", "citations", "unresolved_author_link"),
     ("malformed", "analyst", "malformed_model_response"),
     ("model", "analyst", "model_transport_failed"),
@@ -239,6 +249,7 @@ def test_invalid_references_and_model_failures_are_clear_and_stage_local(kind, s
     output = {
         "citation": "16 pounds. [[E404]]", "unselected": "16 pounds. [[E2]]",
         "missing": "16 pounds.", "raw_link": "16 pounds. [invented](https://not-acquired.test)",
+        "broken_marker": "16 pounds. [[E1]",
     }.get(kind, "16 pounds. [[E1]]")
     final = ("author", ModelError("model_transport_failed")) if kind == "author" else author(output)
     model = Model(search_for(), read("C1", "C2"), verdict, *([verdict] if kind == "malformed" else []), final)

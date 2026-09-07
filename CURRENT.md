@@ -1,6 +1,6 @@
 # ScryRaven Current Truth
 
-Status: first single-component walking skeleton implemented
+Status: first single-component walking skeleton implemented; live acceptance incomplete
 Repository: aidan600/scryraven
 Preferred local checkout: C:\Users\aidan\ScryRaven
 
@@ -34,8 +34,47 @@ separation of discovery and evidence, selected Author material, successful cited
 answers, Analyst-directed follow-up, revised poor discovery and failed reads,
 honest limitations, execution bounds, invalid references, model failures, and CLI
 use of the same application with real Linkup adapters and injected external calls.
-The retained doorman and Linkup transport tests pass. No live product result has
-yet been demonstrated on this implementation.
+The retained doorman and Linkup transport tests pass.
+
+The required two-topic live acceptance condition has not been met. Eight ordinary
+CLI invocations used the retained doorman with sanitized output outside the repo;
+that work item's live execution allowance is exhausted. There is no product
+accounting subsystem and no further live execution is authorized by that brief.
+
+On the last live-tested revision, 512a3bb2683f3fb6eed10b03aa57ef2ff9a09227:
+
+- Bowling completed with a cited 16-pound maximum from three directly acquired
+  secondary sources (Big League Shirts, Flybowling, and EFX). Analyst selected
+  all three; a failed fourth read created no evidence. No Analyst follow-up was
+  needed. The answer also included secondary-source historical/rationale claims
+  beyond the question. Independent reading of the cited EFX page confirms those
+  claims are present there; that does not establish their primary-source quality.
+- Chess acquired two sources (chess-teacher.com and ppqty.com). Analyst supported
+  queen/rook/bishop/knight and handed both snapshots to Author, but citation
+  resolution failed with malformed_citation_reference. No user-facing answer was
+  emitted. A successful cited transfer-topic answer has not been demonstrated.
+
+Earlier live evidence demonstrated a complete natural Analyst -> Research adaptive
+cycle on bowling: initial material concerned static weight, Analyst requested the
+total-weight rule, Research directly read USBC manuals, and Author cited selected
+support. That observation used 5b62ff13364db1e625f22074a82b1bc4b2465871, before the
+final Research prompt/FAST-role change. A separate earlier chess run returned an
+honest run-bounded limitation after Research prematurely stopped without reads.
+Those observations do not establish the final configuration's reliability.
+
+After live execution stopped, an offline scenario reproduced the citation failure
+code with a bracket-ended source title. The final code validates unresolved Author
+markers before rendering escaped source metadata, preserving valid bracketed titles
+and still rejecting broken aliases. The full offline suite and repository hooks
+pass. This final citation repair has not been exercised live, and its causal role
+in the observed chess failure is not proved because raw Author output was not kept.
+
+Two independent source checks were used: the USBC manual confirms the 16.00-pound
+rule; the cited EFX article supports the bowling answer's secondary-source claims.
+Neither check was inserted into product evidence. Pulse files remain outside the
+repository. Final relevant PRODUCT evidence remains outstanding. The remaining human
+decision is whether to license additional live verification of this same work item;
+no next phase has begun.
 
 ## Provisional implementation choices and limitations
 

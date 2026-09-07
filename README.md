@@ -7,6 +7,10 @@ selects support, and can send an unresolved semantic need back to Research.
 Author writes from the selected findings and evidence; code resolves citations.
 Discovery snippets never become answer evidence.
 
+The walking skeleton is implemented, but its required two-topic live acceptance
+is incomplete. See `CURRENT.md` for the demonstrated frontier and the final
+citation repair that has only offline verification.
+
 ## Run
 
 Use Python 3.10 or later from the repository root:

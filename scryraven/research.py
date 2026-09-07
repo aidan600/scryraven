@@ -293,9 +293,11 @@ def _cite(draft: str, selected: list[Evidence], trace: list[dict]) -> tuple[str,
     prose = re.sub(r"\[\[([^\[\]]+)\]\]", "", draft)
     if re.search(r"https?://|\]\s*\(|\]\s*\[|\[[^\]]+\]:|!\[", prose, re.IGNORECASE):
         raise RunError("citations", "unresolved_author_link", trace)
-    answer = re.sub(r"\[\[([^\[\]]+)\]\]", replace, draft)
-    if "[[" in answer or "]]" in answer:
+    # Inspect unresolved Author markers before adding escaped source metadata.
+    # A label ending in an escaped bracket legitimately produces adjacent ].
+    if "[[" in prose or "]]" in prose:
         raise RunError("citations", "malformed_citation_reference", trace)
+    answer = re.sub(r"\[\[([^\[\]]+)\]\]", replace, draft)
     if not answer.strip():
         raise RunError("author", "empty_answer", trace)
     if selected and not used:
