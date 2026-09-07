@@ -32,22 +32,38 @@ class Model:
         return json.dumps(reply)
 
 
-def search_for(query="official rules"):
-    return "research", {"action": "search", "query": query, "candidate_refs": []}
+def orient(question=QUESTION, needs=None):
+    return "research", {"answer_needs": needs or [{
+        "need": question, "authority": "Responsible governing body", "material_sought": "Current official rule",
+        "temporal_requirement": "Applicable governing rule, regardless of publication age",
+    }], "focus": question}
 
 
-def read(*refs):
-    return "research", {"action": "read", "query": "", "candidate_refs": list(refs)}
+def search_for(query="official rules", *, revised=None, summary="Locate the responsible governing rule."):
+    return "research", {"action": "search", "query": query, "candidate_refs": [],
+                        "revised_answer_needs": revised, "summary": summary}
+
+
+def read(*refs, summary="Read the direct rule rather than the adjacent summary."):
+    return "research", {"action": "read", "query": "", "candidate_refs": list(refs),
+                        "revised_answer_needs": None, "summary": summary}
 
 
 def done():
-    return "research", {"action": "done", "query": "", "candidate_refs": []}
+    return "research", {"action": "done", "query": "", "candidate_refs": [],
+                        "revised_answer_needs": None, "summary": "No useful unread navigation remains."}
+
+
+def relevance(*refs, summary="Retain material relevant to the question."):
+    return "research", {"relevant_evidence_refs": list(refs), "summary": summary}
 
 
 def analysis(decision="supported", refs=("E1",), *, next_need=None, active=None):
     return "analyst", {
         "decision": decision,
-        "findings": [{"text": "Maximum weight is 16 pounds.", "support_refs": list(refs)}] if refs else [],
+        "coverage": [{"need": QUESTION, "status": "supported" if refs else "unresolved",
+                      "findings": [{"text": "Maximum weight is 16 pounds.", "support_refs": list(refs)}] if refs else [],
+                      "limitation": "" if refs else "The applicable maximum is unresolved."}],
         "active_evidence_refs": list(refs) if active is None else active,
         "explanation": "The acquired rule establishes the limit." if decision == "supported" else "The limit is unresolved.",
         "next_need": next_need,
@@ -72,7 +88,8 @@ def test_supported_flow_preserves_fetched_evidence_and_selects_author_material()
         unused_url: "Historical background without the requested limit.",
         URL: "Rule: The weight shall not exceed 16 pounds.",
     }
-    model = Model(search_for(), read("C1", "C2"), analysis(refs=("E2",), active=["E1", "E2"]), author("16 pounds. [[E2]]"))
+    model = Model(orient(), search_for(), read("C1", "C2"), relevance("E1", "E2"),
+                  analysis(refs=("E2",), active=["E1", "E2"]), author("16 pounds. [[E2]]"))
     result = run(QUESTION, model=model, search=lambda q: [
         DiscoveryCandidate("Background", unused_url, "DISCOVERY-ONLY: 99 pounds"),
         discover(q)[0],
@@ -106,13 +123,15 @@ def test_analyst_semantic_need_returns_to_research_and_expands_same_collection()
         return [DiscoveryCandidate("Clarification", second_url, "A navigation clue")]
 
     model = Model(
-        search_for("initial query"), read("C2"), analysis("research_needed", refs=(), next_need=gap, active=["E1"]),
-        search_for("Research chose this new query"), read("C2"), read("C1"), analysis(refs=("E2",), active=["E1", "E2"]),
+        orient(), search_for("initial query"), read("C2"), relevance("E1"),
+        analysis("research_needed", refs=(), next_need=gap, active=["E1"]),
+        search_for("Research chose this new query"), read("C2"), read("C1"), relevance("E2"),
+        analysis(refs=("E2",), active=["E1", "E2"]),
         author("16 pounds. [[E2]]"),
     )
     result = run(QUESTION, model=model, search=search, fetch=fetch)
     analyses = [material for stage, material in model.calls if stage == "analyst"]
-    second_research = next(material for stage, material in model.calls if stage == "research" and material["need"] == gap)
+    second_research = next(material for stage, material in model.calls if stage == "research" and material.get("need") == gap)
     assert second_research["question"] == QUESTION
     assert second_research["need"] == gap
     assert queries == ["initial query", "Research chose this new query"]
@@ -143,7 +162,7 @@ def test_research_corrects_invalid_selection_before_any_fetch(refs, cause):
         reads.append(url)
         return fetch(url)
 
-    model = Model(search_for(), read(*refs), read("C2"), analysis(), author())
+    model = Model(orient(), search_for(), read(*refs), read("C2"), relevance("E1"), analysis(), author())
     result = run(QUESTION, model=model, search=lambda query: sources, fetch=read_source)
     assert reads == [chosen_url]  # Neither guesses nor valid fragments of a rejected selection are fetched.
     assert [(item.id, item.url) for item in result.evidence] == [("E1", chosen_url)]
@@ -164,6 +183,8 @@ def test_research_corrects_invalid_selection_before_any_fetch(refs, cause):
 def test_repeated_invalid_selection_stops_without_fetch_or_downstream_evidence():
     def invalid_research(stage, _prompt, material, _schema):
         assert stage == "research"
+        if material["phase"] == "orientation":
+            return json.dumps(orient()[1])
         return json.dumps(read("C1", "C999")[1] if material["candidates"] else search_for()[1])
 
     with pytest.raises(RunError) as captured:
@@ -192,7 +213,8 @@ def test_research_revises_poor_discovery_and_failed_reads_before_analyst():
             raise LinkupTransportError("raw provider detail must not escape")
         return fetch(url)
 
-    model = Model(search_for("weak query"), search_for("better query"), read("C1"), search_for("alternative"), read("C2"), analysis(), author())
+    model = Model(orient(), search_for("weak query"), search_for("better query"), read("C1"),
+                  search_for("alternative"), read("C2"), relevance("E1"), analysis(), author())
     result = run(QUESTION, model=model, search=search, fetch=read_source)
     assert len(queries) > 1 and reads == [URL, URL + "2"]
     assert len(result.evidence) == 1 and result.evidence[0].url == URL + "2"
@@ -203,11 +225,13 @@ def test_research_revises_poor_discovery_and_failed_reads_before_analyst():
 
 @pytest.mark.parametrize("failure", ["empty_discovery", "discovery_error", "failed_fetch", "empty_fetch", "wrong_source", "unhelpful_material"])
 def test_discovery_or_failed_read_cannot_support_answer(failure):
-    steps = [search_for()]
+    steps = [orient(), search_for()]
     if failure not in {"empty_discovery", "discovery_error"}:
         steps.append(read("C1"))
     if failure != "unhelpful_material":
         steps.append(done())
+    else:
+        steps.append(relevance())
     steps.extend([analysis("unable", refs=()), author("The available research in this run did not establish the weight limit.")])
     model = Model(*steps)
 
@@ -232,15 +256,15 @@ def test_discovery_or_failed_read_cannot_support_answer(failure):
     assert "99" not in result.answer
     for stage, material in model.calls:
         if stage in {"analyst", "author"}:
-            if stage == "author" or failure != "unhelpful_material":
-                assert material["evidence"] == []
+            assert material["evidence"] == []
             assert "DISCOVERY-ONLY" not in json.dumps(material)
     assert "private raw" not in json.dumps(result.trace)
 
 
 def test_operational_bound_preserves_unresolved_analysis_in_author_handoff():
     gap = "The applicable maximum weight."
-    model = Model(search_for(), analysis("research_needed", refs=(), next_need=gap), author("The available research in this run did not establish the limit."))
+    model = Model(orient(), search_for(), analysis("research_needed", refs=(), next_need=gap),
+                  author("The available research in this run did not establish the limit."))
     result = run(QUESTION, model=model, search=discover, fetch=fetch, limits=RunLimits(research_passes=1, navigation_steps=1))
     assert result.analysis.decision == "research_needed"
     assert result.posture == "unable" and result.stop_reason == "research_bound"
@@ -253,7 +277,7 @@ def test_operational_bound_preserves_unresolved_analysis_in_author_handoff():
 
 def test_malformed_output_can_be_repaired_without_exposing_values():
     model = Model(
-        search_for(), read("C1"), ("analyst", {"decision": "private rejected value"}),
+        orient(), search_for(), read("C1"), relevance("E1"), ("analyst", {"decision": "private rejected value"}),
         analysis(), ("author", '```json\n{"answer":"16 pounds. [E1]"}\n```'),
     )
     result = run(QUESTION, model=model, search=discover, fetch=fetch)
@@ -266,8 +290,9 @@ def test_malformed_output_can_be_repaired_without_exposing_values():
 
 def test_json_syntax_repair_has_safe_location_diagnostics():
     model = Model(
+        orient(),
         ("research", '{"action":"search" "query":"private bad value","candidate_refs":[]}'),
-        search_for(), read("C1"), analysis(), author(),
+        search_for(), read("C1"), relevance("E1"), analysis(), author(),
     )
     result = run(QUESTION, model=model, search=discover, fetch=fetch)
     rejected = next(event for event in result.trace if event["action"] == "response_rejected")
@@ -291,7 +316,7 @@ def test_citation_grammar_preserves_prose_and_renders_only_selected_acquired_sou
         ("**[E1]**, ([E12]);\n[E2] (a qualification).", f"**{links[1]}**, ({links[12]});\n{links[2]} (a qualification)."),
     ]
     model = Model(
-        search_for(), read(*(f"C{index}" for index in range(1, 13))),
+        orient(), search_for(), read(*(f"C{index}" for index in range(1, 13))), relevance("E1", "E2", "E12"),
         analysis(refs=("E1", "E2", "E12")), author("\n".join(draft for draft, _ in cases)),
     )
     result = run(QUESTION, model=model, search=lambda query: sources, fetch=fetch)
@@ -321,7 +346,8 @@ def test_citation_grammar_preserves_prose_and_renders_only_selected_acquired_sou
     ("\n[other]: /unacquired", "unresolved_author_link", "author_link_or_image"),
 ])
 def test_bad_citations_fail_even_beside_a_valid_alias_without_exposing_the_draft(marker, code, pattern):
-    model = Model(search_for(), read("C1", "C2"), analysis(), author("Private rejected answer. [E1] " + marker))
+    model = Model(orient(), search_for(), read("C1", "C2"), relevance("E1"),
+                  analysis(), author("Private rejected answer. [E1] " + marker))
     with pytest.raises(RunError) as captured:
         run(QUESTION, model=model, search=lambda q: [*discover(q), DiscoveryCandidate("Unselected", URL + "2", "clue")], fetch=fetch)
     error = captured.value
@@ -344,7 +370,7 @@ def test_invalid_analysis_references_and_missing_citations_are_stage_local(kind,
     verdict = analysis(refs=("E404",)) if kind == "support" else analysis()
     if kind == "active":
         verdict = analysis(active=["E404"])
-    model = Model(search_for(), read("C1"), verdict, author("16 pounds."))
+    model = Model(orient(), search_for(), read("C1"), relevance("E1"), verdict, author("16 pounds."))
     with pytest.raises(RunError) as captured:
         run(QUESTION, model=model, search=discover, fetch=fetch)
     error = captured.value
@@ -355,7 +381,7 @@ def test_invalid_analysis_references_and_missing_citations_are_stage_local(kind,
 @pytest.mark.parametrize("stage", ["research", "analyst", "author"])
 @pytest.mark.parametrize("failure", ["transport", "malformed"])
 def test_model_failures_stop_at_the_responsibility_without_raw_output(stage, failure):
-    model = Model(search_for(), read("C1"), analysis(), author())
+    model = Model(orient(), search_for(), read("C1"), relevance("E1"), analysis(), author())
 
     def fail_at_stage(current, *args):
         if current == stage:
@@ -394,7 +420,7 @@ def test_cli_invokes_real_application_and_real_linkup_adapters(monkeypatch, caps
         assert url == linkup_transport.LINKUP_FETCH_URL
         return Response({"markdown": "The limit is 16 pounds."})
 
-    model = Model(search_for(), read("C1"), analysis(), author())
+    model = Model(orient(), search_for(), read("C1"), relevance("E1"), analysis(), author())
     monkeypatch.setenv("LINKUP_API_KEY", "offline-test-value")
     monkeypatch.setattr(linkup_transport.requests, "post", post)
     monkeypatch.setattr(research, "OpenAIModel", lambda: model)
@@ -415,3 +441,233 @@ def test_cli_invokes_real_application_and_real_linkup_adapters(monkeypatch, caps
     assert captured.out == ""
     assert "research: model_configuration_missing" in captured.err
     assert "Traceback" not in captured.err
+
+
+MULTI_QUESTION = "Under Meadow Games rules, what is the equipment limit, excess-equipment penalty, and replacement condition?"
+NEEDS = [{
+    "need": need, "authority": "Meadow Games federation", "material_sought": material,
+    "temporal_requirement": "Applicable current edition, not necessarily the newest page",
+} for need, material in [
+    ("Equipment limit", "Current equipment rule"),
+    ("Excess-equipment penalty", "Current competition penalty rule"),
+    ("Replacement condition", "Current replacement rule and exceptions"),
+]]
+RULES_TEXT = "A player may carry four items. Carrying extra items incurs a two-point penalty."
+REPLACEMENT_TEXT = "Damaged equipment may be replaced after the referee approves."
+
+
+def component_analysis(last_ref="E1", *, decision=None, qualified=False):
+    texts = ["The limit is four items.", "The penalty is two points.", "Replacement requires referee approval."]
+    coverage = [{
+        "need": item["need"], "status": "qualified" if qualified else "supported",
+        "findings": [{"text": text, "support_refs": ["E1" if index < 2 else last_ref]}],
+        "limitation": "Based on the readable federation handbook summary." if qualified else "",
+    } for index, (item, text) in enumerate(zip(NEEDS, texts, strict=True))]
+    if last_ref is None:
+        coverage[-1].update(status="unresolved", findings=[], limitation="Replacement conditions were not established.")
+    return "analyst", {
+        "decision": decision or ("supported" if last_ref else "research_needed"),
+        "coverage": coverage, "active_evidence_refs": [],
+        "explanation": "The combined passages establish the findings; the coverage identifies any remaining gap.",
+        "next_need": "The rule establishing when damaged equipment may be replaced." if last_ref is None else None,
+    }
+
+
+@pytest.mark.parametrize("separate_source", [False, True])
+def test_multi_component_authority_orientation_combination_and_pipeline_triage(separate_source):
+    """Scripted model judgments exercise the real handoffs, not live semantic quality."""
+    replacement_url = "https://equipment.test/replacement"
+    irrelevant_url = "https://meadow.test/rules-archive"
+    needs = [dict(item) for item in NEEDS]
+    if separate_source:
+        needs[-1]["authority"] = "Meadow equipment committee"
+    model = Model(
+        orient(MULTI_QUESTION, needs), search_for("Meadow federation current competition equipment rules"),
+        read("C2", "C2", "C3", *(["C4"] if separate_source else []),
+             summary="The summary points to C2, the responsible rule owner; C1 adds no direct evidence."),
+        relevance("E1", *(["E3"] if separate_source else []), summary="The archive is unrelated boilerplate."),
+        component_analysis("E3" if separate_source else "E1"),
+        author("The limit is four items and the penalty is two points. [E1] "
+               + f"Damaged equipment requires referee approval for replacement. [{'E3' if separate_source else 'E1'}]"),
+    )
+    queries, reads = [], []
+
+    def search(query):
+        # Research's semantic orientation really precedes discovery and reaches navigation.
+        assert model.calls[0][1]["phase"] == "orientation"
+        assert model.calls[-1][1]["answer_needs"] == needs
+        queries.append(query)
+        return [
+            DiscoveryCandidate("A secondary explainer", "https://summary.test/game", "DISCOVERY-ONLY: federation owns rules"),
+            DiscoveryCandidate("Federation equipment rules", URL, "DISCOVERY-ONLY"),
+            DiscoveryCandidate("Archived rules", irrelevant_url, "Possibly useful"),
+            DiscoveryCandidate("Equipment committee rule", replacement_url, "DISCOVERY-ONLY"),
+        ]
+
+    def acquire(url):
+        reads.append(url)
+        content = {
+            URL: RULES_TEXT + (" " + REPLACEMENT_TEXT if not separate_source else ""),
+            irrelevant_url: "UNRELATED BODY: website cookie policy and navigation.",
+            replacement_url: REPLACEMENT_TEXT,
+        }[url]
+        return FetchedMaterial(url, content)
+
+    result = run(MULTI_QUESTION, model=model, search=search, fetch=acquire)
+    assert result.posture == "supported" and not model.replies
+    assert len(queries) == 1  # No mechanical search-per-component or duplicate reads.
+    assert reads == [URL, irrelevant_url, *([replacement_url] if separate_source else [])]
+    assert result.evidence[1].content.startswith("UNRELATED BODY")  # Retained, not destroyed.
+    downstream = [material for stage, material in model.calls if stage in {"analyst", "author"}]
+    assert "UNRELATED BODY" not in json.dumps(downstream)
+    assert "DISCOVERY-ONLY" not in json.dumps(downstream)
+    assert all([item["id"] for item in material["evidence"]] == ["E1", *(["E3"] if separate_source else [])]
+               for material in downstream)
+    assert len(downstream[-1]["coverage"]) == 3
+    assert all(item["findings"] for item in downstream[-1]["coverage"])
+    assert [event["action"] for event in result.trace].index("oriented") < [event["action"] for event in result.trace].index("discovery_started")
+    assert "UNRELATED BODY" not in json.dumps(result.trace)
+
+
+@pytest.mark.parametrize("resolve_gap", [False, True])
+def test_missing_component_drives_focused_research_preserving_supported_parts_at_bound(resolve_gap):
+    gap = component_analysis(None)[1]["next_need"]
+    new_url = URL + "/replacement"
+    queries, reads = [], []
+
+    def search(query):
+        queries.append(query)
+        return [DiscoveryCandidate("Federation rules", URL, "clue"), DiscoveryCandidate("Replacement rule", new_url, "clue")]
+
+    def acquire(url):
+        reads.append(url)
+        return FetchedMaterial(url, RULES_TEXT if url == URL else (
+            REPLACEMENT_TEXT if resolve_gap else "Unrelated product warranty."
+        ))
+
+    final = component_analysis("E2" if resolve_gap else None)
+    model = Model(
+        orient(MULTI_QUESTION, NEEDS), search_for(), read("C1"), relevance("E1"), component_analysis(None),
+        search_for("Federation replacement condition"), read("C1", "C2"),
+        relevance(*(["E2"] if resolve_gap else [])), final,
+        author("The limit is four items, with a two-point penalty for extras. [E1] " + (
+            "Replacement requires referee approval. [E2]" if resolve_gap else
+            "This run did not establish the conditions for replacing damaged equipment."
+        )),
+    )
+    result = run(MULTI_QUESTION, model=model, search=search, fetch=acquire, limits=RunLimits(research_passes=2))
+    assert reads == [URL, new_url]  # Existing E1 is not acquired again on the second selection.
+    analyses = [material for stage, material in model.calls if stage == "analyst"]
+    assert analyses[0]["evidence"][0] == analyses[1]["evidence"][0]
+    assert analyses[1]["previous_analysis"]["coverage"][:2] == component_analysis(None)[1]["coverage"][:2]
+    followup = [material for stage, material in model.calls if material.get("phase") == "navigation" and material["need"] == gap]
+    assert followup and all(material["question"] == MULTI_QUESTION for material in followup)
+    assert len(queries) == 2 and result.analysis.coverage[:2] == research.Analysis.model_validate(final[1]).coverage[:2]
+    assert result.posture == ("supported" if resolve_gap else "partial")
+    author_input = model.calls[-1][1]
+    assert author_input["coverage"] == final[1]["coverage"]
+    if not resolve_gap:
+        assert result.stop_reason == "research_bound"
+        assert author_input["posture"] == "partial" and author_input["unresolved_need"] == gap
+        assert [item["id"] for item in author_input["evidence"]] == ["E1"]
+        assert "did not establish" in result.answer and f"]({URL})" in result.answer
+
+
+def test_secondary_fallback_revisable_needs_and_restoring_omitted_acquisition_without_refetch():
+    wrong_needs = [{**NEEDS[0], "need": "Buying equipment"}]
+    sources = [
+        DiscoveryCandidate("Official rulebook", URL + "/primary", "clue"),
+        DiscoveryCandidate("Federation handbook summary", URL, "clue"),
+        DiscoveryCandidate("Equipment committee clarification", URL + "/replacement", "clue"),
+    ]
+    reads = []
+
+    def acquire(url):
+        reads.append(url)
+        if url == sources[0].url:
+            raise LinkupTransportError("primary unavailable")
+        return FetchedMaterial(url, RULES_TEXT if url == URL else REPLACEMENT_TEXT)
+
+    revised_done = {**done()[1], "revised_answer_needs": NEEDS}
+    model = Model(
+        orient(MULTI_QUESTION, wrong_needs), search_for(), read("C1", "C2", "C3"), relevance("E1"),
+        component_analysis(None, qualified=True), ("research", revised_done), relevance("E1", "E2"),
+        component_analysis("E2", qualified=True),
+        author("The readable handbook gives a four-item limit and two-point penalty. [E1] "
+               "Replacement requires referee approval. [E2] The main rulebook was unavailable in this run."),
+    )
+    result = run(MULTI_QUESTION, model=model, search=lambda query: sources, fetch=acquire)
+    assert result.posture == "supported"
+    assert reads == [item.url for item in sources]
+    analyses = [material for stage, material in model.calls if stage == "analyst"]
+    assert analyses[0]["answer_needs"] == wrong_needs
+    assert analyses[1]["answer_needs"] == NEEDS  # Analyst corrected the original hypothesis.
+    assert [item["id"] for item in analyses[0]["evidence"]] == ["E1"]
+    assert [item["id"] for item in analyses[1]["evidence"]] == ["E1", "E2"]
+    selections = [material for stage, material in model.calls if material.get("phase") == "relevance"]
+    assert selections[1]["new_evidence"] == []  # Restored from run-local identity, not another source request.
+    assert [item["id"] for item in selections[1]["available_sources"]] == ["E1", "E2"]
+    assert all(item.status == "qualified" for item in result.analysis.coverage)
+    assert any(event["action"] == "orientation_revised" for event in result.trace)
+
+
+@pytest.mark.parametrize("failure", ["unknown_relevance", "withheld_support", "premature_supported"])
+def test_selections_and_component_completeness_fail_mechanically_in_the_actual_flow(failure):
+    selected = relevance("E404") if failure == "unknown_relevance" else relevance("E1")
+    verdict = component_analysis("E2") if failure == "withheld_support" else component_analysis(None, decision="supported")
+    model = Model(orient(MULTI_QUESTION, NEEDS), search_for(), read("C1", "C2"), selected, verdict)
+    with pytest.raises(RunError) as captured:
+        run(MULTI_QUESTION, model=model, search=lambda query: [*discover(query),
+            DiscoveryCandidate("Withheld source", URL + "2", "clue")], fetch=fetch)
+    error = captured.value
+    assert error.stage == ("research" if failure == "unknown_relevance" else "analyst")
+    assert error.code == ("supported_with_unresolved_component" if failure == "premature_supported" else "invalid_evidence_reference")
+    assert all(stage != "author" for stage, material in model.calls)
+
+
+@pytest.mark.parametrize("temporal_target", ["applicable", "named_period", "latest_event"])
+def test_temporal_orientation_selects_applicable_material_instead_of_newest_page(temporal_target):
+    question = {
+        "applicable": "What are the currently applicable Meadow Games equipment rules?",
+        "named_period": "What equipment rules applied in the Meadow Games opening season?",
+        "latest_event": "What is the most recently announced Meadow Games equipment change?",
+    }[temporal_target]
+    temporal_basis = {
+        "applicable": "Present governing edition; an older publication can remain in force.",
+        "named_period": "Opening-season edition, even if a later edition superseded it afterward.",
+        "latest_event": "The latest announcement by event time; recency matters to this question.",
+    }[temporal_target]
+    needs = [{**NEEDS[0], "need": question, "temporal_requirement": temporal_basis}]
+    sources = [
+        DiscoveryCandidate("Fresh secondary commentary", "https://commentary.test/new", "Published today; DISCOVERY-ONLY"),
+        DiscoveryCandidate("Federation opening-season rules", URL + "/opening", "Original official edition"),
+        DiscoveryCandidate("Federation governing rules", URL + "/governing", "Published months ago; currently governing"),
+        DiscoveryCandidate("Federation latest announcement", URL + "/announcement", "Most recent announcement"),
+    ]
+    target_index = {"applicable": 2, "named_period": 1, "latest_event": 3}[temporal_target]
+    statement = {
+        "applicable": "This edition remains in force and supersedes the opening-season edition. Limit: four items.",
+        "named_period": "During the opening season the limit was five items. Later seasons use another edition.",
+        "latest_event": "The latest federation announcement introduces a six-item limit for next season, not this season.",
+    }[temporal_target]
+    verdict = analysis()[1]
+    verdict["coverage"] = [{"need": question, "status": "supported", "limitation": "",
+                            "findings": [{"text": statement, "support_refs": ["E1"]}]}]
+    model = Model(orient(question, needs), search_for(), read(f"C{target_index + 1}", summary=temporal_basis),
+                  relevance("E1", summary=temporal_basis), ("analyst", verdict), author(statement + " [E1]"))
+    fetched = []
+
+    def acquire(url):
+        fetched.append(url)
+        return FetchedMaterial(url, statement)
+
+    result = run(question, model=model, search=lambda query: sources, fetch=acquire)
+    assert fetched == [sources[target_index].url] and result.posture == "supported"
+    for stage, material in model.calls:
+        if material.get("phase") in {"navigation", "relevance"} or stage == "analyst":
+            assert material["answer_needs"][0]["temporal_requirement"] == temporal_basis
+    orientation = next(event for event in result.trace if event["action"] == "oriented")
+    assert orientation["answer_needs"][0]["temporal_requirement"] == temporal_basis
+    author_input = model.calls[-1][1]
+    assert author_input["evidence"][0]["content"] == statement
+    assert "DISCOVERY-ONLY" not in json.dumps(author_input)
