@@ -44,6 +44,11 @@ citation resolution, and terminal stage/reason. It omits raw prompts, provider
 payloads, source bodies, credentials, and hidden model reasoning. Trace text can
 contain the user's question and source URLs; use public questions for observations.
 
+For support inspection, `--trace-evidence` additionally includes the exact acquired
+text of Analyst-selected sources in stderr diagnostics. It uses the same run and
+makes no extra source requests. Keep this optional material outside the repository
+when capturing a product observation through the doorman.
+
 Execution errors exit with code 1 and a safe stage/code. Supported answers and
 honest limitations exit with code 0; the trace distinguishes their posture.
 The provisional local loop allows three research passes of up to six navigation

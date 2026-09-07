@@ -287,11 +287,16 @@ def test_cli_invokes_real_application_and_real_linkup_adapters(monkeypatch, caps
     monkeypatch.setenv("LINKUP_API_KEY", "offline-test-value")
     monkeypatch.setattr(linkup_transport.requests, "post", post)
     monkeypatch.setattr(research, "OpenAIModel", lambda: model)
-    assert cli.main([QUESTION, "--trace"]) == 0
+    assert cli.main([QUESTION, "--trace", "--trace-evidence"]) == 0
     captured = capsys.readouterr()
     assert f"[Rules]({URL})" in captured.out
     assert calls[1][1] == {"url": URL}
-    assert json.loads(captured.err)["trace"][-1]["posture"] == "supported"
+    diagnostics = json.loads(captured.err)
+    assert diagnostics["trace"][-1]["posture"] == "supported"
+    assert diagnostics["selected_evidence"] == [{
+        "id": "E1", "url": URL, "title": "Rules", "content": "The limit is 16 pounds.",
+    }]
+    assert "DISCOVERY-ONLY" not in captured.err
 
     monkeypatch.setattr(research, "OpenAIModel", lambda: Model(("research", ModelError("model_configuration_missing"))))
     assert cli.main([QUESTION, "--trace"]) == 1
