@@ -1,73 +1,74 @@
 # ScryRaven Current Truth
 
-Status: Part B product decision complete; active v1 tree reset complete
+Status: first single-component walking skeleton implemented
 Repository: aidan600/scryraven
 Preferred local checkout: C:\Users\aidan\ScryRaven
 
-## Approved product state
+## Approved and implemented product state
 
-Part B remains the approved product decision. The first supported product
-promise is a single-component factual research answer grounded in acquired
-public-web source material. The selected future responsibility boundary is:
+PRODUCT.md remains the approved product charter. The ordinary entrypoint is:
 
-Research
-→ Analyst
-→ Author
+    python -m scryraven "What is the maximum allowed weight of a ten-pin bowling ball?"
 
-with bounded Analyst-directed follow-up returning to Research when acquired
-evidence exposes an important unresolved information need.
+The implemented path is Research -> Analyst -> Author -> deterministic citations.
+Research chooses and revises Linkup standard searches, interprets discovery clues
+as navigation, selects sources, and directly reads them with Linkup Fetch.
+Successful reads create immutable run-local evidence snapshots with stable IDs,
+source URLs, display titles, and the full readable material returned by Fetch.
+Discovery context is never part of the evidence passed to Analyst or Author.
 
-The walking skeleton is not implemented.
+Analyst semantically interprets the acquired collection with a stronger model,
+returns supported/research_needed/unable, connects findings to support IDs, and
+selects active evidence IDs. A semantic next_need returns to Research; later
+analysis sees the expanded collection, including the original snapshots.
+Author receives the question, supported findings or limitation, relevant Analyst
+explanation, and only selected supporting snapshots. Mechanical code checks
+references and renders source links; it does not judge whether passages prove
+claims. Unsupported outcomes preserve uncertainty, including when a local
+execution bound ends research.
 
-## Repository state after this reset
+## Verification frontier
 
-The active tree is intentionally a small foundation:
+The actual application path has focused offline coverage for direct acquisition,
+separation of discovery and evidence, selected Author material, successful cited
+answers, Analyst-directed follow-up, revised poor discovery and failed reads,
+honest limitations, execution bounds, invalid references, model failures, and CLI
+use of the same application with real Linkup adapters and injected external calls.
+The retained doorman and Linkup transport tests pass. No live product result has
+yet been demonstrated on this implementation.
 
-- root AGENTS.md, PRODUCT.md, and CURRENT.md;
-- the minimal Cursor pointer to root guidance;
-- ordinary repository hygiene and development configuration;
-- the general operator credential doorman at
-  scripts/run_brokered_command_once.py;
-- one neutral Linkup transport surface at core/linkup_transport.py;
-- a minimal non-executable scryraven namespace; and
-- focused offline tests for the retained surfaces.
+## Provisional implementation choices and limitations
 
-The reset does not run ScryRaven and makes no live provider, model, search, or
-Fetch call. The walking skeleton remains unimplemented and no production
-ResearchState, AnalystResult, AuthorMaterial, support-reference, or active
-evidence-reference contract has been created.
+- One OpenAI Responses transport with configurable FAST and SMART model roles;
+  defaults are gpt-5.4-mini/low for Research and Author, gpt-5.4/medium for Analyst.
+- Small responsibility prompts, Pydantic structured-response parsing, and ordinary
+  sequential functions. Three research passes and six navigation actions per pass
+  are provisional local defaults, not product restrictions or acceptance criteria.
+- Optional --trace emits compact run-local diagnostic JSON on stderr: stage,
+  research need, discovery/read outcomes, acquired IDs/URLs/counts, Analyst
+  decisions/support/gaps, Author selection, citation resolution, and terminal
+  posture/reason. It omits raw prompts, source bodies, provider payloads, and
+  hidden model reasoning. It can include the public question and source URLs.
+- Full fetched text is kept in memory and sent to Analyst; large corpora can
+  exceed model context. No semantic reduction or persistent evidence system exists.
+- Provider failures and malformed model/reference responses are reported with
+  safe stage/code errors. Research can choose another search/read within its loop;
+  there is no general retry/fallback/recovery system.
+- Source interpretation and faithful writing remain model judgments. Offline
+  mechanics alone do not establish broad live answer quality.
+- Multi-component research, scheduling, parallel research, persistent sessions,
+  resumability, UI, provider routing, and generalized recovery are unimplemented.
 
-## Retired v1 active estate
+## Retained boundaries
 
-The former v1 application and runtime are no longer active in the filesystem.
-This includes the old SearchOS, SearchPlanner, SearchJudgment, QueryPlan,
-SearchWorkPlan, EvidenceLedger, FinalAnswerPacket, RunKernel, RunAuthority,
-D-prime, Cross, Sufficiency, Scrutineer, graph, scheduler, recovery,
-provider-proxy, pricing/cap/attempt-authority, and alternate CLI/UI estates.
-Their callers, compatibility machinery, exclusive tests, configuration, and
-current documentation were removed with them.
+The general doorman at scripts/run_brokered_command_once.py remains operator-only
+credential custody and process plumbing; product code does not import it.
+Agent-operated credentialed commands use it and put sanitized outputs outside the
+repository. No live-run accounting, token/cost authority, or persistent diagnostic
+system is part of the product. CI remains pre-commit plus offline pytest without
+live calls or provider secrets.
 
-Git history preserves the implementation history. The annotated immutable tag
-v1-final-implementation points to the verified final v1 baseline
-bdefe506ffb58df491e31156771f4e0712e3dd2b. No active archive, legacy copy, or
-fallback tree was created.
-
-## Retained donor boundary
-
-core/linkup_transport.py carries only:
-
-- one Linkup standard search request using standard depth and searchResults;
-- query and bounded result-count construction;
-- mechanical credential-header construction;
-- bounded title, URL, and discovery-context normalization;
-- one direct Linkup Fetch request for a selected URL; and
-- readable returned-material extraction mechanically associated with that URL.
-
-It deliberately carries no routing, retry, cap, cost, model, evidence,
-custody, semantic, authority, answer, or lifecycle behavior.
-
-## Next authorized repository work
-
-After human review and merge of this reset, the next potential product work is
-implementation of the approved Research → Analyst → Author walking skeleton.
-That work has not begun in this reset.
+The old v1 architecture remains removed from the active tree. Git history and
+v1-final-implementation preserve it; no old orchestration, authority, evidence
+ledger, final-answer packet, scheduler, or fallback tree has been recreated.
+The obsolete reset test forbidding an executable CLI has been removed.
