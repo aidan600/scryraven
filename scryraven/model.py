@@ -19,8 +19,8 @@ class ModelRole:
 
 @dataclass(frozen=True)
 class ModelConfig:
-    fast: ModelRole = ModelRole("gpt-5.4-mini", "medium")
-    smart: ModelRole = ModelRole("gpt-5.4", "medium")
+    fast: ModelRole = ModelRole("gpt-5.6-luna", "medium")
+    smart: ModelRole = ModelRole("gpt-5.6-luna", "medium")
 
     @classmethod
     def from_environment(cls) -> ModelConfig:

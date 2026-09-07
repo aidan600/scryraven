@@ -31,9 +31,9 @@ It does not load `.env` itself. Optional role configuration:
 
 | Variable | Default |
 | --- | --- |
-| `SCRYRAVEN_FAST_MODEL` | `gpt-5.4-mini` (Research and Author) |
+| `SCRYRAVEN_FAST_MODEL` | `gpt-5.6-luna` (Research and Author) |
 | `SCRYRAVEN_FAST_REASONING` | `medium` |
-| `SCRYRAVEN_SMART_MODEL` | `gpt-5.4` (Analyst) |
+| `SCRYRAVEN_SMART_MODEL` | `gpt-5.6-luna` (Analyst) |
 | `SCRYRAVEN_SMART_REASONING` | `medium` |
 
 An empty reasoning value omits that API option. Models and reasoning settings
@@ -65,6 +65,16 @@ supported, partial, and unable postures.
 The provisional local loop allows three research passes of up to six navigation
 actions each. Analyst still judges acquired evidence at a navigation bound.
 Exhaustion is a limitation of the run, never proof that an answer does not exist.
+Within that loop, each semantic research need permits at most three discovery
+calls; one or two should normally suffice. Further searches require Research's
+compact evidence hypothesis, novelty, expected value and acquisition expectation;
+the third requires a concrete exceptional lead. Discovery outcomes report new
+candidate refs and duplicate counts without mechanically judging source quality.
+Candidates and attempts survive Analyst follow-ups. Analyst reuses a run-local
+need reference for equivalent gaps, including paraphrases or narrowed portions of
+already searched territory; only a genuinely different gap receives a new reference.
+Reads do not spend discovery allowance and remain available after the fuse blocks
+a search. Need identity and novelty are semantic judgments, not similarity scores.
 Successful acquisitions remain in memory with stable source IDs. Research selects
 relevant material; later Analyst passes retain prior support and useful conflict
 context. Author receives only the sources supporting the selected findings.
