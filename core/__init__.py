@@ -1,1 +1,1 @@
-# Core package for extracted app modules.
+"""Small mechanical foundations retained for the next ScryRaven slice."""
