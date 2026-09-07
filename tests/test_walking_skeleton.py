@@ -203,7 +203,18 @@ def test_malformed_output_can_be_repaired_without_exposing_values_and_adjacent_c
     rejected = next(event for event in result.trace if event["action"] == "response_rejected")
     assert rejected["stage"] == "analyst" and rejected["issues"]
     assert "private rejected value" not in json.dumps(result.trace)
-    assert "private rejected value" not in json.dumps(model.calls)
+
+
+def test_json_syntax_repair_has_safe_location_diagnostics():
+    model = Model(
+        ("research", '{"action":"search" "query":"private bad value","candidate_refs":[]}'),
+        search_for(), read("C1"), analysis(), author(),
+    )
+    result = run(QUESTION, model=model, search=discover, fetch=fetch)
+    rejected = next(event for event in result.trace if event["action"] == "response_rejected")
+    assert any(issue["type"] == "expected_comma" for issue in rejected["issues"])
+    assert "private bad value" not in json.dumps(result.trace)
+    assert result.posture == "supported"
 
 
 @pytest.mark.parametrize("kind,stage,code", [

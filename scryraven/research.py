@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
@@ -147,14 +148,31 @@ def _ask(model: ModelCall, stage: str, prompt: str, material: dict, shape: type[
                 "type": error["type"],
                 "field": next((str(part) for part in error["loc"] if part in shape.model_fields), "response"),
             } for error in exc.errors(include_input=False, include_context=False, include_url=False)[:3]]
+            try:
+                json.loads(raw)
+            except json.JSONDecodeError as error:
+                # The parser message is mapped to fixed codes, not printed.
+                syntax = {
+                    "Expecting property name enclosed in double quotes": "expected_quoted_key",
+                    "Expecting ',' delimiter": "expected_comma",
+                    "Expecting ':' delimiter": "expected_colon",
+                    "Extra data": "trailing_content",
+                    "Unterminated string starting at": "unterminated_string",
+                    "Invalid control character at": "invalid_control_character",
+                    "Invalid \\escape": "invalid_escape",
+                    "Expecting value": "expected_value",
+                }.get(error.msg, "invalid_json")
+                issues.append({"type": syntax, "line": error.lineno, "column": error.colno})
             trace.append({
                 "stage": stage, "action": "response_rejected", "issues": issues,
                 "format": "object" if raw.lstrip().startswith("{") else "non_object",
             })
             if attempt == 0:
                 material = {**material, "output_correction": {
-                    "instruction": "Return only a JSON object matching the supplied schema. Correct these shape errors.",
+                    "instruction": "Repair the rejected response into one valid JSON object matching the supplied schema.",
                     "issues": issues,
+                    # Kept only in this local retry, never in diagnostics/results.
+                    "rejected_response": raw,
                 }}
     raise RunError(stage, "malformed_model_response", trace) from None
 
