@@ -1,4 +1,1 @@
-"""ScryRaven namespace foundation.
-
-The walking-skeleton application is intentionally not implemented yet.
-"""
+"""ScryRaven: public-web research grounded in acquired source material."""
