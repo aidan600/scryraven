@@ -96,6 +96,8 @@ meaning and reject weak leads; search differently if they are poor or reads fail
 If promising candidates exist, choose read with their candidate_refs. A search
 only lists pages; those pages have not been read. A snippet mentioning an answer
 does not complete the need. Only acquired_sources identifies successful reads.
+For read, copy exact id values from candidates into candidate_refs (for example C1).
+Do not use URLs, titles, bracketed aliases, list positions, or acquired evidence IDs.
 Read a small useful selection of candidates before returning to Analyst. A successful
 read hands the acquired material to Analyst, which alone judges what it establishes.
 Do not select already acquired URLs. Use done only when no useful navigation remains.
@@ -206,12 +208,32 @@ def _research(
     candidates: dict[str, DiscoveryCandidate] = {}
     attempts: list[dict] = []
     for _ in range(limits.navigation_steps):
-        action = _ask(model, "research", RESEARCH_PROMPT, {
+        request = {
             "question": question, "need": need,
             "candidates": [{"id": ref, **asdict(item)} for ref, item in candidates.items()],
             "acquired_sources": [{"id": item.id, "url": item.url, "title": item.title} for item in evidence],
             "attempts": attempts,
-        }, ResearchAction, trace)
+        }
+        for correction in range(2):
+            action = _ask(model, "research", RESEARCH_PROMPT, request, ResearchAction, trace)
+            invalid = [ref for ref in action.candidate_refs if ref not in candidates]
+            if action.action != "read" or (action.candidate_refs and not invalid):
+                break
+            cause = "empty_selection" if not action.candidate_refs else (
+                "unknown_alias" if all(re.fullmatch(r"C[0-9]+", ref) for ref in invalid) else "malformed_alias"
+            )
+            trace.append({
+                "stage": "research", "action": "selection_rejected", "code": "invalid_candidate_reference",
+                "cause": cause, "invalid_alias_count": len(invalid),
+                "valid_candidate_refs": list(candidates), "evidence_count": len(evidence),
+            })
+            if correction:
+                raise RunError("research", "invalid_candidate_reference", trace)
+            request = {**request, "selection_correction": {
+                "cause": cause, "valid_candidate_refs": list(candidates),
+                "instruction": "The read selection was rejected; no Fetch occurred. Return a corrected Research action. "
+                "For read, select exact aliases from the presented candidates. If none are useful, choose search or done.",
+            }}
         if action.action == "done":
             trace.append({"stage": "research", "action": "navigation_done", "evidence_count": len(evidence)})
             return False
@@ -232,8 +254,6 @@ def _research(
             attempts.append({"query": action.query, **observation})
             continue
 
-        if not action.candidate_refs or any(ref not in candidates for ref in action.candidate_refs):
-            raise RunError("research", "invalid_candidate_reference", trace)
         acquired_before = len(evidence)
         for ref in dict.fromkeys(action.candidate_refs):
             lead = candidates[ref]

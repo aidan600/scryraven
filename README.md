@@ -42,8 +42,10 @@ diagnostics on stderr: research needs, discovery/read outcomes, source URLs,
 acquired evidence IDs/counts, Analyst decisions/support/gaps, Author selection,
 citation resolution, and terminal stage/reason. Citation failures identify the
 rejected pattern, position, and evidence aliases without retaining the rejected
-answer. The trace omits raw prompts, provider
-payloads, source bodies, credentials, and hidden model reasoning. Trace text can
+answer. Invalid Research selections report the validation cause and current valid
+candidate aliases. Research gets one local correction opportunity before a repeated
+invalid selection terminates the run; rejected selections never reach Fetch.
+The trace omits raw prompts, provider payloads, source bodies, credentials, and hidden model reasoning. Trace text can
 contain the user's question and source URLs; use public questions for observations.
 
 For completed-run support inspection, `--trace-evidence` includes the exact acquired

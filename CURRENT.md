@@ -36,13 +36,28 @@ honest limitations, execution bounds, invalid references, model failures, and CL
 use of the same application with real Linkup adapters and injected external calls.
 The retained doorman and Linkup transport tests pass.
 
-The required two-topic live acceptance condition has not been met. Nine ordinary
+The required two-topic live acceptance condition has not been met. Ten ordinary
 CLI invocations used the retained doorman with sanitized output outside the repo:
-the original eight and the first of two separately authorized continuation runs.
-One continuation invocation remains for the same chess question after offline
-review and repair. This is work-item accounting, not a product subsystem.
+the original eight and both separately authorized continuation runs. That live
+allowance was exhausted. A subsequent completion continuation authorizes up to
+five additional ordinary invocations, starting with chess and then a transfer
+topic on the same final code. This is work-item accounting, not a product subsystem.
 
-Demonstrated live behavior:
+The final PRODUCT observation tested e93f0e9699a12eb8ad3ceada40a6ce7bb2de877e
+with the chess promotion question. Research stopped at invalid_candidate_reference
+after discovery returned six candidates. No direct read occurred, no acquired
+evidence was created, and Analyst, Author, and citation resolution were not reached.
+The CLI exited 1 with no user-facing answer. The final citation repair therefore
+remains unverified through PRODUCT execution. Publication has not proceeded.
+
+The candidate-selection repair is implemented and covered offline. Research
+receives explicit local aliases; malformed or unknown read selections are rejected
+before any Fetch. One local correction request supplies the current valid aliases
+to Research. Repeated invalid selection fails clearly. Code neither guesses a
+replacement candidate nor chooses semantic relevance. Safe diagnostics distinguish
+empty, malformed, and unknown aliases without retaining rejected model output.
+
+Earlier demonstrated live behavior:
 
 - Bowling on 512a3bb2683f3fb6eed10b03aa57ef2ff9a09227 completed with a cited
   16-pound maximum from three directly acquired
@@ -73,14 +88,15 @@ valid citation, and link/code presentation could prevent a resolved alias from
 being a user citation. The resolver now uses an explicit bracketed-alias grammar,
 validates every referenced selected ID, and checks malformed aliases before source
 metadata is rendered. Failure diagnostics identify patterns, positions, and aliases
-without retaining the rejected answer. These changes await the final authorized
-PRODUCT observation. The exact cause of the last live failure is unproved because
-its rejected token was not retained.
+without retaining the rejected answer. The relevant offline suite, Ruff,
+pre-commit, and import/parse checks pass. The final live run did not reach this
+resolver. The exact token responsible for the preceding live citation failure is
+unknown because that run did not retain token diagnostics.
 
 Two independent source checks were used: the USBC manual confirms the 16.00-pound
 rule; the cited EFX article supports the bowling answer's secondary-source claims.
 Neither check was inserted into product evidence. Pulse files remain outside the
-repository. Final relevant PRODUCT evidence remains outstanding; no next phase has
+repository. Final relevant PRODUCT evidence remains outstanding. No next phase has
 begun.
 
 ## Provisional implementation choices and limitations

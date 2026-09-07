@@ -101,24 +101,79 @@ def test_analyst_semantic_need_returns_to_research_and_expands_same_collection()
 
     def search(query):
         queries.append(query)
-        return discover(query) if len(queries) == 1 else [DiscoveryCandidate("Clarification", second_url, "A navigation clue")]
+        if len(queries) == 1:
+            return [DiscoveryCandidate("Weak lead", URL + "-weak", "clue"), *discover(query)]
+        return [DiscoveryCandidate("Clarification", second_url, "A navigation clue")]
 
     model = Model(
-        search_for("initial query"), read("C1"), analysis("research_needed", refs=(), next_need=gap, active=["E1"]),
-        search_for("Research chose this new query"), read("C1"), analysis(refs=("E2",), active=["E1", "E2"]),
+        search_for("initial query"), read("C2"), analysis("research_needed", refs=(), next_need=gap, active=["E1"]),
+        search_for("Research chose this new query"), read("C2"), read("C1"), analysis(refs=("E2",), active=["E1", "E2"]),
         author("16 pounds. [[E2]]"),
     )
     result = run(QUESTION, model=model, search=search, fetch=fetch)
     analyses = [material for stage, material in model.calls if stage == "analyst"]
-    second_research = model.calls[3][1]
+    second_research = next(material for stage, material in model.calls if stage == "research" and material["need"] == gap)
     assert second_research["question"] == QUESTION
     assert second_research["need"] == gap
     assert queries == ["initial query", "Research chose this new query"]
     assert analyses[0]["evidence"] == analyses[1]["evidence"][:1]
     assert [item.id for item in result.evidence] == ["E1", "E2"]
     assert result.evidence[1].url == second_url
+    rejected = next(event for event in result.trace if event["action"] == "selection_rejected")
+    assert rejected["cause"] == "unknown_alias"
+    assert rejected["valid_candidate_refs"] == ["C1"]  # C2 belonged to the earlier discovery set.
+    assert rejected["evidence_count"] == 1
     assert any(event.get("next_need") == gap for event in result.trace)
     assert result.posture == "supported"
+
+
+@pytest.mark.parametrize("refs,cause", [
+    (("C999",), "unknown_alias"),
+    (("[C2]",), "malformed_alias"),
+    (("private malformed selection",), "malformed_alias"),
+    ((), "empty_selection"),
+    (("C1", "C999"), "unknown_alias"),
+])
+def test_research_corrects_invalid_selection_before_any_fetch(refs, cause):
+    reads = []
+    chosen_url = URL + "-chosen"
+    sources = [*discover("query"), DiscoveryCandidate("Chosen rules", chosen_url, "DISCOVERY-ONLY")]
+
+    def read_source(url):
+        reads.append(url)
+        return fetch(url)
+
+    model = Model(search_for(), read(*refs), read("C2"), analysis(), author())
+    result = run(QUESTION, model=model, search=lambda query: sources, fetch=read_source)
+    assert reads == [chosen_url]  # Neither guesses nor valid fragments of a rejected selection are fetched.
+    assert [(item.id, item.url) for item in result.evidence] == [("E1", chosen_url)]
+    correction = next(material for stage, material in model.calls if "selection_correction" in material)
+    assert correction["question"] == QUESTION and correction["need"] == QUESTION
+    assert correction["acquired_sources"] == []
+    assert correction["selection_correction"]["valid_candidate_refs"] == [item["id"] for item in correction["candidates"]]
+    rejected = next(event for event in result.trace if event["action"] == "selection_rejected")
+    assert rejected["stage"] == "research" and rejected["cause"] == cause
+    assert rejected["evidence_count"] == 0
+    assert "private malformed selection" not in json.dumps(result.trace)
+    downstream = [material for stage, material in model.calls if stage in {"analyst", "author"}]
+    assert "DISCOVERY-ONLY" not in json.dumps(downstream)
+    assert all(material["evidence"][0]["content"] == fetch(chosen_url).readable_text for material in downstream)
+    assert result.posture == "supported"
+
+
+def test_repeated_invalid_selection_stops_without_fetch_or_downstream_evidence():
+    def invalid_research(stage, _prompt, material, _schema):
+        assert stage == "research"
+        return json.dumps(read("C1", "C999")[1] if material["candidates"] else search_for()[1])
+
+    with pytest.raises(RunError) as captured:
+        run(QUESTION, model=invalid_research, search=discover, fetch=lambda url: pytest.fail("Rejected selection reached Fetch"))
+    error = captured.value
+    assert (error.stage, error.code) == ("research", "invalid_candidate_reference")
+    rejections = [event for event in error.trace if event["action"] == "selection_rejected"]
+    assert len(rejections) > 1
+    assert all(event["cause"] == "unknown_alias" and event["evidence_count"] == 0 for event in rejections)
+    assert error.trace[-1]["action"] == "failed"
 
 
 def test_research_revises_poor_discovery_and_failed_reads_before_analyst():
