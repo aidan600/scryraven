@@ -35,6 +35,7 @@ class Model:
 def orient(question=QUESTION, needs=None):
     return "research", {"answer_needs": needs or [{
         "need": question, "authority": "Responsible governing body", "material_sought": "Current official rule",
+        "temporal_requirement": "Applicable governing rule, regardless of publication age",
     }], "focus": question}
 
 
@@ -445,6 +446,7 @@ def test_cli_invokes_real_application_and_real_linkup_adapters(monkeypatch, caps
 MULTI_QUESTION = "Under Meadow Games rules, what is the equipment limit, excess-equipment penalty, and replacement condition?"
 NEEDS = [{
     "need": need, "authority": "Meadow Games federation", "material_sought": material,
+    "temporal_requirement": "Applicable current edition, not necessarily the newest page",
 } for need, material in [
     ("Equipment limit", "Current equipment rule"),
     ("Excess-equipment penalty", "Current competition penalty rule"),
@@ -621,3 +623,51 @@ def test_selections_and_component_completeness_fail_mechanically_in_the_actual_f
     assert error.stage == ("research" if failure == "unknown_relevance" else "analyst")
     assert error.code == ("supported_with_unresolved_component" if failure == "premature_supported" else "invalid_evidence_reference")
     assert all(stage != "author" for stage, material in model.calls)
+
+
+@pytest.mark.parametrize("temporal_target", ["applicable", "named_period", "latest_event"])
+def test_temporal_orientation_selects_applicable_material_instead_of_newest_page(temporal_target):
+    question = {
+        "applicable": "What are the currently applicable Meadow Games equipment rules?",
+        "named_period": "What equipment rules applied in the Meadow Games opening season?",
+        "latest_event": "What is the most recently announced Meadow Games equipment change?",
+    }[temporal_target]
+    temporal_basis = {
+        "applicable": "Present governing edition; an older publication can remain in force.",
+        "named_period": "Opening-season edition, even if a later edition superseded it afterward.",
+        "latest_event": "The latest announcement by event time; recency matters to this question.",
+    }[temporal_target]
+    needs = [{**NEEDS[0], "need": question, "temporal_requirement": temporal_basis}]
+    sources = [
+        DiscoveryCandidate("Fresh secondary commentary", "https://commentary.test/new", "Published today; DISCOVERY-ONLY"),
+        DiscoveryCandidate("Federation opening-season rules", URL + "/opening", "Original official edition"),
+        DiscoveryCandidate("Federation governing rules", URL + "/governing", "Published months ago; currently governing"),
+        DiscoveryCandidate("Federation latest announcement", URL + "/announcement", "Most recent announcement"),
+    ]
+    target_index = {"applicable": 2, "named_period": 1, "latest_event": 3}[temporal_target]
+    statement = {
+        "applicable": "This edition remains in force and supersedes the opening-season edition. Limit: four items.",
+        "named_period": "During the opening season the limit was five items. Later seasons use another edition.",
+        "latest_event": "The latest federation announcement introduces a six-item limit for next season, not this season.",
+    }[temporal_target]
+    verdict = analysis()[1]
+    verdict["coverage"] = [{"need": question, "status": "supported", "limitation": "",
+                            "findings": [{"text": statement, "support_refs": ["E1"]}]}]
+    model = Model(orient(question, needs), search_for(), read(f"C{target_index + 1}", summary=temporal_basis),
+                  relevance("E1", summary=temporal_basis), ("analyst", verdict), author(statement + " [E1]"))
+    fetched = []
+
+    def acquire(url):
+        fetched.append(url)
+        return FetchedMaterial(url, statement)
+
+    result = run(question, model=model, search=lambda query: sources, fetch=acquire)
+    assert fetched == [sources[target_index].url] and result.posture == "supported"
+    for stage, material in model.calls:
+        if material.get("phase") in {"navigation", "relevance"} or stage == "analyst":
+            assert material["answer_needs"][0]["temporal_requirement"] == temporal_basis
+    orientation = next(event for event in result.trace if event["action"] == "oriented")
+    assert orientation["answer_needs"][0]["temporal_requirement"] == temporal_basis
+    author_input = model.calls[-1][1]
+    assert author_input["evidence"][0]["content"] == statement
+    assert "DISCOVERY-ONLY" not in json.dumps(author_input)
