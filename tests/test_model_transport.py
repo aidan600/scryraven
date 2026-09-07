@@ -67,6 +67,10 @@ def test_provider_failures_do_not_expose_raw_payloads(monkeypatch, data, code):
     with pytest.raises(ModelError, match=f"^{code}$"):
         model("author", "private prompt", {}, {})
 
+
+def test_connection_failure_does_not_expose_request_details(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "offline-test-value")
+
     def failed(*args, **kwargs):
         raise requests.ConnectionError("secret-bearing request detail")
 

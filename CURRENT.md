@@ -36,23 +36,28 @@ honest limitations, execution bounds, invalid references, model failures, and CL
 use of the same application with real Linkup adapters and injected external calls.
 The retained doorman and Linkup transport tests pass.
 
-The required two-topic live acceptance condition has not been met. Eight ordinary
-CLI invocations used the retained doorman with sanitized output outside the repo;
-that work item's live execution allowance is exhausted. There is no product
-accounting subsystem and no further live execution is authorized by that brief.
+The required two-topic live acceptance condition has not been met. Nine ordinary
+CLI invocations used the retained doorman with sanitized output outside the repo:
+the original eight and the first of two separately authorized continuation runs.
+One continuation invocation remains for the same chess question after offline
+review and repair. This is work-item accounting, not a product subsystem.
 
-On the last live-tested revision, 512a3bb2683f3fb6eed10b03aa57ef2ff9a09227:
+Demonstrated live behavior:
 
-- Bowling completed with a cited 16-pound maximum from three directly acquired
+- Bowling on 512a3bb2683f3fb6eed10b03aa57ef2ff9a09227 completed with a cited
+  16-pound maximum from three directly acquired
   secondary sources (Big League Shirts, Flybowling, and EFX). Analyst selected
   all three; a failed fourth read created no evidence. No Analyst follow-up was
   needed. The answer also included secondary-source historical/rationale claims
   beyond the question. Independent reading of the cited EFX page confirms those
   claims are present there; that does not establish their primary-source quality.
-- Chess acquired two sources (chess-teacher.com and ppqty.com). Analyst supported
-  queen/rook/bishop/knight and handed both snapshots to Author, but citation
+- Chess on 1584b766da77eed566af371f484695b431bb1251 acquired ppqty.com (E1)
+  and greenchess.net (E2); another selected Fetch failed without becoming evidence.
+  Analyst returned supported and selected both snapshots. Author ran, but citation
   resolution failed with malformed_citation_reference. No user-facing answer was
-  emitted. A successful cited transfer-topic answer has not been demonstrated.
+  emitted. This run included the earlier bracket-title citation repair and an
+  optional acquired-evidence diagnostic flag. A successful cited transfer-topic
+  answer has not been demonstrated.
 
 Earlier live evidence demonstrated a complete natural Analyst -> Research adaptive
 cycle on bowling: initial material concerned static weight, Analyst requested the
@@ -62,19 +67,21 @@ final Research prompt/FAST-role change. A separate earlier chess run returned an
 honest run-bounded limitation after Research prematurely stopped without reads.
 Those observations do not establish the final configuration's reliability.
 
-After live execution stopped, an offline scenario reproduced the citation failure
-code with a bracket-ended source title. The final code validates unresolved Author
-markers before rendering escaped source metadata, preserving valid bracketed titles
-and still rejecting broken aliases. The full offline suite and repository hooks
-pass. This final citation repair has not been exercised live, and its causal role
-in the observed chess failure is not proved because raw Author output was not kept.
+Whole-path offline review found additional deterministic citation defects: grouped
+aliases were rejected, malformed single-bracket aliases could survive beside a
+valid citation, and link/code presentation could prevent a resolved alias from
+being a user citation. The resolver now uses an explicit bracketed-alias grammar,
+validates every referenced selected ID, and checks malformed aliases before source
+metadata is rendered. Failure diagnostics identify patterns, positions, and aliases
+without retaining the rejected answer. These changes await the final authorized
+PRODUCT observation. The exact cause of the last live failure is unproved because
+its rejected token was not retained.
 
 Two independent source checks were used: the USBC manual confirms the 16.00-pound
 rule; the cited EFX article supports the bowling answer's secondary-source claims.
 Neither check was inserted into product evidence. Pulse files remain outside the
-repository. Final relevant PRODUCT evidence remains outstanding. The remaining human
-decision is whether to license additional live verification of this same work item;
-no next phase has begun.
+repository. Final relevant PRODUCT evidence remains outstanding; no next phase has
+begun.
 
 ## Provisional implementation choices and limitations
 
@@ -89,6 +96,8 @@ no next phase has begun.
   decisions/support/gaps, Author selection, citation resolution, and terminal
   posture/reason. It omits raw prompts, source bodies, provider payloads, and
   hidden model reasoning. It can include the public question and source URLs.
+  --trace-evidence optionally adds the exact selected acquired snapshots for
+  support inspection after completion, without additional source requests.
 - Full fetched text is kept in memory and sent to Analyst; large corpora can
   exceed model context. No semantic reduction or persistent evidence system exists.
 - Provider failures and malformed model/reference responses are reported with

@@ -40,11 +40,13 @@ No model has built-in web tools; source acquisition goes through Linkup.
 An answer or honest limitation appears on stdout. `--trace` adds compact JSON
 diagnostics on stderr: research needs, discovery/read outcomes, source URLs,
 acquired evidence IDs/counts, Analyst decisions/support/gaps, Author selection,
-citation resolution, and terminal stage/reason. It omits raw prompts, provider
+citation resolution, and terminal stage/reason. Citation failures identify the
+rejected pattern, position, and evidence aliases without retaining the rejected
+answer. The trace omits raw prompts, provider
 payloads, source bodies, credentials, and hidden model reasoning. Trace text can
 contain the user's question and source URLs; use public questions for observations.
 
-For support inspection, `--trace-evidence` additionally includes the exact acquired
+For completed-run support inspection, `--trace-evidence` includes the exact acquired
 text of Analyst-selected sources in stderr diagnostics. It uses the same run and
 makes no extra source requests. Keep this optional material outside the repository
 when capturing a product observation through the doorman.

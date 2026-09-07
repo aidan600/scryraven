@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from dataclasses import FrozenInstanceError
 
 import pytest
 
@@ -89,8 +88,9 @@ def test_supported_flow_preserves_fetched_evidence_and_selects_author_material()
     assert "DISCOVERY-ONLY" not in json.dumps([analyst_input, author_input])
     assert unused_url not in json.dumps(author_input)
     assert "attempts" not in author_input and "candidates" not in author_input
-    with pytest.raises(FrozenInstanceError):
-        result.evidence[1].content = "replacement"
+    analyst_input["evidence"][1]["content"] = "replacement in the Analyst input"
+    author_input["evidence"][0]["content"] = "replacement in the Author input"
+    assert result.evidence[1].content == fetched[URL]
     assert result.trace[-1]["posture"] == "supported"
 
 
@@ -146,12 +146,14 @@ def test_research_revises_poor_discovery_and_failed_reads_before_analyst():
     assert result.posture == "supported"
 
 
-@pytest.mark.parametrize("failure", ["empty_discovery", "discovery_error", "failed_fetch", "empty_fetch"])
+@pytest.mark.parametrize("failure", ["empty_discovery", "discovery_error", "failed_fetch", "empty_fetch", "wrong_source", "unhelpful_material"])
 def test_discovery_or_failed_read_cannot_support_answer(failure):
     steps = [search_for()]
-    if failure in {"failed_fetch", "empty_fetch"}:
+    if failure not in {"empty_discovery", "discovery_error"}:
         steps.append(read("C1"))
-    steps.extend([done(), analysis("unable", refs=()), author("The available research in this run did not establish the weight limit.")])
+    if failure != "unhelpful_material":
+        steps.append(done())
+    steps.extend([analysis("unable", refs=()), author("The available research in this run did not establish the weight limit.")])
     model = Model(*steps)
 
     def search(query):
@@ -162,16 +164,21 @@ def test_discovery_or_failed_read_cannot_support_answer(failure):
     def read_source(url):
         if failure == "empty_fetch":
             return FetchedMaterial(url, "")
+        if failure == "wrong_source":
+            return FetchedMaterial(url + "other", "A rule from a different source.")
+        if failure == "unhelpful_material":
+            return FetchedMaterial(url, "This page describes a different game without a weight limit.")
         raise LinkupTransportError("private raw response")
 
     result = run(QUESTION, model=model, search=search, fetch=read_source)
     assert result.posture == "unable" and result.stop_reason == "not_established"
-    assert result.evidence == ()
+    assert bool(result.evidence) == (failure == "unhelpful_material")
     assert "this run did not establish" in result.answer
     assert "99" not in result.answer
     for stage, material in model.calls:
         if stage in {"analyst", "author"}:
-            assert material["evidence"] == []
+            if stage == "author" or failure != "unhelpful_material":
+                assert material["evidence"] == []
             assert "DISCOVERY-ONLY" not in json.dumps(material)
     assert "private raw" not in json.dumps(result.trace)
 
@@ -189,17 +196,14 @@ def test_operational_bound_preserves_unresolved_analysis_in_author_handoff():
     assert any(event["action"] == "navigation_bound" for event in result.trace)
 
 
-def test_malformed_output_can_be_repaired_without_exposing_values_and_adjacent_citations_resolve():
+def test_malformed_output_can_be_repaired_without_exposing_values():
     model = Model(
-        search_for(), read("C1", "C2"), ("analyst", {"decision": "private rejected value"}),
-        analysis(refs=("E1", "E2")), ("author", '```json\n{"answer":"16 pounds. [[E1]] [[E2]]"}\n```'),
+        search_for(), read("C1"), ("analyst", {"decision": "private rejected value"}),
+        analysis(), ("author", '```json\n{"answer":"16 pounds. [E1]"}\n```'),
     )
-    result = run(QUESTION, model=model, search=lambda q: [
-        *discover(q), DiscoveryCandidate("Second rules", URL + "2", "clue"),
-    ], fetch=fetch)
+    result = run(QUESTION, model=model, search=discover, fetch=fetch)
     assert result.posture == "supported"
     assert f"[Official rules]({URL})" in result.answer
-    assert f"[Second rules]({URL}2)" in result.answer
     rejected = next(event for event in result.trace if event["action"] == "response_rejected")
     assert rejected["stage"] == "analyst" and rejected["issues"]
     assert "private rejected value" not in json.dumps(result.trace)
@@ -217,47 +221,99 @@ def test_json_syntax_repair_has_safe_location_diagnostics():
     assert result.posture == "supported"
 
 
-def test_source_title_brackets_are_display_text_not_unresolved_citations():
-    model = Model(search_for(), read("C1"), analysis(), author())
-    result = run(QUESTION, model=model, search=lambda query: [
-        DiscoveryCandidate("Official rules [edition]", URL, "clue"),
-    ], fetch=fetch)
+def test_citation_grammar_preserves_prose_and_renders_only_selected_acquired_sources():
+    sources = [DiscoveryCandidate(f"Rules {index} [edition]", URL + str(index), "clue") for index in range(1, 13)]
+    links = {index: f"[Rules {index} \\[edition\\]]({URL}{index})" for index in (1, 2, 12)}
+    cases = [
+        ("[E1] [E12]", links[1] + " " + links[12]),
+        ("[[E1]][[E2]]", links[1] + links[2]),
+        ("[E1, E2]", links[1] + " " + links[2]),
+        ("[[E1, E2]]", links[1] + " " + links[2]),
+        ("[[E1], [E2]]", links[1] + " " + links[2]),
+        ("[ E1,\n E2 ]", links[1] + " " + links[2]),
+        ("[E1] again [E1]", links[1] + " again " + links[1]),
+        ("[note] [context] [[ordinary prose]]", "[note] [context] [[ordinary prose]]"),
+        ("**[E1]**, ([E12]);\n[E2] (a qualification).", f"**{links[1]}**, ({links[12]});\n{links[2]} (a qualification)."),
+    ]
+    model = Model(
+        search_for(), read(*(f"C{index}" for index in range(1, 13))),
+        analysis(refs=("E1", "E2", "E12")), author("\n".join(draft for draft, _ in cases)),
+    )
+    result = run(QUESTION, model=model, search=lambda query: sources, fetch=fetch)
     assert result.posture == "supported"
-    assert result.answer == "The maximum weight is 16 pounds. [Official rules \\[edition\\]](" + URL + ")"
+    assert result.answer == "\n".join(expected for _, expected in cases)
+    resolved = next(event for event in result.trace if event["action"] == "resolved")
+    assert resolved["evidence_ids"] == ["E1", "E12", "E2"]
+
+
+@pytest.mark.parametrize("marker,code,pattern", [
+    ("[E999]", "invalid_citation_reference", "unknown_or_unselected_alias"),
+    ("[E2]", "invalid_citation_reference", "unknown_or_unselected_alias"),
+    ("[[E1], [E999]]", "invalid_citation_reference", "unknown_or_unselected_alias"),
+    ("[[E1, E999]]", "invalid_citation_reference", "unknown_or_unselected_alias"),
+    ("[E]", "malformed_citation_reference", "incomplete_alias"),
+    ("[E1", "malformed_citation_reference", "incomplete_alias"),
+    ("E1]", "malformed_citation_reference", "incomplete_alias"),
+    ("[e1]", "malformed_citation_reference", "incomplete_alias"),
+    ("[[E1]", "malformed_citation_reference", "unbalanced_brackets"),
+    ("[[E1]]]", "malformed_citation_reference", "unbalanced_brackets"),
+    (r"\[E1]", "malformed_citation_reference", "escaped_citation"),
+    ("`[E1]`", "malformed_citation_reference", "literal_citation"),
+    ("\n```\n[E1]", "malformed_citation_reference", "literal_citation"),
+    ("\n~~~\n[E1]\n~~~", "malformed_citation_reference", "literal_citation"),
+    ("![E1]", "unresolved_author_link", "author_link_or_image"),
+    ("[invented](https://not-acquired.test)", "unresolved_author_link", "author_link_or_image"),
+    ("\n[other]: /unacquired", "unresolved_author_link", "author_link_or_image"),
+])
+def test_bad_citations_fail_even_beside_a_valid_alias_without_exposing_the_draft(marker, code, pattern):
+    model = Model(search_for(), read("C1", "C2"), analysis(), author("Private rejected answer. [E1] " + marker))
+    with pytest.raises(RunError) as captured:
+        run(QUESTION, model=model, search=lambda q: [*discover(q), DiscoveryCandidate("Unselected", URL + "2", "clue")], fetch=fetch)
+    error = captured.value
+    assert (error.stage, error.code) == ("citations", code)
+    rejected = next(event for event in error.trace if event["action"] == "rejected")
+    assert rejected["pattern"] == pattern and rejected["offset"] is not None
+    assert rejected["selected_evidence_ids"] == ["E1"]
+    if "E999" in marker:
+        assert "E999" in rejected["evidence_ids"]
+    assert "Private rejected answer" not in json.dumps(error.trace)
+    assert "not-acquired.test" not in json.dumps(error.trace)
 
 
 @pytest.mark.parametrize("kind,stage,code", [
     ("support", "analyst", "invalid_evidence_reference"),
     ("active", "analyst", "invalid_evidence_reference"),
-    ("citation", "citations", "invalid_citation_reference"),
-    ("unselected", "citations", "invalid_citation_reference"),
     ("missing", "citations", "missing_citation"),
-    ("broken_marker", "citations", "malformed_citation_reference"),
-    ("raw_link", "citations", "unresolved_author_link"),
-    ("malformed", "analyst", "malformed_model_response"),
-    ("model", "analyst", "model_transport_failed"),
-    ("author", "author", "model_transport_failed"),
 ])
-def test_invalid_references_and_model_failures_are_clear_and_stage_local(kind, stage, code):
+def test_invalid_analysis_references_and_missing_citations_are_stage_local(kind, stage, code):
     verdict = analysis(refs=("E404",)) if kind == "support" else analysis()
     if kind == "active":
         verdict = analysis(active=["E404"])
-    if kind == "malformed":
-        verdict = "analyst", {"decision": "banana", "private": "raw model output"}
-    if kind == "model":
-        verdict = "analyst", ModelError("model_transport_failed")
-    output = {
-        "citation": "16 pounds. [[E404]]", "unselected": "16 pounds. [[E2]]",
-        "missing": "16 pounds.", "raw_link": "16 pounds. [invented](https://not-acquired.test)",
-        "broken_marker": "16 pounds. [[E1]",
-    }.get(kind, "16 pounds. [[E1]]")
-    final = ("author", ModelError("model_transport_failed")) if kind == "author" else author(output)
-    model = Model(search_for(), read("C1", "C2"), verdict, *([verdict] if kind == "malformed" else []), final)
+    model = Model(search_for(), read("C1"), verdict, author("16 pounds."))
     with pytest.raises(RunError) as captured:
-        run(QUESTION, model=model, search=lambda q: [*discover(q), DiscoveryCandidate("Other", URL + "2", "clue")], fetch=fetch)
+        run(QUESTION, model=model, search=discover, fetch=fetch)
     error = captured.value
     assert (error.stage, error.code) == (stage, code)
-    assert error.trace[-1] == {"stage": stage, "action": "failed", "code": code}
+    assert error.trace[-1]["stage"] == stage and error.trace[-1]["action"] == "failed"
+
+
+@pytest.mark.parametrize("stage", ["research", "analyst", "author"])
+@pytest.mark.parametrize("failure", ["transport", "malformed"])
+def test_model_failures_stop_at_the_responsibility_without_raw_output(stage, failure):
+    model = Model(search_for(), read("C1"), analysis(), author())
+
+    def fail_at_stage(current, *args):
+        if current == stage:
+            if failure == "transport":
+                raise ModelError("model_transport_failed")
+            return '{"private":"raw model output"}'
+        return model(current, *args)
+
+    with pytest.raises(RunError) as captured:
+        run(QUESTION, model=fail_at_stage, search=discover, fetch=fetch)
+    error = captured.value
+    assert error.stage == stage
+    assert error.code == ("model_transport_failed" if failure == "transport" else "malformed_model_response")
     assert "raw model output" not in str(error) + json.dumps(error.trace)
 
 
