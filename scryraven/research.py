@@ -824,7 +824,6 @@ def run(
     attempts: list[dict] = []
     analysis = None
     last_analyst_refs: set[str] | None = None
-    last_analyst_needs: list[AnswerNeed] | None = None
     stop_reason = "research_bound"
     analyst_passes = 0
     navigation_remaining = limits.navigation_steps
@@ -837,7 +836,7 @@ def run(
         navigation_remaining -= steps_used
         relevant = _relevant_evidence(question, need, answer_needs, evidence, acquired_before, analysis, model, trace, candidates)
         relevant_refs = {item.id for item in relevant}
-        if (relevant_refs == last_analyst_refs and answer_needs == last_analyst_needs) or (analysis is None and not relevant_refs):
+        if relevant_refs == last_analyst_refs or (analysis is None and not relevant_refs):
             # Immutable identical material cannot supply new evidence feedback.
             # Continue the current bounded round, retaining Analyst's prior gap.
             trace.append({"stage": "research", "action": "no_new_analyst_material", **active_need.allowance()})
@@ -847,7 +846,7 @@ def run(
                 break
             # Initial empty evidence reaches Analyst only at genuine exhaustion.
         new_analyst_refs = relevant_refs - (last_analyst_refs or set())
-        last_analyst_refs, last_analyst_needs = relevant_refs, answer_needs
+        last_analyst_refs = relevant_refs
         trace.append({"stage": "analyst", "action": "material_selected", "evidence_ids": [item.id for item in relevant]})
         analysis = _ask(model, "analyst", ANALYST_PROMPT, {
             "question": question, "answer_needs": [item.model_dump() for item in answer_needs],

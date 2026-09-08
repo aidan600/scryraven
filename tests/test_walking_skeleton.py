@@ -417,7 +417,8 @@ def test_search_failure_or_evidence_not_submitted_cannot_earn_second_round(failu
     assert "private" not in json.dumps(result.trace)
 
 
-def test_omitted_new_read_does_not_spend_an_analyst_call_or_close_earned_round():
+@pytest.mark.parametrize("revise_needs", [False, True])
+def test_omitted_new_read_does_not_spend_an_analyst_call_or_close_earned_round(revise_needs):
     queries = []
 
     def search(query):
@@ -426,7 +427,8 @@ def test_omitted_new_read_does_not_spend_an_analyst_call_or_close_earned_round()
 
     model = Model(
         orient(), search_for(), read("C1"), relevance("E1"), analysis("research_needed", next_need="Exception"),
-        read("C2"), relevance("E1", summary="The new material is unrelated."),
+        ("research", {**read("C2")[1], "revised_answer_needs": NEEDS if revise_needs else None}),
+        relevance("E1", summary="The new material is unrelated."),
         search_for("Named exception document"), read("C3"), relevance("E1", "E3"),
         analysis(refs=("E1", "E3")), author(),
     )
