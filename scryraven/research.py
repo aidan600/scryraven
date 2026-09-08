@@ -7,8 +7,9 @@ import re
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import date
+from html import unescape
 from typing import Literal, TypeVar
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, urljoin, urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -65,8 +66,16 @@ class ResearchAction(_Output):
     search_hypothesis: SearchHypothesis | None
 
 
+class NavigationLink(_Output):
+    evidence_ref: str
+    url: str
+    title: str
+    expected_role: str
+
+
 class RelevantEvidence(_Output):
     relevant_evidence_refs: list[str]
+    navigation_links: list[NavigationLink]
     summary: str
 
 
@@ -300,6 +309,13 @@ version conflict. Age alone does not mean superseded. Check applicable period/ve
 and governing status in the actual material; dates/metadata alone are not proof.
 Do not require an explicit date when applicability is otherwise reasonably clear.
 Do not retain a page merely because it mentions the topic.
+When acquired text explicitly links to more direct evidence for the current gap,
+return that small useful selection in navigation_links: evidence_ref of the page,
+the actual linked URL, a short title, and its distinct expected_role. For example,
+a maintained information page may link the governing manual that must be read.
+Use only links present in the supplied acquired text; never guess or reconstruct a
+document URL. An omitted source can still supply a useful navigation link. These
+links become candidates for Research, not evidence. Use [] when none are useful.
 Return the complete relevant_evidence_refs selection. previously_relevant_refs are
 sources retained by Analyst for the whole question, including already supported
 components. Preserve useful earlier material while investigating the current gap.
@@ -624,9 +640,23 @@ def _needs_summary(needs: list[AnswerNeed]) -> list[dict]:
     return [{key: value[:400] for key, value in item.model_dump().items()} for item in needs]
 
 
+def _linked_urls(source: Evidence) -> set[str]:
+    """Recognize explicit navigation links; do not choose their semantic value."""
+    targets = re.findall(r'\]\(([^)\r\n]+)\)|href=["\']([^"\']+)["\']', source.content)
+    urls = [re.sub(r'\s+["\'][^"\']*["\']$', '', markdown) if markdown else html for markdown, html in targets]
+    urls.extend(re.findall(r'https?://[^\s<>\])"]+', source.content))
+    return {_link_url(value, source.url) for value in urls}
+
+
+def _link_url(value: str, base: str) -> str:
+    # Fetch markdown may contain unescaped spaces in link targets.
+    return quote(urljoin(base, unescape(value.strip().strip("<>"))), safe=":/?#@!$&'*+,;=%~-._")
+
+
 def _relevant_evidence(
     question: str, need: str, answer_needs: list[AnswerNeed], evidence: list[Evidence],
     acquired_before: int, previous: Analysis | None, model: ModelCall, trace: list[dict],
+    candidates: dict[str, DiscoveryCandidate],
 ) -> list[Evidence]:
     if not evidence:
         return []
@@ -641,6 +671,17 @@ def _relevant_evidence(
     known = {item.id for item in evidence}
     if any(ref not in known for ref in selection.relevant_evidence_refs):
         raise RunError("research", "invalid_evidence_reference", trace)
+    for link in selection.navigation_links:
+        source = next((item for item in evidence[acquired_before:] if item.id == link.evidence_ref), None)
+        url = _link_url(link.url, source.url) if source else ""
+        if not source or not _public_url(url) or url not in _linked_urls(source):
+            raise RunError("research", "invalid_navigation_link", trace)
+        if any(item.url == url for item in candidates.values()):
+            continue
+        ref = f"C{len(candidates) + 1}"
+        candidates[ref] = DiscoveryCandidate(link.title, url, f"Linked from {source.id}. Expected role: {link.expected_role}")
+        trace.append({"stage": "research", "action": "linked_candidate_retained", "candidate_ref": ref,
+                      "from_evidence_id": source.id, "url": url, "expected_role": link.expected_role[:400]})
     # Research relevance selection cannot silently discard Analyst's existing
     # support or conflict context while investigating a gap. Analyst reassesses it.
     relevant_refs = set(retained_refs) | set(selection.relevant_evidence_refs)
@@ -810,7 +851,7 @@ def run(
             active_need, candidates, attempts,
         )
         navigation_remaining -= steps_used
-        relevant = _relevant_evidence(question, need, answer_needs, evidence, acquired_before, analysis, model, trace)
+        relevant = _relevant_evidence(question, need, answer_needs, evidence, acquired_before, analysis, model, trace, candidates)
         relevant_refs = {item.id for item in relevant}
         if relevant_refs == last_analyst_refs and answer_needs == last_analyst_needs:
             # Immutable identical material cannot supply new evidence feedback.

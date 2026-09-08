@@ -61,8 +61,8 @@ def done():
                         "revised_answer_needs": None, "summary": "No useful unread navigation remains.", "search_hypothesis": None}
 
 
-def relevance(*refs, summary="Retain material relevant to the question."):
-    return "research", {"relevant_evidence_refs": list(refs), "summary": summary}
+def relevance(*refs, summary="Retain material relevant to the question.", links=None):
+    return "research", {"relevant_evidence_refs": list(refs), "summary": summary, "navigation_links": links or []}
 
 
 def analysis(decision="supported", refs=("E1",), *, next_need=None, active=None, need_ref="N1", new_reason=None):
@@ -475,6 +475,46 @@ def test_existing_candidates_reused_selectively_after_analyst_feedback():
     assert len(queries) == 1 and reads == [candidates[1].url, candidates[3].url]
     assert len(reads) < len(candidates) and result.posture == "supported"
     assert [e["previously_known"] for e in result.trace if e["action"] == "read_selected"] == [False, True]
+
+
+@pytest.mark.parametrize("link_text", [
+    '[Manual](https://example.test/current manual.pdf)',
+    '[Manual](https://example.test/current%20manual.pdf "Current rules")',
+    '<a href="/current%20manual.pdf">Manual</a>',
+])
+def test_research_can_fetch_explicit_link_from_acquired_landscape_after_searches_close(link_text):
+    manual = "https://example.test/current%20manual.pdf"
+    reads, queries = [], []
+
+    def search(query):
+        queries.append(query)
+        return [*discover(query), DiscoveryCandidate("Current information", URL + "/information", "clue")]
+
+    def acquire(url):
+        reads.append(url)
+        return FetchedMaterial(url, link_text if url.endswith("information") else "Maximum: 16 pounds.")
+
+    link = {"evidence_ref": "E2", "url": manual, "title": "Manual", "expected_role": "Current governing limit"}
+    model = Model(
+        orient(), search_for(), read("C1"), relevance("E1"), analysis("research_needed", next_need="Current specification"),
+        read("C2"), relevance("E1", "E2", links=[link, link]),
+        analysis("research_needed", refs=("E1",), active=("E1", "E2"), next_need="The linked current rule"),
+        read("C3"), relevance("E1", "E2", "E3"), analysis(refs=("E3",)), author("16 pounds. [E3]"),
+    )
+    result = run(QUESTION, model=model, search=search, fetch=acquire)
+    assert len(queries) == 1 and reads == [URL, URL + "/information", manual]
+    assert len([e for e in result.trace if e["action"] == "linked_candidate_retained"]) == 1
+    last_navigation = [m for _, m in model.calls if m.get("phase") == "navigation"][-1]
+    assert last_navigation["retrieval_allowance"]["retrieval_closed"]
+    assert result.posture == "supported" and result.evidence[-1].url == manual
+
+
+@pytest.mark.parametrize("evidence_ref,url", [("E1", "https://example.test/invented"), ("E999", URL)])
+def test_research_link_nomination_must_resolve_to_an_explicit_acquired_link(evidence_ref, url):
+    link = {"evidence_ref": evidence_ref, "url": url, "title": "Manual", "expected_role": "Current rule"}
+    model = Model(orient(), search_for(), read("C1"), relevance("E1", links=[link]))
+    with pytest.raises(RunError, match="invalid_navigation_link"):
+        run(QUESTION, model=model, search=discover, fetch=fetch)
 
 
 @pytest.mark.parametrize("escalate", [False, True])
