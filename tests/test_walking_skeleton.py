@@ -512,9 +512,11 @@ def test_research_can_fetch_explicit_link_from_acquired_landscape_after_searches
 @pytest.mark.parametrize("evidence_ref,url", [("E1", "https://example.test/invented"), ("E999", URL)])
 def test_research_link_nomination_must_resolve_to_an_explicit_acquired_link(evidence_ref, url):
     link = {"evidence_ref": evidence_ref, "url": url, "title": "Manual", "expected_role": "Current rule"}
-    model = Model(orient(), search_for(), read("C1"), relevance("E1", links=[link]))
-    with pytest.raises(RunError, match="invalid_navigation_link"):
-        run(QUESTION, model=model, search=discover, fetch=fetch)
+    model = Model(orient(), search_for(), read("C1"), relevance("E1", links=[link]), analysis(), author())
+    result = run(QUESTION, model=model, search=discover, fetch=fetch)
+    assert len(result.evidence) == 1 and result.posture == "supported"
+    assert any(e["action"] == "navigation_link_rejected" for e in result.trace)
+    assert not any(e["action"] == "linked_candidate_retained" for e in result.trace)
 
 
 @pytest.mark.parametrize("escalate", [False, True])

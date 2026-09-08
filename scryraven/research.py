@@ -675,7 +675,9 @@ def _relevant_evidence(
         source = next((item for item in evidence[acquired_before:] if item.id == link.evidence_ref), None)
         url = _link_url(link.url, source.url) if source else ""
         if not source or not _public_url(url) or url not in _linked_urls(source):
-            raise RunError("research", "invalid_navigation_link", trace)
+            # An invalid optional clue cannot discard successfully acquired evidence.
+            trace.append({"stage": "research", "action": "navigation_link_rejected", "code": "invalid_navigation_link"})
+            continue
         if any(item.url == url for item in candidates.values()):
             continue
         ref = f"C{len(candidates) + 1}"
