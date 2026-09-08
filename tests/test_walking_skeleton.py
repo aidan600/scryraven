@@ -354,7 +354,7 @@ def test_unused_second_round_allowance_does_not_permit_a_third_return():
         orient(), search_for(), read("C1"), relevance("E1"), analysis("research_needed", next_need="Exception"),
         read("C2"), relevance("E1", "E2"), analysis("research_needed", refs=("E1", "E2"), next_need="Same exception"),
         search_for("third return"), search_for("third return as Scout", tool="scout"), done(), relevance("E1", "E2"),
-        analysis("unable", refs=("E1", "E2")), author("16 pounds. [E1] Exception unresolved."),
+        author("16 pounds. [E1] Exception unresolved."),
     )
     result = run(QUESTION, model=model, search=search, scout=lambda _: pytest.fail("Closed Scout called"), fetch=fetch)
     assert len(queries) == 1
@@ -412,11 +412,33 @@ def test_search_failure_or_evidence_not_submitted_cannot_earn_second_round(failu
               search_for("no evidence feedback"), search_for("still no evidence")]
     if failure == "omitted":
         steps += [relevance()]
-    steps += [analysis("unable", refs=()), author("This run did not establish the limit.")]
-    result = run(QUESTION, model=Model(*steps), search=search, fetch=acquire, limits=RunLimits(navigation_steps=10))
+    steps += [author("This run did not establish the limit.")]
+    result = run(QUESTION, model=Model(*steps), search=search, fetch=acquire,
+                 limits=RunLimits(research_passes=2, navigation_steps=10))
     assert len(queries) == 2 and result.posture == "unable"
     assert not any(e["action"] == "return_to_well" for e in result.trace)
     assert "private" not in json.dumps(result.trace)
+
+
+def test_omitted_new_read_does_not_spend_an_analyst_call_or_close_earned_round():
+    queries = []
+
+    def search(query):
+        queries.append(query)
+        return [DiscoveryCandidate("Rule", URL + str(i), "clue") for i in range(3)]
+
+    model = Model(
+        orient(), search_for(), read("C1"), relevance("E1"), analysis("research_needed", next_need="Exception"),
+        read("C2"), relevance("E1", summary="The new material is unrelated."),
+        search_for("Named exception document"), read("C3"), relevance("E1", "E3"),
+        analysis(refs=("E1", "E3")), author(),
+    )
+    result = run(QUESTION, model=model, search=search, fetch=fetch)
+    assert len(queries) == 2 and result.posture == "supported"
+    assert len([s for s, _ in model.calls if s == "analyst"]) == 2
+    unchanged = next(e for e in result.trace if e["action"] == "no_new_analyst_material")
+    assert unchanged["research_round"] == 2 and not unchanged["retrieval_closed"]
+    assert len([e for e in result.trace if e["action"] == "return_to_well"]) == 1
 
 
 def test_existing_candidates_reused_selectively_after_analyst_feedback():
@@ -792,7 +814,7 @@ def test_missing_component_drives_focused_research_preserving_supported_parts_at
     model = Model(
         orient(MULTI_QUESTION, NEEDS), search_for(), read("C1"), relevance("E1"), component_analysis(None),
         read("C1", "C2"),
-        relevance(*(["E2"] if resolve_gap else [])), final,
+        relevance(*(["E2"] if resolve_gap else [])), *([final] if resolve_gap else []),
         author("The limit is four items, with a two-point penalty for extras. [E1] " + (
             "Replacement requires referee approval. [E2]" if resolve_gap else
             "This run did not establish the conditions for replacing damaged equipment."
@@ -801,8 +823,11 @@ def test_missing_component_drives_focused_research_preserving_supported_parts_at
     result = run(MULTI_QUESTION, model=model, search=search, fetch=acquire, limits=RunLimits(research_passes=2))
     assert reads == [URL, new_url]  # Existing E1 is not acquired again on the second selection.
     analyses = [material for stage, material in model.calls if stage == "analyst"]
-    assert analyses[0]["evidence"][0] == analyses[1]["evidence"][0]
-    assert analyses[1]["previous_analysis"]["coverage"][:2] == component_analysis(None)[1]["coverage"][:2]
+    assert analyses[0]["evidence"][0] == analyses[-1]["evidence"][0]
+    if resolve_gap:
+        assert analyses[1]["previous_analysis"]["coverage"][:2] == component_analysis(None)[1]["coverage"][:2]
+    else:
+        assert len(analyses) == 1  # No new material reached Analyst; its support/gap survives.
     followup = [material for stage, material in model.calls if material.get("phase") == "navigation" and material["need"] == gap]
     assert followup and all(material["question"] == MULTI_QUESTION for material in followup)
     assert len(queries) == 1 and result.analysis.coverage[:2] == research.Analysis.model_validate(final[1]).coverage[:2]

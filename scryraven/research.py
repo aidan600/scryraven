@@ -167,6 +167,8 @@ For ordinary unspecified context, choose a reasonable scope that can be stated i
 the answer. Do not expand a simple question into comparisons across every possible
 ruleset, jurisdiction or use. Investigate such distinctions only when the question
 requests them or evidence makes them material to answering it correctly.
+Do not append optional comparisons ('and other rulesets if applicable') to a
+well-scoped ordinary question. Start with one reasonable governing scope.
 For each need, identify who or what would have direct or institutional authority,
 and what material would establish it. Give concise source expectations, not private
 reasoning. Authority is claim-specific: prefer responsible first-hand/official
@@ -200,6 +202,9 @@ searches. Choose queries that locate material owned by the appropriate authority
 When an identifiable owner/publication exists, make that identity useful in the
 query, rather than merely repeating the topic words. Do not guess a current edition
 or add an assumed year: discover the applicable publication using current_date.
+The supplied current_date does not itself request a dated edition or a year filter.
+For a standing specification, locate the specification itself; adding this year's
+date may hide the still-operative document behind recent event/news pages.
 Combine the need, source owner, and temporal_requirement when choosing a query.
 Reassess temporal fit after discovery: requested period/version, governing status,
 effective period, supersession, and whether publication recency actually matters.
@@ -235,6 +240,11 @@ different requested component, or a route to a controlling document. Prefer a
 maintained summary/catalog for an aggregate question over many individual notices
 that cannot establish the aggregate. Avoid reading several pages from the same
 evidence family or republished copies unless they resolve different material gaps.
+Inspect the full returned context for the actual requested meaning. Merely naming
+the topic or authority is not a credible read role. Once a read identifies a missing
+controlling document, do not keep reading adjacent announcements or event pages
+just because they might link to it. Use an existing candidate for that document,
+or explain the landscape gap and retrieve the named document directly.
 For an ambiguous/latest-event question, compare the plausible incidents, entity
 identity and dates in the whole landscape before committing to one incident.
 A successful
@@ -788,6 +798,8 @@ def run(
     candidates: dict[str, DiscoveryCandidate] = {}
     attempts: list[dict] = []
     analysis = None
+    last_analyst_refs: set[str] | None = None
+    last_analyst_needs: list[AnswerNeed] | None = None
     stop_reason = "research_bound"
     for _ in range(limits.research_passes):
         acquired_before = len(evidence)
@@ -796,6 +808,14 @@ def run(
             active_need, candidates, attempts,
         )
         relevant = _relevant_evidence(question, need, answer_needs, evidence, acquired_before, analysis, model, trace)
+        relevant_refs = {item.id for item in relevant}
+        if relevant_refs == last_analyst_refs and answer_needs == last_analyst_needs:
+            # Immutable identical material cannot supply new evidence feedback.
+            # Continue the current bounded round, retaining Analyst's prior gap.
+            trace.append({"stage": "research", "action": "no_new_analyst_material", **active_need.allowance()})
+            continue
+        new_analyst_refs = relevant_refs - (last_analyst_refs or set())
+        last_analyst_refs, last_analyst_needs = relevant_refs, answer_needs
         trace.append({"stage": "analyst", "action": "material_selected", "evidence_ids": [item.id for item in relevant]})
         analysis = _ask(model, "analyst", ANALYST_PROMPT, {
             "question": question, "answer_needs": [item.model_dump() for item in answer_needs],
@@ -809,7 +829,7 @@ def run(
             active_need.evidence_assessed = True
         # The assessment ending round 2 cannot license another return, even when
         # the last round used fewer than its maximum calls. Existing reads survive.
-        if active_need.research_round == 2:
+        if active_need.research_round == 2 and new_analyst_refs.intersection(active_need.acquired_evidence_refs):
             active_need.retrieval_closed = True
         trace.append({
             "stage": "analyst", "action": "decided", "decision": analysis.decision,
