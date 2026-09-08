@@ -22,8 +22,7 @@ class _Response:
         return self.payload
 
 
-@pytest.mark.parametrize("depth", ["fast", "standard"])
-def test_search_preserves_full_navigation_context(depth) -> None:
+def test_search_preserves_full_navigation_context() -> None:
     calls: list[dict[str, Any]] = []
     long_context = " ".join(["context"] * 200)
 
@@ -50,7 +49,6 @@ def test_search_preserves_full_navigation_context(depth) -> None:
     candidates = linkup.search_linkup(
         "  a question about sources  ",
         result_count=2,
-        depth=depth,
         api_key="offline-test-key",  # pragma: allowlist secret
         timeout_seconds=12,
         post=post,
@@ -61,7 +59,7 @@ def test_search_preserves_full_navigation_context(depth) -> None:
             "url": linkup.LINKUP_SEARCH_URL,
             "json": {
                 "q": "a question about sources",
-                "depth": depth,
+                "depth": "standard",
                 "outputType": "searchResults",
                 "maxResults": 2,
             },

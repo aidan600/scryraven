@@ -51,7 +51,6 @@ def search_linkup(
     query: str,
     *,
     result_count: int = DEFAULT_DISCOVERY_RESULT_COUNT,
-    depth: str = "standard",
     api_key: str | None = None,
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
     post: PostJSON | None = None,
@@ -59,14 +58,12 @@ def search_linkup(
     """Perform one Linkup retrieval and preserve ordinary navigation context."""
 
     normalized_query = _required_text(query, "query")
-    if depth not in {"fast", "standard"}:
-        raise ValueError("depth must be fast or standard")
     bounded_count = _bounded_result_count(result_count)
     data = _post_json(
         LINKUP_SEARCH_URL,
         {
             "q": normalized_query,
-            "depth": depth,
+            "depth": "standard",
             "outputType": "searchResults",
             "maxResults": bounded_count,
         },
@@ -97,11 +94,6 @@ def search_linkup(
             DiscoveryCandidate(title=title, url=url, context=context, context_omitted_characters=omitted)
         )
     return candidates[:bounded_count]
-
-
-def scout_linkup(query: str) -> list[DiscoveryCandidate]:
-    """Direct keyword retrieval using the same Linkup boundary."""
-    return search_linkup(query, depth="fast")
 
 
 def fetch_linkup(
@@ -225,5 +217,4 @@ __all__ = [
     "MAX_DISCOVERY_RESULT_COUNT",
     "fetch_linkup",
     "search_linkup",
-    "scout_linkup",
 ]

@@ -39,14 +39,12 @@ def orient(question=QUESTION, needs=None):
     }], "focus": question}
 
 
-def search_for(query="official rules", *, revised=None, summary="Locate the responsible governing rule.", hypothesis=None,
-               tool="discover"):
-    return "research", {"action": tool, "query": query, "candidate_refs": [],
+def search_for(query="official rules", *, revised=None, summary="Locate the responsible governing rule.", hypothesis=None):
+    return "research", {"action": "discover", "query": query, "candidate_refs": [],
                         "revised_answer_needs": revised, "summary": summary,
                         "search_hypothesis": hypothesis or {
                             "evidence_target": "Governing rule text", "novelty": "Initial governing publication route",
                             "expected_value": "Establish the applicable limit", "acquirability": "Public federation rulebook",
-                            "tool_reason": "Interpreted retrieval for the governing publication",
                             "existing_candidates_gap": "The unread landscape does not cover the requested exception",
                         }}
 
@@ -239,7 +237,7 @@ def test_discovery_or_failed_read_cannot_support_answer(failure):
     if failure != "unhelpful_material":
         steps.append(done())
     else:
-        steps.append(relevance())
+        steps.extend([relevance(), done(), relevance()])
     steps.extend([analysis("unable", refs=()), author("The available research in this run did not establish the weight limit.")])
     model = Model(*steps)
 
@@ -289,7 +287,6 @@ def test_second_hypothesis_receives_actual_yield_without_a_quality_gate():
         "novelty": "The announcement archive exposed only background; try the maintained rules reference",
         "expected_value": "Find the operative limit rather than its announcement",
         "acquirability": "A public HTML handbook is linked from the federation navigation",
-        "tool_reason": "Interpreted publication lookup",
         "existing_candidates_gap": "Only a background archive is known",
     }
     queries = []
@@ -353,12 +350,12 @@ def test_unused_second_round_allowance_does_not_permit_a_third_return():
     model = Model(
         orient(), search_for(), read("C1"), relevance("E1"), analysis("research_needed", next_need="Exception"),
         read("C2"), relevance("E1", "E2"), analysis("research_needed", refs=("E1", "E2"), next_need="Same exception"),
-        search_for("third return"), search_for("third return as Scout", tool="scout"), done(), relevance("E1", "E2"),
+        search_for("third return"), done(), relevance("E1", "E2"),
         author("16 pounds. [E1] Exception unresolved."),
     )
-    result = run(QUESTION, model=model, search=search, scout=lambda _: pytest.fail("Closed Scout called"), fetch=fetch)
+    result = run(QUESTION, model=model, search=search, fetch=fetch)
     assert len(queries) == 1
-    assert {e["action"] for e in result.trace} >= {"discovery_fuse_reached", "scout_fuse_reached"}
+    assert {e["action"] for e in result.trace} >= {"discovery_fuse_reached"}
     assert result.posture == "partial"
 
 
@@ -407,7 +404,7 @@ def test_search_failure_or_evidence_not_submitted_cannot_earn_second_round(failu
     if failure != "omitted":
         steps += [done()]
     else:
-        steps += [relevance()]
+        steps += [relevance(), done(), relevance()]
     steps += [analysis("research_needed", refs=(), next_need="The same missing limit"),
               search_for("no evidence feedback"), search_for("still no evidence")]
     if failure == "omitted":
@@ -519,42 +516,62 @@ def test_research_link_nomination_must_resolve_to_an_explicit_acquired_link(evid
     assert not any(e["action"] == "linked_candidate_retained" for e in result.trace)
 
 
-@pytest.mark.parametrize("escalate", [False, True])
-def test_scout_can_lead_directly_to_fetch_or_to_rich_discovery(escalate):
-    calls = []
+@pytest.mark.parametrize("bad_link", [
+    None,
+    "private malformed nomination",
+    {"url": "private missing identity"},
+    {"evidence_ref": "E1", "url": 7, "title": "Invalid", "expected_role": "Rule"},
+    {"evidence_ref": "E1", "url": "https://[broken", "title": "Invalid", "expected_role": "Rule"},
+    {"evidence_ref": "E1", "url": "https://user:private@example.test/rule", "title": "Invalid", "expected_role": "Rule"},  # pragma: allowlist secret
+])
+def test_navigation_only_landing_page_follows_valid_links_despite_bad_optional_item(bad_link):
+    manual = URL + "/manual.pdf"
+    other = URL + "/exceptions.pdf"
+    body = f"See the [governing manual]({manual}) and [exceptions]({other}). [Broken](https://[broken)"
+    link = {"evidence_ref": "E1", "url": manual, "title": "Manual", "expected_role": "Governing limit"}
+    second = {**link, "url": other, "title": "Exceptions"}
+    model = Model(
+        orient(), search_for(), read("C1"),
+        relevance(links=[link, bad_link, second], summary="Navigation only; follow the governing manual."),
+        read("C2"), relevance("E2"), analysis(refs=("E2",)), author("16 pounds. [E2]"),
+    )
+    result = run(QUESTION, model=model, search=discover,
+                 fetch=lambda url: FetchedMaterial(url, body if url == URL else "Maximum: 16 pounds."))
+    assert result.posture == "supported" and not model.replies
+    assert len([e for e in result.trace if e["action"] == "discovery_started"]) == 1
+    assert len([e for e in result.trace if e["action"] == "linked_candidate_retained"]) == 2
+    assert any(e["action"] == "navigation_link_rejected" for e in result.trace)
+    assert "private" not in json.dumps(result.trace)
+    assert [item.url for item in result.evidence] == [URL, manual]
+    analyst_inputs = [m for stage, m in model.calls if stage == "analyst"]
+    assert len(analyst_inputs) == 1
+    assert analyst_inputs[0]["evidence"] == [{"id": "E2", "url": manual, "title": "Manual", "content": "Maximum: 16 pounds."}]
+    navigation = [m for _, m in model.calls if m.get("phase") == "navigation"][-1]
+    assert navigation["evidence_selection"]["omitted_evidence_ids"] == ["E1"]
 
-    def scout(query):
-        calls.append(("scout", query))
-        return [DiscoveryCandidate("Adjacent page", URL + "adjacent", "Background")] if escalate else discover(query)
 
-    def search(query):
-        calls.append(("discover", query))
-        return discover(query)
-
-    steps = [orient(), search_for("focused keywords", tool="scout")]
-    if escalate:
-        steps += [search_for("Locate the governing handbook and operative exception")]
-    steps += [read("C2" if escalate else "C1"), relevance("E1"), analysis(), author()]
-    result = run(QUESTION, model=Model(*steps), scout=scout, search=search, fetch=fetch)
-    assert [c[0] for c in calls] == (["scout", "discover"] if escalate else ["scout"])
-    assert result.posture == "supported"
+def test_initial_omitted_reads_reach_analyst_only_when_navigation_is_exhausted():
+    candidates = [DiscoveryCandidate("Possible rule", URL + str(i), "clue") for i in range(3)]
+    model = Model(
+        orient(), search_for(), read("C1"), relevance(), read("C2"), relevance(),
+        analysis("unable", refs=()), author("This run did not establish the limit."),
+    )
+    result = run(QUESTION, model=model, search=lambda _: candidates, fetch=fetch,
+                 limits=RunLimits(navigation_steps=3))
+    assert len(result.evidence) == 2 and result.posture == "unable"
+    assert len([s for s, _ in model.calls if s == "analyst"]) == 1
+    assert not model.replies
 
 
-def test_scout_fuse_spends_failures_and_blocks_query_permutations():
-    calls = []
-
-    def scout(query):
-        calls.append(query)
-        raise LinkupTransportError("private provider detail")
-
-    model = Model(orient(), *(search_for(str(i), tool="scout") for i in range(4)),
-                  analysis("unable", refs=()), author("The limit was not established."))
-    result = run(QUESTION, model=model, scout=scout, search=lambda _: pytest.fail("Unexpected Standard"), fetch=fetch)
-    assert len(calls) == 2 and result.posture == "unable"
-    assert len([e for e in result.trace if e["action"] == "scout_fuse_reached"]) == 2
+def test_malformed_optional_link_container_does_not_discard_evidence():
+    selection = {**relevance("E1")[1], "navigation_links": {"url": "private malformed container"}}
+    model = Model(orient(), search_for(), read("C1"), ("research", selection), analysis(), author())
+    result = run(QUESTION, model=model, search=discover, fetch=fetch)
+    assert result.posture == "supported" and len(result.evidence) == 1
+    assert "private" not in json.dumps(result.trace)
 
 
-def test_search_requires_instrument_choice_and_reconsideration_of_candidates():
+def test_search_requires_reconsideration_of_candidates():
     incomplete = {**search_for()[1]["search_hypothesis"], "existing_candidates_gap": ""}
     model = Model(orient(), search_for(), search_for("unjustified extra", hypothesis=incomplete),
                   read("C1"), relevance("E1"), analysis(), author())
@@ -711,8 +728,7 @@ def test_model_failures_stop_at_the_responsibility_without_raw_output(stage, fai
     assert "raw model output" not in str(error) + json.dumps(error.trace)
 
 
-@pytest.mark.parametrize("tool,depth", [("scout", "fast"), ("discover", "standard")])
-def test_cli_invokes_real_application_and_real_linkup_adapters(monkeypatch, capsys, tool, depth):
+def test_cli_invokes_real_application_and_real_linkup_adapters(monkeypatch, capsys):
     from core import linkup_transport
 
     calls = []
@@ -735,7 +751,7 @@ def test_cli_invokes_real_application_and_real_linkup_adapters(monkeypatch, caps
         assert url == linkup_transport.LINKUP_FETCH_URL
         return Response({"markdown": "The limit is 16 pounds."})
 
-    model = Model(orient(), search_for(tool=tool), read("C1"), relevance("E1"), analysis(), author())
+    model = Model(orient(), search_for(), read("C1"), relevance("E1"), analysis(), author())
     monkeypatch.setenv("LINKUP_API_KEY", "offline-test-value")
     monkeypatch.setattr(linkup_transport.requests, "post", post)
     monkeypatch.setattr(research, "OpenAIModel", lambda: model)
@@ -743,7 +759,7 @@ def test_cli_invokes_real_application_and_real_linkup_adapters(monkeypatch, caps
     captured = capsys.readouterr()
     assert f"[Rules]({URL})" in captured.out
     assert calls[1][1] == {"url": URL}
-    assert calls[0][1]["depth"] == depth
+    assert calls[0][1]["depth"] == "standard"
     assert model.calls[2][1]["candidates"][0]["context"] == full_context
     assert "DISCOVERY-ONLY" not in json.dumps([m for stage, m in model.calls if stage in {"analyst", "author"}])
     diagnostics = json.loads(captured.err)
@@ -793,8 +809,7 @@ def component_analysis(last_ref="E1", *, decision=None, qualified=False):
 
 
 @pytest.mark.parametrize("separate_source", [False, True])
-@pytest.mark.parametrize("tool", ["discover", "scout"])
-def test_multi_component_authority_orientation_combination_and_pipeline_triage(separate_source, tool):
+def test_multi_component_authority_orientation_combination_and_pipeline_triage(separate_source):
     """Scripted model judgments exercise the real handoffs, not live semantic quality."""
     replacement_url = "https://equipment.test/replacement"
     irrelevant_url = "https://meadow.test/rules-archive"
@@ -802,7 +817,7 @@ def test_multi_component_authority_orientation_combination_and_pipeline_triage(s
     if separate_source:
         needs[-1]["authority"] = "Meadow equipment committee"
     model = Model(
-        orient(MULTI_QUESTION, needs), search_for("Meadow federation current competition equipment rules", tool=tool),
+        orient(MULTI_QUESTION, needs), search_for("Meadow federation current competition equipment rules"),
         read("C2", "C2", "C3", *(["C4"] if separate_source else []),
              summary="The summary points to C2, the responsible rule owner; C1 adds no direct evidence."),
         relevance("E1", *(["E3"] if separate_source else []), summary="The archive is unrelated boilerplate."),
@@ -833,7 +848,7 @@ def test_multi_component_authority_orientation_combination_and_pipeline_triage(s
         }[url]
         return FetchedMaterial(url, content)
 
-    result = run(MULTI_QUESTION, model=model, search=search, scout=search, fetch=acquire)
+    result = run(MULTI_QUESTION, model=model, search=search, fetch=acquire)
     assert result.posture == "supported" and not model.replies
     assert len(queries) == 1  # No mechanical search-per-component or duplicate reads.
     assert reads == [URL, irrelevant_url, *([replacement_url] if separate_source else [])]
@@ -845,8 +860,7 @@ def test_multi_component_authority_orientation_combination_and_pipeline_triage(s
                for material in downstream)
     assert len(downstream[-1]["coverage"]) == 3
     assert all(item["findings"] for item in downstream[-1]["coverage"])
-    started = "discovery_started" if tool == "discover" else "scout_started"
-    assert [event["action"] for event in result.trace].index("oriented") < [event["action"] for event in result.trace].index(started)
+    assert [event["action"] for event in result.trace].index("oriented") < [event["action"] for event in result.trace].index("discovery_started")
     assert "UNRELATED BODY" not in json.dumps(result.trace)
 
 
