@@ -62,19 +62,39 @@ when capturing a product observation through the doorman.
 Execution errors exit with code 1 and a safe stage/code. Complete answers, partial
 answers, and honest limitations exit with code 0; the trace distinguishes
 supported, partial, and unable postures.
-The provisional local loop allows three research passes of up to six navigation
-actions each. Analyst still judges acquired evidence at a navigation bound.
+The provisional local loop allows three Analyst assessments, each preceded by up
+to six navigation actions. Irrelevant reads with unchanged Analyst material continue
+within that same navigation allowance. Analyst still judges new evidence at a bound.
 Exhaustion is a limitation of the run, never proof that an answer does not exist.
-Within that loop, each semantic research need permits at most three discovery
-calls; one or two should normally suffice. Further searches require Research's
-compact evidence hypothesis, novelty, expected value and acquisition expectation;
-the third requires a concrete exceptional lead. Discovery outcomes report new
-candidate refs and duplicate counts without mechanically judging source quality.
-Candidates and attempts survive Analyst follow-ups. Analyst reuses a run-local
+Within that loop, Research chooses interpreted Standard discovery or direct Fetch
+of an existing candidate. Each semantic need permits at most two Standard
+calls in its initial round. Actual acquired evidence reaching Analyst, followed by
+a specific unresolved same-need gap, can earn one further round with the same
+limits. Unused initial allowance expires. Analyst assessment of new evidence in
+round two closes further retrieval for that need; existing reads remain available.
+Search failure and omitted material do not earn another round. These are safety
+bounds, not targets. Research should normally need much less.
+
+Retrieval hypotheses explain expected evidence, novelty, acquisition prospects and
+why existing unread candidates cannot address the gap. Research selects a small
+useful read subset by evidentiary role. Candidate and attempt history survives
+Analyst follow-ups. Analyst reuses a run-local
 need reference for equivalent gaps, including paraphrases or narrowed portions of
 already searched territory; only a genuinely different gap receives a new reference.
-Reads do not spend discovery allowance and remain available after the fuse blocks
-a search. Need identity and novelty are semantic judgments, not similarity scores.
+Reads do not spend search allowance. Need identity, novelty, and useful selection
+remain semantic judgments, not similarity scores. Normal returned navigation
+context is preserved whole. A pathological context exceeding 65,536 characters is
+explicitly omitted with its original length, while its URL remains available to
+Fetch. Safe trace records tool/round/attempts, candidate identities and context
+sizes, selected reads and reuse, and Analyst return events; it excludes full
+navigation context. Discovery context remains navigation only.
+Research relevance selection can nominate a useful explicit link from newly
+acquired text as another candidate. Code validates it against that source's links;
+the linked source must still be Fetched before it can become evidence. This also
+permits reading an identified manual after the same-need search allowance closes.
+Malformed or invalid optional nominations are rejected individually without losing
+valid links or acquired evidence. Navigation-only reads continue within the same
+pass; Analyst receives empty evidence only when initial navigation is exhausted.
 Successful acquisitions remain in memory with stable source IDs. Research selects
 relevant material; later Analyst passes retain prior support and useful conflict
 context. Author receives only the sources supporting the selected findings.
