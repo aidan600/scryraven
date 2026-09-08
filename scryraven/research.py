@@ -469,14 +469,14 @@ def _research(
     question: str, need: str, evidence: list[Evidence], model: ModelCall,
     search: Callable[..., list[DiscoveryCandidate]], scout: Callable[..., list[DiscoveryCandidate]],
     fetch: Callable[[str], FetchedMaterial],
-    limits: RunLimits, trace: list[dict], answer_needs: list[AnswerNeed], previous: Analysis | None,
+    navigation_steps: int, trace: list[dict], answer_needs: list[AnswerNeed], previous: Analysis | None,
     active_need: _ResearchNeed, candidates: dict[str, DiscoveryCandidate], attempts: list[dict],
-) -> tuple[bool, list[AnswerNeed]]:
+) -> tuple[bool, list[AnswerNeed], int]:
     """Navigate; retain every successful direct read in evidence."""
     trace.append({"stage": "research", "action": "started", "need": need[:600], **active_need.allowance()})
     known_at_start = set(candidates)
     blocked_tools: set[str] = set()
-    for _ in range(limits.navigation_steps):
+    for step in range(navigation_steps):
         request = {
             "phase": "navigation", "question": question, "need": need,
             "answer_needs": [item.model_dump() for item in answer_needs],
@@ -516,7 +516,7 @@ def _research(
                       "summary": action.summary[:600]})
         if action.action == "done":
             trace.append({"stage": "research", "action": "navigation_done", "evidence_count": len(evidence)})
-            return False, answer_needs
+            return False, answer_needs, step + 1
         if action.action in {"scout", "discover"}:
             tool = action.action
             event_prefix = "scout" if tool == "scout" else "discovery"
@@ -529,7 +529,7 @@ def _research(
                 # Give Research a chance to read existing candidates after rejection.
                 # Repeated refusal to use read/done returns available evidence to Analyst.
                 if tool in blocked_tools:
-                    return True, answer_needs
+                    return True, answer_needs, step + 1
                 blocked_tools.add(tool)
                 continue
             if not action.query.strip():
@@ -615,9 +615,9 @@ def _research(
             trace.append(observation)
             attempts.append(observation)
         if len(evidence) > acquired_before:
-            return False, answer_needs
+            return False, answer_needs, step + 1
     trace.append({"stage": "research", "action": "navigation_bound", "evidence_count": len(evidence)})
-    return True, answer_needs
+    return True, answer_needs, step + 1
 
 
 def _needs_summary(needs: list[AnswerNeed]) -> list[dict]:
@@ -801,18 +801,23 @@ def run(
     last_analyst_refs: set[str] | None = None
     last_analyst_needs: list[AnswerNeed] | None = None
     stop_reason = "research_bound"
-    for _ in range(limits.research_passes):
+    analyst_passes = 0
+    navigation_remaining = limits.navigation_steps
+    while analyst_passes < limits.research_passes:
         acquired_before = len(evidence)
-        navigation_bound, answer_needs = _research(
-            question, need, evidence, model, search, scout, fetch, limits, trace, answer_needs, analysis,
+        navigation_bound, answer_needs, steps_used = _research(
+            question, need, evidence, model, search, scout, fetch, navigation_remaining, trace, answer_needs, analysis,
             active_need, candidates, attempts,
         )
+        navigation_remaining -= steps_used
         relevant = _relevant_evidence(question, need, answer_needs, evidence, acquired_before, analysis, model, trace)
         relevant_refs = {item.id for item in relevant}
         if relevant_refs == last_analyst_refs and answer_needs == last_analyst_needs:
             # Immutable identical material cannot supply new evidence feedback.
             # Continue the current bounded round, retaining Analyst's prior gap.
             trace.append({"stage": "research", "action": "no_new_analyst_material", **active_need.allowance()})
+            if not navigation_remaining or len(evidence) == acquired_before:
+                break
             continue
         new_analyst_refs = relevant_refs - (last_analyst_refs or set())
         last_analyst_refs, last_analyst_needs = relevant_refs, answer_needs
@@ -825,6 +830,8 @@ def run(
             "discovery_history": [dict(item) for item in attempts if "query" in item],
         }, Analysis, trace)
         _validate_analysis(analysis, relevant, trace)
+        analyst_passes += 1
+        navigation_remaining = limits.navigation_steps
         if any(item.id in active_need.acquired_evidence_refs for item in relevant):
             active_need.evidence_assessed = True
         # The assessment ending round 2 cannot license another return, even when

@@ -441,6 +441,20 @@ def test_omitted_new_read_does_not_spend_an_analyst_call_or_close_earned_round()
     assert len([e for e in result.trace if e["action"] == "return_to_well"]) == 1
 
 
+def test_omitted_reads_cannot_reset_navigation_steps():
+    candidates = [DiscoveryCandidate("Rule", URL + str(i), "clue") for i in range(5)]
+    model = Model(
+        orient(), search_for(), read("C1"), relevance("E1"), analysis("research_needed", next_need="Exception"),
+        read("C2"), relevance("E1"), read("C3"), relevance("E1"),
+        author("16 pounds. [E1] Exception unresolved."),
+    )
+    result = run(QUESTION, model=model, search=lambda _: candidates, fetch=fetch,
+                 limits=RunLimits(research_passes=3, navigation_steps=2))
+    assert len(result.evidence) == 3 and result.posture == "partial"
+    assert len([s for s, _ in model.calls if s == "analyst"]) == 1
+    assert not model.replies
+
+
 def test_existing_candidates_reused_selectively_after_analyst_feedback():
     queries, reads = [], []
     candidates = [DiscoveryCandidate("Rule " + str(i), URL + str(i), "Navigation " + str(i)) for i in range(5)]
@@ -814,7 +828,8 @@ def test_missing_component_drives_focused_research_preserving_supported_parts_at
     model = Model(
         orient(MULTI_QUESTION, NEEDS), search_for(), read("C1"), relevance("E1"), component_analysis(None),
         read("C1", "C2"),
-        relevance(*(["E2"] if resolve_gap else [])), *([final] if resolve_gap else []),
+        relevance(*(["E2"] if resolve_gap else [])),
+        *([final] if resolve_gap else [done(), relevance("E1")]),
         author("The limit is four items, with a two-point penalty for extras. [E1] " + (
             "Replacement requires referee approval. [E2]" if resolve_gap else
             "This run did not establish the conditions for replacing damaged equipment."
