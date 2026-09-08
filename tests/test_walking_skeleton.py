@@ -451,6 +451,19 @@ def test_json_syntax_repair_has_safe_location_diagnostics():
     assert result.posture == "supported"
 
 
+def test_finding_support_is_required_by_schema_and_uses_existing_output_correction():
+    rejected = analysis()[1]
+    rejected["coverage"][0]["findings"][0] = {"text": "Private unsupported finding", "support_refs": []}
+    model = Model(orient(), search_for(), read("C1"), relevance("E1"),
+                  ("analyst", rejected), analysis(), author())
+    result = run(QUESTION, model=model, search=discover, fetch=fetch)
+    assert research.Analysis.model_json_schema()["$defs"]["Finding"]["properties"]["support_refs"]["minItems"] == 1
+    corrections = [material for stage, material in model.calls if stage == "analyst" and "output_correction" in material]
+    assert len(corrections) == 1 and result.posture == "supported"
+    assert result.analysis.findings[0].support_refs == ["E1"]
+    assert "Private unsupported finding" not in json.dumps(result.trace)
+
+
 def test_citation_grammar_preserves_prose_and_renders_only_selected_acquired_sources():
     sources = [DiscoveryCandidate(f"Rules {index} [edition]", URL + str(index), "clue") for index in range(1, 13)]
     links = {index: f"[Rules {index} \\[edition\\]]({URL}{index})" for index in (1, 2, 12)}

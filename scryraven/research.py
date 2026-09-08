@@ -10,7 +10,7 @@ from datetime import date
 from typing import Literal, TypeVar
 from urllib.parse import quote, urlsplit
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from core.linkup_transport import (
     DiscoveryCandidate,
@@ -70,7 +70,7 @@ class RelevantEvidence(_Output):
 
 class Finding(_Output):
     text: str
-    support_refs: list[str]
+    support_refs: list[str] = Field(min_length=1)
 
 
 class ComponentAssessment(_Output):
