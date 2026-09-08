@@ -21,6 +21,20 @@ class Response:
         return self.data
 
 
+def test_luna_defaults_preserve_independent_role_overrides(monkeypatch):
+    for role in ("FAST", "SMART"):
+        for field in ("MODEL", "REASONING"):
+            monkeypatch.delenv(f"SCRYRAVEN_{role}_{field}", raising=False)
+    expected = ModelRole("gpt-5.6-luna", "medium")
+    assert ModelConfig() == ModelConfig(expected, expected)
+    assert ModelConfig.from_environment() == ModelConfig(expected, expected)
+    monkeypatch.setenv("SCRYRAVEN_FAST_MODEL", "configured-fast")
+    monkeypatch.setenv("SCRYRAVEN_SMART_REASONING", "high")
+    assert ModelConfig.from_environment() == ModelConfig(
+        ModelRole("configured-fast", "medium"), ModelRole("gpt-5.6-luna", "high"),
+    )
+
+
 @pytest.mark.parametrize("phase", [None, "final_answer"])
 def test_roles_structured_request_and_final_message_only(monkeypatch, phase):
     monkeypatch.setenv("OPENAI_API_KEY", "offline-test-value")
