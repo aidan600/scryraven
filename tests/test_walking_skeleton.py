@@ -40,12 +40,12 @@ def orient(question=QUESTION, needs=None):
 
 
 def search_for(query="official rules", *, revised=None, summary="Locate the responsible governing rule.", hypothesis=None):
-    return "research", {"action": "search", "query": query, "candidate_refs": [],
+    return "research", {"action": "discover", "query": query, "candidate_refs": [],
                         "revised_answer_needs": revised, "summary": summary,
                         "search_hypothesis": hypothesis or {
                             "evidence_target": "Governing rule text", "novelty": "Initial governing publication route",
                             "expected_value": "Establish the applicable limit", "acquirability": "Public federation rulebook",
-                            "third_search_reason": None,
+                            "existing_candidates_gap": "The unread landscape does not cover the requested exception",
                         }}
 
 
@@ -59,14 +59,14 @@ def done():
                         "revised_answer_needs": None, "summary": "No useful unread navigation remains.", "search_hypothesis": None}
 
 
-def relevance(*refs, summary="Retain material relevant to the question."):
-    return "research", {"relevant_evidence_refs": list(refs), "summary": summary}
+def relevance(*refs, summary="Retain material relevant to the question.", links=None):
+    return "research", {"relevant_evidence_refs": list(refs), "summary": summary, "navigation_links": links or []}
 
 
 def analysis(decision="supported", refs=("E1",), *, next_need=None, active=None, need_ref="N1", new_reason=None):
     return "analyst", {
         "decision": decision,
-        "coverage": [{"need": QUESTION, "status": "supported" if refs else "unresolved",
+        "coverage": [{"need": QUESTION, "status": ("qualified" if next_need else "supported") if refs else "unresolved",
                       "findings": [{"text": "Maximum weight is 16 pounds.", "support_refs": list(refs)}] if refs else [],
                       "limitation": "" if refs else "The applicable maximum is unresolved."}],
         "active_evidence_refs": list(refs) if active is None else active,
@@ -211,7 +211,7 @@ def test_research_revises_poor_discovery_and_failed_reads_before_analyst():
         queries.append(query)
         if len(queries) == 1:
             return []
-        return discover(query) if len(queries) == 2 else [DiscoveryCandidate("Working rules", URL + "2", "clue")]
+        return [*discover(query), DiscoveryCandidate("Working rules", URL + "2", "clue")]
 
     def read_source(url):
         reads.append(url)
@@ -219,11 +219,8 @@ def test_research_revises_poor_discovery_and_failed_reads_before_analyst():
             raise LinkupTransportError("raw provider detail must not escape")
         return fetch(url)
 
-    alternative = {**search_for()[1]["search_hypothesis"],
-                   "novelty": "Another publication surface after the rulebook Fetch failed",
-                   "third_search_reason": "The discovered federation handbook links to a public HTML edition."}
     model = Model(orient(), search_for("weak query"), search_for("better query"), read("C1"),
-                  search_for("alternative", hypothesis=alternative), read("C2"), relevance("E1"), analysis(), author())
+                  read("C2"), relevance("E1"), analysis(), author())
     result = run(QUESTION, model=model, search=search, fetch=read_source)
     assert len(queries) > 1 and reads == [URL, URL + "2"]
     assert len(result.evidence) == 1 and result.evidence[0].url == URL + "2"
@@ -240,7 +237,7 @@ def test_discovery_or_failed_read_cannot_support_answer(failure):
     if failure != "unhelpful_material":
         steps.append(done())
     else:
-        steps.append(relevance())
+        steps.extend([relevance(), done(), relevance()])
     steps.extend([analysis("unable", refs=()), author("The available research in this run did not establish the weight limit.")])
     model = Model(*steps)
 
@@ -290,7 +287,7 @@ def test_second_hypothesis_receives_actual_yield_without_a_quality_gate():
         "novelty": "The announcement archive exposed only background; try the maintained rules reference",
         "expected_value": "Find the operative limit rather than its announcement",
         "acquirability": "A public HTML handbook is linked from the federation navigation",
-        "third_search_reason": None,
+        "existing_candidates_gap": "Only a background archive is known",
     }
     queries = []
 
@@ -307,55 +304,62 @@ def test_second_hypothesis_receives_actual_yield_without_a_quality_gate():
     outcome = navigation[2]["attempts"][-1]
     assert (outcome["returned"], outcome["new_candidate_count"], outcome["duplicate_url_count"]) == (4, 1, 2)
     assert outcome["new_candidate_refs"] == ["C2"] and outcome["search_hypothesis"] == revised
-    assert navigation[2]["discovery_allowance"] == {"need_ref": "N1", "searches_used": 2, "remaining": 1}
+    assert navigation[2]["retrieval_allowance"]["discover_remaining"] == 0
     assert len(queries) == 2 and result.posture == "supported"
 
 
-def exceptional_search():
-    return search_for("named rules supplement", hypothesis={
-        "evidence_target": "Named rules supplement", "novelty": "Separate supplement beyond the handbook and archive",
-        "expected_value": "Resolve the exception missing from both prior routes",
-        "acquirability": "Public supplement identified by the federation's handbook listing",
-        "third_search_reason": "The second discovery explicitly names the supplement and its publisher.",
-    })
-
-
-def test_fuse_blocks_fourth_and_paraphrase_but_preserves_candidates_reads_and_partial_support():
+def test_two_rounds_require_evidence_and_block_third_searches_and_third_return():
     queries, reads = [], []
 
     def search(query):
         queries.append(query)
-        return [*discover(query), DiscoveryCandidate("Supplement", URL + "/supplement", "DISCOVERY-ONLY")]
+        return [DiscoveryCandidate("Rule", URL + str(i), "DISCOVERY-ONLY") for i in range(1, 6)]
 
     def acquire(url):
         reads.append(url)
         return fetch(url)
 
-    gap = "The maximum permitted mass under the applicable rules."
+    gap = "The exception to the same applicable limit, restated."
     model = Model(
-        orient(), search_for("first route"), search_for("second route"), exceptional_search(),
-        search_for("fourth wording", revised=NEEDS), read("C1"), relevance("E1"),
-        analysis("research_needed", next_need=gap),
-        search_for("fifth wording after paraphrase"), read("C2"), relevance("E1", "E2"),
-        analysis("unable", refs=("E1", "E2")),
-        author("The acquired text gives 16 pounds. [E1, E2] This run did not resolve applicability."),
+        orient(), search_for("first"), search_for("different route"), search_for("blocked third"),
+        read("C1"), relevance("E1"), analysis("research_needed", next_need=gap),
+        search_for("evidence-informed route"), search_for("different evidence route"), search_for("blocked third in round 2"),
+        read("C2"), relevance("E1", "E2"), analysis("research_needed", refs=("E1", "E2"), next_need=gap),
+        search_for("blocked third return", revised=NEEDS), read("C3"), relevance("E1", "E2", "E3"),
+        analysis("unable", refs=("E1", "E2", "E3")), author("The limit is 16 pounds. [E1] Applicability remains unresolved."),
     )
     result = run(QUESTION, model=model, search=search, fetch=acquire)
-    assert len(queries) == 3 and reads == [URL, URL + "/supplement"]
-    discoveries = [event for event in result.trace if event["action"] == "discovery_started"]
-    assert [event["attempt"] for event in discoveries] == [1, 2, 3]
-    assert discoveries[-1]["search_hypothesis"]["third_search_reason"]
-    blocked = [event for event in result.trace if event["action"] == "discovery_fuse_reached"]
-    assert len(blocked) == 2 and all(event["need_ref"] == "N1" and event["remaining"] == 0 for event in blocked)
-    followup = next(material for _, material in model.calls if material.get("phase") == "navigation" and material["need"] == gap)
-    assert followup["discovery_allowance"]["searches_used"] == 3
-    assert len(followup["candidates"]) == 2 and len([a for a in followup["attempts"] if "query" in a]) == 3
-    assert result.posture == "partial" and [item.id for item in result.evidence] == ["E1", "E2"]
-    assert [item["id"] for item in model.calls[-1][1]["evidence"]] == ["E1", "E2"]
+    assert len(queries) == 4 and len(reads) == 3 and result.posture == "partial"
+    starts = [e for e in result.trace if e["action"] == "discovery_started"]
+    assert [(e["research_round"], e["attempt"]) for e in starts] == [(1, 1), (1, 2), (2, 1), (2, 2)]
+    assert len([e for e in result.trace if e["action"] == "return_to_well"]) == 1
+    blocked = [e for e in result.trace if e["action"] == "discovery_fuse_reached"]
+    assert len(blocked) == 3 and all(e["need_ref"] == "N1" for e in blocked)
+    assert blocked[-1]["retrieval_closed"]
+    assert [e["previously_known"] for e in result.trace if e["action"] == "read_selected"] == [False, True, True]
     assert "DISCOVERY-ONLY" not in json.dumps([m for stage, m in model.calls if stage in {"analyst", "author"}])
 
 
-def test_new_analyst_gap_has_own_allowance_and_returning_to_old_need_keeps_its_count():
+def test_unused_second_round_allowance_does_not_permit_a_third_return():
+    queries = []
+
+    def search(query):
+        queries.append(query)
+        return [*discover(query), DiscoveryCandidate("Exception", URL + "2", "clue")]
+
+    model = Model(
+        orient(), search_for(), read("C1"), relevance("E1"), analysis("research_needed", next_need="Exception"),
+        read("C2"), relevance("E1", "E2"), analysis("research_needed", refs=("E1", "E2"), next_need="Same exception"),
+        search_for("third return"), done(), relevance("E1", "E2"),
+        author("16 pounds. [E1] Exception unresolved."),
+    )
+    result = run(QUESTION, model=model, search=search, fetch=fetch)
+    assert len(queries) == 1
+    assert {e["action"] for e in result.trace} >= {"discovery_fuse_reached"}
+    assert result.posture == "partial"
+
+
+def test_new_analyst_gap_has_own_allowance_and_returning_to_old_need_keeps_its_state():
     queries = []
 
     def search(query):
@@ -363,54 +367,222 @@ def test_new_analyst_gap_has_own_allowance_and_returning_to_old_need_keeps_its_c
         return [DiscoveryCandidate("Rule", URL + str(len(queries)), "clue")]
 
     model = Model(
-        orient(), search_for("rule"), search_for("handbook"), exceptional_search(), read("C1"), relevance("E1"),
+        orient(), search_for("rule"), search_for("handbook"), read("C1"), relevance("E1"),
         analysis("research_needed", next_need="Why the earlier edition used a different limit.", need_ref=None,
-                 new_reason="The first investigation concerned the operative limit; the historical reason has not been investigated."),
-        search_for("edition change explanation"), read("C4"), relevance("E1", "E2"),
-        analysis("research_needed", next_need="The operative maximum weight, restated.", need_ref="N1"),
-        search_for("another current limit wording"), done(), relevance("E1", "E2"),
-        analysis("unable", refs=("E1", "E2")), author("The acquired limit is 16 pounds. [E1] Some applicability remains unresolved."),
+                 new_reason="The historical reason has not been investigated."),
+        search_for("edition explanation"), read("C3"), relevance("E1", "E2"),
+        analysis("research_needed", next_need="The operative limit exception, restated.", need_ref="N1"),
+        search_for("specific exception"), read("C4"), relevance("E1", "E2", "E3"),
+        analysis("unable", refs=("E1", "E2")), author("16 pounds. [E1] Some applicability remains unresolved."),
     )
     result = run(QUESTION, model=model, search=search, fetch=fetch)
-    assert len(queries) == 4
-    starts = [event for event in result.trace if event["action"] == "discovery_started"]
-    assert [(e["need_ref"], e["attempt"]) for e in starts] == [("N1", 1), ("N1", 2), ("N1", 3), ("N2", 1)]
-    blocked = next(e for e in result.trace if e["action"] == "discovery_fuse_reached")
-    assert blocked["need_ref"] == "N1" and blocked["searches_used"] == 3
-    analyses = [material for stage, material in model.calls if stage == "analyst"]
-    assert [(n["ref"], n["searches"]) for n in analyses[-1]["research_needs"]] == [("N1", 3), ("N2", 1)]
-    assert len(analyses[-1]["discovery_history"]) == 4 and result.posture == "partial"
+    starts = [e for e in result.trace if e["action"] == "discovery_started"]
+    assert [(e["need_ref"], e["research_round"], e["attempt"]) for e in starts] == [
+        ("N1", 1, 1), ("N1", 1, 2), ("N2", 1, 1), ("N1", 2, 1),
+    ]
+    assert result.posture == "partial"
 
 
-def test_third_search_without_concrete_case_can_read_without_spending_another_call():
+@pytest.mark.parametrize("failure", ["provider", "omitted", "failed_fetch"])
+def test_search_failure_or_evidence_not_submitted_cannot_earn_second_round(failure):
     queries = []
 
     def search(query):
         queries.append(query)
+        if failure == "provider":
+            raise LinkupTransportError("private provider detail")
         return discover(query)
 
-    model = Model(orient(), search_for("first"), search_for("second"), search_for("unjustified third"),
-                  read("C1"), relevance("E1"), analysis(), author())
-    result = run(QUESTION, model=model, search=search, fetch=fetch)
-    assert queries == ["first", "second"] and result.posture == "supported"
-    rejection = next(event for event in result.trace if event["action"] == "search_rejected")
-    assert rejection["missing_fields"] == ["third_search_reason"] and rejection["remaining"] == 1
+    def acquire(url):
+        if failure == "failed_fetch":
+            raise LinkupTransportError("private read failure")
+        return fetch(url)
+
+    steps = [orient(), search_for("first"), search_for("second")]
+    if failure != "provider":
+        steps += [read("C1")]
+    if failure != "omitted":
+        steps += [done()]
+    else:
+        steps += [relevance(), done(), relevance()]
+    steps += [analysis("research_needed", refs=(), next_need="The same missing limit"),
+              search_for("no evidence feedback"), search_for("still no evidence")]
+    if failure == "omitted":
+        steps += [relevance()]
+    steps += [author("This run did not establish the limit.")]
+    result = run(QUESTION, model=Model(*steps), search=search, fetch=acquire,
+                 limits=RunLimits(research_passes=2, navigation_steps=10))
+    assert len(queries) == 2 and result.posture == "unable"
+    assert not any(e["action"] == "return_to_well" for e in result.trace)
+    assert "private" not in json.dumps(result.trace)
 
 
-def test_failed_discovery_spends_fuse_and_repeated_block_returns_honest_limitation():
+@pytest.mark.parametrize("revise_needs", [False, True])
+def test_omitted_new_read_does_not_spend_an_analyst_call_or_close_earned_round(revise_needs):
     queries = []
 
     def search(query):
         queries.append(query)
-        raise LinkupTransportError("private provider detail")
+        return [DiscoveryCandidate("Rule", URL + str(i), "clue") for i in range(3)]
 
-    model = Model(orient(), search_for("first"), search_for("second"), exceptional_search(),
-                  search_for("fourth"), search_for("fifth"), analysis("unable", refs=()),
-                  author("This run could not establish the limit."))
-    result = run(QUESTION, model=model, search=search, fetch=fetch, limits=RunLimits(navigation_steps=20))
-    assert len(queries) == 3 and not result.evidence and result.posture == "unable"
-    assert "private provider detail" not in json.dumps(result.trace)
-    assert len([e for e in result.trace if e["action"] == "discovery_failed"]) == 3
+    model = Model(
+        orient(), search_for(), read("C1"), relevance("E1"), analysis("research_needed", next_need="Exception"),
+        ("research", {**read("C2")[1], "revised_answer_needs": NEEDS if revise_needs else None}),
+        relevance("E1", summary="The new material is unrelated."),
+        search_for("Named exception document"), read("C3"), relevance("E1", "E3"),
+        analysis(refs=("E1", "E3")), author(),
+    )
+    result = run(QUESTION, model=model, search=search, fetch=fetch)
+    assert len(queries) == 2 and result.posture == "supported"
+    assert len([s for s, _ in model.calls if s == "analyst"]) == 2
+    selections = [m for _, m in model.calls if m.get("phase") == "relevance"]
+    assert selections[1]["previous_analysis"]["next_need"] == "Exception"
+    assert selections[1]["previous_analysis"]["coverage"][0]["findings"][0]["support_refs"] == ["E1"]
+    unchanged = next(e for e in result.trace if e["action"] == "no_new_analyst_material")
+    assert unchanged["research_round"] == 2 and not unchanged["retrieval_closed"]
+    assert len([e for e in result.trace if e["action"] == "return_to_well"]) == 1
+
+
+def test_omitted_reads_cannot_reset_navigation_steps():
+    candidates = [DiscoveryCandidate("Rule", URL + str(i), "clue") for i in range(5)]
+    model = Model(
+        orient(), search_for(), read("C1"), relevance("E1"), analysis("research_needed", next_need="Exception"),
+        read("C2"), relevance("E1"), read("C3"), relevance("E1"),
+        author("16 pounds. [E1] Exception unresolved."),
+    )
+    result = run(QUESTION, model=model, search=lambda _: candidates, fetch=fetch,
+                 limits=RunLimits(research_passes=3, navigation_steps=2))
+    assert len(result.evidence) == 3 and result.posture == "partial"
+    assert len([s for s, _ in model.calls if s == "analyst"]) == 1
+    assert not model.replies
+
+
+def test_existing_candidates_reused_selectively_after_analyst_feedback():
+    queries, reads = [], []
+    candidates = [DiscoveryCandidate("Rule " + str(i), URL + str(i), "Navigation " + str(i)) for i in range(5)]
+
+    def search(query):
+        queries.append(query)
+        return candidates
+
+    def acquire(url):
+        reads.append(url)
+        return fetch(url)
+
+    model = Model(orient(), search_for(), read("C2", summary="C2 supplies the governing limit."), relevance("E1"),
+                  analysis("research_needed", next_need="The applicability exception"),
+                  read("C4", summary="C4 supplies the exception requested by Analyst."), relevance("E1", "E2"),
+                  analysis(refs=("E1", "E2")), author())
+    result = run(QUESTION, model=model, search=search, fetch=acquire)
+    assert len(queries) == 1 and reads == [candidates[1].url, candidates[3].url]
+    assert len(reads) < len(candidates) and result.posture == "supported"
+    assert [e["previously_known"] for e in result.trace if e["action"] == "read_selected"] == [False, True]
+
+
+@pytest.mark.parametrize("link_text", [
+    '[Manual](https://example.test/current manual.pdf)',
+    '[Manual](https://example.test/current%20manual.pdf "Current rules")',
+    '<a href="/current%20manual.pdf">Manual</a>',
+])
+def test_research_can_fetch_explicit_link_from_acquired_landscape_after_searches_close(link_text):
+    manual = "https://example.test/current%20manual.pdf"
+    reads, queries = [], []
+
+    def search(query):
+        queries.append(query)
+        return [*discover(query), DiscoveryCandidate("Current information", URL + "/information", "clue")]
+
+    def acquire(url):
+        reads.append(url)
+        return FetchedMaterial(url, link_text if url.endswith("information") else "Maximum: 16 pounds.")
+
+    link = {"evidence_ref": "E2", "url": manual, "title": "Manual", "expected_role": "Current governing limit"}
+    model = Model(
+        orient(), search_for(), read("C1"), relevance("E1"), analysis("research_needed", next_need="Current specification"),
+        read("C2"), relevance("E1", "E2", links=[link, link]),
+        analysis("research_needed", refs=("E1",), active=("E1", "E2"), next_need="The linked current rule"),
+        read("C3"), relevance("E1", "E2", "E3"), analysis(refs=("E3",)), author("16 pounds. [E3]"),
+    )
+    result = run(QUESTION, model=model, search=search, fetch=acquire)
+    assert len(queries) == 1 and reads == [URL, URL + "/information", manual]
+    assert len([e for e in result.trace if e["action"] == "linked_candidate_retained"]) == 1
+    last_navigation = [m for _, m in model.calls if m.get("phase") == "navigation"][-1]
+    assert last_navigation["retrieval_allowance"]["retrieval_closed"]
+    assert result.posture == "supported" and result.evidence[-1].url == manual
+
+
+@pytest.mark.parametrize("evidence_ref,url", [("E1", "https://example.test/invented"), ("E999", URL)])
+def test_research_link_nomination_must_resolve_to_an_explicit_acquired_link(evidence_ref, url):
+    link = {"evidence_ref": evidence_ref, "url": url, "title": "Manual", "expected_role": "Current rule"}
+    model = Model(orient(), search_for(), read("C1"), relevance("E1", links=[link]), analysis(), author())
+    result = run(QUESTION, model=model, search=discover, fetch=fetch)
+    assert len(result.evidence) == 1 and result.posture == "supported"
+    assert any(e["action"] == "navigation_link_rejected" for e in result.trace)
+    assert not any(e["action"] == "linked_candidate_retained" for e in result.trace)
+
+
+@pytest.mark.parametrize("bad_link", [
+    None,
+    "private malformed nomination",
+    {"url": "private missing identity"},
+    {"evidence_ref": "E1", "url": 7, "title": "Invalid", "expected_role": "Rule"},
+    {"evidence_ref": "E1", "url": "https://[broken", "title": "Invalid", "expected_role": "Rule"},
+    {"evidence_ref": "E1", "url": "https://user:private@example.test/rule", "title": "Invalid", "expected_role": "Rule"},  # pragma: allowlist secret
+])
+def test_navigation_only_landing_page_follows_valid_links_despite_bad_optional_item(bad_link):
+    manual = URL + "/manual.pdf"
+    other = URL + "/exceptions.pdf"
+    body = f"See the [governing manual]({manual}) and [exceptions]({other}). [Broken](https://[broken)"
+    link = {"evidence_ref": "E1", "url": manual, "title": "Manual", "expected_role": "Governing limit"}
+    second = {**link, "url": other, "title": "Exceptions"}
+    model = Model(
+        orient(), search_for(), read("C1"),
+        relevance(links=[link, bad_link, second], summary="Navigation only; follow the governing manual."),
+        read("C2"), relevance("E2"), analysis(refs=("E2",)), author("16 pounds. [E2]"),
+    )
+    result = run(QUESTION, model=model, search=discover,
+                 fetch=lambda url: FetchedMaterial(url, body if url == URL else "Maximum: 16 pounds."))
+    assert result.posture == "supported" and not model.replies
+    assert len([e for e in result.trace if e["action"] == "discovery_started"]) == 1
+    assert len([e for e in result.trace if e["action"] == "linked_candidate_retained"]) == 2
+    assert any(e["action"] == "navigation_link_rejected" for e in result.trace)
+    assert "private" not in json.dumps(result.trace)
+    assert [item.url for item in result.evidence] == [URL, manual]
+    analyst_inputs = [m for stage, m in model.calls if stage == "analyst"]
+    assert len(analyst_inputs) == 1
+    assert analyst_inputs[0]["evidence"] == [{"id": "E2", "url": manual, "title": "Manual", "content": "Maximum: 16 pounds."}]
+    navigation = [m for _, m in model.calls if m.get("phase") == "navigation"][-1]
+    assert navigation["evidence_selection"]["omitted_evidence_ids"] == ["E1"]
+
+
+def test_initial_omitted_reads_reach_analyst_only_when_navigation_is_exhausted():
+    candidates = [DiscoveryCandidate("Possible rule", URL + str(i), "clue") for i in range(3)]
+    model = Model(
+        orient(), search_for(), read("C1"), relevance(), read("C2"), relevance(),
+        analysis("unable", refs=()), author("This run did not establish the limit."),
+    )
+    result = run(QUESTION, model=model, search=lambda _: candidates, fetch=fetch,
+                 limits=RunLimits(navigation_steps=3))
+    assert len(result.evidence) == 2 and result.posture == "unable"
+    assert len([s for s, _ in model.calls if s == "analyst"]) == 1
+    assert not model.replies
+
+
+def test_malformed_optional_link_container_does_not_discard_evidence():
+    selection = {**relevance("E1")[1], "navigation_links": {"url": "private malformed container"}}
+    model = Model(orient(), search_for(), read("C1"), ("research", selection), analysis(), author())
+    result = run(QUESTION, model=model, search=discover, fetch=fetch)
+    assert result.posture == "supported" and len(result.evidence) == 1
+    assert "private" not in json.dumps(result.trace)
+
+
+def test_search_requires_reconsideration_of_candidates():
+    incomplete = {**search_for()[1]["search_hypothesis"], "existing_candidates_gap": ""}
+    model = Model(orient(), search_for(), search_for("unjustified extra", hypothesis=incomplete),
+                  read("C1"), relevance("E1"), analysis(), author())
+    result = run(QUESTION, model=model, search=discover, fetch=fetch)
+    assert len([e for e in result.trace if e["action"] == "discovery_started"]) == 1
+    assert next(e for e in result.trace if e["action"] == "search_rejected")["missing_fields"] == ["existing_candidates_gap"]
 
 
 @pytest.mark.parametrize("need_ref,new_reason,code", [
@@ -565,6 +737,7 @@ def test_cli_invokes_real_application_and_real_linkup_adapters(monkeypatch, caps
     from core import linkup_transport
 
     calls = []
+    full_context = "DISCOVERY-ONLY " + "navigation " * 70 + "USEFUL ROUTE BEYOND CHARACTER 500"
 
     class Response:
         def __init__(self, payload):
@@ -579,7 +752,7 @@ def test_cli_invokes_real_application_and_real_linkup_adapters(monkeypatch, caps
     def post(url, **kwargs):
         calls.append((url, kwargs["json"]))
         if url == linkup_transport.LINKUP_SEARCH_URL:
-            return Response({"results": [{"url": URL, "name": "Rules", "content": "DISCOVERY-ONLY"}]})
+            return Response({"results": [{"url": URL, "name": "Rules", "content": full_context}]})
         assert url == linkup_transport.LINKUP_FETCH_URL
         return Response({"markdown": "The limit is 16 pounds."})
 
@@ -591,6 +764,9 @@ def test_cli_invokes_real_application_and_real_linkup_adapters(monkeypatch, caps
     captured = capsys.readouterr()
     assert f"[Rules]({URL})" in captured.out
     assert calls[1][1] == {"url": URL}
+    assert calls[0][1]["depth"] == "standard"
+    assert model.calls[2][1]["candidates"][0]["context"] == full_context
+    assert "DISCOVERY-ONLY" not in json.dumps([m for stage, m in model.calls if stage in {"analyst", "author"}])
     diagnostics = json.loads(captured.err)
     assert diagnostics["trace"][-1]["posture"] == "supported"
     assert diagnostics["selected_evidence"] == [{
@@ -712,8 +888,9 @@ def test_missing_component_drives_focused_research_preserving_supported_parts_at
     final = component_analysis("E2" if resolve_gap else None)
     model = Model(
         orient(MULTI_QUESTION, NEEDS), search_for(), read("C1"), relevance("E1"), component_analysis(None),
-        search_for("Federation replacement condition"), read("C1", "C2"),
-        relevance(*(["E2"] if resolve_gap else [])), final,
+        read("C1", "C2"),
+        relevance(*(["E2"] if resolve_gap else [])),
+        *([final] if resolve_gap else [done(), relevance("E1")]),
         author("The limit is four items, with a two-point penalty for extras. [E1] " + (
             "Replacement requires referee approval. [E2]" if resolve_gap else
             "This run did not establish the conditions for replacing damaged equipment."
@@ -722,11 +899,14 @@ def test_missing_component_drives_focused_research_preserving_supported_parts_at
     result = run(MULTI_QUESTION, model=model, search=search, fetch=acquire, limits=RunLimits(research_passes=2))
     assert reads == [URL, new_url]  # Existing E1 is not acquired again on the second selection.
     analyses = [material for stage, material in model.calls if stage == "analyst"]
-    assert analyses[0]["evidence"][0] == analyses[1]["evidence"][0]
-    assert analyses[1]["previous_analysis"]["coverage"][:2] == component_analysis(None)[1]["coverage"][:2]
+    assert analyses[0]["evidence"][0] == analyses[-1]["evidence"][0]
+    if resolve_gap:
+        assert analyses[1]["previous_analysis"]["coverage"][:2] == component_analysis(None)[1]["coverage"][:2]
+    else:
+        assert len(analyses) == 1  # No new material reached Analyst; its support/gap survives.
     followup = [material for stage, material in model.calls if material.get("phase") == "navigation" and material["need"] == gap]
     assert followup and all(material["question"] == MULTI_QUESTION for material in followup)
-    assert len(queries) == 2 and result.analysis.coverage[:2] == research.Analysis.model_validate(final[1]).coverage[:2]
+    assert len(queries) == 1 and result.analysis.coverage[:2] == research.Analysis.model_validate(final[1]).coverage[:2]
     assert result.posture == ("supported" if resolve_gap else "partial")
     author_input = model.calls[-1][1]
     assert author_input["coverage"] == final[1]["coverage"]

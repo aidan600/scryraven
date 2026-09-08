@@ -1,260 +1,193 @@
 # ScryRaven Current Truth
 
-Status: Luna defaults and bounded model-driven discovery implemented and live observed
+Status: research efficiency and evidence-feedback phase meets bounded acceptance
 Repository: aidan600/scryraven
 Preferred local checkout: C:\Users\aidan\ScryRaven
 
-## Implemented
+## Implemented product path
 
-PRODUCT.md remains the approved product charter; the multi-component research work
-item authorizes extending its first slice to questions with several answer needs.
-The ordinary entrypoint remains `python -m scryraven "<public-web question>"`.
-The semantic responsibilities remain Research -> Analyst -> Author, followed by
-mechanical citation resolution. No separate planner or source-quality owner exists.
+PRODUCT.md remains the approved charter. The authorized multi-component extension
+and research-efficiency work use `python -m scryraven "<public-web question>"`.
+Semantic owners remain Research -> Analyst -> Author, followed by mechanical
+citation resolution. No planner, source-quality owner or alternate product path exists.
+Both FAST (Research/Author) and SMART (Analyst) remain gpt-5.6-luna / medium,
+independently configurable, with no fallback. The doorman remains operator-only
+secret custody/process plumbing; the product does not import it.
 
-Before its first search, Research makes a compact orientation: answer needs,
-likely authoritative publishers/source types, the material sought, temporal
-requirements, and an initial focus. This is a revisable run-local hypothesis, with
-no fixed component count, persistence, component IDs, graph, scheduling, or lifecycle.
-The original question
-remains authoritative. Research chooses Linkup standard searches with source
-ownership in mind and reevaluates discovery candidates for relevance, directness,
-actual publisher, currency, accessibility, and duplication. Authority is contextual;
-secondary material is useful when it explains, corroborates, guides discovery,
-synthesizes, or is the best obtainable evidence. There is no domain list, ranking
-formula, deterministic source admission rule, or provider routing.
+Research orients to provisional answer needs, appropriate publishers, material
+sought and temporal requirements. The original question governs. Orientation and
+source expectations remain revisable, run-local model judgments. One source may
+address multiple components. No component graph, scheduler, authority registry,
+source score, domain admission list or freshness window exists. Current/applicable
+is distinct from recently published. Secondary sources can explain, corroborate,
+guide navigation or provide the best obtainable evidence.
 
-Temporal orientation distinguishes applicable rules/versions/periods from recent
-publication. Research infers the question's time target and what establishes fit,
-then reevaluates candidate edition, governing status, effective period, supersession,
-or event timing. An older source may remain applicable; a newer page may be only
-commentary. Analyst judges applicability from acquired material and can return a
-semantic temporal gap. There is no fixed freshness window, age penalty, date ranker,
-or requirement that every source carry an explicit date.
+Research chooses Standard Discover, direct read of an existing candidate, or done.
+The unused Linkup Fast Scout experiment and its exclusive transport/schema/counter/
+prompt/test machinery were removed. No provider or routing layer was added.
+Discover requests at most six candidates by default. Normal returned context is
+preserved whole with internal whitespace, replacing the old 500-character clip.
+No provider content-length maximum is documented. Above 65,536 characters the
+entire context is explicitly omitted with a notice and original size, retaining
+its URL for Fetch. Safe traces expose identities, sizes and omissions, not full
+navigation context. Discovery remains navigation, never answer evidence.
 
-Only successful direct Linkup Fetch calls create immutable evidence snapshots with
-stable run-local IDs, URLs, titles, and readable text. Duplicate candidate aliases
-and exact previously acquired URLs do not create another snapshot. All successful
-acquisitions remain in memory. Research examines newly acquired text and selects
-relevant IDs for Analyst; omitted source identities remain available for restoration
-without another Fetch. Later Research calls receive source metadata, not every
-previous body. Relevance selection does not establish claim support.
+Each run-local semantic need permits at most two Standard Discover calls initially.
+Failed calls spend allowance. Actual acquired evidence must reach Analyst, which
+must identify a specific materially unresolved same-need gap, before one second
+round opens. It permits at most two additional Standard calls. Unused initial
+allowance expires. Assessment of new evidence in round two closes remaining search
+allowance for that need; useful existing reads survive. There is no third return.
+These bounds are ceilings, not targets. No runtime fuse was raised.
 
-Analyst receives the original question, provisional answer needs, its previous
-assessment, and deliberately selected acquired text. Prior Analyst support and
-active conflict/context evidence are retained for reassessment during follow-up.
-Analyst may correct Research's interpretation, merge or add answer needs, and
-returns coverage with supported/qualified/unresolved portions, supported findings
-and evidence references, and limitations. It selects one semantic next_need when
-further research is useful; Research authors the actual search/read action.
-An overall supported decision cannot coexist with an explicitly unresolved portion.
-References must resolve to the evidence actually submitted to Analyst.
+Analyst reuses need references for equivalent gaps, narrower searched portions,
+source-route changes and continuing temporal needs. Genuinely new missing meaning
+requires an explicit explanation before mechanics assign another reference.
+Semantic identity remains fallible: an erroneous new-need judgment could allocate
+allowance. Wording or component changes alone cannot reset the counters.
 
-Author receives coverage findings, qualifications/limitations, and only the acquired
-sources supporting those findings. It must retain claim conditions and avoid
-incidental claims from the larger source body. Mechanical code validates and renders
-citations to selected acquired sources; it does not decide whether passages prove
-claims. A completed run is supported, partial, or unable. Partial results preserve
-supported portions and identify what this run did not establish, including at the
-local execution bound. All three completed postures exit 0; execution errors exit 1.
-Discovery snippets/context never become Analyst or Author evidence.
+Candidates and compact attempts survive follow-ups. Exact URL duplicates keep
+their aliases and may receive refreshed returned context. Search hypotheses explain
+expected evidence, novelty, value, acquisition prospects and why promising unread
+candidates cannot address the gap. Research selects small sets by distinct expected
+contribution, considers source-size clues when present, and can recover a failed
+publication through another justified search within existing bounds. It need not
+read weak leftovers merely to avoid discovery. This is semantic guidance, not a
+numeric scoring system or a guarantee against poor reads.
 
-## Live demonstrated
+Only successful direct Fetch creates immutable E-ID evidence with source URL,
+title and readable text. Exact acquired URLs are not fetched again. All acquisitions
+remain in memory. Research relevance selection inspects new bodies and Analyst's
+previous findings/gap, omits irrelevant or redundant material, and can restore older
+IDs. Later navigation sees candidate context, acquired metadata, compact attempts,
+the previous assessment and the recent relevance selection.
 
-Ordinary CLI observations use the actual OpenAI Responses, Linkup standard discovery
-and direct Fetch path through the unchanged doorman. The search-economy work item
-used all six authorized PRODUCT invocations. Both FAST and SMART were observed as
-`gpt-5.6-luna` / `medium` in every trace; no public override or fallback was needed.
-Credentials and private environment contents were not inspected. Sanitized answers,
-traces, status and selected evidence remain outside the repository in
-`C:\tmp\scryraven-search-economy-luna-01`.
+Research may nominate a small useful set of explicit links found in actually
+acquired text. Mechanics validate source identity, public-URL syntax and occurrence,
+resolve relative links, and encode spaces. Each malformed or invalid optional item
+is rejected with a fixed safe diagnostic without losing valid siblings, candidates
+or acquired evidence. The destination still requires Fetch. There is no automatic
+traversal, crawler, invented URL or model-memory link admission.
 
-The final runtime revision is ef2cae17cc54a1ac7d0f00e300a2d0789cab0e5b. The canary
-and Galloway observations below used e5b8a9570468f409c5ef94cff34957b8a5d8eeba with
-the same search policy, prompts, counters and role defaults. The subsequent runtime
-change only declares the existing nonempty finding-support requirement in the
-structured response schema; those earlier valid findings meet that requirement.
-Saturn and the airport transfer exercised the final schema. Canary/Galloway were
-not repeated after that schema change; this is a limit on exact-revision coverage.
-Subsequent delivery changes are documentation only.
+The provisional outer limit is three Analyst assessments, each preceded by at most
+six navigation actions. Initial irrelevant reads continue within that same remaining
+allowance; empty evidence reaches Analyst only at genuine initial exhaustion.
+Unchanged immutable evidence retains the prior Analyst assessment even if provisional
+needs change. Omitted reads do not consume an Analyst pass, reset navigation, or earn
+another search round. Newly relevant evidence reaches Analyst at a bound.
 
-- Canary: "What is the maximum allowed weight of a ten-pin bowling ball?"
-  One search, two successful official USBC PDF reads, one Analyst pass, supported
-  answer of 16.00 pounds scoped to USBC. The equipment manual supplied the value;
-  the 2026 Open Championships rules supplied applicability context. An initial
-  observation had used three searches and eight Fetch attempts after inventing
-  international/recreational comparison obligations. General orientation/Analyst
-  scope guidance was calibrated before the one-search observation.
-- Galloway: "latest Scott Galloway controversy" used three searches under N1 across
-  three Analyst passes, versus 17 in the baseline diagnostic pulse. Routes moved
-  from recent reporting to a named photo dispute, then its primary social-record
-  trail. Yield was 6, 4 and 4 new candidates, with 0, 2 and 2 duplicates. Five Fetch
-  attempts acquired four sources: a HeapEvents Forbes headline record, PolitiFact,
-  Poynter and Snopes; direct Forbes acquisition failed. The answer described the
-  July McConnell-photo dispute while explicitly leaving Galloway's exact statement
-  and whether this was his latest controversy unresolved. Terminal posture was
-  partial/research_bound. Triage initially omitted the two photo fact-checks for
-  lacking a substantive Galloway connection, then restored them as context. They
-  did not independently establish his role. Poynter republishes the PolitiFact
-  report, so those two bodies are not independent corroboration.
-- Saturn: the exact question requesting reconciliation of 274, 285 and 293 as of
-  September 2026 used three searches under N1, versus 13 in the baseline pulse.
-  It acquired individual MPC circulars, broadened to synthesized chronology, then
-  followed the specific S/2009 S 2 lead to official material. Each search returned
-  six new candidates. Nine successful reads included NASA APOD's August 11 report
-  of 293 confirmed moons as of June 2026, the IAU's March announcement of 285,
-  five MPC circulars, Wikipedia and SpaceDaily. Analyst retained conflicting dates
-  and definitions and gave a qualified 293 answer with the historical transitions.
-  It did not establish an official aggregate explicitly dated September 7; the
-  terminal posture was partial/research_bound. The first Saturn invocation stopped
-  on finding_missing_support after one search and three reads. Declaring minItems=1
-  for finding support in the existing schema repaired that output-contract defect;
-  the repeat completed on the final runtime revision.
-- Transfer: "What is the world's busiest airport in the latest full-year rankings,
-  and does the answer change if 'busiest' means aircraft movements rather than
-  total passengers?" Two searches and three successful reads supported both
-  components. After low-value newsroom results, Research broadened to indexed
-  ranking publications and read an ACI-attributed release on PR Newswire. Analyst
-  recognized it as preliminary. A follow-up reused N1 and read already discovered
-  July Time Out/Economy Middle East coverage without another search. The supported
-  answer distinguished Atlanta for passengers from Chicago O'Hare for movements
-  in the final 2025 rankings, explicitly disclosing the secondary-source basis.
-  Author received only the two final-ranking sources, not the preliminary release.
+Analyst assesses the whole question, selected acquired bodies, provisional needs,
+previous analysis and compact discovery history. Prior support and active conflict
+context survive triage; Analyst can revise their role. Findings reference submitted
+evidence. Author receives supported findings, qualifications and supporting sources.
+Code validates references and resolves citations, not semantic support. Supported,
+partial and unable postures exit 0; execution errors exit 1.
 
-Both challenging regressions used the exceptional third search with a visible
-specific source/incident lead. The ordinary canary and transfer used one and two.
-No live run attempted a fourth search; hard rejection and reads after rejection
-are proven offline, while live follow-ups demonstrate reuse of spent N1 counts.
-The sample does not establish that most future questions will use one or two
-searches, or that semantic novelty/need identity will always be judged correctly.
+## Demonstrated outcome and limits
 
-Three independent source checks were used for review only. NASA APOD independently
-confirmed its June-2026 293 statement, and Time Out contained the reported final
-2025 leaders and figures. The reviewer tool could not open the HeapEvents URL;
-that independent check was inconclusive. Acquired sanitized bodies were inspected
-separately. No reviewer evidence entered the product corpus. OpenAI's official
-model documentation was separately consulted for Responses/schema compatibility.
+Final runtime bdf17e30f292d24b0f77f15203a096ba35ed1f3e was exercised through the ordinary
+entrypoint, actual model/Linkup path and Author/citation consumer for the exact canary,
+Saturn and Galloway questions. Later delivery changes are documentation only.
+The phase meets its bounded quality/evidence/efficiency criteria; universal reliability
+or an unqualified latest-event answer is not demonstrated.
 
-Earlier ordinary observations on 0cbdd73d9a5e0890503658bef3946d9713aa280c with the
-previous defaults demonstrated three-component golf rules, Pluto facts plus its
-IAU classification, and five-component Webb mission facts. They demonstrated
-shared official evidence, Analyst-directed follow-up, earlier support continuity,
-and relevant-source selection. They were not rerun as part of this work item.
+| Final observation | Standard by round | Fetch attempts / acquired | Acquired characters | Analyst calls | Result |
+| --- | --- | --- | --- | --- | --- |
+| Maximum ten-pin bowling ball weight | 1 / 0 | 2 / 2 | 186,063 | 1 | Supported 16.00 pounds under USBC specifications. |
+| September 2026 Saturn 274/285/293 reconciliation | 1 / 0 | 6 / 6 | 168,766 | 3 | Supported, scoped 293 from NASA and JPL; older conflicting text and March count explained. |
+| latest Scott Galloway controversy | 1 / 0 | 5 / 5 | 78,829 | 3 | Qualified account; compared dated incidents, with weak corroboration and latest status explicitly unresolved. |
 
-## Offline demonstrated
+The final canary acquired the USBC equipment manual directly from a search candidate.
+It matches PR #626's one search, two reads and one Analyst call. Acquired characters
+are 3.6% higher because the fetched manual differs, but triage omitted the redundant
+tournament rules before Analyst, reducing source-body submission across models by
+9.2%. An earlier continuation canary followed an explicit link from an acquired
+explanation to this same governing manual without another Discover. Final-runtime
+Saturn and Galloway also demonstrated acquired-link navigation.
 
-The real application with injected external calls covers:
+Saturn read the visible NASA moons page, followed its explicit link to JPL's inventory,
+and acquired the IAU March announcement, its linked MPC circular, a 2023 newsletter
+and a recent-MPEC index. It recovered authoritative 293 evidence and did not miss a
+promising visible current-count candidate. Compared with PR #626: three searches
+became one, nine reads became six, and 355,967 acquired characters became 168,766
+(52.6% fewer). Total source-body characters submitted across Research triage, Analyst
+and Author fell from about 1.42 million to 735,000 (48.3%). These are body counts,
+not measured tokens, price or latency.
 
-- Three components supported by one source without a search per component, or by
-  different sources combined into one answer; official/direct candidate selection
-  is a scripted model judgment rather than proof of live source-quality behavior.
-- A missing component returning through Analyst -> Research, with prior support
-  preserved, duplicate URLs skipped, and a combined later analysis.
-- Partial success at a research bound, with two cited supported portions and an
-  explicit unresolved replacement condition reaching Author.
-- Unavailable primary material followed by useful secondary evidence; Analyst
-  correcting a bad component hypothesis; restoration of an omitted acquisition
-  without another Fetch.
-- Successful but irrelevant acquisitions retained in the run and omitted from
-  Analyst/Author; Author receiving only supporting evidence rather than all active
-  Analyst context; discovery remaining separate from evidence.
-- Invalid candidate selection and local correction, malformed structured output,
-  invalid/withheld evidence references, inconsistent overall support, unavailable
-  sources, execution bounds, model failures, and citation grammar/identity checks.
-- CLI use of the actual application and real Linkup adapters with only external
-  calls injected, plus retained Linkup transport and operator doorman tests.
-- Current but not recent governing material versus fresh commentary and superseded
-  official material; a named historical period; and a latest-event question where
-  recency matters. These scenarios exercise handoffs with scripted model judgments.
+NASA's acquired page reported 293 as of August 2026 while also containing older
+274 text. The linked JPL inventory stated 293 officially recognized Saturn satellites;
+IAU supplied the March 285 total. This is stronger aggregate/currentness evidence than
+PR #626's NASA APOD June statement. The answer qualifies the September cutoff and
+does not certify future changes or reconstruct every addition. Inconsistent page
+metadata remains visible. The 2023 newsletter and repeated March detail were weak
+selections; selectivity improved but is imperfect.
 
-- One useful discovery followed by a read, second-route yield feedback, an
-  exceptional third search, and rejection of an unjustified third or any fourth.
-- Reads and partial support after fuse rejection; a paraphrased gap retaining its
-  allowance; a new Analyst gap receiving a new reference; returning to an exhausted
-  earlier reference without resetting it. Revised component lists do not mint budgets.
-- Failed discovery calls spending the fuse, invalid handoff references not silently
-  allocating allowance, and empty finding-support lists using local schema correction.
+Galloway compared a reported August property-database dispute, later SpaceX valuation
+comments and older Hollywood criticism. It acquired a linked commentator post and
+the original Business Insider article after its republication. Two invalid optional
+links were rejected while valid links/evidence survived. It skipped a wrong-person
+candidate and avoided a search loop. The result attributes the principal allegation
+to a partisan report, does not independently establish it, and does not assert a
+definitive latest incident. Relative to PR #626: three searches became one; Fetch
+attempts remained five (five successes versus four); bodies fell from 180,573 to
+78,829 and model source-body submissions from 570,519 to 254,046. Primary responses
+and latest-event completeness remain unproved. No particular historical controversy
+was required for acceptance.
 
-Existing single-component, transport, citation, and doorman protections remain.
-Tests were adapted to explicit Research orientation/relevance calls and component
-coverage; the obsolete assumption that every successful acquisition reaches Analyst
-was replaced. No prompt-wording or governance-wording tests were added.
-Partial success at a bound, secondary-source fallback, component revision and
-restoration of omitted acquisitions are demonstrated offline. The current live
-sample includes supported and honestly partial answers, restoration of contextual
-fact-checks, and preliminary versus final annual rankings. It includes an older
-applicable definition and varied temporal needs, not a broad supersession benchmark.
+The first six PRODUCT invocations were exhausted with acceptance NOT MET. The
+authorized continuation used five additional PRODUCT invocations, zero of four
+additional retrieval-only probes, and three additional reviewer source checks.
+The earlier four probes compared Fast/Standard on Galloway and Saturn; Fast was
+never chosen in the first six PRODUCT runs. Standard already exposed Galloway's
+incident terrain; Saturn probe candidates were identical. No demonstrated failure
+required Scout, so it was removed instead of retained through its tests.
 
-## Provisional choices
+Reviewer checks confirmed the USBC 16-pound passage and NASA/JPL's 293 statements.
+Reviewer evidence never entered the product corpus. No optional transfer was run;
+the three priority observations were sufficient to decide this bounded phase.
+Credentials, private environment values and raw provider payloads were not inspected.
+Sanitized answers, traces, selected supporting evidence, comparisons and the full
+review bundle remain outside the repository at
+`C:\tmp\scryraven-research-scout-feedback-loop-01\continuation`.
 
-- One OpenAI Responses transport, with configurable FAST and SMART roles. Defaults
-  are gpt-5.6-luna/medium for both FAST (Research/Author) and SMART (Analyst).
-  Roles remain independently configurable. There is no silent fallback.
-- Small Pydantic values, sequential functions, one initial Research orientation,
-  and Research relevance selection before each Analyst pass when acquisitions exist.
-  Candidate aliases and compact attempts now survive the whole run. Research search
-  actions state evidence target, novelty, expected value and acquirability; a third
-  action additionally requires a concrete exceptional lead. Mechanics validate the
-  case's presence; Research judges its merits. Returned/new/duplicate candidate
-  counts inform that judgment without providing a quality score.
-  Analyst reuses an existing need reference for a continuing or paraphrased gap,
-  including previously searched subsets. A genuinely different uninvestigated need
-  requires an explicit semantic explanation before mechanics assign a new reference.
-  Changing text or the provisional component list alone cannot reset the counter.
-  References/counts are run-local accounting, not a persistent component lifecycle.
-  The local calendar date accompanies model material to avoid guessed currency.
-- Three research passes and six navigation actions per pass are provisional local
-  defaults, not per-component limits, acceptance thresholds, or work-item budgets.
-  A fixed exceptional fuse permits at most three discovery calls per run-local
-  semantic need reference, including failed provider calls. One or two is the normal
-  expectation. Fetch/read does not spend that allowance; exhaustion is a limitation
-  of the run, not evidence of nonexistence.
-- The trace reports compact source expectations, current need, revised orientation,
-  temporal expectations, configured model roles, queries and candidate-selection
-  summaries, acquired/omitted/forwarded IDs, coverage, semantic gaps, Author selection,
-  citation resolution, and terminal posture/reason. Discovery events also report
-  need reference, attempt, hypothesis, candidate yield and remaining allowance;
-  a blocked search reports discovery_fuse_reached and leaves useful reads available.
-  It omits raw prompts, provider payloads, source bodies, credentials, and hidden
-  reasoning. Optional --trace-evidence adds only the exact selected acquired bodies
-  for completed-run review without extra source requests. Public questions and URLs
-  may appear in diagnostics; observation files remain outside the repository.
-- Malformed structured output gets one local correction with safe diagnostics;
-  invalid candidate aliases get one Research correction using valid current aliases.
-  Finding support lists require at least one reference in the response schema,
-  so an empty list uses that same local structured-output correction path.
-  Other invalid references or model/transport failures report safe stage/code errors.
+## Offline verification and architectural frontier
 
-## Limitations and retained boundaries
+Final full pytest passed 123 tests; focused checks, Ruff, pre-commit, production
+imports/AST and git diff --check passed. CI remains offline and unchanged, with no
+provider calls or credentials. Scenarios exercise full >500-character context through
+the transport and CLI, visible pathological omission, non-evidence separation, hard
+2+2 bounds, earned feedback, no third return even with unused allowance, failure
+accounting, need-reference continuity, candidate reuse, and evidence preservation.
 
-Source discovery, relevance, authority, coverage, and writing remain model judgments.
-An official publisher can still return old or adjacent material, and relevant pages
-can contain substantial boilerplate. Research triage reduces context but does not
-compress source text: a large selected corpus or difficult primary document can
-still exceed model context. Exact URL deduplication is mechanical; semantic duplicate
-selection depends on Research. The sequential local bound can end with partial
-support. Broad reliability, arbitrary question breadth, and difficult primary-source
-acquisition are not established by a few observations. Novelty, new-gap identity
-and useful source selection still depend on model judgment: an erroneous semantic
-new-gap decision can allocate another allowance. There is no deterministic semantic
-similarity check. The mechanical maximum is strict for each assigned reference.
-Saturn still read nine sources, including a 311,689-character Wikipedia body; fewer
-searches do not by themselves prove economical acquisition or minimal context.
+The landing-page -> explicit manual link -> Fetch -> Analyst scenario needs no
+additional Discover. Mixed valid/malformed/invalid nominations retain valid links
+and evidence; malformed URLs already in a source cannot break nomination. Tests
+cover omitted reads before the first Analyst and after feedback, including revised
+provisional needs, without resetting navigation or repeating Analyst input. Scripted
+judgments demonstrate mechanics, not general semantic competence.
 
-Targeted large-document reading remains the next capability candidate and is
-unimplemented. The earlier IPCC pulse acquired roughly 845k/893k characters before
-Research relevance failed with model_rate_limited; it did not prove a context-window
-overflow. That document path was not changed or rerun. Deterministic calculation
-also remains unimplemented; the earlier unnecessary erroneous secondary NASA
-radius calculation was not repaired in this phase.
+NO EMBEDDINGS NOW. Search repetition, candidate clustering, semantic duplicates,
+need continuity and Scout triage were evaluated against the observed failures.
+Existing context/history and semantic judgment are simpler for these small candidate
+sets. Similarity does not establish source ownership, currentness, independence or
+support; no saved retrieval/model call was demonstrated. No embedding API, vectors,
+vector database, persistent state or similarity authority was added.
 
-Persistent sessions, resumability, parallel research, schedulers, UI, provider
-routing/fallback, generalized recovery, and semantic compression remain unimplemented.
-The old v1 machinery remains removed. No evidence ledger, final-answer packet,
-source-quality subsystem, authority registry, or new semantic owner was introduced.
+Large-document reading remains deferred: no PDF chunks, embeddings, passage indexes,
+targeting, compression or IPCC run. The earlier IPCC pulse acquired approximately
+845k/893k characters before model_rate_limited; context overflow was not established.
+Deterministic calculation remains absent; the prior incidental NASA radius calculation
+error was not addressed. Earlier golf, Pluto/IAU and Webb demonstrations used earlier
+revisions/defaults and are not final-runtime guarantees.
 
-The retained scripts/run_brokered_command_once.py is operator-only credential custody
-and process plumbing; product code does not import it. Agent-operated credentialed
-commands use it, with sanitized outputs outside the repository. CI remains ordinary
-pre-commit and offline pytest, without live calls or provider credentials. Work-item
-PRODUCT-run and independent-review allowances are not runtime code or state.
+Source selection, scope/currentness judgment, candidate availability, semantic need
+identity and model-generated citations remain fallible. Additional retrieval can
+still be warranted before a read batch, and even relevant new detail can close the
+last search round without resolving the gap. The final runs establish an improved
+tradeoff, not an optimal minimum or a measured causal effect from richer context alone.
+
+Exactly Research, Analyst and Author retain semantic authority. Persistent sessions,
+resumability, parallel research, provider routing/fallback, generic recovery and
+semantic compression remain absent. Old v1 machinery, the 500-character semantic
+clip, exceptional-third-search machinery and Scout-only machinery are removed.
+This outcome does not authorize merge, aftercare or beginning another capability.

@@ -20,7 +20,7 @@ LINKUP_API_KEY_ENV = "LINKUP_API_KEY"  # pragma: allowlist secret
 DEFAULT_TIMEOUT_SECONDS = 30.0
 DEFAULT_DISCOVERY_RESULT_COUNT = 6
 MAX_DISCOVERY_RESULT_COUNT = 100
-DISCOVERY_CONTEXT_MAX_CHARACTERS = 500
+DISCOVERY_CONTEXT_SAFETY_LIMIT = 65_536
 
 PostJSON = Callable[..., Any]
 
@@ -31,11 +31,12 @@ class LinkupTransportError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class DiscoveryCandidate:
-    """A bounded navigation clue returned by standard Linkup discovery."""
+    """Provider navigation context, never directly acquired evidence."""
 
     title: str
     url: str
     context: str
+    context_omitted_characters: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,7 +55,7 @@ def search_linkup(
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
     post: PostJSON | None = None,
 ) -> list[DiscoveryCandidate]:
-    """Perform one standard Linkup search and normalize bounded clues."""
+    """Perform one Linkup retrieval and preserve ordinary navigation context."""
 
     normalized_query = _required_text(query, "query")
     bounded_count = _bounded_result_count(result_count)
@@ -85,12 +86,12 @@ def search_linkup(
         if not url:
             continue
         title = _text(raw_result.get("name") or raw_result.get("title"))
-        context = _bounded_text(
-            raw_result.get("content") or raw_result.get("snippet"),
-            DISCOVERY_CONTEXT_MAX_CHARACTERS,
-        )
+        context = _text(raw_result.get("content") or raw_result.get("snippet"))
+        omitted = len(context) if len(context) > DISCOVERY_CONTEXT_SAFETY_LIMIT else 0
+        if omitted:
+            context = "Navigation context omitted by size guard; Fetch this URL to inspect its material."
         candidates.append(
-            DiscoveryCandidate(title=title, url=url, context=context)
+            DiscoveryCandidate(title=title, url=url, context=context, context_omitted_characters=omitted)
         )
     return candidates[:bounded_count]
 
@@ -203,14 +204,10 @@ def _text(value: Any) -> str:
     return value.strip() if isinstance(value, str) else ""
 
 
-def _bounded_text(value: Any, limit: int) -> str:
-    return " ".join(_text(value).split())[:limit]
-
-
 __all__ = [
     "DEFAULT_DISCOVERY_RESULT_COUNT",
     "DEFAULT_TIMEOUT_SECONDS",
-    "DISCOVERY_CONTEXT_MAX_CHARACTERS",
+    "DISCOVERY_CONTEXT_SAFETY_LIMIT",
     "DiscoveryCandidate",
     "FetchedMaterial",
     "LINKUP_API_KEY_ENV",

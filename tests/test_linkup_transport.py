@@ -22,7 +22,7 @@ class _Response:
         return self.payload
 
 
-def test_standard_search_builds_request_and_normalizes_bounded_candidates() -> None:
+def test_search_preserves_full_navigation_context() -> None:
     calls: list[dict[str, Any]] = []
     long_context = " ".join(["context"] * 200)
 
@@ -75,8 +75,8 @@ def test_standard_search_builds_request_and_normalizes_bounded_candidates() -> N
             title="First title",
             url="https://example.test/first",
             context=(
-                "first line " + " ".join(["context"] * 200)
-            )[: linkup.DISCOVERY_CONTEXT_MAX_CHARACTERS],
+                "first line\n" + " ".join(["context"] * 200)
+            ),
         ),
         linkup.DiscoveryCandidate(
             title="Second title",
@@ -84,10 +84,16 @@ def test_standard_search_builds_request_and_normalizes_bounded_candidates() -> N
             context="second clue",
         ),
     ]
-    assert all(
-        len(candidate.context) <= linkup.DISCOVERY_CONTEXT_MAX_CHARACTERS
-        for candidate in candidates
-    )
+    assert len(candidates[0].context) > 500
+
+
+def test_pathological_context_is_explicitly_omitted_without_a_misleading_prefix():
+    size = linkup.DISCOVERY_CONTEXT_SAFETY_LIMIT + 1
+    result = linkup.search_linkup("query", api_key="offline-test-key", post=lambda *a, **k: _Response({  # pragma: allowlist secret
+        "results": [{"url": "https://example.test/large", "content": "x" * size}],
+    }))
+    assert result[0].context_omitted_characters == size
+    assert "omitted" in result[0].context and "xxx" not in result[0].context
 
 
 def test_search_uses_environment_injected_credential_without_network(
