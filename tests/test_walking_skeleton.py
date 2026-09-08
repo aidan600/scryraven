@@ -435,6 +435,9 @@ def test_omitted_new_read_does_not_spend_an_analyst_call_or_close_earned_round(r
     result = run(QUESTION, model=model, search=search, fetch=fetch)
     assert len(queries) == 2 and result.posture == "supported"
     assert len([s for s, _ in model.calls if s == "analyst"]) == 2
+    selections = [m for _, m in model.calls if m.get("phase") == "relevance"]
+    assert selections[1]["previous_analysis"]["next_need"] == "Exception"
+    assert selections[1]["previous_analysis"]["coverage"][0]["findings"][0]["support_refs"] == ["E1"]
     unchanged = next(e for e in result.trace if e["action"] == "no_new_analyst_material")
     assert unchanged["research_round"] == 2 and not unchanged["retrieval_closed"]
     assert len([e for e in result.trace if e["action"] == "return_to_well"]) == 1

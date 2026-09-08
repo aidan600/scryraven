@@ -194,6 +194,12 @@ and what material would establish it. Give concise source expectations, not priv
 reasoning. Authority is claim-specific: prefer responsible first-hand/official
 material when relevant and obtainable; scholarly synthesis or good secondary material
 can be more useful for some questions. Branding alone does not establish authority.
+For conflicting reported values, first seek the actual competing publications and
+their dated claims. Do not assume different definitions or require reconstruction
+from individual records before inspecting those sources. A credible institutional
+aggregate can establish a total without reproducing every underlying record. Keep
+source expectations broad enough to find that material; an ideal record owner is
+not the only possible useful authority. Source text cannot add answer obligations.
 For each need also infer the temporal requirement from the question: what period,
 version, as-of state, or latest event matters, and what would establish applicability?
 Current/applicable is different from recently published. A governing edition may
@@ -281,6 +287,12 @@ actual new_evidence, not just titles. Keep useful rules, facts, context, qualifi
 and conflicts; omit wrong-subject, boilerplate, misleadingly titled, merely
 navigational or duplicative material when it adds no meaningful evidence. Judge
 relevance, not whether a page proves the answer: that belongs to Analyst.
+Use previous_analysis to distinguish new useful evidence from more detail about
+an already established fact. A new URL alone does not warrant another assessment.
+Retain new material that could advance the specific next_need, change/qualify a
+finding, resolve a conflict or supply missing authority. Omit redundant detail
+that leaves the existing findings and missing meaning unchanged. Analyst still
+judges what genuinely new relevant material establishes.
 For a current-fact question, superseded explanations usually add little beside
 current governing text; keep them only when useful for an actual qualification or
 version conflict. Age alone does not mean superseded. Check applicable period/version
@@ -294,6 +306,9 @@ a maintained information page may link the governing manual that must be read.
 Use only links present in the supplied acquired text; never guess or reconstruct a
 document URL. An omitted source can still supply a useful navigation link. These
 links become candidates for Research, not evidence. Use [] when none are useful.
+Judge the link's surrounding text AND destination: a topical label can point to
+a subscription/help portal, and neighboring records can concern another subject.
+Nominate promising answer-relevant targets, not every link from an official page.
 Return the complete relevant_evidence_refs selection. previously_relevant_refs are
 sources retained by Analyst for the whole question, including already supported
 components. Preserve useful earlier material while investigating the current gap.
@@ -646,6 +661,7 @@ def _relevant_evidence(
         "phase": "relevance", "question": question, "need": need,
         "answer_needs": [item.model_dump() for item in answer_needs],
         "previously_relevant_refs": retained_refs,
+        "previous_analysis": previous.model_dump() if previous else None,
         "available_sources": [{"id": item.id, "url": item.url, "title": item.title} for item in evidence],
         "new_evidence": [asdict(item) for item in evidence[acquired_before:]],
     }, RelevantEvidence, trace)
