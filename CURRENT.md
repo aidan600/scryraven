@@ -46,8 +46,8 @@ Only useful donor packet mechanics were reused; no interactive browser survived.
 
 Analyst owns faithful paraphrase of significant quantities, conditions, time scope,
 comparison baselines and epistemic/causal strength. Findings include exact support
-anchors; mechanics validate references and quote occurrence, never meaning. Author
-receives anchors and the same supporting context. Model fidelity and excerpt
+references; mechanics validate references, never meaning. Author
+receives findings and the same supporting context. Model fidelity and excerpt
 sufficiency remain unproved until ordinary live controls pass.
 
 Full pytest passed 134 tests with a fresh external temporary directory after the

@@ -67,7 +67,7 @@ def analysis(decision="supported", refs=("E1",), *, next_need=None, active=None,
     return "analyst", {
         "decision": decision,
         "coverage": [{"need": QUESTION, "status": ("qualified" if next_need else "supported") if refs else "unresolved",
-                      "findings": [{"text": "Maximum weight is 16 pounds.", "support_refs": list(refs), "anchors": []}] if refs else [],
+                      "findings": [{"text": "Maximum weight is 16 pounds.", "support_refs": list(refs)}] if refs else [],
                       "limitation": "" if refs else "The applicable maximum is unresolved."}],
         "active_evidence_refs": list(refs) if active is None else active,
         "explanation": "The acquired rule establishes the limit." if decision == "supported" else "The limit is unresolved.",
@@ -797,7 +797,7 @@ def component_analysis(last_ref="E1", *, decision=None, qualified=False):
     texts = ["The limit is four items.", "The penalty is two points.", "Replacement requires referee approval."]
     coverage = [{
         "need": item["need"], "status": "qualified" if qualified else "supported",
-        "findings": [{"text": text, "support_refs": ["E1" if index < 2 else last_ref], "anchors": []}],
+        "findings": [{"text": text, "support_refs": ["E1" if index < 2 else last_ref]}],
         "limitation": "Based on the readable federation handbook summary." if qualified else "",
     } for index, (item, text) in enumerate(zip(NEEDS, texts, strict=True))]
     if last_ref is None:
@@ -994,7 +994,7 @@ def test_temporal_orientation_selects_applicable_material_instead_of_newest_page
     }[temporal_target]
     verdict = analysis()[1]
     verdict["coverage"] = [{"need": question, "status": "supported", "limitation": "",
-                            "findings": [{"text": statement, "support_refs": ["E1"], "anchors": []}]}]
+                            "findings": [{"text": statement, "support_refs": ["E1"]}]}]
     model = Model(orient(question, needs), search_for(), read(f"C{target_index + 1}", summary=temporal_basis),
                   relevance("E1", summary=temporal_basis), ("analyst", verdict), author(statement + " [E1]"))
     fetched = []

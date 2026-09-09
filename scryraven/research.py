@@ -87,15 +87,9 @@ class RelevantEvidence(_Output):
         return valid
 
 
-class SupportAnchor(_Output):
-    evidence_ref: str
-    quote: str
-
-
 class Finding(_Output):
     text: str
     support_refs: list[str] = Field(min_length=1)
-    anchors: list[SupportAnchor]
 
 
 class ComponentAssessment(_Output):
@@ -362,13 +356,10 @@ and causal strength. Keep each qualification attached to the right claim. Simila
 labels need not mean the same strength; retain significant epistemic terms verbatim
 when a paraphrase could change their meaning. A rate comparison is not a magnitude
 comparison. A nearby qualifier about another estimate cannot qualify this one.
-For each finding, include short exact support anchors: evidence_ref plus a quote
-copied contiguously from one submitted material item, without invented ellipses.
-Use separate anchors when the claim and governing caption/definition are separated.
-Choose just the passages carrying the finding's significant meaning. Then write
-the finding in your own words without weakening, strengthening or dropping it.
-Anchors are references for the handoff, not an automatic semantic check. If the
-range/claim is present but its materially necessary qualification is absent, retain
+Write each finding so that Author can preserve its significant meaning, including
+qualifying captions or definitions supplied in separate passages of the source.
+Keep its support references connected to that material. If the range/claim is
+present but its materially necessary qualification is absent, retain
 only what is established and request that missing meaning. Never guess a label.
 Judge temporal applicability from acquired evidence: governing edition, effective
 period, official current status, supersession, or relevant event timing. Publication
@@ -437,8 +428,8 @@ relevant rules from lookalikes, and account for conflicts. Empty evidence suppor
 no findings. Lack of evidence never by itself proves nonexistence."""
 
 AUTHOR_PROMPT = """You are Author. Write a concise useful answer to the original question
-faithfully from the Analyst's coverage findings, support anchors and acquired content.
-The anchors preserve source-significant wording. Keep numbers, units, ranges,
+ faithfully from the Analyst's coverage findings and acquired content.
+Keep source-significant wording, numbers, units, ranges,
 definitions, conditions/exceptions, temporal scope and comparison baselines attached
 to their findings. Preserve uncertainty, confidence/likelihood, modal terms and
 causal strength. Do not replace significant epistemic labels with approximate
@@ -846,26 +837,6 @@ def _validate_analysis(analysis: Analysis, evidence: list[Evidence], trace: list
         raise RunError("analyst", "invalid_evidence_reference", trace)
     if any(not item.text.strip() or not item.support_refs for item in analysis.findings):
         raise RunError("analyst", "finding_missing_support", trace)
-    for finding in analysis.findings:
-        for anchor in finding.anchors:
-            parts = [item for item in evidence if anchor.evidence_ref == item.source_id]
-            matched = next((anchor.quote for item in parts if anchor.quote.strip() and anchor.quote in item.content), None)
-            if matched is None and anchor.quote.strip():
-                # Model output may normalize PDF newlines or nonbreaking spaces.
-                # Resolve only whitespace variation back to the exact source span;
-                # no word, punctuation, number or semantic substitution is allowed.
-                pattern = r"\s+".join(re.escape(word) for word in anchor.quote.split())
-                matched = next((match.group() for item in parts if (match := re.search(pattern, item.content))), None)
-            if anchor.evidence_ref not in finding.support_refs or matched is None:
-                # Reference/substring validity only. The Analyst still owns meaning.
-                trace.append({"stage": "analyst", "action": "support_anchor_rejected",
-                              "source_reference_valid": anchor.evidence_ref in finding.support_refs and bool(parts),
-                              "quote_characters": len(anchor.quote), "whitespace_match": matched is not None})
-                raise RunError("analyst", "invalid_support_anchor", trace)
-            if matched != anchor.quote:
-                trace.append({"stage": "analyst", "action": "support_anchor_resolved",
-                              "evidence_ref": anchor.evidence_ref, "match": "whitespace_only"})
-                anchor.quote = matched
     if not analysis.coverage or any(not item.need.strip() for item in analysis.coverage):
         raise RunError("analyst", "coverage_missing", trace)
     if any(item.status != "unresolved" and not item.findings for item in analysis.coverage):
@@ -1051,8 +1022,7 @@ def run(
             "evidence_count": len(relevant), "explanation": analysis.explanation[:600],
             "coverage": [{
                 "need": item.need[:400], "status": item.status, "limitation": item.limitation[:600],
-                "findings": [{"text": finding.text[:600], "support_refs": finding.support_refs,
-                              "anchors": [anchor.model_dump() for anchor in finding.anchors]} for finding in item.findings],
+                "findings": [{"text": finding.text[:600], "support_refs": finding.support_refs} for finding in item.findings],
             } for item in analysis.coverage],
             "next_need": (analysis.next_need or "")[:600],
         })

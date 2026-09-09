@@ -5,7 +5,7 @@ import pytest
 from test_walking_skeleton import Model, analysis, author, done, orient, read, relevance, search_for
 
 from core.exa_transport import DiscoveryCandidate, FetchedMaterial
-from scryraven.research import RunError, run
+from scryraven.research import run
 from scryraven.sources import PACKET_CHARACTERS, Evidence, SourceIndex, SourcePackets, exact_view
 
 URL = "https://example.test/standard"
@@ -19,12 +19,11 @@ def use(*refs):
                         "search_hypothesis": None, "context_needed": None}
 
 
-def verdict(text=PASSAGE, *, refs=("E1",), anchors=None, decision="supported", gap=None):
+def verdict(text=PASSAGE, *, refs=("E1",), decision="supported", gap=None):
     reply = analysis(decision, refs=refs, next_need=gap)[1]
     reply["coverage"][0]["need"] = QUESTION
     reply["coverage"][0]["findings"] = [{
         "text": text, "support_refs": list(refs),
-        "anchors": anchors if anchors is not None else [{"evidence_ref": refs[0], "quote": text}],
     }] if refs else []
     return "analyst", reply
 
@@ -44,7 +43,7 @@ def test_sufficient_provider_material_reaches_analyst_author_and_citations_witho
     assert result.selected_evidence[0].content == PASSAGE
     assert result.selected_evidence[0].acquisition == "provider_highlights"
     assert f"[Standard]({URL})" in result.answer
-    assert model.calls[-1][1]["coverage"][0]["findings"][0]["anchors"] == [{"evidence_ref": "E1", "quote": PASSAGE}]
+    assert model.calls[-1][1]["coverage"][0]["findings"][0] == {"text": PASSAGE, "support_refs": ["E1"]}
     assert model.calls[-1][1]["evidence"] == model.calls[-2][1]["evidence"]
 
 
@@ -94,45 +93,14 @@ def test_new_same_url_highlights_are_immutable_material_versions_not_new_sources
     assert len([m for s, m in model.calls if s == "analyst"][-1]["evidence"]) == 1
 
 
-@pytest.mark.parametrize("anchor", [
-    {"evidence_ref": "E2", "quote": PASSAGE},
-    {"evidence_ref": "E1", "quote": "The device is always safe."},
-    {"evidence_ref": "E1", "quote": ""},
-])
-def test_anchor_must_reference_submitted_material_without_invented_words(anchor):
-    model = Model(orient(QUESTION), search_for(), use("C1"), verdict(anchors=[anchor]))
-    with pytest.raises(RunError, match="invalid_support_anchor"):
-        run(QUESTION, model=model, search=lambda q: [lead()], fetch=no_fetch)
-
-
-def test_anchors_do_not_turn_mechanical_validity_into_semantic_approval():
+def test_references_do_not_turn_mechanical_validity_into_semantic_approval():
     # The scripted Analyst deliberately misstates correct source text. Mechanics
     # must not invent a fourth semantic checker; live fidelity is a separate axis.
     wrong = "The pressure is always safe."
     model = Model(orient(QUESTION), search_for(), use("C1"),
-                  verdict(wrong, anchors=[{"evidence_ref": "E1", "quote": PASSAGE}]), author(wrong + " [E1]"))
+                  verdict(wrong), author(wrong + " [E1]"))
     result = run(QUESTION, model=model, search=lambda q: [lead()], fetch=no_fetch)
     assert wrong in result.answer
-
-
-def test_pdf_whitespace_anchor_resolves_to_exact_source_without_semantic_rewriting():
-    source = "The range is 11–13 kPa.\n\nIt applies with\u00a0high confidence only while idle."
-    copied = "The range is 11–13 kPa. It applies with high confidence only while idle."
-    model = Model(orient(QUESTION), search_for(), use("C1"),
-                  verdict(copied, anchors=[{"evidence_ref": "E1", "quote": copied}]), author(copied + " [E1]"))
-    result = run(QUESTION, model=model, search=lambda q: [lead(source)], fetch=no_fetch)
-    anchor = model.calls[-1][1]["coverage"][0]["findings"][0]["anchors"][0]
-    assert anchor["quote"] == source
-    assert any(e["action"] == "support_anchor_resolved" for e in result.trace)
-
-
-@pytest.mark.parametrize("changed", ["low confidence", "confidence", "very high confidence"])
-def test_whitespace_resolution_cannot_change_epistemic_words(changed):
-    copied = PASSAGE.replace("high confidence", changed)
-    model = Model(orient(QUESTION), search_for(), use("C1"),
-                  verdict(anchors=[{"evidence_ref": "E1", "quote": copied}]))
-    with pytest.raises(RunError, match="invalid_support_anchor"):
-        run(QUESTION, model=model, search=lambda q: [lead()], fetch=no_fetch)
 
 
 def large_source():

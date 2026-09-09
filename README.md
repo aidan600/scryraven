@@ -5,7 +5,7 @@ writes one cited answer from source material it receives and reads. Research fin
 promising sources with Exa Search and selects useful extractive highlights for
 Analyst. Missing context can trigger acquisition of fuller source text. Analyst
 interprets support, qualifications and gaps; Author writes from its findings, short
-exact support anchors and supporting material.
+source references and supporting material.
 
 See `CURRENT.md` for implementation, demonstrations and limits. `PRODUCT.md` owns
 approved product intent.
@@ -83,7 +83,7 @@ the linked source must be acquired before it supports findings.
 
 Answers appear on stdout. `--trace` adds compact diagnostics on stderr: model
 roles, Research choices, source identities/sizes, acquisitions, packet bounds,
-selected material, Analyst findings/anchors/gaps and citation resolution. Per-stage
+selected material, Analyst findings/gaps and citation resolution. Per-stage
 body characters include repeated submissions; they are not tokens or dollars.
 Raw payloads, credentials and hidden reasoning are excluded.
 `--trace-evidence` also exposes exact selected supporting material and provenance;
