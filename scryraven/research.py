@@ -205,8 +205,11 @@ For each need also infer the temporal requirement from the question: what period
 version, as-of state, or latest event matters, and what would establish applicability?
 Current/applicable is different from recently published. A governing edition may
 remain applicable for years; a newer commentary may not supersede it. Recency itself
-matters for latest developments, not by default. Use current_date as context, not
-as an assumed publication/edition year. These are hypotheses to verify in acquired
+matters for latest developments, not by default. current_date is operating context,
+not a date specified by the user and not a requirement to certify a rule on that day.
+Unless the original question requests an as-of date, do not introduce one into the
+needs or require an explicit current-edition endorsement of an applicable standing
+rule. These are hypotheses to verify in acquired
 material, not factual claims from memory. Do not invent section numbers or versions.
 Choose a brief initial focus that can investigate related needs together. One source
 may cover several needs; different needs may call for different authorities. These
@@ -374,6 +377,12 @@ remain current; an explicit date is not mandatory when official context reasonab
 establishes fit. Research temporal expectations are revisable hypotheses, not proof.
 If the underlying fact is supported but applicability remains materially unresolved,
 retain that qualified finding and request the semantic temporal confirmation needed.
+The original question, not current_date or Research's provisional needs, determines
+whether exact-date confirmation was requested. Discard an invented as-of obligation
+when it appears only in those hypotheses or operating context. An applicable official
+standing rule does not need a separate statement that it remained valid on today's
+date unless the question or actual source material raises a concrete supersession
+or applicability conflict. Do not treat missing date metadata as that conflict.
 Assess ALL answer-relevant portions of the original question across the combined
 evidence. answer_needs is Research's provisional navigation hypothesis, not evidence
 or a binding decomposition. Correct omissions, merge redundant needs, remove
@@ -421,7 +430,9 @@ remaining retrieval allowance, existing candidates, or a genuinely new gap can
 advance the question. Preserve supported findings and qualify remaining
 gaps if no useful route remains; exhaustion is not evidence of nonexistence.
 When no further research is needed, next_need, next_need_ref and new_need_reason
-are all null. Read the actual passages, distinguish
+are all null. A research_needed decision must name a concrete nonempty next_need;
+if you have no such remaining gap, choose supported or unable as warranted by the
+coverage instead. Read the actual passages, distinguish
 relevant rules from lookalikes, and account for conflicts. Empty evidence supports
 no findings. Lack of evidence never by itself proves nonexistence."""
 
