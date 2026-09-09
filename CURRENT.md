@@ -101,6 +101,17 @@ bowling / IPCC / NIST / Saturn. Model dollar cost was not inferred from these pr
 
 ## Verification, limits and handoff evidence
 
+## Large-source evidence identity fix
+
+Targeted views retain exact material IDs while sharing their canonical
+`Evidence.source_id`. At the Analyst boundary, only exact submitted material IDs
+are mechanically mapped to their existing source IDs; unknown or unsubmitted
+references remain rejected. Author still receives the selected exact views, and
+citations resolve through the canonical source publication. The live Q13 RFC 8446
+rerun reached Author and passed independent review; the RFC 9110 large-source
+regression also reached Author and passed. No Exa, search, prompt, packet-ranking,
+or semantic-owner behavior changed.
+
 Full pytest passed 131 tests using a fresh external temporary directory; focused
 transport, source-packet and ordinary-application checks, Ruff and AST/import checks
 passed. Offline fixtures verify mechanical promises, not semantic reliability.
