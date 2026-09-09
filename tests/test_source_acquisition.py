@@ -180,14 +180,26 @@ def test_submitted_targeted_view_support_canonicalizes_to_one_source():
     assert len([event for event in trace if event["action"] == "evidence_reference_canonicalized"]) == 4
 
 
-@pytest.mark.parametrize("reference", ["E1@999999:1000000", "E2@100:300"])
-def test_unknown_or_unsubmitted_targeted_view_support_still_fails(reference):
+def test_unknown_targeted_view_support_still_fails():
     source = Evidence("E1", URL, "Standard", "x" * 1600)
     views = [exact_view(source, 100, 300), exact_view(source, 900, 1200)]
-    result = _analysis_for_refs([reference])
+    result = _analysis_for_refs(["E1@999999:1000000"])
 
     with pytest.raises(research.RunError) as captured:
         research._validate_analysis(result, views, [])
+
+    assert (captured.value.stage, captured.value.code) == ("analyst", "invalid_evidence_reference")
+
+
+def test_valid_targeted_view_from_unsubmitted_source_still_fails():
+    source = Evidence("E1", URL, "Standard", "x" * 1600)
+    other_source = Evidence("E2", URL + "-other", "Other", "y" * 1600)
+    submitted_views = [exact_view(source, 100, 300), exact_view(source, 900, 1200)]
+    unsubmitted_view = exact_view(other_source, 100, 300)
+    result = _analysis_for_refs([unsubmitted_view.id])
+
+    with pytest.raises(research.RunError) as captured:
+        research._validate_analysis(result, submitted_views, [])
 
     assert (captured.value.stage, captured.value.code) == ("analyst", "invalid_evidence_reference")
 
