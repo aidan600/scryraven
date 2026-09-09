@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from core.linkup_transport import DiscoveryCandidate, FetchedMaterial, LinkupTransportError
+from core.exa_transport import DiscoveryCandidate, ExaTransportError, FetchedMaterial
 from scryraven import __main__ as cli
 from scryraven import research
 from scryraven.model import ModelError
@@ -40,7 +40,7 @@ def orient(question=QUESTION, needs=None):
 
 
 def search_for(query="official rules", *, revised=None, summary="Locate the responsible governing rule.", hypothesis=None):
-    return "research", {"action": "discover", "query": query, "candidate_refs": [],
+    return "research", {"action": "discover", "context_needed": None, "query": query, "candidate_refs": [],
                         "revised_answer_needs": revised, "summary": summary,
                         "search_hypothesis": hypothesis or {
                             "evidence_target": "Governing rule text", "novelty": "Initial governing publication route",
@@ -50,12 +50,12 @@ def search_for(query="official rules", *, revised=None, summary="Locate the resp
 
 
 def read(*refs, summary="Read the direct rule rather than the adjacent summary."):
-    return "research", {"action": "read", "query": "", "candidate_refs": list(refs),
+    return "research", {"action": "read", "context_needed": "The needed rule and its applicability are absent from navigation context.", "query": "", "candidate_refs": list(refs),
                         "revised_answer_needs": None, "summary": summary, "search_hypothesis": None}
 
 
 def done():
-    return "research", {"action": "done", "query": "", "candidate_refs": [],
+    return "research", {"action": "done", "context_needed": None, "query": "", "candidate_refs": [],
                         "revised_answer_needs": None, "summary": "No useful unread navigation remains.", "search_hypothesis": None}
 
 
@@ -216,7 +216,7 @@ def test_research_revises_poor_discovery_and_failed_reads_before_analyst():
     def read_source(url):
         reads.append(url)
         if len(reads) == 1:
-            raise LinkupTransportError("raw provider detail must not escape")
+            raise ExaTransportError("raw provider detail must not escape")
         return fetch(url)
 
     model = Model(orient(), search_for("weak query"), search_for("better query"), read("C1"),
@@ -243,7 +243,7 @@ def test_discovery_or_failed_read_cannot_support_answer(failure):
 
     def search(query):
         if failure == "discovery_error":
-            raise LinkupTransportError("private raw response")
+            raise ExaTransportError("private raw response")
         return [] if failure == "empty_discovery" else discover(query)
 
     def read_source(url):
@@ -253,7 +253,7 @@ def test_discovery_or_failed_read_cannot_support_answer(failure):
             return FetchedMaterial(url + "other", "A rule from a different source.")
         if failure == "unhelpful_material":
             return FetchedMaterial(url, "This page describes a different game without a weight limit.")
-        raise LinkupTransportError("private raw response")
+        raise ExaTransportError("private raw response")
 
     result = run(QUESTION, model=model, search=search, fetch=read_source)
     assert result.posture == "unable" and result.stop_reason == "not_established"
@@ -390,12 +390,12 @@ def test_search_failure_or_evidence_not_submitted_cannot_earn_second_round(failu
     def search(query):
         queries.append(query)
         if failure == "provider":
-            raise LinkupTransportError("private provider detail")
+            raise ExaTransportError("private provider detail")
         return discover(query)
 
     def acquire(url):
         if failure == "failed_fetch":
-            raise LinkupTransportError("private read failure")
+            raise ExaTransportError("private read failure")
         return fetch(url)
 
     steps = [orient(), search_for("first"), search_for("second")]
@@ -550,7 +550,7 @@ def test_navigation_only_landing_page_follows_valid_links_despite_bad_optional_i
     assert [item.url for item in result.evidence] == [URL, manual]
     analyst_inputs = [m for stage, m in model.calls if stage == "analyst"]
     assert len(analyst_inputs) == 1
-    assert analyst_inputs[0]["evidence"] == [{"id": "E2", "url": manual, "title": "Manual", "content": "Maximum: 16 pounds."}]
+    assert analyst_inputs[0]["evidence"] == [research.Evidence("E2", manual, "Manual", "Maximum: 16 pounds.").material()]
     navigation = [m for _, m in model.calls if m.get("phase") == "navigation"][-1]
     assert navigation["evidence_selection"]["omitted_evidence_ids"] == ["E1"]
 
@@ -733,8 +733,8 @@ def test_model_failures_stop_at_the_responsibility_without_raw_output(stage, fai
     assert "raw model output" not in str(error) + json.dumps(error.trace)
 
 
-def test_cli_invokes_real_application_and_real_linkup_adapters(monkeypatch, capsys):
-    from core import linkup_transport
+def test_cli_invokes_real_application_and_real_exa_adapters(monkeypatch, capsys):
+    from core import exa_transport
 
     calls = []
     full_context = "DISCOVERY-ONLY " + "navigation " * 70 + "USEFUL ROUTE BEYOND CHARACTER 500"
@@ -751,27 +751,25 @@ def test_cli_invokes_real_application_and_real_linkup_adapters(monkeypatch, caps
 
     def post(url, **kwargs):
         calls.append((url, kwargs["json"]))
-        if url == linkup_transport.LINKUP_SEARCH_URL:
-            return Response({"results": [{"url": URL, "name": "Rules", "content": full_context}]})
-        assert url == linkup_transport.LINKUP_FETCH_URL
-        return Response({"markdown": "The limit is 16 pounds."})
+        if url == exa_transport.EXA_SEARCH_URL:
+            return Response({"results": [{"url": URL, "title": "Rules", "highlights": [full_context]}]})
+        assert url == exa_transport.EXA_CONTENTS_URL
+        return Response({"results": [{"id": URL, "url": URL, "text": "The limit is 16 pounds."}]})
 
     model = Model(orient(), search_for(), read("C1"), relevance("E1"), analysis(), author())
-    monkeypatch.setenv("LINKUP_API_KEY", "offline-test-value")
-    monkeypatch.setattr(linkup_transport.requests, "post", post)
+    monkeypatch.setenv("EXA_API_KEY", "offline-test-value")
+    monkeypatch.setattr(exa_transport.requests, "post", post)
     monkeypatch.setattr(research, "OpenAIModel", lambda: model)
     assert cli.main([QUESTION, "--trace", "--trace-evidence"]) == 0
     captured = capsys.readouterr()
     assert f"[Rules]({URL})" in captured.out
-    assert calls[1][1] == {"url": URL}
-    assert calls[0][1]["depth"] == "standard"
+    assert calls[1][1] == {"ids": [URL], "text": {"verbosity": "full"}, "highlights": False, "maxAgeHours": 0}
+    assert calls[0][1]["type"] == "auto"
     assert model.calls[2][1]["candidates"][0]["context"] == full_context
     assert "DISCOVERY-ONLY" not in json.dumps([m for stage, m in model.calls if stage in {"analyst", "author"}])
     diagnostics = json.loads(captured.err)
     assert diagnostics["trace"][-1]["posture"] == "supported"
-    assert diagnostics["selected_evidence"] == [{
-        "id": "E1", "url": URL, "title": "Rules", "content": "The limit is 16 pounds.",
-    }]
+    assert diagnostics["selected_evidence"] == [research.Evidence("E1", URL, "Rules", "The limit is 16 pounds.").material()]
     assert "DISCOVERY-ONLY" not in captured.err
 
     monkeypatch.setattr(research, "OpenAIModel", lambda: Model(("research", ModelError("model_configuration_missing"))))
@@ -929,7 +927,7 @@ def test_secondary_fallback_revisable_needs_and_restoring_omitted_acquisition_wi
     def acquire(url):
         reads.append(url)
         if url == sources[0].url:
-            raise LinkupTransportError("primary unavailable")
+            raise ExaTransportError("primary unavailable")
         return FetchedMaterial(url, RULES_TEXT if url == URL else REPLACEMENT_TEXT)
 
     revised_done = {**done()[1], "revised_answer_needs": NEEDS}
