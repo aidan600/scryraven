@@ -30,7 +30,7 @@ def main(argv: list[str] | None = None) -> int:
         diagnostics = {"trace": result.trace}
         if args.trace_evidence:
             diagnostics["selected_evidence"] = [
-                asdict(item) for item in result.evidence if item.id in result.analysis.support_refs
+                asdict(item) for item in result.selected_evidence
             ]
         print(json.dumps(diagnostics, ensure_ascii=True), file=sys.stderr)
     print(result.answer)

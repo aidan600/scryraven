@@ -11,7 +11,7 @@ What changed?
 - [ ] Root guidance or current truth
 - [ ] Repository configuration or CI
 - [ ] Operator doorman
-- [ ] Linkup transport donor
+- [ ] Exa acquisition transport
 - [ ] Focused offline tests
 - [ ] Other:
 
