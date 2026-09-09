@@ -4,7 +4,7 @@ ScryRaven researches public-web factual questions with related answer needs and
 writes one cited answer from source material it receives and reads. Research finds
 promising sources with Exa Search and selects useful extractive highlights for
 Analyst. Missing context can trigger acquisition of fuller source text. Analyst
-interprets support, qualifications and gaps; Author writes from its findings, short
+interprets support, qualifications and gaps; Author writes from its findings,
 source references and supporting material.
 
 See `CURRENT.md` for implementation, demonstrations and limits. `PRODUCT.md` owns
@@ -60,9 +60,10 @@ not semantic sufficiency thresholds. There is no conversational document browser
 Different material versions at the same exact URL remain immutable and share
 source identity. Views carry exact parent bounds; highlights never acquire guessed
 offsets. Multiple versions/views are not independent corroboration. Analyst and
-Author receive selected context grouped by source. Short support quotes help
-preserve significant quantities, conditions, time comparisons and epistemic
-language through paraphrase. Quote/reference validation does not decide meaning.
+Author receive selected context grouped by source. Analyst owns preservation of
+significant quantities, conditions, time comparisons and epistemic language through
+paraphrase; Author preserves that meaning in the answer. Reference validation does
+not decide meaning or mechanically check paraphrase.
 Citations resolve to the publication URL.
 
 The existing provisional loop permits three Analyst assessments, each preceded by

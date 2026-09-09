@@ -13,7 +13,7 @@ The first supported product slice is a simple, single-component factual research
 For that class of question, ScryRaven should:
 
 1. search for promising sources;
-2. use discovery results as navigation clues rather than answer evidence;
+2. use search metadata to navigate and assess any returned source text by what that text establishes;
 3. directly acquire and read useful source material;
 4. semantically interpret the acquired material in the context of the original question;
 5. continue research when interpretation reveals an important unresolved information need;
@@ -25,8 +25,8 @@ The product must not silently fill an evidentiary gap from unsupported model mem
 ## Durable product invariants
 
 - Research is question-directed and may adapt when an initial attempt is inadequate.
-- Discovery snippets, titles, descriptions, and similar search-result material may guide research but do not become final answer evidence merely because a search provider returned them.
-- Factual answer support comes from source material that ScryRaven has actually acquired or read.
+- Search ranking, ordering, titles and other metadata guide navigation. Source-derived text returned with search results can support a claim when the received text itself establishes the claim and its materially necessary context.
+- Factual answer support comes from source material that ScryRaven has actually received and read. Missing qualifications, applicability or connecting context require further acquisition; provider provenance alone does not establish completeness.
 - A model semantically interprets acquired evidence in the context of the user's question, including relevant qualifications, conflicts, and limitations.
 - Semantic interpretation may identify an important unresolved information need and cause further research.
 - Acquired evidence retains its source identity as analysis and answer writing proceed.
