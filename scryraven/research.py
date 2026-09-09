@@ -848,10 +848,24 @@ def _validate_analysis(analysis: Analysis, evidence: list[Evidence], trace: list
         raise RunError("analyst", "finding_missing_support", trace)
     for finding in analysis.findings:
         for anchor in finding.anchors:
-            if (anchor.evidence_ref not in finding.support_refs or not anchor.quote.strip()
-                    or not any(anchor.evidence_ref == item.source_id and anchor.quote in item.content for item in evidence)):
+            parts = [item for item in evidence if anchor.evidence_ref == item.source_id]
+            matched = next((anchor.quote for item in parts if anchor.quote.strip() and anchor.quote in item.content), None)
+            if matched is None and anchor.quote.strip():
+                # Model output may normalize PDF newlines or nonbreaking spaces.
+                # Resolve only whitespace variation back to the exact source span;
+                # no word, punctuation, number or semantic substitution is allowed.
+                pattern = r"\s+".join(re.escape(word) for word in anchor.quote.split())
+                matched = next((match.group() for item in parts if (match := re.search(pattern, item.content))), None)
+            if anchor.evidence_ref not in finding.support_refs or matched is None:
                 # Reference/substring validity only. The Analyst still owns meaning.
+                trace.append({"stage": "analyst", "action": "support_anchor_rejected",
+                              "source_reference_valid": anchor.evidence_ref in finding.support_refs and bool(parts),
+                              "quote_characters": len(anchor.quote), "whitespace_match": matched is not None})
                 raise RunError("analyst", "invalid_support_anchor", trace)
+            if matched != anchor.quote:
+                trace.append({"stage": "analyst", "action": "support_anchor_resolved",
+                              "evidence_ref": anchor.evidence_ref, "match": "whitespace_only"})
+                anchor.quote = matched
     if not analysis.coverage or any(not item.need.strip() for item in analysis.coverage):
         raise RunError("analyst", "coverage_missing", trace)
     if any(item.status != "unresolved" and not item.findings for item in analysis.coverage):

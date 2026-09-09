@@ -115,6 +115,26 @@ def test_anchors_do_not_turn_mechanical_validity_into_semantic_approval():
     assert wrong in result.answer
 
 
+def test_pdf_whitespace_anchor_resolves_to_exact_source_without_semantic_rewriting():
+    source = "The range is 11–13 kPa.\n\nIt applies with\u00a0high confidence only while idle."
+    copied = "The range is 11–13 kPa. It applies with high confidence only while idle."
+    model = Model(orient(QUESTION), search_for(), use("C1"),
+                  verdict(copied, anchors=[{"evidence_ref": "E1", "quote": copied}]), author(copied + " [E1]"))
+    result = run(QUESTION, model=model, search=lambda q: [lead(source)], fetch=no_fetch)
+    anchor = model.calls[-1][1]["coverage"][0]["findings"][0]["anchors"][0]
+    assert anchor["quote"] == source
+    assert any(e["action"] == "support_anchor_resolved" for e in result.trace)
+
+
+@pytest.mark.parametrize("changed", ["low confidence", "confidence", "very high confidence"])
+def test_whitespace_resolution_cannot_change_epistemic_words(changed):
+    copied = PASSAGE.replace("high confidence", changed)
+    model = Model(orient(QUESTION), search_for(), use("C1"),
+                  verdict(anchors=[{"evidence_ref": "E1", "quote": copied}]))
+    with pytest.raises(RunError, match="invalid_support_anchor"):
+        run(QUESTION, model=model, search=lambda q: [lead()], fetch=no_fetch)
+
+
 def large_source():
     return Evidence("E1", URL, "Standard", "# Standard\nApplicable pressure standard.\n\n" +
                     ("# Other equipment\n" + "Unrelated mechanical history. " * 240 + "\n\n") * 25 +
