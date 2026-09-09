@@ -5,6 +5,7 @@ import pytest
 from test_walking_skeleton import Model, analysis, author, done, orient, read, relevance, search_for
 
 from core.exa_transport import DiscoveryCandidate, FetchedMaterial
+from scryraven import research
 from scryraven.research import run
 from scryraven.sources import PACKET_CHARACTERS, Evidence, SourceIndex, SourcePackets, exact_view
 
@@ -147,6 +148,82 @@ def test_large_source_expands_once_without_refetch_and_never_exposes_whole_paren
     assert source.content not in json.dumps([e.material() for e in packets.materials.values()])
     with pytest.raises(ValueError):
         exact_view(source, -1, 20)
+
+
+def _analysis_for_refs(refs):
+    reply = verdict(refs=tuple(refs))[1]
+    return research.Analysis.model_validate(reply)
+
+
+def test_targeted_views_group_under_one_source_and_preserve_exact_material_ids():
+    source = Evidence("E1", URL, "Standard", "x" * 1600)
+    views = [exact_view(source, 100, 300), exact_view(source, 900, 1200)]
+
+    grouped = research._source_material(views)
+
+    assert len(grouped) == 1
+    assert grouped[0]["id"] == "E1"
+    assert [item["id"] for item in grouped[0]["materials"]] == [view.id for view in views]
+    assert [item["source_id"] for item in grouped[0]["materials"]] == ["E1", "E1"]
+
+
+def test_submitted_targeted_view_support_canonicalizes_to_one_source():
+    source = Evidence("E1", URL, "Standard", "x" * 1600)
+    views = [exact_view(source, 100, 300), exact_view(source, 900, 1200)]
+    result = _analysis_for_refs([view.id for view in views])
+    trace = []
+
+    research._validate_analysis(result, views, trace)
+
+    assert result.support_refs == ["E1"]
+    assert result.active_evidence_refs == ["E1", "E1"]
+    assert len([event for event in trace if event["action"] == "evidence_reference_canonicalized"]) == 4
+
+
+@pytest.mark.parametrize("reference", ["E1@999999:1000000", "E2@100:300"])
+def test_unknown_or_unsubmitted_targeted_view_support_still_fails(reference):
+    source = Evidence("E1", URL, "Standard", "x" * 1600)
+    views = [exact_view(source, 100, 300), exact_view(source, 900, 1200)]
+    result = _analysis_for_refs([reference])
+
+    with pytest.raises(research.RunError) as captured:
+        research._validate_analysis(result, views, [])
+
+    assert (captured.value.stage, captured.value.code) == ("analyst", "invalid_evidence_reference")
+
+
+def test_view_reference_reaches_author_with_exact_views_and_canonical_citation():
+    source = large_source()
+
+    class ViewReferenceModel(Model):
+        def __call__(self, stage, prompt, material, schema):
+            if material.get("phase") == "relevance":
+                self.calls.append((stage, material))
+                refs = [item["id"] for item in material["new_evidence"]]
+                return json.dumps(relevance(*refs)[1])
+            if stage == "analyst":
+                self.calls.append((stage, material))
+                view_id = material["evidence"][0]["materials"][0]["id"]
+                return json.dumps(verdict(refs=(view_id,))[1])
+            return super().__call__(stage, prompt, material, schema)
+
+    model = ViewReferenceModel(orient(), search_for(), read("C1"), author(PASSAGE + " [E1]"))
+    result = run(QUESTION, model=model, search=lambda q: [lead("Missing necessary context.")],
+                 fetch=lambda url: FetchedMaterial(url, source.content))
+
+    assert result.posture == "supported"
+    assert result.analysis.support_refs == ["E1"]
+    assert all(item.acquisition == "targeted_view" for item in result.selected_evidence)
+    analyst_input = next(material for stage, material in model.calls if stage == "analyst")
+    author_input = next(material for stage, material in model.calls if stage == "author")
+    assert [item["id"] for item in analyst_input["evidence"][0]["materials"]] == [
+        item.id for item in result.selected_evidence
+    ]
+    assert author_input["evidence"] == analyst_input["evidence"]
+    assert source.content not in json.dumps(author_input)
+    assert f"[Standard]({URL})" in result.answer
+    assert any(event["action"] == "evidence_reference_canonicalized" for event in result.trace)
+    assert next(event for event in result.trace if event["action"] == "resolved")["evidence_ids"] == ["E1"]
 
 
 def test_ordinary_application_large_packet_flows_through_research_and_both_consumers():

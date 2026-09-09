@@ -831,7 +831,40 @@ def _relevant_evidence(
     return selected
 
 
+def _canonicalize_analysis_references(analysis: Analysis, evidence: list[Evidence], trace: list[dict]) -> None:
+    """Resolve submitted material IDs to their existing owning source IDs.
+
+    Analyst support is source-level, while targeted views retain exact material
+    IDs for provenance.  A model may therefore repeat a submitted view ID even
+    though the support boundary is the view's canonical source.  Only exact IDs
+    from the currently submitted evidence are mapped; unknown references remain
+    untouched so the strict validation below still rejects them.
+    """
+    source_ids = {item.source_id for item in evidence}
+    material_to_source = {item.id: item.source_id for item in evidence}
+
+    def canonicalize(ref: str, field: str) -> str:
+        if ref in source_ids:
+            return ref
+        source_id = material_to_source.get(ref)
+        if source_id is None:
+            return ref
+        trace.append({
+            "stage": "analyst", "action": "evidence_reference_canonicalized",
+            "field": field, "material_id": ref, "source_id": source_id,
+        })
+        return source_id
+
+    for component in analysis.coverage:
+        for finding in component.findings:
+            finding.support_refs = [canonicalize(ref, "finding.support_refs")
+                                    for ref in finding.support_refs]
+    analysis.active_evidence_refs = [canonicalize(ref, "active_evidence_refs")
+                                     for ref in analysis.active_evidence_refs]
+
+
 def _validate_analysis(analysis: Analysis, evidence: list[Evidence], trace: list[dict]) -> None:
+    _canonicalize_analysis_references(analysis, evidence, trace)
     known = {item.source_id for item in evidence}
     if any(ref not in known for ref in [*analysis.support_refs, *analysis.active_evidence_refs]):
         raise RunError("analyst", "invalid_evidence_reference", trace)
