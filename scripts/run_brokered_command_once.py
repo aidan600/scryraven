@@ -55,6 +55,10 @@ def _private_configuration_error_code(exc: BrokeredCommandError) -> str:
         return "private_session_missing"
     if message == "environment_file_unavailable":
         return "environment_file_unavailable"
+    if message == "environment_file_read_error":
+        return "environment_file_read_error"
+    if message == "environment_file_decode_error":
+        return "environment_file_decode_error"
     for code in (
         "invalid_environment_assignment", "invalid_environment_name", "invalid_environment_value",
     ):
@@ -501,8 +505,10 @@ def load_private_environment_file(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
     try:
         lines = path.read_text(encoding="utf-8-sig").splitlines()
-    except (OSError, UnicodeDecodeError) as exc:
-        raise BrokeredCommandError("environment_file_unavailable") from exc
+    except OSError as exc:
+        raise BrokeredCommandError("environment_file_read_error") from exc
+    except UnicodeDecodeError as exc:
+        raise BrokeredCommandError("environment_file_decode_error") from exc
     for line_number, line in enumerate(lines, start=1):
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
