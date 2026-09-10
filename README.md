@@ -105,6 +105,13 @@ python scripts/run_brokered_command_once.py --repo-root C:\Users\aidan\ScryRaven
 The doorman owns only secret custody and process plumbing; the product does not
 import it. Keep observation packets outside the repository.
 
+Private-child configuration failures retain status `private_child_configuration_failed`.
+The status file's `safe_error_code` can identify `private_session_missing`,
+`environment_file_unavailable`, `invalid_environment_assignment`,
+`invalid_environment_name`, or `invalid_environment_value`; unrecognized failures
+keep the generic code. These categories expose no parser line numbers, variable
+names, values, or raw exceptions. Parsing and target execution are unchanged.
+
 ```powershell
 python -m pytest -q
 python -m ruff check .

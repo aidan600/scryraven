@@ -45,18 +45,40 @@ _SECRET_NAME_TERMS = (
 
 
 class BrokeredCommandError(ValueError):
-    """Raised for a sanitized configuration failure."""
+    """Internal configuration failure; classify before private-child publication."""
+
+
+def _private_configuration_error_code(exc: BrokeredCommandError) -> str:
+    """Return only fixed categories, never private details or parser line numbers."""
+    message = exc.args[0] if len(exc.args) == 1 and type(exc.args[0]) is str else ""
+    if message == "private_session_missing":
+        return "private_session_missing"
+    if message == "environment_file_unavailable":
+        return "environment_file_unavailable"
+    for code in (
+        "invalid_environment_assignment", "invalid_environment_name", "invalid_environment_value",
+    ):
+        if message == code:
+            return code
+        if message.startswith(code + "_"):
+            suffix = message[len(code) + 1:]
+            if suffix.isascii() and suffix.isdecimal():
+                return code
+    return "private_child_configuration_failed"
 
 
 def main(argv: list[str] | None = None) -> int:
     supplied_argv = list(sys.argv[1:] if argv is None else argv)
+    private_child = False
     try:
         option_argv, target_argv = _split_command(supplied_argv)
-        if "--private-child" in option_argv:
+        private_child = "--private-child" in option_argv
+        if private_child:
             return _private_main(option_argv, target_argv)
         return _parent_main(option_argv, target_argv)
     except BrokeredCommandError as exc:
-        print(f"brokered-command configuration failed: {exc}", file=sys.stderr)
+        code = _private_configuration_error_code(exc) if private_child else str(exc)
+        print(f"brokered-command configuration failed: {code}", file=sys.stderr)
         return CONFIGURATION_EXIT_CODE
 
 
@@ -142,8 +164,6 @@ def _private_main(option_argv: Sequence[str], target_argv: list[str]) -> int:
     args = _private_parser().parse_args(option_argv)
     nonce = os.environ.get(PRIVATE_NONCE_ENV_VAR)
     env_file_path = os.environ.get(PRIVATE_ENV_FILE_PATH_ENV_VAR)
-    if not nonce or not env_file_path:
-        raise BrokeredCommandError("private_session_missing")
     repo_root: Path | None = None
     stdout_path: Path | None = None
     stderr_path: Path | None = None
@@ -159,6 +179,9 @@ def _private_main(option_argv: Sequence[str], target_argv: list[str]) -> int:
             status=args.status,
             replace_output=args.replace_output,
         )
+        # Validate public destinations before reporting a missing private session.
+        if not nonce or not env_file_path:
+            raise BrokeredCommandError("private_session_missing")
         validate_target_argv(target_argv)
         if args.timeout_seconds <= 0:
             raise BrokeredCommandError("timeout_seconds_must_be_positive")
@@ -176,7 +199,7 @@ def _private_main(option_argv: Sequence[str], target_argv: list[str]) -> int:
             timeout_seconds=args.timeout_seconds,
             secret_values=secret_values_for_redaction(parsed_values),
         )
-    except BrokeredCommandError:
+    except BrokeredCommandError as exc:
         if status_path is not None:
             stdout_written = _write_sanitized_text(stdout_path, "")
             stderr_written = _write_sanitized_text(stderr_path, "")
@@ -189,7 +212,7 @@ def _private_main(option_argv: Sequence[str], target_argv: list[str]) -> int:
                 stdout_sanitized_written=stdout_written,
                 stderr_sanitized_written=stderr_written,
                 status="private_child_configuration_failed",
-                safe_error_code="private_child_configuration_failed",
+                safe_error_code=_private_configuration_error_code(exc),
             ):
                 return STATUS_WRITE_FAILURE_EXIT_CODE
         raise
