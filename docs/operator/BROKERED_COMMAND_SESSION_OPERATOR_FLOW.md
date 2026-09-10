@@ -62,6 +62,32 @@ The parent does not receive raw target output. A timeout terminates the target
 process tree and records a structural timeout status. A target launch failure
 records a safe launch-failure status without exposing an operating-system error.
 
+## Environment input failures
+
+Environment loading failures retain exit code 2, status
+`private_child_configuration_failed`, and `target_launch_attempted=false`.
+Only fixed categories cross the private-child boundary; OS error numbers,
+messages, filenames, decoding details, and tracebacks stay private.
+
+| Safe error code | Meaning |
+| --- | --- |
+| `environment_file_not_found_at_read` | The input was not found when the private child tried to read it. |
+| `environment_file_permission_denied` | The operating system denied the private child's read access. |
+| `environment_file_sharing_violation` | Windows reported a sharing or file-lock violation during the read. |
+| `environment_file_other_read_error` | Another operating-system read error occurred. |
+| `environment_file_decode_error` | Text decoding failed under the existing UTF-8-sig requirement. |
+
+The legacy `environment_file_unavailable` and `environment_file_read_error`
+categories remain accepted. Unknown private configuration failures retain the
+generic `private_child_configuration_failed` fallback.
+
+Use harmless synthetic `--repo-env` and public `--env-file` controls to determine
+whether a failure is specific to the private input. If those controls succeed
+but the private input reports `environment_file_permission_denied`, the operator
+must resolve read access for the authorized broker execution identity. The broker
+does not change permissions, elevate privileges, or copy the private file to
+work around a denial. The parent and controlling agent still do not read it.
+
 ## Review boundary
 
 The doorman is a credential-custody boundary, not a general sandbox and not an

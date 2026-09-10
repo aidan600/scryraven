@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -15,6 +16,10 @@ from scripts import run_brokered_command_once as doorman
     ("environment_file_unavailable", "environment_file_unavailable"),
     ("environment_file_read_error", "environment_file_read_error"),
     ("environment_file_decode_error", "environment_file_decode_error"),
+    ("environment_file_not_found_at_read", "environment_file_not_found_at_read"),
+    ("environment_file_permission_denied", "environment_file_permission_denied"),
+    ("environment_file_sharing_violation", "environment_file_sharing_violation"),
+    ("environment_file_other_read_error", "environment_file_other_read_error"),
     ("invalid_environment_assignment", "invalid_environment_assignment"),
     ("invalid_environment_assignment_12", "invalid_environment_assignment"),
     ("invalid_environment_name_3", "invalid_environment_name"),
@@ -26,6 +31,10 @@ from scripts import run_brokered_command_once as doorman
     ("environment_file_unavailable_details", "private_child_configuration_failed"),
     ("environment_file_read_error_73", "private_child_configuration_failed"),
     ("environment_file_decode_error_details", "private_child_configuration_failed"),
+    ("environment_file_not_found_at_read_private.env", "private_child_configuration_failed"),
+    ("environment_file_permission_denied_5", "private_child_configuration_failed"),
+    ("environment_file_sharing_violation_32", "private_child_configuration_failed"),
+    ("environment_file_other_read_error_details", "private_child_configuration_failed"),
     ("unknown failure", "private_child_configuration_failed"),
 ])
 def test_private_error_categories_require_exact_known_structure(message: str, expected: str) -> None:
@@ -43,7 +52,7 @@ def test_private_error_classifier_does_not_stringify_unknown_arguments() -> None
         )
 
 
-@pytest.mark.parametrize("failure", ["missing-file", "unreadable-directory", "missing-session", "missing-nonce", "missing-env-path", "legacy-unavailable", "unknown"])
+@pytest.mark.parametrize("failure", ["missing-file", "unreadable-directory", "missing-session", "missing-nonce", "missing-env-path", "legacy-unavailable", "legacy-read-error", "unknown"])
 def test_private_configuration_status_and_console_are_safe(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], failure: str,
 ) -> None:
@@ -66,10 +75,12 @@ def test_private_configuration_status_and_console_are_safe(
         private_state.pop(doorman.PRIVATE_ENV_FILE_PATH_ENV_VAR)
     monkeypatch.setattr(doorman.os, "environ", private_state)
     secret = "synthetic-unpublishable-value"  # pragma: allowlist secret
-    if failure in {"legacy-unavailable", "unknown"}:
+    if failure in {"legacy-unavailable", "legacy-read-error", "unknown"}:
         def fail(_path: Path) -> dict[str, str]:
             if failure == "legacy-unavailable":
                 raise doorman.BrokeredCommandError("environment_file_unavailable")
+            if failure == "legacy-read-error":
+                raise doorman.BrokeredCommandError("environment_file_read_error")
             raise doorman.BrokeredCommandError(f"unknown failure: {secret}; PRIVATE_NAME; line 991")
         monkeypatch.setattr(doorman, "load_private_environment_file", fail)
 
@@ -90,7 +101,10 @@ def test_private_configuration_status_and_console_are_safe(
         "private_session_missing" if failure.startswith("missing-") and failure != "missing-file"
         else "private_child_configuration_failed" if failure == "unknown"
         else "environment_file_unavailable" if failure == "legacy-unavailable"
-        else "environment_file_read_error"
+        else "environment_file_read_error" if failure == "legacy-read-error"
+        else "environment_file_not_found_at_read" if failure == "missing-file"
+        else "environment_file_permission_denied" if os.name == "nt"
+        else "environment_file_other_read_error"
     )
     assert result == doorman.CONFIGURATION_EXIT_CODE
     assert json.loads(paths["status"].read_text(encoding="utf-8")) == {
@@ -112,9 +126,18 @@ def test_private_configuration_status_and_console_are_safe(
         assert "Traceback" not in text
 
 
-@pytest.mark.parametrize("failure", ["decode", "read"])
+@pytest.mark.parametrize(("failure", "expected"), [
+    ("decode", "environment_file_decode_error"),
+    ("read", "environment_file_other_read_error"),
+    ("not-found", "environment_file_not_found_at_read"),
+    ("permission", "environment_file_permission_denied"),
+    ("sharing", "environment_file_sharing_violation"),
+    ("lock", "environment_file_sharing_violation"),
+    ("permission-with-other-winerror", "environment_file_permission_denied"),
+])
 def test_private_environment_input_failure_has_only_fixed_diagnostics(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], failure: str,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    failure: str, expected: str,
 ) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -125,8 +148,15 @@ def test_private_environment_input_failure_has_only_fixed_diagnostics(
     private_value = "synthetic-unpublishable-input-value"  # pragma: allowlist secret
     contents = f"{private_name}={private_value}\n".encode("utf-8")
     private_path.write_bytes(contents + (b"\xff\xfe\n" if failure == "decode" else b""))
-    read_error = OSError(73, f"synthetic-read-detail {private_name}={private_value}", str(private_path))
-    if failure == "read":
+    error_type = (
+        FileNotFoundError if failure == "not-found"
+        else PermissionError if failure in {"permission", "sharing", "lock", "permission-with-other-winerror"}
+        else OSError
+    )
+    read_error = error_type(73, f"synthetic-read-detail {private_name}={private_value}", str(private_path))
+    if failure in {"sharing", "lock", "permission-with-other-winerror"}:
+        read_error.winerror = {"sharing": 32, "lock": 33, "permission-with-other-winerror": 5}[failure]
+    if failure != "decode":
         original_read_text = Path.read_text
 
         def fail_private_read(path: Path, *args: object, **kwargs: object) -> str:
@@ -154,7 +184,6 @@ def test_private_environment_input_failure_has_only_fixed_diagnostics(
         "--status", str(paths["status"]), "--timeout-seconds", "1",
         "--", sys.executable, "-c", "pass",
     ])
-    expected = f"environment_file_{failure}_error"
     assert result == doorman.CONFIGURATION_EXIT_CODE == 2
     assert json.loads(paths["status"].read_text(encoding="utf-8")) == {
         "schema_version": doorman.STATUS_SCHEMA_VERSION,
@@ -171,7 +200,8 @@ def test_private_environment_input_failure_has_only_fixed_diagnostics(
         for forbidden in (
             private_name, private_value, private_path.name, str(private_path),
             str(read_error), "synthetic-read-detail", "73", str(len(contents)),
-            "OSError", "UnicodeDecodeError", "Traceback", "utf-8", "position", "offset",
+            "OSError", "FileNotFoundError", "PermissionError", "UnicodeDecodeError", "Traceback",
+            "32", "33", "winerror", "errno", "utf-8", "position", "offset",
             "0xff", "0xfe", "\\xff", "\\xfe", "\ufffd", "invalid start byte",
         ):
             assert forbidden not in text
