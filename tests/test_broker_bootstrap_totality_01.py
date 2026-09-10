@@ -6,6 +6,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 from scripts import run_brokered_command_once as doorman
 
 
@@ -106,18 +108,26 @@ def test_timeout_has_structural_status_without_raw_material(
     assert status["stderr_sanitized_written"] is True
 
 
+@pytest.mark.parametrize(("malformed", "code"), [
+    ("not dotenv syntax", "invalid_environment_assignment"),
+    ("invalid-name=value", "invalid_environment_name"),
+    ('NORMAL="unterminated', "invalid_environment_value"),
+], ids=["assignment", "name", "quoted-value"])
 def test_private_child_configuration_failure_has_safe_status(
-    tmp_path: Path,
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], malformed: str, code: str,
 ) -> None:
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
     external_root = tmp_path / "external"
     external_root.mkdir()
     status_path = external_root / "broker.status.json"
+    secret = "synthetic-config-private-value"  # pragma: allowlist secret
+    # Fail on line 12, after an otherwise valid synthetic secret assignment.
+    contents = f"API_KEY={secret}\n" + "# synthetic padding\n" * 10 + malformed + "\n"
 
     result = _run(
         repo_root=repo_root,
-        env_file=_write_env(tmp_path / "synthetic.env", "not dotenv syntax\n"),
+        env_file=_write_env(tmp_path / "synthetic.env", contents),
         external_root=external_root,
         command=[sys.executable, "-c", "pass"],
         status=status_path,
@@ -126,6 +136,20 @@ def test_private_child_configuration_failure_has_safe_status(
     assert result == doorman.CONFIGURATION_EXIT_CODE
     status = json.loads(status_path.read_text(encoding="utf-8"))
     assert status["status"] == "private_child_configuration_failed"
-    assert status["safe_error_code"] == "private_child_configuration_failed"
+    assert status["safe_error_code"] == code
     assert status["target_launch_attempted"] is False
     assert status["target_launch_succeeded"] is False
+    assert status["target_exit_code"] is None
+    assert status["stdout_sanitized_written"] is True
+    assert status["stderr_sanitized_written"] is True
+    captured = capsys.readouterr()
+    outputs = [status_path.read_text(encoding="utf-8"), captured.out, captured.err]
+    for name in ("broker.stdout.txt", "broker.stderr.txt"):
+        text = (external_root / name).read_text(encoding="utf-8")
+        assert text == ""
+        outputs.append(text)
+    for text in outputs:
+        assert secret not in text
+        assert "API_KEY" not in text
+        assert malformed not in text
+        assert "_12" not in text
