@@ -51,10 +51,14 @@ class BrokeredCommandError(ValueError):
 def _private_configuration_error_code(exc: BrokeredCommandError) -> str:
     """Return only fixed categories, never private details or parser line numbers."""
     message = exc.args[0] if len(exc.args) == 1 and type(exc.args[0]) is str else ""
-    if message == "private_session_missing":
-        return "private_session_missing"
-    if message == "environment_file_unavailable":
-        return "environment_file_unavailable"
+    for code in (
+        "private_session_missing", "environment_file_unavailable",
+        "environment_file_read_error", "environment_file_decode_error",
+        "environment_file_not_found_at_read", "environment_file_permission_denied",
+        "environment_file_sharing_violation", "environment_file_other_read_error",
+    ):
+        if message == code:
+            return code
     for code in (
         "invalid_environment_assignment", "invalid_environment_name", "invalid_environment_value",
     ):
@@ -495,14 +499,28 @@ def private_child_environment(
     return env
 
 
+def _private_environment_read_error_code(exc: OSError) -> str:
+    """Classify privately; never publish OS codes, messages, or filenames."""
+    # Windows sharing/lock violations can also surface as PermissionError.
+    if getattr(exc, "winerror", None) in (32, 33):
+        return "environment_file_sharing_violation"
+    if isinstance(exc, FileNotFoundError):
+        return "environment_file_not_found_at_read"
+    if isinstance(exc, PermissionError):
+        return "environment_file_permission_denied"
+    return "environment_file_other_read_error"
+
+
 def load_private_environment_file(path: Path) -> dict[str, str]:
     """Parse simple dotenv assignments inside the private child only."""
 
     values: dict[str, str] = {}
     try:
         lines = path.read_text(encoding="utf-8-sig").splitlines()
-    except (OSError, UnicodeDecodeError) as exc:
-        raise BrokeredCommandError("environment_file_unavailable") from exc
+    except OSError as exc:
+        raise BrokeredCommandError(_private_environment_read_error_code(exc)) from exc
+    except UnicodeDecodeError as exc:
+        raise BrokeredCommandError("environment_file_decode_error") from exc
     for line_number, line in enumerate(lines, start=1):
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
