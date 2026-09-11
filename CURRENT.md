@@ -1,12 +1,12 @@
 # ScryRaven Current Truth
 
-Status: adaptive presentation initial controls observed; in-scope SLAC presentation repair awaiting its bounded rerun
+Status: compact citations and evidence inspection demonstrated; complex-answer readability outcome not met in full
 Repository: aidan600/scryraven
 Preferred local checkout: C:\Users\aidan\ScryRaven
 
 ## Active product path
 
-Author now chooses depth and structure from the actual question and Analyst's
+Author is instructed to choose depth and structure from the actual question and Analyst's
 support envelope, preserving material qualifications without dumping every finding
 or imposing a template. Citation validation retains its existing grammar and
 failure behavior. Validated uses receive deterministic numbers in order of first
@@ -20,15 +20,8 @@ link. Source text stays escaped; raw model HTML is disabled. The tiny fixed scri
 opens a disclosure when its citation is followed. The page loads no remote assets.
 Extracted-text offsets are not treated as original PDF pages or precise proof
 locations. No session, server, persistence service or frontend build stack exists.
-Both fixed controls reached supported answers and passed citation validation at
-`ad53eacad77bf09cfa0bb0409893033d38ed5a6b`. SI was a single short paragraph. SLAC's
-first answer packed several topics into long paragraphs, repeated CUI training,
-and broadened a specific learning-dataset copyright prerequisite. One in-scope
-Author refinement now emphasizes scannable topical groups, combining overlapping
-findings, and preserving a condition's action, object and required standard.
 Missing PDF titles receive a clearly labeled filename instead of a repeated URL;
-no title is generated from evidence text. The SLAC rerun remains pending. These
-observations do not establish improved Research reliability.
+no title is generated from evidence text.
 
 Exactly Research -> Analyst -> Author retain semantic authority. FAST and SMART
 remain gpt-5.6-luna / medium. The ordinary CLI uses one fixed acquisition policy:
@@ -62,6 +55,48 @@ date cannot invent an as-of requirement for an otherwise applicable standing rul
 The existing three-Analyst/six-navigation bounds and earned 2+2 search rounds remain.
 No general provider router, alternate-provider fallback, persistent corpus, vector
 DB, crawler, general RAG, calculation work or next capability was introduced.
+
+## Adaptive presentation evidence and remaining limit
+
+The bounded presentation outcome is not met in full. The SI control is one short
+paragraph; numeric references, original-source links and exact selected material
+disclosures work for both controls. SLAC remains difficult to scan, with long
+multi-topic paragraphs and an extensive inline tool inventory. Its final paragraph
+combines autonomy, network-aware models, uncertainty, reporting, exceptions and
+enforcement. Absence of headings alone is not the failure; the information has not
+been organized to make this complex answer readily usable.
+
+| Observation | Runtime revision | Responses | Search / Contents | Posture / citation validation |
+| --- | --- | --- | --- | --- |
+| Initial SLAC | `ad53eacad77bf09cfa0bb0409893033d38ed5a6b` | 11 | 1 / 2 | supported / resolved |
+| Final SI control | `ad53eacad77bf09cfa0bb0409893033d38ed5a6b` | 5 | 1 / 0 | supported / resolved |
+| Final SLAC after one repair | `226f1238d8c8e41a5ac179ec68a892ca5ece5afc` | 8 | 1 / 2 | supported / resolved |
+
+Initial SLAC used five paragraphs and broadened a specific learning-dataset
+copyright prerequisite. One Author refinement emphasized topical organization,
+combining overlapping findings, and preserving a condition's action, object and
+required standard. The final answer retained the dataset prerequisite but still
+used five dense paragraphs. Evidence selection and Analyst coverage also varied
+between runs; no causal or Research-reliability improvement is claimed. A wording
+loss was already present in final Analyst coverage: the source's example of
+submitting pull requests became submitting requests, which Author carried forward.
+No Research, Analyst, acquisition or transport changes were made to address it.
+
+Final SLAC cites three canonical sources with five exact selected material items
+(35,616 characters); the policy PDF and SLAC AI page each group highlights with
+fuller text. Final SI cites one BIPM source with 411 selected characters. Export
+checks and offline browser inspection verified exact material, source grouping,
+original URLs, citation open/reopen/focus and mobile layout. No PDF page or precise
+proof-passage anchors were invented. Final code passed 206 tests, Ruff and all
+pre-commit hooks. SI was not repeated after the complex-presentation refinement;
+the missing-title fallback is covered offline because the rerun supplied a title.
+
+The approved hash-checked broker block used 3/4 PRODUCT runs, 24/50 Responses calls,
+7/16 Exa calls (3 Search, 4 Contents) and 0 independent source checks. SLAC has used
+its one permitted repair rerun. The wrapper remained unchanged and all public
+answer, view and evidence artifacts passed through broker output sanitization.
+The external review packet is `C:\tmp\scryraven-adaptive-answer-presentation-01`.
+Publication and PR creation are held for human review of the unmet outcome.
 
 ## Provider decision and removal
 
@@ -155,10 +190,10 @@ revision mapping and the final review bundle are outside the repository under
 `C:\tmp\scryraven-linkup-exa-bakeoff-01`. PRODUCT.md received only the earned
 refinement distinguishing navigation metadata from sufficient received source text.
 
-Starting clean main/origin/main was `cb6a68c0410e9506285fdb7a1c37a560c1cbc33a`.
-Work branch: `codex/linkup-exa-bakeoff-01`. Both inspected donor branches remain
-unchanged: `codex/targeted-source-reading-01` at
-`f69198553f0b9740e365c0842afe6bcfdd1bf913` and
-`codex/evidence-escalation-01` at `01c787346634660f9c595774fdfab1e48772259c`.
-They were neither merged nor wholesale cherry-picked. Publication is one review
-surface; merge authority remains with the human.
+The presentation work started from clean main at
+`eff06bef008c5164aeae787bd31e0aab304b9f71` and uses
+`codex/adaptive-answer-presentation-01`. Main has not been altered. The phase is
+unpublished and no PR has been opened; the final runtime is
+`226f1238d8c8e41a5ac179ec68a892ca5ece5afc`. Later factual documentation does not
+change that tested runtime. Human review controls publication and any further
+work; merge authority remains with the human.
