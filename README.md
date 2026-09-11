@@ -79,6 +79,8 @@ not decide meaning or mechanically check paraphrase.
 Citations receive stable numbers in order of first validated use, reusing the same
 number for the same canonical source. Source titles appear once in the CLI source
 list and in the local view's disclosures, rather than repeatedly in answer prose.
+When source-title metadata is absent, a PDF's filename is labeled as a publication
+file; other sources use their hostname. No title is generated from evidence text.
 The view groups exact `result.selected_evidence` items under each cited source;
 it neither regenerates excerpts nor presents unselected material. This is
 source-level support, not a claim-to-sentence proof map. Extracted-text slice

@@ -1,6 +1,6 @@
 # ScryRaven Current Truth
 
-Status: adaptive answer and evidence presentation implemented; bounded live presentation validation pending
+Status: adaptive presentation initial controls observed; in-scope SLAC presentation repair awaiting its bounded rerun
 Repository: aidan600/scryraven
 Preferred local checkout: C:\Users\aidan\ScryRaven
 
@@ -20,9 +20,15 @@ link. Source text stays escaped; raw model HTML is disabled. The tiny fixed scri
 opens a disclosure when its citation is followed. The page loads no remote assets.
 Extracted-text offsets are not treated as original PDF pages or precise proof
 locations. No session, server, persistence service or frontend build stack exists.
-Offline presentation and surviving application checks pass; the fixed SLAC and
-SI-prefix questions have not yet been run on this implementation. This is not a
-claim of improved Research reliability.
+Both fixed controls reached supported answers and passed citation validation at
+`ad53eacad77bf09cfa0bb0409893033d38ed5a6b`. SI was a single short paragraph. SLAC's
+first answer packed several topics into long paragraphs, repeated CUI training,
+and broadened a specific learning-dataset copyright prerequisite. One in-scope
+Author refinement now emphasizes scannable topical groups, combining overlapping
+findings, and preserving a condition's action, object and required standard.
+Missing PDF titles receive a clearly labeled filename instead of a repeated URL;
+no title is generated from evidence text. The SLAC rerun remains pending. These
+observations do not establish improved Research reliability.
 
 Exactly Research -> Analyst -> Author retain semantic authority. FAST and SMART
 remain gpt-5.6-luna / medium. The ordinary CLI uses one fixed acquisition policy:

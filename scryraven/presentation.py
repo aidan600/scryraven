@@ -7,7 +7,7 @@ import hashlib
 from dataclasses import dataclass
 from html import escape
 from typing import TYPE_CHECKING
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 from markdown_it import MarkdownIt
 
@@ -35,9 +35,24 @@ class CitationUse:
     end: int
 
 
+def _source_label(citation: Citation) -> str:
+    if title := " ".join(citation.title.split()):
+        return title
+    # Missing display metadata does not license generating a publication title
+    # from source content. Label the URL's filename as a filename instead.
+    try:
+        parsed = urlsplit(citation.url)
+    except ValueError:
+        return "Untitled source"
+    filename = unquote(parsed.path.rsplit("/", 1)[-1])
+    if filename.lower().endswith(".pdf"):
+        return "Publication file: " + " ".join(filename.replace("_", " ").split())
+    return parsed.hostname or "Untitled source"
+
+
 def render_cli(result: Result) -> str:
     sources = "\n".join(
-        f"[{item.number}] {' '.join(item.title.split()) or item.url}\n    {item.url}"
+        f"[{item.number}] {_source_label(item)}\n    {item.url}"
         for item in result.citations
     )
     return result.answer + ("\n\nSources\n" + sources if sources else "")
@@ -91,7 +106,7 @@ def _source_html(citation: Citation) -> str:
     return (
         f'<details id="source-{citation.number}">'
         f'<summary><span class="source-number">[{citation.number}]</span> '
-        f'{escape(citation.title or citation.url)}</summary>'
+        f'{escape(_source_label(citation))}</summary>'
         '<div class="source-body">' + _source_link(citation.url)
         + '<h2>Material ScryRaven used from this source</h2>'
         '<p class="scope">The citation refers to this source and its selected material, '

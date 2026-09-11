@@ -153,6 +153,25 @@ def test_source_url_attribute_is_escaped_and_original_url_remains_accessible():
     assert len([tag for tag, attrs in page.tags if tag == "script"]) == 1
 
 
+@pytest.mark.parametrize("url,expected", [
+    ("https://example.test/2025/Acceptable_Use%20Policy.pdf", "Publication file: Acceptable Use Policy.pdf"),
+    ("https://example.test/", "example.test"),
+    ("https://example.test/%3Cscript%3Eevil%3C%2Fscript%3E.pdf", "Publication file: <script>evil</script>.pdf"),
+])
+def test_missing_title_uses_honest_escaped_url_metadata_without_repeating_the_url(url, expected):
+    result = answer(title=" ")
+    citation = replace(result.citations[0], url=url)
+    result = replace(result, citations=(citation,))
+    cli_text = render_cli(result)
+    assert f"[1] {expected}\n" in cli_text
+    assert cli_text.count(url) == 1
+    page = Page(render_html(QUESTION, result))
+    assert expected in "".join(page.text)
+    assert [a["href"] for tag, a in page.tags if tag == "a"] == ["#source-1", url]
+    assert len([tag for tag, attrs in page.tags if tag == "script"]) == 1
+    assert citation.title == " " and citation.materials == result.selected_evidence
+
+
 def test_cli_writes_local_view_and_keeps_diagnostics_out_of_ordinary_output(monkeypatch, capsys, tmp_path):
     result = answer()
     monkeypatch.setattr(cli, "run", lambda question: result)
