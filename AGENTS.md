@@ -363,6 +363,11 @@ Do not use aftercare to:
 
 ## 15. Evaluation evidence preservation
 
+When capturing, adjudicating, selecting, or otherwise using local evaluation
+evidence, follow `docs/operator/LOCAL_EVALUATION_CORPUS.md` for the corpus
+location, privacy boundary, case structure, lifecycle, and reserved/development
+rules.
+
 When an authorized PRODUCT observation, model lab, regression investigation, or
 other evaluation reveals a useful material failure, minor diagnostic failure,
 difficult clean control, or partial/unable boundary case, preserve a sanitized
