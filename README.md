@@ -28,11 +28,6 @@ opens the source's selected material; each source also links to the original
 publication. Source disclosures can be opened directly without JavaScript.
 No server, account, hosted deployment or saved session is required.
 
-Author scales the answer's structure to the question: a simple fact normally needs
-one short paragraph, while a complex answer may benefit from descriptive headings,
-lists or a compact table. It selects relevant findings from Analyst's support
-envelope while preserving material qualifications and unresolved limitations.
-
 The process needs `OPENAI_API_KEY` and `EXA_API_KEY`. The product does not load
 `.env`. Optional independent role configuration:
 

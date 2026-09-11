@@ -1,199 +1,93 @@
 # ScryRaven Current Truth
 
-Status: compact citations and evidence inspection demonstrated; complex-answer readability outcome not met in full
+Status: compact citations and inspection of selected Evidence are implemented and
+demonstrated. The semantic product path remains Research -> Analyst -> Author.
 Repository: aidan600/scryraven
 Preferred local checkout: C:\Users\aidan\ScryRaven
 
 ## Active product path
 
-Author is instructed to choose depth and structure from the actual question and Analyst's
-support envelope, preserving material qualifications without dumping every finding
-or imposing a template. Citation validation retains its existing grammar and
-failure behavior. Validated uses receive deterministic numbers in order of first
-use, reused by canonical source. Result citations group the exact selected Evidence
-items already supplied to Author. No Author citation retry was added.
+Exactly Research, Analyst, and Author retain semantic authority. Research directs
+public-web acquisition toward the question; Analyst interprets support,
+qualifications, conflicts, and unresolved gaps; Author writes from Analyst findings
+and supplied supporting material. FAST and SMART remain internal role labels, both
+configured by default as gpt-5.6-luna / medium. There is no user-facing
+Fast/Balanced/Deep mode, generalized model/provider routing, or alternate-provider
+fallback.
 
-The ordinary CLI prints a numeric answer and one source list. `--html PATH` also
-saves a self-contained local view: question, answer, compact citation links and
-native source disclosures with exact selected material and an original publication
-link. Source text stays escaped; raw model HTML is disabled. The tiny fixed script
-opens a disclosure when its citation is followed. The page loads no remote assets.
-Extracted-text offsets are not treated as original PDF pages or precise proof
-locations. No session, server, persistence service or frontend build stack exists.
-Missing PDF titles receive a clearly labeled filename instead of a repeated URL;
-no title is generated from evidence text.
+The ordinary CLI uses one fixed acquisition policy: Exa Search with query-guided
+extractive highlights, Research selection of actual material, Analyst
+interpretation, and Author writing from supported findings and supporting context.
+Search metadata is navigation. A concrete missing-context need can trigger Exa
+Contents full text with full verbosity and a fresh crawl. Provider-returned text
+may establish a claim when the received text supplies the material context; generated
+summaries and answers are excluded. Source selection and sufficiency remain semantic
+judgments, not transport verdicts.
 
-Exactly Research -> Analyst -> Author retain semantic authority. FAST and SMART
-remain gpt-5.6-luna / medium. The ordinary CLI uses one fixed acquisition policy:
-Exa Search with query-guided extractive highlights, Research selection of actual
-material, Analyst interpretation, and Author writing from supported findings and
-supporting context. Search metadata is navigation. Missing material context can
-trigger Exa Contents full text, using full verbosity and a fresh crawl.
+Successful full-text acquisition is retained once per exact URL for the run. Bodies
+up to 32,000 characters are exposed directly; larger bodies use exact extracted
+packets up to 32,000 characters, with one optional 48,000-character expansion for a
+concrete gap. Packet bounds describe received extraction, not original-document
+pages or locations. Same-URL material versions share one source identity.
 
-Provider-returned text may establish a claim without another acquisition. Exa's
-extractive contract does not promise completeness, contiguous passages, perfect
-parsing or independent corroboration. Generated summaries/answers are excluded.
-Same-URL material versions share source identity. Source selection and sufficiency
-remain semantic judgments, not transport verdicts.
+Research retains its existing bounds: up to three Analyst assessments, up to six
+navigation actions before each assessment, and an earned second two-call search round
+for a specific unresolved same-need gap. Those limits are operational ceilings, not
+semantic sufficiency rules.
 
-Successful full-text acquisitions are retained once per exact URL within the run.
-Bodies up to 32,000 characters are exposed directly. Larger sources produce one
-mechanical packet of exact slices up to 32,000 characters, with one optional
-48,000-character expansion for a concrete gap. Bounds identify slices of the
-received extraction, not original page offsets. There is no interactive document
-map or find/read conversation. Packet sizes are provisional economics choices.
+## Citations and selected-Evidence inspection
 
-Analyst explicitly owns faithful paraphrase of numbers, units, ranges, definitions,
-conditions/exceptions, time scope, comparison baselines, epistemic/modal language
-and causal strength. Author receives the same supporting context and must preserve
-that meaning. An experimental exact-quote handoff repeatedly blocked IPCC before
-an answer and was removed with its exclusive tests; no quote schema, quote gate,
-domain dictionary, deterministic semantic checker or fourth owner remains.
+Author still emits validated evidence aliases. Deterministic mechanics reject
+malformed, unknown, and unselected aliases, and supported answers still require
+valid citation use. After validation, citations receive compact numbers in order of
+first use of their canonical source; every later use of that source reuses its
+number. Full publication titles no longer interrupt answer prose.
 
-Research must infer temporal requirements from the original question. The operating
-date cannot invent an as-of requirement for an otherwise applicable standing rule.
-The existing three-Analyst/six-navigation bounds and earned 2+2 search rounds remain.
-No general provider router, alternate-provider fallback, persistent corpus, vector
-DB, crawler, general RAG, calculation work or next capability was introduced.
+The ordinary CLI prints the numeric answer followed by one compact source list.
+`--html PATH` writes a self-contained local view with compact citation links. Each
+source disclosure shows the source title, its original public URL, and the exact
+selected Evidence items grouped under that canonical source. A missing title falls
+back only to clearly labeled URL metadata (a PDF filename or hostname), never to a
+generated title or source-text guess.
 
-## Adaptive presentation evidence and remaining limit
+The disclosure says that it is material ScryRaven used from the source. It is
+source-level support context, not a sentence-level proof map. Extracted-text offsets
+are never shown as PDF pages, sections, byte offsets, or precise proof passages.
+Question, model, and source text are escaped; raw model HTML is disabled; the view
+uses fixed local assets protected by a content security policy and loads no remote
+resources. Disclosures remain usable without JavaScript.
 
-The bounded presentation outcome is not met in full. The SI control is one short
-paragraph; numeric references, original-source links and exact selected material
-disclosures work for both controls. SLAC remains difficult to scan, with long
-multi-topic paragraphs and an extensive inline tool inventory. Its final paragraph
-combines autonomy, network-aware models, uncertainty, reporting, exceptions and
-enforcement. Absence of headings alone is not the failure; the information has not
-been organized to make this complex answer readily usable.
+## Demonstrated product frontier
 
-| Observation | Runtime revision | Responses | Search / Contents | Posture / citation validation |
-| --- | --- | --- | --- | --- |
-| Initial SLAC | `ad53eacad77bf09cfa0bb0409893033d38ed5a6b` | 11 | 1 / 2 | supported / resolved |
-| Final SI control | `ad53eacad77bf09cfa0bb0409893033d38ed5a6b` | 5 | 1 / 0 | supported / resolved |
-| Final SLAC after one repair | `226f1238d8c8e41a5ac179ec68a892ca5ece5afc` | 8 | 1 / 2 | supported / resolved |
+The fixed Exa path has ordinary-product evidence for Bowling, IPCC Chapter 2, NIST
+FIPS 197, and Saturn. Bowling, IPCC, and NIST reached supported answers with the
+material qualifications preserved. Saturn remained partial: the NASA/JPL, MPC, and
+IAU chronology supported the substantive answer but did not establish the requested
+September snapshot. That limitation remains explicit rather than being upgraded into
+certainty.
 
-Initial SLAC used five paragraphs and broadened a specific learning-dataset
-copyright prerequisite. One Author refinement emphasized topical organization,
-combining overlapping findings, and preserving a condition's action, object and
-required standard. The final answer retained the dataset prerequisite but still
-used five dense paragraphs. Evidence selection and Analyst coverage also varied
-between runs; no causal or Research-reliability improvement is claimed. A wording
-loss was already present in final Analyst coverage: the source's example of
-submitting pull requests became submitting requests, which Author carried forward.
-No Research, Analyst, acquisition or transport changes were made to address it.
+Ordinary presentation controls demonstrated the retained behavior on a short BIPM
+SI-prefix answer and on a complex SLAC workplace-AI-policy answer. They showed
+stable numeric references, original-publication links, grouped exact selected
+material, and source-safe local rendering. The complex SLAC answer did not establish
+a general improvement in dense-policy readability or semantic paraphrase fidelity.
+Closure cleanup leaves the already observed citation and disclosure mechanics
+unchanged, so it does not require another live PRODUCT run.
 
-Final SLAC cites three canonical sources with five exact selected material items
-(35,616 characters); the policy PDF and SLAC AI page each group highlights with
-fuller text. Final SI cites one BIPM source with 411 selected characters. Export
-checks and offline browser inspection verified exact material, source grouping,
-original URLs, citation open/reopen/focus and mobile layout. No PDF page or precise
-proof-passage anchors were invented. Final code passed 206 tests, Ruff and all
-pre-commit hooks. SI was not repeated after the complex-presentation refinement;
-the missing-title fallback is covered offline because the rerun supplied a title.
+## Current boundaries and limitations
 
-The approved hash-checked broker block used 3/4 PRODUCT runs, 24/50 Responses calls,
-7/16 Exa calls (3 Search, 4 Contents) and 0 independent source checks. SLAC has used
-its one permitted repair rerun. The wrapper remained unchanged and all public
-answer, view and evidence artifacts passed through broker output sanitization.
-The external review packet is `C:\tmp\scryraven-adaptive-answer-presentation-01`.
-Publication and PR creation are held for human review of the unmet outcome.
+Citation identity validation is not semantic entailment or fact checking. Analyst
+and Author paraphrase remains probabilistic: modal force, scope, qualifications, or
+other meaning can still mutate, particularly in dense policy material. Research can
+also omit relevant evidence before Analyst sees it. Displayed selected Evidence is
+honest, inspectable source-level context, not a guarantee that one displayed span
+proves every nearby sentence.
 
-## Provider decision and removal
+No fourth semantic owner, intermediary semantic representation, semantic verifier or
+Reviewer, or post-Author remediation loop is present.
+There is no persistent corpus, vector database, crawler, general RAG, calculation
+system, session, server, or frontend build stack.
 
-The comparison used 11 Linkup Standard/searchResults and 13 Exa Search/Contents
-calls, without OpenAI model calls, across bowling, IPCC Chapter 2, NIST FIPS 197
-and Saturn. Exa's first matched Search found sufficient official material for the
-three primary controls. For IPCC, the chapter estimate/rate and Figure 2.11 caption
-together supplied the interval's very-likely qualification without a full chapter.
-
-Linkup received a substantive trial of its actual content. Known-URL Standard
-material established USBC and NIST details without Fetch; a caption-targeted call
-recovered IPCC's 90% / very likely wording. Its initial Saturn result preserved
-dates better than initial Exa highlights. Linkup is not intrinsically inadequate,
-and known-URL controls are not evidence of self-discovered complete task paths.
-
-Exa only earned the fixed product role from this bounded comparison and final
-ordinary controls. Separate Contents/highlights did not reliably recover missing
-context and was not implemented. The dual-provider sequence did not earn its
-additional surface. Linkup runtime, callers, exclusive tests and current config
-were removed; other providers are not retained dormant. The credential broker was
-unchanged, and EXA_API_KEY was confirmed configured by a presence-only canary.
-
-## Ordinary PRODUCT evidence
-
-Final runtime: `0cac09f7fd1bab4c0eecbb14cb7bfe86781684e4`.
-All four final controls exercised the unchanged ordinary module entrypoint, real
-Exa acquisition and Luna/medium Research, Analyst and Author. An external operator
-wrapper counted requests and recorded numeric metrics without supplying evidence,
-changing responses or performing missing product work.
-
-| Final control | Search / Contents | Research / Analyst / Author | Selected material chars | Repeated body chars to models | Result |
-| --- | --- | --- | --- | --- | --- |
-| Bowling | 1 / 0 | 3 / 1 / 1 | 2,318 | 4,636 | Supported: USBC 16.00-pound maximum. |
-| IPCC | 1 / 0 | 3 / 1 / 1 | 5,449 | 10,898 | Supported: Chapter 2, 1.09°C, 0.95–1.20°C very likely range, recent 50-year rate unprecedented in at least 2,000 years (high confidence). |
-| NIST | 1 / 0 | 3 / 1 / 1 | 5,255 | 11,546 | Supported: 128-bit blocks, 10/12/14 rounds, no technical algorithm change in the 2023 editorial update. |
-| Saturn | 2 / 2 | 8 / 3 / 1 | 57,809 | 215,054 | Partial: NASA/JPL 293, MPC March 2025 274, IAU March 26, 2026 285; September cutoff remains qualified. |
-
-IPCC's source, Analyst and Author all retained **very likely** and **high confidence**
-with their proper claims. The 90% numeral was not in the selected final packet and
-was not invented. No full IPCC chapter, USBC manual or NIST PDF was fetched in the
-final primary controls. The exact-quote mechanism is absent from this tested runtime.
-
-Saturn used the same NASA/JPL + IAU quality of aggregate evidence as PR #627 and
-added the MPC's March 2025 chronology. It did not certify a September 8 snapshot or
-reconstruct every intervening addition. Analyst unnecessarily pursued the eight
-individual additions and exact-date confirmation. Posture was partial rather than
-PR #627's supported-with-qualifications; the answer preserved the substantive
-chronology and currentness limitation. A JPL legacy 2023 footer and NASA's stale
-274 table heading remained explicit conflicts. These are not resolved by metadata.
-
-Saturn fetched 48,696 JPL and 36,154 NASA characters, exposing initial exact packets
-of 29,457 and 16,682. Research selected 16,432 of the latter. Neither full parent
-went to the models; no expansion was used. Against PR #627, full acquisition fell
-168,766 -> 84,850 characters and repeated model body input fell 734,802 -> 215,054.
-Searches rose 1 -> 2, Contents/Fetch fell 6 -> 2, and model calls stayed at 12.
-
-Across the four final controls, provider spend was $0.037, with 27 model calls,
-242,134 repeated body characters and another 136,084 discovery-material characters
-submitted to models. Timings were approximately 16 / 29 / 22 / 101 seconds for
-bowling / IPCC / NIST / Saturn. Model dollar cost was not inferred from these proxies.
-
-## Verification, limits and handoff evidence
-
-## Large-source evidence identity fix
-
-Targeted views retain exact material IDs while sharing their canonical
-`Evidence.source_id`. At the Analyst boundary, only exact submitted material IDs
-are mechanically mapped to their existing source IDs; unknown or unsubmitted
-references remain rejected. Author still receives the selected exact views, and
-citations resolve through the canonical source publication. The live Q13 RFC 8446
-rerun reached Author and passed independent review; the RFC 9110 large-source
-regression also reached Author and passed. No Exa, search, prompt, packet-ranking,
-or semantic-owner behavior changed.
-
-Full pytest passed 131 tests using a fresh external temporary directory; focused
-transport, source-packet and ordinary-application checks, Ruff and AST/import checks
-passed. Offline fixtures verify mechanical promises, not semantic reliability.
-Broader discussion sufficiency and the optional expansion remain offline-only
-demonstrations. Provider variance, parser omissions and model judgment can still
-fail outside the observed cases. No universal provider superiority is claimed.
-
-The finite phase used 8/8 PRODUCT invocations, 48/80 Responses calls, 13/24 retained
-provider calls (10 Search, 3 Contents), no secondary provider, and 4/4 independent
-source-review attempts. The IPCC direct-page review attempt returned HTTP 403;
-USBC, NIST and JPL were independently read. Earlier failures remain failures: one
-bowling scope/structural-handoff failure and two IPCC quote-gate failures. They are
-not final-runtime successes or evidence of a retrieval-provider semantic error.
-
-Sanitized comparisons, exact selected material, answers, traces, request ledgers,
-revision mapping and the final review bundle are outside the repository under
-`C:\tmp\scryraven-linkup-exa-bakeoff-01`. PRODUCT.md received only the earned
-refinement distinguishing navigation metadata from sufficient received source text.
-
-The presentation work started from clean main at
-`eff06bef008c5164aeae787bd31e0aab304b9f71` and uses
-`codex/adaptive-answer-presentation-01`. Main has not been altered. The phase is
-unpublished and no PR has been opened; the final runtime is
-`226f1238d8c8e41a5ac179ec68a892ca5ece5afc`. Later factual documentation does not
-change that tested runtime. Human review controls publication and any further
-work; merge authority remains with the human.
+Offline fixtures exercise deterministic mechanics and rendering safety; they do not
+prove model judgment or universal provider reliability. The existing broker remains
+limited to credentials and process plumbing, not product semantics.
