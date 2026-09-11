@@ -102,7 +102,8 @@ def test_supported_flow_preserves_fetched_evidence_and_selects_author_material()
     ], fetch=lambda url: FetchedMaterial(url, fetched[url]))
 
     assert result.posture == "supported"
-    assert result.answer == f"16 pounds. [Official rules]({URL})"
+    assert result.answer == "16 pounds. [1]"
+    assert result.citations[0].url == URL
     analyst_input = next(material for stage, material in model.calls if stage == "analyst")
     author_input = next(material for stage, material in model.calls if stage == "author")
     assert [item["content"] for item in analyst_input["evidence"]] == list(fetched.values())
@@ -604,7 +605,7 @@ def test_malformed_output_can_be_repaired_without_exposing_values():
     )
     result = run(QUESTION, model=model, search=discover, fetch=fetch)
     assert result.posture == "supported"
-    assert f"[Official rules]({URL})" in result.answer
+    assert "[1]" in result.answer and result.citations[0].url == URL
     rejected = next(event for event in result.trace if event["action"] == "response_rejected")
     assert rejected["stage"] == "analyst" and rejected["issues"]
     assert "private rejected value" not in json.dumps(result.trace)
@@ -638,7 +639,7 @@ def test_finding_support_is_required_by_schema_and_uses_existing_output_correcti
 
 def test_citation_grammar_preserves_prose_and_renders_only_selected_acquired_sources():
     sources = [DiscoveryCandidate(f"Rules {index} [edition]", URL + str(index), "clue") for index in range(1, 13)]
-    links = {index: f"[Rules {index} \\[edition\\]]({URL}{index})" for index in (1, 2, 12)}
+    links = {1: "[1]", 12: "[2]", 2: "[3]"}
     cases = [
         ("[E1] [E12]", links[1] + " " + links[12]),
         ("[[E1]][[E2]]", links[1] + links[2]),
@@ -762,7 +763,7 @@ def test_cli_invokes_real_application_and_real_exa_adapters(monkeypatch, capsys)
     monkeypatch.setattr(research, "OpenAIModel", lambda: model)
     assert cli.main([QUESTION, "--trace", "--trace-evidence"]) == 0
     captured = capsys.readouterr()
-    assert f"[Rules]({URL})" in captured.out
+    assert "[1] Rules" in captured.out and URL in captured.out
     assert calls[1][1] == {"ids": [URL], "text": {"verbosity": "full"}, "highlights": False, "maxAgeHours": 0}
     assert calls[0][1]["type"] == "auto"
     assert model.calls[2][1]["candidates"][0]["context"] == full_context
@@ -770,6 +771,8 @@ def test_cli_invokes_real_application_and_real_exa_adapters(monkeypatch, capsys)
     diagnostics = json.loads(captured.err)
     assert diagnostics["trace"][-1]["posture"] == "supported"
     assert diagnostics["selected_evidence"] == [research.Evidence("E1", URL, "Rules", "The limit is 16 pounds.").material()]
+    assert diagnostics["citations"] == [{"number": 1, "source_id": "E1", "title": "Rules", "url": URL,
+                                         "material_ids": ["E1"]}]
     assert "DISCOVERY-ONLY" not in captured.err
 
     monkeypatch.setattr(research, "OpenAIModel", lambda: Model(("research", ModelError("model_configuration_missing"))))
@@ -912,7 +915,7 @@ def test_missing_component_drives_focused_research_preserving_supported_parts_at
         assert result.stop_reason == "research_bound"
         assert author_input["posture"] == "partial" and author_input["unresolved_need"] == gap
         assert [item["id"] for item in author_input["evidence"]] == ["E1"]
-        assert "did not establish" in result.answer and f"]({URL})" in result.answer
+        assert "did not establish" in result.answer and result.citations[0].url == URL
 
 
 def test_secondary_fallback_revisable_needs_and_restoring_omitted_acquisition_without_refetch():

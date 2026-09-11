@@ -1,10 +1,28 @@
 # ScryRaven Current Truth
 
-Status: bounded source-acquisition bake-off MET; Exa path demonstrated through the ordinary product
+Status: adaptive answer and evidence presentation implemented; bounded live presentation validation pending
 Repository: aidan600/scryraven
 Preferred local checkout: C:\Users\aidan\ScryRaven
 
 ## Active product path
+
+Author now chooses depth and structure from the actual question and Analyst's
+support envelope, preserving material qualifications without dumping every finding
+or imposing a template. Citation validation retains its existing grammar and
+failure behavior. Validated uses receive deterministic numbers in order of first
+use, reused by canonical source. Result citations group the exact selected Evidence
+items already supplied to Author. No Author citation retry was added.
+
+The ordinary CLI prints a numeric answer and one source list. `--html PATH` also
+saves a self-contained local view: question, answer, compact citation links and
+native source disclosures with exact selected material and an original publication
+link. Source text stays escaped; raw model HTML is disabled. The tiny fixed script
+opens a disclosure when its citation is followed. The page loads no remote assets.
+Extracted-text offsets are not treated as original PDF pages or precise proof
+locations. No session, server, persistence service or frontend build stack exists.
+Offline presentation and surviving application checks pass; the fixed SLAC and
+SI-prefix questions have not yet been run on this implementation. This is not a
+claim of improved Research reliability.
 
 Exactly Research -> Analyst -> Author retain semantic authority. FAST and SMART
 remain gpt-5.6-luna / medium. The ordinary CLI uses one fixed acquisition policy:

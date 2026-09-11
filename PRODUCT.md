@@ -33,6 +33,10 @@ The product must not silently fill an evidentiary gap from unsupported model mem
 - Answer-relevant findings remain connected to the acquired evidence that supports them.
 - Answer writing may operate from a deliberately selected subset of supporting material rather than the complete research corpus.
 - Final citations resolve to acquired material that actually supports the cited answer.
+- Answer depth and structure follow the question's complexity, without unnecessary
+  repetition or loss of material qualifications. Compact references let the user
+  inspect the selected source material and open its original publication, without
+  implying more precise support locations than the acquired evidence establishes.
 - Deterministic mechanics may preserve identities, move data, validate references, and render citations; they must not substitute mechanical rules for semantic evidence judgment.
 - When the available research does not establish an answer, ScryRaven preserves that limitation rather than upgrading uncertainty into unsupported certainty.
 

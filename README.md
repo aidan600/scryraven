@@ -21,6 +21,18 @@ python -m pip install -r requirements.txt -r requirements-dev.txt
 python -m scryraven "What is the maximum allowed weight of a ten-pin bowling ball?"
 ```
 
+Add `--html C:\tmp\answer.html` to save a self-contained local answer view
+(the destination directory must exist). Open that file in a browser. The view
+shows the question and answer, with compact numbered citations. Clicking a citation
+opens the source's selected material; each source also links to the original
+publication. Source disclosures can be opened directly without JavaScript.
+No server, account, hosted deployment or saved session is required.
+
+Author scales the answer's structure to the question: a simple fact normally needs
+one short paragraph, while a complex answer may benefit from descriptive headings,
+lists or a compact table. It selects relevant findings from Analyst's support
+envelope while preserving material qualifications and unresolved limitations.
+
 The process needs `OPENAI_API_KEY` and `EXA_API_KEY`. The product does not load
 `.env`. Optional independent role configuration:
 
@@ -64,7 +76,17 @@ Author receive selected context grouped by source. Analyst owns preservation of
 significant quantities, conditions, time comparisons and epistemic language through
 paraphrase; Author preserves that meaning in the answer. Reference validation does
 not decide meaning or mechanically check paraphrase.
-Citations resolve to the publication URL.
+Citations receive stable numbers in order of first validated use, reusing the same
+number for the same canonical source. Source titles appear once in the CLI source
+list and in the local view's disclosures, rather than repeatedly in answer prose.
+The view groups exact `result.selected_evidence` items under each cited source;
+it neither regenerates excerpts nor presents unselected material. This is
+source-level support, not a claim-to-sentence proof map. Extracted-text slice
+offsets are not original PDF page coordinates; no page or section anchors are
+invented. Original publication links remain separate from the selected material.
+The renderer escapes source/question text and disables raw model HTML. A small
+Markdown parser handles answer structure; fixed local CSS and JavaScript are
+restricted by a content security policy. The view loads no remote resources.
 
 The existing provisional loop permits three Analyst assessments, each preceded by
 up to six navigation actions. Each semantic need allows two Search calls initially.
@@ -82,12 +104,12 @@ the linked source must be acquired before it supports findings.
 
 ## Observations and checks
 
-Answers appear on stdout. `--trace` adds compact diagnostics on stderr: model
+Answers and a compact source list appear on stdout. `--trace` adds compact diagnostics on stderr: model
 roles, Research choices, source identities/sizes, acquisitions, packet bounds,
 selected material, Analyst findings/gaps and citation resolution. Per-stage
 body characters include repeated submissions; they are not tokens or dollars.
 Raw payloads, credentials and hidden reasoning are excluded.
-`--trace-evidence` also exposes exact selected supporting material and provenance;
+`--trace-evidence` also exposes exact selected supporting material, citations and provenance;
 unseen full parents remain out of the trace. Use public questions for observations.
 
 Execution errors exit 1 with a safe stage/code. Supported, partial and unable
