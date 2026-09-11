@@ -461,6 +461,40 @@ briefly. A research bound is a limitation of this run, never proof of nonexisten
 Keep supported partial findings distinct from what remains unresolved. Do not claim
 success when posture is unable. Return the user-facing answer in the answer field."""
 
+SESSION_CONTEXT_PROMPT = """
+This is a fresh decision for the CURRENT question, which remains authoritative.
+conversation_context contains prior questions and final answers only to interpret
+references and follow-up intent. It is not evidence: never cite a previous answer
+or import factual claims from it. semantic_history contains prior turns' Analyst
+assessments, postures and limitations for continuity, not proof or a current verdict.
+previous_analysis, when present, is from this current turn only. Reassess the current
+question using actual current Evidence; earlier judgments are revisable and current
+actual Evidence controls any conflict. Every current finding requires current
+Evidence support.
+"""
+
+SESSION_RESEARCH_PROMPT = SESSION_CONTEXT_PROMPT + """
+retained_sources lists actual acquisitions from earlier turns, not generated text.
+Inspect potentially useful retained material before redundant discovery. Research
+still chooses relevance; do not forward the entire corpus or inherit old selections.
+Use the existing C-ID actions: use_material selects actual provider_highlights;
+read on a retained fetched source inspects its local text WITHOUT provider I/O.
+For this local read, context_needed describes the current meaning to inspect.
+Large retained parents receive fresh exact SourcePackets for the current need,
+then the usual relevance selection. An optional expand remains available this turn.
+Metadata is only navigation. Highlights remain limited excerpts; if fuller text has
+not been acquired, read can still acquire it. If retained material does not establish
+the current need, choose new research. Each turn has fresh research/search limits;
+local inspection spends no provider-search allowance.
+"""
+
+SESSION_AUTHOR_PROMPT = """
+conversation_context contains earlier questions and answers only to interpret the
+current follow-up's intent and references. Prior answers are not factual authority,
+cannot be cited, and cannot supply facts. Only current Analyst coverage findings
+may enter the answer, with citations to the supplied current supporting Evidence.
+"""
+
 ModelCall = Callable[[str, str, dict, dict], str]
 T = TypeVar("T", bound=_Output)
 
@@ -566,7 +600,7 @@ def _research(
     fetch: Callable[[str], FetchedMaterial],
     navigation_steps: int, trace: list[dict], answer_needs: list[AnswerNeed], previous: Analysis | None,
     active_need: _ResearchNeed, candidates: dict[str, DiscoveryCandidate], attempts: list[dict],
-    reading: SourcePackets,
+    reading: SourcePackets, context: dict | None = None, retained_ids: frozenset[str] = frozenset(),
 ) -> tuple[bool, list[AnswerNeed], int, list[str] | None]:
     """Navigate; retain every successful direct read in evidence."""
     trace.append({"stage": "research", "action": "started", "need": need[:600], **active_need.allowance()})
@@ -574,6 +608,7 @@ def _research(
     discovery_blocked = False
     for step in range(navigation_steps):
         request = {
+            **(context or {}),
             "phase": "navigation", "question": question, "need": need,
             "answer_needs": [item.model_dump() for item in answer_needs],
             "previous_analysis": previous.model_dump() if previous else None,
@@ -590,8 +625,16 @@ def _research(
                                                  for source in evidence)],
             "retrieval_allowance": active_need.allowance(),
         }
+        if context is not None:
+            request["retained_sources"] = [
+                {"id": item.id, "source_id": item.source_id, "url": item.url, "title": item.title,
+                 "acquisition": item.acquisition,
+                 "candidate_refs": [ref for ref, lead in candidates.items() if lead.url == item.url]}
+                for item in evidence if item.id in retained_ids
+            ]
         for correction in range(2):
-            action = _ask(model, "research", RESEARCH_PROMPT, request, ResearchAction, trace)
+            action = _ask(model, "research", RESEARCH_PROMPT + (SESSION_RESEARCH_PROMPT if context is not None else ""),
+                          request, ResearchAction, trace)
             invalid = [ref for ref in action.candidate_refs if ref not in candidates]
             if action.action not in {"use_material", "read", "expand"} or (action.candidate_refs and not invalid):
                 break
@@ -689,6 +732,7 @@ def _research(
             continue
 
         acquired_before = len(evidence)
+        prepared_before = len(reading.materials)
         selected_material = []
         for ref in dict.fromkeys(action.candidate_refs):
             lead = candidates[ref]
@@ -702,22 +746,35 @@ def _research(
                     continue
                 item = next((item for item in evidence if item.url == lead.url and item.content == lead.context
                              and item.acquisition == "provider_highlights"), None)
+                newly_acquired = item is None
                 if item is None:
                     source_id = next((item.source_id for item in evidence if item.url == lead.url), f"E{len(evidence) + 1}")
                     item = Evidence(f"E{len(evidence) + 1}", lead.url, lead.title, lead.context, "provider_highlights", source_id)
                     evidence.append(item)
+                if newly_acquired or item.id in retained_ids:
                     active_need.acquired_evidence_refs.append(item.source_id)
+                if item.id not in reading.materials:
                     reading.acquire(item, [], "", trace)
+                if item.id in retained_ids:
+                    _trace_reuse(item, trace)
                 selected_material.append(item.id)
                 trace.append({"stage": "research", "action": "provider_material_selected", "candidate_ref": ref,
                               "evidence_id": item.id, "source_id": item.source_id, "url": item.url,
-                              "characters": len(item.content)})
+                              "characters": len(item.content),
+                              "source_identity": "newly_allocated" if newly_acquired and item.id == item.source_id
+                              else "reused"})
                 continue
             if action.action == "expand":
                 if reading.expand(fetched.id if fetched else "", action.context_needed, trace):
                     return False, answer_needs, step + 1, None
                 continue
             if fetched:
+                if fetched.id in retained_ids and fetched.id not in reading.materials and fetched.id not in reading.indexes:
+                    reading.acquire(fetched, [action.context_needed, *[part.need for part in answer_needs], question],
+                                    lead.context if lead.context_kind == "provider_highlights" else "", trace)
+                    active_need.acquired_evidence_refs.append(fetched.source_id)
+                    _trace_reuse(fetched, trace)
+                    continue
                 attempts.append({"action": "already_acquired", "candidate_ref": ref})
                 continue
             trace.append({"stage": "research", "action": "read_selected", "tool": "read",
@@ -742,15 +799,21 @@ def _research(
                     "stage": "research", "action": "read_succeeded", "evidence_id": item.id,
                     "url": item.url, "characters": len(item.content), "evidence_count": len(evidence),
                     "source_id": item.source_id, "acquisition": item.acquisition,
+                    "source_identity": "newly_allocated" if item.id == item.source_id else "reused",
                 }
             trace.append(observation)
             attempts.append(observation)
         if selected_material:
             return False, answer_needs, step + 1, selected_material
-        if len(evidence) > acquired_before:
+        if len(evidence) > acquired_before or len(reading.materials) > prepared_before:
             return False, answer_needs, step + 1, None
     trace.append({"stage": "research", "action": "navigation_bound", "evidence_count": len(evidence)})
     return True, answer_needs, step + 1, None
+
+
+def _trace_reuse(item: Evidence, trace: list[dict]) -> None:
+    trace.append({"stage": "research", "action": "retained_material_reused", "evidence_id": item.id,
+                  "source_id": item.source_id, "acquisition": item.acquisition, "source_identity": "reused"})
 
 
 def _needs_summary(needs: list[AnswerNeed]) -> list[dict]:
@@ -778,11 +841,12 @@ def _link_url(value: str, base: str) -> str:
 
 
 def _relevant_evidence(
-    question: str, need: str, answer_needs: list[AnswerNeed], evidence: list[Evidence],
+    question: str, need: str, answer_needs: list[AnswerNeed],
     previous: Analysis | None, model: ModelCall, trace: list[dict],
     candidates: dict[str, DiscoveryCandidate], reading: SourcePackets, material_refs: list[str] | None,
+    context: dict | None = None,
 ) -> list[Evidence]:
-    if not evidence:
+    if not reading.materials:
         return []
     retained_refs = list(reading.selection_refs) if previous else []
     if material_refs is not None:
@@ -794,7 +858,8 @@ def _relevant_evidence(
         return [reading.materials[ref] for ref in reading.selection_refs]
     new_material = list(reading.pending)
     reading.pending.clear()
-    selection = _ask(model, "research", RELEVANCE_PROMPT, {
+    selection = _ask(model, "research", RELEVANCE_PROMPT + (SESSION_CONTEXT_PROMPT if context is not None else ""), {
+        **(context or {}),
         "phase": "relevance", "question": question, "need": need,
         "answer_needs": [item.model_dump() for item in answer_needs],
         "previously_relevant_refs": retained_refs,
@@ -994,17 +1059,35 @@ def run(
     fetch: Callable[[str], FetchedMaterial] = fetch_exa,
     limits: RunLimits = RunLimits(),
 ) -> Result:
-    """Used unchanged by the CLI, offline scenarios, and ordinary live execution."""
+    """An isolated single-turn request; callers need not construct a session."""
+    return _run_turn(question, model=model, search=search, fetch=fetch, limits=limits)
+
+
+def _run_turn(
+    question: str, *, model: ModelCall | None = None,
+    search: Callable[..., list[DiscoveryCandidate]] = search_exa,
+    fetch: Callable[[str], FetchedMaterial] = fetch_exa,
+    limits: RunLimits = RunLimits(),
+    retained_acquisitions: tuple[Evidence, ...] = (), context: dict | None = None,
+    session_turn: int | None = None,
+) -> Result:
+    """One fresh bounded decision, staging acquisitions until a valid Result exists."""
     if not question.strip():
         raise RunError("input", "empty_question", [])
     model = model or OpenAIModel()
     trace: list[dict] = []
+    if session_turn is not None:
+        trace.append({"stage": "session", "action": "turn_started", "turn_index": session_turn,
+                      "retained_source_count": len({item.source_id for item in retained_acquisitions}),
+                      "retained_acquisition_count": len(retained_acquisitions)})
     config = getattr(model, "config", None)
     if isinstance(config, ModelConfig):
         trace.append({"stage": "application", "action": "models_configured", "roles": asdict(config)})
-    evidence: list[Evidence] = []
+    evidence = list(retained_acquisitions)
+    retained_ids = frozenset(item.id for item in retained_acquisitions)
     reading = SourcePackets()
-    orientation = _ask(model, "research", ORIENTATION_PROMPT, {
+    orientation = _ask(model, "research", ORIENTATION_PROMPT + (SESSION_CONTEXT_PROMPT if context is not None else ""), {
+        **(context or {}),
         "phase": "orientation", "question": question,
     }, Orientation, trace)
     answer_needs = orientation.answer_needs
@@ -1016,6 +1099,13 @@ def run(
     active_need = _ResearchNeed("N1", need)
     research_needs = {active_need.ref: active_need}
     candidates: dict[str, DiscoveryCandidate] = {}
+    for item in retained_acquisitions:
+        # Preserve every actual highlight version as inspectable candidate material;
+        # full parents need only navigation metadata until Research requests a read.
+        candidates[f"C{len(candidates) + 1}"] = DiscoveryCandidate(
+            item.title, item.url, item.content if item.acquisition == "provider_highlights" else "",
+            context_kind="provider_highlights" if item.acquisition == "provider_highlights" else "navigation",
+        )
     attempts: list[dict] = []
     analysis = None
     last_analyst_refs: set[str] | None = None
@@ -1026,16 +1116,18 @@ def run(
         acquired_before = len(evidence)
         navigation_bound, answer_needs, steps_used, material_refs = _research(
             question, need, evidence, model, search, fetch, navigation_remaining, trace, answer_needs, analysis,
-            active_need, candidates, attempts, reading,
+            active_need, candidates, attempts, reading, context, retained_ids,
         )
         navigation_remaining -= steps_used
-        relevant = _relevant_evidence(question, need, answer_needs, evidence, analysis, model, trace, candidates, reading, material_refs)
+        inspected_retained = any(item.id in retained_ids or item.parent_id in retained_ids for item in reading.pending)
+        relevant = _relevant_evidence(question, need, answer_needs, analysis, model, trace,
+                                      candidates, reading, material_refs, context)
         relevant_refs = {item.id for item in relevant}
         if relevant_refs == last_analyst_refs or (analysis is None and not relevant_refs):
             # Immutable identical material cannot supply new evidence feedback.
             # Continue the current bounded round, retaining Analyst's prior gap.
             trace.append({"stage": "research", "action": "no_new_analyst_material", **active_need.allowance()})
-            if navigation_remaining and len(evidence) > acquired_before:
+            if navigation_remaining and (len(evidence) > acquired_before or inspected_retained):
                 continue
             if analysis is not None:
                 break
@@ -1043,7 +1135,8 @@ def run(
         new_analyst_refs = relevant_refs - (last_analyst_refs or set())
         last_analyst_refs = relevant_refs
         trace.append({"stage": "analyst", "action": "material_selected", "evidence_ids": [item.id for item in relevant]})
-        analysis = _ask(model, "analyst", ANALYST_PROMPT, {
+        analysis = _ask(model, "analyst", ANALYST_PROMPT + (SESSION_CONTEXT_PROMPT if context is not None else ""), {
+            **(context or {}),
             "question": question, "answer_needs": [item.model_dump() for item in answer_needs],
             "previous_analysis": analysis.model_dump() if analysis else None,
             "evidence": _source_material(relevant),
@@ -1081,7 +1174,8 @@ def run(
     posture = "supported" if analysis.decision == "supported" else ("partial" if analysis.findings else "unable")
     selected = [item for item in relevant if item.source_id in analysis.support_refs]
     trace.append({"stage": "author", "action": "material_selected", "evidence_ids": [item.id for item in selected]})
-    draft = _ask(model, "author", AUTHOR_PROMPT, {
+    draft = _ask(model, "author", AUTHOR_PROMPT + (SESSION_AUTHOR_PROMPT if context is not None else ""), {
+        **({"conversation_context": context["conversation_context"]} if context is not None else {}),
         "question": question, "posture": posture, "stop_reason": stop_reason,
         "coverage": [item.model_dump() for item in analysis.coverage],
         "explanation": analysis.explanation,
@@ -1097,6 +1191,12 @@ def run(
         for number, ref in enumerate(citation_refs, 1)
     )
     trace.append({"stage": "citations", "action": "resolved", "evidence_ids": citation_refs})
+    if session_turn is not None:
+        trace.append({"stage": "session", "action": "turn_completed", "turn_index": session_turn,
+                      "new_acquisition_count": len(evidence) - len(retained_acquisitions),
+                      "reused_source_ids": list(dict.fromkeys(event["source_id"] for event in trace
+                                                              if event["action"] == "retained_material_reused")),
+                      "source_count": len({item.source_id for item in evidence})})
     trace.append({"stage": "application", "action": "finished", "posture": posture, "stop_reason": stop_reason})
     return Result(answer, posture, stop_reason, tuple(evidence), analysis, tuple(trace),
                   tuple(selected), citations, citation_uses)

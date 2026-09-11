@@ -22,6 +22,15 @@ For that class of question, ScryRaven should:
 
 The product must not silently fill an evidentiary gap from unsupported model memory.
 
+## Follow-up research
+
+A follow-up receives a fresh Research -> Analyst -> Author decision over the current
+question. Prior conversation helps interpret intent but is not evidence. Actual
+previously acquired source material may remain evidence and be reused when relevant;
+previous generated answers and Analyst judgments never become factual evidence.
+Current findings require current supporting source material. New research occurs
+when retained evidence does not establish what the follow-up needs.
+
 ## Durable product invariants
 
 - Research is question-directed and may adapt when an initial attempt is inadequate.

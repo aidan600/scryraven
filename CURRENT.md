@@ -1,7 +1,9 @@
 # ScryRaven Current Truth
 
-Status: compact citations and inspection of selected Evidence are implemented and
-demonstrated. The semantic product path remains Research -> Analyst -> Author.
+Status: in-memory retained-context follow-ups are implemented and verified offline;
+live multi-turn behavior has not been demonstrated. Compact citations and inspection
+of selected Evidence retain their earlier product demonstrations. The semantic
+product path remains Research -> Analyst -> Author.
 Repository: aidan600/scryraven
 Preferred local checkout: C:\Users\aidan\ScryRaven
 
@@ -24,16 +26,47 @@ may establish a claim when the received text supplies the material context; gene
 summaries and answers are excluded. Source selection and sufficiency remain semantic
 judgments, not transport verdicts.
 
-Successful full-text acquisition is retained once per exact URL for the run. Bodies
+Successful full-text acquisition is retained once per exact URL for the run or
+in-memory session. Bodies
 up to 32,000 characters are exposed directly; larger bodies use exact extracted
 packets up to 32,000 characters, with one optional 48,000-character expansion for a
 concrete gap. Packet bounds describe received extraction, not original-document
 pages or locations. Same-URL material versions share one source identity.
 
-Research retains its existing bounds: up to three Analyst assessments, up to six
+Each question gets fresh existing bounds: up to three Analyst assessments, up to six
 navigation actions before each assessment, and an earned second two-call search round
 for a specific unresolved same-need gap. Those limits are operational ceilings, not
 semantic sufficiency rules.
+
+## In-memory follow-ups
+
+`ResearchSession.ask(question)` uses the same production path as isolated
+`run(question)`. The ordinary CLI adds `--session`: answer the initial question,
+then accept follow-ups until blank input or EOF. Session-mode HTML is not provided;
+ordinary single-answer HTML and each Result's citation/inspection data remain intact.
+
+Completed questions/answers supply conversation context only. Prior Analyst output,
+posture and limitations supply separate, non-evidentiary semantic history. Each
+turn starts with fresh Research orientation, no inherited Analyst verdict, and no
+automatically selected evidence. Research can inspect actual retained highlights or
+use `read` to inspect a retained full parent locally, select current relevant
+material, and acquire more when needed. Only current selected Evidence supports
+Analyst findings; only current coverage findings support Author claims.
+
+Immutable acquisitions, including full parents of large-source packets, survive
+successful turns. Canonical source and material IDs remain stable; new acquisitions
+receive noncolliding IDs, with same-URL versions grouped under their original source.
+Numeric citations remain answer-local. Retained parents can yield different exact
+packets for a new question without provider I/O; packet expansion and research
+limits apply afresh per turn. Failed turns discard staged acquisitions and semantic
+history. Valid partial/unable Results count as completed turns.
+
+Safe session trace facts identify the turn, entering retained-source count, reused
+material, source identity allocation, and new acquisition count. Conversation history
+is not copied into diagnostics. Deterministic fake-model/provider tests exercise
+reuse, fresh acquisition, reference rejection, large-source reinspection, failure
+isolation, and the ordinary multi-turn CLI. They prove mechanics, not live model
+relevance or fidelity. No live follow-up PRODUCT run has occurred.
 
 ## Citations and selected-Evidence inspection
 
@@ -85,8 +118,11 @@ proves every nearby sentence.
 
 No fourth semantic owner, intermediary semantic representation, semantic verifier or
 Reviewer, or post-Author remediation loop is present.
+Sessions exist only in the current process. There is no persistence, serialized
+session/transcript, account memory, uploaded-document support, history compression,
+context eviction, or cache optimization. OpenAI request/cache policy is unchanged.
 There is no persistent corpus, vector database, crawler, general RAG, calculation
-system, session, server, or frontend build stack.
+system, server, or frontend build stack.
 
 Offline fixtures exercise deterministic mechanics and rendering safety; they do not
 prove model judgment or universal provider reliability. The existing broker remains

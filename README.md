@@ -28,6 +28,37 @@ opens the source's selected material; each source also links to the original
 publication. Source disclosures can be opened directly without JavaScript.
 No server, account, hosted deployment or saved session is required.
 
+For follow-ups in the same process:
+
+```powershell
+python -m scryraven "According to the BIPM SI Brochure, what is the largest SI prefix?" --session
+```
+
+After each answer, enter the next question at the prompt. Blank input or EOF ends
+the session. Every question gets fresh Research, Analyst and Author decisions and
+fresh research limits. Research can inspect actual retained sources without another
+provider call, or acquire additional material. Previous answers help interpret
+follow-up intent but cannot support facts or citations. Nothing is saved between
+processes. `--html` remains a single-answer option and cannot accompany `--session`.
+
+The equivalent sequential Python API accepts the same optional model, search,
+fetch and limits arguments as `run`:
+
+```python
+from scryraven.session import ResearchSession
+
+session = ResearchSession()
+first = session.ask("According to the BIPM SI Brochure, what is the largest SI prefix?")
+followup = session.ask("And what is the smallest one?")
+```
+
+`session.turns` exposes completed questions, answers and copied Analyst history;
+`session.acquisitions` exposes immutable actual Evidence, including full parents;
+`session.source_ids` exposes canonical identities. Each Result's `evidence` is the
+acquisition corpus at that turn, while `selected_evidence` and citations describe
+only its current supporting material. Failed turns leave committed state intact;
+valid partial/unable answers are completed turns. `run(question)` remains isolated.
+
 The process needs `OPENAI_API_KEY` and `EXA_API_KEY`. The product does not load
 `.env`. Optional independent role configuration:
 
@@ -57,12 +88,14 @@ or broader page/discussion questions. `context_needed` records the concrete gap.
 An older governing source can remain applicable; unrequested editions and
 hypothetical exceptions do not automatically expand a narrow question.
 
-Successful full-text acquisitions are immutable and retained in run-local memory.
+Successful full-text acquisitions are immutable and retained in run/session memory.
 Bodies up to 32,000 characters are exposed directly. Larger sources produce one
 mechanical packet of exact slices up to 32,000 characters, using structure, lexical
 matches and recoverable excerpt phrases. One optional expansion up to 48,000
 characters addresses a concrete gap. These are provisional economics choices,
-not semantic sufficiency thresholds. There is no conversational document browser.
+not semantic sufficiency thresholds. A later turn can inspect a new exact packet
+from the same retained full parent without fetching it again. There is no persistent
+document store or history compression.
 
 Different material versions at the same exact URL remain immutable and share
 source identity. Views carry exact parent bounds; highlights never acquire guessed
@@ -108,6 +141,9 @@ body characters include repeated submissions; they are not tokens or dollars.
 Raw payloads, credentials and hidden reasoning are excluded.
 `--trace-evidence` also exposes exact selected supporting material, citations and provenance;
 unseen full parents remain out of the trace. Use public questions for observations.
+Session diagnostics also identify the turn, retained source count, reused material,
+new acquisitions and source identity reuse/allocation. Prior conversation is not
+added as a diagnostic payload. Numeric source references start afresh in each answer.
 
 Execution errors exit 1 with a safe stage/code. Supported, partial and unable
 postures exit 0. An honest limit is not proof of nonexistence.
@@ -123,6 +159,9 @@ python scripts/run_brokered_command_once.py --repo-root C:\Users\aidan\ScryRaven
 
 The doorman owns only secret custody and process plumbing; the product does not
 import it. Keep observation packets outside the repository.
+The broker closes stdin, so the interactive CLI stops after the initial answer
+under it. An authorized automated multi-turn observation can call the public
+`ResearchSession.ask` API sequentially from a brokered caller.
 
 Private-child configuration failures retain status `private_child_configuration_failed`.
 The status file's `safe_error_code` can identify `private_session_missing`,
