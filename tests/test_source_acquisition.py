@@ -43,7 +43,7 @@ def test_sufficient_provider_material_reaches_analyst_author_and_citations_witho
     assert len(model.calls) == 5
     assert result.selected_evidence[0].content == PASSAGE
     assert result.selected_evidence[0].acquisition == "provider_highlights"
-    assert f"[Standard]({URL})" in result.answer
+    assert "[1]" in result.answer and result.citations[0].url == URL
     assert model.calls[-1][1]["coverage"][0]["findings"][0] == {"text": PASSAGE, "support_refs": ["E1"]}
     assert model.calls[-1][1]["evidence"] == model.calls[-2][1]["evidence"]
 
@@ -69,6 +69,9 @@ def test_context_gap_acquires_same_url_once_preserving_excerpt_and_source_identi
     assert len(submitted) == 1 and submitted[0]["id"] == "E1"
     assert [item["content"] for item in submitted[0]["materials"]] == [excerpt, PASSAGE]
     assert len(result.selected_evidence) == 2
+    assert len(result.citations) == 1
+    assert result.citations[0].materials == result.selected_evidence
+    assert [item.content for item in result.citations[0].materials] == [excerpt, PASSAGE]
 
 
 def test_navigation_and_omission_notices_cannot_be_selected_as_material():
@@ -233,7 +236,8 @@ def test_view_reference_reaches_author_with_exact_views_and_canonical_citation()
     ]
     assert author_input["evidence"] == analyst_input["evidence"]
     assert source.content not in json.dumps(author_input)
-    assert f"[Standard]({URL})" in result.answer
+    assert "[1]" in result.answer and result.citations[0].url == URL
+    assert result.citations[0].materials == result.selected_evidence
     assert any(event["action"] == "evidence_reference_canonicalized" for event in result.trace)
     assert next(event for event in result.trace if event["action"] == "resolved")["evidence_ids"] == ["E1"]
 

@@ -21,6 +21,7 @@ from core.exa_transport import (
     search_exa,
 )
 from scryraven.model import ModelConfig, ModelError, OpenAIModel
+from scryraven.presentation import Citation, CitationUse
 from scryraven.sources import Evidence, SourcePackets
 
 
@@ -166,6 +167,8 @@ class Result:
     analysis: Analysis
     trace: tuple[dict, ...]
     selected_evidence: tuple[Evidence, ...]
+    citations: tuple[Citation, ...]
+    citation_uses: tuple[CitationUse, ...]
 
 
 class RunError(RuntimeError):
@@ -915,9 +918,13 @@ def _followup_need(analysis: Analysis, needs: dict[str, _ResearchNeed], trace: l
     return chosen
 
 
-def _cite(draft: str, selected: list[Evidence], trace: list[dict]) -> tuple[str, list[str]]:
+def _cite(
+    draft: str, selected: list[Evidence], trace: list[dict],
+) -> tuple[str, list[str], tuple[CitationUse, ...]]:
     by_id = {item.id: item for item in selected}
     used: list[str] = []
+    uses: list[CitationUse] = []
+    offset = 0
 
     # An alias is E followed by digits. Brackets hold a comma-separated alias
     # list, optionally wrapped once: [E1], [[E1, E2]], or [[E1], [E2]].
@@ -946,23 +953,26 @@ def _cite(draft: str, selected: list[Evidence], trace: list[dict]) -> tuple[str,
             reject("malformed_citation_reference", "literal_citation", literal)
 
     def replace(match: re.Match) -> str:
+        nonlocal offset
         prefix = draft[:match.start()]
         if prefix.endswith("[") or draft[match.end():].startswith("]"):
             reject("malformed_citation_reference", "unbalanced_brackets", match)
         if (len(prefix) - len(prefix.rstrip("\\"))) % 2:
             reject("malformed_citation_reference", "escaped_citation", match)
-        links = []
+        references = []
         for ref in re.findall(r"E[0-9]+", match.group()):
             if ref not in by_id:
                 reject("invalid_citation_reference", "unknown_or_unselected_alias", match)
             if ref not in used:
                 used.append(ref)
-            item = by_id[ref]
-            # Source labels are display metadata, not part of the alias grammar.
-            title = re.sub(r"([\\\[\]*_`<>])", r"\\\1", " ".join(item.title.split()) or item.url)
-            url = quote(item.url, safe=":/?#@!$&'*+,;=%~-._")
-            links.append(f"[{title}]({url})")
-        return " ".join(links)
+            number = used.index(ref) + 1
+            marker = f"[{number}]"
+            start = match.start() + offset + sum(len(part) + 1 for part in references)
+            uses.append(CitationUse(number, start, start + len(marker)))
+            references.append(marker)
+        rendered = " ".join(references)
+        offset += len(rendered) - len(match.group())
+        return rendered
 
     # Mask recognized tokens before inspecting leftover alias syntax. Preserve
     # offsets, and never run this check on rendered source titles or URLs.
@@ -975,7 +985,7 @@ def _cite(draft: str, selected: list[Evidence], trace: list[dict]) -> tuple[str,
         raise RunError("author", "empty_answer", trace)
     if selected and not used:
         reject("missing_citation", "no_alias")
-    return answer, used
+    return answer, used, tuple(uses)
 
 
 def run(
@@ -1079,7 +1089,14 @@ def run(
         "evidence": _source_material(selected),
     }, Draft, trace)
     citation_sources = [item for item in evidence if item.id in analysis.support_refs]
-    answer, citation_refs = _cite(draft.answer, citation_sources, trace)
+    answer, citation_refs, citation_uses = _cite(draft.answer, citation_sources, trace)
+    by_id = {item.id: item for item in citation_sources}
+    citations = tuple(
+        Citation(number, ref, by_id[ref].title, by_id[ref].url,
+                 tuple(item for item in selected if item.source_id == ref))
+        for number, ref in enumerate(citation_refs, 1)
+    )
     trace.append({"stage": "citations", "action": "resolved", "evidence_ids": citation_refs})
     trace.append({"stage": "application", "action": "finished", "posture": posture, "stop_reason": stop_reason})
-    return Result(answer, posture, stop_reason, tuple(evidence), analysis, tuple(trace), tuple(selected))
+    return Result(answer, posture, stop_reason, tuple(evidence), analysis, tuple(trace),
+                  tuple(selected), citations, citation_uses)
