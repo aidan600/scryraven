@@ -360,3 +360,20 @@ Do not use aftercare to:
 - delete unrelated branches;
 - clean unrelated files;
 - start the next work item.
+
+## 15. Evaluation evidence preservation
+
+When an authorized PRODUCT observation, model lab, regression investigation, or
+other evaluation reveals a useful material failure, minor diagnostic failure,
+difficult clean control, or partial/unable boundary case, preserve a sanitized
+local evaluation candidate before destructive experiment cleanup when sufficient
+exact evidence exists. Capture useful cases that may support future regression
+testing, prompt/model/provider comparisons, reliability experiments,
+failure-layer diagnosis, or random/seeded evaluation samples; do not archive
+noise merely because a run occurred.
+
+If aftercare would delete the only surviving exact artifacts for useful evidence,
+first either capture the case in the ignored `local-evals/` corpus, explicitly
+establish that no useful case needs preservation, or report that capture is
+impossible or inappropriate because of privacy or missing exact provenance. Do
+not silently discard the last exact copy of known useful evaluation evidence.

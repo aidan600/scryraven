@@ -42,6 +42,9 @@ dist/
 build/
 coverage/
 
+# Local evaluation evidence (never publish corpus contents)
+/local-evals/
+
 # Logs / dumps
 *.log
 logs/
