@@ -58,7 +58,7 @@ def test_roles_structured_request_and_final_message_only(monkeypatch, phase):
     for url, kwargs in calls:
         assert url == "https://api.openai.com/v1/responses"
         payload = kwargs["json"]
-        assert json.loads(payload["input"]) == {"question": "test"}
+        assert json.loads("".join(block["text"] for block in payload["input"][1]["content"])) == {"question": "test"}
         assert payload["text"]["format"]["schema"] == schema
         assert payload["text"]["format"]["strict"] is True
         assert payload["store"] is False
