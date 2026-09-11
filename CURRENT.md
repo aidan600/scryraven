@@ -3,7 +3,8 @@
 Status: in-memory retained-context follow-ups are implemented and demonstrated in
 one ordinary three-turn BIPM/BIPM/NASA session. Compact citations and inspection of
 selected Evidence retain their earlier product demonstrations. The semantic product
-path remains Research -> Analyst -> Author.
+path remains Research -> Analyst -> Author. Explicit prompt caching reduced effective
+input units by 23.62% on the bounded three-turn retained-context workload.
 Repository: aidan600/scryraven
 Preferred local checkout: C:\Users\aidan\ScryRaven
 
@@ -87,6 +88,34 @@ were performed. The sanitized validation record is in
 `docs/operator/IN_MEMORY_FOLLOWUP_VALIDATION.md`; exact live artifacts stay external
 and a useful sanitized clean control is preserved only in the ignored local corpus.
 
+## OpenAI transport economics
+
+The GPT-5.6 Responses transport uses explicit-only prompt caching with a 30-minute
+TTL. Unchanged instructions and Structured Outputs contracts define deterministic
+cache families. Complete local material is serialized as one JSON object across
+content blocks: growing history first, stable navigation context next, then current
+candidates, Evidence, decisions and corrections. Up to four explicit breakpoints
+preserve instruction, history and navigation prefixes; volatile tails incur ordinary
+input charges instead of cache writes. No text is summarized, compressed or omitted.
+Optional in-process usage observations expose token classes, family and breakpoint
+labels without prompts or provider payloads. Missing counters remain unknown.
+
+One ordinary three-turn session on the same BIPM/BIPM/NASA questions used 40,621 input
+tokens: 13,409 cache reads, 7,040 cache writes and 20,172 ordinary uncached tokens.
+At relative rates 1.00 ordinary / 1.25 write / 0.10 read, effective input units were
+30,312.9 versus the historical 39,685.6, a 23.62% reduction. There were 14 model calls,
+two Exa Search calls and zero Contents calls, matching the historical call counts.
+Turn 2 reused unchanged BIPM E1 without acquisition; turn 3 acquired and cited NASA
+E3 while preserving E1/E2. All three answers were supported by selected material.
+No repair or second session was used. This bounded observation is not a guarantee
+for other workloads or cache routing; source selections can vary between runs.
+
+Model/reasoning defaults, semantic prompts, provider/ranking policy and evidence
+custody are unchanged. `store=False` remains in force, with no server-side
+conversation state. The token formula belongs to validation reporting, not runtime
+pricing policy. See `docs/operator/PROMPT_CACHE_ECONOMY_VALIDATION.md` for the tested
+revision, exact workload, token classes, source identities and limitations.
+
 ## Citations and selected-Evidence inspection
 
 Author still emits validated evidence aliases. Deterministic mechanics reject
@@ -139,7 +168,7 @@ No fourth semantic owner, intermediary semantic representation, semantic verifie
 Reviewer, or post-Author remediation loop is present.
 Sessions exist only in the current process. There is no persistence, serialized
 session/transcript, account memory, uploaded-document support, history compression,
-context eviction, or cache optimization. OpenAI request/cache policy is unchanged.
+or context eviction. Prompt caching changes transport economics only.
 There is no persistent corpus, vector database, crawler, general RAG, calculation
 system, server, or frontend build stack.
 
