@@ -1,9 +1,9 @@
 # ScryRaven Current Truth
 
-Status: in-memory retained-context follow-ups are implemented and verified offline;
-live multi-turn behavior has not been demonstrated. Compact citations and inspection
-of selected Evidence retain their earlier product demonstrations. The semantic
-product path remains Research -> Analyst -> Author.
+Status: in-memory retained-context follow-ups are implemented and demonstrated in
+one ordinary three-turn BIPM/BIPM/NASA session. Compact citations and inspection of
+selected Evidence retain their earlier product demonstrations. The semantic product
+path remains Research -> Analyst -> Author.
 Repository: aidan600/scryraven
 Preferred local checkout: C:\Users\aidan\ScryRaven
 
@@ -27,8 +27,8 @@ summaries and answers are excluded. Source selection and sufficiency remain sema
 judgments, not transport verdicts.
 
 Successful full-text acquisition is retained once per exact URL for the run or
-in-memory session. Bodies
-up to 32,000 characters are exposed directly; larger bodies use exact extracted
+in-memory session. Bodies up to 32,000 characters are exposed directly; larger
+bodies use exact extracted
 packets up to 32,000 characters, with one optional 48,000-character expansion for a
 concrete gap. Packet bounds describe received extraction, not original-document
 pages or locations. Same-URL material versions share one source identity.
@@ -66,7 +66,26 @@ material, source identity allocation, and new acquisition count. Conversation hi
 is not copied into diagnostics. Deterministic fake-model/provider tests exercise
 reuse, fresh acquisition, reference rejection, large-source reinspection, failure
 isolation, and the ordinary multi-turn CLI. They prove mechanics, not live model
-relevance or fidelity. No live follow-up PRODUCT run has occurred.
+relevance or fidelity. The ordinary live session demonstrated retained-highlight
+reuse; retained full-parent reinspection and different large-source packets remain
+verified offline only.
+
+The bounded live observation at `dfca5658049cd1f492fadcae70b972169ddcad15`
+answered the four 2022 BIPM prefix additions, then the elliptical question "Which two
+of those are for factors smaller than one?", then NASA's day length on Mars. All
+three turns reached supported results with fresh Research, Analyst and Author calls.
+Search/Contents/model-call counts were 1/0/5, 0/0/4 and 1/0/5. Turn 1 retained BIPM
+sources E1 and E2; turn 2 selected unchanged E1 without provider acquisition; turn 3
+added NASA E3, selected only E3, and preserved E1/E2. Current findings and citations
+resolved to actual selected source material. Input audits kept prior answers in
+non-evidentiary conversation context, with no source IDs, and Author received the
+current Analyst coverage. No repair or second live session was required.
+
+This is one successful ordinary session, not general conversational reliability.
+All selected live material was provider highlights. No independent source checks
+were performed. The sanitized validation record is in
+`docs/operator/IN_MEMORY_FOLLOWUP_VALIDATION.md`; exact live artifacts stay external
+and a useful sanitized clean control is preserved only in the ignored local corpus.
 
 ## Citations and selected-Evidence inspection
 
