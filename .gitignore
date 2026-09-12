@@ -34,6 +34,13 @@ __pycache__/
 *.sqlite3
 *.db-journal
 *.sqlite-journal
+*.sqlite3-journal
+*.db-wal
+*.db-shm
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-wal
+*.sqlite3-shm
 
 # Outputs / generated files
 output/

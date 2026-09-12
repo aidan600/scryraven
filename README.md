@@ -38,8 +38,8 @@ After each answer, enter the next question at the prompt. Blank input or EOF end
 the session. Every question gets fresh Research, Analyst and Author decisions and
 fresh research limits. Research can inspect actual retained sources without another
 provider call, or acquire additional material. Previous answers help interpret
-follow-up intent but cannot support facts or citations. Nothing is saved between
-processes. `--html` remains a single-answer option and cannot accompany `--session`.
+follow-up intent but cannot support facts or citations. This mode saves nothing
+between processes. `--html` remains an isolated single-answer option.
 
 The equivalent sequential Python API accepts the same optional model, search,
 fetch and limits arguments as `run`:
@@ -58,6 +58,81 @@ followup = session.ask("And what is the smallest one?")
 acquisition corpus at that turn, while `selected_evidence` and citations describe
 only its current supporting material. Failed turns leave committed state intact;
 valid partial/unable answers are completed turns. `run(question)` remains isolated.
+
+## Saved local sessions
+
+Create a durable session, record the printed session ID, and reopen it later:
+
+```powershell
+python -m scryraven "According to the BIPM, what SI prefixes were added in 2022?" --create-session
+python -m scryraven --list-sessions
+python -m scryraven "Which two of those are for factors smaller than one?" --resume SESSION_ID
+python -m scryraven --resume SESSION_ID
+```
+
+Create/resume with a question accepts interactive follow-ups until blank input or
+EOF. Resume without a question prints the historical transcript and source list,
+without calling models or providers. `--html` does not accompany session options.
+Use `--database C:\tmp\my-session-test\sessions.sqlite3` with persistent options
+to choose an explicit database; missing parent directories are created.
+
+The default is `%LOCALAPPDATA%\ScryRaven\sessions.sqlite3` on Windows, outside the
+repository. macOS uses `~/Library/Application Support/ScryRaven/sessions.sqlite3`;
+other platforms use `$XDG_DATA_HOME/scryraven/sessions.sqlite3` or
+`~/.local/share/scryraven/sessions.sqlite3`. Only local single-user storage is
+provided. This database contains questions, answers and source text in plaintext;
+there is no encryption at rest, cloud sync or authentication. Keep it out of Git.
+Tests and validation use explicit external temporary paths, not your default store.
+
+Persistence belongs to the application API, independently of the CLI:
+
+```python
+from scryraven.session import ResearchSession
+from scryraven.session_store import SQLiteSessionStore
+from scryraven.presentation import render_html
+
+store = SQLiteSessionStore()  # Or SQLiteSessionStore(an_explicit_test_path).
+session = ResearchSession.create(store=store)
+first = session.ask("According to the BIPM, what SI prefixes were added in 2022?")
+session_id = session.session_id
+# A later process, with no old session or provider cache required:
+reopened = ResearchSession.open(session_id, store=SQLiteSessionStore())
+metadata = store.list_sessions()  # ID, times, title, revision (completed-turn count).
+old_turn = reopened.turns[0]      # No model or provider call.
+html = render_html(old_turn.question, old_turn)
+followup = reopened.ask("Which two of those are for factors smaller than one?")
+```
+
+`create/open` accept the ordinary constructor's model/search/fetch/limits options
+for future questions. An optional `title` on `create` sets the display label;
+otherwise the first committed question supplies it without a model call.
+`SessionStore` is a small create/load/list/commit interface with one SQLite backend.
+
+Each saved `SessionTurn` exposes question, answer, Analysis, posture, stop reason,
+`selected_evidence`, `citations` and `citation_uses`. Citation records preserve
+answer-local numbers, canonical source IDs, titles, URLs and exact selected material;
+CitationUse records preserve the numeric markers' character spans. Historical
+packets are saved exactly, including targeted-view IDs, parents, bounds and content.
+They are not regenerated for display or automatically reused as current support.
+
+All actual acquisitions, including complete large-source parents, retain their
+original IDs and source relationships across restart. Future Research may select
+them or derive new exact views locally. Prior answers remain conversation context;
+Analysis remains semantic history. Each question still receives fresh Research,
+Analyst and Author decisions. Storage contains no traces, credentials, raw model
+responses, corrections, lexical indexes or cache state. Prompt caching is unchanged
+and cache expiration does not prevent reopening.
+
+Schema version 1 stores metadata and a validated complete session snapshot in one
+SQLite row. Each completed turn atomically updates the snapshot and revision. A
+failed turn or failed commit preserves the previous durable and in-memory state.
+`SessionStoreError` reports a fixed code; `SessionConflictError` reports
+`session_conflict` if another handle has advanced the session. Reopen to inspect
+the newer state before asking again; histories are never merged automatically.
+Incompatible schema versions and corrupt product records fail safely. Complete
+snapshots are rewritten on commit; very long-session performance is unproved.
+
+## Model configuration
 
 The process needs `OPENAI_API_KEY` and `EXA_API_KEY`. The product does not load
 `.env`. Optional independent role configuration:
@@ -88,14 +163,14 @@ or broader page/discussion questions. `context_needed` records the concrete gap.
 An older governing source can remain applicable; unrequested editions and
 hypothetical exceptions do not automatically expand a narrow question.
 
-Successful full-text acquisitions are immutable and retained in run/session memory.
+Successful full-text acquisitions are immutable and retained by the run/session.
 Bodies up to 32,000 characters are exposed directly. Larger sources produce one
 mechanical packet of exact slices up to 32,000 characters, using structure, lexical
 matches and recoverable excerpt phrases. One optional expansion up to 48,000
 characters addresses a concrete gap. These are provisional economics choices,
 not semantic sufficiency thresholds. A later turn can inspect a new exact packet
-from the same retained full parent without fetching it again. There is no persistent
-document store or history compression.
+from the same retained full parent without fetching it again, including after a
+durable session reopens. There is no shared document store or history compression.
 
 Different material versions at the same exact URL remain immutable and share
 source identity. Views carry exact parent bounds; highlights never acquire guessed
@@ -177,6 +252,7 @@ pre-commit run --all-files
 ```
 
 Offline tests inject external transports into the ordinary application and do not
-prove model judgment. CI runs offline without provider credentials/calls. Persistent
-sessions, scheduling, generalized routing/recovery, vector databases, semantic
-compression and calculation remain absent. Old providers are not dormant fallbacks.
+prove model judgment. CI runs offline without provider credentials/calls.
+Scheduling, generalized routing/recovery, vector databases, uploads, web/desktop
+shells, semantic compression and calculation remain absent. Old providers are not
+dormant fallbacks.

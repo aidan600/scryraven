@@ -31,6 +31,12 @@ previous generated answers and Analyst judgments never become factual evidence.
 Current findings require current supporting source material. New research occurs
 when retained evidence does not establish what the follow-up needs.
 
+A research session may be reopened later, preserving its conversation, acquired
+Evidence, source identities and historical answer provenance. Reopening changes
+lifetime only: previous generated answers remain non-evidentiary, prior Analyst
+judgments remain semantic history, and follow-ups receive fresh semantic decisions
+over actual acquired Evidence.
+
 ## Durable product invariants
 
 - Research is question-directed and may adapt when an initial attempt is inadequate.
@@ -54,7 +60,7 @@ Multi-component research is the immediate next product capability after the firs
 
 That capability should allow one user question to create several research needs, research those needs using the same evidence-grounded behavior, reason across the combined relevant evidence, and produce one coherent answer.
 
-Multi-component scheduling, graphs, parallel execution, specialist systems, persistent research sessions, generalized recovery systems, and other broader capabilities are not part of the first supported promise and should not be prebuilt merely in anticipation of future use.
+Multi-component scheduling, graphs, parallel execution, specialist systems, generalized recovery systems, and other broader capabilities are not part of the first supported promise and should not be prebuilt merely in anticipation of future use.
 
 ## Implementation posture
 

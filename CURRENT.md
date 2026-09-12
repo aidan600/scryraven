@@ -1,7 +1,8 @@
 # ScryRaven Current Truth
 
-Status: in-memory retained-context follow-ups are implemented and demonstrated in
-one ordinary three-turn BIPM/BIPM/NASA session. Compact citations and inspection of
+Status: local durable sessions are implemented and verified offline; their bounded
+production restart observation is pending. Retained-context follow-ups retain the
+ordinary three-turn BIPM/BIPM/NASA demonstration. Compact citations and inspection of
 selected Evidence retain their earlier product demonstrations. The semantic product
 path remains Research -> Analyst -> Author. Explicit prompt caching reduced effective
 input units by 23.62% on the bounded three-turn retained-context workload.
@@ -28,7 +29,7 @@ summaries and answers are excluded. Source selection and sufficiency remain sema
 judgments, not transport verdicts.
 
 Successful full-text acquisition is retained once per exact URL for the run or
-in-memory session. Bodies up to 32,000 characters are exposed directly; larger
+session. Bodies up to 32,000 characters are exposed directly; larger
 bodies use exact extracted
 packets up to 32,000 characters, with one optional 48,000-character expansion for a
 concrete gap. Packet bounds describe received extraction, not original-document
@@ -39,12 +40,14 @@ navigation actions before each assessment, and an earned second two-call search 
 for a specific unresolved same-need gap. Those limits are operational ceilings, not
 semantic sufficiency rules.
 
-## In-memory follow-ups
+## Session follow-ups
 
 `ResearchSession.ask(question)` uses the same production path as isolated
 `run(question)`. The ordinary CLI adds `--session`: answer the initial question,
 then accept follow-ups until blank input or EOF. Session-mode HTML is not provided;
 ordinary single-answer HTML and each Result's citation/inspection data remain intact.
+The constructor and `--session` remain ephemeral; the durable API and CLI options
+below opt into local persistence.
 
 Completed questions/answers supply conversation context only. Prior Analyst output,
 posture and limitations supply separate, non-evidentiary semantic history. Each
@@ -87,6 +90,39 @@ All selected live material was provider highlights. No independent source checks
 were performed. The sanitized validation record is in
 `docs/operator/IN_MEMORY_FOLLOWUP_VALIDATION.md`; exact live artifacts stay external
 and a useful sanitized clean control is preserved only in the ignored local corpus.
+
+## Local durable sessions
+
+`ResearchSession.create/open` use the application-level `SessionStore` boundary,
+with one standard-library SQLite implementation. The default database is per-user
+application data outside the checkout (`%LOCALAPPDATA%\ScryRaven\sessions.sqlite3`
+on Windows). Callers and tests can inject an explicit path. The CLI exposes
+`--create-session`, `--resume ID`, `--list-sessions` and `--database PATH`.
+Opening without a question reads the saved transcript without model/provider I/O.
+
+Schema version 1 stores session identity, UTC creation/update times, display title,
+revision, and a complete product-state snapshot. Each completed turn preserves its
+question, answer, Analysis, posture, stop reason, selected Evidence, Citation
+records and CitationUse character spans. Actual acquisitions retain every Evidence
+field, including full source content, IDs and canonical-source relationships.
+Historical exact views retain their IDs, parent relationships, ranges and content;
+they are audit/presentation snapshots, never automatically current Evidence.
+Existing CLI/HTML renderers can render saved `SessionTurn` objects directly.
+
+All completed-turn state commits in one transaction with a revision check. Failed
+model/citation turns and failed database commits leave the prior durable and
+in-memory state intact. Stale writers receive `session_conflict`; there is no
+semantic merge. Invalid reconstructed records and incompatible schema versions
+fail safely. No credentials, raw responses, corrections, diagnostic traces, prompt
+cache keys or provider cache state enter the session schema.
+
+Offline tests demonstrate process-object replacement, restored conversation and
+semantic history, retained-evidence reuse, stable/noncolliding IDs including
+same-URL versions, exact historical citation numbering and material, fresh large
+views from a persisted full parent without refetch, failure rollback and conflicts.
+Disposable lexical indexes are rebuilt, not persisted. The ordinary isolated and
+ephemeral paths and PR #635 fake-transport cache regressions remain covered.
+Live restart behavior is not yet claimed by this branch checkpoint.
 
 ## OpenAI transport economics
 
@@ -166,11 +202,14 @@ proves every nearby sentence.
 
 No fourth semantic owner, intermediary semantic representation, semantic verifier or
 Reviewer, or post-Author remediation loop is present.
-Sessions exist only in the current process. There is no persistence, serialized
-session/transcript, account memory, uploaded-document support, history compression,
-or context eviction. Prompt caching changes transport economics only.
-There is no persistent corpus, vector database, crawler, general RAG, calculation
-system, server, or frontend build stack.
+Persistence is local and single-user, without encryption at rest, cloud sync,
+accounts/authentication, uploads, a web/desktop shell, history compression or
+context eviction. The complete snapshot is rewritten on each commit; arbitrary
+long-session performance is unproved. Retained acquisitions belong to their session,
+not a shared retrieval service. Prompt caching remains an independent transport
+optimization; reopening does not require a provider cache hit.
+There is no vector database, crawler, general RAG, calculation system, server, or
+frontend build stack.
 
 Offline fixtures exercise deterministic mechanics and rendering safety; they do not
 prove model judgment or universal provider reliability. The existing broker remains
