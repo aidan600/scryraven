@@ -1,8 +1,8 @@
 # ScryRaven Current Truth
 
-Status: local durable sessions are implemented and verified offline; their bounded
-production restart observation is pending. Retained-context follow-ups retain the
-ordinary three-turn BIPM/BIPM/NASA demonstration. Compact citations and inspection of
+Status: local durable sessions are implemented and demonstrated in one ordinary
+three-turn BIPM/BIPM/NASA session across separate processes, followed by exact
+provider-free historical inspection. Compact citations and inspection of
 selected Evidence retain their earlier product demonstrations. The semantic product
 path remains Research -> Analyst -> Author. Explicit prompt caching reduced effective
 input units by 23.62% on the bounded three-turn retained-context workload.
@@ -122,7 +122,22 @@ same-URL versions, exact historical citation numbering and material, fresh large
 views from a persisted full parent without refetch, failure rollback and conflicts.
 Disposable lexical indexes are rebuilt, not persisted. The ordinary isolated and
 ephemeral paths and PR #635 fake-transport cache regressions remain covered.
-Live restart behavior is not yet claimed by this branch checkpoint.
+
+The bounded ordinary observation at `286c5721763ff49354fc811ad04dbf2c7737aa8d`
+used three separate processes for the BIPM prefix question, the elliptical
+below-one follow-up, and NASA's Mars day length. Search/Contents/model-call counts
+were 1/0/5, 0/0/4 and 1/0/5. Turn 2 reused unchanged persisted BIPM E1 while E1/E2
+remained intact. Turn 3 acquired and cited only new NASA E3/E4 while preserving
+E1/E2. Each turn had fresh Research, Analyst and Author decisions. A fourth process
+restored the entire session and all old answers, selected material, citations,
+CitationUse spans and rendered HTML exactly, with zero model/provider calls.
+
+One logical validation attempt and three ask calls succeeded; no repair or rerun
+was used. All live material was provider highlights. This proves the bounded
+restart path, not general conversational reliability or live full-parent reuse.
+The record is `docs/operator/PERSISTENT_SESSION_VALIDATION.md`. The temporary
+database and exact packet remain external under `C:\tmp`; a sanitized development
+clean-control candidate, without the database, is preserved in ignored local-evals.
 
 ## OpenAI transport economics
 

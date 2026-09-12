@@ -132,6 +132,9 @@ the newer state before asking again; histories are never merged automatically.
 Incompatible schema versions and corrupt product records fail safely. Complete
 snapshots are rewritten on commit; very long-session performance is unproved.
 
+The bounded production restart observation and its limits are recorded in
+[`PERSISTENT_SESSION_VALIDATION.md`](docs/operator/PERSISTENT_SESSION_VALIDATION.md).
+
 ## Model configuration
 
 The process needs `OPENAI_API_KEY` and `EXA_API_KEY`. The product does not load
