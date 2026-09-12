@@ -37,6 +37,18 @@ lifetime only: previous generated answers remain non-evidentiary, prior Analyst
 judgments remain semantic history, and follow-ups receive fresh semantic decisions
 over actual acquired Evidence.
 
+## Local Reading Room
+
+The local browser product operates the same research-session application and
+durable store as the CLI. It offers a continuous, readable research conversation,
+persistent history, follow-up questions, session rename and confirmed permanent
+deletion. Compact citations open the exact selected source material saved with
+that historical answer, alongside publication identity and its original URL.
+Citation numbering belongs to each answer. Later acquisitions must not change
+historical inspection. The answer is the primary reading surface; evidence is
+available in depth when requested. Working states and research limitations remain
+honest, and the interface remains usable at narrow browser widths.
+
 ## Durable product invariants
 
 - Research is question-directed and may adapt when an initial attempt is inadequate.

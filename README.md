@@ -21,6 +21,56 @@ python -m pip install -r requirements.txt -r requirements-dev.txt
 python -m scryraven "What is the maximum allowed weight of a ten-pin bowling ball?"
 ```
 
+## Reading Room
+
+Launch the local browser product from the same environment:
+
+```powershell
+python -m scryraven.reading_room
+```
+
+Open [http://127.0.0.1:7331](http://127.0.0.1:7331) in your browser. Keep the terminal
+running; Ctrl+C stops the server. It binds only to `127.0.0.1`. If the port is busy,
+choose another with `--port 7339`. There is no remote bind option.
+
+The Reading Room uses the same default per-user database as the saved-session CLI.
+To keep your durable research in a chosen location, pass the path at launch:
+
+```powershell
+python -m scryraven.reading_room --database "D:\My Research\sessions.sqlite3"
+```
+
+Missing parent directories are created. Use the same path when restarting or when
+opening these sessions from the CLI. The database holds your conversation and saved
+source material; browser storage holds none of it.
+
+Choose **New research**, ask a question, and use the composer for follow-ups. Submit
+with the arrow or Ctrl+Enter / Command+Enter; plain Enter adds a line. Research runs
+in the HTTP request, with an indeterminate working state and no token streaming.
+Completed answers, including limited results, are saved. A failed attempt keeps
+the question available to edit and leaves completed conversation intact.
+
+Click **[1]** to inspect the exact material saved with that historical answer, or
+**Sources** for its publication overview. Evidence opens beside the answer on a
+wide screen, as an overlay on a laptop, and as a full sheet on a narrow screen.
+Long material can be expanded in full. **Open original publication** opens a new
+tab; the saved selections remain available when the original site changes.
+
+Each session's **…** menu offers **Rename** and **Delete**. Rename preserves all
+research and requires no model call. Delete requires confirmation and permanently
+removes that session and its saved material. History, reopening, and both actions
+require no provider calls. Starting new questions uses the same provider environment
+and `ResearchSession` path as the CLI. An open form expires when the server restarts;
+reload the page before submitting it again.
+
+Flask supplies routing, escaping templates and the local HTTP server. All assets
+are local; no frontend framework or build step is needed. This is a local,
+single-user application, not a hosted service. JavaScript enhances the evidence
+sheet, working state and keyboard interactions; ordinary history, reading and
+forms also work without it, with expandable source disclosures.
+
+## Single-answer views and follow-ups
+
 Add `--html C:\tmp\answer.html` to save a self-contained local answer view
 (the destination directory must exist). Open that file in a browser. The view
 shows the question and answer, with compact numbered citations. Clicking a citation
@@ -256,6 +306,6 @@ pre-commit run --all-files
 
 Offline tests inject external transports into the ordinary application and do not
 prove model judgment. CI runs offline without provider credentials/calls.
-Scheduling, generalized routing/recovery, vector databases, uploads, web/desktop
-shells, semantic compression and calculation remain absent. Old providers are not
+Scheduling, generalized routing/recovery, vector databases, uploads, desktop
+wrappers, semantic compression and calculation remain absent. Old providers are not
 dormant fallbacks.

@@ -1,0 +1,160 @@
+{% macro icon(name) -%}
+<svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+{% if name == 'book' %}<path d="M12 5c-3-2-6-2-9-1v15c3-1 6-1 9 1 3-2 6-2 9-1V4c-3-1-6-1-9 1Z"/><path d="M12 5v15"/>
+{% elif name == 'plus' %}<path d="M12 5v14M5 12h14"/>
+{% elif name == 'arrow' %}<path d="m6 11 6-6 6 6M12 5v15"/>
+{% elif name == 'close' %}<path d="m6 6 12 12M6 18 18 6"/>
+{% elif name == 'menu' %}<path d="M4 6h16M4 12h16M4 18h16"/>
+{% elif name == 'back' %}<path d="m10 5-7 7 7 7M3 12h18"/>
+{% elif name == 'more' %}<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>
+{% endif %}</svg>
+{%- endmacro %}
+
+{% macro actions(item) -%}
+<details class="session-actions">
+  <summary class="icon-button" aria-label="Actions for {{ item.title or 'Untitled research' }}">{{ icon('more') }}</summary>
+  <div class="action-menu">
+    <a href="{{ url_for('open_session', session_id=item.session_id, edit='rename') }}">Rename</a>
+    <a class="danger-text" href="{{ url_for('confirm_delete', session_id=item.session_id) }}">Delete</a>
+  </div>
+</details>
+{%- endmacro %}
+
+{% macro composer(is_new=false) -%}
+<div class="composer-wrap{% if is_new %} welcome-composer{% endif %}">
+  <form class="ask-form" method="post" action="{{ url_for('ask', session_id=saved.metadata.session_id) if saved else url_for('ask') }}">
+    <input type="hidden" name="form_token" value="{{ form_token('ask') }}">
+    <label class="sr-only" for="question">{{ 'Ask a follow-up' if saved else 'Your research question' }}</label>
+    <div class="composer">
+      <textarea id="question" name="question" rows="2" required placeholder="{{ 'Ask a follow-up…' if saved else 'Ask a research question…' }}">{{ question or '' }}</textarea>
+      <button class="submit-question" type="submit" aria-label="{{ 'Ask follow-up' if saved else 'Start research' }}">{{ icon('arrow') }}</button>
+    </div>
+    <div class="composer-caption"><span>{{ 'Continue the conversation.' if saved else 'A question is a good place to start.' }}</span><span class="keyboard-hint">Ctrl / ⌘ + Enter</span></div>
+    <div class="working-state" role="status" aria-live="polite" hidden>
+      <span class="working-indicator" aria-hidden="true"></span>
+      <div><strong>Researching…</strong><p>ScryRaven is gathering and evaluating source material.</p></div>
+    </div>
+  </form>
+</div>
+{%- endmacro %}
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="same-origin">
+  <meta name="color-scheme" content="light">
+  <title>{{ saved.metadata.title if saved else 'Reading Room' }} · ScryRaven</title>
+  <link rel="icon" href="{{ url_for('static', filename='mark.svg') }}" type="image/svg+xml">
+  <link rel="stylesheet" href="{{ url_for('static', filename='reading_room.css') }}">
+  <script src="{{ url_for('static', filename='reading_room.js') }}" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#reading">Skip to reading</a>
+<aside class="sidebar" id="history" aria-label="Research history">
+  <div class="sidebar-top">
+    <a class="wordmark" href="{{ url_for('new_research') }}"><span class="brand-mark">{{ icon('book') }}</span>ScryRaven</a>
+    <a class="icon-button close-history" href="#" aria-label="Close history">{{ icon('close') }}</a>
+    <a class="new-research" href="{{ url_for('new_research') }}">{{ icon('plus') }} New research</a>
+  </div>
+  <nav class="history-list" aria-label="Saved sessions">
+    <div class="eyebrow history-label">Your research</div>
+    {% for item in history %}
+    <div class="session-row{% if saved and item.session_id == saved.metadata.session_id %} selected{% endif %}">
+      <a class="session-link" href="{{ url_for('open_session', session_id=item.session_id) }}" title="{{ item.title or 'Untitled research' }}"{% if saved and item.session_id == saved.metadata.session_id %} aria-current="page"{% endif %}>{{ item.title or 'Untitled research' }}</a>
+      {{ actions(item) }}
+    </div>
+    {% else %}
+    <p class="empty-history">A place for your questions,<br>and what you discover.</p>
+    {% endfor %}
+  </nav>
+  <div class="sidebar-foot"><span class="local-dot" aria-hidden="true"></span>Saved on this device</div>
+</aside>
+
+<main class="workspace{% if not saved %} new-state{% endif %}" id="reading" tabindex="-1">
+  <header class="room-header">
+    <a class="icon-button open-history" href="#history" aria-label="Open history">{{ icon('menu') }}</a>
+    <div class="room-name">Reading Room</div>
+    {% if saved %}
+    <span class="header-separator" aria-hidden="true">/</span>
+    {% if renaming %}
+    <form class="rename-form" method="post" action="{{ url_for('rename_session', session_id=saved.metadata.session_id) }}">
+      <input type="hidden" name="form_token" value="{{ form_token('rename') }}">
+      <label class="sr-only" for="session-title">Session title</label>
+      <input id="session-title" name="title" required value="{{ saved.metadata.title }}" autofocus>
+      <button class="small-button" type="submit">Save</button>
+      <a class="text-button rename-cancel" href="{{ url_for('open_session', session_id=saved.metadata.session_id) }}">Cancel</a>
+    </form>
+    {% else %}
+    <h1 class="session-title">{{ saved.metadata.title or 'Untitled research' }}</h1>
+    {{ actions(saved.metadata) }}
+    {% endif %}
+    {% else %}<span class="header-note">A little room to think.</span>{% endif %}
+  </header>
+
+  <div class="reading-scroll">
+    <div class="reading-content">
+      {% if notice %}<div class="notice" role="status">{{ notice }}</div>{% endif %}
+      {% if error %}<div class="error-notice" role="alert"><p>{{ error }}</p>{% if unavailable %}<a href="{{ url_for('new_research') }}">Reopen Reading Room</a>{% endif %}</div>{% endif %}
+      {% if not saved and not unavailable %}
+      <section class="welcome" aria-labelledby="welcome-title">
+        <div class="welcome-rule" aria-hidden="true"></div>
+        <p class="eyebrow">Space for a good question</p>
+        <h1 id="welcome-title">What do you want<br>to understand?</h1>
+        <p class="welcome-description">Follow a question further. ScryRaven researches it and brings the answer back with source material you can explore.</p>
+        {{ composer(true) }}
+        <p class="welcome-note">Read the answer. Open a citation. See what’s behind it.</p>
+      </section>
+      {% endif %}
+
+      {% for turn in turns %}
+      <section class="turn" id="turn-{{ turn.number }}" aria-labelledby="question-{{ turn.number }}">
+        <div class="question-block"><span class="eyebrow">{{ 'Your question' if loop.first else 'Following the thread' }}</span><h2 id="question-{{ turn.number }}">{{ turn.question }}</h2></div>
+        <article class="answer" aria-label="Answer to {{ turn.question }}">{{ turn.answer }}</article>
+        {% if turn.posture != 'supported' %}
+        <aside class="research-limitation"><strong>Research limitation</strong><p>{{ 'The available research did not establish an answer to this question.' if turn.posture == 'unable' else 'The available research did not establish every part of the question.' }}</p></aside>
+        {% endif %}
+        {% if turn.sources %}
+        <details class="sources-overview" id="turn-{{ turn.number }}-sources">
+          <summary class="sources-control">{{ icon('book') }} Sources <span aria-hidden="true">·</span> {{ turn.sources|length }}</summary>
+          <div class="source-list">
+          {% for source in turn.sources %}
+            <details class="source" id="{{ source.id }}">
+              <summary><span class="source-number">[{{ source.number }}]</span> <span class="source-title">{{ source.title }}</span></summary>
+              <div class="source-body">{{ source.body }}</div>
+            </details>
+          {% endfor %}
+          </div>
+        </details>
+        {% endif %}
+      </section>
+      {% endfor %}
+      {% if saved and not turns %}<p class="empty-session">This research hasn’t saved an answer yet. Ask a question below.</p>{% endif %}
+    </div>
+  </div>
+  {% if saved and not unavailable %}<footer class="composer-footer">{{ composer() }}</footer>{% endif %}
+</main>
+
+<dialog class="inspector" id="evidence-inspector" aria-labelledby="inspector-title">
+  <div class="inspector-top"><button class="text-button inspector-back" type="button">{{ icon('back') }} Sources</button><span class="eyebrow inspector-label">Evidence</span><button class="icon-button inspector-close" type="button" aria-label="Close evidence">{{ icon('close') }}</button></div>
+  <div class="inspector-scroll"><p class="eyebrow inspector-number"></p><h2 id="inspector-title">Sources</h2><div class="inspector-content"></div></div>
+  <div class="inspector-foot">Source material, as saved with this answer.</div>
+</dialog>
+
+{% if confirmation and saved %}
+<dialog class="delete-dialog" id="delete-confirmation" open aria-labelledby="delete-title" aria-describedby="delete-description">
+  <p class="eyebrow">Delete research</p>
+  <h2 id="delete-title">Delete “{{ saved.metadata.title or 'Untitled research' }}”?</h2>
+  <p id="delete-description">This permanently removes this research session, including its conversation and saved source material.</p>
+  <div class="dialog-actions">
+    <a class="small-button delete-cancel" href="{{ url_for('open_session', session_id=saved.metadata.session_id) }}" autofocus>Cancel</a>
+    <form method="post" action="{{ url_for('delete_session', session_id=saved.metadata.session_id) }}">
+      <input type="hidden" name="form_token" value="{{ form_token('delete') }}">
+      <button type="submit" class="delete-button" name="confirm" value="delete">Delete session</button>
+    </form>
+  </div>
+</dialog>
+{% endif %}
+</body>
+</html>

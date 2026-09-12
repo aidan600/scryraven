@@ -1,8 +1,12 @@
 # ScryRaven Current Truth
 
-Status: local durable sessions are implemented and demonstrated in one ordinary
-three-turn BIPM/BIPM/NASA session across separate processes, followed by exact
-provider-free historical inspection. Compact citations and inspection of
+Status: the local Reading Room browser product operates durable sessions, with
+deterministic HTTP and real-browser acceptance of conversation, exact historical
+Evidence, follow-ups, rename/delete, working/failure states and responsive layouts.
+Browser-shell validation used zero live research/provider calls. Local durable
+sessions retain their earlier ordinary three-turn BIPM/BIPM/NASA demonstration
+across separate processes, followed by exact provider-free historical inspection.
+Compact citations and inspection of
 selected Evidence retain their earlier product demonstrations. The semantic product
 path remains Research -> Analyst -> Author. Explicit prompt caching reduced effective
 input units by 23.62% on the bounded three-turn retained-context workload.
@@ -44,8 +48,9 @@ semantic sufficiency rules.
 
 `ResearchSession.ask(question)` uses the same production path as isolated
 `run(question)`. The ordinary CLI adds `--session`: answer the initial question,
-then accept follow-ups until blank input or EOF. Session-mode HTML is not provided;
-ordinary single-answer HTML and each Result's citation/inspection data remain intact.
+then accept follow-ups until blank input or EOF. The CLI's `--html` remains a
+single-answer artifact; the Reading Room renders complete durable conversations.
+Ordinary single-answer HTML and each Result's citation/inspection data remain intact.
 The constructor and `--session` remain ephemeral; the durable API and CLI options
 below opt into local persistence.
 
@@ -139,6 +144,61 @@ The record is `docs/operator/PERSISTENT_SESSION_VALIDATION.md`. The temporary
 database and exact packet remain external under `C:\tmp`; a sanitized development
 clean-control candidate, without the database, is preserved in ignored local-evals.
 
+## Local browser Reading Room
+
+`python -m scryraven.reading_room` launches the Flask/Werkzeug local HTTP shell at
+`http://127.0.0.1:7331`. `--database PATH` uses a chosen SQLiteSessionStore location;
+omitting it uses the existing per-user default. `--port` changes the local port.
+The launch path binds only to loopback, without a debugger or reloader. It is a
+local single-user server, not a hosted deployment. No frontend build, background
+jobs, queue, WebSockets, alternate research engine or browser persistence exists.
+
+Browser questions use ordinary `ResearchSession.create/open(...).ask(question)`;
+completed turns commit only through SessionStore. New research navigation creates
+no empty session. The first submission creates one, and a failed first turn removes
+only its still-empty record with a revision guard. Prior completed state survives
+failures and stale writers are not merged. Partial/unable results render as
+completed answers with restrained limitation context. While an HTTP request runs,
+the browser acknowledges work without claiming stages, progress percentages or
+streaming results. One-use signed forms prevent duplicate submissions; a restart
+expires open forms, which can be reloaded without losing saved history.
+
+SessionStore now owns metadata-only rename and permanent delete. Rename leaves the
+completed-turn revision and serialized research payload unchanged; a concurrent
+ask preserves the latest title. Delete checks the displayed completed-turn revision
+and requires a confirmation form. Stale/deleted pages return safely to history or
+retain an unsaved question in the new-research view. Neither operation calls a model.
+
+The shared deterministic presentation module renders safe Markdown and source
+material for both standalone HTML and the Reading Room. Every browser citation
+destination contains its historical turn index. Its inspector reads only that
+saved SessionTurn's Citation.materials, never the session's later acquisition
+corpus. Multiple selected materials remain separate; all three acquisition types
+have human-readable labels and long material is available in full. Ordinary
+bracketed numbers and answer-authored local links cannot impersonate citations.
+
+The answer uses a bounded reading measure, a quiet session sidebar and a multiline
+composer. Evidence docks on wide screens, overlays laptop layouts, and fills a
+narrow screen. The history drawer, citation interaction, focus return, source
+overview, full-material expansion, rename, delete confirmation and reduced-motion
+behavior use ordinary HTML/CSS with small JavaScript enhancements. Native forms and
+source disclosures remain available without JavaScript.
+
+HTTP protection includes trusted loopback hostnames, Origin checks, signed
+action-bound forms, a restrictive CSP, frame denial, bounded errors, and no remote
+assets. Local same-origin referrers preserve native form Origin headers; external
+publication links use `noopener noreferrer`. Questions, titles, Markdown and saved
+Evidence remain untrusted display data. No provider errors or request payloads are
+exposed as browser diagnostics.
+
+Offline regression and browser acceptance use only synthetic material and explicit
+external disposable databases. The browser pass exercised 1440px desktop, 1920px
+docked evidence, and 390px narrow layouts, including real form submission through
+the application, failure/limited results, historical [1] collisions, later same-URL
+material, rename/delete and process restart/reopen. This demonstrates presentation
+and session mechanics, not new evidence of live research quality. Arbitrary long
+history performance and simultaneous multi-user operation remain unproved.
+
 ## OpenAI transport economics
 
 The GPT-5.6 Responses transport uses explicit-only prompt caching with a 30-minute
@@ -218,13 +278,13 @@ proves every nearby sentence.
 No fourth semantic owner, intermediary semantic representation, semantic verifier or
 Reviewer, or post-Author remediation loop is present.
 Persistence is local and single-user, without encryption at rest, cloud sync,
-accounts/authentication, uploads, a web/desktop shell, history compression or
+accounts/authentication, uploads, a desktop wrapper, history compression or
 context eviction. The complete snapshot is rewritten on each commit; arbitrary
 long-session performance is unproved. Retained acquisitions belong to their session,
 not a shared retrieval service. Prompt caching remains an independent transport
 optimization; reopening does not require a provider cache hit.
-There is no vector database, crawler, general RAG, calculation system, server, or
-frontend build stack.
+There is no vector database, crawler, general RAG, calculation system, hosted
+service or frontend build stack.
 
 Offline fixtures exercise deterministic mechanics and rendering safety; they do not
 prove model judgment or universal provider reliability. The existing broker remains

@@ -75,6 +75,8 @@ class SessionStore(Protocol):
     def load(self, session_id: str) -> StoredSession: ...
     def list_sessions(self) -> tuple[SessionMetadata, ...]: ...
     def commit(self, session_id: str, revision: int, state: SessionState) -> SessionMetadata: ...
+    def rename(self, session_id: str, title: str) -> SessionMetadata: ...
+    def delete(self, session_id: str, *, revision: int | None = None) -> None: ...
 
 
 def default_session_path() -> Path:
@@ -345,3 +347,24 @@ class SQLiteSessionStore:
             if updated.rowcount != 1:
                 raise SessionConflictError()
         return metadata
+
+    def rename(self, session_id: str, title: str) -> SessionMetadata:
+        """Edit metadata only; the completed-turn revision and payload are untouched."""
+        with self._transaction() as connection:
+            if not isinstance(title, str) or not title.strip():
+                raise SessionStoreError("invalid_session_title")
+            current = self._load(connection, session_id).metadata
+            now = max(current.updated_at, datetime.now(timezone.utc).isoformat())
+            title = title.strip()
+            connection.execute("UPDATE sessions SET title = ?, updated_at = ? WHERE session_id = ?",
+                               (title, now, session_id))
+            metadata = SessionMetadata(session_id, current.created_at, now, title, current.revision)
+        return metadata
+
+    def delete(self, session_id: str, *, revision: int | None = None) -> None:
+        """Permanently remove one session; optionally guard a displayed turn count."""
+        with self._transaction() as connection:
+            current = self._load(connection, session_id)
+            if revision is not None and current.metadata.revision != revision:
+                raise SessionConflictError()
+            connection.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
