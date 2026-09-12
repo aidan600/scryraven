@@ -15,6 +15,7 @@ from scryraven.sources import Evidence
 
 if TYPE_CHECKING:
     from scryraven.research import Result
+    from scryraven.session_store import SessionTurn
 
 
 @dataclass(frozen=True)
@@ -50,7 +51,7 @@ def _source_label(citation: Citation) -> str:
     return parsed.hostname or "Untitled source"
 
 
-def render_cli(result: Result) -> str:
+def render_cli(result: Result | SessionTurn) -> str:
     sources = "\n".join(
         f"[{item.number}] {_source_label(item)}\n    {item.url}"
         for item in result.citations
@@ -58,7 +59,7 @@ def render_cli(result: Result) -> str:
     return result.answer + ("\n\nSources\n" + sources if sources else "")
 
 
-def _answer_html(result: Result) -> str:
+def _answer_html(result: Result | SessionTurn) -> str:
     # Only spans emitted by validation become links. Ordinary numeric brackets
     # in prose are not citations. Insert trusted fragment destinations before
     # Markdown parsing; raw HTML, images and autolinks remain disabled.
@@ -180,7 +181,7 @@ def _hash_allowance(text: str) -> str:
     return "'sha256-" + base64.b64encode(hashlib.sha256(text.encode("utf-8")).digest()).decode("ascii") + "'"
 
 
-def render_html(question: str, result: Result) -> str:
+def render_html(question: str, result: Result | SessionTurn) -> str:
     """Render a self-contained artifact with escaped source text and fixed assets."""
     policy = ("default-src 'none'; base-uri 'none'; form-action 'none'; "
               f"style-src {_hash_allowance(_STYLE)}; script-src {_hash_allowance(_SCRIPT)}")
