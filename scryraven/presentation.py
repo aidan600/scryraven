@@ -36,7 +36,7 @@ class CitationUse:
     end: int
 
 
-def _source_label(citation: Citation) -> str:
+def source_label(citation: Citation) -> str:
     if title := " ".join(citation.title.split()):
         return title
     # Missing display metadata does not license generating a publication title
@@ -53,27 +53,55 @@ def _source_label(citation: Citation) -> str:
 
 def render_cli(result: Result | SessionTurn) -> str:
     sources = "\n".join(
-        f"[{item.number}] {_source_label(item)}\n    {item.url}"
+        f"[{item.number}] {source_label(item)}\n    {item.url}"
         for item in result.citations
     )
     return result.answer + ("\n\nSources\n" + sources if sources else "")
 
 
-def _answer_html(result: Result | SessionTurn) -> str:
+def answer_html(result: Result | SessionTurn, *, source_prefix: str = "source-") -> str:
     # Only spans emitted by validation become links. Ordinary numeric brackets
     # in prose are not citations. Insert trusted fragment destinations before
     # Markdown parsing; raw HTML, images and autolinks remain disabled.
+    # A content-derived marker distinguishes our links from answer-authored links.
+    # It never survives rendering and contains no user-controlled HTML/URL syntax.
+    marker = "sr-" + hashlib.sha256(result.answer.encode()).hexdigest() + "-"
+    destinations = {f"#{marker}{c.number}": c.number for c in result.citations}
     parts = []
     previous = 0
     for use in result.citation_uses:
-        parts.extend((result.answer[previous:use.start], f"[[{use.number}]](#source-{use.number})"))
+        parts.extend((result.answer[previous:use.start], f"[[{use.number}]](#{marker}{use.number})"))
         previous = use.end
     parts.append(result.answer[previous:])
     markdown = MarkdownIt("commonmark", {"html": False}).enable("table").disable(["image", "autolink"])
-    return markdown.render("".join(parts))
+
+    tokens = markdown.parse("".join(parts))
+    for block in tokens:
+        if block.type in {"th_open", "td_open"}:
+            alignment = (block.attrGet("style") or "").removeprefix("text-align:")
+            if alignment in {"left", "center", "right"}:
+                block.attrs.pop("style", None)
+                block.attrSet("class", f"align-{alignment}")
+        for token in block.children or ():
+            if token.type != "link_open":
+                continue
+            destination = token.attrGet("href") or ""
+            if destination in destinations:
+                number = destinations[destination]
+                token.attrSet("href", f"#{source_prefix}{number}")
+                token.attrSet("class", "citation")
+                token.attrSet("aria-label", f"Inspect source {number}")
+            elif safe_publication_url(destination):
+                token.attrSet("target", "_blank")
+                token.attrSet("rel", "noopener noreferrer")
+            else:
+                # Model-authored local links cannot impersonate validated citations
+                # or navigate to application actions. Keep their visible label.
+                token.attrs.pop("href", None)
+    return markdown.renderer.render(tokens, markdown.options, {})
 
 
-def _source_link(url: str) -> str:
+def safe_publication_url(url: str) -> bool:
     # Defense at the HTML boundary, also for callers constructing results offline.
     # No URL is synthesized from an evidence offset or document locator.
     try:
@@ -83,7 +111,11 @@ def _source_link(url: str) -> str:
                    and not any(char.isspace() or ord(char) < 32 for char in url))
     except ValueError:
         allowed = False
-    if not allowed:
+    return allowed
+
+
+def _source_link(url: str) -> str:
+    if not safe_publication_url(url):
         return '<p class="source-url">Original source URL unavailable.</p>'
     return (f'<p class="source-url"><a href="{escape(url, quote=True)}" target="_blank" '
             f'rel="noopener noreferrer">Open original publication <span aria-hidden="true">↗</span></a>'
@@ -91,28 +123,38 @@ def _source_link(url: str) -> str:
 
 
 _ACQUISITION_LABELS = {
-    "provider_highlights": "Extractive highlights. Selections may be noncontiguous or omit surrounding context.",
-    "fetched_source": "Extracted source text.",
-    "targeted_view": "Selected slice of extracted text. Slice boundaries are not original-document page locations.",
+    "provider_highlights": ("Extractive highlight", "Selections may be noncontiguous or omit surrounding context."),
+    "fetched_source": ("Fetched source text", "Text extracted from the publication."),
+    "targeted_view": ("Selected slice", "Slice boundaries are not original-document page locations."),
 }
 
 
+def source_body_html(citation: Citation, *, collapse_long: bool = False) -> str:
+    """Exact saved material, shared by standalone disclosures and the Reading Room."""
+    materials = []
+    for index, item in enumerate(citation.materials, 1):
+        label, qualification = _ACQUISITION_LABELS[item.acquisition]
+        content = f'<pre class="material-text"><code>{escape(item.content)}</code></pre>'
+        if collapse_long and len(item.content) > 1200:
+            content = (f'<div class="material-preview">{escape(item.content[:800])}…</div>'
+                       '<details class="full-material"><summary><span class="show-material">Show full material</span>'
+                       '<span class="hide-material">Collapse material</span></summary>' + content + '</details>')
+        materials.append('<section class="material">'
+                         f'<h3><span class="selection-label">Selection {index}</span>{label}</h3>'
+                         f'<p class="acquisition">{qualification}</p>' + content + '</section>')
+    return (_source_link(citation.url)
+            + '<h2>Material ScryRaven used from this source</h2>'
+            '<p class="scope">The citation refers to this source and its selected material, '
+            'not one exact proof passage. These selections may not include the whole publication.</p>'
+            + "".join(materials))
+
+
 def _source_html(citation: Citation) -> str:
-    materials = "".join(
-        '<section class="material">'
-        f'<h3>Selection {index}</h3><p class="acquisition">{_ACQUISITION_LABELS[item.acquisition]}</p>'
-        f'<pre><code>{escape(item.content)}</code></pre></section>'
-        for index, item in enumerate(citation.materials, 1)
-    )
     return (
         f'<details id="source-{citation.number}">'
         f'<summary><span class="source-number">[{citation.number}]</span> '
-        f'{escape(_source_label(citation))}</summary>'
-        '<div class="source-body">' + _source_link(citation.url)
-        + '<h2>Material ScryRaven used from this source</h2>'
-        '<p class="scope">The citation refers to this source and its selected material, '
-        'not one exact proof passage. These selections may not include the whole publication.</p>'
-        + materials + '</div></details>'
+        f'{escape(source_label(citation))}</summary>'
+        '<div class="source-body">' + source_body_html(citation) + '</div></details>'
     )
 
 
@@ -139,6 +181,9 @@ li { margin: .35em 0; }
 table { display: block; width: 100%; overflow-x: auto; border-collapse: collapse; margin: 1.2em 0; font-size: .92rem; }
 th, td { text-align: left; vertical-align: top; padding: .6em .85em; border: 1px solid #d7dfda; }
 th { background: #eef2ee; }
+.answer .align-left { text-align: left; }
+.answer .align-center { text-align: center; }
+.answer .align-right { text-align: right; }
 blockquote { margin: 1em 0; padding-left: 1em; border-left: 3px solid #b2c4b9; }
 .sources { margin-top: 38px; border-top: 1px solid #d7dfda; padding-top: 8px; }
 .sources > h2 { font-size: .85rem; color: #526660; margin: 18px 0 12px; }
@@ -151,6 +196,7 @@ summary { padding: 14px 18px; cursor: pointer; font-size: .92rem; font-weight: 5
 .source-url span { overflow-wrap: anywhere; }
 .material { margin-top: 22px; }
 .material h3 { font-size: .85rem; margin-bottom: 3px; }
+.selection-label { display: block; font-weight: 400; }
 pre { white-space: pre-wrap; overflow-wrap: anywhere; font: .86rem/1.65 system-ui, sans-serif;
       background: #f5f7f4; border-left: 2px solid #c9d7ce; padding: 16px; margin: 10px 0 0; }
 pre code { font: inherit; }
@@ -195,6 +241,6 @@ def render_html(question: str, result: Result | SessionTurn) -> str:
         f'<title>ScryRaven answer</title><style>{_STYLE}</style></head><body><main>'
         '<header><div class="brand">ScryRaven</div>'
         f'<h1>{escape(question)}</h1></header><article class="answer" aria-label="Answer">'
-        + _answer_html(result) + '</article>' + sources
+        + answer_html(result) + '</article>' + sources
         + f'</main><script>{_SCRIPT}</script></body></html>\n'
     )

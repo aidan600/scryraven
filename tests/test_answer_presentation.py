@@ -96,6 +96,22 @@ def test_markdown_structure_and_citations_render_without_adding_an_answer_templa
     assert len([attrs for tag, attrs in page.tags if tag == "a" and attrs["href"] == "#source-1"]) == 4
 
 
+@pytest.mark.parametrize("draft", ["A quoted number: `[1]`.", "```text\nNumber: [1]\n```",
+                                   "    Number: [1]"])
+def test_ordinary_numbers_inside_code_do_not_become_citations(draft):
+    page = Page(render_html(QUESTION, answer(draft + "\n\nThe source. [E1]")))
+    assert [a["href"] for tag, a in page.tags if a.get("class") == "citation"] == ["#source-1"]
+    assert "Number: [1]" in "".join(page.text) or "A quoted number: [1]" in "".join(page.text)
+
+
+def test_markdown_table_alignment_uses_csp_compatible_classes():
+    page = Page(render_html(QUESTION, answer("A table. [E1]\n\n| Left | Center | Right |\n"
+                                          "| :--- | :---: | ---: |\n| A | B | C |")))
+    cells = [attrs for tag, attrs in page.tags if tag in {"th", "td"}]
+    assert [attrs["class"] for attrs in cells] == ["align-left", "align-center", "align-right"] * 2
+    assert not any("style" in attrs for attrs in cells)
+
+
 def test_unable_empty_evidence_has_no_invented_sources_or_citations():
     model = Model(orient(), done(), analysis("unable", refs=()),
                   author("The available evidence did not establish the weight limit."))
