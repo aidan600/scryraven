@@ -2,6 +2,8 @@
 
 import json
 import sqlite3
+import tempfile
+from contextlib import closing
 from dataclasses import asdict
 from pathlib import Path
 
@@ -41,6 +43,16 @@ from scryraven.session_store import (
     default_session_path,
 )
 from scryraven.sources import PACKET_CHARACTERS
+
+
+@pytest.fixture
+def tmp_path():
+    # The repository's general pytest basetemp can live inside the checkout.
+    # Session databases must stay external even when pytest runs without flags.
+    root = Path(tempfile.gettempdir()).resolve()
+    assert not root.is_relative_to(Path(__file__).resolve().parents[1])
+    with tempfile.TemporaryDirectory(prefix="scryraven-session-test-", dir=root) as directory:
+        yield Path(directory)
 
 
 def no_io(*args, **kwargs):
@@ -249,7 +261,7 @@ def test_stale_writer_cannot_overwrite_winner_or_advance_its_own_memory(tmp_path
 
 
 def mutate_payload(path, mutate):
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         payload = json.loads(connection.execute("SELECT payload FROM sessions").fetchone()[0])
         mutate(payload)
         connection.execute("UPDATE sessions SET payload = ?", (json.dumps(payload),))
@@ -292,7 +304,7 @@ def test_corrupt_product_state_fails_before_research_without_rewriting_data(tmp_
 ])
 def test_invalid_metadata_and_json_are_safe(tmp_path, statement):
     path, session, _ = opening(tmp_path)
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute(statement)
     with pytest.raises(SessionStoreError, match="^invalid_session_data$"):
         reopen(path, session.session_id)
@@ -301,7 +313,7 @@ def test_invalid_metadata_and_json_are_safe(tmp_path, statement):
 @pytest.mark.parametrize("statement", ["PRAGMA user_version = 99", "CREATE TABLE unrelated (value TEXT)"])
 def test_unknown_schema_is_not_migrated_or_overwritten(tmp_path, statement):
     path = tmp_path / "incompatible.sqlite3"
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute(statement)
     before = path.read_bytes()
     with pytest.raises(SessionStoreError, match="^incompatible_session_store$"):
@@ -329,7 +341,7 @@ def test_public_snapshots_are_copied_and_storage_is_a_product_field_allowlist(tm
     assert session.turns[0].analysis.findings[0].text == FACT_A
     restored = reopen(path, session.session_id)
     assert restored.turns == session.turns
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         record = json.loads(connection.execute("SELECT payload FROM sessions").fetchone()[0])
     assert set(record) == {"turns", "acquisitions"}
     assert set(record["turns"][0]) == {

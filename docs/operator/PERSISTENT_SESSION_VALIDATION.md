@@ -3,7 +3,8 @@
 Outcome: **met** in the primary attempt on 2026-09-11 (Pacific time). One logical
 session completed three public questions in three separate Python processes.
 A fourth process inspected the saved history without external calls. Live runtime:
-`286c5721763ff49354fc811ad04dbf2c7737aa8d`. Subsequent changes are documentation only.
+`286c5721763ff49354fc811ad04dbf2c7737aa8d`. Subsequent changes are documentation and
+test temporary-directory isolation only; product runtime is unchanged.
 
 ## Baseline and execution
 
@@ -103,7 +104,8 @@ refetch. Large-source restart reuse remains offline evidence only.
 
 Verification passed: `python -m pytest -q` (295 tests), `python -m ruff check .`,
 and `pre-commit run --all-files` using the repository Python and external temp/cache
-roots. The stale pre-commit cache was replaced with a fresh external tool cache;
+roots. Persistence tests also enforce external temporary directories when pytest
+runs without a basetemp override. The stale pre-commit cache was replaced with a fresh external tool cache;
 no machine-wide configuration or permission changes were made. PR #635 fake
 transport tests still verify cache layout and `store=False`. Research prompts,
 models/reasoning, retrieval/ranking, source mechanics and transports are unchanged.
