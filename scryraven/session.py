@@ -39,8 +39,10 @@ class ResearchSession:
         search: Callable[..., list[DiscoveryCandidate]] = search_exa,
         fetch: Callable[[str], FetchedMaterial] = fetch_exa,
         limits: RunLimits = RunLimits(),
+        engine: Callable[..., Result] | None = None,
     ) -> None:
         self._model, self._search, self._fetch, self._limits = model, search, fetch, limits
+        self._engine = engine
         self._snapshot = _Snapshot(SessionState())
         self._store: SessionStore | None = None
 
@@ -94,7 +96,7 @@ class ResearchSession:
                 for turn in state.turns
             ],
         }
-        result = _run_turn(
+        result = (self._engine or _run_turn)(
             question, model=self._model, search=self._search, fetch=self._fetch, limits=self._limits,
             retained_acquisitions=state.acquisitions, context=context, session_turn=len(state.turns) + 1,
         )

@@ -68,7 +68,10 @@ honest, and the interface remains usable at narrow browser widths.
 
 ## Deferred capabilities
 
-Multi-component research is the immediate next product capability after the first single-component slice works.
+Multi-component research remains a future product capability. Near-term development
+is evaluating an integrated Investigator responsibility with reversible attention.
+Investigator is experimental, has not replaced production, and has not demonstrated
+superiority over the current path.
 
 That capability should allow one user question to create several research needs, research those needs using the same evidence-grounded behavior, reason across the combined relevant evidence, and produce one coherent answer.
 

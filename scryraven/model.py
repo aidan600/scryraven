@@ -154,8 +154,8 @@ class OpenAIModel:
         instructions += "\nReturn only JSON matching the response schema, with no Markdown or commentary."
         phase = material.get("phase", stage)
         # Only fixed transport labels reach telemetry, never arbitrary material.
-        safe_stage = stage if stage in {"research", "analyst", "author"} else "other"
-        safe_phase = phase if phase in {"orientation", "navigation", "relevance", "analyst", "author"} else "other"
+        safe_stage = stage if stage in {"research", "analyst", "author", "investigator"} else "other"
+        safe_phase = phase if phase in {"orientation", "navigation", "relevance", "analyst", "author", "investigator"} else "other"
         family = sha256(_json(["layout-v1", self.cache_namespace, role.model, role.reasoning,
                               stage, phase, instructions, schema]).encode("utf-8")).hexdigest()[:32]
         cache_family = f"sr-v1:{safe_stage}:{safe_phase}:{family}"
