@@ -108,15 +108,17 @@ def _validate_state(
     _require(bool(state.interpreted_target.strip() and state.intellectual_operation.strip()),
              "missing_question_interpretation", trace)
     _require(len(state.model_dump_json()) <= attention.limits.max_state_chars, "state_size_exceeded", trace)
-    notes = [*state.supported_understanding, *state.qualifications_and_conflicts]
-    old = {item.id: item for item in [*previous.supported_understanding, *previous.qualifications_and_conflicts]
-           } if previous else {}
-    _require(len({item.id for item in notes}) == len(notes), "duplicate_note_id", trace)
-    for note in notes:
+    categories = ("supported_understanding", "qualifications_and_conflicts")
+    notes = [(category, item) for category in categories for item in getattr(state, category)]
+    # Reclassifying an identical note is still a semantic revision.
+    old = {(category, item.id): item for category in categories
+           for item in getattr(previous, category)} if previous else {}
+    _require(len({item.id for _, item in notes}) == len(notes), "duplicate_note_id", trace)
+    for category, note in notes:
         _require(bool(note.id.strip() and note.text.strip()), "incomplete_supported_note", trace)
         for ref in note.support_material_refs:
             attention.resolve(ref)
-        if note != old.get(note.id):
+        if note != old.get((category, note.id)):
             _require(set(note.support_material_refs) <= exposed, "note_support_not_exposed", trace)
     obligations = state.unresolved_obligations
     _require(len({item.id for item in obligations}) == len(obligations), "duplicate_obligation_id", trace)

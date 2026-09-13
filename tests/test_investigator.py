@@ -245,6 +245,42 @@ def test_revised_note_requires_reactivation_in_the_reasoning_input(category):
         harness(model, Provider([lead()])).run(QUESTION)
 
 
+@pytest.mark.parametrize("previous_category,next_category", [
+    ("qualifications_and_conflicts", "supported_understanding"),
+    ("supported_understanding", "qualifications_and_conflicts"),
+])
+@pytest.mark.parametrize("reactivate", [False, True], ids=["shelved", "reactivated"])
+def test_note_category_change_requires_exposed_support(previous_category, next_category, reactivate):
+    previous = state()
+    previous[previous_category] = [note(text="Threshold A applies only at rest.")]
+    revised = state()
+    revised[next_category] = deepcopy(previous[previous_category])
+    steps = [decision(discover()), decision(inspect(), memory=previous, shelve=["E1"])]
+    if reactivate:
+        # Same-category unchanged notes can survive shelving while requesting reactivation.
+        steps.append(decision(inspect("E1"), memory=previous))
+    revision_call = len(steps)
+    steps.extend([
+        # Inspect in this response cannot backdate exposure for the category change.
+        decision(inspect("E1"), memory=revised),
+        decision(finish("E1", synthesis="Threshold A applies only at rest."), memory=revised),
+        author("Threshold A applies only at rest. [E1]"),
+    ])
+    model = ScriptedModel(*steps)
+    candidate = harness(model, Provider([lead()]))
+    if reactivate:
+        result = candidate.run(QUESTION)
+        assert result.posture == "supported" and not model.steps
+        assert result.selected_evidence[0].content == TEXT_A
+    else:
+        with pytest.raises(RunError, match="note_support_not_exposed"):
+            candidate.run(QUESTION)
+        assert len(model.calls) == revision_call + 1
+    request = model.calls[revision_call][1]
+    assert request["investigation_state_not_evidence"] == previous
+    assert [item["id"] for item in material_items(request)] == (["E1"] if reactivate else [])
+
+
 @pytest.mark.parametrize("same_response_shelve", [False, True])
 def test_terminal_relationship_requires_exact_support_active_now(same_response_shelve):
     steps = [decision(discover())]
