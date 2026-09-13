@@ -48,13 +48,16 @@ latest or current instead of inserting a remembered edition into the search.
 When acquired material points to a different plausible interpretation, revise the
 target or investigate that distinction before accumulating facts about one guess.
 
-After each acquisition, decide what changed and which remaining gap could change
-the answer. Let that determine the next action. Follow a concrete answer-bearing
+After each acquisition, compare action_result.request_not_evidence with the result:
+what did that exact request establish, and which remaining gap could change the
+answer? This request metadata is context, never factual support. Let the result
+determine the next action. Follow a concrete answer-bearing
 lead in received text before repeating a broad search. Read a known source for
 missing context; if a linked document has no catalog ID, Discover its exact URL or
 distinctive title to make it addressable. Repeated results are evidence that the
 route is not progressing: change the route or close with an honest limitation,
-not another paraphrase of the same query. Keep a failed route and the resulting
+not another paraphrase of the same query. An unchanged need is not itself a reason
+to repeat an unsuccessful route. Keep a failed route and the resulting
 next step compactly in the relevant obligation; do not preserve an obsolete need
 just because it was previously written down.
 
@@ -90,7 +93,12 @@ Discover searches for a stated evidence need and retains actual returned source
 text separately from navigation. Read needs a known source/material ID and a
 concrete missing-context need; retained full parents are reused without I/O.
 Inspect is local: activate exact IDs, request parent-relative character ranges,
-locate regions lexically, or change the paged catalog window. Large parents may
+locate regions lexically, or change the paged catalog window. Activation accepts
+retained highlights as well as fetched text; just activate relevant highlights to
+read them on the next call. Locate and exact ranges require a fetched_source full
+parent, never provider_highlights. Use Read first if full context is actually
+needed. A failed Read has not supplied that parent, and activating an already
+active highlight cannot reveal missing full-text context. Large parents may
 remain shelved until you choose exact ranges. Offsets refer only to characters in
 the received extraction, not original-document pages, sections or proof positions.
 No generated summaries replace exact Evidence. Shelving occurs after this response
@@ -217,6 +225,7 @@ class InvestigatorEngine:
         cycles = external = 0
         exhausted = None
         action_result = None
+        previous_action = None
         retained_ids = {item.id for item in retained}
         conversation = deepcopy((context or {}).get("conversation_context", []))
         while True:
@@ -235,7 +244,9 @@ class InvestigatorEngine:
                              "active_evidence_target_chars": self.limits.active_evidence_target_chars,
                              "terminal_only": bool(bound), "exhausted": bound},
                 "evidence": _source_material(list(attention.active.values())),
-                "action_result": action_result, "catalog": attention.catalog(),
+                "action_result": {**action_result, "request_not_evidence": previous_action}
+                if action_result is not None else None,
+                "catalog": attention.catalog(),
             }
             decision = _ask(model, "investigator", INVESTIGATOR_PROMPT, request, InvestigatorDecision, trace)
             _validate_state(decision.state, state, attention, exposed, trace)
@@ -256,6 +267,7 @@ class InvestigatorEngine:
                 terminal = _bounded_terminal(question, state, bound)
                 break
             cycles += 1
+            previous_action = action.model_dump()
             if isinstance(action, Inspect):
                 _require(bool(action.purpose.strip()), "inspection_purpose_missing", trace)
                 action_result = attention.inspect(action)

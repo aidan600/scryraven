@@ -353,6 +353,46 @@ def test_current_target_revision_follows_link_and_closes_only_current_support():
     assert material_items(script.calls[-2][1]) == [result.evidence[1].material()]
 
 
+def test_action_feedback_keeps_request_identity_through_failure_and_local_inspection():
+    provider = Provider([lead()], ExaTransportError("untrusted detail"))
+    retry_route = {"kind": "discover", "query": "a distinct current-source route",
+                   "evidence_need": "The published current scope."}
+    actions = [discover(), retry_route, inspect("E1")]
+    model = ScriptedModel(*(decision(action) for action in actions), decision(finish("E1")), author())
+    result = harness(model, provider).run(QUESTION)
+    assert model.calls[0][1]["action_result"] is None
+    for index, action in enumerate(actions, 1):
+        assert model.calls[index][1]["action_result"]["request_not_evidence"] == action
+    assert model.calls[2][1]["action_result"]["status"] == "acquisition_failed"
+    assert "untrusted detail" not in json.dumps(model.calls)
+    assert "request_not_evidence" not in model.calls[-1][1]
+    assert [item.content for item in result.evidence] == [TEXT_A]
+
+
+@pytest.mark.parametrize("locate_highlight", [False, True])
+def test_followup_highlights_activate_without_full_parent_but_cannot_locate(locate_highlight):
+    session = harness(ScriptedModel(decision(discover()), decision(finish("E1")), author()),
+                      Provider([lead()])).session()
+    session.ask(QUESTION)
+    before = session.turns, session.acquisitions
+    action = inspect("E1", locate={"material_ref": "E1", "query": "threshold", "start_char": 0}
+                     if locate_highlight else None)
+    model = ScriptedModel(decision(action), decision(finish("E1")), author())
+    session._model, session._search, session._fetch = model, no_io, no_io
+    if locate_highlight:
+        with pytest.raises(RunError, match="region_inspection_requires_full_parent"):
+            session.ask("What is its scope?")
+        assert (session.turns, session.acquisitions) == before
+    else:
+        result = session.ask("What is its scope?")
+        assert result.selected_evidence == before[1]
+        assert result.citations[0].materials[0].content == TEXT_A
+        assert model.calls[1][1]["action_result"]["request_not_evidence"] == action
+    initial = model.calls[0][1]
+    assert initial["evidence"] == [] and initial["investigation_state_not_evidence"] is None
+    assert initial["catalog"]["items"][0]["acquisition"] == "provider_highlights"
+
+
 def test_attention_target_rejects_activation_atomically_without_eviction_or_truncation():
     retained = (Evidence("E1", URL_A, "A", TEXT_A), Evidence("E2", URL_B, "B", TEXT_B))
     attention = Attention(retained, ExperimentalLimits(active_evidence_target_chars=len(TEXT_A)))

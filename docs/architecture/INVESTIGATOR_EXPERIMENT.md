@@ -15,7 +15,9 @@ Obligations arise when a concrete trigger, material answer impact and plausible
 useful next action exist. Mechanics check those fields, not their justification.
 
 One loop exposes conversation context, compact state, active exact Evidence, the
-last mechanical action result and a catalog window. One model response updates
+last mechanical action result (including its requested action as non-evidentiary
+context) and a catalog window. Only the preceding request is retained for this
+feedback, not an action history or persistent transcript. One model response updates
 state and chooses one action. Mechanics validate references against that input,
 apply shelving, execute the action and expose the resulting working set next time.
 There are no relevance/shelving calls, semantic summaries, planner/reviewer agents,
