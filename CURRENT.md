@@ -10,12 +10,15 @@ Compact citations and inspection of
 selected Evidence retain their earlier product demonstrations. The semantic product
 path remains Research -> Analyst -> Author. Explicit prompt caching reduced effective
 input units by 23.62% on the bounded three-turn retained-context workload.
+An explicit experimental Investigator -> Author harness implements reversible
+attention and has deterministic offline mechanical evidence. It has no live
+quality demonstration and no product replacement decision.
 Repository: aidan600/scryraven
 Preferred local checkout: C:\Users\aidan\ScryRaven
 
 ## Active product path
 
-Exactly Research, Analyst, and Author retain semantic authority. Research directs
+On the ordinary production path, exactly Research, Analyst, and Author retain semantic authority. Research directs
 public-web acquisition toward the question; Analyst interprets support,
 qualifications, conflicts, and unresolved gaps; Author writes from Analyst findings
 and supplied supporting material. FAST and SMART remain internal role labels, both
@@ -43,6 +46,51 @@ Each question gets fresh existing bounds: up to three Analyst assessments, up to
 navigation actions before each assessment, and an earned second two-call search round
 for a specific unresolved same-need gap. Those limits are operational ceilings, not
 semantic sufficiency rules.
+
+## Experimental Investigator
+
+The explicit `scryraven.experimental.harness` developer entrypoint implements
+Investigator -> Author with independent state/action/terminal contracts. Investigator
+owns interpretation, acquisition direction, synthesis and terminal judgment within
+this candidate. The ordinary production path is still Research -> Analyst -> Author;
+CLI/Reading Room defaults have no selector or replacement. `ResearchSession` accepts
+one optional injected engine callable, and normal calls retain the production engine.
+
+The candidate retains actual acquired source text independently of final answer
+selection in the existing acquisition collection. Run-local attention can shelve,
+reactivate and repeatedly inspect exact parent-relative views without refetch.
+A bounded body-free catalog and disposable lexical region locator preserve direct
+ID access after lookup misses. Same-URL versions/views retain canonical source
+identity. Semantic state is non-evidentiary: new/revised notes require exact material
+exposed in their reasoning input, and Finish requires its exact support active in
+that input and still active after shelving. These are reference/exposure checks,
+not semantic entailment validation.
+
+A terminal-only adapter preserves integrated synthesis, qualifications/conflicts,
+requested operation and unresolved portions for the unchanged Author consumer.
+Canonical support references and exact selected material use existing Result,
+citation and session machinery. Successful candidate acquisitions can persist while
+unselected. Follow-ups have fresh state and attention over retained acquisitions;
+intermediate state, obligations, catalog windows and indexes are not persisted.
+Clarify is an experimental terminal signal without a completed session turn or UI
+lifecycle. The existing version-1 database schema and atomic commit remain unchanged.
+
+Configurable initial knobs are 16 nonterminal cycles, 16 external acquisition
+attempts and 128,000 active Evidence characters. Local inspection does not consume
+external allowance; obligations do not renew counters. Exhaustion permits one
+terminal-only partial/unable/Clarify step, with explicit unable fallback. These are
+experimental settings, not product sufficiency rules.
+
+Domain-neutral scripted tests exercise custody without selection, exact reversible
+attention, repeated full-parent views, bounded catalogs and direct addressing,
+exposure rejection, relational terminal analysis, unchanged Author material and
+citations, successful process/session reopen, fresh follow-ups, historical exactness,
+rollback and stale commits, clarification, independent limits and lossless cached
+transport input without shelved bodies. Existing production regressions remain
+covered. This is offline mechanical evidence only: no live Investigator quality,
+prompt quality, general semantic fidelity or superiority has been demonstrated.
+There is no product replacement decision. See
+`docs/architecture/INVESTIGATOR_EXPERIMENT.md` for the architecture and genuine limits.
 
 ## Session follow-ups
 
@@ -275,11 +323,13 @@ also omit relevant evidence before Analyst sees it. Displayed selected Evidence 
 honest, inspectable source-level context, not a guarantee that one displayed span
 proves every nearby sentence.
 
-No fourth semantic owner, intermediary semantic representation, semantic verifier or
-Reviewer, or post-Author remediation loop is present.
+The ordinary production path has no fourth semantic owner or intermediary semantic
+representation. The development-only Investigator candidate is separate from that
+path. Neither path adds a semantic verifier, Reviewer or post-Author remediation loop.
 Persistence is local and single-user, without encryption at rest, cloud sync,
 accounts/authentication, uploads, a desktop wrapper, history compression or
-context eviction. The complete snapshot is rewritten on each commit; arbitrary
+production context eviction. Experimental shelving changes only current attention,
+not retained custody. The complete snapshot is rewritten on each commit; arbitrary
 long-session performance is unproved. Retained acquisitions belong to their session,
 not a shared retrieval service. Prompt caching remains an independent transport
 optimization; reopening does not require a provider cache hit.

@@ -496,7 +496,7 @@ may enter the answer, with citations to the supplied current supporting Evidence
 """
 
 ModelCall = Callable[[str, str, dict, dict], str]
-T = TypeVar("T", bound=_Output)
+T = TypeVar("T", bound=BaseModel)
 
 
 def _source_material(items: list[Evidence]) -> list[dict]:
@@ -1173,6 +1173,17 @@ def _run_turn(
         need = analysis.next_need
     posture = "supported" if analysis.decision == "supported" else ("partial" if analysis.findings else "unable")
     selected = [item for item in relevant if item.source_id in analysis.support_refs]
+    return _author_result(question, model, analysis, posture, stop_reason, evidence, selected, trace,
+                          context=context, session_turn=session_turn, retained_acquisitions=retained_acquisitions)
+
+
+def _author_result(
+    question: str, model: ModelCall, analysis: Analysis, posture: str, stop_reason: str,
+    evidence: list[Evidence], selected: list[Evidence], trace: list[dict], *,
+    context: dict | None = None, session_turn: int | None = None,
+    retained_acquisitions: tuple[Evidence, ...] = (),
+) -> Result:
+    """Existing Author/citation consumer, shared at the terminal compatibility boundary."""
     trace.append({"stage": "author", "action": "material_selected", "evidence_ids": [item.id for item in selected]})
     draft = _ask(model, "author", AUTHOR_PROMPT + (SESSION_AUTHOR_PROMPT if context is not None else ""), {
         **({"conversation_context": context["conversation_context"]} if context is not None else {}),
