@@ -101,11 +101,24 @@ def test_exact_historical_citations_multiple_materials_and_all_acquisitions(tmp_
     assert session.turns[2].citations[0].url != session.turns[0].citations[0].url
     assert {"Extractive highlight", "Fetched source text", "Selected slice"} <= set(
         label for label in ["Extractive highlight", "Fetched source text", "Selected slice"] if label in html)
-    assert "Show full material" in html and "END OF COMPLETE SAVED MATERIAL" in html
+    assert "Show full saved material" in html and "END OF COMPLETE SAVED MATERIAL" in html
+    assert "Selection 1 of 2" in html and "Selection 2 of 2" in html
     assert page.pre == [item.content for turn in session.turns for c in turn.citations for item in c.materials]
     assert html.count('class="citation"') == len([use for turn in session.turns for use in turn.citation_uses])
     assert 'ordinary numeric text [1]' in html
     assert {"table", "blockquote", "ul", "strong"} <= {tag for tag, a in page.tags}
+
+
+def test_followup_has_a_visible_label_and_the_native_session_form(tmp_path):
+    store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
+    session = prepared_session(store)
+    html = app_for(store).test_client().get(f"/sessions/{session.session_id}").get_data(as_text=True)
+    page = Page(html)
+    label, = [a for tag, a in page.tags if tag == "label" and a.get("for") == "question"]
+    assert label["class"] == "composer-label" and "Ask a follow-up" in page.text
+    form, = [a for tag, a in page.tags if tag == "form" and a.get("class") == "ask-form"]
+    assert form["method"] == "post" and form["action"] == f"/sessions/{session.session_id}/ask"
+    assert Form(html, form["action"]).fields["form_token"]
 
 
 def test_browser_new_and_followup_use_real_session_and_survive_app_replacement(tmp_path):

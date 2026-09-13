@@ -18,12 +18,19 @@ Use Python 3.10 or later from the repository root:
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt -r requirements-dev.txt
+```
+
+Research requires `OPENAI_API_KEY` and `EXA_API_KEY` in the process environment.
+ScryRaven does **not** load `.env`. With those variables already supplied:
+
+```powershell
 python -m scryraven "What is the maximum allowed weight of a ten-pin bowling ball?"
 ```
 
 ## Reading Room
 
-Launch the local browser product from the same environment:
+**Direct launch:** from the repository root and activated environment above, when
+`OPENAI_API_KEY` and `EXA_API_KEY` are already in the process environment:
 
 ```powershell
 python -m scryraven.reading_room
@@ -32,6 +39,35 @@ python -m scryraven.reading_room
 Open [http://127.0.0.1:7331](http://127.0.0.1:7331) in your browser. Keep the terminal
 running; Ctrl+C stops the server. It binds only to `127.0.0.1`. If the port is busy,
 choose another with `--port 7339`. There is no remote bind option.
+
+**Launch with the private repository `.env`:** use the existing doorman, which
+supplies the child process environment without printing or exposing secret values.
+From the repository root in PowerShell:
+
+```powershell
+$roomLogs = Join-Path $env:TEMP ('scryraven-room-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $roomLogs | Out-Null
+$roomProcess = Start-Process .\.venv\Scripts\python.exe -WindowStyle Hidden -PassThru -WorkingDirectory (Get-Location).Path -ArgumentList @(
+    'scripts/run_brokered_command_once.py', '--repo-root', ('"{0}"' -f (Get-Location).Path),
+    '--repo-env', '--stdout', ('"{0}\stdout.txt"' -f $roomLogs),
+    '--stderr', ('"{0}\stderr.txt"' -f $roomLogs), '--status', ('"{0}\status.json"' -f $roomLogs),
+    '--timeout-seconds', '28800', '--target-current-python', '--', '-m', 'scryraven.reading_room'
+)
+```
+
+Open [http://127.0.0.1:7331](http://127.0.0.1:7331). The broker captures output, so
+there is no terminal startup banner. This example runs for up to eight hours;
+sanitized logs/status are written under `$roomLogs` when it exits or times out.
+After any active question finishes, stop this launch from the same PowerShell window:
+
+```powershell
+if (-not $roomProcess.HasExited) { taskkill /PID $roomProcess.Id /T /F }
+```
+
+This stops that launch's process tree; forced shutdown may leave no logs/status.
+Closing the browser tab does not stop the server. See the existing
+[doorman operator guidance](docs/operator/BROKERED_COMMAND_SESSION_OPERATOR_FLOW.md)
+for credential-custody details. The product itself still does not load `.env`.
 
 The Reading Room uses the same default per-user database as the saved-session CLI.
 To keep your durable research in a chosen location, pass the path at launch:
@@ -42,7 +78,8 @@ python -m scryraven.reading_room --database "D:\My Research\sessions.sqlite3"
 
 Missing parent directories are created. Use the same path when restarting or when
 opening these sessions from the CLI. The database holds your conversation and saved
-source material; browser storage holds none of it.
+source material; browser storage holds none of it. For a doorman launch, append
+`'--database', '"D:\My Research\sessions.sqlite3"'` to the target arguments above.
 
 Choose **New research**, ask a question, and use the composer for follow-ups. Submit
 with the arrow or Ctrl+Enter / Command+Enter; plain Enter adds a line. Research runs

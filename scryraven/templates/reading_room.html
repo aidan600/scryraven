@@ -24,12 +24,12 @@
 <div class="composer-wrap{% if is_new %} welcome-composer{% endif %}">
   <form class="ask-form" method="post" action="{{ url_for('ask', session_id=saved.metadata.session_id) if saved else url_for('ask') }}">
     <input type="hidden" name="form_token" value="{{ form_token('ask') }}">
-    <label class="sr-only" for="question">{{ 'Ask a follow-up' if saved else 'Your research question' }}</label>
+    <label class="{{ 'composer-label' if saved else 'sr-only' }}" for="question">{{ 'Ask a follow-up' if saved else 'Your research question' }}</label>
     <div class="composer">
       <textarea id="question" name="question" rows="2" required placeholder="{{ 'Ask a follow-up…' if saved else 'Ask a research question…' }}">{{ question or '' }}</textarea>
       <button class="submit-question" type="submit" aria-label="{{ 'Ask follow-up' if saved else 'Start research' }}">{{ icon('arrow') }}</button>
     </div>
-    <div class="composer-caption"><span>{{ 'Continue the conversation.' if saved else 'A question is a good place to start.' }}</span><span class="keyboard-hint">Ctrl / ⌘ + Enter</span></div>
+    <div class="composer-caption"><span>{{ 'Research a related question.' if saved else 'Enter a question to begin.' }}</span><span class="keyboard-hint">Ctrl / ⌘ + Enter</span></div>
     <div class="working-state" role="status" aria-live="polite" hidden>
       <span class="working-indicator" aria-hidden="true"></span>
       <div><strong>Researching…</strong><p>ScryRaven is gathering and evaluating source material.</p></div>
@@ -66,7 +66,7 @@
       {{ actions(item) }}
     </div>
     {% else %}
-    <p class="empty-history">A place for your questions,<br>and what you discover.</p>
+    <p class="empty-history">Your saved research will appear here.</p>
     {% endfor %}
   </nav>
   <div class="sidebar-foot"><span class="local-dot" aria-hidden="true"></span>Saved on this device</div>
@@ -90,7 +90,7 @@
     <h1 class="session-title">{{ saved.metadata.title or 'Untitled research' }}</h1>
     {{ actions(saved.metadata) }}
     {% endif %}
-    {% else %}<span class="header-note">A little room to think.</span>{% endif %}
+    {% else %}<span class="header-note">Research with sources.</span>{% endif %}
   </header>
 
   <div class="reading-scroll">
@@ -100,17 +100,17 @@
       {% if not saved and not unavailable %}
       <section class="welcome" aria-labelledby="welcome-title">
         <div class="welcome-rule" aria-hidden="true"></div>
-        <p class="eyebrow">Space for a good question</p>
+        <p class="eyebrow">New research</p>
         <h1 id="welcome-title">What do you want<br>to understand?</h1>
-        <p class="welcome-description">Follow a question further. ScryRaven researches it and brings the answer back with source material you can explore.</p>
+        <p class="welcome-description">ScryRaven researches public sources and writes an answer with citations you can inspect.</p>
         {{ composer(true) }}
-        <p class="welcome-note">Read the answer. Open a citation. See what’s behind it.</p>
+        <p class="welcome-note">Open any citation to read the source material used.</p>
       </section>
       {% endif %}
 
       {% for turn in turns %}
       <section class="turn" id="turn-{{ turn.number }}" aria-labelledby="question-{{ turn.number }}">
-        <div class="question-block"><span class="eyebrow">{{ 'Your question' if loop.first else 'Following the thread' }}</span><h2 id="question-{{ turn.number }}">{{ turn.question }}</h2></div>
+        <div class="question-block"><span class="eyebrow">{{ 'Your question' if loop.first else 'Your follow-up' }}</span><h2 id="question-{{ turn.number }}">{{ turn.question }}</h2></div>
         <article class="answer" aria-label="Answer to {{ turn.question }}">{{ turn.answer }}</article>
         {% if turn.posture != 'supported' %}
         <aside class="research-limitation"><strong>Research limitation</strong><p>{{ 'The available research did not establish an answer to this question.' if turn.posture == 'unable' else 'The available research did not establish every part of the question.' }}</p></aside>
