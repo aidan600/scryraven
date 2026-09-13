@@ -36,7 +36,7 @@
   function showOverview(group) {
     sourceGroup = group;
     inspectorTitle.textContent = 'Sources for this answer';
-    inspectorNumber.textContent = 'The reading behind the answer';
+    inspectorNumber.textContent = 'Saved with this answer';
     inspectorContent.replaceChildren();
     group.querySelectorAll('.source').forEach(source => {
       const button = document.createElement('button');

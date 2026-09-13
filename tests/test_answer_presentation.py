@@ -9,7 +9,7 @@ from test_walking_skeleton import Model, analysis, author, done, orient, read, r
 from core.exa_transport import DiscoveryCandidate, FetchedMaterial
 from scryraven import __main__ as cli
 from scryraven import research
-from scryraven.presentation import _SCRIPT, render_cli, render_html
+from scryraven.presentation import _SCRIPT, render_cli, render_html, source_body_html
 from scryraven.sources import Evidence, exact_view
 
 QUESTION = "What is the weight limit?"
@@ -29,7 +29,9 @@ class Page(HTMLParser):
         self.tags = []
         self.text = []
         self.pre = []
+        self.previews = []
         self.in_pre = False
+        self.in_preview = False
         self.feed(html)
 
     def handle_starttag(self, tag, attrs):
@@ -37,15 +39,60 @@ class Page(HTMLParser):
         if tag == "pre":
             self.in_pre = True
             self.pre.append("")
+        if dict(attrs).get("class") == "preview-text":
+            self.in_preview = True
+            self.previews.append("")
 
     def handle_endtag(self, tag):
         if tag == "pre":
             self.in_pre = False
+        if tag == "div":
+            self.in_preview = False
 
     def handle_data(self, data):
         self.text.append(data)
         if self.in_pre:
             self.pre[-1] += data
+        if self.in_preview:
+            self.previews[-1] += data
+
+
+@pytest.mark.parametrize("content", [
+    "A complete short selection.\nWith its exact spacing & <quoted> text.",
+    "\nExact saved text & <script>unsafe()</script>.\n\n" * 50 + "FINAL SAVED QUALIFICATION",
+    "Short line.\n" * 40 + "FINAL SAVED QUALIFICATION",
+])
+def test_reading_room_disclosure_keeps_exact_full_material_and_literal_previews(content):
+    citation = answer(content=content).citations[0]
+    page = Page(source_body_html(citation, collapse_long=True))
+    assert page.pre == [content]
+    disclosures = [a for tag, a in page.tags if tag == "details"]
+    if "FINAL SAVED QUALIFICATION" in content:
+        assert len(disclosures) == 1 and "open" not in disclosures[0]
+        preview, = page.previews
+        assert content.startswith(preview)
+        assert 0 < len(preview) < len(content) / 2
+        assert len(preview.splitlines()) < 12
+        assert "FINAL SAVED QUALIFICATION" not in preview
+        assert "Show full saved material" in page.text
+    else:
+        assert not disclosures and not page.previews
+    assert not any(tag == "script" for tag, a in page.tags)
+    assert not any(name.startswith("on") for tag, a in page.tags for name in a)
+    # The shared standalone view still exposes every saved selection directly.
+    assert Page(source_body_html(citation)).pre == [content]
+
+
+def test_source_identity_uses_historical_domain_and_keeps_the_exact_original_link():
+    citation = answer().citations[0]
+    url = 'https://publications.example.test/archive/rules.pdf?edition=old&label="quoted"'
+    page = Page(source_body_html(replace(citation, url=url), collapse_long=True))
+    text = "".join(page.text)
+    assert text.index("publications.example.test") < text.index("Open original publication")
+    assert text.index("Open original publication") < text.index("Material ScryRaven used")
+    link, = [a for tag, a in page.tags if tag == "a"]
+    assert link["href"] == url and link["target"] == "_blank" and link["rel"] == "noopener noreferrer"
+    assert not any(tag in {"img", "script", "iframe"} for tag, a in page.tags)
 
 
 def test_first_validated_use_orders_sources_and_reuses_numbers_without_inline_titles():
@@ -81,7 +128,7 @@ def test_selected_source_slices_are_exact_grouped_material_without_manufactured_
     assert "UNSELECTED" not in "".join(page.text)
     assert [attrs["href"] for tag, attrs in page.tags if tag == "a"] == ["#source-1", parent.url]
     assert not any("open" in attrs for tag, attrs in page.tags if tag == "details")
-    assert "not one exact proof passage" in "".join(page.text)
+    assert "Exact text saved with this answer" in "".join(page.text)
     assert "not original-document page locations" in "".join(page.text)
 
 

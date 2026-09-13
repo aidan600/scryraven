@@ -117,9 +117,12 @@ def safe_publication_url(url: str) -> bool:
 def _source_link(url: str) -> str:
     if not safe_publication_url(url):
         return '<p class="source-url">Original source URL unavailable.</p>'
-    return (f'<p class="source-url"><a href="{escape(url, quote=True)}" target="_blank" '
+    domain = urlsplit(url).hostname
+    return ('<div class="source-identity"><p class="publisher-domain">'
+            '<span class="publication-mark" aria-hidden="true"></span>'
+            f'{escape(domain)}</p><p class="source-url"><a href="{escape(url, quote=True)}" target="_blank" '
             f'rel="noopener noreferrer">Open original publication <span aria-hidden="true">↗</span></a>'
-            f'<br><span>{escape(url)}</span></p>')
+            '</p></div>')
 
 
 _ACQUISITION_LABELS = {
@@ -135,17 +138,23 @@ def source_body_html(citation: Citation, *, collapse_long: bool = False) -> str:
     for index, item in enumerate(citation.materials, 1):
         label, qualification = _ACQUISITION_LABELS[item.acquisition]
         content = f'<pre class="material-text"><code>{escape(item.content)}</code></pre>'
-        if collapse_long and len(item.content) > 1200:
-            content = (f'<div class="material-preview">{escape(item.content[:800])}…</div>'
-                       '<details class="full-material"><summary><span class="show-material">Show full material</span>'
-                       '<span class="hide-material">Collapse material</span></summary>' + content + '</details>')
+        if collapse_long and (len(item.content) > 1200 or len(item.content.splitlines()) > 12):
+            # A literal prefix only. Bound line-heavy extractions as well as prose;
+            # the complete selected Evidence remains untouched in the disclosure.
+            preview = "".join(item.content[:600].splitlines(keepends=True)[:8])
+            content = ('<div class="material-preview"><p class="preview-label">Preview of saved material</p>'
+                       f'<div class="preview-text">{escape(preview)}</div></div>'
+                       '<details class="full-material"><summary><span class="show-material">Show full saved material</span>'
+                       '<span class="hide-material">Show preview</span></summary>' + content + '</details>')
+        selection = (f'<h3>Selection {index} of {len(citation.materials)}</h3>'
+                     if len(citation.materials) > 1 else "")
         materials.append('<section class="material">'
-                         f'<h3><span class="selection-label">Selection {index}</span>{label}</h3>'
-                         f'<p class="acquisition">{qualification}</p>' + content + '</section>')
+                         + selection + f'<p class="acquisition"><span>{label}</span> · {qualification}</p>'
+                         + content + '</section>')
     return (_source_link(citation.url)
             + '<h2>Material ScryRaven used from this source</h2>'
-            '<p class="scope">The citation refers to this source and its selected material, '
-            'not one exact proof passage. These selections may not include the whole publication.</p>'
+            '<p class="scope">Exact text saved with this answer. '
+            'Selections may not include the whole publication.</p>'
             + "".join(materials))
 
 
@@ -193,10 +202,9 @@ summary { padding: 14px 18px; cursor: pointer; font-size: .92rem; font-weight: 5
 .source-body { padding: 4px 20px 20px; }
 .source-body h2 { font-size: 1rem; margin-top: 20px; }
 .source-url, .scope, .acquisition { font-size: .82rem; color: #58666a; }
-.source-url span { overflow-wrap: anywhere; }
+.publisher-domain { overflow-wrap: anywhere; font-size: .82rem; color: #58666a; margin-bottom: 6px; }
 .material { margin-top: 22px; }
 .material h3 { font-size: .85rem; margin-bottom: 3px; }
-.selection-label { display: block; font-weight: 400; }
 pre { white-space: pre-wrap; overflow-wrap: anywhere; font: .86rem/1.65 system-ui, sans-serif;
       background: #f5f7f4; border-left: 2px solid #c9d7ce; padding: 16px; margin: 10px 0 0; }
 pre code { font: inherit; }
