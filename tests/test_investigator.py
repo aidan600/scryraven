@@ -6,6 +6,7 @@ import sys
 import tempfile
 from contextlib import closing
 from copy import deepcopy
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -20,9 +21,9 @@ from scryraven.experimental.contracts import (
     InvestigatorDecision,
 )
 from scryraven.experimental.harness import CandidateHarness, ScriptedModel
-from scryraven.experimental.investigator import ClarificationRequired, InvestigatorEngine
+from scryraven.experimental.investigator import INVESTIGATOR_PROMPT, ClarificationRequired, InvestigatorEngine
 from scryraven.model import ModelError, OpenAIModel
-from scryraven.research import RunError
+from scryraven.research import AUTHOR_PROMPT, SESSION_AUTHOR_PROMPT, RunError
 from scryraven.session_store import SessionStoreError, SQLiteSessionStore
 from scryraven.sources import Evidence, exact_view
 
@@ -309,6 +310,87 @@ def test_reactivated_material_permits_new_relational_synthesis_after_shelving():
     result = harness(model, Provider([lead(), lead(URL_B, TEXT_B)])).run(QUESTION)
     assert result.posture == "supported"
     assert [item.id for item in result.selected_evidence] == ["E1", "E2"]
+
+
+def test_current_target_revision_follows_link_and_closes_only_current_support():
+    """Prompt delivery and the intended route, not proof of live semantic judgment."""
+    question = "What threshold does the current specification require?"
+    index = f"The old threshold was 12. The current specification is linked at {URL_B}."
+    current = "The current specification requires 18 units during idle operation only."
+    provider = Provider([lead(text=index)], [lead(URL_B, "", kind="navigation")],
+                        bodies={URL_B: current})
+    revised = state(obligations=[{
+        "id": "current", "trigger": "The received index describes an old value and links a current specification.",
+        "answer_impact": "The old value does not establish the current requirement.",
+        "next_action": "Read the linked current specification.",
+    }])
+    revised["interpreted_target"] = question
+    revised["intellectual_operation"] = "Identify the current requirement and its conditions"
+    terminal = finish("E2", synthesis=current)
+    terminal["terminal"].update(interpreted_target=question,
+                                intellectual_operation=revised["intellectual_operation"])
+    script = ScriptedModel(
+        decision(discover()),
+        decision({"kind": "discover", "query": URL_B, "evidence_need": "Locate the linked current specification."},
+                 memory=revised),
+        decision(read("D2"), memory=revised, shelve=["E1"]),
+        decision(terminal), author(current + " [E2]"),
+    )
+    delivered = []
+
+    def model(stage, prompt, material, schema):
+        delivered.append((stage, prompt))
+        assert material["current_date"] == date.today().isoformat()
+        return script(stage, prompt, material, schema)
+
+    result = harness(model, provider).run(question)
+    assert delivered == [("investigator", INVESTIGATOR_PROMPT)] * 4 + [
+        ("author", AUTHOR_PROMPT + SESSION_AUTHOR_PROMPT)]
+    assert provider.searches[-1] == URL_B and provider.fetches == [URL_B]
+    assert len(result.evidence) == 2 and result.selected_evidence == (result.evidence[1],)
+    assert result.analysis.findings[0].text == current
+    assert result.citations[0].materials[0].content == current
+    assert material_items(script.calls[-2][1]) == [result.evidence[1].material()]
+
+
+def test_action_feedback_keeps_request_identity_through_failure_and_local_inspection():
+    provider = Provider([lead()], ExaTransportError("untrusted detail"))
+    retry_route = {"kind": "discover", "query": "a distinct current-source route",
+                   "evidence_need": "The published current scope."}
+    actions = [discover(), retry_route, inspect("E1")]
+    model = ScriptedModel(*(decision(action) for action in actions), decision(finish("E1")), author())
+    result = harness(model, provider).run(QUESTION)
+    assert model.calls[0][1]["action_result"] is None
+    for index, action in enumerate(actions, 1):
+        assert model.calls[index][1]["action_result"]["request_not_evidence"] == action
+    assert model.calls[2][1]["action_result"]["status"] == "acquisition_failed"
+    assert "untrusted detail" not in json.dumps(model.calls)
+    assert "request_not_evidence" not in model.calls[-1][1]
+    assert [item.content for item in result.evidence] == [TEXT_A]
+
+
+@pytest.mark.parametrize("locate_highlight", [False, True])
+def test_followup_highlights_activate_without_full_parent_but_cannot_locate(locate_highlight):
+    session = harness(ScriptedModel(decision(discover()), decision(finish("E1")), author()),
+                      Provider([lead()])).session()
+    session.ask(QUESTION)
+    before = session.turns, session.acquisitions
+    action = inspect("E1", locate={"material_ref": "E1", "query": "threshold", "start_char": 0}
+                     if locate_highlight else None)
+    model = ScriptedModel(decision(action), decision(finish("E1")), author())
+    session._model, session._search, session._fetch = model, no_io, no_io
+    if locate_highlight:
+        with pytest.raises(RunError, match="region_inspection_requires_full_parent"):
+            session.ask("What is its scope?")
+        assert (session.turns, session.acquisitions) == before
+    else:
+        result = session.ask("What is its scope?")
+        assert result.selected_evidence == before[1]
+        assert result.citations[0].materials[0].content == TEXT_A
+        assert model.calls[1][1]["action_result"]["request_not_evidence"] == action
+    initial = model.calls[0][1]
+    assert initial["evidence"] == [] and initial["investigation_state_not_evidence"] is None
+    assert initial["catalog"]["items"][0]["acquisition"] == "provider_highlights"
 
 
 def test_attention_target_rejects_activation_atomically_without_eviction_or_truncation():

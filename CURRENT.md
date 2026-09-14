@@ -11,8 +11,11 @@ selected Evidence retain their earlier product demonstrations. The semantic prod
 path remains Research -> Analyst -> Author. Explicit prompt caching reduced effective
 input units by 23.62% on the bounded three-turn retained-context workload.
 An explicit experimental Investigator -> Author harness implements reversible
-attention and has deterministic offline mechanical evidence. It has no live
-quality demonstration and no product replacement decision.
+attention and has deterministic offline mechanical evidence. A bounded live
+development campaign demonstrated useful factual and relational answers, but
+repeated unproductive acquisition persisted after two interventions. The
+Investigator architecture hypothesis is not yet supported; there is no product
+replacement decision.
 Repository: aidan600/scryraven
 Preferred local checkout: C:\Users\aidan\ScryRaven
 
@@ -87,10 +90,32 @@ exposure rejection, relational terminal analysis, unchanged Author material and
 citations, successful process/session reopen, fresh follow-ups, historical exactness,
 rollback and stale commits, clarification, independent limits and lossless cached
 transport input without shelved bodies. Existing production regressions remain
-covered. This is offline mechanical evidence only: no live Investigator quality,
-prompt quality, general semantic fidelity or superiority has been demonstrated.
-There is no product replacement decision. See
-`docs/architecture/INVESTIGATOR_EXPERIMENT.md` for the architecture and genuine limits.
+covered. The prompt additionally guides evidence-responsive target interpretation,
+next actions, sufficiency and existing inspection prerequisites. The immediate
+preceding action is exposed alongside its mechanical result as non-evidentiary
+context; no action history or new lifecycle is retained.
+
+The Phase 3 development campaign used 14 frozen primary submissions in two waves
+and three targeted rechecks: 96 model-call attempts and 62 external acquisitions
+(60 searches, two unsuccessful fetches). At final runtime revision
+`08563d39e9217fb79cca861bb26fe63a12f21bdd`, the conversational recheck answered after
+an earlier invalid inspection had aborted, but reacquired available retained
+support. The identity recheck again repeated 15 searches without pursuing a linked
+answer-bearing document and was stopped with no terminal answer. Another repair
+appeared necessary after the two authorized interventions, so live work ended
+before the numerical budget was exhausted.
+
+Narrow authoritative facts, contextual abbreviation resolution, comparisons and
+explanations produced useful answers on development questions. Recursion/economy,
+current-target establishment, reception breadth and preservation of qualifications
+have unresolved failures or concerns. The final revision was not retested across
+the entire manifest. Efficient live retained-material reuse, successful full-parent
+inspection and general semantic reliability remain unproved. All successful live
+acquisitions in this campaign were provider highlights. This is DEVELOPMENT
+validation, not held-out proof or a comparison with production; the architecture
+hypothesis is not yet supported. See
+`docs/operator/INVESTIGATOR_BEHAVIOR_VALIDATION.md` for the decision and evidence and
+`docs/architecture/INVESTIGATOR_EXPERIMENT.md` for the unchanged candidate architecture.
 
 ## Session follow-ups
 
