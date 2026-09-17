@@ -105,3 +105,36 @@ def test_final_selection_of_shelved_material_is_bounded_and_revisable():
     assert sum(len(item["content"]) for item in final_packet["evidence"]) <= 65536
     assert [item["id"] for item in final_packet["evidence"]] == ["E1"]
     assert len(result.evidence) == 3 and result.selected_evidence[0].id == "E1"
+
+
+@pytest.mark.parametrize("observer_raises", [False, True])
+def test_observer_cannot_change_model_evidence_execution_or_returned_trace(observer_raises):
+    notifications = []
+
+    def observer(event):
+        notifications.append(event)
+        if event.get("evidence"):
+            event["evidence"][0]["content"] = "FORGED OBSERVER TEXT"
+            event["evidence"].clear()
+        if "result" in event:
+            event["result"]["material_ids"].clear()
+        if "budget" in event:
+            event["budget"]["semantic_attempts"] = 999
+        event["action"] = "observer_changed"
+        if observer_raises:
+            raise RuntimeError("OBSERVER PRIVATE ERROR")
+
+    model = Script(decision(), decision("answer", ["E1"]), answer())
+    result = run("What is the value?", model=model, search=search, fetch=no_io, observe=observer)
+    assert notifications and result.posture == "supported"
+    assert [call[0] for call in model.calls] == ["research", "research", "answer"]
+    for call in model.calls[1:]:
+        assert call[2]["evidence"][0]["content"] == "The stated value is seven."
+    assert model.calls[1][2]["last_route"][0]["material_ids"] == ["E1"]
+    assert result.evidence[0].content == "The stated value is seven."
+    snapshot = json.dumps(result.trace, sort_keys=True)
+    assert "observer_changed" not in snapshot and "OBSERVER" not in snapshot
+    assert result.trace[-1]["budget"]["semantic_attempts"] == 3
+    for event in notifications:
+        event.clear()
+    assert json.dumps(result.trace, sort_keys=True) == snapshot

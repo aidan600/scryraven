@@ -80,6 +80,8 @@ parents can provide focused exact views using the existing disposable
 `SourceIndex`; repeated inspection is allowed. A refresh returning identical
 material may reuse its immutable record. Different received versions preserve
 their own material IDs and share the source identity allocated to the same URL.
+Find merges overlapping hit regions only within the same immutable parent,
+preserving all matched text while reducing duplicate reading context.
 Target URLs must be supplied by the user, returned through acquisition, or found
 as explicit links in exposed material. These mechanics validate addressability
 and custody, not semantic relevance.

@@ -163,6 +163,25 @@ def test_unable_can_preserve_read_packet_without_invented_citation(tmp_path):
     assert saved.turns[0].selected_evidence == (source,) and saved.turns[0].citations == ()
 
 
+def test_neutral_partial_requires_cited_material_before_session_commit(tmp_path):
+    store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
+    uncited = CompletedAnswer("An unsupported partial assertion.", "partial", "not_established",
+                              (), (), (), (), ())
+    session = ResearchSession.create(store=store, engine=lambda question, **kwargs: uncited)
+    with pytest.raises(SessionStoreError, match="invalid_session_data"):
+        session.ask("Question")
+    assert session.turns == () and session.metadata.revision == 0
+    assert store.load(session.session_id).state.turns == ()
+
+    source = Evidence("E1", "https://example.org/source", "Source", "A documented part of the answer.")
+    cited = completed("A documented part. [E1] The remainder is unresolved.", [source], [source], "partial")
+    session._engine = lambda question, **kwargs: cited
+    session.ask("Question")
+    reopened = ResearchSession.open(session.session_id, store=store)
+    assert reopened.turns[0].posture == "partial"
+    assert reopened.turns[0].citations[0].materials == (source,)
+
+
 def test_cli_v2_routes_isolated_and_durable_calls_through_candidate(tmp_path, monkeypatch, capsys):
     from scryraven import v2
 

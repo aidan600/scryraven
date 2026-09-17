@@ -176,6 +176,9 @@ def test_answer_reading_is_exact_source_text_and_invalid_reading_uses_same_budge
     assert "invented value" not in json.dumps(model.calls[-1][2])
     readings = [event for event in events if event["action"] == "answer_reading"]
     assert readings[0]["readings"][0]["passage"] == "The stated value is seven."
+    trace_answer = next(event for event in result.trace if event["action"] == "answer_decision")
+    assert "source_readings" not in trace_answer["decision"]
+    assert trace_answer["source_reading_refs"] == ["E1"]
 
 
 def test_reading_cannot_borrow_exact_text_from_unsupplied_material():

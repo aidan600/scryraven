@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import re
 import time
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import date
 from typing import Callable, Literal
@@ -253,9 +254,14 @@ def _run_turn(
     def emit(action, *, source_body=False, **fields):
         event = {"stage": "v2", "action": action, **fields}
         if not source_body:
-            trace.append(event)
+            trace.append(deepcopy(event))
         if observe is not None:
-            observe(event)
+            # Diagnostics cannot mutate supplied Evidence, decisions or the
+            # public trace, and a failed observer cannot interrupt research.
+            try:
+                observe(deepcopy(event))
+            except Exception:
+                pass
 
     def ask(stage, prompt, packet, shape):
         budget.before_model()
@@ -356,7 +362,8 @@ def _run_turn(
                 packet["output_correction"] = {"code": issue, "instruction": "Select only literal passages from supplied Evidence. Do not paraphrase or import text from another material/version."}
                 continue
             emit("answer_reading", source_body=True, readings=readings)
-            emit("answer_decision", decision=final.model_dump())
+            emit("answer_decision", decision=final.model_dump(exclude={"source_readings"}),
+                 source_reading_refs=[reading.evidence_ref for reading in final.source_readings])
             return final
         return None
 
