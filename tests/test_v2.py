@@ -81,7 +81,7 @@ def test_unexposed_retained_reference_is_rejected_then_local_read():
 def test_missing_need_returns_to_same_loop_without_draft_or_budget_reset():
     model = Script(decision(), decision("answer", ["E1"]),
                    answer("A provisional fragment. [E1]", "partial", "What conditions apply?"),
-                   decision(requests=[request("read", query="", target="E1", focus="conditions")], refs=["E1"]),
+                   decision(requests=[request("read", query="", target="E1", mode="full", focus="conditions")], refs=["E1"]),
                    decision("answer", ["E2"]), answer("Seven under the stated condition. [E2]"))
     result = run("What is the value?", model=model, search=search,
                  fetch=lambda url: FetchedMaterial(url, "Seven under the stated condition."))

@@ -106,9 +106,15 @@ def test_retained_highlight_can_be_read_locally_or_acquired_as_full_source():
     library = AcquisitionLibrary((highlight,), fetch=lambda url: fetches.append(url) or FetchedMaterial(url, "Full passage context"))
     local = library.execute({"kind": "read", "target": "E1", "mode": "local"}, before_external=no_external)
     assert local["material_ids"] == ["E1"]
-    full = request(library, "read", target="E1")
+    automatic = library.execute({"kind": "read", "target": "E1"}, before_external=no_external)
+    assert automatic["material_ids"] == ["E1"] and automatic["local"] and fetches == []
+    full = request(library, "read", target="E1", mode="full")
     assert full["material_ids"] == ["E2"] and fetches == [URL]
     assert library.acquisitions[1].source_id == "E1"
+    reused_full = library.execute({"kind": "read", "target": "E1", "mode": "full"}, before_external=no_external)
+    assert reused_full["material_ids"] == ["E2"] and reused_full["local"]
+    unchanged_highlight = library.execute({"kind": "read", "target": "E1"}, before_external=no_external)
+    assert unchanged_highlight["material_ids"] == ["E1"]
     repeated = library.execute({"kind": "read", "target": "C1"}, before_external=no_external)
     assert repeated["material_ids"] == ["E2"] and repeated["local"]
 
@@ -121,6 +127,7 @@ def test_refresh_keeps_old_bytes_and_exact_old_views_and_url_uses_latest():
     assert refreshed["material_ids"] == ["E2"] and library.materials[old_view].content == "Old"
     assert library.acquisitions[0] == old and library.acquisitions[1].source_id == "E1"
     assert request(library, "read", target="E1")["material_ids"] == ["E1"]
+    assert request(library, "read", target="E1", mode="full")["material_ids"] == ["E2"]
     assert request(library, "read", target=URL)["material_ids"] == ["E2"]
     assert request(library, "read", target=old_view)["material_ids"] == [old_view]
 

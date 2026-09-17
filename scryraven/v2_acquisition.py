@@ -205,7 +205,7 @@ class AcquisitionLibrary:
                 raise AcquisitionError("invalid_request_field")
             result[key] = value.strip()
         result["mode"] = request.get("mode", "auto")
-        if not isinstance(result["mode"], str) or result["mode"] not in {"auto", "local", "refresh"}:
+        if not isinstance(result["mode"], str) or result["mode"] not in {"auto", "local", "full", "refresh"}:
             raise AcquisitionError("invalid_read_mode")
         scope = request.get("scope", [])
         if not isinstance(scope, list) or any(not isinstance(ref, str) for ref in scope):
@@ -274,9 +274,9 @@ class AcquisitionLibrary:
             item = exact_item or full or next((item for item in reversed(self.acquisitions) if item.url == url), None)
             if item is None:
                 raise AcquisitionError("local_material_unavailable")
-        elif mode == "auto" and exact_item is not None and exact_item.acquisition in {"fetched_source", "targeted_view"}:
+        elif mode == "auto" and exact_item is not None:
             item = exact_item
-        elif mode == "auto" and full is not None:
+        elif mode in {"auto", "full"} and full is not None:
             item = full
         else:
             before_external()

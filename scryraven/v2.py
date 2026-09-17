@@ -42,7 +42,7 @@ class Request(_Contract):
     query: str
     target: str
     focus: str
-    mode: Literal["auto", "local", "refresh"]
+    mode: Literal["auto", "local", "full", "refresh"]
     scope: list[str]
     start_char: int | None
     end_char: int | None
@@ -93,8 +93,10 @@ Choose a useful research route of roughly 1–3 INDEPENDENT requests. If one req
 depends on interpreting another's result, return for that interpretation first.
 Search: kind=search, query=the search; unused fields empty/null, mode=auto.
 Read: target=known C/E material ID or observed URL, focus=meaning to inspect.
-mode=auto reads retained full text or obtains it; local rereads retained material
-without external acquisition; refresh reacquires a new version. Optional start_char
+mode=auto on an exact E ID rereads that retained material locally; on a C ID or URL
+it reads a retained full parent or obtains it. local always avoids external I/O.
+full obtains/reads the full parent when an excerpt lacks consequential context;
+refresh reacquires a new version. Optional start_char
 and end_char request an exact full-parent range. Repeated local reading is allowed.
 Find: query=words/phrases to locate, scope=retained material IDs (empty=whole library).
 Find reads exact local matches, not the web; a lexical miss proves no semantic absence.
