@@ -162,7 +162,7 @@ class AcquisitionLibrary:
             # item small enough for the caller to deliver through bounded attention.
             items = [exact_view(parent, left, min(left + TARGETED_SOURCE_CHARACTERS, end))
                      for left in range(start, end, TARGETED_SOURCE_CHARACTERS)]
-        elif item.acquisition == "targeted_view" and not focus:
+        elif item.acquisition == "targeted_view":
             items = [item]
         else:
             parent = self.materials[item.parent_id] if item.parent_id else item
@@ -172,6 +172,32 @@ class AcquisitionLibrary:
                 items = [parent]
         self.materials.update((item.id, item) for item in items)
         return items
+
+    def _coalesce_views(self, items: list[Evidence]) -> list[Evidence]:
+        """Remove repeated characters within selected views, without changing selection."""
+        by_parent: dict[str, list[tuple[int, int, int]]] = {}
+        ordered = []
+        for position, item in enumerate(items):
+            if item.acquisition == "targeted_view":
+                by_parent.setdefault(item.parent_id, []).append((item.start_char, item.end_char, position))
+            else:
+                ordered.append((position, 0, item))
+        for parent_ref, spans in by_parent.items():
+            merged = []
+            for start, end, position in sorted(spans):
+                if merged and start <= merged[-1][1]:
+                    old_start, old_end, old_position = merged[-1]
+                    merged[-1] = (old_start, max(end, old_end), min(position, old_position))
+                else:
+                    merged.append((start, end, position))
+            parent = self.materials[parent_ref]
+            for start, end, position in merged:
+                for left in range(start, end, TARGETED_SOURCE_CHARACTERS):
+                    ordered.append((position, left - start,
+                                    exact_view(parent, left, min(left + TARGETED_SOURCE_CHARACTERS, end))))
+        # Preserve the first selected hit's priority for each merged region. Only
+        # contiguous source characters are joined, never different parent versions.
+        return [item for _, _, item in sorted(ordered, key=lambda row: (row[0], row[1]))]
 
     def _target(self, ref: str) -> tuple[str, str, Evidence | None]:
         if ref in self.materials:
@@ -324,6 +350,7 @@ class AcquisitionLibrary:
             for items in matches:
                 if position < len(items) and len(chosen) < FIND_RESULT_LIMIT:
                     chosen.append(items[position])
-        self.materials.update((item.id, item) for item in chosen)
-        result.update(material_ids=[item.id for item in chosen], matching_region_count=count,
+        merged = self._coalesce_views(chosen)
+        self.materials.update((item.id, item) for item in merged)
+        result.update(material_ids=[item.id for item in merged], matching_region_count=count,
                       omitted_match_count=max(0, count - len(chosen)))

@@ -168,6 +168,21 @@ def test_explicit_large_range_delivers_every_exact_character_in_bounded_source_o
     assert library.acquisitions == [parent]
 
 
+@pytest.mark.parametrize("mode", ["auto", "local"])
+def test_exact_view_target_with_focus_preserves_the_requested_material(mode):
+    body = "Requested exact passage.\n\n" + "Unrelated passage. " * 4000 + "Distinct remote term."
+    parent = Evidence("E1", URL, "Long source", body)
+    library = AcquisitionLibrary((parent,))
+    view_ref = request(library, "read", target="E1", start_char=0, end_char=24)["material_ids"][0]
+    result = library.execute({"kind": "read", "target": view_ref, "mode": mode, "focus": "Distinct remote term"},
+                             before_external=no_external)
+    assert result["material_ids"] == [view_ref]
+    assert library.materials[view_ref].content == body[:24]
+    changed = library.execute({"kind": "read", "target": view_ref, "mode": mode, "focus": "Distinct remote term",
+                               "start_char": len(body) - 21, "end_char": len(body)}, before_external=no_external)
+    assert changed["material_ids"] == [f"E1@{len(body) - 21}:{len(body)}"]
+
+
 @pytest.mark.parametrize("bounds", [{"start_char": -1, "end_char": 3}, {"start_char": 3, "end_char": 2},
                                      {"start_char": 0, "end_char": 99}, {"start_char": True, "end_char": 2},
                                      {"start_char": 0}])
@@ -201,6 +216,36 @@ def test_find_is_bounded_with_observable_omission_and_scoped_reactivation():
     assert found["matching_region_count"] == 12 and found["omitted_match_count"] == 12 - FIND_RESULT_LIMIT
     scoped = request(library, "find", query="threshold", scope=["E12"])
     assert scoped["material_ids"] == [f"E12@0:{len(retained[-1].content)}"]
+
+
+def test_find_consolidates_overlap_without_losing_selected_source_characters():
+    body = "\n\n".join("Needle matching context. " * 150 + str(index) for index in range(14))
+    parent = Evidence("E1", URL, "Long source", body)
+    library = AcquisitionLibrary((parent,))
+    index = library._index(parent)
+    ranked = index.rank("Needle")
+    selected_ranges = [(index.regions[max(0, region - 1)][0],
+                        index.regions[min(len(index.regions) - 1, region + 1)][1]) for region in ranked[:FIND_RESULT_LIMIT]]
+    expected_characters = {position for start, end in selected_ranges for position in range(start, end)}
+    found = library.execute({"kind": "find", "query": "Needle", "scope": ["E1"]}, before_external=no_external)
+    views = [library.materials[ref] for ref in found["material_ids"]]
+    actual_positions = [position for view in views for position in range(view.start_char, view.end_char)]
+    assert set(actual_positions) == expected_characters
+    assert len(actual_positions) == len(expected_characters)
+    assert len(views) < FIND_RESULT_LIMIT
+    assert all(0 < len(view.content) <= 32_000 and view == exact_view(parent, view.start_char, view.end_char) for view in views)
+    assert found["omitted_match_count"] == len(ranked) - FIND_RESULT_LIMIT
+
+
+def test_find_consolidation_keeps_same_url_versions_separate():
+    body = "\n\n".join("Needle matching context. " * 100 + str(index) for index in range(8))
+    parents = (Evidence("E1", URL, "Old source", body), Evidence("E2", URL, "New source", body + "Updated.", source_id="E1"))
+    library = AcquisitionLibrary(parents)
+    found = request(library, "find", query="Needle")
+    views = [library.materials[ref] for ref in found["material_ids"]]
+    assert {view.parent_id for view in views} == {"E1", "E2"}
+    assert all(view == exact_view(library.materials[view.parent_id], view.start_char, view.end_char) for view in views)
+    assert library.acquisitions == list(parents)
 
 
 @pytest.mark.parametrize("operation", ["search", "read"])

@@ -19,12 +19,11 @@ def decision(action="research", refs=(), requests=None, interpretation="Find the
                                   still_needed=[] if action == "answer" else ["What is the fact?"],
                                   last_route_result=""), action=action, purpose="Resolve the fact",
                 requests=([request()] if requests is None and action == "research" else requests or []),
-                retain=list(refs), answer_evidence_refs=list(refs) if action == "answer" else [],
-                answer_cautions=[])
+                retain=list(refs), answer_evidence_refs=list(refs) if action == "answer" else [])
 
 
 def answer(text="The stated value is seven. [E1]", posture="supported", missing=None):
-    return dict(answer=text, posture=posture, missing_information=missing)
+    return dict(source_readings=[], answer=text, posture=posture, missing_information=missing)
 
 
 class Script:
@@ -54,7 +53,7 @@ def test_fresh_source_first_answer_and_exact_exposure():
     result = run("What is the value?", model=model, search=search, fetch=no_fetch, observe=observations.append)
     assert [call[0] for call in model.calls] == ["research", "research", "answer"]
     packet = model.calls[-1][2]
-    assert not {"working_understanding", "analysis", "draft", "verdict"} & packet.keys()
+    assert not {"working_understanding", "analysis", "draft", "verdict", "research_cautions"} & packet.keys()
     assert packet["evidence"][0]["content"] == "The stated value is seven."
     assert result.answer.endswith("[1]")
     assert result.selected_evidence == result.citations[0].materials
@@ -161,3 +160,27 @@ def test_pending_requested_reading_precedes_new_external_work():
     assert [call[2]["evidence"][0]["id"] for call in model.calls[1:4]] == ["E1", "E2", "E3"]
     assert any(e["action"] == "reading_pending" for e in result.trace)
     assert result.trace[-1]["budget"]["external_attempts"] == 1
+
+
+def test_answer_reading_is_exact_source_text_and_invalid_reading_uses_same_budget():
+    invalid = answer()
+    invalid["source_readings"] = [{"evidence_ref": "E1", "passage": "The invented value is eight."}]
+    valid = answer()
+    valid["source_readings"] = [{"evidence_ref": "E1", "passage": "The stated\nvalue is seven."}]
+    model = Script(decision(), decision("answer", ["E1"]), invalid, valid)
+    events = []
+    result = run("Value?", model=model, search=search, fetch=no_fetch, observe=events.append)
+    assert [call[0] for call in model.calls] == ["research", "research", "answer", "answer"]
+    assert result.trace[-1]["budget"]["semantic_attempts"] == 4
+    assert model.calls[-1][2]["output_correction"]["code"] == "reading_passage_not_in_source"
+    assert "invented value" not in json.dumps(model.calls[-1][2])
+    readings = [event for event in events if event["action"] == "answer_reading"]
+    assert readings[0]["readings"][0]["passage"] == "The stated value is seven."
+
+
+def test_reading_cannot_borrow_exact_text_from_unsupplied_material():
+    invalid = answer()
+    invalid["source_readings"] = [{"evidence_ref": "E2", "passage": "The stated value is seven."}]
+    model = Script(decision(), decision("answer", ["E1"]), invalid, answer())
+    result = run("Value?", model=model, search=search, fetch=no_fetch)
+    assert any(event.get("code") == "unselected_reading_reference" for event in result.trace)

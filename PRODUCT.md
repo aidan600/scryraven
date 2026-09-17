@@ -24,10 +24,10 @@ The product must not silently fill an evidentiary gap from unsupported model mem
 
 ## Follow-up research
 
-A follow-up receives a fresh Research -> Analyst -> Author decision over the current
+A follow-up receives fresh research interpretation and answer decisions over the current
 question. Prior conversation helps interpret intent but is not evidence. Actual
 previously acquired source material may remain evidence and be reused when relevant;
-previous generated answers and Analyst judgments never become factual evidence.
+previous generated answers and semantic judgments never become factual evidence.
 Current findings require current supporting source material. New research occurs
 when retained evidence does not establish what the follow-up needs.
 
@@ -66,12 +66,28 @@ honest, and the interface remains usable at narrow browser widths.
 - Deterministic mechanics may preserve identities, move data, validate references, and render citations; they must not substitute mechanical rules for semantic evidence judgment.
 - When the available research does not establish an answer, ScryRaven preserves that limitation rather than upgrading uncertainty into unsupported certainty.
 
-## Deferred capabilities
+## Approved V2 development outcome
 
-Multi-component research remains a future product capability. Near-term development
-is evaluating an integrated Investigator responsibility with reversible attention.
-Investigator is experimental, has not replaced production, and has not demonstrated
-superiority over the current path.
+V2 development targets a competent general research assistant, including recursive
+identity/chronology research and questions with multiple interacting components.
+One Research decision-maker interprets the original request and actual material,
+revises a compact working understanding, chooses acquisition, and proposes stopping.
+A mechanical executor performs Search, Read and local Find. A fresh source-first
+Answer call independently determines what the supplied sources justify. These are
+two semantic contracts; no verifier, Scout, specialist hierarchy or model router is
+part of this design. The runtime default is GPT-5.6 Luna / medium with Exa.
+
+Actual Evidence remains immutable and locally rereadable. Generated understanding,
+past answers and candidate hypotheses are not Evidence. Currentness means applicable
+entity, role, conditions and time, rather than the newest publication. Source needs
+depend on the requested operation. Budget exhaustion and failed searches establish
+neither support nor nonexistence. A useful honest partial or unable answer is valid.
+
+A real CLI/session candidate with exact citations, retained actual Evidence and fresh
+follow-ups is the implementation boundary for this work item; Reading Room replacement
+is not its cognition acceptance gate. Implementation and bounded demonstrations are
+recorded separately in `CURRENT.md`; this approved direction is not a claim of
+general reliability. The earlier Investigator lineage is stopped development evidence.
 
 That capability should allow one user question to create several research needs, research those needs using the same evidence-grounded behavior, reason across the combined relevant evidence, and produce one coherent answer.
 

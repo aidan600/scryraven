@@ -27,6 +27,26 @@ ScryRaven does **not** load `.env`. With those variables already supplied:
 python -m scryraven "What is the maximum allowed weight of a ten-pin bowling ball?"
 ```
 
+## V2 research candidate
+
+The adaptive V2 candidate uses one Research loop, mechanical Search/Read/Find,
+and a fresh source-first Answer call, with GPT-5.6 Luna / medium and Exa:
+
+```powershell
+python -m scryraven "Your research question" --v2
+python -m scryraven "Your research question" --v2 --session
+python -m scryraven "Your research question" --v2 --create-session --database C:\tmp\research.sqlite3
+python -m scryraven "A follow-up question" --v2 --resume SESSION_ID --database C:\tmp\research.sqlite3
+```
+
+Actual acquired material and exact historical citations survive durable reopening;
+past generated answers remain conversation context. `--html`, `--trace` and
+`--trace-evidence` also work with the candidate. Agents use the existing credential
+broker for credentialed commands. The default CLI and Reading Room still use the
+baseline engine. See [V2 architecture](docs/architecture/V2_RESEARCH.md), the
+[frozen development campaign](docs/operator/V2_CAMPAIGN.md), and `CURRENT.md`
+for the implemented boundary and observed limits.
+
 ## Reading Room
 
 **Direct launch:** from the repository root and activated environment above, when
