@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 from core.exa_transport import DiscoveryCandidate, FetchedMaterial, fetch_exa, search_exa
 from scryraven.research import ModelCall, Result, RunLimits, _run_turn
+from scryraven.results import CompletedAnswer
 from scryraven.session_store import (
     SessionMetadata,
     SessionState,
@@ -39,7 +40,7 @@ class ResearchSession:
         search: Callable[..., list[DiscoveryCandidate]] = search_exa,
         fetch: Callable[[str], FetchedMaterial] = fetch_exa,
         limits: RunLimits = RunLimits(),
-        engine: Callable[..., Result] | None = None,
+        engine: Callable[..., Result | CompletedAnswer] | None = None,
     ) -> None:
         self._model, self._search, self._fetch, self._limits = model, search, fetch, limits
         self._engine = engine
@@ -84,7 +85,7 @@ class ResearchSession:
     def source_ids(self) -> tuple[str, ...]:
         return tuple(dict.fromkeys(item.source_id for item in self.acquisitions))
 
-    def ask(self, question: str) -> Result:
+    def ask(self, question: str) -> Result | CompletedAnswer:
         snapshot = self._snapshot
         state = snapshot.state
         # These two history classes are never admitted to the Evidence collection.
@@ -93,14 +94,15 @@ class ResearchSession:
             "semantic_history": [
                 {"question": turn.question, "analysis": turn.analysis.model_dump(),
                  "posture": turn.posture, "stop_reason": turn.stop_reason}
-                for turn in state.turns
+                for turn in state.turns if turn.analysis is not None
             ],
         }
         result = (self._engine or _run_turn)(
             question, model=self._model, search=self._search, fetch=self._fetch, limits=self._limits,
             retained_acquisitions=state.acquisitions, context=context, session_turn=len(state.turns) + 1,
         )
-        turn = SessionTurn(question, result.answer, result.analysis.model_copy(deep=True),
+        analysis = getattr(result, "analysis", None)
+        turn = SessionTurn(question, result.answer, analysis.model_copy(deep=True) if analysis is not None else None,
                            result.posture, result.stop_reason, result.selected_evidence,
                            result.citations, result.citation_uses)
         staged = SessionState((*state.turns, turn), result.evidence)

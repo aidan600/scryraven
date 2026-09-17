@@ -138,11 +138,13 @@ class OpenAIModel:
         post: Callable[..., Any] | None = None,
         usage_observer: Callable[[ModelUsage], None] | None = None,
         cache_namespace: str = "scryraven",
+        timeout_seconds: float = 120,
     ) -> None:
         self.config = config or ModelConfig.from_environment()
         self.post = post or requests.post
         self.usage_observer = usage_observer
         self.cache_namespace = cache_namespace
+        self.timeout_seconds = timeout_seconds
 
     def __call__(
         self, stage: str, instructions: str, material: dict, schema: dict,
@@ -154,8 +156,8 @@ class OpenAIModel:
         instructions += "\nReturn only JSON matching the response schema, with no Markdown or commentary."
         phase = material.get("phase", stage)
         # Only fixed transport labels reach telemetry, never arbitrary material.
-        safe_stage = stage if stage in {"research", "analyst", "author", "investigator"} else "other"
-        safe_phase = phase if phase in {"orientation", "navigation", "relevance", "analyst", "author", "investigator"} else "other"
+        safe_stage = stage if stage in {"research", "analyst", "author", "investigator", "answer"} else "other"
+        safe_phase = phase if phase in {"orientation", "navigation", "relevance", "analyst", "author", "investigator", "v2_research", "v2_answer"} else "other"
         family = sha256(_json(["layout-v1", self.cache_namespace, role.model, role.reasoning,
                               stage, phase, instructions, schema]).encode("utf-8")).hexdigest()[:32]
         cache_family = f"sr-v1:{safe_stage}:{safe_phase}:{family}"
@@ -180,7 +182,7 @@ class OpenAIModel:
                 "https://api.openai.com/v1/responses",
                 headers={"Authorization": f"Bearer {token}"},
                 json=payload,
-                timeout=120,
+                timeout=self.timeout_seconds,
             )
             response.raise_for_status()
             data = response.json()
