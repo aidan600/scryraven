@@ -74,6 +74,9 @@ def test_unexposed_retained_reference_is_rejected_then_local_read():
     result = run("What is the value?", model=model, search=lambda q: pytest.fail("Unexpected search"),
                  fetch=no_fetch, retained_acquisitions=(retained,))
     assert any(e["action"] == "decision_rejected" for e in result.trace)
+    correction = model.calls[1][2]["output_correction"]
+    assert correction["issues"]["unexposed_answer_refs"] == ["E1"]
+    assert correction["exposed_refs"] == []
     assert result.evidence == (retained,)
     assert result.trace[-1]["budget"]["external_attempts"] == 0
 

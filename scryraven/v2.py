@@ -335,10 +335,18 @@ def _run_turn(
             correction = "Return one JSON object matching the schema. No rejected text is retained."
             continue
         referenced = {ref for finding in decision.understanding.established for ref in finding.evidence_refs}
-        bad = (referenced | set(decision.retain) | set(decision.answer_evidence_refs)) - exposed
-        if bad or (decision.action == "answer" and decision.requests) or (decision.action == "research" and not decision.requests):
-            correction = "Use only exact exposed Evidence IDs. Research requires requests; answer requires no requests."
-            emit("decision_rejected", code="unexposed_reference_or_action_shape")
+        issues = {
+            "unexposed_finding_refs": sorted(referenced - exposed),
+            "unexposed_retain_refs": sorted(set(decision.retain) - exposed),
+            "unexposed_answer_refs": sorted(set(decision.answer_evidence_refs) - exposed),
+            "action_shape": ((decision.action == "answer" and bool(decision.requests))
+                             or (decision.action == "research" and not decision.requests)),
+        }
+        if any(issues.values()):
+            correction = {"instruction": "Repair these specific fields. Only exact material already supplied in Evidence may support established findings, retain or answer_evidence_refs. Catalog-only material may be requested by Read/Find, but leave those three fields empty until its text has been supplied. Research needs requests; answer needs no requests.",
+                          "issues": issues, "exposed_refs": sorted(exposed)}
+            emit("decision_rejected", code="unexposed_reference_or_action_shape", issues=issues)
+            emit("rejected_decision", source_body=True, decision=decision.model_dump(), issues=issues)
             continue
         if any(sum(len(library.materials[ref].content) for ref in set(refs)) > limits.attention_characters
                for refs in (decision.retain, decision.answer_evidence_refs)):
