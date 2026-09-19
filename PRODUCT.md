@@ -66,9 +66,9 @@ honest, and the interface remains usable at narrow browser widths.
 - Deterministic mechanics may preserve identities, move data, validate references, and render citations; they must not substitute mechanical rules for semantic evidence judgment.
 - When the available research does not establish an answer, ScryRaven preserves that limitation rather than upgrading uncertainty into unsupported certainty.
 
-## Approved V2 development outcome
+## Approved experimental research-capability development outcome
 
-V2 development targets a competent general research assistant, including recursive
+Experimental research-capability development targets a competent general research assistant, including recursive
 identity/chronology research and questions with multiple interacting components.
 One Research decision-maker interprets the original request and actual material,
 revises a compact working understanding, chooses acquisition, and proposes stopping.
