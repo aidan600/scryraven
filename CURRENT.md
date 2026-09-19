@@ -78,6 +78,10 @@ F05 results remain historical campaign evidence. The focused tail ran F04 on
 was diagnosed, F06-R1/F07/F08 ran on
 `c7632124f0d35dfae0f19ea99f56c94f8faf9a82` under a frozen repair amendment. No
 semantic contract, question, rubric, provider, prompt or product default changed.
+The current branch also contains a final offline-only correction that prevents a
+hard deadline from committing an older partial Answer while newly acquired material
+is still pending. That edge was not exercised by a scored tail run, so the live
+results retain their exact recorded revisions.
 
 - F04 now recognized the future actual, made no acquisition, and committed its
   honest unable answer after one no-progress recheck (three model calls rather
