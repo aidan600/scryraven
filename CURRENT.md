@@ -8,6 +8,13 @@ Answer deadline failure, but the reception case still materially promoted select
 evidence into broad player reception. That unresolved semantic failure prevents a
 general competence or production-adoption claim.
 
+The experimental branch now also supports one Answer source selection containing
+multiple independently exact, contiguous passages from the same supplied Evidence
+item. A bounded Sonnet 5 / medium validation demonstrated that this interface
+accepts genuine discontinuous readings without weakening literal custody. It did
+not establish semantic competence: its F03 run dropped an explicit junior-event
+qualification and its F06 run overpromoted non-systematic reception material.
+
 The default CLI and local Reading Room still use the approved production
 Research -> Analyst -> Author path. V2 is an explicit development candidate,
 selected with `--v2`; no production replacement or merge decision is implied.
@@ -28,12 +35,16 @@ no semantic planning or truth judgment. The fresh Answer call receives exact
 selected sources, conversation referents, operating date and mechanical limits.
 It receives no Research findings, factual cautions, answer draft or verdict.
 
-Within that same Answer call, transient literal `source_readings` precede prose.
-Their membership in supplied material is mechanically checked, allowing only
-whitespace variation and reconstructing the exact original substring. This does
-not establish comprehension, faithful synthesis, or completeness: the campaign
-demonstrated that true selected quotations can coexist with a materially incomplete
-answer. A consequential missing need may return to the same Research loop and
+Within that same Answer call, each transient literal `source_reading` identifies
+one supplied Evidence reference and one or more independently literal, contiguous
+passages. Every passage is mechanically checked only against that referenced
+supplied material, allowing only whitespace variation, and exact original source
+substrings are reconstructed after validation. Duplicate passages do not duplicate
+source identity. A rejected reading is retained only as a bounded safe observer
+event, not as Evidence, session state, citation support, or user-facing data. This
+does not establish comprehension, faithful synthesis, or completeness: the
+campaign demonstrated that true selected quotations can coexist with a materially
+incomplete answer. A consequential missing need may return to the same Research loop and
 remaining budget. If a valid partial or unable Answer's recheck selects no exact
 material beyond that Answer's packet, the existing source-first result commits
 instead of requesting another Answer. There is no subsequent verifier or
@@ -104,6 +115,19 @@ judgment is **NO**: the intended research competence is not established. Exact
 disposable artifacts are at `C:\tmp\scryraven-sol-tail-repair-20260918\`; the
 sanitized F06 development candidate is retained in ignored `local-evals/`.
 Live work is stopped for human review, not automatically queued for another phase.
+
+The bounded Sonnet 5 / medium source-reading validation on
+`633c8da6a19a4ab963a39ce3cf60ea0694a95e53` exercised the same V2 product path for
+F03 and F06 under a frozen manifest. Both runs completed mechanically, and F06
+had no source-reading rejection after the multi-passage repair. F03 nevertheless
+lost the official junior-event "other than in exceptional circumstances"
+qualification in its public working state and final Answer; F06 again converted
+selected forum and secondary observations into an unsupported positive-direction
+reception conclusion and then ended its committed prose mid-sentence. Both are
+MATERIAL FAIL results. The repair therefore demonstrates exact source-reading
+mechanics only; it creates no Sonnet adoption or production-default claim. Exact
+disposable artifacts are at
+`C:\tmp\scryraven-sonnet5-multispan-validation-20260919\`.
 
 ## Neutral results, sessions and citations
 
