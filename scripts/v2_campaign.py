@@ -95,6 +95,8 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--case", action="append", required=True, dest="cases",
                         help="Frozen case ID. Repeat F01 then F02 for one retained session.")
+    parser.add_argument("--manifest", type=Path,
+                        help="Absolute external frozen campaign manifest; defaults to V2_CAMPAIGN.md.")
     parser.add_argument("--revision", required=True, help="Tested Git revision; source hashes are also recorded.")
     parser.add_argument("--semantic-attempts", type=int, default=12)
     parser.add_argument("--external-attempts", type=int, default=16)
@@ -132,7 +134,14 @@ def _selected_cases(parser: argparse.ArgumentParser, args, manifest: dict) -> li
 def main(argv: list[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
-    manifest, manifest_hash = load_manifest()
+    manifest_path = args.manifest or MANIFEST
+    if args.manifest is not None:
+        if not manifest_path.is_absolute() or manifest_path.resolve().is_relative_to(REPOSITORY):
+            parser.error("--manifest must be an absolute path outside the repository.")
+    try:
+        manifest, manifest_hash = load_manifest(manifest_path)
+    except (OSError, ValueError):
+        parser.error("--manifest must contain a valid frozen campaign manifest.")
     selected = _selected_cases(parser, args, manifest)
     runtime = _runtime()
     usage_rows: list[dict] = []

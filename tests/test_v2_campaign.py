@@ -126,6 +126,19 @@ def test_independent_cases_have_fresh_sessions(monkeypatch, capsys):
                for row in output(capsys) if row["kind"] == "submission_started")
 
 
+def test_external_manifest_drives_ordinary_session_questions(monkeypatch, tmp_path, capsys):
+    bindings, observed = runtime()
+    manifest_path = tmp_path / "frozen.md"
+    manifest_path.write_text(campaign.MANIFEST.read_text(encoding="utf-8"), encoding="utf-8")
+    monkeypatch.setattr(campaign, "_runtime", lambda: bindings)
+    assert campaign.main([
+        "--case", "F03", "--revision", "abc1234", "--manifest", str(manifest_path),
+    ]) == 0
+    manifest, digest = campaign.load_manifest(manifest_path)
+    assert observed.questions == [manifest["cases"][2]["question"]]
+    assert output(capsys)[0]["manifest_sha256"] == digest
+
+
 @pytest.mark.parametrize("extra", [
     ["--semantic-attempts", "21"], ["--external-attempts", "25"], ["--seconds", "301"],
     ["--seconds", "nan"], ["--seconds", "0"], ["--database", "relative.sqlite3"],
