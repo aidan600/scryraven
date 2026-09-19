@@ -2,11 +2,11 @@
 
 Status: the coherent V2 candidate is implemented and has ordinary CLI/session
 demonstrations, but the intended general research capability is **not established**.
-The complete eight-class frozen Sol / medium development campaign is now finished.
-A focused mechanical repair removed a future-actual no-progress loop and terminal
-Answer deadline failure, but the reception case still materially promoted selected
-evidence into broad player reception. That unresolved semantic failure prevents a
-general competence or production-adoption claim.
+The observation/inference/sufficiency contract repair is **NOT MET**: its one fresh
+Sol / medium F06 submission completed mechanically but still promoted selected
+evidence into a favorable first-month reception conclusion. Live validation stopped
+at that material failure; F01/F03/F05 controls were not run. No post-failure tuning,
+general competence claim, or production-adoption decision is authorized.
 
 The experimental branch now also supports one Answer source selection containing
 multiple independently exact, contiguous passages from the same supplied Evidence
@@ -19,10 +19,13 @@ The candidate's semantic-contract repair now replaces `established` with compact
 direct `observed` and analytical `inferred` lists. Missing premises constrain
 answerable scope: Research must obtain a consequential obtainable premise or
 abandon the broader inference and explicitly propose a narrower answer. Answer
-independently applies the same scope discipline to actual sources. Focused V2
-checks (113 tests), the full offline suite (504 tests), Ruff and diff checks pass.
-Bounded Sol / medium validation is pending; no semantic improvement is yet
-demonstrated.
+is instructed to apply the same scope discipline independently to actual sources.
+Focused V2 checks (113 tests), the full offline suite (504 tests), Ruff and diff
+checks pass.
+The live result on `904ff562e1978265650e5c66f8876b85663a0381` did not demonstrate
+the required semantic repair. The labels and explicit scope declaration did not
+prevent the broader inference; negative-control behavior on this contract remains
+unproved. Details are in `docs/operator/V2_SCOPE_CONTRACT_VALIDATION.md`.
 
 The default CLI and local Reading Room still use the approved production
 Research -> Analyst -> Author path. V2 is an explicit development candidate,
@@ -35,8 +38,8 @@ Implementation baseline: `533f45df9271978e0591fb35aa8da2b1917255b2`
 ## V2 candidate implementation
 
 `scryraven.v2` implements exactly two semantic contracts, using its default GPT-5.6
-Luna / medium configuration with Exa acquisition. Sol / medium was injected only
-for the authorized development campaign; production defaults are unchanged.
+Luna / medium configuration with Exa acquisition. Sol / medium is injected only
+for authorized development observations; production defaults are unchanged.
 Research interprets the immutable original question and supplied actual Evidence,
 replaces a compact working understanding, chooses
 independent Search/Read/Find requests, and proposes answering at `requested` or
@@ -147,6 +150,24 @@ MATERIAL FAIL results. The repair therefore demonstrates exact source-reading
 mechanics only; it creates no Sonnet adoption or production-default claim. Exact
 disposable artifacts are at
 `C:\tmp\scryraven-sonnet5-multispan-validation-20260919\`.
+
+The observation/inference/sufficiency repair's single Sol / medium F06 run used
+the frozen question/rubric and the ordinary session application on
+`904ff562e1978265650e5c66f8876b85663a0381`. Research preserved source distinctions
+in `observed`, but its second decision already inferred a positive reception
+direction; its fifth chose `answer_scope=requested` while claiming reception was
+"broadly favorable relative to the preceding lull." The missing bridge had narrowed
+to a missing precise approval rate. Fresh Answer kept engagement separate from
+satisfaction and returned partial posture, yet still opened with a favorable
+first-month reception claim. Both positive and negative material reached it.
+This is a semantic MATERIAL FAIL, not a provider failure or a requirement for a
+statistical survey. The existing no-progress behavior committed that partial
+without another identical Answer call. There were six model calls, ten searches,
+one full read, and 101.813 seconds elapsed. No controls or replacements ran.
+Exact sanitized artifacts remain at `C:\tmp\scryraven-scope-contract-20260919\`,
+and the failure is preserved as an ignored local development candidate. The final
+review adds documentation only after that tested implementation; no runtime code
+was changed after the live result.
 
 ## Neutral results, sessions and citations
 
