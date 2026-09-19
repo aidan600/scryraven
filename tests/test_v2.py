@@ -176,6 +176,22 @@ def test_deadline_prevents_additional_io_and_produces_honest_operational_result(
     assert not any(e["action"] == "model_started" and e["exposed"] for e in result.trace)
 
 
+def test_terminal_answer_reserve_preserves_a_source_first_answer_window():
+    now = [0.0]
+
+    def delayed(q):
+        now[0] = 66
+        return search(q)
+
+    model = Script(decision(), answer())
+    result = run("Value?", model=model, search=delayed, fetch=no_fetch, clock=lambda: now[0])
+    assert [call[0] for call in model.calls] == ["research", "answer"]
+    assert result.stop_reason == "research_bound"
+    assert any(event["action"] == "research_bound" and event["code"] == "answer_deadline_reserve"
+               for event in result.trace)
+    assert model.calls[-1][2]["evidence"][0]["id"] == "E1"
+
+
 def test_unknown_final_citation_fails_without_a_hidden_polisher():
     model = Script(decision(), decision("answer", ["E1"]), answer("Seven. [E99]"))
     with pytest.raises(RunError):

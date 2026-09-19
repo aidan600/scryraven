@@ -21,6 +21,11 @@ from scryraven.research import RunError
 from scryraven.results import CompletedAnswer, resolve_citations
 from scryraven.v2_acquisition import AcquisitionLibrary
 
+# Preserve enough of a bounded run for a source-first terminal Answer. This is
+# an operational reservation only: it never supplies evidence or changes a
+# model-derived posture.
+TERMINAL_ANSWER_RESERVE_SECONDS = 55
+
 
 class _Contract(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
@@ -373,6 +378,11 @@ def _run_turn(
     while True:
         if budget.remaining_seconds <= 0:
             bound = "deadline"
+            break
+        if (budget.remaining_seconds <= TERMINAL_ANSWER_RESERVE_SECONDS
+                and library.acquisitions):
+            bound = "answer_deadline_reserve"
+            selected = active
             break
         if budget.semantic >= limits.semantic_attempts - 1:
             bound = bound or "semantic_attempts"
