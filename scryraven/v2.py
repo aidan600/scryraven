@@ -487,7 +487,9 @@ def _run_turn(
             break
 
     emit("research_bound", code=bound, budget=budget.snapshot())
-    if provisional_answer is not None and set(selected).issubset(provisional_answer[1]):
+    # A newly acquired pending item has not yet been supplied to Answer. Do not
+    # discard it by treating the prior packet as unchanged at a hard bound.
+    if provisional_answer is not None and not pending and set(selected).issubset(provisional_answer[1]):
         prior, prior_refs = provisional_answer
         emit("answer_committed_no_progress", posture=prior.posture,
              missing_information=prior.missing_information,

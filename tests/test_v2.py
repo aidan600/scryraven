@@ -192,6 +192,30 @@ def test_terminal_answer_reserve_preserves_a_source_first_answer_window():
     assert model.calls[-1][2]["evidence"][0]["id"] == "E1"
 
 
+def test_pending_new_material_at_deadline_does_not_commit_a_stale_partial_answer():
+    now = [0.0]
+
+    def staged_search(query):
+        if query == "new material":
+            now[0] = 121
+            return [DiscoveryCandidate("New fact", "https://example.org/new", "A new fact.",
+                                       context_kind="provider_highlights")]
+        return search(query)
+
+    model = Script(
+        decision(),
+        decision("answer", ["E1"]),
+        answer("A provisional fragment. [E1]", "partial", "What changed?"),
+        decision(requests=[request(query="new material")], refs=["E1"]),
+    )
+    result = run("Value?", model=model, search=staged_search, fetch=no_fetch,
+                 clock=lambda: now[0])
+    assert [call[0] for call in model.calls] == ["research", "research", "answer", "research"]
+    assert result.posture == "unable"
+    assert not any(event["action"] == "answer_committed_no_progress" for event in result.trace)
+    assert {item.id for item in result.evidence} == {"E1", "E2"}
+
+
 def test_unknown_final_citation_fails_without_a_hidden_polisher():
     model = Script(decision(), decision("answer", ["E1"]), answer("Seven. [E99]"))
     with pytest.raises(RunError):

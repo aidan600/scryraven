@@ -2,10 +2,11 @@
 
 Status: the coherent V2 candidate is implemented and has ordinary CLI/session
 demonstrations, but the intended general research capability is **not established**.
-Live development stopped after 10 top-level submissions. Material scope,
-qualification, stopping and identity/chronology failures remain after a coherent
-source-first repair. More acquisition allowance is not justified by the preserved
-identity failure: the controlling disconfirmation had already been supplied.
+The complete eight-class frozen Sol / medium development campaign is now finished.
+A focused mechanical repair removed a future-actual no-progress loop and terminal
+Answer deadline failure, but the reception case still materially promoted selected
+evidence into broad player reception. That unresolved semantic failure prevents a
+general competence or production-adoption claim.
 
 The default CLI and local Reading Room still use the approved production
 Research -> Analyst -> Author path. V2 is an explicit development candidate,
@@ -17,9 +18,11 @@ Implementation baseline: `533f45df9271978e0591fb35aa8da2b1917255b2`
 
 ## V2 candidate implementation
 
-`scryraven.v2` implements exactly two semantic contracts, using GPT-5.6 Luna /
-medium with Exa acquisition. Research interprets the immutable original question
-and supplied actual Evidence, replaces a compact working understanding, chooses
+`scryraven.v2` implements exactly two semantic contracts, using its default GPT-5.6
+Luna / medium configuration with Exa acquisition. Sol / medium was injected only
+for the authorized development campaign; production defaults are unchanged.
+Research interprets the immutable original question and supplied actual Evidence,
+replaces a compact working understanding, chooses
 independent Search/Read/Find requests, and proposes answering. The executor does
 no semantic planning or truth judgment. The fresh Answer call receives exact
 selected sources, conversation referents, operating date and mechanical limits.
@@ -31,7 +34,10 @@ whitespace variation and reconstructing the exact original substring. This does
 not establish comprehension, faithful synthesis, or completeness: the campaign
 demonstrated that true selected quotations can coexist with a materially incomplete
 answer. A consequential missing need may return to the same Research loop and
-remaining budget. There is no subsequent verifier or prose-polishing model.
+remaining budget. If a valid partial or unable Answer's recheck selects no exact
+material beyond that Answer's packet, the existing source-first result commits
+instead of requesting another Answer. There is no subsequent verifier or
+prose-polishing model.
 
 Search mechanically admits actual extractive highlights, while navigation metadata
 remains navigation. Read of an exact material ID is local by default; `full` obtains
@@ -51,67 +57,49 @@ receipts demonstrate what was supplied, not what the model understood.
 Default operating settings are 12 semantic attempts, 16 external acquisitions,
 120 seconds, and 128,000 active Evidence characters. Invalid/corrected model calls
 consume the same budget; local reading does not consume external allowance.
-Transport timeouts use remaining time. One answer attempt is reserved where time
-permits; an operational unable result is used if no source-grounded answer can be
-completed. Bounds are not evidence of support or nonexistence.
-
-The work item's separate ceiling is 50 submissions, with no run above
-20 semantic attempts, 24 external attempts or 300 seconds. All 10 submissions used
-the initial 12/16/120 settings. No model/provider replacement, router, premium
-escalation, Scout, claim graph, confidence database or persistent hypothesis
-lifecycle was introduced.
+Transport timeouts use remaining time. Once acquired material exists, a 55-second
+terminal-Answer reservation prevents beginning another Research turn that could
+leave no operational source-first Answer window. This is an operating bound, not
+evidence of support or nonexistence. No model/provider replacement, router,
+premium escalation, Scout, claim graph, confidence database or persistent
+hypothesis lifecycle was introduced.
 
 ## V2 ordinary-product evidence and remaining frontier
 
 The eight development questions and rubrics were frozen before live execution in
 `docs/operator/V2_CAMPAIGN.md`. Only questions entered the product runtime; no
 expected identities, decisive URLs or evaluator answers were supplied. These are
-development observations, not held-out proof or a model/provider comparison.
+development observations, not held-out proof or a production-model decision.
 
-Seven classes were exercised; the multi-component LK-99 class was not executed
-before the stop decision. `docs/operator/V2_VALIDATION.md` owns the run ledger,
-tested revisions, first-loss diagnoses, repair accounting and exact artifact
-provenance. Useful sanitized failures and boundary cases are preserved in ignored
-`local-evals/`; they are not product dependencies or tracked test gold.
+The complete Sol / medium campaign result is F01 PASS, F02 PASS, F03 PASS, F04
+PASS, F05 PASS, F06 MATERIAL FAIL, F07 PASS, and F08 PASS. The earlier F01/F02/F03/
+F05 results remain historical campaign evidence. The focused tail ran F04 on
+`259e37343f896819288f107f6a7752d4bb9c3909`; after a direct terminal-Answer timeout
+was diagnosed, F06-R1/F07/F08 ran on
+`c7632124f0d35dfae0f19ea99f56c94f8faf9a82` under a frozen repair amendment. No
+semantic contract, question, rubric, provider, prompt or product default changed.
 
-- The BIPM prefix question produced correct exact cited answers through the session
-  application and ordinary `python -m scryraven --v2` CLI. Both finished with
-  three model calls and one Search, in about 8–11 seconds.
-- A follow-up reopened the CLI-created durable session in another process and
-  answered from unchanged retained highlights with zero external acquisition.
-  It nevertheless spent four calls on rejected exposure/action references before
-  local reading. Field-specific correction diagnostics were subsequently added;
-  improved live follow-up economy after that change remains unproved.
-- The future British Museum calendar-year question correctly returned unable in
-  two model calls, with no acquisition, based on the question and operating date.
-- The parkrun rule case twice omitted a supplied junior accompaniment qualification
-  and generalized the running supervision rule across participation despite an
-  exposed volunteering distinction. The latter run had the repaired independent
-  source-first boundary. Citations were mechanically valid; the semantic outcome
-  was not acceptable against the frozen exception rubric.
-- The HTTP explanation used real full RFC parents and repeated local exact views.
-  Core validator/precedence/revalidation relationships were useful, with minor
-  qualification losses in the response `no-cache` and incidental `no-store`
-  discussion. Eleven model calls, six external requests and about 90 seconds
-  showed weak economy, including rereading and overlapping context. Exact-view
-  target drift and within-Find overlap were repaired offline afterward; this
-  technical question was not rerun on those changes.
-- The event/version reception answer qualified its incomplete first-month sample,
-  but still promoted selected early journalism and promotional/undated material
-  into mostly positive player reception. It stopped with useful obtainable dated
-  player/later-period evidence unresolved and ample budget remaining.
-- The recursive identity case was shown official departure/transition chronology,
-  shelved it, then pursued the departed candidate's biography as a possible new
-  appointment. It ultimately acknowledged unresolved current identity but answered
-  with that former candidate's qualifications. It used 15 searches, one external
-  full read and 11 model calls in about 74 seconds. The missing capability is
-  interpretation, premise retention and productive routing, not a larger ceiling.
+- F04 now recognized the future actual, made no acquisition, and committed its
+  honest unable answer after one no-progress recheck (three model calls rather
+  than semantic exhaustion).
+- F06's initial terminal Answer timed out with no HTTP response. Its permitted
+  replacement completed mechanically and distinguished update-specific material,
+  game-wide indicators and source limits, but still generalized selected journalism,
+  forum posts and whole-game measures into broadly favorable/warm player reception.
+  The first consequential loss was promotion/sufficiency in the final answer.
+- F07 preserved Ashley's historical tenure, later departure, Patty's interim role,
+  and the 2026 search. It pursued appointment evidence through 12 searches and
+  three full reads, then correctly answered unable rather than attribute role
+  requirements to an unestablished appointee.
+- F08 separated the original LK-99 claims, replicated anomalies, non-superconducting
+  mechanisms and the conclusion applicable to tested material; it passed with
+  exact selected-source citations.
 
-The source-first repair removed a real upstream-verdict leak, but did not establish
-the intended semantic capability. No final prompt/schema-only intervention or
-budget-only identity rerun was used. Live work is stopped for human architecture
-review, not automatically queued for another phase. A finite reserve remaining
-does not justify repeating the same unsuccessful pattern.
+The focused repair resolved its operational objective, but the campaign-level Sol
+judgment is **NO**: the intended research competence is not established. Exact
+disposable artifacts are at `C:\tmp\scryraven-sol-tail-repair-20260918\`; the
+sanitized F06 development candidate is retained in ignored `local-evals/`.
+Live work is stopped for human review, not automatically queued for another phase.
 
 ## Neutral results, sessions and citations
 
