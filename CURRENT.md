@@ -44,6 +44,20 @@ reliability. No semantic repair or Terra counterfactual was earned. The
 sanitized packet is external to the runtime at
 `C:\tmp\scryraven-luna-foundation-01-20260919\`.
 
+Foundation 02 observed the same unchanged candidate with GPT-5.6 Luna / medium
+on three frozen Level-4 bounded-synthesis cases. All three passed from actual
+selected public Evidence: L4A combined NPS Going-to-the-Sun vehicle-size limits
+with Tesla Cybertruck stock dimensions, correctly limiting its conclusion to
+the stated size criteria; L4B combined NASA Hubble angular resolution and lunar
+distance to derive that a 5-m object is not spatially resolvable; L4C preserved
+that 27,650 mAh alone does not establish a 100 Wh threshold without voltage,
+even while separately reporting Anker's explicit Wh statement. No semantic
+repair or Terra counterfactual was earned, and the experimental architecture
+and production behavior remain unchanged. This valid three-case foundation
+result demonstrates those bounded operations only, not general Level-4
+reliability or open-world aggregate sufficiency. The sanitized external packet
+is `C:\tmp\scryraven-luna-foundation-02-20260919\`.
+
 ## Historical development evidence
 
 The stopped Investigator lineage and failed Observation/Inference/scope-contract
