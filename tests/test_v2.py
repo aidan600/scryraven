@@ -6,7 +6,7 @@ import pytest
 from core.exa_transport import DiscoveryCandidate, FetchedMaterial
 from scryraven.research import RunError
 from scryraven.sources import Evidence
-from scryraven.v2 import V2Limits, run
+from scryraven.v2 import AnswerDecision, V2Limits, run
 
 
 def request(kind="search", query="public fact", target="", mode="auto", focus=""):
@@ -41,6 +41,16 @@ class Script:
 
 def search(query):
     return [DiscoveryCandidate("Official fact", "https://example.org/fact", "The stated value is seven.", context_kind="provider_highlights")]
+
+
+def multi_search(query):
+    return [
+        DiscoveryCandidate("First source", "https://example.org/first",
+                           "First exact passage. A material qualification applies. Final first-source fact.",
+                           context_kind="provider_highlights"),
+        DiscoveryCandidate("Second source", "https://example.org/second",
+                           "Second source fact. A second qualification applies.", context_kind="provider_highlights"),
+    ]
 
 
 def no_fetch(url):
@@ -250,9 +260,9 @@ def test_pending_requested_reading_precedes_new_external_work():
 
 def test_answer_reading_is_exact_source_text_and_invalid_reading_uses_same_budget():
     invalid = answer()
-    invalid["source_readings"] = [{"evidence_ref": "E1", "passage": "The invented value is eight."}]
+    invalid["source_readings"] = [{"evidence_ref": "E1", "passages": ["The invented value is eight."]}]
     valid = answer()
-    valid["source_readings"] = [{"evidence_ref": "E1", "passage": "The stated\nvalue is seven."}]
+    valid["source_readings"] = [{"evidence_ref": "E1", "passages": ["The stated\nvalue is seven."]}]
     model = Script(decision(), decision("answer", ["E1"]), invalid, valid)
     events = []
     result = run("Value?", model=model, search=search, fetch=no_fetch, observe=events.append)
@@ -262,6 +272,12 @@ def test_answer_reading_is_exact_source_text_and_invalid_reading_uses_same_budge
     assert "invented value" not in json.dumps(model.calls[-1][2])
     readings = [event for event in events if event["action"] == "answer_reading"]
     assert readings[0]["readings"][0]["passage"] == "The stated value is seven."
+    rejected = [event for event in events if event["action"] == "answer_reading_rejected"]
+    assert rejected == [{"stage": "v2", "action": "answer_reading_rejected", "contract": "answer",
+                         "code": "reading_passage_not_in_source", "evidence_ref": "E1",
+                         "passage": "The invented value is eight.", "reading_index": 0,
+                         "passage_index": 0}]
+    assert not any(event["action"] == "answer_reading_rejected" for event in result.trace)
     trace_answer = next(event for event in result.trace if event["action"] == "answer_decision")
     assert "source_readings" not in trace_answer["decision"]
     assert trace_answer["source_reading_refs"] == ["E1"]
@@ -269,7 +285,94 @@ def test_answer_reading_is_exact_source_text_and_invalid_reading_uses_same_budge
 
 def test_reading_cannot_borrow_exact_text_from_unsupplied_material():
     invalid = answer()
-    invalid["source_readings"] = [{"evidence_ref": "E2", "passage": "The stated value is seven."}]
+    invalid["source_readings"] = [{"evidence_ref": "E2", "passages": ["The stated value is seven."]}]
     model = Script(decision(), decision("answer", ["E1"]), invalid, answer())
     result = run("Value?", model=model, search=search, fetch=no_fetch)
     assert any(event.get("code") == "unselected_reading_reference" for event in result.trace)
+
+
+def test_answer_reading_accepts_discontinuous_literal_passages_from_one_material():
+    valid = answer("First exact passage with the qualification. [E1]")
+    valid["source_readings"] = [{"evidence_ref": "E1", "passages": [
+        "First exact passage.", "A material\nqualification applies.",
+    ]}]
+    model = Script(decision(), decision("answer", ["E1"]), valid)
+    events = []
+    result = run("What is the qualified fact?", model=model,
+                 search=lambda query: multi_search(query)[:1], fetch=no_fetch, observe=events.append)
+    reading = next(event for event in events if event["action"] == "answer_reading")
+    assert [item["passage"] for item in reading["readings"]] == [
+        "First exact passage.", "A material qualification applies.",
+    ]
+    trace_answer = next(event for event in result.trace if event["action"] == "answer_decision")
+    assert trace_answer["source_reading_refs"] == ["E1"]
+    assert result.selected_evidence == result.citations[0].materials
+
+
+def test_answer_readings_accept_multiple_materials_without_duplicate_source_identity():
+    valid = answer("First qualified fact [E1]. Second qualified fact [E2].")
+    valid["source_readings"] = [
+        {"evidence_ref": "E1", "passages": [
+            "First exact passage.", "A material qualification applies.", "First exact passage.",
+        ]},
+        {"evidence_ref": "E2", "passages": [
+            "Second source fact.", "A second qualification applies.",
+        ]},
+    ]
+    model = Script(decision(), decision("answer", ["E1", "E2"]), valid)
+    events = []
+    result = run("What are the qualified facts?", model=model, search=multi_search, fetch=no_fetch,
+                 observe=events.append)
+    reading = next(event for event in events if event["action"] == "answer_reading")
+    assert [item["evidence_ref"] for item in reading["readings"]] == ["E1", "E1", "E2", "E2"]
+    trace_answer = next(event for event in result.trace if event["action"] == "answer_decision")
+    assert trace_answer["source_reading_refs"] == ["E1", "E2"]
+    assert [citation.materials[0].id for citation in result.citations] == ["E1", "E2"]
+    assert [item.id for item in result.selected_evidence] == ["E1", "E2"]
+
+
+def test_answer_reading_schema_replaces_the_obsolete_single_passage_shape():
+    with pytest.raises(ValueError):
+        AnswerDecision.model_validate({
+            "source_readings": [{"evidence_ref": "E1", "passage": "Old shape."}],
+            "posture": "unable", "answer": "Unable.", "missing_information": None,
+        })
+    with pytest.raises(ValueError):
+        AnswerDecision.model_validate({
+            "source_readings": [{"evidence_ref": "E1", "passages": []}],
+            "posture": "unable", "answer": "Unable.", "missing_information": None,
+        })
+
+
+@pytest.mark.parametrize(("invalid_reading", "code", "passage_index"), [
+    ({"evidence_ref": "E2", "passages": ["First exact passage.", "First paraphrased value."]},
+     "reading_passage_not_in_source", 1),
+    ({"evidence_ref": "E2", "passages": ["First exact passage!"]},
+     "reading_passage_not_in_source", 0),
+    ({"evidence_ref": "E2", "passages": ["Second source fact."]},
+     "reading_passage_not_in_source", 0),
+    ({"evidence_ref": "E2", "passages": ["Retained but unsupplied text."]},
+     "reading_passage_not_in_source", 0),
+    ({"evidence_ref": "E2", "passages": ["Fabricated text."]},
+     "reading_passage_not_in_source", 0),
+    ({"evidence_ref": "E2", "passages": ["First exact passage. ... A material qualification applies."]},
+     "reading_passage_not_in_source", 0),
+    ({"evidence_ref": "E99", "passages": ["First exact passage."]}, "unselected_reading_reference", 0),
+])
+def test_answer_reading_rejects_nonliteral_or_wrong_custody_passages(invalid_reading, code, passage_index):
+    invalid = answer()
+    invalid["source_readings"] = [invalid_reading]
+    model = Script(decision(), decision("answer", ["E2", "E3"]), invalid,
+                   answer("First exact passage. [E2]"))
+    retained = Evidence("E1", "https://example.org/retained", "Retained", "Retained but unsupplied text.")
+    events = []
+    result = run("What are the facts?", model=model, search=multi_search, fetch=no_fetch,
+                 retained_acquisitions=(retained,), observe=events.append)
+    assert result.posture == "supported"
+    assert model.calls[-1][2]["output_correction"]["code"] == code
+    assert all(item["id"] != "E1" for item in model.calls[-1][2]["evidence"])
+    rejected = [event for event in events if event["action"] == "answer_reading_rejected"]
+    assert rejected[0]["code"] == code
+    assert rejected[0]["evidence_ref"] == invalid_reading["evidence_ref"]
+    assert rejected[0]["passage"] == invalid_reading["passages"][passage_index]
+    assert rejected[0]["passage_index"] == passage_index

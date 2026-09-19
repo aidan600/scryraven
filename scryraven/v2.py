@@ -11,7 +11,7 @@ import time
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import date
-from typing import Callable, Literal
+from typing import Annotated, Callable, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -65,7 +65,7 @@ class ResearchDecision(_Contract):
 
 class SourceReading(_Contract):
     evidence_ref: str
-    passage: str = Field(min_length=1, max_length=4000)
+    passages: list[Annotated[str, Field(min_length=1, max_length=4000)]] = Field(min_length=1, max_length=12)
 
 
 class AnswerDecision(_Contract):
@@ -157,10 +157,13 @@ fill a gap from model memory. An unsuccessful search or exhausted budget proves
 neither nonexistence nor support. Distinguish future actual results from forecasts.
 
 Perform the source reading before composing prose in this same call: source_readings
-selects a few literal passages from the supplied material that control the answer,
-including the scope/identity/time/conditions that change what can be said. Copy the
-passages, with their exact evidence_ref, without paraphrase or a claim-to-source
-justification. This is your own fresh reading selection, not Research's verdict.
+selects literal passages from the supplied material that control the answer,
+including the scope/identity/time/conditions that change what can be said. Each
+entry has one exact evidence_ref and one or more independently literal contiguous
+passages from that material. When relying on discontinuous portions, return them
+as separate passages; never stitch them together with ellipses. Copy every passage
+without paraphrase or a claim-to-source justification. This is your own fresh
+reading selection, not Research's verdict.
 Keep materially different cases and contradictory or qualifying passages available
 while composing. Selections are transient actual text, not a claim database or a
 count-based sufficiency test; their absence proves nothing. With no source material,
@@ -348,28 +351,40 @@ def _run_turn(
                 packet["output_correction"] = "Return a JSON object matching the schema."
                 continue
             readings = []
-            issue = None
-            for reading in final.source_readings:
+            seen_readings = set()
+            issue = rejected = None
+            for reading_index, reading in enumerate(final.source_readings):
                 if reading.evidence_ref not in refs:
                     issue = "unselected_reading_reference"
+                    rejected = {"evidence_ref": reading.evidence_ref, "passage": reading.passages[0],
+                                "reading_index": reading_index, "passage_index": 0}
                     break
                 source = library.materials[reading.evidence_ref]
-                # Whitespace differences do not alter quoted words. Reconstruct
-                # the exact original substring; never repair words or punctuation.
-                pattern = r"\s+".join(re.escape(word) for word in reading.passage.split())
-                match = re.search(pattern, source.content) if pattern else None
-                if match is None:
-                    issue = "reading_passage_not_in_source"
+                for passage_index, passage in enumerate(reading.passages):
+                    # Whitespace differences do not alter quoted words. Reconstruct
+                    # the exact original substring; never repair words or punctuation.
+                    pattern = r"\s+".join(re.escape(word) for word in passage.split())
+                    match = re.search(pattern, source.content) if pattern else None
+                    if match is None:
+                        issue = "reading_passage_not_in_source"
+                        rejected = {"evidence_ref": source.id, "passage": passage,
+                                    "reading_index": reading_index, "passage_index": passage_index}
+                        break
+                    key = source.id, match.start(), match.end()
+                    if key not in seen_readings:
+                        seen_readings.add(key)
+                        readings.append({"evidence_ref": source.id, "start_char": match.start(),
+                                         "end_char": match.end(), "passage": match.group()})
+                if issue:
                     break
-                readings.append({"evidence_ref": source.id, "start_char": match.start(),
-                                 "end_char": match.end(), "passage": match.group()})
             if issue:
+                emit("answer_reading_rejected", source_body=True, contract="answer", code=issue, **rejected)
                 emit("response_rejected", contract="answer", code=issue)
-                packet["output_correction"] = {"code": issue, "instruction": "Select only literal passages from supplied Evidence. Do not paraphrase or import text from another material/version."}
+                packet["output_correction"] = {"code": issue, "instruction": "Select separate literal contiguous passages only from the referenced supplied Evidence. Do not paraphrase, import another material/version, or stitch excerpts with ellipses."}
                 continue
             emit("answer_reading", source_body=True, readings=readings)
             emit("answer_decision", decision=final.model_dump(exclude={"source_readings"}),
-                 source_reading_refs=[reading.evidence_ref for reading in final.source_readings])
+                 source_reading_refs=list(dict.fromkeys(reading.evidence_ref for reading in final.source_readings)))
             return final
         return None
 

@@ -57,6 +57,36 @@ def test_actual_v2_engine_reopens_and_rereads_retained_material_without_acquisit
         assert render_html(restored.turns[0].question, restored.turns[0]) == first_html
 
 
+def test_multispan_answer_remains_neutral_and_durable_in_a_real_v2_session():
+    with tempfile.TemporaryDirectory(prefix="scryraven-v2-multispan-session-") as directory:
+        store = SQLiteSessionStore(Path(directory) / "sessions.sqlite3")
+        source = Evidence("E1", "https://example.org/source", "Source",
+                          "First exact passage. A material qualification applies.",
+                          acquisition="provider_highlights")
+        final = answer("First qualified fact. [E1]")
+        final["source_readings"] = [{"evidence_ref": "E1", "passages": [
+            "First exact passage.", "A material qualification applies.",
+        ]}]
+        model = Script(
+            decision(),
+            decision("answer", ["E1"]),
+            final,
+        )
+        session = ResearchSession.create(store=store, engine=_run_turn, limits=V2Limits(), model=model,
+                                         search=lambda query: [DiscoveryCandidate("Source", source.url, source.content,
+                                                                                  context_kind="provider_highlights")],
+                                         fetch=no_io)
+        completed = session.ask("What is the qualified fact?")
+        session_id = session.session_id
+        assert completed.selected_evidence == (source,)
+        assert completed.citations[0].materials == (source,)
+        assert session.turns[0].analysis is None
+        reopened = ResearchSession.open(session_id, store=SQLiteSessionStore(store.path))
+        assert reopened.turns[0].selected_evidence == (source,)
+        assert reopened.turns[0].citations[0].materials == (source,)
+        assert reopened.turns[0].analysis is None
+
+
 def test_supported_answer_without_actual_supplied_evidence_cannot_complete():
     model = Script(decision("answer"), answer("A factual answer from memory."))
     with pytest.raises(RunError, match="missing_citation"):
