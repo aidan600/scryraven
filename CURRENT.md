@@ -29,17 +29,19 @@ heterogeneous evidence, the system must provide the strongest useful
 evidence-bounded synthesis without manufacturing an unsupported aggregate claim.
 Luna, Sol and Sonnet observations each exposed variants of that difficulty.
 
-Foundation 01 initial observation ran at `6b37a8f3c87f3cad30472fbf10f5f1be523c861f`
-through the ordinary candidate path with GPT-5.6 Luna / medium. It passed the
-frozen authoritative lookup and both qualified-interpretation cases from actual
-NIST, FAA, and IRS material. The frozen comparison case cannot be adjudicated
-against its supplied expected values: current NPS park-statistics material gave
-Yosemite as 759,620 acres and Bryce Canyon as 35,835 acres, while the frozen
-rubric named older NPS foundation-document values of 747,956 and 35,830. Both
-sets were acquired; the result is a frozen-case applicability invalidation, not
-a demonstrated semantic or mechanical candidate loss. No semantic repair or
-Terra counterfactual was earned, and Foundation 01 does not establish its
-four-case success condition. The sanitized packet is external to the runtime at
+Foundation 01 observed the ordinary candidate path with GPT-5.6 Luna / medium.
+L1 authoritative lookup, L2A qualified conditions, and L2B date applicability
+passed from acquired NIST, FAA, and IRS material. The original NPS comparison
+is retained as `INVALID — evaluator/source ambiguity`: current NPS
+park-statistics material gave Yosemite 759,620 acres and Bryce Canyon 35,835
+acres, while the frozen rubric named older NPS foundation-document values of
+747,956 and 35,830. It is not a ScryRaven failure and is excluded from the
+valid-case denominator. Authorized replacement L3R passed from acquired Census
+Bureau 2020 Census resident-population material: California 39,538,223, Texas
+29,145,505, with California larger. Foundation 01 is therefore met on its four
+valid frozen Levels 1–3 cases. This is foundation evidence only, not general
+reliability. No semantic repair or Terra counterfactual was earned. The
+sanitized packet is external to the runtime at
 `C:\tmp\scryraven-luna-foundation-01-20260919\`.
 
 ## Historical development evidence
