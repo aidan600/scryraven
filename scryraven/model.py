@@ -186,6 +186,8 @@ class OpenAIModel:
             )
             response.raise_for_status()
             data = response.json()
+        except requests.Timeout:
+            raise ModelError("model_request_timed_out") from None
         except requests.HTTPError as exc:
             status = exc.response.status_code if exc.response is not None else None
             code = {

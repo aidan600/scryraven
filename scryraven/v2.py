@@ -298,6 +298,7 @@ def _run_turn(
     correction = None
     answer_need = None
     selected: list[str] = []
+    provisional_answer: tuple[AnswerDecision, tuple[str, ...]] | None = None
     bound = None
 
     def reading_packet():
@@ -419,6 +420,18 @@ def _run_turn(
             continue
         if decision.action == "answer":
             selected = list(dict.fromkeys(decision.answer_evidence_refs))
+            if provisional_answer is not None:
+                prior, prior_refs = provisional_answer
+                # Research has reconsidered the Answer's stated need but selected
+                # no material beyond what the valid prior Answer already received.
+                # Another Answer call would have no new source basis; retain the
+                # honest existing result instead of renewing the same loop.
+                if set(selected).issubset(prior_refs):
+                    emit("answer_committed_no_progress", posture=prior.posture,
+                         missing_information=prior.missing_information,
+                         prior_selected_refs=list(prior_refs), selected_refs=selected)
+                    return finish(prior, list(prior_refs), "not_established")
+                provisional_answer = None
             try:
                 final = answer_from_sources(selected, [
                     item for item in last_route if item.get("status") == "error"])
@@ -435,6 +448,7 @@ def _run_turn(
                 if budget.semantic < limits.semantic_attempts - 1 and budget.remaining_seconds > 0:
                     answer_need = final.missing_information
                     active = selected
+                    provisional_answer = (final, tuple(selected))
                     # Deliberately do not feed the provisional answer back to Research.
                     emit("answer_returned_to_research", missing_information=answer_need)
                     continue
@@ -463,6 +477,12 @@ def _run_turn(
             break
 
     emit("research_bound", code=bound, budget=budget.snapshot())
+    if provisional_answer is not None and set(selected).issubset(provisional_answer[1]):
+        prior, prior_refs = provisional_answer
+        emit("answer_committed_no_progress", posture=prior.posture,
+             missing_information=prior.missing_information,
+             prior_selected_refs=list(prior_refs), selected_refs=selected)
+        return finish(prior, list(prior_refs), "not_established")
     if budget.semantic < limits.semantic_attempts and budget.remaining_seconds > 0:
         if pending:
             reading_packet()

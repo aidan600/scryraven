@@ -90,3 +90,13 @@ def test_connection_failure_does_not_expose_request_details(monkeypatch):
 
     with pytest.raises(ModelError, match="^model_transport_failed$"):
         OpenAIModel(post=failed)("research", "prompt", {}, {})
+
+
+def test_timeout_has_a_safe_distinct_transport_code(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "offline-test-value")
+
+    def timed_out(*args, **kwargs):
+        raise requests.Timeout("secret-bearing request detail")
+
+    with pytest.raises(ModelError, match="^model_request_timed_out$"):
+        OpenAIModel(post=timed_out)("answer", "prompt", {}, {})

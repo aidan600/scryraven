@@ -93,6 +93,52 @@ def test_missing_need_returns_to_same_loop_without_draft_or_budget_reset():
     assert continuation["evidence"][0]["id"] == "E1"
     assert result.trace[-1]["budget"]["semantic_attempts"] == 6
     assert result.trace[-1]["budget"]["external_attempts"] == 2
+    assert not any(event["action"] == "answer_committed_no_progress" for event in result.trace)
+
+
+def test_terminal_unable_answer_without_a_need_commits_immediately():
+    model = Script(decision("answer"), answer("The material does not establish this.", "unable"))
+    result = run("What is the value?", model=model, search=search, fetch=no_fetch)
+    assert [call[0] for call in model.calls] == ["research", "answer"]
+    assert result.posture == "unable"
+    assert not any(event["action"] == "answer_returned_to_research" for event in result.trace)
+
+
+def test_terminal_partial_answer_without_a_need_commits_immediately():
+    model = Script(decision(), decision("answer", ["E1"]),
+                   answer("The material establishes only this fragment. [E1]", "partial"))
+    result = run("What is the value?", model=model, search=search, fetch=no_fetch)
+    assert [call[0] for call in model.calls] == ["research", "research", "answer"]
+    assert result.posture == "partial"
+    assert not any(event["action"] == "answer_returned_to_research" for event in result.trace)
+
+
+def test_partial_answer_with_no_new_selected_material_commits_without_a_second_answer():
+    model = Script(decision(), decision("answer", ["E1"]),
+                   answer("A supported fragment. [E1]", "partial", "What condition applies?"),
+                   decision("answer", ["E1"]))
+    result = run("What is the value?", model=model, search=search, fetch=no_fetch)
+    assert [call[0] for call in model.calls] == ["research", "research", "answer", "research"]
+    assert result.answer.startswith("A supported fragment.")
+    assert result.posture == "partial"
+    committed = [event for event in result.trace if event["action"] == "answer_committed_no_progress"]
+    assert committed == [
+        {"stage": "v2", "action": "answer_committed_no_progress", "posture": "partial",
+         "missing_information": "What condition applies?", "prior_selected_refs": ["E1"],
+         "selected_refs": ["E1"]},
+    ]
+
+
+def test_partial_answer_at_a_semantic_bound_is_not_promoted_to_support():
+    model = Script(decision(), decision("answer", ["E1"]),
+                   answer("A supported fragment. [E1]", "partial", "What condition applies?"),
+                   decision(refs=["E1"]))
+    result = run("What is the value?", model=model, search=search, fetch=no_fetch,
+                 limits=V2Limits(semantic_attempts=5, external_attempts=1))
+    assert [call[0] for call in model.calls] == ["research", "research", "answer", "research"]
+    assert result.posture == "partial"
+    assert result.stop_reason == "not_established"
+    assert result.trace[-1]["budget"]["semantic_attempts"] == 4
 
 
 def test_malformed_call_consumes_attempt_and_final_reserve_is_source_first():
