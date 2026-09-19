@@ -58,6 +58,19 @@ result demonstrates those bounded operations only, not general Level-4
 reliability or open-world aggregate sufficiency. The sanitized external packet
 is `C:\tmp\scryraven-luna-foundation-02-20260919\`.
 
+Recursive 01 observed the same unchanged candidate with GPT-5.6 Luna / medium on
+three frozen Level-5 one-hop dependency cases. All three produced materially
+correct, actual-Evidence-supported answers, but none demonstrated the required
+Evidence-directed acquisition transition. D1 searched the Anker rating and FAA
+rule in parallel; D2 placed `NIRSpec` in its initial search before acquired NASA
+material established the instrument identity; D3’s first ESA launcher result
+supplied both Falcon 9 and its propellants. D1 and D3 therefore triggered the
+frozen two-primary correct-but-unexercised stop condition; D4R was not run. This
+is `INCONCLUSIVE` for Level 5, not a demonstrated semantic failure: no repair or
+Terra counterfactual was earned, and the experimental architecture and production
+behavior remain unchanged. The sanitized external packet is
+`C:\tmp\scryraven-luna-recursive-01-20260919\`.
+
 ## Historical development evidence
 
 The stopped Investigator lineage and failed Observation/Inference/scope-contract
