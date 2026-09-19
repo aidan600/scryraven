@@ -1,12 +1,7 @@
 # ScryRaven Current Truth
 
-Status: the coherent V2 candidate is implemented and has ordinary CLI/session
+Status: the coherent V2 candidate is implemented with ordinary CLI/session
 demonstrations, but the intended general research capability is **not established**.
-The observation/inference/sufficiency contract repair is **NOT MET**: its one fresh
-Sol / medium F06 submission completed mechanically but still promoted selected
-evidence into a favorable first-month reception conclusion. Live validation stopped
-at that material failure; F01/F03/F05 controls were not run. No post-failure tuning,
-general competence claim, or production-adoption decision is authorized.
 
 The experimental branch now also supports one Answer source selection containing
 multiple independently exact, contiguous passages from the same supplied Evidence
@@ -15,18 +10,12 @@ accepts genuine discontinuous readings without weakening literal custody. It did
 not establish semantic competence: its F03 run dropped an explicit junior-event
 qualification and its F06 run overpromoted non-systematic reception material.
 
-The candidate's semantic-contract repair now replaces `established` with compact
-direct `observed` and analytical `inferred` lists. Missing premises constrain
-answerable scope: Research must obtain a consequential obtainable premise or
-abandon the broader inference and explicitly propose a narrower answer. Answer
-is instructed to apply the same scope discipline independently to actual sources.
-Focused V2 checks (113 tests), the full offline suite (504 tests), Ruff and diff
-checks pass.
-The live result on `904ff562e1978265650e5c66f8876b85663a0381` did not demonstrate
-the required semantic repair. The labels and explicit scope declaration did not
-prevent the broader inference; negative-control behavior on this contract remains
-unproved. Details are in `docs/operator/V2_SCOPE_CONTRACT_VALIDATION.md`.
-
+The failed Observation/Inference/requested-versus-narrowed scope contract is no
+longer active candidate semantics. Its F06 failure and frozen validation record
+remain historical development evidence in `docs/operator/V2_SCOPE_CONTRACT_VALIDATION.md`.
+The candidate retains the demonstrated source-first mechanics, but aggregate and
+open-world sufficiency remain unresolved; no general competence or adoption claim
+is authorized.
 The default CLI and local Reading Room still use the approved production
 Research -> Analyst -> Author path. V2 is an explicit development candidate,
 selected with `--v2`; no production replacement or merge decision is implied.
@@ -42,20 +31,10 @@ Luna / medium configuration with Exa acquisition. Sol / medium is injected only
 for authorized development observations; production defaults are unchanged.
 Research interprets the immutable original question and supplied actual Evidence,
 replaces a compact working understanding, chooses
-independent Search/Read/Find requests, and proposes answering at `requested` or
-`narrowed` scope, with a concise scope limit only for the latter. The old candidate
-`established` state is removed without compatibility machinery. Observed items
-preserve material source attribution and qualifications; inferred items contain
-only conclusions warranted at their stated scope. `still_needed` also records
-premises whose absence limits that scope. The executor checks references and
-declaration shape, not whether an inference is justified. It does
+independent Search/Read/Find requests, and proposes answering. The executor does
 no semantic planning or truth judgment. The fresh Answer call receives exact
 selected sources, conversation referents, operating date and mechanical limits.
-It receives no Research observations, inferences, scope declaration, factual
-cautions, answer draft or verdict. Its unchanged result schema expresses useful
-narrower answers through partial posture. Direct facts, qualitative aggregate
-judgments and technical/rule synthesis remain permitted without source-count or
-universal statistical-sampling requirements.
+It receives no Research findings, factual cautions, answer draft or verdict.
 
 Within that same Answer call, each transient literal `source_reading` identifies
 one supplied Evidence reference and one or more independently literal, contiguous
@@ -150,24 +129,6 @@ MATERIAL FAIL results. The repair therefore demonstrates exact source-reading
 mechanics only; it creates no Sonnet adoption or production-default claim. Exact
 disposable artifacts are at
 `C:\tmp\scryraven-sonnet5-multispan-validation-20260919\`.
-
-The observation/inference/sufficiency repair's single Sol / medium F06 run used
-the frozen question/rubric and the ordinary session application on
-`904ff562e1978265650e5c66f8876b85663a0381`. Research preserved source distinctions
-in `observed`, but its second decision already inferred a positive reception
-direction; its fifth chose `answer_scope=requested` while claiming reception was
-"broadly favorable relative to the preceding lull." The missing bridge had narrowed
-to a missing precise approval rate. Fresh Answer kept engagement separate from
-satisfaction and returned partial posture, yet still opened with a favorable
-first-month reception claim. Both positive and negative material reached it.
-This is a semantic MATERIAL FAIL, not a provider failure or a requirement for a
-statistical survey. The existing no-progress behavior committed that partial
-without another identical Answer call. There were six model calls, ten searches,
-one full read, and 101.813 seconds elapsed. No controls or replacements ran.
-Exact sanitized artifacts remain at `C:\tmp\scryraven-scope-contract-20260919\`,
-and the failure is preserved as an ignored local development candidate. The final
-review adds documentation only after that tested implementation; no runtime code
-was changed after the live result.
 
 ## Neutral results, sessions and citations
 

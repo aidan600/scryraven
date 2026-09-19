@@ -1,3 +1,11 @@
+# FAILED DEVELOPMENT EXPERIMENT — NOT ACTIVE CANDIDATE SEMANTICS
+
+This is a preserved historical validation record for the scope-contract experiment
+at `904ff562e1978265650e5c66f8876b85663a0381`. The experiment did not meet its
+semantic objective and was removed from the active V2 candidate during the
+2026-09-19 harvest. The detailed text below describes the tested historical tree;
+it does not describe current runtime state or authorize compatibility machinery.
+
 # Observation / inference / sufficiency contract repair
 
 OUTCOME: **NOT MET**. The fresh Sol / medium F06 submission is a MATERIAL FAIL.
