@@ -71,6 +71,20 @@ Terra counterfactual was earned, and the experimental architecture and productio
 behavior remain unchanged. The sanitized external packet is
 `C:\tmp\scryraven-luna-recursive-01-20260919\`.
 
+Recursive 01B then tested the unchanged candidate with GPT-5.6 Luna / medium on
+a later frozen seven-case dependency-gated bank. It met the bounded Level-5
+standard: G1 established Passport from NASA/GE hybrid-demonstration Evidence then
+redirected to GE’s Passport thrust specification; G2 established Sentinel-1 from
+USGS interferogram Evidence then redirected to ESA’s radar specification; and G7
+established Elytra from NASA/JPL MoonFall Evidence then redirected to Firefly’s
+engine-family material. G3–G6 were materially correct, supported shortcut cases
+whose initial acquisition batches already contained both stages; they do not count
+as failures or passes. No semantic repair or Terra counterfactual was earned, and
+the experimental architecture and production behavior remain unchanged. This is
+bounded Level-5 evidence only, not general recursive reliability or Level-6
+identity/chronology recovery. The sanitized external packet is
+`C:\tmp\scryraven-luna-recursive-01b-20260919\`.
+
 ## Historical development evidence
 
 The stopped Investigator lineage and failed Observation/Inference/scope-contract
