@@ -15,6 +15,15 @@ accepts genuine discontinuous readings without weakening literal custody. It did
 not establish semantic competence: its F03 run dropped an explicit junior-event
 qualification and its F06 run overpromoted non-systematic reception material.
 
+The candidate's semantic-contract repair now replaces `established` with compact
+direct `observed` and analytical `inferred` lists. Missing premises constrain
+answerable scope: Research must obtain a consequential obtainable premise or
+abandon the broader inference and explicitly propose a narrower answer. Answer
+independently applies the same scope discipline to actual sources. Focused V2
+checks (113 tests), the full offline suite (504 tests), Ruff and diff checks pass.
+Bounded Sol / medium validation is pending; no semantic improvement is yet
+demonstrated.
+
 The default CLI and local Reading Room still use the approved production
 Research -> Analyst -> Author path. V2 is an explicit development candidate,
 selected with `--v2`; no production replacement or merge decision is implied.
@@ -30,10 +39,20 @@ Luna / medium configuration with Exa acquisition. Sol / medium was injected only
 for the authorized development campaign; production defaults are unchanged.
 Research interprets the immutable original question and supplied actual Evidence,
 replaces a compact working understanding, chooses
-independent Search/Read/Find requests, and proposes answering. The executor does
+independent Search/Read/Find requests, and proposes answering at `requested` or
+`narrowed` scope, with a concise scope limit only for the latter. The old candidate
+`established` state is removed without compatibility machinery. Observed items
+preserve material source attribution and qualifications; inferred items contain
+only conclusions warranted at their stated scope. `still_needed` also records
+premises whose absence limits that scope. The executor checks references and
+declaration shape, not whether an inference is justified. It does
 no semantic planning or truth judgment. The fresh Answer call receives exact
 selected sources, conversation referents, operating date and mechanical limits.
-It receives no Research findings, factual cautions, answer draft or verdict.
+It receives no Research observations, inferences, scope declaration, factual
+cautions, answer draft or verdict. Its unchanged result schema expresses useful
+narrower answers through partial posture. Direct facts, qualitative aggregate
+judgments and technical/rule synthesis remain permitted without source-count or
+universal statistical-sampling requirements.
 
 Within that same Answer call, each transient literal `source_reading` identifies
 one supplied Evidence reference and one or more independently literal, contiguous

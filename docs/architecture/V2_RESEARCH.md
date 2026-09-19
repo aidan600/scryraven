@@ -13,13 +13,22 @@ premium escalation, Scout, specialist hierarchy, verifier, or prose polisher.
 
 **Research** owns interpretation of the original question and supplied actual
 Evidence, a compact revisable understanding, route selection, and a proposal to
-answer. Its understanding contains the current interpretation, a small set of
-scoped findings with material references, neutral unresolved questions, and the
-last route's result. This generated state is continuity, never Evidence. It is
+answer. Its understanding contains the current interpretation, compact `observed`
+and `inferred` lists with exact material references, neutral `still_needed`
+information, and the last route's result. Observed items preserve what sources
+directly establish, including material attribution and qualifications. Inferred
+items contain analytical relationships justified at their stated scope. Missing
+information can limit the permissible inference scope as well as answer content.
+This replaces the experimental `established` list without a compatibility adapter.
+The generated state is continuity, never Evidence. It is
 replaced as a whole and is not stored as a claim database or hypothesis lifecycle.
 
 Research returns either a route of Search/Read/Find requests or a proposal for a
-fresh answer with exact material references. The prompt
+fresh answer with exact material references. An answer proposal declares
+`answer_scope=requested` with null `scope_limit`, or `answer_scope=narrowed` with a
+concise material scope restriction, never a draft answer. Acquisition decisions
+leave both fields null. Shape checks enforce this declaration, not semantic
+sufficiency. The prompt
 guides roughly one to three independent requests per route. Results return to the
 same Research owner before semantically dependent follow-on requests are chosen.
 The executor performs selected requests and reports mechanical outcomes; it makes
@@ -28,10 +37,16 @@ no truth, applicability, contradiction, sufficiency, or research-policy decision
 **Answer** receives the immutable original question, conversation referents,
 current date, exact selected Evidence, mechanical acquisition limitations, and
 remaining budget. No `answer_cautions`, working understanding, generated factual
-warnings, answer draft, or Research verdict crosses this boundary. Controlling
+warnings, answer draft, Research scope declaration, or verdict crosses this boundary. Controlling
 identity, scope, time, conflicts and qualifications travel in the actual selected
 material. Answer independently determines what that material justifies, with
-supported, partial, or unable posture.
+supported, partial, or unable posture. Its instructions distinguish direct
+observations, attributed characterizations and warranted inference; a missing
+connecting premise must limit the claims themselves, not just add a caveat.
+Requested-scope support permits supported posture; useful narrower answers are
+partial. Qualitative aggregation and technical/rule synthesis remain allowed
+when their premises warrant the relationship, without universal source counts or
+statistical-sampling requirements. The Answer schema is unchanged.
 One consequential missing information need may return to Research within the
 same run allowance. Only that need returns; the provisional answer is not supplied
 as Research authority. Each subsequent answer attempt is again source-first.
@@ -102,9 +117,14 @@ Catalogs and indexes are transient navigation, not persisted product truth.
 
 ## Completion and resource limits
 
-Stopping belongs to Research's evidence-based judgment: answer at a useful honest
-scope when no consequential unresolved need justifies further obtainable material
-at its expected cost. The source-first Answer contract independently determines
+Stopping belongs to Research's evidence-based judgment: a premise required for a
+broader inference must either be pursued when consequential and reasonably
+obtainable, or that inference must be abandoned and the answer scope narrowed.
+The missing premise remains in `still_needed`; a scope caveat cannot coexist with
+the same unsupported broad inference. Answer when no consequential unresolved
+need justifies further obtainable material at its expected cost. Simple facts can
+stop with one observation and no inference; inference alone never demands an
+additional source. The source-first Answer contract independently determines
 the supported scope. Neither source counts nor budget consumption establishes
 sufficiency.
 

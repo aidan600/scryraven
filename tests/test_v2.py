@@ -15,9 +15,10 @@ def request(kind="search", query="public fact", target="", mode="auto", focus=""
 
 
 def decision(action="research", refs=(), requests=None, interpretation="Find the requested fact"):
-    return dict(understanding=dict(interpretation=interpretation, established=[],
+    return dict(understanding=dict(interpretation=interpretation, observed=[], inferred=[],
                                   still_needed=[] if action == "answer" else ["What is the fact?"],
                                   last_route_result=""), action=action, purpose="Resolve the fact",
+                answer_scope="requested" if action == "answer" else None, scope_limit=None,
                 requests=([request()] if requests is None and action == "research" else requests or []),
                 retain=list(refs), answer_evidence_refs=list(refs) if action == "answer" else [])
 
