@@ -129,6 +129,8 @@ def test_external_manifest_drives_ordinary_session_questions(monkeypatch, tmp_pa
     manifest_path = tmp_path / "frozen.md"
     manifest_path.write_text(campaign.MANIFEST.read_text(encoding="utf-8"), encoding="utf-8")
     monkeypatch.setattr(campaign, "_runtime", lambda: bindings)
+    # Keep the manifest external even when pytest's temp base is in the checkout.
+    monkeypatch.setattr(campaign, "REPOSITORY", tmp_path / "checkout")
     assert campaign.main([
         "--case", "F03", "--revision", "abc1234", "--manifest", str(manifest_path),
     ]) == 0
