@@ -7,11 +7,10 @@ from dataclasses import asdict
 import pytest
 import requests
 from test_model_transport import Response
+from test_research_loop import answer, decision
 from test_research_session import (
     ANSWER_A,
     BODY,
-    FACT_A,
-    FACT_B,
     FACT_C,
     Q1,
     Q2,
@@ -19,11 +18,10 @@ from test_research_session import (
     URL_A,
     URL_B,
     Provider,
-    assess,
     candidate,
+    first_turn,
+    local_turn,
 )
-from test_source_acquisition import use
-from test_walking_skeleton import author, orient, search_for
 
 from scryraven import research
 from scryraven.model import ModelConfig, ModelRole, OpenAIModel
@@ -31,11 +29,8 @@ from scryraven.session import ResearchSession
 
 SUFFIX = "\nReturn only JSON matching the response schema, with no Markdown or commentary."
 FAMILIES = [
-    ("research", "orientation", research.ORIENTATION_PROMPT, research.SESSION_CONTEXT_PROMPT, research.Orientation),
-    ("research", "navigation", research.RESEARCH_PROMPT, research.SESSION_RESEARCH_PROMPT, research.ResearchAction),
-    ("research", "relevance", research.RELEVANCE_PROMPT, research.SESSION_CONTEXT_PROMPT, research.RelevantEvidence),
-    ("analyst", "analyst", research.ANALYST_PROMPT, research.SESSION_CONTEXT_PROMPT, research.Analysis),
-    ("author", "author", research.AUTHOR_PROMPT, research.SESSION_AUTHOR_PROMPT, research.Draft),
+    ("research", "research", research.RESEARCH_PROMPT, "", research.ResearchDecision),
+    ("answer", "answer", research.ANSWER_PROMPT, "", research.AnswerDecision),
 ]
 
 
@@ -63,17 +58,12 @@ def transport(monkeypatch):
 
 def rich_material():
     return {
-        "current_date": "2026-09-11", "phase": "navigation", "question": Q2,
+        "current_date": "2026-09-20", "phase": "research", "question": Q2,
         "conversation_context": [{"question": Q1, "answer": ANSWER_A}],
-        "semantic_history": [{"question": Q1, "analysis": assess(Q1, FACT_A, "E1")[1],
-                              "posture": "supported", "stop_reason": "supported"}],
-        "need": "Resolve the follow-up", "answer_needs": orient(Q2)[1]["answer_needs"],
-        "candidates": [{"id": "C1", "url": URL_A, "context": BODY + '\nUnicode ± – \\ " [E1]'}],
-        "evidence": [{"id": "E1", "content": BODY}], "new_evidence": [{"id": "E2", "content": FACT_C}],
-        "retained_sources": [{"id": "E1", "candidate_refs": ["C1"]}],
-        "previous_analysis": None, "retrieval_allowance": {"remaining": 2}, "attempts": [],
-        "output_correction": {"rejected_response": '{"answer":'},
-        "selection_correction": {"cause": "unknown_alias"},
+        "evidence": [{"id": "E1", "content": BODY}],
+        "working_understanding": {"interpretation": "Resolve the follow-up"},
+        "catalog": {"materials": [{"id": "E1"}]}, "budget": {"semantic_remaining": 8},
+        "output_correction": {"code": "invalid_reference"},
         "unrecognized_future_field": {"qualification": "only while idle", "order": [3, 1, 2]},
     }
 
@@ -87,7 +77,6 @@ def test_lossless_layout_unchanged_instructions_schema_defaults_and_stateless_co
     material = rich_material()
     material["phase"] = phase
     if not session:
-        material.pop("semantic_history")
         material.pop("conversation_context")
     original = deepcopy(material)
     instructions = prompt + (session_prompt if session else "")
@@ -120,11 +109,10 @@ def test_navigation_prefix_stable_and_volatile_material_after_last_breakpoint(tr
     model, calls, _ = transport
     original = rich_material()
     changed = deepcopy(original)
-    for field in ("candidates", "evidence", "new_evidence", "previous_analysis", "retained_sources",
-                  "attempts", "retrieval_allowance", "output_correction", "selection_correction"):
+    for field in ("evidence", "working_understanding", "catalog", "budget", "output_correction"):
         changed[field] = {"changed": "volatile"}
     for material in (original, changed):
-        model("research", research.RESEARCH_PROMPT, material, research.ResearchAction.model_json_schema())
+        model("research", research.RESEARCH_PROMPT, material, research.ResearchDecision.model_json_schema())
     before, after = [call["input"][1]["content"] for call in calls]
     assert before[:-1] == after[:-1]
     assert before[-1] != after[-1]
@@ -134,11 +122,11 @@ def test_navigation_prefix_stable_and_volatile_material_after_last_breakpoint(tr
     assert prefix == "".join(block["text"] for block in after[:-1]).encode("utf-8")
     assert b'"candidates"' not in prefix and b'"output_correction"' not in prefix
     tail = before[-1]["text"]
-    assert tail.index('"candidates"') < tail.index('"selection_correction"') < tail.index('"output_correction"')
+    assert tail.index('"catalog"') < tail.index('"output_correction"')
     assert calls[0]["prompt_cache_key"] == calls[1]["prompt_cache_key"]
 
 
-@pytest.mark.parametrize("stage,history_field", [("analyst", "semantic_history"), ("author", "conversation_context")])
+@pytest.mark.parametrize("stage,history_field", [("research", "conversation_context"), ("answer", "conversation_context")])
 def test_history_append_keeps_exact_previous_endpoint_without_truncating_history(transport, stage, history_field):
     model, calls, _ = transport
     history = []
@@ -149,7 +137,7 @@ def test_history_append_keeps_exact_previous_endpoint_without_truncating_history
         assert material_of(calls[-1]) == material
         assert len([b for m in calls[-1]["input"] for b in m["content"] if "prompt_cache_breakpoint" in b]) <= 4
         if len(calls) > 1:
-            old = calls[-2]["input"][1]["content"][:-1]
+            old = calls[-2]["input"][1]["content"][:turn - 1]
             new = calls[-1]["input"][1]["content"]
             # Marker metadata may retire, but every byte and content boundary
             # remains, and the preceding turn's final endpoint is still marked.
@@ -162,19 +150,19 @@ def test_family_separates_contracts_and_namespace_but_not_questions_or_correctio
     for stage, phase, prompt, session_prompt, shape in FAMILIES:
         for instructions in (prompt, prompt + session_prompt):
             model(stage, instructions, {"phase": phase, "question": Q1}, shape.model_json_schema())
-    assert len({call["prompt_cache_key"] for call in calls}) == 10
+    assert len({call["prompt_cache_key"] for call in calls}) == 2
     for instructions, schema in [("prompt", {}), ("changed prompt", {}), ("prompt", {"type": "object"})]:
-        model("author", instructions, {"question": Q1}, schema)
+        model("answer", instructions, {"question": Q1}, schema)
     assert len({call["prompt_cache_key"] for call in calls[-3:]}) == 3
     for material in ({"question": Q1}, {"question": Q2}, {"question": Q2, "output_correction": {"issues": []}}):
-        model("author", "prompt", material, {})
+        model("answer", "prompt", material, {})
     assert len({call["prompt_cache_key"] for call in calls[-3:]}) == 1
     base = calls[-1]["prompt_cache_key"]
     for kwargs in ({"cache_namespace": "cold-validation-2"},
                    {"config": ModelConfig(fast=ModelRole("gpt-5.6-sol", "medium"))},
                    {"config": ModelConfig(fast=ModelRole("gpt-5.6-luna", "high"))}):
         other = OpenAIModel(post=model.post, **kwargs)
-        other("author", "prompt", {"question": Q1}, {})
+        other("answer", "prompt", {"question": Q1}, {})
         assert calls[-1]["prompt_cache_key"] != base
     assert all(len(call["prompt_cache_key"]) <= 64 for call in calls)
 
@@ -194,7 +182,7 @@ def test_family_separates_contracts_and_namespace_but_not_questions_or_correctio
 def test_usage_is_optional_safe_and_does_not_invent_missing_classes(transport, usage, expected):
     model, _, records = transport
     model.post = lambda *a, **k: response(usage=usage)
-    assert model("author", "private prompt", {}, {}) == '{"answer":"ok"}'
+    assert model("answer", "private prompt", {}, {}) == '{"answer":"ok"}'
     record = records[0]
     assert (record.input_tokens, record.cached_input_tokens, record.cache_write_tokens,
             record.ordinary_uncached_tokens, record.output_tokens, record.reasoning_tokens) == expected
@@ -212,18 +200,17 @@ def test_http_failure_counted_and_observer_failure_cannot_change_model_execution
     assert len(records) == 1 and records[0].input_tokens is None
     model.post = lambda *a, **k: response()
     model.usage_observer = failed
-    assert model("author", "prompt", {}, {}) == '{"answer":"ok"}'
+    assert model("answer", "prompt", {}, {}) == '{"answer":"ok"}'
 
 
 @pytest.mark.parametrize("session_mode", [False, True])
 def test_real_model_transport_through_ordinary_run_and_session_with_fake_responses(transport, session_mode):
     model, calls, records = transport
-    opening = [orient(Q1), search_for(Q1), use("C1"), assess(Q1, FACT_A, "E1"), author(ANSWER_A + " [E1]")]
-    replies = opening + ([orient(Q2), use("C1"), assess(Q2, FACT_B, "E1"), author(FACT_B + " [E1]"),
-                          orient(Q3), search_for(Q3), use("C2"), assess(Q3, FACT_C, "E2"), author(FACT_C + " [E2]")]
-                         if session_mode else [])
-    # Exercise the actual Structured Outputs retry, retaining the same prefix.
-    replies.insert(0, ("research", '{"answer_needs":'))
+    outputs = list(first_turn(highlights=True))
+    if session_mode:
+        outputs += list(local_turn()) + [decision(), decision("answer", ["E2"]), answer(FACT_C + " [E2]")]
+    replies = [("research" if "understanding" in output else "answer", output) for output in outputs]
+    replies.insert(0, ("research", '{"understanding":'))
 
     def post(url, **kwargs):
         calls.append(kwargs["json"])
@@ -243,18 +230,18 @@ def test_real_model_transport_through_ordinary_run_and_session_with_fake_respons
         assert second.citations[0].source_id == "E1"
         assert third.citations[0].source_id == "E2" and third.selected_evidence[0].content == FACT_C
         assert session.source_ids == ("E1", "E2") and len(provider.searches) == 2
-        later_analyst = [material_of(call) for call in calls if call["text"]["format"]["name"] == "analyst"][1]
-        assert later_analyst["conversation_context"] == [{"question": Q1, "answer": first.answer}]
-        assert later_analyst["evidence"][0]["content"] == BODY
-        assert later_analyst["previous_analysis"] is None
+        later_answer = [material_of(call) for call in calls if call["text"]["format"]["name"] == "answer"][1]
+        assert later_answer["conversation_context"] == [{"question": Q1, "answer": first.answer}]
+        assert later_answer["evidence"][0]["content"] == BODY
+        assert "analysis" not in later_answer and "working_understanding" not in later_answer
     else:
         first = research.run(Q1, model=model, search=provider.search, fetch=provider.fetch)
         assert len(provider.searches) == 1
     assert first.answer == ANSWER_A + " [1]" and first.citations[0].url == URL_A
     assert not replies and not provider.fetches
-    assert "output_correction" not in material_of(calls[0])
+    assert material_of(calls[0])["output_correction"] is None
     assert "output_correction" in material_of(calls[1])
     assert calls[0]["prompt_cache_key"] == calls[1]["prompt_cache_key"]
     assert calls[0]["input"][0] == calls[1]["input"][0]
-    assert len(records) == len(calls) == (15 if session_mode else 6)
+    assert len(records) == len(calls) == (10 if session_mode else 4)
     assert sum(record.ordinary_uncached_tokens for record in records) == 100 * len(calls)

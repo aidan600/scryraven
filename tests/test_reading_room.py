@@ -20,9 +20,8 @@ from reading_room_samples import (
 )
 from test_answer_presentation import Page
 from test_persistent_sessions import tmp_path as external_tmp_path
-from test_research_session import assess
-from test_source_acquisition import use
-from test_walking_skeleton import analysis, author, done, orient
+from test_research_loop import answer, decision
+from test_research_session import local_turn
 
 from scryraven import reading_room
 from scryraven.presentation import answer_html, source_body_html
@@ -123,7 +122,7 @@ def test_followup_has_a_visible_label_and_the_native_session_form(tmp_path):
 
 def test_browser_new_and_followup_use_real_session_and_survive_app_replacement(tmp_path):
     store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
-    model = Script(*first_script(), orient(FOLLOWUP), use("C1"), assess(FOLLOWUP, EARLY, "E1"), author("A follow-up. [E1]"))
+    model = Script(*first_script(), *local_turn("A follow-up. [E1]"))
     client = app_for(store, model=model, search=source_search).test_client()
     response = submit(client)
     assert response.status_code == 303
@@ -132,11 +131,11 @@ def test_browser_new_and_followup_use_real_session_and_survive_app_replacement(t
     location = f"/sessions/{metadata.session_id}"
     assert submit(client, location, FOLLOWUP).status_code == 303
     assert store.load(metadata.session_id).metadata.revision == 2
-    analyst_inputs = [m for stage, m in model.calls if stage == "analyst"]
-    assert analyst_inputs[-1]["conversation_context"] == [{"question": QUESTION, "answer": store.load(metadata.session_id).state.turns[0].answer}]
+    answer_inputs = [m for stage, _, m, _ in model.calls if stage == "answer"]
+    assert {stage for stage, _, _, _ in model.calls} == {"research", "answer"}
+    assert answer_inputs[-1]["conversation_context"] == [{"question": QUESTION, "answer": store.load(metadata.session_id).state.turns[0].answer}]
     fresh = app_for(SQLiteSessionStore(store.path)).test_client()
     assert "A follow-up." in fresh.get(location).get_data(as_text=True)
-    assert not model.replies
 
 
 @pytest.mark.parametrize("existing", [False, True])
@@ -157,9 +156,10 @@ def test_failure_preserves_all_prior_durable_state_and_keeps_question_for_edit(t
 @pytest.mark.parametrize("partial", [False, True])
 def test_partial_and_unable_are_completed_answers(tmp_path, partial):
     store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
-    start = (use("C1"),) if partial else (done(),)
-    model = Script(orient(QUESTION), *start, analysis("unable", refs=("E1",) if partial else ()),
-                   author("Some parts remain unresolved. [E1]" if partial else "An answer was not established."))
+    outputs = local_turn("Some parts remain unresolved. [E1]") if partial else (decision("answer"), answer("An answer was not established.", "unable"))
+    if partial:
+        outputs[-1]["posture"] = "partial"
+    model = Script(*outputs)
     if partial:
         prepared_session(store)
         session_id = store.list_sessions()[0].session_id
@@ -184,7 +184,7 @@ def test_rename_edits_only_metadata_preserves_revision_and_inflight_commit_title
         payload = connection.execute("SELECT payload FROM sessions").fetchone()[0]
     # This ask object predates the title edit; commit must use the current title.
     inflight = ResearchSession.open(session.session_id, store=store, model=Script(
-        orient(FOLLOWUP), use("C1"), assess(FOLLOWUP, EARLY, "E1"), author("More. [E1]")), search=no_io, fetch=no_io)
+        *local_turn("More. [E1]")), search=no_io, fetch=no_io)
     client = app_for(store).test_client()
     location = f"/sessions/{session.session_id}"
     form = token(client.get(location + "?edit=rename"), location + "/rename")
@@ -232,7 +232,7 @@ def test_stale_research_and_delete_forms_do_not_run_or_remove_new_turns(tmp_path
     old = token(client.get(location), location + "/ask")
     deletion = token(client.get(location + "/delete"), location + "/delete")
     next_session = ResearchSession.open(session.session_id, store=store, model=Script(
-        orient(FOLLOWUP), use("C1"), assess(FOLLOWUP, EARLY, "E1"), author("A new answer. [E1]")), search=no_io, fetch=no_io)
+        *local_turn("A new answer. [E1]")), search=no_io, fetch=no_io)
     next_session.ask(FOLLOWUP)
     before = store.load(session.session_id)
     assert client.post(location + "/ask", data=old | {"question": FOLLOWUP}).status_code == 409
@@ -350,7 +350,7 @@ def test_unavailable_database_and_post_commit_conflict_are_bounded(tmp_path):
         def commit(self, *args):
             raise SessionConflictError()
     client = app_for(ConflictedStore(store.path), model=Script(
-        orient(FOLLOWUP), use("C1"), assess(FOLLOWUP, EARLY, "E1"), author("Unsaved. [E1]"))).test_client()
+        *local_turn("Unsaved. [E1]"))).test_client()
     response = submit(client, f"/sessions/{session.session_id}", FOLLOWUP)
     assert response.status_code == 409 and "Unsaved." not in response.get_data(as_text=True)
     assert store.load(session.session_id) == before

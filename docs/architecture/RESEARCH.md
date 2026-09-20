@@ -1,18 +1,13 @@
-# V2 adaptive research candidate
+# Ordinary Research / Evidence-first Answer architecture
 
-Historical development snapshot. Its references to then-current production and
-candidate entrypoints describe that period only. The ordinary path is now defined
-in [RESEARCH.md](RESEARCH.md); executable old-owner machinery has been retired.
-Preserved branches and operator packets retain the original experiments.
-
-This document describes the implemented candidate and its mechanical boundaries.
-It does not establish research competence or campaign success. Development
-questions and outcome rubrics live in `docs/operator/V2_CAMPAIGN.md`; observed
-capability and remaining failures belong in `CURRENT.md` and validation records.
+The ordinary application promotes the accepted clean-room Level-1–5 lineage.
+This replaces Research -> Analyst -> Author. There is no production selector,
+alternate engine or fallback. `CURRENT.md` distinguishes implementation from
+bounded demonstrations and remaining limitations.
 
 ## Two semantic contracts
 
-`scryraven.v2` has two semantic model contracts, both using GPT-5.6 Luna with
+`scryraven.research` has two semantic model contracts, both using GPT-5.6 Luna with
 medium reasoning. Exa supplies external acquisition. There is no model router,
 premium escalation, Scout, specialist hierarchy, verifier, or prose polisher.
 
@@ -62,7 +57,7 @@ answer; there is no subsequent verifier or prose-polishing model.
 
 ## Acquisition, custody, and reversible attention
 
-`scryraven.v2_acquisition.AcquisitionLibrary` retains immutable actual
+`scryraven.acquisition.AcquisitionLibrary` retains immutable actual
 `Evidence` and supplies an inspectable catalog. Search admits source-derived Exa
 highlights mechanically; navigation-only metadata is not admitted as source text.
 Read can acquire a full source, reuse actual retained material, or construct an
@@ -116,13 +111,13 @@ at its expected cost. The source-first Answer contract independently determines
 the supported scope. Neither source counts nor budget consumption establishes
 sufficiency.
 
-The candidate has not demonstrated reliable aggregate or open-world sufficiency:
+The architecture has not demonstrated reliable aggregate or open-world sufficiency:
 selected source themes can still be promoted beyond what the evidence warrants.
 That semantic limitation is not repaired by a runtime restriction or an additional
 decision-maker; the rejected scope-contract experiment remains historical evidence,
 not active design.
 
-`V2Limits` initially allows 12 semantic attempts, 16 external acquisition attempts,
+`RunLimits` initially allows 12 semantic attempts, 16 external acquisition attempts,
 120 seconds, and 128,000 characters of current Evidence attention. These are
 operational settings. Local inspection uses no external allowance, while malformed
 or corrected model attempts consume the same semantic allowance. Transport
@@ -130,12 +125,6 @@ timeouts use the remaining run deadline. The loop reserves an answer attempt
 where time and allowance permit; if no source-grounded answer can be completed,
 it returns an explicit operational unable result rather than synthesizing from
 generated notes. A limit is not evidence of support or nonexistence.
-
-The development work item separately authorizes at most 50 top-level submissions
-and per-submission ceilings of 20 semantic attempts, 24 external attempts, and
-300 seconds. The campaign runner enforces those per-submission maxima, and the
-operator maintains the whole-work-item ledger. These work-item ceilings do not
-become permanent product semantics or broker policy.
 
 ## Result, session, and presentation boundaries
 
@@ -148,8 +137,7 @@ links, and assign compact source numbers. Historical citation snapshots contain
 the exact selected material, including versions and views. Identity validation is
 not semantic entailment checking.
 
-`ResearchSession` accepts this neutral result through its existing injected
-engine boundary. Every `ask` starts fresh V2 understanding and attention over the
+`ResearchSession` receives this native result from the ordinary Research loop. Every `ask` starts fresh Research understanding and attention over the
 retained acquisition library. Prior questions and answers are conversation
 context, never Evidence. Only successful completed results commit session state;
 failures leave the previous in-memory and durable snapshot unchanged. A partial
@@ -163,17 +151,23 @@ Run traces, working understanding, indexes, observer records and provider state
 are not session persistence fields. Reopening preserves actual Evidence and
 historical answer provenance without making past generated text evidentiary.
 
-The ordinary CLI exposes the candidate with `python -m scryraven --v2`, including
-ephemeral `--session` and the existing durable-session options. Shared citation,
-terminal and HTML presentation operate on the neutral result. The Reading Room's
-ordinary engine selection remains unchanged; a new V2 browser selection or full
-UI campaign is not claimed by this integration. The candidate switch is the
-development entrypoint for this work item, not a new independently governed
-permanent product path.
+Ordinary `run`, `ResearchSession.ask`, the CLI (isolated, ephemeral and durable),
+and Reading Room all invoke this same loop. There is no `--v2` selector.
+Shared terminal/HTML presentation consumes `CompletedAnswer` and saved
+`SessionTurn` directly, with no manufactured Analyst result. The only historical
+Analysis code is decode-only schema/reference validation in `scryraven.historical`.
+Historical judgments are excluded from new model packets. The stopped Investigator
+executable harness and its Author adapter are retired to their preserved Git lineage.
+
+The model transport keeps exact JSON content and explicit prompt-cache boundaries
+for instructions, growing conversation history and stable Research turn context.
+Research and Answer have separate cache families; mutable Evidence and corrections
+remain outside those stable boundaries. Transport, Exa policy and the credential
+broker remain mechanical infrastructure, with no semantic decision authority.
 
 ## Safe development observations
 
-An optional V2 observer receives normalized public events: bounded structured
+An optional observer receives normalized public events: bounded structured
 decisions, field-specific rejected-decision diagnostics, selected requests and
 acquisition outcomes, budget facts, exact acquired/exposed public material,
 verified literal answer-reading selections, and exposure IDs, lengths and hashes. It never
@@ -181,8 +175,9 @@ receives raw provider responses or hidden reasoning. The small returned trace
 excludes source bodies; exact bodies can be captured separately through the
 observer when an authorized development observation needs them.
 
-`scripts/v2_campaign.py` calls the ordinary session application with the V2 engine
-and explicit Luna/medium configuration. It supplies only the frozen selected
+`scripts/v2_campaign.py` remains a development-only observation caller (its name
+identifies historical campaign files). It calls the ordinary session application
+with explicit Luna/medium configuration and no engine override. It supplies only the frozen selected
 question, never the rubric, expected identities, known URLs or a scripted route.
 JSON lines go through the existing doorman's sanitized output boundary. The
 doorman handles credentials and process plumbing only. Useful exact public

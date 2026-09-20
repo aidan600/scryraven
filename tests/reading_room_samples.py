@@ -14,9 +14,8 @@ from time import sleep
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from test_research_session import Script, assess, inspect, select_packet
-from test_source_acquisition import use
-from test_walking_skeleton import analysis, author, done, orient, relevance, search_for
+from test_research_loop import Script, answer, decision, request
+from test_research_session import local_turn
 
 from core.exa_transport import DiscoveryCandidate, FetchedMaterial
 from scryraven.reading_room import create_app, serve
@@ -67,7 +66,7 @@ def no_io(*args, **kwargs):
 
 
 def first_script(draft=DRAFT):
-    return (orient(QUESTION), search_for(QUESTION), use("C1"), assess(QUESTION, EARLY, "E1"), author(draft))
+    return (decision(), decision("answer", ["E1"]), answer(draft))
 
 
 def source_search(question):
@@ -79,21 +78,22 @@ def prepared_session(store):
     """Three real committed turns, including later same-URL and exact-view material."""
     session = ResearchSession.create(store=store, model=Script(*first_script()), search=source_search, fetch=no_io)
     session.ask(QUESTION)
-    gap = analysis("research_needed", refs=("E1",), next_need="How humidity changes evaporation")
     session = ResearchSession.open(session.session_id, store=store, search=no_io,
         fetch=lambda url: FetchedMaterial(url, LATER), model=Script(
-            orient(FOLLOWUP), use("C1"), gap, inspect("C1", need=FOLLOWUP), relevance("E2"),
-            assess(FOLLOWUP, LATER[:250], "E1"),
-            author("Humidity can reduce evaporative cooling. **Shade remains useful.** [E1]\n\n"
-                   "The full material adds a qualification to the earlier field note: local conditions matter. [E1]")))
+            decision(requests=[request("read", query="", target="E1", mode="local"), request("read", query="", target="E1", mode="full")]),
+            decision("answer", ["E1", "E2"]),
+            answer("Humidity can reduce evaporative cooling. **Shade remains useful.** [E1, E2]\n\n"
+                   "The full material adds a qualification to the earlier field note: local conditions matter. [E2]")))
     session.ask(FOLLOWUP)
+    def select_packet(material):
+        return decision("answer", [item["id"] for item in material["evidence"]])
+    def cite_packet(material):
+        return answer("Start with the places where people spend time: **walking routes, bus stops and seating.** [" + material["evidence"][0]["id"] + "]")
     session = ResearchSession.open(session.session_id, store=store,
         search=lambda q: [DiscoveryCandidate("Designing for shade · sample publication", OTHER_URL, "Navigation")],
         fetch=lambda url: FetchedMaterial(url, LARGE), model=Script(
-            orient(THIRD), search_for(THIRD), inspect("C3", need=THIRD), select_packet,
-            assess(THIRD, "Shade matters along walking routes and at places to wait.", "E3"),
-            author("Start with the places where people spend time: **walking routes, bus stops and seating.** [E3]\n\n"
-                   "A continuous shaded route can matter more to a pedestrian than isolated patches of canopy. [E3]")))
+            decision(), decision(requests=[request("read", query="", target="C2", focus=THIRD)]),
+            select_packet, cite_packet))
     session.ask(THIRD)
     return session
 
@@ -105,20 +105,17 @@ class AcceptanceModel:
         self.current = local()
 
     def __call__(self, stage, prompt, material, schema):
-        if material.get("phase") == "orientation":
+        if stage == "research" and material["working_understanding"] is None and material["output_correction"] is None:
             question = material["question"]
             sleep(3)  # A visible, deterministic request-in-progress interval.
             if "failure" in question.lower():
                 raise RuntimeError("SYNTHETIC_PRIVATE_EXCEPTION_PATH_AND_PAYLOAD")
             if "unable" in question.lower():
-                replies = (orient(question), done(), analysis("unable", refs=()),
-                           author("The available material did not establish an answer to this question."))
+                replies = (decision("answer"), answer("The available material did not establish an answer to this question.", "unable"))
             else:
-                start = (use("C1"),) if material["conversation_context"] else (search_for(question), use("C1"))
-                verdict = analysis("unable", refs=("E1",)) if "partial" in question.lower() else assess(question, EARLY, "E1")
-                replies = (orient(question), *start, verdict,
-                           author("The available material establishes that trees provide shade. [E1]\n\n"
-                                  "Some aspects remain unresolved." if "partial" in question.lower() else DRAFT))
+                replies = local_turn(DRAFT) if material["conversation_context"] else first_script()
+                if "partial" in question.lower():
+                    replies[-1].update(posture="partial", answer="The available material establishes that trees provide shade. [E1]\n\nSome aspects remain unresolved.")
             self.current.script = Script(*replies)
         return self.current.script(stage, prompt, material, schema)
 
@@ -134,8 +131,7 @@ if __name__ == "__main__":
     if not store.list_sessions():
         prepared_session(store)
         empty = ResearchSession.create(store=store, title="A long research title that should fit quietly in the sidebar without widening it",
-            model=Script(orient("Unresolved question"), done(), analysis("unable", refs=()),
-                         author("The available material did not establish this answer.")), search=no_io, fetch=no_io)
+            model=Script(decision("answer"), answer("The available material did not establish this answer.", "unable")), search=no_io, fetch=no_io)
         empty.ask("Unresolved question")
     print("Synthetic acceptance data only. All model and provider I/O is replaced.", flush=True)
     serve(create_app(store=store, session_options={"model": AcceptanceModel(), "search": source_search, "fetch": no_io}),

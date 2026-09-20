@@ -1,4 +1,4 @@
-"""V2's mechanical Search/Read/Find executor over immutable actual material.
+"""Mechanical Search/Read/Find executor over immutable actual material.
 
 Acquisition, local location and exposure are observable facts. None of them is an
 assessment of truth, applicability or sufficiency. There is no model call here.
@@ -9,12 +9,31 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Iterable
 from dataclasses import asdict
+from html import unescape
+from urllib.parse import quote, urljoin, urlsplit
 
 from core.exa_transport import DiscoveryCandidate, FetchedMaterial, fetch_exa, search_exa
-from scryraven.research import _link_url, _public_url
 from scryraven.sources import TARGETED_SOURCE_CHARACTERS, Evidence, SourceIndex, exact_view
 
 FIND_RESULT_LIMIT = 8
+
+
+def _public_url(url: str) -> bool:
+    try:
+        parsed = urlsplit(url)
+        return (
+            parsed.scheme in {"http", "https"} and bool(parsed.hostname)
+            and not parsed.username and not parsed.password
+            and not any(char.isspace() or ord(char) < 32 for char in url)
+        )
+    except ValueError:
+        return False
+
+
+def _link_url(value: str, base: str) -> str:
+    # Fetch markdown may contain unescaped spaces in link targets.
+    value = re.sub(r"\\([_.*~])", r"\1", value.strip().strip("<>"))
+    return quote(urljoin(base, unescape(value)), safe=":/?#@!$&'*+,;=%~-._")
 
 
 def _visible_links(text: str, base: str) -> set[str]:

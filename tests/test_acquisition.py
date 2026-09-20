@@ -5,8 +5,8 @@ import json
 import pytest
 
 from core.exa_transport import DiscoveryCandidate, FetchedMaterial
+from scryraven.acquisition import FIND_RESULT_LIMIT, AcquisitionError, AcquisitionLibrary
 from scryraven.sources import Evidence, exact_view
-from scryraven.v2_acquisition import FIND_RESULT_LIMIT, AcquisitionError, AcquisitionLibrary
 
 URL = "https://example.test/specification"
 
@@ -71,7 +71,7 @@ def test_links_become_readable_only_after_exact_material_exposure():
 def test_question_urls_are_explicit_navigation_and_unobserved_urls_do_not_fetch():
     fetches = []
     library = AcquisitionLibrary(fetch=lambda url: fetches.append(url) or FetchedMaterial(url, "Source body"))
-    library.allow_question_urls(f"What does [{URL}]({URL}) say? Also https://user:password@example.test/")
+    library.allow_question_urls(f"What does [{URL}]({URL}) say? Also https://user:password@example.test/")  # pragma: allowlist secret -- synthetic URL rejection
     assert request(library, "read", target=URL)["status"] == "ok"
     assert request(library, "read", target=URL + "/invented")["code"] == "unobserved_url"
     assert fetches == [URL]

@@ -9,7 +9,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from scryraven.presentation import render_cli, render_html
-from scryraven.research import Result, RunError, run
+from scryraven.research import RunError, run
 from scryraven.results import CompletedAnswer
 from scryraven.session import ResearchSession
 from scryraven.session_store import SessionStoreError, SQLiteSessionStore
@@ -18,7 +18,6 @@ from scryraven.session_store import SessionStoreError, SQLiteSessionStore
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Research a public-web factual question with acquired sources.")
     parser.add_argument("question", nargs="?")
-    parser.add_argument("--v2", action="store_true", help="Exercise the V2 source-first research candidate.")
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--session", action="store_true", help="Ask follow-ups in this process; blank input finishes.")
     modes.add_argument("--create-session", action="store_true", help="Start and save a local research session.")
@@ -42,15 +41,6 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--list-sessions does not take a question.")
     if args.question is None and not (args.resume or args.list_sessions):
         parser.error("a question is required.")
-    isolated_run = run
-    session_options = {}
-    if args.v2:
-        from scryraven.v2 import V2Limits
-        from scryraven.v2 import _run_turn as v2_turn
-        from scryraven.v2 import run as v2_run
-
-        isolated_run = v2_run
-        session_options = {"engine": v2_turn, "limits": V2Limits()}
     try:
         if persistent:
             store = SQLiteSessionStore(args.database)
@@ -59,8 +49,8 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"{item.session_id}\t{item.updated_at}\t{item.revision} turns\t"
                           f"{' '.join(item.title.split()) or 'Untitled session'}")
                 return 0
-            session = (ResearchSession.open(args.resume, store=store, **session_options) if args.resume
-                       else ResearchSession.create(store=store, **session_options))
+            session = (ResearchSession.open(args.resume, store=store) if args.resume
+                       else ResearchSession.create(store=store))
             print(f"Session: {session.session_id}", file=sys.stderr)
             if args.question is None:
                 for turn in session.turns:
@@ -68,7 +58,7 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
             ask = session.ask
         else:
-            ask = ResearchSession(**session_options).ask if args.session else isolated_run
+            ask = ResearchSession().ask if args.session else run
     except SessionStoreError as exc:
         print(f"ScryRaven session error: {exc.code}", file=sys.stderr)
         return 1
@@ -101,7 +91,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
 
-def _print_result(result: Result | CompletedAnswer, *, trace: bool, trace_evidence: bool) -> None:
+def _print_result(result: CompletedAnswer, *, trace: bool, trace_evidence: bool) -> None:
     if trace or trace_evidence:
         diagnostics = {"trace": result.trace}
         if trace_evidence:

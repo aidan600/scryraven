@@ -1,5 +1,10 @@
 # Experimental research-capability baseline
 
+Historical development snapshot. Its references to then-current production and
+candidate entrypoints describe that period only. The ordinary path is now defined
+in [RESEARCH.md](RESEARCH.md); executable old-owner machinery has been retired.
+Preserved branches and operator packets retain the original experiments.
+
 ## Objective
 
 Build evidence-grounded research that can show why its answer follows from what

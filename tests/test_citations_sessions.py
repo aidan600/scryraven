@@ -87,7 +87,7 @@ def test_neutral_reopen_retained_followup_and_same_source_refresh_preserve_histo
 
     def followup(question, **kwargs):
         assert kwargs["retained_acquisitions"] == (source,)
-        assert kwargs["context"]["semantic_history"] == []
+        assert "semantic_history" not in kwargs["context"]
         assert kwargs["context"]["conversation_context"] == [
             {"question": "What is the first fact?", "answer": first.answer}]
         return completed("Second fact [E1@12:23].", [exact_view(source, 12, 23)], [source])
@@ -182,8 +182,9 @@ def test_neutral_partial_requires_cited_material_before_session_commit(tmp_path)
     assert reopened.turns[0].citations[0].materials == (source,)
 
 
-def test_cli_v2_routes_isolated_and_durable_calls_through_candidate(tmp_path, monkeypatch, capsys):
-    from scryraven import v2
+def test_cli_routes_isolated_and_durable_calls_through_ordinary_engine(tmp_path, monkeypatch, capsys):
+    from scryraven import session
+    from scryraven.research import RunLimits
 
     calls = []
     result = completed("Unable to establish this.", [], [], "unable")
@@ -192,14 +193,14 @@ def test_cli_v2_routes_isolated_and_durable_calls_through_candidate(tmp_path, mo
         calls.append((question, kwargs))
         return result
 
-    monkeypatch.setattr(v2, "run", engine)
-    monkeypatch.setattr(v2, "_run_turn", engine)
-    assert cli.main(["--v2", "Isolated question"]) == 0
+    monkeypatch.setattr(cli, "run", engine)
+    monkeypatch.setattr(session, "_run_turn", engine)
+    assert cli.main(["Isolated question"]) == 0
     monkeypatch.setattr("builtins.input", lambda prompt: "")
     path = tmp_path / "sessions.sqlite3"
-    assert cli.main(["--v2", "--create-session", "--database", str(path), "Saved question"]) == 0
-    assert len(calls) == 2 and isinstance(calls[1][1]["limits"], v2.V2Limits)
+    assert cli.main(["--create-session", "--database", str(path), "Saved question"]) == 0
+    assert len(calls) == 2 and isinstance(calls[1][1]["limits"], RunLimits)
     session_id = SQLiteSessionStore(path).list_sessions()[0].session_id
-    assert cli.main(["--v2", "--resume", session_id, "--database", str(path)]) == 0
+    assert cli.main(["--resume", session_id, "--database", str(path)]) == 0
     assert len(calls) == 2
     assert "Saved question" in capsys.readouterr().out

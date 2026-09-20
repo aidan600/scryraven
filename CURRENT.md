@@ -1,111 +1,84 @@
 # ScryRaven Current Truth
 
-## Production
+## Ordinary product architecture
 
-Production remains `main` at `533f45df9271978e0591fb35aa8da2b1917255b2`.
-Its normal path is Research -> Analyst -> Author, with GPT-5.6 Luna / medium as
-the default semantic model. Production behavior and the Reading Room selection
-are unchanged.
+The production candidate supersedes Research -> Analyst -> Author with the
+accepted clean-room Research semantic loop -> mechanical Search / Read / Find ->
+Research reassessment -> fresh Evidence-first Answer. `scryraven.research.run`,
+`ResearchSession.ask`, the CLI and Reading Room share this single path. There is
+no architecture selector, Analyst checkpoint, old Author handoff or fallback.
 
-## Experimental research-capability baseline
+Research owns interpretation, compact revisable understanding, consequential
+needs, acquisition direction, attention and stopping. Generated state is never
+Evidence. Answer independently reads selected actual source material and decides
+what the current/original request justifies. The demonstrated prompts, structured
+contracts and acquisition/stopping semantics are preserved.
 
-`codex/research-capability-baseline-01` is the current experimental branch,
-directly sourced from harvested commit `725ef54fc929731c6f78f5d563bc7dc32bbcf732`.
-It is an unpublished candidate, not a production replacement or adoption decision.
+Ordinary runtime remains GPT-5.6 Luna / medium with the existing Exa Search and
+Contents policy. Limits remain 12 semantic attempts, 16 external attempts,
+120 seconds and 128,000 characters of current attention. No model router, premium
+escalation, semantic verifier or additional semantic owner exists.
 
-The candidate has two semantic contracts: Research interprets actual immutable
-Evidence and selects Search/Read/Find or a fresh answer; a new source-first
-Answer independently determines what selected actual sources justify. Surviving
-mechanics include immutable/canonical Evidence custody, exact local rereading,
-retained-Evidence follow-ups, exact citation/history custody, neutral completed
-answers and sessions, no-progress terminal handling, terminal Answer reservation,
-safe timeout classification, pending-new-material protection, and multi-span
-literal Answer readings with bounded safe rejection diagnostics.
+## Sessions, Evidence and presentation
 
-Development evidence demonstrates those custody, session, citation and selected
-reading mechanics. It does not establish general research competence. In
-particular, aggregate/open-world sufficiency remains unresolved: with incomplete
-heterogeneous evidence, the system must provide the strongest useful
-evidence-bounded synthesis without manufacturing an unsupported aggregate claim.
-Luna, Sol and Sonnet observations each exposed variants of that difficulty.
+Immutable acquisitions, canonical source identities, exact versions/views,
+literal Answer readings, deterministic citations and historical selected-material
+snapshots survive. Follow-ups start fresh Research/Answer decisions and can reread
+retained actual Evidence without external acquisition. Prior generated answers
+resolve conversation referents only.
 
-Foundation 01 observed the ordinary candidate path with GPT-5.6 Luna / medium.
-L1 authoritative lookup, L2A qualified conditions, and L2B date applicability
-passed from acquired NIST, FAA, and IRS material. The original NPS comparison
-is retained as `INVALID — evaluator/source ambiguity`: current NPS
-park-statistics material gave Yosemite 759,620 acres and Bryce Canyon 35,835
-acres, while the frozen rubric named older NPS foundation-document values of
-747,956 and 35,830. It is not a ScryRaven failure and is excluded from the
-valid-case denominator. Authorized replacement L3R passed from acquired Census
-Bureau 2020 Census resident-population material: California 39,538,223, Texas
-29,145,505, with California larger. Foundation 01 is therefore met on its four
-valid frozen Levels 1–3 cases. This is foundation evidence only, not general
-reliability. No semantic repair or Terra counterfactual was earned. The
-sanitized packet is external to the runtime at
-`C:\tmp\scryraven-luna-foundation-01-20260919\`.
+Durable SQLite sessions retain atomic revision-checked commits, reopen/history,
+rename/delete and failure isolation. Native turns use `analysis: null` in the
+existing backward-readable snapshot schema. Historical Analysis is retained and
+validated only on serialization/reopen; it never controls new research or becomes
+Evidence. Historical turns and citations are not rewritten on reopening.
+The synthetic pre-supersession fixture exercises mixed historical/native sessions.
 
-Foundation 02 observed the same unchanged candidate with GPT-5.6 Luna / medium
-on three frozen Level-4 bounded-synthesis cases. All three passed from actual
-selected public Evidence: L4A combined NPS Going-to-the-Sun vehicle-size limits
-with Tesla Cybertruck stock dimensions, correctly limiting its conclusion to
-the stated size criteria; L4B combined NASA Hubble angular resolution and lunar
-distance to derive that a 5-m object is not spatially resolvable; L4C preserved
-that 27,650 mAh alone does not establish a 100 Wh threshold without voltage,
-even while separately reporting Anker's explicit Wh statement. No semantic
-repair or Terra counterfactual was earned, and the experimental architecture
-and production behavior remain unchanged. This valid three-case foundation
-result demonstrates those bounded operations only, not general Level-4
-reliability or open-world aggregate sufficiency. The sanitized external packet
-is `C:\tmp\scryraven-luna-foundation-02-20260919\`.
+Reading Room and CLI use the same session application and store. The existing
+safe Markdown/source renderer, browser security, local assets, transport,
+credential doorman and exact-content prompt-cache mechanics remain in place.
+The legacy SMART transport configuration remains readable for compatibility but
+has no ordinary semantic role. Ordinary model configuration is explicitly Luna /
+medium for both surviving contracts.
 
-Recursive 01 observed the same unchanged candidate with GPT-5.6 Luna / medium on
-three frozen Level-5 one-hop dependency cases. All three produced materially
-correct, actual-Evidence-supported answers, but none demonstrated the required
-Evidence-directed acquisition transition. D1 searched the Anker rating and FAA
-rule in parallel; D2 placed `NIRSpec` in its initial search before acquired NASA
-material established the instrument identity; D3’s first ESA launcher result
-supplied both Falcon 9 and its propellants. D1 and D3 therefore triggered the
-frozen two-primary correct-but-unexercised stop condition; D4R was not run. This
-is `INCONCLUSIVE` for Level 5, not a demonstrated semantic failure: no repair or
-Terra counterfactual was earned, and the experimental architecture and production
-behavior remain unchanged. The sanitized external packet is
-`C:\tmp\scryraven-luna-recursive-01-20260919\`.
+## Bounded evidence and limits
 
-Recursive 01B then tested the unchanged candidate with GPT-5.6 Luna / medium on
-a later frozen seven-case dependency-gated bank. It met the bounded Level-5
-standard: G1 established Passport from NASA/GE hybrid-demonstration Evidence then
-redirected to GE’s Passport thrust specification; G2 established Sentinel-1 from
-USGS interferogram Evidence then redirected to ESA’s radar specification; and G7
-established Elytra from NASA/JPL MoonFall Evidence then redirected to Firefly’s
-engine-family material. G3–G6 were materially correct, supported shortcut cases
-whose initial acquisition batches already contained both stages; they do not count
-as failures or passes. No semantic repair or Terra counterfactual was earned, and
-the experimental architecture and production behavior remain unchanged. This is
-bounded Level-5 evidence only, not general recursive reliability or Level-6
-identity/chronology recovery. The sanitized external packet is
-`C:\tmp\scryraven-luna-recursive-01b-20260919\`.
+Foundation 01 established four valid frozen Levels 1–3 cases; its NPS comparison
+was excluded for evaluator/source ambiguity. Foundation 02 established three
+frozen Level-4 bounded synthesis cases, including Anker missing-premise restraint.
+Recursive 01 produced correct shortcuts but was inconclusive for dependency
+change. Recursive 01B established three counted Level-5 transitions (G1 Passport,
+G2 Sentinel-1, G7 Elytra); G3–G6 were correct unexercised shortcuts. These are
+bounded development observations, not universal or general recursive reliability.
 
-## Historical development evidence
+The exact public packets remain external under
+`C:\tmp\scryraven-luna-foundation-01-20260919`,
+`C:\tmp\scryraven-luna-foundation-02-20260919`,
+`C:\tmp\scryraven-luna-recursive-01-20260919`, and
+`C:\tmp\scryraven-luna-recursive-01b-20260919`.
+The accepted lineage was `codex/luna-capability-recursive-01b` at
+`b72defe1fa05568175a6a39a91b858a0783d6504`, descended from production baseline
+`533f45df9271978e0591fb35aa8da2b1917255b2`.
 
-The stopped Investigator lineage and failed Observation/Inference/scope-contract
-experiment are DEVELOPMENT evidence, not active candidate semantics. The latter
-is retained in `docs/operator/V2_SCOPE_CONTRACT_VALIDATION.md`; its
-`observed`/`inferred` state and requested-versus-narrowed declaration were removed
-from the active tree without compatibility adapters. The Sol closure probe is
-`INCONCLUSIVE / EXECUTION INTEGRITY INVALID`: overlapping broker processes
-exceeded its frozen call cap, so its semantic output is not treatment evidence.
+Supersession offline verification covers ordinary routing, retained follow-ups,
+backward-readable persistence, exact citations, CLI, Reading Room and failures.
+Ordinary live promotion validation is pending on this working branch; no live
+promotion claim is made yet. Detailed phase evidence belongs in
+`docs/operator/MAINLINE_SEMANTIC_SUPERSESSION_01.md` when completed.
 
-## Next posture and boundaries
+Aggregate/open-world sufficiency remains unresolved. Literal-reading and citation
+validation prove custody/membership, not semantic entailment. Very long-session
+performance and general reliability remain unproved. Level 6 revision/recovery
+under superseding Evidence is **not established**.
 
-Future capability work is Luna / medium first. Terra / medium is a bounded
-counterfactual only when a Luna failure leaves model capability versus harness
-quality ambiguous; Sol is not the ordinary development reference model. The
-intended diagnostic progression is authoritative lookup, qualified rule/source
-interpretation, comparison, bounded synthesis, one-hop discovery, recursive
-identity/chronology research, open-world aggregate synthesis, then dynamic
-multi-component research. This is not authorization to start a new architecture,
-full campaign, semantic intervention, or provider run.
+## Preserved development history
 
-Ignored `local-evals/` and `C:\tmp` preserve development evidence but are not
-runtime dependencies. The exact continuity detail is in
-`docs/architecture/RESEARCH_CAPABILITY_BASELINE.md`.
+The stopped Investigator and earlier architecture-lab branches remain intact.
+The failed Observation/Inference/scope-contract experiment and invalid Sol closure
+probe remain historical records, not active semantics. Their executable old-owner
+harness is absent from the product tree. Operator campaign scripts, frozen
+manifests, external packets and ignored `local-evals/` are development evidence;
+ordinary runtime has no dependency on them. No evaluation evidence was deleted.
+
+Current architecture: `docs/architecture/RESEARCH.md`. Earlier V2/baseline and
+Investigator architecture documents are explicitly historical snapshots.

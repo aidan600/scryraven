@@ -1,4 +1,4 @@
-"""Operator-only V2 campaign caller; public JSON lines go through the doorman.
+"""Development-only campaign caller; public JSON lines go through the doorman.
 
 This invokes the ordinary session API. It never wraps provider requests, supplies
 research decisions, or passes evaluation rubrics into the product runtime.
@@ -12,7 +12,6 @@ import json
 import sys
 from dataclasses import asdict
 from datetime import datetime, timezone
-from functools import partial
 from pathlib import Path
 from time import monotonic
 from types import SimpleNamespace
@@ -45,14 +44,14 @@ def _runtime() -> SimpleNamespace:
     # A script launched by absolute path still imports the exact approved checkout.
     if str(REPOSITORY) not in sys.path:
         sys.path.insert(0, str(REPOSITORY))
-    from scryraven import v2
+    from scryraven import research
     from scryraven.model import ModelConfig, ModelRole, OpenAIModel
     from scryraven.research import RunError
     from scryraven.session import ResearchSession
     from scryraven.session_store import SessionStoreError, SQLiteSessionStore
 
     return SimpleNamespace(
-        engine=v2._run_turn, limits=v2.V2Limits,
+        limits=research.RunLimits,
         model=OpenAIModel, config=ModelConfig, role=ModelRole,
         session=ResearchSession, store=SQLiteSessionStore,
         run_error=RunError, store_error=SessionStoreError,
@@ -80,10 +79,10 @@ def _usage_summary(rows: list[dict]) -> dict:
 
 def _code_hashes() -> dict[str, str]:
     paths = [
-        "scripts/v2_campaign.py", "scryraven/v2.py", "scryraven/model.py",
-        "scryraven/__main__.py", "scryraven/research.py",
+        "scripts/v2_campaign.py", "scryraven/research.py", "scryraven/model.py",
+        "scryraven/__main__.py", "scryraven/errors.py", "scryraven/historical.py",
         "scryraven/session.py", "scryraven/session_store.py",
-        "scryraven/sources.py", "scryraven/results.py", "scryraven/v2_acquisition.py", "core/exa_transport.py",
+        "scryraven/sources.py", "scryraven/results.py", "scryraven/acquisition.py", "core/exa_transport.py",
     ]
     return {
         name: hashlib.sha256((REPOSITORY / name).read_bytes()).hexdigest()
@@ -162,7 +161,7 @@ def main(argv: list[str] | None = None) -> int:
         attention_characters=128_000,
     )
     model = runtime.model(runtime.config(fast=role, smart=role), usage_observer=record_usage)
-    options = {"engine": partial(runtime.engine, observe=observe), "model": model, "limits": limits}
+    options = {"observe": observe, "model": model, "limits": limits}
     _emit(
         "campaign_invocation", campaign_id=manifest["campaign_id"], manifest_sha256=manifest_hash,
         revision=args.revision, source_sha256=_code_hashes(), case_ids=args.cases,

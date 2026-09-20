@@ -1,0 +1,51 @@
+"""CLI uses the ordinary two-contract runtime and real transport adapters offline."""
+import json
+
+import pytest
+from test_model_transport import Response
+from test_research_loop import answer, decision
+
+from core import exa_transport
+from scryraven import __main__ as cli
+from scryraven import model
+
+
+def test_cli_ordinary_run_invokes_research_and_answer_over_real_exa_adapter(monkeypatch, capsys, tmp_path):
+    monkeypatch.setenv("OPENAI_API_KEY", "offline-test-value")
+    monkeypatch.setenv("EXA_API_KEY", "offline-test-value")
+    outputs = iter([decision(), decision("answer", ["E1"]), answer("The exact value is seven. [E1]")])
+    stages, providers = [], []
+
+    def post(url, **kwargs):
+        if url.endswith('/v1/responses'):
+            stages.append(kwargs["json"]["text"]["format"]["name"])
+            assert kwargs["json"]["model"] == "gpt-5.6-luna"
+            assert kwargs["json"]["reasoning"] == {"effort": "medium"}
+            material = json.loads(''.join(b['text'] for b in kwargs['json']['input'][1]['content']))
+            assert 'analysis' not in material and 'semantic_history' not in material
+            if stages[-1] == 'answer':
+                assert material['evidence'][0]['content'] == 'The exact value is seven.'
+                assert 'working_understanding' not in material
+            return Response({'status': 'completed', 'output': [{'type': 'message', 'phase': 'final_answer',
+                             'content': [{'type': 'output_text', 'text': json.dumps(next(outputs))}]}]})
+        providers.append(url)
+        return Response({'results': [{'url': 'https://example.org/fact', 'title': 'Synthetic fact',
+                                      'highlights': ['The exact value is seven.']}]})
+
+    monkeypatch.setattr(model.requests, 'post', post)
+    monkeypatch.setattr(exa_transport.requests, 'post', post)
+    path = tmp_path / 'answer.html'
+    assert cli.main(['What is the value?', '--trace-evidence', '--html', str(path)]) == 0
+    captured = capsys.readouterr()
+    assert stages == ['research', 'research', 'answer']
+    assert len(providers) == 1 and providers[0].endswith('/search')
+    assert 'The exact value is seven. [1]' in captured.out
+    diagnostics = json.loads(captured.err)
+    assert diagnostics['selected_evidence'][0]['content'] == 'The exact value is seven.'
+    assert 'Synthetic fact' in path.read_text(encoding='utf-8')
+
+
+def test_retired_architecture_selector_is_not_an_ordinary_cli_option():
+    with pytest.raises(SystemExit) as caught:
+        cli.main(['Question', '--v2'])
+    assert caught.value.code == 2

@@ -15,8 +15,9 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict
 
+from scryraven.errors import RunError
+from scryraven.historical import Analysis, validate_historical_analysis
 from scryraven.presentation import Citation, CitationUse
-from scryraven.research import Analysis, RunError, _validate_analysis
 from scryraven.sources import Evidence, exact_view
 
 
@@ -198,7 +199,7 @@ def _decode(payload: str, revision: int) -> SessionState:
         analysis = saved.analysis
         if analysis is not None:
             original = analysis.model_dump()
-            _validate_analysis(analysis, list(acquisitions), [])
+            validate_historical_analysis(analysis, list(acquisitions), [])
             _require(analysis.model_dump() == original)  # Reconstruction never corrects history.
             _require(set(analysis.support_refs) == {item.source_id for item in selected})
             posture = "supported" if analysis.decision == "supported" else ("partial" if analysis.findings else "unable")

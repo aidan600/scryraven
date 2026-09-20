@@ -67,9 +67,7 @@ def runtime(*, failure=None, saved_question=None):
             return instance
 
         def ask(self, question):
-            reply = self.options["engine"](
-                question, model=self.options["model"], limits=self.options["limits"],
-            )
+            reply = engine(question, **self.options)
             self.turns.append(SimpleNamespace(question=question))
             self.acquisitions = reply.evidence
             return reply

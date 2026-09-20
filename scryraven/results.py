@@ -5,8 +5,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from scryraven.errors import RunError
 from scryraven.presentation import Citation, CitationUse
-from scryraven.research import RunError
 from scryraven.sources import Evidence, exact_view
 
 

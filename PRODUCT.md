@@ -1,6 +1,6 @@
 # ScryRaven Product
 
-Status: approved Part B product charter
+Status: approved product charter, including Mainline Semantic Supersession 01
 
 ScryRaven is a research assistant for turning user research questions into useful, evidence-grounded answers.
 
@@ -17,7 +17,7 @@ For that class of question, ScryRaven should:
 3. directly acquire and read useful source material;
 4. semantically interpret the acquired material in the context of the original question;
 5. continue research when interpretation reveals an important unresolved information need;
-6. produce an answer from supported findings with citations to the acquired material that supports them; and
+6. produce a fresh Evidence-first answer with citations to the acquired material that supports it; and
 7. represent unresolved limitations honestly when reasonable bounded research does not establish the answer.
 
 The product must not silently fill an evidentiary gap from unsupported model memory.
@@ -66,10 +66,12 @@ honest, and the interface remains usable at narrow browser widths.
 - Deterministic mechanics may preserve identities, move data, validate references, and render citations; they must not substitute mechanical rules for semantic evidence judgment.
 - When the available research does not establish an answer, ScryRaven preserves that limitation rather than upgrading uncertainty into unsupported certainty.
 
-## Approved experimental research-capability development outcome
+## Ordinary research architecture
 
-Experimental research-capability development targets a competent general research assistant, including recursive
-identity/chronology research and questions with multiple interacting components.
+The ordinary product promotes the demonstrated clean-room Research/Answer
+architecture, including questions with multiple interacting components and
+evidence-directed acquisition dependencies. The former Research -> Analyst ->
+Author semantic path is superseded, with no alternate path or fallback.
 One Research decision-maker interprets the original request and actual material,
 revises a compact working understanding, chooses acquisition, and proposes stopping.
 A mechanical executor performs Search, Read and local Find. A fresh source-first
@@ -83,11 +85,17 @@ entity, role, conditions and time, rather than the newest publication. Source ne
 depend on the requested operation. Budget exhaustion and failed searches establish
 neither support nor nonexistence. A useful honest partial or unable answer is valid.
 
-A real CLI/session candidate with exact citations, retained actual Evidence and fresh
-follow-ups is the implementation boundary for this work item; Reading Room replacement
-is not its cognition acceptance gate. Implementation and bounded demonstrations are
-recorded separately in `CURRENT.md`; this approved direction is not a claim of
-general reliability. The earlier Investigator lineage is stopped development evidence.
+The CLI, durable sessions and Reading Room share this ordinary architecture.
+Historical Analyst judgments remain inspectable semantic records only; new turns
+must not fabricate Analyst objects or use historical judgments as factual authority.
+Research chooses when the Evidence packet is ready; Answer independently decides
+what the original/current request and actual selected sources justify. Research's
+generated verdict, notes or draft must not bind Answer.
+
+Bounded Levels 1–5 demonstrations are development evidence, not a universal
+reliability claim. Level 6 revision/recovery under superseding Evidence is not
+established. The earlier Investigator and architecture-lab lineages are stopped
+development history.
 
 That capability should allow one user question to create several research needs, research those needs using the same evidence-grounded behavior, reason across the combined relevant evidence, and produce one coherent answer.
 

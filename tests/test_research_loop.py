@@ -4,9 +4,8 @@ import json
 import pytest
 
 from core.exa_transport import DiscoveryCandidate, FetchedMaterial
-from scryraven.research import RunError
+from scryraven.research import AnswerDecision, RunError, RunLimits, run
 from scryraven.sources import Evidence
-from scryraven.v2 import AnswerDecision, V2Limits, run
 
 
 def request(kind="search", query="public fact", target="", mode="auto", focus=""):
@@ -36,6 +35,10 @@ class Script:
         value = next(self.outputs)
         if callable(value):
             value = value(material)
+        if isinstance(value, Exception):
+            raise value
+        if isinstance(value, dict):
+            assert stage == ("research" if "understanding" in value else "answer")
         return value if isinstance(value, str) else json.dumps(value)
 
 
@@ -133,7 +136,7 @@ def test_partial_answer_with_no_new_selected_material_commits_without_a_second_a
     assert result.posture == "partial"
     committed = [event for event in result.trace if event["action"] == "answer_committed_no_progress"]
     assert committed == [
-        {"stage": "v2", "action": "answer_committed_no_progress", "posture": "partial",
+        {"stage": "research", "action": "answer_committed_no_progress", "posture": "partial",
          "missing_information": "What condition applies?", "prior_selected_refs": ["E1"],
          "selected_refs": ["E1"]},
     ]
@@ -144,7 +147,7 @@ def test_partial_answer_at_a_semantic_bound_is_not_promoted_to_support():
                    answer("A supported fragment. [E1]", "partial", "What condition applies?"),
                    decision(refs=["E1"]))
     result = run("What is the value?", model=model, search=search, fetch=no_fetch,
-                 limits=V2Limits(semantic_attempts=5, external_attempts=1))
+                 limits=RunLimits(semantic_attempts=5, external_attempts=1))
     assert [call[0] for call in model.calls] == ["research", "research", "answer", "research"]
     assert result.posture == "partial"
     assert result.stop_reason == "not_established"
@@ -153,7 +156,7 @@ def test_partial_answer_at_a_semantic_bound_is_not_promoted_to_support():
 
 def test_malformed_call_consumes_attempt_and_final_reserve_is_source_first():
     model = Script("invalid", decision(), answer())
-    result = run("Value?", model=model, search=search, fetch=no_fetch, limits=V2Limits(semantic_attempts=3))
+    result = run("Value?", model=model, search=search, fetch=no_fetch, limits=RunLimits(semantic_attempts=3))
     assert [call[0] for call in model.calls] == ["research", "research", "answer"]
     assert result.stop_reason == "research_bound"
     assert result.trace[-1]["budget"]["semantic_attempts"] == 3
@@ -165,7 +168,7 @@ def test_external_budget_blocks_second_independent_request_without_hiding_first_
                    decision("answer", ["E1"]), answer())
     calls = []
     result = run("Value?", model=model, search=lambda q: calls.append(q) or search(q), fetch=no_fetch,
-                 limits=V2Limits(external_attempts=1))
+                 limits=RunLimits(external_attempts=1))
     assert calls == ["one"]
     assert model.calls[1][2]["last_route"][1]["code"] == "external_attempts"
     assert result.trace[-1]["budget"]["external_attempts"] == 1
@@ -178,7 +181,7 @@ def test_deadline_prevents_additional_io_and_produces_honest_operational_result(
         return search(q)
     model = Script(decision())
     result = run("Value?", model=model, search=delayed, fetch=no_fetch,
-                 limits=V2Limits(seconds=5), clock=lambda: now[0])
+                 limits=RunLimits(seconds=5), clock=lambda: now[0])
     assert len(model.calls) == 1
     assert result.posture == "unable"
     assert result.citations == ()
@@ -251,7 +254,7 @@ def test_pending_requested_reading_precedes_new_external_work():
                                    context_kind="provider_highlights") for i in range(3)]
     model = Script(decision(), decision(), decision(), decision("answer", ["E3"]), answer("A selected observation. [E3]"))
     result = run("Inspect", model=model, search=large_search, fetch=no_fetch,
-                 limits=V2Limits(attention_characters=65536))
+                 limits=RunLimits(attention_characters=65536))
     # The packet is intentionally one material wide; all three are delivered.
     assert [call[2]["evidence"][0]["id"] for call in model.calls[1:4]] == ["E1", "E2", "E3"]
     assert any(e["action"] == "reading_pending" for e in result.trace)
@@ -273,7 +276,7 @@ def test_answer_reading_is_exact_source_text_and_invalid_reading_uses_same_budge
     readings = [event for event in events if event["action"] == "answer_reading"]
     assert readings[0]["readings"][0]["passage"] == "The stated value is seven."
     rejected = [event for event in events if event["action"] == "answer_reading_rejected"]
-    assert rejected == [{"stage": "v2", "action": "answer_reading_rejected", "contract": "answer",
+    assert rejected == [{"stage": "research", "action": "answer_reading_rejected", "contract": "answer",
                          "code": "reading_passage_not_in_source", "evidence_ref": "E1",
                          "passage": "The invented value is eight.", "reading_index": 0,
                          "passage_index": 0}]

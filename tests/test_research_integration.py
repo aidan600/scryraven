@@ -1,30 +1,29 @@
-"""Independent integration regressions for the real V2 loop with offline I/O."""
+"""Independent integration regressions for the ordinary Research loop with offline I/O."""
 
 import json
 import tempfile
 from pathlib import Path
 
 import pytest
-from test_v2 import Script, answer, decision, request, search
+from test_research_loop import Script, answer, decision, request, search
 
 from core.exa_transport import DiscoveryCandidate
 from scryraven.presentation import render_html
-from scryraven.research import RunError
+from scryraven.research import RunError, RunLimits, run
 from scryraven.session import ResearchSession
 from scryraven.session_store import SQLiteSessionStore
 from scryraven.sources import Evidence
-from scryraven.v2 import V2Limits, _run_turn, run
 
 
 def no_io(*args, **kwargs):
     pytest.fail("Unexpected provider acquisition")
 
 
-def test_actual_v2_engine_reopens_and_rereads_retained_material_without_acquisition():
+def test_ordinary_engine_reopens_and_rereads_retained_material_without_acquisition():
     with tempfile.TemporaryDirectory(prefix="scryraven-v2-real-session-") as directory:
         store = SQLiteSessionStore(Path(directory) / "sessions.sqlite3")
         first_model = Script(decision(), decision("answer", ["E1"]), answer())
-        session = ResearchSession.create(store=store, engine=_run_turn, limits=V2Limits(),
+        session = ResearchSession.create(store=store, limits=RunLimits(),
                                          model=first_model, search=search, fetch=no_io)
         first = session.ask("What is the value?")
         first_turn = session.turns[0]
@@ -37,7 +36,7 @@ def test_actual_v2_engine_reopens_and_rereads_retained_material_without_acquisit
             decision("answer", ["E1"]), answer("The retained publication states seven. [E1]"),
         )
         reopened = ResearchSession.open(session_id, store=SQLiteSessionStore(store.path),
-                                        engine=_run_turn, limits=V2Limits(), model=followup_model,
+                                        limits=RunLimits(), model=followup_model,
                                         search=no_io, fetch=no_io)
         second = reopened.ask("What does that source say?")
         assert second.evidence == first.evidence
@@ -72,7 +71,7 @@ def test_multispan_answer_remains_neutral_and_durable_in_a_real_v2_session():
             decision("answer", ["E1"]),
             final,
         )
-        session = ResearchSession.create(store=store, engine=_run_turn, limits=V2Limits(), model=model,
+        session = ResearchSession.create(store=store, limits=RunLimits(), model=model,
                                          search=lambda query: [DiscoveryCandidate("Source", source.url, source.content,
                                                                                   context_kind="provider_highlights")],
                                          fetch=no_io)
@@ -112,7 +111,7 @@ def test_oversized_exact_read_can_be_delivered_or_revised_without_pending_deadlo
         return json.dumps(output)
 
     result = run("Read the observation", model=model, search=no_io, fetch=no_io,
-                 retained_acquisitions=(parent,), limits=V2Limits(attention_characters=65536))
+                 retained_acquisitions=(parent,), limits=RunLimits(attention_characters=65536))
     assert result.posture == "supported"
     assert result.citations and result.trace[-1]["budget"]["external_attempts"] == 0
     assert len(calls) < 12
@@ -129,7 +128,7 @@ def test_final_selection_of_shelved_material_is_bounded_and_revisable():
         decision("answer", ["E1"]), answer("A limited source-based answer. [E1]"),
     )
     result = run("Read the sources", model=model, search=several_sources, fetch=no_io,
-                 limits=V2Limits(attention_characters=65536))
+                 limits=RunLimits(attention_characters=65536))
     assert any(event.get("code") == "attention_packet_too_large" for event in result.trace)
     final_packet = model.calls[-1][2]
     assert sum(len(item["content"]) for item in final_packet["evidence"]) <= 65536
