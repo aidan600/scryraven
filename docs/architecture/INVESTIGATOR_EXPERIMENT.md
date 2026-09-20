@@ -1,5 +1,10 @@
 # Investigator experiment
 
+Historical development snapshot. Its references to then-current production and
+candidate entrypoints describe that period only. The ordinary path is now defined
+in [RESEARCH.md](RESEARCH.md); executable old-owner machinery has been retired.
+Preserved branches and operator packets retain the original experiments.
+
 Status: approved experimental architecture, mechanically implemented and tested
 offline. Ordinary production remains **Research -> Analyst -> Author**. The explicit
 developer harness exercises **Investigator -> Author**. There is no replacement

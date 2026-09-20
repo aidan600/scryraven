@@ -1,11 +1,11 @@
 # ScryRaven
 
-ScryRaven researches public-web factual questions with related answer needs and
-writes one cited answer from source material it receives and reads. Research finds
-promising sources with Exa Search and selects useful extractive highlights for
-Analyst. Missing context can trigger acquisition of fuller source text. Analyst
-interprets support, qualifications and gaps; Author writes from its findings,
-source references and supporting material.
+ScryRaven researches public-web questions and writes cited answers from actual
+source material. One Research semantic loop owns interpretation, evolving needs,
+acquisition direction and stopping. Mechanical Search / Read / Find execute its
+choices. A fresh Evidence-first Answer independently determines what the selected
+sources justify. Generated Research state and prior answers are never Evidence.
+The CLI, sessions and Reading Room use this same ordinary path.
 
 See `CURRENT.md` for implementation, demonstrations and limits. `PRODUCT.md` owns
 approved product intent.
@@ -26,6 +26,10 @@ ScryRaven does **not** load `.env`. With those variables already supplied:
 ```powershell
 python -m scryraven "What is the maximum allowed weight of a ten-pin bowling ball?"
 ```
+
+The ordinary runtime is GPT-5.6 Luna / medium with Exa. There is no architecture
+selector, Analyst checkpoint, separate old Author handoff or fallback engine.
+See [research architecture](docs/architecture/RESEARCH.md) for the promoted contract.
 
 ## Reading Room
 
@@ -122,7 +126,7 @@ python -m scryraven "According to the BIPM SI Brochure, what is the largest SI p
 ```
 
 After each answer, enter the next question at the prompt. Blank input or EOF ends
-the session. Every question gets fresh Research, Analyst and Author decisions and
+the session. Every question gets fresh Research and Answer decisions and
 fresh research limits. Research can inspect actual retained sources without another
 provider call, or acquire additional material. Previous answers help interpret
 follow-up intent but cannot support facts or citations. This mode saves nothing
@@ -139,9 +143,9 @@ first = session.ask("According to the BIPM SI Brochure, what is the largest SI p
 followup = session.ask("And what is the smallest one?")
 ```
 
-`session.turns` exposes completed questions, answers and copied Analyst history;
+`session.turns` exposes completed questions, answers and historical records;
 `session.acquisitions` exposes immutable actual Evidence, including full parents;
-`session.source_ids` exposes canonical identities. Each Result's `evidence` is the
+`session.source_ids` exposes canonical identities. Each CompletedAnswer's `evidence` is the
 acquisition corpus at that turn, while `selected_evidence` and citations describe
 only its current supporting material. Failed turns leave committed state intact;
 valid partial/unable answers are completed turns. `run(question)` remains isolated.
@@ -195,7 +199,7 @@ for future questions. An optional `title` on `create` sets the display label;
 otherwise the first committed question supplies it without a model call.
 `SessionStore` is a small create/load/list/commit interface with one SQLite backend.
 
-Each saved `SessionTurn` exposes question, answer, Analysis, posture, stop reason,
+Each saved `SessionTurn` exposes question, answer, posture, stop reason,
 `selected_evidence`, `citations` and `citation_uses`. Citation records preserve
 answer-local numbers, canonical source IDs, titles, URLs and exact selected material;
 CitationUse records preserve the numeric markers' character spans. Historical
@@ -205,10 +209,10 @@ They are not regenerated for display or automatically reused as current support.
 All actual acquisitions, including complete large-source parents, retain their
 original IDs and source relationships across restart. Future Research may select
 them or derive new exact views locally. Prior answers remain conversation context;
-Analysis remains semantic history. Each question still receives fresh Research,
-Analyst and Author decisions. Storage contains no traces, credentials, raw model
-responses, corrections, lexical indexes or cache state. Prompt caching is unchanged
-and cache expiration does not prevent reopening.
+Historical Analysis remains inspectable history; native turns have no Analysis.
+Each question receives fresh Research and Answer decisions. Storage contains no
+traces, credentials, raw model responses, corrections, lexical indexes or cache
+state. Cache expiration does not prevent reopening.
 
 Schema version 1 stores metadata and a validated complete session snapshot in one
 SQLite row. Each completed turn atomically updates the snapshot and revision. A
@@ -224,90 +228,68 @@ The bounded production restart observation and its limits are recorded in
 
 ## Model configuration
 
-The process needs `OPENAI_API_KEY` and `EXA_API_KEY`. The product does not load
-`.env`. Optional independent role configuration:
-
-| Variable | Default |
-| --- | --- |
-| `SCRYRAVEN_FAST_MODEL` | `gpt-5.6-luna` (Research and Author) |
-| `SCRYRAVEN_FAST_REASONING` | `medium` |
-| `SCRYRAVEN_SMART_MODEL` | `gpt-5.6-luna` (Analyst) |
-| `SCRYRAVEN_SMART_REASONING` | `medium` |
-
-An empty reasoning value omits that API option. One OpenAI Responses transport
-uses structured output and Pydantic parsing. No model has built-in web tools.
+The process needs `OPENAI_API_KEY` and `EXA_API_KEY`; it does not load `.env`.
+Ordinary research explicitly configures both semantic contracts as GPT-5.6 Luna /
+medium, preserving the demonstrated candidate policy. The transport retains its
+existing `ModelConfig` and `SCRYRAVEN_FAST_*` / `SCRYRAVEN_SMART_*` environment
+interface for direct callers; SMART no longer selects an ordinary semantic role.
+There is no automatic premium escalation or model fallback. One stateless OpenAI
+Responses transport uses structured output; no model has built-in web tools.
 
 ## Acquisition and evidence
 
-The fixed path is Exa Search (`auto`, six results, query-guided highlights up to
-4,000 characters per result), then Exa Contents text only when context is missing
-(`verbosity: full`, `maxAgeHours: 0`). Generated summaries and answers are excluded.
-Search metadata remains navigation. Actual highlights may support only meaning
-established by their text; extractive does not mean complete, contiguous or free
-of extraction artifacts. Authority, applicability and sufficiency are judgments.
+Exa Search remains `auto`, six results, query-guided highlights up to 4,000
+characters per result. Exa Contents acquires text with `verbosity: full` and
+`maxAgeHours: 0`. Generated provider summaries and answers are excluded. Metadata
+guides navigation; actual highlights can support only what their text establishes.
+Missing conditions, identity, applicability or connected context can require a Read.
 
-Research selects highlights in its existing navigation call, without another
-relevance call or full-text acquisition. Fuller context is appropriate for missing
-definitions, conditions, captions, chronology, connected passages, version context,
-or broader page/discussion questions. `context_needed` records the concrete gap.
-An older governing source can remain applicable; unrequested editions and
-hypothetical exceptions do not automatically expand a narrow question.
+Search admits actual source-derived highlights mechanically. Read can acquire a
+full source, reread retained material, or select exact views. Find locates lexical
+matches in retained Evidence without provider I/O. All results return to Research
+for reassessment. Neither source count, failed search nor budget exhaustion proves
+support, completeness or nonexistence. The original/current request governs scope.
 
-Successful full-text acquisitions are immutable and retained by the run/session.
-Bodies up to 32,000 characters are exposed directly. Larger sources produce one
-mechanical packet of exact slices up to 32,000 characters, using structure, lexical
-matches and recoverable excerpt phrases. One optional expansion up to 48,000
-characters addresses a concrete gap. These are provisional economics choices,
-not semantic sufficiency thresholds. A later turn can inspect a new exact packet
-from the same retained full parent without fetching it again, including after a
-durable session reopens. There is no shared document store or history compression.
+Actual acquisitions remain immutable and locally rereadable across follow-ups.
+Same-URL versions retain their canonical source identity. Large full sources can
+provide exact bounded views through the existing source index; shelving attention
+does not discard Evidence. New turns begin with fresh Research state and fresh
+Answer decisions over actual material, using prior conversation only for referents.
 
-Different material versions at the same exact URL remain immutable and share
-source identity. Views carry exact parent bounds; highlights never acquire guessed
-offsets. Multiple versions/views are not independent corroboration. Analyst and
-Author receive selected context grouped by source. Analyst owns preservation of
-significant quantities, conditions, time comparisons and epistemic language through
-paraphrase; Author preserves that meaning in the answer. Reference validation does
-not decide meaning or mechanically check paraphrase.
-Citations receive stable numbers in order of first validated use, reusing the same
-number for the same canonical source. Source titles appear once in the CLI source
-list and in the local view's disclosures, rather than repeatedly in answer prose.
-When source-title metadata is absent, a PDF's filename is labeled as a publication
-file; other sources use their hostname. No title is generated from evidence text.
-The view groups exact `result.selected_evidence` items under each cited source;
-it neither regenerates excerpts nor presents unselected material. This is
-source-level support, not a claim-to-sentence proof map. Extracted-text slice
-offsets are not original PDF page coordinates; no page or section anchors are
-invented. Original publication links remain separate from the selected material.
-The renderer escapes source/question text and disables raw model HTML. A small
-Markdown parser handles answer structure; fixed local CSS and JavaScript are
-restricted by a content security policy. The view loads no remote resources.
+Answer selects literal passages in the same fresh semantic call. Mechanical
+membership checks verify those passages against the supplied exact material;
+they do not decide entailment. Valid citations receive compact source numbers in
+first-use order. Each answer saves its selected material and citation-use spans,
+so later acquisitions cannot change historical inspection. Views carry exact
+parent bounds; highlights never receive guessed offsets or invented page numbers.
+Source labels use publication metadata, PDF filenames or hostnames without
+generating titles from evidence text.
 
-The existing provisional loop permits three Analyst assessments, each preceded by
-up to six navigation actions. Each semantic need allows two Search calls initially.
-Actual evidence assessed by Analyst and a specific unresolved same-need gap can
-earn one further round of two calls; there is no third round. Unused initial
-allowance expires. Assessment of new evidence in round two closes remaining search
-allowance for that need. Existing candidate reads survive. Failures spend search
-allowance; empty or omitted material cannot earn a return. These are ceilings,
-not targets. Need identity remains a semantic judgment.
+The established operating limits are 12 semantic attempts, 16 external acquisition
+attempts, 120 seconds and 128,000 characters of current Evidence attention. Local
+Read/Find use no external allowance. Corrected model outputs use the same finite
+semantic allowance. The loop reserves terminal Answer time and returns an honest
+operational unable result when it cannot complete a source-grounded answer.
+Supported, partial and unable results remain distinct.
 
-Research can nominate useful explicit links from acquired material. Mechanics
-validate occurrence and URL syntax, including escaped Markdown punctuation.
-Invalid optional links are rejected individually. There is no automatic crawling;
-the linked source must be acquired before it supports findings.
+SQLite keeps the existing revision-checked atomic snapshot boundary. Native turns
+store `analysis: null`; old saved Analysis remains a historical record only.
+Reopening does not rerun research, rewrite historical turns or promote generated
+history to Evidence. Unknown/corrupt schemas fail safely. The source and answer
+renderer escapes untrusted text, disables raw model HTML, and loads only local
+assets under the existing content security policy.
 
 ## Observations and checks
 
 Answers and a compact source list appear on stdout. `--trace` adds compact diagnostics on stderr: model
-roles, Research choices, source identities/sizes, acquisitions, packet bounds,
-selected material, Analyst findings/gaps and citation resolution. Per-stage
-body characters include repeated submissions; they are not tokens or dollars.
+roles, public Research choices, acquisition results, exposure IDs/lengths/hashes,
+answer posture, bounds and citation resolution. Exact source bodies stay outside
+the compact trace. These diagnostics contain no private reasoning.
 Raw payloads, credentials and hidden reasoning are excluded.
 `--trace-evidence` also exposes exact selected supporting material, citations and provenance;
 unseen full parents remain out of the trace. Use public questions for observations.
-Session diagnostics also identify the turn, retained source count, reused material,
-new acquisitions and source identity reuse/allocation. Prior conversation is not
+Session diagnostics identify the turn, retained material count, local reuse,
+new acquisitions and remaining operating allowance. Prior conversation is not
 added as a diagnostic payload. Numeric source references start afresh in each answer.
 
 Execution errors exit 1 with a safe stage/code. Supported, partial and unable

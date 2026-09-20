@@ -15,8 +15,9 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict
 
+from scryraven.errors import RunError
+from scryraven.historical import Analysis, validate_historical_analysis
 from scryraven.presentation import Citation, CitationUse
-from scryraven.research import Analysis, RunError, _validate_analysis
 from scryraven.sources import Evidence, exact_view
 
 
@@ -26,7 +27,9 @@ class SessionTurn:
 
     question: str
     answer: str
-    analysis: Analysis
+    # Legacy semantic history only. Source-first completed answers do not invent
+    # an Analyst result merely to use the same custody and presentation boundary.
+    analysis: Analysis | None
     posture: str
     stop_reason: str
     selected_evidence: tuple[Evidence, ...] = ()
@@ -129,7 +132,7 @@ class _UseRecord(_Record):
 class _TurnRecord(_Record):
     question: str
     answer: str
-    analysis: Analysis
+    analysis: Analysis | None
     posture: Literal["supported", "partial", "unable"]
     stop_reason: Literal["supported", "not_established", "research_bound", "navigation_bound"]
     selected_evidence: list[_EvidenceRecord]
@@ -194,18 +197,19 @@ def _decode(payload: str, revision: int) -> SessionState:
             else:
                 _require(by_id[item.id] == item)
         analysis = saved.analysis
-        original = analysis.model_dump()
-        _validate_analysis(analysis, list(acquisitions), [])
-        _require(analysis.model_dump() == original)  # Reconstruction never corrects history.
-        _require(set(analysis.support_refs) == {item.source_id for item in selected})
-        posture = "supported" if analysis.decision == "supported" else ("partial" if analysis.findings else "unable")
-        _require(saved.posture == posture)
-        if analysis.decision == "supported":
-            _require(saved.stop_reason == "supported")
-        elif analysis.decision == "research_needed":
-            _require(saved.stop_reason == "research_bound")
-        else:
-            _require(saved.stop_reason in {"not_established", "navigation_bound"})
+        if analysis is not None:
+            original = analysis.model_dump()
+            validate_historical_analysis(analysis, list(acquisitions), [])
+            _require(analysis.model_dump() == original)  # Reconstruction never corrects history.
+            _require(set(analysis.support_refs) == {item.source_id for item in selected})
+            posture = "supported" if analysis.decision == "supported" else ("partial" if analysis.findings else "unable")
+            _require(saved.posture == posture)
+            if analysis.decision == "supported":
+                _require(saved.stop_reason == "supported")
+            elif analysis.decision == "research_needed":
+                _require(saved.stop_reason == "research_bound")
+            else:
+                _require(saved.stop_reason in {"not_established", "navigation_bound"})
         citations = tuple(Citation(c.number, c.source_id, c.title, c.url,
                                    tuple(materials[ref] for ref in c.material_ids)) for c in saved.citations)
         _require(len({c.source_id for c in citations}) == len(citations))
@@ -222,7 +226,10 @@ def _decode(payload: str, revision: int) -> SessionState:
             _require(saved.answer[use.start:use.end] == f"[{use.number}]")
             end = use.end
         _require(list(dict.fromkeys(use.number for use in uses)) == list(range(1, len(citations) + 1)))
-        _require(bool(citations) == bool(selected))
+        if analysis is not None or saved.posture != "unable":
+            _require(bool(citations) == bool(selected))
+        if analysis is None and saved.posture != "unable":
+            _require(bool(citations))
         turns.append(SessionTurn(saved.question, saved.answer, analysis, saved.posture, saved.stop_reason,
                                  selected, citations, uses))
     return SessionState(tuple(turns), acquisitions)
@@ -233,7 +240,8 @@ def _encode(state: SessionState) -> str:
     turns = []
     for turn in state.turns:
         turns.append({
-            "question": turn.question, "answer": turn.answer, "analysis": turn.analysis.model_dump(),
+            "question": turn.question, "answer": turn.answer,
+            "analysis": turn.analysis.model_dump() if turn.analysis is not None else None,
             "posture": turn.posture, "stop_reason": turn.stop_reason,
             "selected_evidence": [asdict(item) for item in turn.selected_evidence],
             "citations": [{"number": c.number, "source_id": c.source_id, "title": c.title, "url": c.url,

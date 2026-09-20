@@ -52,9 +52,9 @@ def test_roles_structured_request_and_final_message_only(monkeypatch, phase):
     config = ModelConfig(ModelRole("small-configured-model", ""), ModelRole("strong-configured-model", "medium"))
     model = OpenAIModel(config, post=post)
     schema = {"type": "object", "additionalProperties": False, "properties": {}, "required": []}
-    for stage in ("research", "analyst", "author"):
+    for stage in ("research", "answer"):
         assert model(stage, "instructions", {"question": "test"}, schema) == '{"answer":"ok"}'
-    assert [call[1]["json"]["model"] for call in calls] == [config.fast.model, config.smart.model, config.fast.model]
+    assert [call[1]["json"]["model"] for call in calls] == [config.fast.model, config.fast.model]
     for url, kwargs in calls:
         assert url == "https://api.openai.com/v1/responses"
         payload = kwargs["json"]
@@ -79,7 +79,7 @@ def test_provider_failures_do_not_expose_raw_payloads(monkeypatch, data, code):
     monkeypatch.setenv("OPENAI_API_KEY", "offline-test-value")
     model = OpenAIModel(post=lambda *a, **k: Response(data))
     with pytest.raises(ModelError, match=f"^{code}$"):
-        model("author", "private prompt", {}, {})
+        model("answer", "private prompt", {}, {})
 
 
 def test_connection_failure_does_not_expose_request_details(monkeypatch):
@@ -90,3 +90,13 @@ def test_connection_failure_does_not_expose_request_details(monkeypatch):
 
     with pytest.raises(ModelError, match="^model_transport_failed$"):
         OpenAIModel(post=failed)("research", "prompt", {}, {})
+
+
+def test_timeout_has_a_safe_distinct_transport_code(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "offline-test-value")
+
+    def timed_out(*args, **kwargs):
+        raise requests.Timeout("secret-bearing request detail")
+
+    with pytest.raises(ModelError, match="^model_request_timed_out$"):
+        OpenAIModel(post=timed_out)("answer", "prompt", {}, {})

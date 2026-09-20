@@ -1,0 +1,79 @@
+{
+  "turns": [
+    {
+      "question": "What pressure setpoint does the standard specify?",
+      "answer": "For idle operation, the standard specifies 12 kPa. [1]",
+      "analysis": {
+        "decision": "supported",
+        "coverage": [
+          {
+            "need": "What pressure setpoint does the standard specify?",
+            "status": "supported",
+            "findings": [
+              {
+                "text": "The pressure setpoint is 12 kPa while idle.",
+                "support_refs": [
+                  "E1"
+                ]
+              }
+            ],
+            "limitation": ""
+          }
+        ],
+        "active_evidence_refs": [
+          "E1"
+        ],
+        "explanation": "The acquired rule establishes the limit.",
+        "next_need": null,
+        "next_need_ref": null,
+        "new_need_reason": null
+      },
+      "posture": "supported",
+      "stop_reason": "supported",
+      "selected_evidence": [
+        {
+          "id": "E1",
+          "url": "https://example.test/pressure-standard",
+          "title": "Synthetic standard",
+          "content": "The pressure setpoint is 12 kPa while idle.\n\nThe inspection interval is eight cycles.",
+          "acquisition": "fetched_source",
+          "source_id": "E1",
+          "parent_id": null,
+          "start_char": null,
+          "end_char": null
+        }
+      ],
+      "citations": [
+        {
+          "number": 1,
+          "source_id": "E1",
+          "title": "Synthetic standard",
+          "url": "https://example.test/pressure-standard",
+          "material_ids": [
+            "E1"
+          ]
+        }
+      ],
+      "citation_uses": [
+        {
+          "number": 1,
+          "start": 51,
+          "end": 54
+        }
+      ]
+    }
+  ],
+  "acquisitions": [
+    {
+      "id": "E1",
+      "url": "https://example.test/pressure-standard",
+      "title": "Synthetic standard",
+      "content": "The pressure setpoint is 12 kPa while idle.\n\nThe inspection interval is eight cycles.",
+      "acquisition": "fetched_source",
+      "source_id": "E1",
+      "parent_id": null,
+      "start_char": null,
+      "end_char": null
+    }
+  ]
+}

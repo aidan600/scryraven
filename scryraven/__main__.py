@@ -9,7 +9,8 @@ from dataclasses import asdict
 from pathlib import Path
 
 from scryraven.presentation import render_cli, render_html
-from scryraven.research import Result, RunError, run
+from scryraven.research import RunError, run
+from scryraven.results import CompletedAnswer
 from scryraven.session import ResearchSession
 from scryraven.session_store import SessionStoreError, SQLiteSessionStore
 
@@ -90,7 +91,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
 
-def _print_result(result: Result, *, trace: bool, trace_evidence: bool) -> None:
+def _print_result(result: CompletedAnswer, *, trace: bool, trace_evidence: bool) -> None:
     if trace or trace_evidence:
         diagnostics = {"trace": result.trace}
         if trace_evidence:

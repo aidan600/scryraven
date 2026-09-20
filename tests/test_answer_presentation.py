@@ -4,7 +4,8 @@ from dataclasses import replace
 from html.parser import HTMLParser
 
 import pytest
-from test_walking_skeleton import Model, analysis, author, done, orient, read, relevance, search_for
+from test_research_loop import Script, decision, request
+from test_research_loop import answer as final_answer
 
 from core.exa_transport import DiscoveryCandidate, FetchedMaterial
 from scryraven import __main__ as cli
@@ -17,7 +18,7 @@ URL = "https://example.test/rules"
 
 
 def answer(draft="The limit is **16 pounds**. [E1]", *, title="Official rules", content="Maximum: 16 pounds."):
-    model = Model(orient(), search_for(), read("C1"), relevance("E1"), analysis(), author(draft))
+    model = Script(decision(), decision(requests=[request("read", query="", target="C1")]), decision("answer", ["E1"]), final_answer(draft))
     return research.run(QUESTION, model=model,
                         search=lambda q: [DiscoveryCandidate(title, URL, "navigation")],
                         fetch=lambda url: FetchedMaterial(url, content))
@@ -97,9 +98,9 @@ def test_source_identity_uses_historical_domain_and_keeps_the_exact_original_lin
 
 def test_first_validated_use_orders_sources_and_reuses_numbers_without_inline_titles():
     sources = [DiscoveryCandidate(f"Long publication title {i}", URL + str(i), "navigation") for i in range(1, 4)]
-    model = Model(orient(), search_for(), read("C1", "C2", "C3"), relevance("E1", "E2", "E3"),
-                  analysis(refs=("E1", "E2", "E3")),
-                  author("First. [E2] Next. [[E1, E2]] Again. [[E1]] An ordinary [1] in prose."))
+    model = Script(decision(), decision(requests=[request("read", query="", target=f"C{i}") for i in range(1, 4)]),
+                   decision("answer", ["E1", "E2", "E3"]),
+                   final_answer("First. [E2] Next. [[E1, E2]] Again. [[E1]] An ordinary [1] in prose."))
     result = research.run(QUESTION, model=model, search=lambda q: sources,
                           fetch=lambda url: FetchedMaterial(url, "Maximum: 16 pounds."))
     assert result.answer == "First. [1] Next. [2] [1] Again. [2] An ordinary [1] in prose."
@@ -160,8 +161,7 @@ def test_markdown_table_alignment_uses_csp_compatible_classes():
 
 
 def test_unable_empty_evidence_has_no_invented_sources_or_citations():
-    model = Model(orient(), done(), analysis("unable", refs=()),
-                  author("The available evidence did not establish the weight limit."))
+    model = Script(decision("answer"), final_answer("The available evidence did not establish the weight limit.", "unable"))
     result = research.run(QUESTION, model=model, search=lambda q: [], fetch=lambda url: None)
     assert result.posture == "unable"
     assert result.citations == result.citation_uses == result.selected_evidence == ()

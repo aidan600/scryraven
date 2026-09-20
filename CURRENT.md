@@ -1,366 +1,107 @@
 # ScryRaven Current Truth
 
-Status: the local Reading Room browser product operates durable sessions, with
-deterministic HTTP and real-browser acceptance of conversation, exact historical
-Evidence, follow-ups, rename/delete, working/failure states and responsive layouts.
-Browser-shell validation used zero live research/provider calls. Local durable
-sessions retain their earlier ordinary three-turn BIPM/BIPM/NASA demonstration
-across separate processes, followed by exact provider-free historical inspection.
-Compact citations and inspection of
-selected Evidence retain their earlier product demonstrations. The semantic product
-path remains Research -> Analyst -> Author. Explicit prompt caching reduced effective
-input units by 23.62% on the bounded three-turn retained-context workload.
-An explicit experimental Investigator -> Author harness implements reversible
-attention and has deterministic offline mechanical evidence. A bounded live
-development campaign demonstrated useful factual and relational answers, but
-repeated unproductive acquisition persisted after two interventions. The
-Investigator architecture hypothesis is not yet supported; there is no product
-replacement decision.
-Repository: aidan600/scryraven
-Preferred local checkout: C:\Users\aidan\ScryRaven
+## Ordinary product architecture
 
-## Active product path
+The production candidate supersedes Research -> Analyst -> Author with the
+accepted clean-room Research semantic loop -> mechanical Search / Read / Find ->
+Research reassessment -> fresh Evidence-first Answer. `scryraven.research.run`,
+`ResearchSession.ask`, the CLI and Reading Room share this single path. There is
+no architecture selector, Analyst checkpoint, old Author handoff or fallback.
 
-On the ordinary production path, exactly Research, Analyst, and Author retain semantic authority. Research directs
-public-web acquisition toward the question; Analyst interprets support,
-qualifications, conflicts, and unresolved gaps; Author writes from Analyst findings
-and supplied supporting material. FAST and SMART remain internal role labels, both
-configured by default as gpt-5.6-luna / medium. There is no user-facing
-Fast/Balanced/Deep mode, generalized model/provider routing, or alternate-provider
-fallback.
+Research owns interpretation, compact revisable understanding, consequential
+needs, acquisition direction, attention and stopping. Generated state is never
+Evidence. Answer independently reads selected actual source material and decides
+what the current/original request justifies. The demonstrated prompts, structured
+contracts and acquisition/stopping semantics are preserved.
 
-The ordinary CLI uses one fixed acquisition policy: Exa Search with query-guided
-extractive highlights, Research selection of actual material, Analyst
-interpretation, and Author writing from supported findings and supporting context.
-Search metadata is navigation. A concrete missing-context need can trigger Exa
-Contents full text with full verbosity and a fresh crawl. Provider-returned text
-may establish a claim when the received text supplies the material context; generated
-summaries and answers are excluded. Source selection and sufficiency remain semantic
-judgments, not transport verdicts.
+Ordinary runtime remains GPT-5.6 Luna / medium with the existing Exa Search and
+Contents policy. Limits remain 12 semantic attempts, 16 external attempts,
+120 seconds and 128,000 characters of current attention. No model router, premium
+escalation, semantic verifier or additional semantic owner exists.
 
-Successful full-text acquisition is retained once per exact URL for the run or
-session. Bodies up to 32,000 characters are exposed directly; larger
-bodies use exact extracted
-packets up to 32,000 characters, with one optional 48,000-character expansion for a
-concrete gap. Packet bounds describe received extraction, not original-document
-pages or locations. Same-URL material versions share one source identity.
+## Sessions, Evidence and presentation
 
-Each question gets fresh existing bounds: up to three Analyst assessments, up to six
-navigation actions before each assessment, and an earned second two-call search round
-for a specific unresolved same-need gap. Those limits are operational ceilings, not
-semantic sufficiency rules.
+Immutable acquisitions, canonical source identities, exact versions/views,
+literal Answer readings, deterministic citations and historical selected-material
+snapshots survive. Follow-ups start fresh Research/Answer decisions and can reread
+retained actual Evidence without external acquisition. Prior generated answers
+resolve conversation referents only.
 
-## Experimental Investigator
+Durable SQLite sessions retain atomic revision-checked commits, reopen/history,
+rename/delete and failure isolation. Native turns use `analysis: null` in the
+existing backward-readable snapshot schema. Historical Analysis is retained and
+validated only on serialization/reopen; it never controls new research or becomes
+Evidence. Historical turns and citations are not rewritten on reopening.
+The synthetic pre-supersession fixture exercises mixed historical/native sessions.
 
-The explicit `scryraven.experimental.harness` developer entrypoint implements
-Investigator -> Author with independent state/action/terminal contracts. Investigator
-owns interpretation, acquisition direction, synthesis and terminal judgment within
-this candidate. The ordinary production path is still Research -> Analyst -> Author;
-CLI/Reading Room defaults have no selector or replacement. `ResearchSession` accepts
-one optional injected engine callable, and normal calls retain the production engine.
+Reading Room and CLI use the same session application and store. The existing
+safe Markdown/source renderer, browser security, local assets, transport,
+credential doorman and exact-content prompt-cache mechanics remain in place.
+The legacy SMART transport configuration remains readable for compatibility but
+has no ordinary semantic role. Ordinary model configuration is explicitly Luna /
+medium for both surviving contracts.
 
-The candidate retains actual acquired source text independently of final answer
-selection in the existing acquisition collection. Run-local attention can shelve,
-reactivate and repeatedly inspect exact parent-relative views without refetch.
-A bounded body-free catalog and disposable lexical region locator preserve direct
-ID access after lookup misses. Same-URL versions/views retain canonical source
-identity. Semantic state is non-evidentiary: new/revised notes require exact material
-exposed in their reasoning input, and Finish requires its exact support active in
-that input and still active after shelving. These are reference/exposure checks,
-not semantic entailment validation.
+## Bounded evidence and limits
 
-A terminal-only adapter preserves integrated synthesis, qualifications/conflicts,
-requested operation and unresolved portions for the unchanged Author consumer.
-Canonical support references and exact selected material use existing Result,
-citation and session machinery. Successful candidate acquisitions can persist while
-unselected. Follow-ups have fresh state and attention over retained acquisitions;
-intermediate state, obligations, catalog windows and indexes are not persisted.
-Clarify is an experimental terminal signal without a completed session turn or UI
-lifecycle. The existing version-1 database schema and atomic commit remain unchanged.
+Foundation 01 established four valid frozen Levels 1–3 cases; its NPS comparison
+was excluded for evaluator/source ambiguity. Foundation 02 established three
+frozen Level-4 bounded synthesis cases, including Anker missing-premise restraint.
+Recursive 01 produced correct shortcuts but was inconclusive for dependency
+change. Recursive 01B established three counted Level-5 transitions (G1 Passport,
+G2 Sentinel-1, G7 Elytra); G3–G6 were correct unexercised shortcuts. These are
+bounded development observations, not universal or general recursive reliability.
 
-Configurable initial knobs are 16 nonterminal cycles, 16 external acquisition
-attempts and 128,000 active Evidence characters. Local inspection does not consume
-external allowance; obligations do not renew counters. Exhaustion permits one
-terminal-only partial/unable/Clarify step, with explicit unable fallback. These are
-experimental settings, not product sufficiency rules.
+The exact public packets remain external under
+`C:\tmp\scryraven-luna-foundation-01-20260919`,
+`C:\tmp\scryraven-luna-foundation-02-20260919`,
+`C:\tmp\scryraven-luna-recursive-01-20260919`, and
+`C:\tmp\scryraven-luna-recursive-01b-20260919`.
+The accepted lineage was `codex/luna-capability-recursive-01b` at
+`b72defe1fa05568175a6a39a91b858a0783d6504`, descended from production baseline
+`533f45df9271978e0591fb35aa8da2b1917255b2`.
 
-Domain-neutral scripted tests exercise custody without selection, exact reversible
-attention, repeated full-parent views, bounded catalogs and direct addressing,
-exposure rejection, relational terminal analysis, unchanged Author material and
-citations, successful process/session reopen, fresh follow-ups, historical exactness,
-rollback and stale commits, clarification, independent limits and lossless cached
-transport input without shelved bodies. Existing production regressions remain
-covered. The prompt additionally guides evidence-responsive target interpretation,
-next actions, sufficiency and existing inspection prerequisites. The immediate
-preceding action is exposed alongside its mechanical result as non-evidentiary
-context; no action history or new lifecycle is retained.
+Supersession offline verification covers ordinary routing, retained follow-ups,
+backward-readable persistence, exact citations, CLI, Reading Room and failures.
+The full offline suite, Ruff, pre-commit and browser acceptance at 1440, 1920 and
+390 pixels passed. Mainline Semantic Supersession 01 acceptance is **Met**.
+Six ordinary live submissions, all Luna / medium, used 19 semantic attempts,
+ten external Searches and one local retained Read. The initial five ran at
+`d544cef780186f63e08d29d390653e84fd279f05`; the single authorized Anker confirmation
+ran at `97c3c77aa501a9cf0d37c2a4e21f9fde37455cae` with identical runtime code and
+prompts. JWST multi-need compatibility, the durable BIPM pair and a counted
+Passport Level-5 dependency transition passed. BIPM's reopened follow-up acquired
+nothing externally and preserved the first turn and all six acquired materials
+exactly. Those accepted obligations were not rerun for closure.
 
-The Phase 3 development campaign used 14 frozen primary submissions in two waves
-and three targeted rechecks: 96 model-call attempts and 62 external acquisitions
-(60 searches, two unsuccessful fetches). At final runtime revision
-`08563d39e9217fb79cca861bb26fe63a12f21bdd`, the conversational recheck answered after
-an earlier invalid inspection had aborted, but reacquired available retained
-support. The identity recheck again repeated 15 searches without pursuing a linked
-answer-bearing document and was stopped with no terminal answer. Another repair
-appeared necessary after the two authorized interventions, so live work ended
-before the numerical budget was exhausted.
+The first Anker control preserved the central missing-premise restraint: it did not
+derive Wh from mAh and distinguished Anker's explicit 99.54 Wh specification.
+However, its final Answer and exactly captured cited material did not establish
+the voltage-dependent conversion rule required by the frozen Foundation 02
+rubric. That first trajectory remains incomplete and preserved. The one unchanged
+confirmation acquired and cited FAA's volts-times-ampere-hours rule, establishing
+the required Ah unit and voltage dependency, and again treated Anker's independent
+99.54 Wh specification separately. It satisfies the complete frozen L4C obligation
+without a semantic code, prompt, provider-policy or model-policy repair. The two
+trajectories demonstrate bounded acquisition variability, not deterministic
+retrieval reliability. No other live rerun or Level-6 work occurred.
+See `docs/operator/MAINLINE_SEMANTIC_SUPERSESSION_01.md` for the evidence and
+review bundle. Both public observations are preserved in
+`C:\tmp\scryraven-mainline-semantic-supersession-01` and useful sanitized local
+evaluation candidates; prior frozen labels and packets remain unchanged.
 
-Narrow authoritative facts, contextual abbreviation resolution, comparisons and
-explanations produced useful answers on development questions. Recursion/economy,
-current-target establishment, reception breadth and preservation of qualifications
-have unresolved failures or concerns. The final revision was not retested across
-the entire manifest. Efficient live retained-material reuse, successful full-parent
-inspection and general semantic reliability remain unproved. All successful live
-acquisitions in this campaign were provider highlights. This is DEVELOPMENT
-validation, not held-out proof or a comparison with production; the architecture
-hypothesis is not yet supported. See
-`docs/operator/INVESTIGATOR_BEHAVIOR_VALIDATION.md` for the decision and evidence and
-`docs/architecture/INVESTIGATOR_EXPERIMENT.md` for the unchanged candidate architecture.
+Aggregate/open-world sufficiency remains unresolved. Literal-reading and citation
+validation prove custody/membership, not semantic entailment. Very long-session
+performance and general reliability remain unproved. Level 6 revision/recovery
+under superseding Evidence is **not established**.
 
-## Session follow-ups
+## Preserved development history
 
-`ResearchSession.ask(question)` uses the same production path as isolated
-`run(question)`. The ordinary CLI adds `--session`: answer the initial question,
-then accept follow-ups until blank input or EOF. The CLI's `--html` remains a
-single-answer artifact; the Reading Room renders complete durable conversations.
-Ordinary single-answer HTML and each Result's citation/inspection data remain intact.
-The constructor and `--session` remain ephemeral; the durable API and CLI options
-below opt into local persistence.
+The stopped Investigator and earlier architecture-lab branches remain intact.
+The failed Observation/Inference/scope-contract experiment and invalid Sol closure
+probe remain historical records, not active semantics. Their executable old-owner
+harness is absent from the product tree. Operator campaign scripts, frozen
+manifests, external packets and ignored `local-evals/` are development evidence;
+ordinary runtime has no dependency on them. No evaluation evidence was deleted.
 
-Completed questions/answers supply conversation context only. Prior Analyst output,
-posture and limitations supply separate, non-evidentiary semantic history. Each
-turn starts with fresh Research orientation, no inherited Analyst verdict, and no
-automatically selected evidence. Research can inspect actual retained highlights or
-use `read` to inspect a retained full parent locally, select current relevant
-material, and acquire more when needed. Only current selected Evidence supports
-Analyst findings; only current coverage findings support Author claims.
-
-Immutable acquisitions, including full parents of large-source packets, survive
-successful turns. Canonical source and material IDs remain stable; new acquisitions
-receive noncolliding IDs, with same-URL versions grouped under their original source.
-Numeric citations remain answer-local. Retained parents can yield different exact
-packets for a new question without provider I/O; packet expansion and research
-limits apply afresh per turn. Failed turns discard staged acquisitions and semantic
-history. Valid partial/unable Results count as completed turns.
-
-Safe session trace facts identify the turn, entering retained-source count, reused
-material, source identity allocation, and new acquisition count. Conversation history
-is not copied into diagnostics. Deterministic fake-model/provider tests exercise
-reuse, fresh acquisition, reference rejection, large-source reinspection, failure
-isolation, and the ordinary multi-turn CLI. They prove mechanics, not live model
-relevance or fidelity. The ordinary live session demonstrated retained-highlight
-reuse; retained full-parent reinspection and different large-source packets remain
-verified offline only.
-
-The bounded live observation at `dfca5658049cd1f492fadcae70b972169ddcad15`
-answered the four 2022 BIPM prefix additions, then the elliptical question "Which two
-of those are for factors smaller than one?", then NASA's day length on Mars. All
-three turns reached supported results with fresh Research, Analyst and Author calls.
-Search/Contents/model-call counts were 1/0/5, 0/0/4 and 1/0/5. Turn 1 retained BIPM
-sources E1 and E2; turn 2 selected unchanged E1 without provider acquisition; turn 3
-added NASA E3, selected only E3, and preserved E1/E2. Current findings and citations
-resolved to actual selected source material. Input audits kept prior answers in
-non-evidentiary conversation context, with no source IDs, and Author received the
-current Analyst coverage. No repair or second live session was required.
-
-This is one successful ordinary session, not general conversational reliability.
-All selected live material was provider highlights. No independent source checks
-were performed. The sanitized validation record is in
-`docs/operator/IN_MEMORY_FOLLOWUP_VALIDATION.md`; exact live artifacts stay external
-and a useful sanitized clean control is preserved only in the ignored local corpus.
-
-## Local durable sessions
-
-`ResearchSession.create/open` use the application-level `SessionStore` boundary,
-with one standard-library SQLite implementation. The default database is per-user
-application data outside the checkout (`%LOCALAPPDATA%\ScryRaven\sessions.sqlite3`
-on Windows). Callers and tests can inject an explicit path. The CLI exposes
-`--create-session`, `--resume ID`, `--list-sessions` and `--database PATH`.
-Opening without a question reads the saved transcript without model/provider I/O.
-
-Schema version 1 stores session identity, UTC creation/update times, display title,
-revision, and a complete product-state snapshot. Each completed turn preserves its
-question, answer, Analysis, posture, stop reason, selected Evidence, Citation
-records and CitationUse character spans. Actual acquisitions retain every Evidence
-field, including full source content, IDs and canonical-source relationships.
-Historical exact views retain their IDs, parent relationships, ranges and content;
-they are audit/presentation snapshots, never automatically current Evidence.
-Existing CLI/HTML renderers can render saved `SessionTurn` objects directly.
-
-All completed-turn state commits in one transaction with a revision check. Failed
-model/citation turns and failed database commits leave the prior durable and
-in-memory state intact. Stale writers receive `session_conflict`; there is no
-semantic merge. Invalid reconstructed records and incompatible schema versions
-fail safely. No credentials, raw responses, corrections, diagnostic traces, prompt
-cache keys or provider cache state enter the session schema.
-
-Offline tests demonstrate process-object replacement, restored conversation and
-semantic history, retained-evidence reuse, stable/noncolliding IDs including
-same-URL versions, exact historical citation numbering and material, fresh large
-views from a persisted full parent without refetch, failure rollback and conflicts.
-Disposable lexical indexes are rebuilt, not persisted. The ordinary isolated and
-ephemeral paths and PR #635 fake-transport cache regressions remain covered.
-
-The bounded ordinary observation at `286c5721763ff49354fc811ad04dbf2c7737aa8d`
-used three separate processes for the BIPM prefix question, the elliptical
-below-one follow-up, and NASA's Mars day length. Search/Contents/model-call counts
-were 1/0/5, 0/0/4 and 1/0/5. Turn 2 reused unchanged persisted BIPM E1 while E1/E2
-remained intact. Turn 3 acquired and cited only new NASA E3/E4 while preserving
-E1/E2. Each turn had fresh Research, Analyst and Author decisions. A fourth process
-restored the entire session and all old answers, selected material, citations,
-CitationUse spans and rendered HTML exactly, with zero model/provider calls.
-
-One logical validation attempt and three ask calls succeeded; no repair or rerun
-was used. All live material was provider highlights. This proves the bounded
-restart path, not general conversational reliability or live full-parent reuse.
-The record is `docs/operator/PERSISTENT_SESSION_VALIDATION.md`. The temporary
-database and exact packet remain external under `C:\tmp`; a sanitized development
-clean-control candidate, without the database, is preserved in ignored local-evals.
-
-## Local browser Reading Room
-
-`python -m scryraven.reading_room` launches the Flask/Werkzeug local HTTP shell at
-`http://127.0.0.1:7331`. `--database PATH` uses a chosen SQLiteSessionStore location;
-omitting it uses the existing per-user default. `--port` changes the local port.
-The launch path binds only to loopback, without a debugger or reloader. It is a
-local single-user server, not a hosted deployment. No frontend build, background
-jobs, queue, WebSockets, alternate research engine or browser persistence exists.
-
-Browser questions use ordinary `ResearchSession.create/open(...).ask(question)`;
-completed turns commit only through SessionStore. New research navigation creates
-no empty session. The first submission creates one, and a failed first turn removes
-only its still-empty record with a revision guard. Prior completed state survives
-failures and stale writers are not merged. Partial/unable results render as
-completed answers with restrained limitation context. While an HTTP request runs,
-the browser acknowledges work without claiming stages, progress percentages or
-streaming results. One-use signed forms prevent duplicate submissions; a restart
-expires open forms, which can be reloaded without losing saved history.
-
-SessionStore now owns metadata-only rename and permanent delete. Rename leaves the
-completed-turn revision and serialized research payload unchanged; a concurrent
-ask preserves the latest title. Delete checks the displayed completed-turn revision
-and requires a confirmation form. Stale/deleted pages return safely to history or
-retain an unsaved question in the new-research view. Neither operation calls a model.
-
-The shared deterministic presentation module renders safe Markdown and source
-material for both standalone HTML and the Reading Room. Every browser citation
-destination contains its historical turn index. Its inspector reads only that
-saved SessionTurn's Citation.materials, never the session's later acquisition
-corpus. Multiple selected materials remain separate; all three acquisition types
-have human-readable labels and long material is available in full. Ordinary
-bracketed numbers and answer-authored local links cannot impersonate citations.
-
-The answer uses a bounded reading measure, a quiet session sidebar and a multiline
-composer. Evidence docks on wide screens, overlays laptop layouts, and fills a
-narrow screen. The history drawer, citation interaction, focus return, source
-overview, full-material expansion, rename, delete confirmation and reduced-motion
-behavior use ordinary HTML/CSS with small JavaScript enhancements. Native forms and
-source disclosures remain available without JavaScript.
-
-HTTP protection includes trusted loopback hostnames, Origin checks, signed
-action-bound forms, a restrictive CSP, frame denial, bounded errors, and no remote
-assets. Local same-origin referrers preserve native form Origin headers; external
-publication links use `noopener noreferrer`. Questions, titles, Markdown and saved
-Evidence remain untrusted display data. No provider errors or request payloads are
-exposed as browser diagnostics.
-
-Offline regression and browser acceptance use only synthetic material and explicit
-external disposable databases. The browser pass exercised 1440px desktop, 1920px
-docked evidence, and 390px narrow layouts, including real form submission through
-the application, failure/limited results, historical [1] collisions, later same-URL
-material, rename/delete and process restart/reopen. This demonstrates presentation
-and session mechanics, not new evidence of live research quality. Arbitrary long
-history performance and simultaneous multi-user operation remain unproved.
-
-## OpenAI transport economics
-
-The GPT-5.6 Responses transport uses explicit-only prompt caching with a 30-minute
-TTL. Unchanged instructions and Structured Outputs contracts define deterministic
-cache families. Complete local material is serialized as one JSON object across
-content blocks: growing history first, stable navigation context next, then current
-candidates, Evidence, decisions and corrections. Up to four explicit breakpoints
-preserve instruction, history and navigation prefixes; volatile tails incur ordinary
-input charges instead of cache writes. No text is summarized, compressed or omitted.
-Optional in-process usage observations expose token classes, family and breakpoint
-labels without prompts or provider payloads. Missing counters remain unknown.
-
-One ordinary three-turn session on the same BIPM/BIPM/NASA questions used 40,621 input
-tokens: 13,409 cache reads, 7,040 cache writes and 20,172 ordinary uncached tokens.
-At relative rates 1.00 ordinary / 1.25 write / 0.10 read, effective input units were
-30,312.9 versus the historical 39,685.6, a 23.62% reduction. There were 14 model calls,
-two Exa Search calls and zero Contents calls, matching the historical call counts.
-Turn 2 reused unchanged BIPM E1 without acquisition; turn 3 acquired and cited NASA
-E3 while preserving E1/E2. All three answers were supported by selected material.
-No repair or second session was used. This bounded observation is not a guarantee
-for other workloads or cache routing; source selections can vary between runs.
-
-Model/reasoning defaults, semantic prompts, provider/ranking policy and evidence
-custody are unchanged. `store=False` remains in force, with no server-side
-conversation state. The token formula belongs to validation reporting, not runtime
-pricing policy. See `docs/operator/PROMPT_CACHE_ECONOMY_VALIDATION.md` for the tested
-revision, exact workload, token classes, source identities and limitations.
-
-## Citations and selected-Evidence inspection
-
-Author still emits validated evidence aliases. Deterministic mechanics reject
-malformed, unknown, and unselected aliases, and supported answers still require
-valid citation use. After validation, citations receive compact numbers in order of
-first use of their canonical source; every later use of that source reuses its
-number. Full publication titles no longer interrupt answer prose.
-
-The ordinary CLI prints the numeric answer followed by one compact source list.
-`--html PATH` writes a self-contained local view with compact citation links. Each
-source disclosure shows the source title, its original public URL, and the exact
-selected Evidence items grouped under that canonical source. A missing title falls
-back only to clearly labeled URL metadata (a PDF filename or hostname), never to a
-generated title or source-text guess.
-
-The disclosure says that it is material ScryRaven used from the source. It is
-source-level support context, not a sentence-level proof map. Extracted-text offsets
-are never shown as PDF pages, sections, byte offsets, or precise proof passages.
-Question, model, and source text are escaped; raw model HTML is disabled; the view
-uses fixed local assets protected by a content security policy and loads no remote
-resources. Disclosures remain usable without JavaScript.
-
-## Demonstrated product frontier
-
-The fixed Exa path has ordinary-product evidence for Bowling, IPCC Chapter 2, NIST
-FIPS 197, and Saturn. Bowling, IPCC, and NIST reached supported answers with the
-material qualifications preserved. Saturn remained partial: the NASA/JPL, MPC, and
-IAU chronology supported the substantive answer but did not establish the requested
-September snapshot. That limitation remains explicit rather than being upgraded into
-certainty.
-
-Ordinary presentation controls demonstrated the retained behavior on a short BIPM
-SI-prefix answer and on a complex SLAC workplace-AI-policy answer. They showed
-stable numeric references, original-publication links, grouped exact selected
-material, and source-safe local rendering. The complex SLAC answer did not establish
-a general improvement in dense-policy readability or semantic paraphrase fidelity.
-Closure cleanup leaves the already observed citation and disclosure mechanics
-unchanged, so it does not require another live PRODUCT run.
-
-## Current boundaries and limitations
-
-Citation identity validation is not semantic entailment or fact checking. Analyst
-and Author paraphrase remains probabilistic: modal force, scope, qualifications, or
-other meaning can still mutate, particularly in dense policy material. Research can
-also omit relevant evidence before Analyst sees it. Displayed selected Evidence is
-honest, inspectable source-level context, not a guarantee that one displayed span
-proves every nearby sentence.
-
-The ordinary production path has no fourth semantic owner or intermediary semantic
-representation. The development-only Investigator candidate is separate from that
-path. Neither path adds a semantic verifier, Reviewer or post-Author remediation loop.
-Persistence is local and single-user, without encryption at rest, cloud sync,
-accounts/authentication, uploads, a desktop wrapper, history compression or
-production context eviction. Experimental shelving changes only current attention,
-not retained custody. The complete snapshot is rewritten on each commit; arbitrary
-long-session performance is unproved. Retained acquisitions belong to their session,
-not a shared retrieval service. Prompt caching remains an independent transport
-optimization; reopening does not require a provider cache hit.
-There is no vector database, crawler, general RAG, calculation system, hosted
-service or frontend build stack.
-
-Offline fixtures exercise deterministic mechanics and rendering safety; they do not
-prove model judgment or universal provider reliability. The existing broker remains
-limited to credentials and process plumbing, not product semantics.
+Current architecture: `docs/architecture/RESEARCH.md`. Earlier V2/baseline and
+Investigator architecture documents are explicitly historical snapshots.

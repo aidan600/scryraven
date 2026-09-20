@@ -7,7 +7,8 @@ from copy import deepcopy
 from dataclasses import dataclass
 
 from core.exa_transport import DiscoveryCandidate, FetchedMaterial, fetch_exa, search_exa
-from scryraven.research import ModelCall, Result, RunLimits, _run_turn
+from scryraven.research import RunLimits, _run_turn
+from scryraven.results import CompletedAnswer
 from scryraven.session_store import (
     SessionMetadata,
     SessionState,
@@ -27,22 +28,24 @@ class _Snapshot:
 class ResearchSession:
     """Sequential ask(question) calls with fresh decisions over a retained corpus.
 
-    Only successful Results commit state (including partial/unable answers).
+    Only completed answers commit state (including partial/unable answers).
     Acquisitions are immutable, including full parents of exact targeted views.
-    History is copied on inspection so callers cannot mutate committed analysis.
+    History is copied on inspection so callers cannot mutate historical records.
     The constructor is ephemeral. create/open opt into a SessionStore. Persistent
     state advances in memory only after the store's completed-turn commit succeeds.
     """
 
     def __init__(
-        self, *, model: ModelCall | None = None,
+        self, *, model: Callable | None = None,
         search: Callable[..., list[DiscoveryCandidate]] = search_exa,
         fetch: Callable[[str], FetchedMaterial] = fetch_exa,
         limits: RunLimits = RunLimits(),
-        engine: Callable[..., Result] | None = None,
+        engine: Callable[..., CompletedAnswer] | None = None,
+        observe: Callable[[dict], None] | None = None,
     ) -> None:
         self._model, self._search, self._fetch, self._limits = model, search, fetch, limits
         self._engine = engine
+        self._observe = observe
         self._snapshot = _Snapshot(SessionState())
         self._store: SessionStore | None = None
 
@@ -84,23 +87,19 @@ class ResearchSession:
     def source_ids(self) -> tuple[str, ...]:
         return tuple(dict.fromkeys(item.source_id for item in self.acquisitions))
 
-    def ask(self, question: str) -> Result:
+    def ask(self, question: str) -> CompletedAnswer:
         snapshot = self._snapshot
         state = snapshot.state
-        # These two history classes are never admitted to the Evidence collection.
+        # Conversation resolves referents only. Historical Analyst records are not
+        # supplied to new research; retained actual acquisitions are Evidence.
         context = {
             "conversation_context": [{"question": turn.question, "answer": turn.answer} for turn in state.turns],
-            "semantic_history": [
-                {"question": turn.question, "analysis": turn.analysis.model_dump(),
-                 "posture": turn.posture, "stop_reason": turn.stop_reason}
-                for turn in state.turns
-            ],
         }
         result = (self._engine or _run_turn)(
             question, model=self._model, search=self._search, fetch=self._fetch, limits=self._limits,
-            retained_acquisitions=state.acquisitions, context=context, session_turn=len(state.turns) + 1,
+            retained_acquisitions=state.acquisitions, context=context, session_turn=len(state.turns) + 1, observe=self._observe,
         )
-        turn = SessionTurn(question, result.answer, result.analysis.model_copy(deep=True),
+        turn = SessionTurn(question, result.answer, None,
                            result.posture, result.stop_reason, result.selected_evidence,
                            result.citations, result.citation_uses)
         staged = SessionState((*state.turns, turn), result.evidence)

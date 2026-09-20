@@ -84,7 +84,7 @@ def _input_blocks(instructions: str, material: dict, stage: str, phase: str) -> 
     """One exact JSON object, split only at JSON boundaries; no semantic rewrite.
 
     Cache instructions across calls of the same contract, growing history across
-    turns, and navigation's turn context across actions. Never write candidate,
+    turns, and Research's turn context across actions. Never write candidate,
     current evidence, decision or correction tails. Up to four explicit markers.
     See https://developers.openai.com/api/docs/guides/prompt-caching .
     """
@@ -93,9 +93,9 @@ def _input_blocks(instructions: str, material: dict, stage: str, phase: str) -> 
                  "prompt_cache_breakpoint": {"mode": "explicit"}}
     blocks: list[dict] = []
     pending = "{"
-    history = "semantic_history" if material.get("semantic_history") else "conversation_context"
-    stable = ("semantic_history", "conversation_context", "current_date", "phase", "question", "need", "answer_needs")
-    corrections = ("selection_correction", "output_correction")
+    history = "conversation_context"
+    stable = ("conversation_context", "current_date", "phase", "question")
+    corrections = ("output_correction",)
     order = [key for key in stable if key in material]
     boundary = len(order)
     order += sorted(key for key in material if key not in stable and key not in corrections)
@@ -123,8 +123,8 @@ def _input_blocks(instructions: str, material: dict, stage: str, phase: str) -> 
             pending += "]"
         else:
             pending += _json(value)
-        if stage == "research" and phase == "navigation" and index + 1 == boundary:
-            flush("navigation_context")
+        if stage == "research" and phase == "research" and index + 1 == boundary:
+            flush("research_context")
     pending += "}"
     flush()
     return [{"role": "developer", "content": [developer]}, {"role": "user", "content": blocks}], tuple(labels)
@@ -138,11 +138,13 @@ class OpenAIModel:
         post: Callable[..., Any] | None = None,
         usage_observer: Callable[[ModelUsage], None] | None = None,
         cache_namespace: str = "scryraven",
+        timeout_seconds: float = 120,
     ) -> None:
         self.config = config or ModelConfig.from_environment()
         self.post = post or requests.post
         self.usage_observer = usage_observer
         self.cache_namespace = cache_namespace
+        self.timeout_seconds = timeout_seconds
 
     def __call__(
         self, stage: str, instructions: str, material: dict, schema: dict,
@@ -150,12 +152,15 @@ class OpenAIModel:
         token = os.getenv("OPENAI_API_KEY", "").strip()
         if not token:
             raise ModelError("model_configuration_missing")
-        role = self.config.smart if stage == "analyst" else self.config.fast
+        # Both surviving semantic contracts use the same configured transport.
+        # The legacy SMART configuration remains readable for environment/API
+        # compatibility, but no current semantic role selects it.
+        role = self.config.fast
         instructions += "\nReturn only JSON matching the response schema, with no Markdown or commentary."
         phase = material.get("phase", stage)
         # Only fixed transport labels reach telemetry, never arbitrary material.
-        safe_stage = stage if stage in {"research", "analyst", "author", "investigator"} else "other"
-        safe_phase = phase if phase in {"orientation", "navigation", "relevance", "analyst", "author", "investigator"} else "other"
+        safe_stage = stage if stage in {"research", "answer"} else "other"
+        safe_phase = phase if phase in {"research", "answer"} else "other"
         family = sha256(_json(["layout-v1", self.cache_namespace, role.model, role.reasoning,
                               stage, phase, instructions, schema]).encode("utf-8")).hexdigest()[:32]
         cache_family = f"sr-v1:{safe_stage}:{safe_phase}:{family}"
@@ -180,10 +185,12 @@ class OpenAIModel:
                 "https://api.openai.com/v1/responses",
                 headers={"Authorization": f"Bearer {token}"},
                 json=payload,
-                timeout=120,
+                timeout=self.timeout_seconds,
             )
             response.raise_for_status()
             data = response.json()
+        except requests.Timeout:
+            raise ModelError("model_request_timed_out") from None
         except requests.HTTPError as exc:
             status = exc.response.status_code if exc.response is not None else None
             code = {
