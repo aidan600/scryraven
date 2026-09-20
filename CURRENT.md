@@ -62,9 +62,26 @@ The accepted lineage was `codex/luna-capability-recursive-01b` at
 
 Supersession offline verification covers ordinary routing, retained follow-ups,
 backward-readable persistence, exact citations, CLI, Reading Room and failures.
-Ordinary live promotion validation is pending on this working branch; no live
-promotion claim is made yet. Detailed phase evidence belongs in
-`docs/operator/MAINLINE_SEMANTIC_SUPERSESSION_01.md` when completed.
+The full offline suite, Ruff, pre-commit and browser acceptance at 1440, 1920 and
+390 pixels passed. Five ordinary live submissions at
+`d544cef780186f63e08d29d390653e84fd279f05`, all Luna / medium, used 16 semantic
+attempts, eight external Searches and one local retained Read. JWST multi-need
+compatibility, the durable BIPM pair and a counted Passport Level-5 dependency
+transition passed. BIPM's reopened follow-up acquired nothing externally and
+preserved the first turn and all six acquired materials exactly.
+
+The Anker control preserved the central missing-premise restraint: it did not
+derive Wh from mAh and distinguished Anker's explicit 99.54 Wh specification.
+However, its final Answer and exactly captured cited material did not establish
+the voltage-dependent conversion rule required by the frozen Foundation 02
+rubric. This is not a full frozen-case PASS. Supersession validation is therefore
+**Inconclusive**, held for governor review; no semantic repair, rerun, push or PR
+was performed. Four of the nine permitted submissions remain unused. The
+implementation is a single promoted path, but completed promotion acceptance is
+not claimed. See `docs/operator/MAINLINE_SEMANTIC_SUPERSESSION_01.md` for the
+evidence and exact review decision. The new public observations are preserved in
+`C:\tmp\scryraven-mainline-semantic-supersession-01` and useful sanitized local
+evaluation candidates; prior frozen labels and packets remain unchanged.
 
 Aggregate/open-world sufficiency remains unresolved. Literal-reading and citation
 validation prove custody/membership, not semantic entailment. Very long-session
