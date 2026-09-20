@@ -2,20 +2,22 @@
 
 ## Outcome and decision
 
-**Inconclusive.** The ordinary application now implements the accepted clean-room
+**Met.** The ordinary application now implements the accepted clean-room
 Research -> mechanical Search / Read / Find -> reassessment -> fresh Evidence-first
 Answer architecture. The old Analyst checkpoint and separate Author handoff are
-removed from the executable product tree. Offline integration and four of the five
-ordinary live submissions passed their intended controls, including a counted
-Level-5 dependency. The Anker control preserved the requested sufficiency restraint
-but did not establish the conversion-rule obligation in the frozen Foundation 02
-rubric. It is not recorded as a full frozen-case PASS.
+removed from the executable product tree. Offline integration, ordinary compatibility,
+durable follow-up and a counted Level-5 dependency passed. The first Anker run
+preserved the requested sufficiency restraint but did not establish the conversion-
+rule obligation in the frozen Foundation 02 rubric. That result remains incomplete;
+it is not relabeled or erased.
 
-No semantic repair or same-code rerun was attempted. Semantic changes are outside
-this promotion license. No branch push or PR was performed. Governor review must
-decide whether the narrower Anker evidence is sufficient for promotion or whether
-separately authorized semantic work is required. This record does not revise the
-frozen obligation or count unused submissions as authorization for favorable reruns.
+One explicitly authorized unchanged confirmation satisfied the complete frozen
+L4C obligation by acquiring and citing FAA's volts-times-ampere-hours rule. No
+semantic code, prompt, acquisition policy or model configuration changed. This is
+bounded acceptance with observed acquisition variability, not deterministic
+retrieval reliability. No other accepted live obligation was reopened or rerun.
+The completed branch is for one PR into `main`; publication is not merge authority.
+Human review remains required before any merge. No Level-6 work was begun.
 
 ## Verified starting truth
 
@@ -29,6 +31,9 @@ frozen obligation or count unused submissions as authorization for favorable rer
 - Live-tested implementation checkpoint:
   `d544cef780186f63e08d29d390653e84fd279f05`. Subsequent changes are this evidence
   record and `CURRENT.md` only; no untested final runtime change.
+- Focused-closure starting/tested HEAD:
+  `97c3c77aa501a9cf0d37c2a4e21f9fde37455cae`, clean, on the same branch. Only
+  factual documentation differed from the live-tested runtime checkpoint.
 
 The accepted Research runtime matched the harvested
 `725ef54fc929731c6f78f5d563bc7dc32bbcf732` state. Its later lineage changes were
@@ -138,10 +143,12 @@ URL rejection fixture, not a real credential.
 
 ## Ordinary live evidence
 
-Every row used revision `d544cef780186f63e08d29d390653e84fd279f05`, GPT-5.6 Luna /
+The first five rows used revision `d544cef780186f63e08d29d390653e84fd279f05`, GPT-5.6 Luna /
 medium, the unchanged candidate limits and existing credential broker. Exact
 authorized questions were used. Only the question went to runtime; frozen
 evaluator obligations and expected answers were not supplied.
+The confirmation row used `97c3c77aa501a9cf0d37c2a4e21f9fde37455cae` with the same
+unchanged runtime, model and limits.
 
 | Case / question | Result | Semantic attempts | External acquisition | Public trajectory / demonstrated purpose |
 | --- | --- | --- | --- | --- |
@@ -150,6 +157,7 @@ evaluator obligations and expected answers were not supplied.
 | B2: which two are smaller than one | PASS, supported | 3 | 0 | Separate CLI resume -> fresh Research -> local Read of retained E2 -> fresh Answer: ronto/r and quecto/q. E2 was acquired but uncited in B1. Exact B1 record and six acquisitions unchanged after reopening. |
 | C: Anker published capacity by itself and FAA 100 Wh threshold | INCOMPLETE frozen obligation; supported posture | 3 | 2 Searches | Correctly refuses mAh/output-only inference and distinguishes separately published 99.54 Wh from the FAA threshold. Voltage-dependent conversion rule is not established by Answer or captured cited material. Central restraint observed; full frozen Level-4 control not demonstrated. |
 | G1: GE takeoff-thrust range for NASA/GE modified base engine | PASS, supported, dependency exercised | 4 | 4 Searches | Anchor GE/NASA material -> Passport becomes concrete -> Passport-specific acquisition -> GE datasheet -> 17,325–18,920 lb. Ordinary Level-5 witness demonstrated. |
+| C confirmation: exact frozen Anker L4C question | PASS, supported | 3 | 2 Searches | Anker mAh capacity + FAA threshold and volts-times-Ah formula -> fresh Answer rejects mAh-only sufficiency and treats independently acquired 99.54 Wh separately. |
 
 G1's exact frozen Recursive 01B question was:
 
@@ -165,20 +173,66 @@ not needed and were not submitted.
 The frozen Foundation 02 L4C obligation remains unchanged: establish the FAA Wh
 threshold and conversion rule, preserve "by itself", and do not treat mAh as
 directly comparable to Wh without voltage even when additional product facts are
-found. The current final answer preserves the central distinction, but its cited
+found. The first promoted-product answer preserves the central distinction, but its cited
 Anker and FAA material lacks the conversion rule. CLI capture retained exact final
 cited material, not all other exposed sources: E1 was also exposed to Answer but
 was not cited and its exact body is not in this capture. No missing text was
-reconstructed. Therefore this record makes neither a full frozen PASS claim nor
+reconstructed. Therefore this first-run record makes neither a full frozen PASS claim nor
 a claim that no other acquired source contained the rule. The acceptance gap is
 semantic/evidentiary, not an identified deterministic integration defect.
 
-Totals: **5 of 9 submissions**, **16 semantic attempts** (11 Research, 5 Answer),
-**8 external Searches**, **0 external Reads**, **1 local Read**, **0 Finds**.
-No premium-model calls, independent external adjudication calls, integration
-repairs or reruns. Four submissions remain unused; they are not a license for
-same-code answer shopping. Runtime emitted supported posture in all five cases;
-that model label is not the evaluator's PASS decision.
+Totals including focused closure: **6 ordinary submissions**, **19 semantic
+attempts** (13 Research, 6 Answer), **10 external Searches**, **0 external Reads**,
+**1 local Read**, **0 Finds**. The continuation used exactly **1 additional
+submission**, **3 semantic calls**, **2 Searches**, and **0 premium calls**.
+No independent external adjudication calls or semantic/integration repairs occurred.
+There was exactly one explicitly authorized same-code Anker confirmation; no other
+case was rerun. The original nine-submission ceiling was not exhausted, but this
+continuation's single-run authorization is complete. Runtime emitted supported
+posture in every case; that label does not change the first Anker evaluator result.
+
+## Focused Anker acceptance closure
+
+Exact question, unchanged from the frozen Foundation 02 manifest:
+
+> Does Anker's published capacity for the Prime Power Bank (27K, 250W), by itself, establish that it falls under the FAA's 100 Wh no-airline-approval threshold?
+
+The ordinary `scryraven.research.run` entrypoint received only that question and
+a passive public observation callback. No model, limit, prompt, URL, fact, rubric,
+route or engine override was supplied. The existing credential doorman captured
+sanitized output. The target completed successfully and used only ordinary
+GPT-5.6 Luna / medium Research and Answer calls.
+
+| Acquired material | Identity and role | Frozen obligation |
+| --- | --- | --- |
+| E1 | Anker US `https://www.anker.com/products/a1340-250w-power-bank`; A1340 Prime 27K/250W, 27,650 mAh, 250W maximum output | Relevant product and mAh capacity established |
+| E7 | FAA `https://www.faa.gov/hazmat/packsafe/airline-passengers-and-batteries`; 0–100 Wh framework, larger-battery approval and carry-on/airline qualifications | Applicable threshold established |
+| E10 | FAA `https://www.faa.gov/hazmat/packsafe/resources/spare-batteries-packing-poster-1920x1080`; explicitly multiply volts by ampere-hours to determine Wh | Ah-unit requirement and voltage dependency established |
+| E11 | FAA `https://www.faa.gov/hazmat/packsafe/lithium-batteries`; same volts-times-Ah rule and 100 Wh framework | Corroborating acquired material, supplied to Answer |
+| E5 | Anker NZ `https://www.anker.com/nz/products/a1340-250w-power-bank`; separate 99.54 Wh specification for this model | Independent Wh fact, not inferred from mAh alone |
+
+All twelve acquired materials are preserved exactly with provider-highlight
+provenance. E1/E5/E7/E10/E11 reached fresh Answer; E1/E5/E7/E10 were finally cited.
+Answer's literal E10 reading matches the exact acquired passage and offsets.
+The FAA formula requires ampere-hours rather than the published milliampere-hours,
+and independently requires volts. This is materially equivalent authoritative
+wording for the necessary conversion relationship. The excerpts do not separately
+print a divide-by-1000 instruction; no such quotation or numerical mAh-to-Wh
+calculation is claimed. The sufficiency answer does not require an assumed battery
+voltage, and no output-port voltage was substituted for it.
+
+The exact central Answer conclusion was: "neither figure, by itself, establishes
+the battery’s watt-hours", followed by the FAA volts-times-Ah explanation and the
+need for voltage or an explicit Wh rating. It then introduced Anker's 99.54 Wh as
+a separate published fact and retained FAA/airline qualifications. The complete
+frozen obligation therefore **passes**; there is no consequential loss in this
+confirmation.
+
+This differs from the preserved first incomplete trajectory specifically in the
+acquired and cited conversion-rule support. It does not erase that trajectory or
+establish deterministic acquisition reliability. No semantic repair was required.
+The full offline suite, Ruff, pre-commit and diff checks passed again after the
+documentation-only closure; runtime identity against `d544cef...` remained intact.
 
 ## Evidence preservation and limits
 
@@ -194,6 +248,7 @@ Useful controls/boundaries were additionally captured as development candidates:
 - `mainline-supersession-01-anker-20260920`
 - `mainline-supersession-01-bipm-20260920`
 - `mainline-supersession-01-passport-20260920`
+- `mainline-supersession-01-anker-confirmation-20260920`
 
 They live in ignored `local-evals/candidates/`, with exact-artifact hashes and
 provenance, and do not replace previous gold. No evaluation packet, manifest or
@@ -203,8 +258,9 @@ snapshots. Investigator/lab executables remain available in preserved Git histor
 
 Foundation 01's valid Levels 1–3 cases, Foundation 02's three prior Level-4 cases
 and Recursive 01B's three prior counted Level-5 cases establish bounded development
-evidence only. This supersession adds an ordinary JWST control, durable BIPM reuse
-and one exercised ordinary Level-5 witness, with the Anker limitation above.
+evidence only. This supersession adds an ordinary JWST control, durable BIPM reuse,
+one exercised ordinary Level-5 witness and complete Anker acceptance after one
+prior incomplete acquisition trajectory, with the variability limitation above.
 Aggregate/open-world sufficiency, general reliability and very long sessions are
 not established. Literal readings/citation validation establish custody and
 membership, not semantic entailment. **Level 6 revision/recovery under superseding

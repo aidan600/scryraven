@@ -63,23 +63,29 @@ The accepted lineage was `codex/luna-capability-recursive-01b` at
 Supersession offline verification covers ordinary routing, retained follow-ups,
 backward-readable persistence, exact citations, CLI, Reading Room and failures.
 The full offline suite, Ruff, pre-commit and browser acceptance at 1440, 1920 and
-390 pixels passed. Five ordinary live submissions at
-`d544cef780186f63e08d29d390653e84fd279f05`, all Luna / medium, used 16 semantic
-attempts, eight external Searches and one local retained Read. JWST multi-need
-compatibility, the durable BIPM pair and a counted Passport Level-5 dependency
-transition passed. BIPM's reopened follow-up acquired nothing externally and
-preserved the first turn and all six acquired materials exactly.
+390 pixels passed. Mainline Semantic Supersession 01 acceptance is **Met**.
+Six ordinary live submissions, all Luna / medium, used 19 semantic attempts,
+ten external Searches and one local retained Read. The initial five ran at
+`d544cef780186f63e08d29d390653e84fd279f05`; the single authorized Anker confirmation
+ran at `97c3c77aa501a9cf0d37c2a4e21f9fde37455cae` with identical runtime code and
+prompts. JWST multi-need compatibility, the durable BIPM pair and a counted
+Passport Level-5 dependency transition passed. BIPM's reopened follow-up acquired
+nothing externally and preserved the first turn and all six acquired materials
+exactly. Those accepted obligations were not rerun for closure.
 
-The Anker control preserved the central missing-premise restraint: it did not
+The first Anker control preserved the central missing-premise restraint: it did not
 derive Wh from mAh and distinguished Anker's explicit 99.54 Wh specification.
 However, its final Answer and exactly captured cited material did not establish
 the voltage-dependent conversion rule required by the frozen Foundation 02
-rubric. This is not a full frozen-case PASS. Supersession validation is therefore
-**Inconclusive**, held for governor review; no semantic repair, rerun, push or PR
-was performed. Four of the nine permitted submissions remain unused. The
-implementation is a single promoted path, but completed promotion acceptance is
-not claimed. See `docs/operator/MAINLINE_SEMANTIC_SUPERSESSION_01.md` for the
-evidence and exact review decision. The new public observations are preserved in
+rubric. That first trajectory remains incomplete and preserved. The one unchanged
+confirmation acquired and cited FAA's volts-times-ampere-hours rule, establishing
+the required Ah unit and voltage dependency, and again treated Anker's independent
+99.54 Wh specification separately. It satisfies the complete frozen L4C obligation
+without a semantic code, prompt, provider-policy or model-policy repair. The two
+trajectories demonstrate bounded acquisition variability, not deterministic
+retrieval reliability. No other live rerun or Level-6 work occurred.
+See `docs/operator/MAINLINE_SEMANTIC_SUPERSESSION_01.md` for the evidence and
+review bundle. Both public observations are preserved in
 `C:\tmp\scryraven-mainline-semantic-supersession-01` and useful sanitized local
 evaluation candidates; prior frozen labels and packets remain unchanged.
 
