@@ -7,8 +7,10 @@ bounded demonstrations and remaining limitations.
 
 ## Two semantic contracts
 
-`scryraven.research` has two semantic model contracts, both using GPT-5.6 Luna with
-medium reasoning. Exa supplies Search; LinkUp static Fetch supplies ordinary
+`scryraven.research` has two semantic model contracts: Research uses GPT-6 Luna
+with high reasoning, and Answer uses GPT-6 Sol with medium reasoning. These are
+fixed assignments to the existing contracts, with no model routing or escalation.
+Exa supplies Search; LinkUp static Fetch supplies ordinary
 external known-URL Read. There is no Read fallback, provider router, model router,
 premium escalation, Scout, specialist hierarchy, verifier, or prose polisher.
 

@@ -77,7 +77,8 @@ revises a compact working understanding, chooses acquisition, and proposes stopp
 A mechanical executor performs Search, Read and local Find. A fresh source-first
 Answer call independently determines what the supplied sources justify. These are
 two semantic contracts; no verifier, Scout, specialist hierarchy or model router is
-part of this design. The runtime default is GPT-5.6 Luna / medium with Exa.
+part of this design. Current fixed model assignments are recorded in `CURRENT.md`;
+Exa supplies Search.
 
 Actual Evidence remains immutable and locally rereadable. Generated understanding,
 past answers and candidate hypotheses are not Evidence. Currentness means applicable

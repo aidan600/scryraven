@@ -233,11 +233,12 @@ The bounded production restart observation and its limits are recorded in
 
 The process needs `OPENAI_API_KEY` and `EXA_API_KEY`; external Read additionally
 needs `LINKUP_API_KEY` when invoked. It does not load `.env`.
-Ordinary research explicitly configures both semantic contracts as GPT-5.6 Luna /
-medium, preserving the demonstrated candidate policy. The transport retains its
-existing `ModelConfig` and `SCRYRAVEN_FAST_*` / `SCRYRAVEN_SMART_*` environment
-interface for direct callers; SMART no longer selects an ordinary semantic role.
-There is no automatic premium escalation or model fallback. One stateless OpenAI
+The fixed ordinary assignments are GPT-6 Luna / high for Research and GPT-6 Sol /
+medium for Answer. The transport retains its existing `ModelConfig` and
+`SCRYRAVEN_FAST_*` / `SCRYRAVEN_SMART_*` environment interface: FAST is the
+compatibility role for Research, and SMART is the compatibility role for Answer.
+Explicit configuration overrides the defaults. There is no model router,
+automatic premium escalation or model fallback. One stateless OpenAI
 Responses transport uses structured output; no model has built-in web tools.
 
 ## Acquisition and evidence

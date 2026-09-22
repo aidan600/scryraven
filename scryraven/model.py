@@ -20,8 +20,8 @@ class ModelRole:
 
 @dataclass(frozen=True)
 class ModelConfig:
-    fast: ModelRole = ModelRole("gpt-5.6-luna", "medium")
-    smart: ModelRole = ModelRole("gpt-5.6-luna", "medium")
+    fast: ModelRole = ModelRole("gpt-6-luna", "high")
+    smart: ModelRole = ModelRole("gpt-6-sol", "medium")
 
     @classmethod
     def from_environment(cls) -> ModelConfig:
@@ -152,10 +152,8 @@ class OpenAIModel:
         token = os.getenv("OPENAI_API_KEY", "").strip()
         if not token:
             raise ModelError("model_configuration_missing")
-        # Both surviving semantic contracts use the same configured transport.
-        # The legacy SMART configuration remains readable for environment/API
-        # compatibility, but no current semantic role selects it.
-        role = self.config.fast
+        # FAST and SMART are compatibility names for Research and Answer.
+        role = self.config.smart if stage == "answer" else self.config.fast
         instructions += "\nReturn only JSON matching the response schema, with no Markdown or commentary."
         phase = material.get("phase", stage)
         # Only fixed transport labels reach telemetry, never arbitrary material.
