@@ -10,6 +10,8 @@ from urllib.parse import urlsplit
 
 import requests
 
+from core.transport import FetchedMaterial
+
 EXA_SEARCH_URL = "https://api.exa.ai/search"
 EXA_CONTENTS_URL = "https://api.exa.ai/contents"
 EXA_API_KEY_ENV = "EXA_API_KEY"  # pragma: allowlist secret
@@ -30,12 +32,6 @@ class DiscoveryCandidate:
     context: str
     context_omitted_characters: int = 0
     context_kind: str = "navigation"
-
-
-@dataclass(frozen=True, slots=True)
-class FetchedMaterial:
-    requested_url: str
-    readable_text: str
 
 
 def search_exa(

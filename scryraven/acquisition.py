@@ -12,7 +12,9 @@ from dataclasses import asdict
 from html import unescape
 from urllib.parse import quote, urljoin, urlsplit
 
-from core.exa_transport import DiscoveryCandidate, FetchedMaterial, fetch_exa, search_exa
+from core.exa_transport import DiscoveryCandidate, search_exa
+from core.linkup_transport import fetch_linkup
+from core.transport import FetchedMaterial
 from scryraven.sources import TARGETED_SOURCE_CHARACTERS, Evidence, SourceIndex, exact_view
 
 FIND_RESULT_LIMIT = 8
@@ -90,7 +92,7 @@ class AcquisitionLibrary:
     def __init__(
         self, retained_acquisitions: Iterable[Evidence] = (), *,
         search: Callable[..., list[DiscoveryCandidate]] = search_exa,
-        fetch: Callable[..., FetchedMaterial] = fetch_exa,
+        fetch: Callable[..., FetchedMaterial] = fetch_linkup,
     ) -> None:
         self.search, self.fetch = search, fetch
         self.acquisitions = list(retained_acquisitions)

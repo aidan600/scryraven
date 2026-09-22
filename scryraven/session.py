@@ -6,7 +6,9 @@ from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass
 
-from core.exa_transport import DiscoveryCandidate, FetchedMaterial, fetch_exa, search_exa
+from core.exa_transport import DiscoveryCandidate, search_exa
+from core.linkup_transport import fetch_linkup
+from core.transport import FetchedMaterial
 from scryraven.research import RunLimits, _run_turn
 from scryraven.results import CompletedAnswer
 from scryraven.session_store import (
@@ -38,7 +40,7 @@ class ResearchSession:
     def __init__(
         self, *, model: Callable | None = None,
         search: Callable[..., list[DiscoveryCandidate]] = search_exa,
-        fetch: Callable[[str], FetchedMaterial] = fetch_exa,
+        fetch: Callable[[str], FetchedMaterial] = fetch_linkup,
         limits: RunLimits = RunLimits(),
         engine: Callable[..., CompletedAnswer] | None = None,
         observe: Callable[[dict], None] | None = None,

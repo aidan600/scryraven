@@ -2,7 +2,7 @@
 
 ## Ordinary product architecture
 
-The production candidate supersedes Research -> Analyst -> Author with the
+The ordinary product supersedes Research -> Analyst -> Author with the
 accepted clean-room Research semantic loop -> mechanical Search / Read / Find ->
 Research reassessment -> fresh Evidence-first Answer. `scryraven.research.run`,
 `ResearchSession.ask`, the CLI and Reading Room share this single path. There is
@@ -14,10 +14,12 @@ Evidence. Answer independently reads selected actual source material and decides
 what the current/original request justifies. The demonstrated prompts, structured
 contracts and acquisition/stopping semantics are preserved.
 
-Ordinary runtime remains GPT-5.6 Luna / medium with the existing Exa Search and
-Contents policy. Limits remain 12 semantic attempts, 16 external attempts,
-120 seconds and 128,000 characters of current attention. No model router, premium
-escalation, semantic verifier or additional semantic owner exists.
+Ordinary runtime remains GPT-5.6 Luna / medium. Exa supplies Search and LinkUp
+static Fetch supplies external known-URL Read when Research selects one. Exa
+Contents has no ordinary Read authority; there is no Read fallback or provider
+router. Limits remain 12 semantic attempts, 16 external attempts, 120 seconds
+and 128,000 characters of current attention. No model router, premium escalation,
+semantic verifier or additional semantic owner exists.
 
 ## Sessions, Evidence and presentation
 
@@ -42,6 +44,14 @@ has no ordinary semantic role. Ordinary model configuration is explicitly Luna /
 medium for both surviving contracts.
 
 ## Bounded evidence and limits
+
+The LinkUp primary Read change is supported by bounded known-URL evidence: 4/4
+rescues of demonstrated Exa Read problems, 8/8 task-sufficient ordinary controls
+with no observed material control regression, corrected integrated validation at
+3/3, and three supported source-bound product canaries. A no-URL control answered
+from acquired Exa Search highlights without an unnecessary Read; deterministic
+tests establish the Exa Search / LinkUp external Read composition. These results
+do not establish universal provider superiority or general product reliability.
 
 Foundation 01 established four valid frozen Levels 1–3 cases; its NPS comparison
 was excluded for evaluator/source ambiguity. Foundation 02 established three

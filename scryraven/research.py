@@ -15,7 +15,8 @@ from typing import Annotated, Callable, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from core.exa_transport import fetch_exa, search_exa
+from core.exa_transport import search_exa
+from core.linkup_transport import fetch_linkup
 from scryraven.acquisition import AcquisitionLibrary
 from scryraven.errors import RunError
 from scryraven.model import ModelConfig, ModelError, ModelRole, OpenAIModel
@@ -238,7 +239,7 @@ def run(question: str, **kwargs) -> CompletedAnswer:
 
 
 def _run_turn(
-    question: str, *, model=None, search=search_exa, fetch=fetch_exa,
+    question: str, *, model=None, search=search_exa, fetch=fetch_linkup,
     limits: RunLimits | None = None, retained_acquisitions=(), context=None,
     session_turn: int = 1, observe: Callable[[dict], None] | None = None,
     clock: Callable[[], float] = time.monotonic,
@@ -254,7 +255,7 @@ def _run_turn(
     # All real transport requests obey the remaining run deadline. Injected offline
     # transports retain their ordinary signatures and never require credentials.
     search_call = (lambda query: search(query, timeout_seconds=budget.remaining_seconds)) if search is search_exa else search
-    fetch_call = (lambda url: fetch(url, timeout_seconds=budget.remaining_seconds)) if fetch is fetch_exa else fetch
+    fetch_call = (lambda url: fetch(url, timeout_seconds=budget.remaining_seconds)) if fetch is fetch_linkup else fetch
     library = AcquisitionLibrary(retained_acquisitions=retained_acquisitions, search=search_call, fetch=fetch_call)
     library.allow_question_urls(question)
     trace: list[dict] = []

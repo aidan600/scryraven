@@ -21,20 +21,23 @@ python -m pip install -r requirements.txt -r requirements-dev.txt
 ```
 
 Research requires `OPENAI_API_KEY` and `EXA_API_KEY` in the process environment.
-ScryRaven does **not** load `.env`. With those variables already supplied:
+External known-URL Read additionally requires `LINKUP_API_KEY` when invoked.
+ScryRaven does **not** load `.env`. With those variables supplied:
 
 ```powershell
 python -m scryraven "What is the maximum allowed weight of a ten-pin bowling ball?"
 ```
 
-The ordinary runtime is GPT-5.6 Luna / medium with Exa. There is no architecture
-selector, Analyst checkpoint, separate old Author handoff or fallback engine.
+The ordinary runtime uses GPT-5.6 Luna / medium, Exa Search, and LinkUp Fetch for
+external known-URL Read. There is no architecture selector, Analyst checkpoint,
+separate old Author handoff or fallback engine.
 See [research architecture](docs/architecture/RESEARCH.md) for the promoted contract.
 
 ## Reading Room
 
-**Direct launch:** from the repository root and activated environment above, when
-`OPENAI_API_KEY` and `EXA_API_KEY` are already in the process environment:
+**Direct launch:** from the repository root and activated environment above, with
+`OPENAI_API_KEY` and `EXA_API_KEY` in the process environment and `LINKUP_API_KEY`
+available for external Read:
 
 ```powershell
 python -m scryraven.reading_room
@@ -228,7 +231,8 @@ The bounded production restart observation and its limits are recorded in
 
 ## Model configuration
 
-The process needs `OPENAI_API_KEY` and `EXA_API_KEY`; it does not load `.env`.
+The process needs `OPENAI_API_KEY` and `EXA_API_KEY`; external Read additionally
+needs `LINKUP_API_KEY` when invoked. It does not load `.env`.
 Ordinary research explicitly configures both semantic contracts as GPT-5.6 Luna /
 medium, preserving the demonstrated candidate policy. The transport retains its
 existing `ModelConfig` and `SCRYRAVEN_FAST_*` / `SCRYRAVEN_SMART_*` environment
@@ -239,8 +243,8 @@ Responses transport uses structured output; no model has built-in web tools.
 ## Acquisition and evidence
 
 Exa Search remains `auto`, six results, query-guided highlights up to 4,000
-characters per result. Exa Contents acquires text with `verbosity: full` and
-`maxAgeHours: 0`. Generated provider summaries and answers are excluded. Metadata
+characters per result. LinkUp Fetch acquires ordinary known-URL readable source
+material. Generated provider summaries and answers are excluded. Metadata
 guides navigation; actual highlights can support only what their text establishes.
 Missing conditions, identity, applicability or connected context can require a Read.
 

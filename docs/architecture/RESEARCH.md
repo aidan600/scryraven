@@ -8,7 +8,8 @@ bounded demonstrations and remaining limitations.
 ## Two semantic contracts
 
 `scryraven.research` has two semantic model contracts, both using GPT-5.6 Luna with
-medium reasoning. Exa supplies external acquisition. There is no model router,
+medium reasoning. Exa supplies Search; LinkUp static Fetch supplies ordinary
+external known-URL Read. There is no Read fallback, provider router, model router,
 premium escalation, Scout, specialist hierarchy, verifier, or prose polisher.
 
 **Research** owns interpretation of the original question and supplied actual
@@ -60,10 +61,10 @@ answer; there is no subsequent verifier or prose-polishing model.
 `scryraven.acquisition.AcquisitionLibrary` retains immutable actual
 `Evidence` and supplies an inspectable catalog. Search admits source-derived Exa
 highlights mechanically; navigation-only metadata is not admitted as source text.
-Read can acquire a full source, reuse actual retained material, or construct an
-exact view. Find locates lexical matches in the retained library, including
-highlights, without provider I/O. A failed search or local match says nothing
-about factual nonexistence.
+External Read retains LinkUp's readable source representation as fetched Evidence;
+local Read reuses actual retained material or constructs an exact view. Find locates
+lexical matches in retained material, including highlights, without provider I/O.
+A failed search or local match says nothing about factual nonexistence.
 
 Read's target and mode have explicit mechanical meaning:
 
