@@ -96,7 +96,9 @@ def test_retained_sequence_uses_one_session_and_only_questions_enter_runtime(mon
     manifest, digest = campaign.load_manifest()
     assert observed.questions == [item["question"] for item in manifest["cases"][:2]]
     assert len(observed.sessions) == 1
-    assert observed.models == [ModelConfig()]
+    assert observed.models == [ModelConfig(
+        ModelRole("gpt-5.6-luna", "medium"), ModelRole("gpt-5.6-luna", "medium"),
+    )]
     rows = output(capsys)
     assert rows[0]["manifest_sha256"] == digest
     assert rows[0]["configuration"]["limits"] == {

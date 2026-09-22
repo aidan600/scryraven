@@ -14,12 +14,14 @@ Evidence. Answer independently reads selected actual source material and decides
 what the current/original request justifies. The demonstrated prompts, structured
 contracts and acquisition/stopping semantics are preserved.
 
-Ordinary runtime remains GPT-5.6 Luna / medium. Exa supplies Search and LinkUp
+Ordinary Research uses GPT-6 Luna / high and Answer uses GPT-6 Sol / medium.
+This is a fixed assignment by semantic stage, not a model router; there is no
+automatic premium escalation or model fallback. Exa supplies Search and LinkUp
 static Fetch supplies external known-URL Read when Research selects one. Exa
 Contents has no ordinary Read authority; there is no Read fallback or provider
 router. Limits remain 12 semantic attempts, 16 external attempts, 120 seconds
-and 128,000 characters of current attention. No model router, premium escalation,
-semantic verifier or additional semantic owner exists.
+and 128,000 characters of current attention. No semantic verifier or additional
+semantic owner exists.
 
 ## Sessions, Evidence and presentation
 
@@ -39,11 +41,19 @@ The synthetic pre-supersession fixture exercises mixed historical/native session
 Reading Room and CLI use the same session application and store. The existing
 safe Markdown/source renderer, browser security, local assets, transport,
 credential doorman and exact-content prompt-cache mechanics remain in place.
-The legacy SMART transport configuration remains readable for compatibility but
-has no ordinary semantic role. Ordinary model configuration is explicitly Luna /
-medium for both surviving contracts.
+The legacy FAST and SMART transport configuration names remain readable for
+compatibility: FAST configures Research and SMART configures Answer. Explicit
+`ModelConfig` and environment overrides still apply.
 
 ## Bounded evidence and limits
+
+On the frozen Answer screen, GPT-6 Sol / medium produced 12/12 acceptable draws.
+In the ordinary product-path Research screen with that Answer role fixed, GPT-6
+Luna / high met every exercised Research obligation. The Elytra post-Evidence
+dependency redirect was unexercised because both relevant sources arrived in the
+initial Search batch, so the registered 6/6 screen was formally inconclusive.
+No material Luna / high Research-layer failure was demonstrated. These bounded
+observations do not establish universal reliability.
 
 The LinkUp primary Read change is supported by bounded known-URL evidence: 4/4
 rescues of demonstrated Exa Read problems, 8/8 task-sufficient ordinary controls

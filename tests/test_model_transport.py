@@ -21,17 +21,17 @@ class Response:
         return self.data
 
 
-def test_luna_defaults_preserve_independent_role_overrides(monkeypatch):
+def test_split_defaults_preserve_independent_environment_overrides(monkeypatch):
     for role in ("FAST", "SMART"):
         for field in ("MODEL", "REASONING"):
             monkeypatch.delenv(f"SCRYRAVEN_{role}_{field}", raising=False)
-    expected = ModelRole("gpt-5.6-luna", "medium")
-    assert ModelConfig() == ModelConfig(expected, expected)
-    assert ModelConfig.from_environment() == ModelConfig(expected, expected)
+    expected = ModelConfig(ModelRole("gpt-6-luna", "high"), ModelRole("gpt-6-sol", "medium"))
+    assert ModelConfig() == expected
+    assert ModelConfig.from_environment() == expected
     monkeypatch.setenv("SCRYRAVEN_FAST_MODEL", "configured-fast")
     monkeypatch.setenv("SCRYRAVEN_SMART_REASONING", "high")
     assert ModelConfig.from_environment() == ModelConfig(
-        ModelRole("configured-fast", "medium"), ModelRole("gpt-5.6-luna", "high"),
+        ModelRole("configured-fast", "high"), ModelRole("gpt-6-sol", "high"),
     )
 
 
@@ -54,7 +54,7 @@ def test_roles_structured_request_and_final_message_only(monkeypatch, phase):
     schema = {"type": "object", "additionalProperties": False, "properties": {}, "required": []}
     for stage in ("research", "answer"):
         assert model(stage, "instructions", {"question": "test"}, schema) == '{"answer":"ok"}'
-    assert [call[1]["json"]["model"] for call in calls] == [config.fast.model, config.fast.model]
+    assert [call[1]["json"]["model"] for call in calls] == [config.fast.model, config.smart.model]
     for url, kwargs in calls:
         assert url == "https://api.openai.com/v1/responses"
         payload = kwargs["json"]
@@ -67,6 +67,28 @@ def test_roles_structured_request_and_final_message_only(monkeypatch, phase):
             assert "reasoning" not in payload
         else:
             assert payload["reasoning"] == {"effort": config.smart.reasoning}
+
+
+def test_environment_overrides_reach_their_stages(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "offline-test-value")
+    monkeypatch.setenv("SCRYRAVEN_FAST_MODEL", "configured-research")
+    monkeypatch.setenv("SCRYRAVEN_FAST_REASONING", "low")
+    monkeypatch.setenv("SCRYRAVEN_SMART_MODEL", "configured-answer")
+    monkeypatch.setenv("SCRYRAVEN_SMART_REASONING", "high")
+    calls = []
+
+    def post(_url, **kwargs):
+        calls.append(kwargs["json"])
+        return Response({"status": "completed", "output": [
+            {"type": "message", "content": [{"type": "output_text", "text": "{}"}]},
+        ]})
+
+    model = OpenAIModel(post=post)
+    model("research", "prompt", {}, {})
+    model("answer", "prompt", {}, {})
+    assert [(call["model"], call["reasoning"]["effort"]) for call in calls] == [
+        ("configured-research", "low"), ("configured-answer", "high"),
+    ]
 
 
 @pytest.mark.parametrize("data,code", [

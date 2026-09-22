@@ -19,7 +19,7 @@ from core.exa_transport import search_exa
 from core.linkup_transport import fetch_linkup
 from scryraven.acquisition import AcquisitionLibrary
 from scryraven.errors import RunError
-from scryraven.model import ModelConfig, ModelError, ModelRole, OpenAIModel
+from scryraven.model import ModelError, OpenAIModel
 from scryraven.results import CompletedAnswer, resolve_citations
 
 # Preserve enough of a bounded run for a source-first terminal Answer. This is
@@ -250,8 +250,7 @@ def _run_turn(
     if not isinstance(limits, RunLimits):
         raise ValueError("research_requires_run_limits")
     budget = _Budget(limits, clock)
-    role = ModelRole("gpt-5.6-luna", "medium")
-    model = model or OpenAIModel(ModelConfig(role, role), cache_namespace="scryraven")
+    model = model or OpenAIModel(cache_namespace="scryraven")
     # All real transport requests obey the remaining run deadline. Injected offline
     # transports retain their ordinary signatures and never require credentials.
     search_call = (lambda query: search(query, timeout_seconds=budget.remaining_seconds)) if search is search_exa else search
