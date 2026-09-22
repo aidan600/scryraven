@@ -67,6 +67,15 @@ from acquired Exa Search highlights without an unnecessary Read; deterministic
 tests establish the Exa Search / LinkUp external Read composition. These results
 do not establish universal provider superiority or general product reliability.
 
+The Research-selectable Serper lane completed one ordinary St. Dorothy's Rest
+observation at `884c69a917aa19528574da42fdae2a8b85ba86b1`: Research chose
+three lexical searches among seven Exa searches, then used two LinkUp Reads.
+The Serper-discovered official Instagram post was fetched through LinkUp and
+cited for the director selection. The final supported answer used that fetched
+post and acquired Exa highlights for qualifications. The run used seven semantic
+attempts and 12 external attempts. This shows one successful source-class route,
+not general semantic-selection reliability or Level-7 synthesis.
+
 Foundation 01 established four valid frozen Levels 1–3 cases; its NPS comparison
 was excluded for evaluator/source ambiguity. Foundation 02 established three
 frozen Level-4 bounded synthesis cases, including Anker missing-premise restraint.
