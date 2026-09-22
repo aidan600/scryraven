@@ -14,6 +14,7 @@ from urllib.parse import quote, urljoin, urlsplit
 
 from core.exa_transport import DiscoveryCandidate, search_exa
 from core.linkup_transport import fetch_linkup
+from core.serper_transport import search_serper
 from core.transport import FetchedMaterial
 from scryraven.sources import TARGETED_SOURCE_CHARACTERS, Evidence, SourceIndex, exact_view
 
@@ -92,9 +93,10 @@ class AcquisitionLibrary:
     def __init__(
         self, retained_acquisitions: Iterable[Evidence] = (), *,
         search: Callable[..., list[DiscoveryCandidate]] = search_exa,
+        lexical_search: Callable[..., list[DiscoveryCandidate]] = search_serper,
         fetch: Callable[..., FetchedMaterial] = fetch_linkup,
     ) -> None:
-        self.search, self.fetch = search, fetch
+        self.search, self.lexical_search, self.fetch = search, lexical_search, fetch
         self.acquisitions = list(retained_acquisitions)
         self.materials: dict[str, Evidence] = {}
         self.exposed: set[str] = set()
@@ -111,7 +113,7 @@ class AcquisitionLibrary:
             self.materials[item.id] = item
             self._candidate(item.url, item.title)
 
-    def _candidate(self, url: str, title: str = "") -> str:
+    def _candidate(self, url: str, title: str = "", context: str = "") -> str:
         if not _public_url(url):
             raise AcquisitionError("invalid_public_url")
         if url not in self._candidate_ids:
@@ -121,6 +123,8 @@ class AcquisitionLibrary:
         ref = self._candidate_ids[url]
         if title and not self.candidates[ref]["title"]:
             self.candidates[ref]["title"] = title
+        if context and "context" not in self.candidates[ref]:
+            self.candidates[ref]["context"] = context
         return ref
 
     def allow_question_urls(self, question: str) -> None:
@@ -243,7 +247,7 @@ class AcquisitionLibrary:
         if not isinstance(request, dict):
             raise AcquisitionError("invalid_request")
         kind = request.get("kind")
-        if not isinstance(kind, str) or kind not in {"search", "read", "find"}:
+        if not isinstance(kind, str) or kind not in {"search", "search_lexical", "read", "find"}:
             raise AcquisitionError("invalid_request_kind")
         result = {"kind": kind}
         for key in ("query", "target", "focus"):
@@ -266,7 +270,7 @@ class AcquisitionLibrary:
         start, end = result["start_char"], result["end_char"]
         if (start is not None or end is not None) and (start is None or end is None or not 0 <= start < end):
             raise AcquisitionError("invalid_exact_range")
-        if kind in {"search", "find"} and not result["query"]:
+        if kind in {"search", "search_lexical", "find"} and not result["query"]:
             raise AcquisitionError("empty_query")
         if kind == "read" and not result["target"]:
             raise AcquisitionError("empty_target")
@@ -275,13 +279,13 @@ class AcquisitionLibrary:
     def execute(self, request: dict, *, before_external: Callable[[], None]) -> dict:
         before = len(self.acquisitions)
         kind = request.get("kind") if isinstance(request, dict) else None
-        result = {"kind": kind if isinstance(kind, str) and kind in {"search", "read", "find"} else None,
+        result = {"kind": kind if isinstance(kind, str) and kind in {"search", "search_lexical", "read", "find"} else None,
                   "status": "ok", "material_ids": [], "new_acquisition_ids": [],
                   "candidate_refs": [], "external": False, "local": True}
         try:
             normalized = self._request(request)
             result["request"] = normalized
-            if normalized["kind"] == "search":
+            if normalized["kind"] in {"search", "search_lexical"}:
                 self._search(normalized, result, before_external)
             elif normalized["kind"] == "read":
                 self._read(normalized, result, before_external)
@@ -297,7 +301,8 @@ class AcquisitionLibrary:
         before_external()
         result.update(external=True, local=False)
         try:
-            leads = self.search(request["query"])
+            lexical = request["kind"] == "search_lexical"
+            leads = (self.lexical_search if lexical else self.search)(request["query"])
         except Exception:
             raise AcquisitionError("search_failed") from None
         if not isinstance(leads, list):
@@ -305,8 +310,9 @@ class AcquisitionLibrary:
         for lead in leads:
             if not isinstance(lead, DiscoveryCandidate) or not _public_url(lead.url):
                 continue
-            result["candidate_refs"].append(self._candidate(lead.url, lead.title))
-            if (lead.context_kind == "provider_highlights" and not lead.context_omitted_characters
+            navigation = lead.context.strip()[:650] if lexical and isinstance(lead.context, str) else ""
+            result["candidate_refs"].append(self._candidate(lead.url, lead.title, navigation))
+            if (not lexical and lead.context_kind == "provider_highlights" and not lead.context_omitted_characters
                     and isinstance(lead.context, str) and lead.context.strip()):
                 item = self._retain(lead.url, lead.title, lead.context, "provider_highlights")
                 result["material_ids"].append(item.id)

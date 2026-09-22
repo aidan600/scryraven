@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from core.exa_transport import search_exa
 from core.linkup_transport import fetch_linkup
+from core.serper_transport import search_serper
 from scryraven.acquisition import AcquisitionLibrary
 from scryraven.errors import RunError
 from scryraven.model import ModelError, OpenAIModel
@@ -45,7 +46,7 @@ class Understanding(_Contract):
 
 
 class Request(_Contract):
-    kind: Literal["search", "read", "find"]
+    kind: Literal["search", "search_lexical", "read", "find"]
     query: str
     target: str
     focus: str
@@ -103,7 +104,13 @@ An older governing source can remain applicable; newest publication is not a rul
 
 Choose a useful research route of roughly 1–3 INDEPENDENT requests. If one request
 depends on interpreting another's result, return for that interpretation first.
-Search: kind=search, query=the search; unused fields empty/null, mode=auto.
+Search: kind=search, query=the search, for ordinary general/semantic public-web
+discovery. Lexical/community search: kind=search_lexical, query=the search, for
+public community/social posts, forums, recent announcements, or exact/current
+source discovery when that source class is needed. Both return navigation candidates;
+only actual source-derived Search highlights may also be Evidence. A failed Search
+alone is not a reason to choose lexical/community search. For both, unused fields
+are empty/null and mode=auto.
 Read: target=known C/E material ID or observed URL, focus=meaning to inspect.
 mode=auto on an exact E ID rereads that retained material locally; on a C ID or URL
 it reads a retained full parent or obtains it. local always avoids external I/O.
@@ -239,7 +246,7 @@ def run(question: str, **kwargs) -> CompletedAnswer:
 
 
 def _run_turn(
-    question: str, *, model=None, search=search_exa, fetch=fetch_linkup,
+    question: str, *, model=None, search=search_exa, lexical_search=search_serper, fetch=fetch_linkup,
     limits: RunLimits | None = None, retained_acquisitions=(), context=None,
     session_turn: int = 1, observe: Callable[[dict], None] | None = None,
     clock: Callable[[], float] = time.monotonic,
@@ -254,8 +261,10 @@ def _run_turn(
     # All real transport requests obey the remaining run deadline. Injected offline
     # transports retain their ordinary signatures and never require credentials.
     search_call = (lambda query: search(query, timeout_seconds=budget.remaining_seconds)) if search is search_exa else search
+    lexical_call = (lambda query: lexical_search(query, timeout_seconds=budget.remaining_seconds)) if lexical_search is search_serper else lexical_search
     fetch_call = (lambda url: fetch(url, timeout_seconds=budget.remaining_seconds)) if fetch is fetch_linkup else fetch
-    library = AcquisitionLibrary(retained_acquisitions=retained_acquisitions, search=search_call, fetch=fetch_call)
+    library = AcquisitionLibrary(retained_acquisitions=retained_acquisitions, search=search_call,
+                                 lexical_search=lexical_call, fetch=fetch_call)
     library.allow_question_urls(question)
     trace: list[dict] = []
 
