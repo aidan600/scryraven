@@ -231,8 +231,9 @@ The bounded production restart observation and its limits are recorded in
 
 ## Model configuration
 
-The process needs `OPENAI_API_KEY` and `EXA_API_KEY`; external Read additionally
-needs `LINKUP_API_KEY` when invoked. It does not load `.env`.
+The process needs `OPENAI_API_KEY` and `EXA_API_KEY`; Research-selected lexical,
+community or current-web discovery needs `SERPER_API_KEY` only when invoked.
+External Read needs `LINKUP_API_KEY` when invoked. It does not load `.env`.
 The fixed ordinary assignments are GPT-6 Luna / high for Research and GPT-6 Sol /
 medium for Answer. The transport retains its existing `ModelConfig` and
 `SCRYRAVEN_FAST_*` / `SCRYRAVEN_SMART_*` environment interface: FAST is the
@@ -243,9 +244,12 @@ Responses transport uses structured output; no model has built-in web tools.
 
 ## Acquisition and evidence
 
-Exa Search remains `auto`, six results, query-guided highlights up to 4,000
-characters per result. LinkUp Fetch acquires ordinary known-URL readable source
-material. Generated provider summaries and answers are excluded. Metadata
+Exa supplies ordinary general Search (`auto`, six results, query-guided highlights
+up to 4,000 characters per result). Research may select Serper for lexical,
+community or current-web discovery (ten navigation candidates). Serper snippets
+are navigation only; Research must Read a useful URL through LinkUp Fetch before
+its source material becomes Evidence. LinkUp Fetch acquires ordinary known-URL
+readable source material. Generated provider summaries and answers are excluded. Metadata
 guides navigation; actual highlights can support only what their text establishes.
 Missing conditions, identity, applicability or connected context can require a Read.
 

@@ -10,8 +10,10 @@ bounded demonstrations and remaining limitations.
 `scryraven.research` has two semantic model contracts: Research uses GPT-6 Luna
 with high reasoning, and Answer uses GPT-6 Sol with medium reasoning. These are
 fixed assignments to the existing contracts, with no model routing or escalation.
-Exa supplies Search; LinkUp static Fetch supplies ordinary
-external known-URL Read. There is no Read fallback, provider router, model router,
+Exa supplies ordinary general Search. Research may select lexical/community/current
+discovery through Serper when the needed source class calls for it. LinkUp static
+Fetch supplies ordinary external known-URL Read. There is no automatic search
+fallback, Read fallback, provider router, model router,
 premium escalation, Scout, specialist hierarchy, verifier, or prose polisher.
 
 **Research** owns interpretation of the original question and supplied actual
@@ -21,7 +23,7 @@ scoped findings with material references, neutral unresolved questions, and the
 last route's result. This generated state is continuity, never Evidence. It is
 replaced as a whole and is not stored as a claim database or hypothesis lifecycle.
 
-Research returns either a route of Search/Read/Find requests or a proposal for a
+Research returns either a route of Search/lexical Search/Read/Find requests or a proposal for a
 fresh answer with exact material references. Its current compact understanding
 shape is `interpretation`, bounded `established` findings with exact Evidence
 references, `still_needed`, and `last_route_result`; it does not declare an
@@ -61,8 +63,11 @@ answer; there is no subsequent verifier or prose-polishing model.
 ## Acquisition, custody, and reversible attention
 
 `scryraven.acquisition.AcquisitionLibrary` retains immutable actual
-`Evidence` and supplies an inspectable catalog. Search admits source-derived Exa
-highlights mechanically; navigation-only metadata is not admitted as source text.
+`Evidence` and supplies an inspectable catalog. Ordinary Search admits source-derived Exa
+highlights mechanically. Serper lexical search supplies navigation candidates only:
+its snippets never become Evidence. Research can Read an observed candidate URL
+through LinkUp to acquire actual source material. Navigation-only metadata is not
+admitted as source text.
 External Read retains LinkUp's readable source representation as fetched Evidence;
 local Read reuses actual retained material or constructs an exact view. Find locates
 lexical matches in retained material, including highlights, without provider I/O.

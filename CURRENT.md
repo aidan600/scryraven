@@ -3,7 +3,8 @@
 ## Ordinary product architecture
 
 The ordinary product supersedes Research -> Analyst -> Author with the
-accepted clean-room Research semantic loop -> mechanical Search / Read / Find ->
+accepted clean-room Research semantic loop -> mechanical Search / lexical Search /
+Read / Find ->
 Research reassessment -> fresh Evidence-first Answer. `scryraven.research.run`,
 `ResearchSession.ask`, the CLI and Reading Room share this single path. There is
 no architecture selector, Analyst checkpoint, old Author handoff or fallback.
@@ -16,10 +17,13 @@ contracts and acquisition/stopping semantics are preserved.
 
 Ordinary Research uses GPT-6 Luna / high and Answer uses GPT-6 Sol / medium.
 This is a fixed assignment by semantic stage, not a model router; there is no
-automatic premium escalation or model fallback. Exa supplies Search and LinkUp
-static Fetch supplies external known-URL Read when Research selects one. Exa
-Contents has no ordinary Read authority; there is no Read fallback or provider
-router. Limits remain 12 semantic attempts, 16 external attempts, 120 seconds
+automatic premium escalation or model fallback. Exa supplies ordinary general
+Search. Research can explicitly select Serper lexical/community/current discovery
+for a needed source class. Serper candidates and snippets guide navigation only;
+they are not Evidence. LinkUp static Fetch supplies external known-URL Read when
+Research selects one. Exa Contents has no ordinary Read authority; there is no
+search or Read fallback or provider router. Limits remain 12 semantic attempts,
+16 external attempts, 120 seconds
 and 128,000 characters of current attention. No semantic verifier or additional
 semantic owner exists.
 
@@ -62,6 +66,15 @@ with no observed material control regression, corrected integrated validation at
 from acquired Exa Search highlights without an unnecessary Read; deterministic
 tests establish the Exa Search / LinkUp external Read composition. These results
 do not establish universal provider superiority or general product reliability.
+
+The Research-selectable Serper lane completed one ordinary St. Dorothy's Rest
+observation at `884c69a917aa19528574da42fdae2a8b85ba86b1`: Research chose
+three lexical searches among seven Exa searches, then used two LinkUp Reads.
+The Serper-discovered official Instagram post was fetched through LinkUp and
+cited for the director selection. The final supported answer used that fetched
+post and acquired Exa highlights for qualifications. The run used seven semantic
+attempts and 12 external attempts. This shows one successful source-class route,
+not general semantic-selection reliability or Level-7 synthesis.
 
 Foundation 01 established four valid frozen Levels 1–3 cases; its NPS comparison
 was excluded for evaluator/source ambiguity. Foundation 02 established three

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 from core.exa_transport import DiscoveryCandidate, search_exa
 from core.linkup_transport import fetch_linkup
+from core.serper_transport import search_serper
 from core.transport import FetchedMaterial
 from scryraven.research import RunLimits, _run_turn
 from scryraven.results import CompletedAnswer
@@ -40,12 +41,14 @@ class ResearchSession:
     def __init__(
         self, *, model: Callable | None = None,
         search: Callable[..., list[DiscoveryCandidate]] = search_exa,
+        lexical_search: Callable[..., list[DiscoveryCandidate]] = search_serper,
         fetch: Callable[[str], FetchedMaterial] = fetch_linkup,
         limits: RunLimits = RunLimits(),
         engine: Callable[..., CompletedAnswer] | None = None,
         observe: Callable[[dict], None] | None = None,
     ) -> None:
-        self._model, self._search, self._fetch, self._limits = model, search, fetch, limits
+        self._model, self._search, self._lexical_search, self._fetch, self._limits = (
+            model, search, lexical_search, fetch, limits)
         self._engine = engine
         self._observe = observe
         self._snapshot = _Snapshot(SessionState())
@@ -98,7 +101,8 @@ class ResearchSession:
             "conversation_context": [{"question": turn.question, "answer": turn.answer} for turn in state.turns],
         }
         result = (self._engine or _run_turn)(
-            question, model=self._model, search=self._search, fetch=self._fetch, limits=self._limits,
+            question, model=self._model, search=self._search, lexical_search=self._lexical_search,
+            fetch=self._fetch, limits=self._limits,
             retained_acquisitions=state.acquisitions, context=context, session_turn=len(state.turns) + 1, observe=self._observe,
         )
         turn = SessionTurn(question, result.answer, None,
