@@ -17,7 +17,7 @@ conversation context and working acquisition, yet Luna/high misidentifies the
 task, loses a user correction, or decomposes the wrong problem. The exact cases
 must be preserved. The comparison would test direct Luna Research against one
 Sol interpretation/decomposition pass followed by Luna Research; it is not a
-production route to prebuild.
+production route to prebuild. No tested current case has earned that experiment.
 
 Exa supplies ordinary general Search. Research may select lexical/community/current
 discovery through Serper when the needed source class calls for it. LinkUp static
@@ -150,11 +150,20 @@ at its expected cost. The Answer contract independently determines the supported
 scope from selected Evidence or explicit user premises. Neither source counts nor
 budget consumption establishes sufficiency.
 
-The architecture has not demonstrated reliable aggregate or open-world sufficiency:
-selected source themes can still be promoted beyond what the evidence warrants.
-That semantic limitation is not repaired by a runtime restriction or an additional
-decision-maker; the rejected scope-contract experiment remains historical evidence,
+Bounded Level-7 evaluation demonstrated useful aggregate and open-world synthesis
+when suitable heterogeneous Evidence reached Answer. It showed restraint against
+promoting small self-selected samples into population claims and appropriate use
+of representative survey evidence. General open-world reliability remains unproved,
+and source-access failures can prevent a fair semantic test. Lexical/community
+discovery can identify a relevant URL that ordinary supported Read cannot
+materialize; navigation does not become Evidence merely because the source is
+relevant. The rejected scope-contract experiment remains historical evidence,
 not active design.
+
+Behavior-first Level-8 evaluation demonstrated bounded dynamic multi-component
+research across seven completed families, including selective revision and
+multi-turn scenario-premise handling. It did not establish arbitrary-length
+continuity or general reliability.
 
 `RunLimits` initially allows 12 semantic attempts, 16 external acquisition attempts,
 120 seconds, and 128,000 characters of current Evidence attention. These are

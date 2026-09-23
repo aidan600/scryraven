@@ -20,24 +20,30 @@ python -m venv .venv
 python -m pip install -r requirements.txt -r requirements-dev.txt
 ```
 
-Research requires `OPENAI_API_KEY` and `EXA_API_KEY` in the process environment.
-External known-URL Read additionally requires `LINKUP_API_KEY` when invoked.
-ScryRaven does **not** load `.env`. With those variables supplied:
+Model execution requires `OPENAI_API_KEY`, and ordinary web Search requires
+`EXA_API_KEY` in the process environment. `SERPER_API_KEY` is required only when
+Research invokes alternate lexical/community/current discovery;
+`LINKUP_API_KEY` is required only when external known-URL Read is invoked.
+ScryRaven does **not** load `.env`. With the applicable variables supplied:
 
 ```powershell
 python -m scryraven "What is the maximum allowed weight of a ten-pin bowling ball?"
 ```
 
-The ordinary runtime uses GPT-5.6 Luna / medium, Exa Search, and LinkUp Fetch for
-external known-URL Read. There is no architecture selector, Analyst checkpoint,
+The ordinary runtime uses GPT-6 Luna / high for Research and GPT-6 Sol / medium
+for Answer. Exa supplies ordinary general Search; Research can select Serper for
+lexical/community/current discovery; LinkUp Fetch supplies external known-URL
+Read. There is no architecture selector, Analyst checkpoint,
 separate old Author handoff or fallback engine.
 See [research architecture](docs/architecture/RESEARCH.md) for the promoted contract.
 
 ## Reading Room
 
 **Direct launch:** from the repository root and activated environment above, with
-`OPENAI_API_KEY` and `EXA_API_KEY` in the process environment and `LINKUP_API_KEY`
-available for external Read:
+`OPENAI_API_KEY` for model execution and `EXA_API_KEY` for ordinary web Search in
+the process environment. Supply `SERPER_API_KEY` when Research invokes alternate
+lexical/community/current discovery and `LINKUP_API_KEY` when it invokes external
+known-URL Read:
 
 ```powershell
 python -m scryraven.reading_room

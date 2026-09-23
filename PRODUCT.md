@@ -101,7 +101,7 @@ needs no external factual support; Answer independently decides what the
 original/current request, explicit user premises and actual selected sources
 justify. Research's generated verdict, notes or draft must not bind Answer.
 
-Bounded Levels 1–5 demonstrations are development evidence, not a universal
+Bounded capability demonstrations are development evidence, not a universal
 reliability claim. Level 6 revision/recovery under superseding Evidence is not
 established. The earlier Investigator and architecture-lab lineages are stopped
 development history.

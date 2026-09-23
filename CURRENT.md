@@ -130,25 +130,64 @@ the required Ah unit and voltage dependency, and again treated Anker's independe
 99.54 Wh specification separately. It satisfies the complete frozen L4C obligation
 without a semantic code, prompt, provider-policy or model-policy repair. The two
 trajectories demonstrate bounded acquisition variability, not deterministic
-retrieval reliability. No other live rerun or Level-6 work occurred.
+retrieval reliability. No other live rerun or Level-6 work occurred within that
+supersession acceptance.
 See `docs/operator/MAINLINE_SEMANTIC_SUPERSESSION_01.md` for the evidence and
 review bundle. Both public observations are preserved in
 `C:\tmp\scryraven-mainline-semantic-supersession-01` and useful sanitized local
 evaluation candidates; prior frozen labels and packets remain unchanged.
 
-Aggregate/open-world sufficiency remains unresolved. Literal-reading and citation
-validation prove custody/membership, not semantic entailment. Very long-session
-performance and conversation-context retention remain unproved; no context
-compaction lifecycle is implemented. General reliability remains unproved. Level
-6 revision/recovery under superseding Evidence is **not established**.
+Level-7 Baseline 01 produced strong bounded evidence that, when suitable
+heterogeneous material reaches Answer, ScryRaven can produce useful open-world
+synthesis without automatically promoting sampled discussion to population-wide
+claims. A representative-survey control supported appropriately stronger
+aggregate claims. Eight synthetic Answer diagnostics handled engagement asymmetry,
+echo amplification, temporal/version shifts and sparse heterogeneous evidence.
+This does not establish general open-world reliability. Several live cases were
+blocked earlier by community-source Read/materialization failures.
 
-Preserve exact cases where Level-8 or later dogfooding shows materially
-recoverable requests with sufficient conversation context and working acquisition,
-yet Luna/high misidentifies the task, loses a user correction, or decomposes the
-wrong problem. Only repeated consequential cases would justify a separate bounded
-experiment comparing direct Luna Research with one Sol
-interpretation/decomposition pass followed by Luna Research. The pass is not part
-of the ordinary product path and is not prebuilt.
+Reddit/community discovery can surface candidate URLs, but tested generic Read
+surfaces did not reliably materialize Reddit thread bodies. Community Read
+Forensics 01 found 24 failed Reads across 15 exact Level-7 trace URLs; six sampled
+Reddit threads yielded no usable body through LinkUp, Exa Contents, Jina Reader or
+plain HTTPS. Reddit remains a known source-access limitation: discovery alone is
+not Evidence, and ScryRaven cannot characterize Reddit reception without actual
+Reddit material in Evidence. The BasicAF Exa-cache result was an isolated
+archival/article recovery observation, not a general alternate Read capability.
+
+At current-revision `b6f059b4d406155fa6ad4a8d3f06bb48d3fed49d`, Level-8
+Baseline 02 completed seven of eight behavior-first families. They demonstrated
+bounded dynamic decomposition, consequential qualification, selective premise
+revision, changing-scope handling, multi-turn follow-up, scenario/user-premise
+reasoning, conditional calculation separated from external factual claims, and
+identification of bottlenecks outside the named component. C01 had minor Answer
+qualification/arithmetic imperfections; C04 had an ancillary provenance gap; C07
+did not establish full numerical ten-year pricing; C08 appropriately remained
+incomplete rather than naming a historical cumulative-cost winner. No completed
+case demonstrated the defined Luna/high Research interpretation/decomposition
+failure needed to earn a Sol interpretation stage.
+
+C02 remained operationally unassessable after `answer:model_response_incomplete`
+in both Level-8 baselines. An exact current-revision Answer replay at the unchanged
+12,000-token cap returned provider status `incomplete` with safe reason
+`content_filter`, not `max_output_tokens`. The two historical failure reasons
+remain unknown because their safe traces did not preserve the provider reason.
+The replay supports no output-cap, prompt, retry or model repair, and it does not
+demonstrate a Research or Answer semantic failure.
+
+Literal-reading and citation validation prove custody/membership, not semantic
+entailment. Very long-session performance and conversation-context retention
+remain unproved; no context-compaction lifecycle is implemented. General
+reliability remains unproved. Level 6 revision/recovery under superseding Evidence
+is **not established**. No Sol interpretation/decomposition pass is part of the
+ordinary product path or currently earned. Only repeated consequential exact
+cases of recoverable Luna/high task-interpretation failures with sufficient
+context and working acquisition would justify a bounded comparison.
+
+The synthetic capability ladder has produced bounded evidence through open-world
+synthesis and dynamic multi-component research. The project is suitable for
+ordinary dogfooding; further reliability evidence is expected primarily from
+preserved organic failures rather than additional capability machinery by default.
 
 ## Preserved development history
 
