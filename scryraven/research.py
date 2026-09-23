@@ -391,6 +391,28 @@ def _run_turn(
                 emit("response_rejected", contract="answer", code=issue)
                 packet["output_correction"] = {"code": issue, "instruction": "Select separate literal contiguous passages only from the referenced supplied Evidence. Do not paraphrase, import another material/version, or stitch excerpts with ellipses."}
                 continue
+            # The final citation resolver already owns alias syntax and custody.
+            # Probe it before accepting this Answer so a missing required alias
+            # can use the existing bounded Answer correction loop. Other citation
+            # errors still take their original finalization path below.
+            try:
+                resolve_citations(final.answer, [library.materials[ref] for ref in refs],
+                                  list(library.acquisitions), [],
+                                  require_citation=final.posture != "unable")
+            except RunError as exc:
+                if refs and exc.stage == "citations" and exc.code == "missing_citation":
+                    emit("response_rejected", contract="answer", code="missing_citation")
+                    packet["output_correction"] = {
+                        "code": "missing_citation",
+                        "instruction": (
+                            "The previous response omitted required Evidence citation aliases. "
+                            "Return a fresh complete AnswerDecision from the supplied Evidence. "
+                            "Cite supported factual claims in answer using exact supplied aliases "
+                            "such as [E1] or [E7@0:3200]. Do not rely on or reproduce any "
+                            "rejected answer text."
+                        ),
+                    }
+                    continue
             emit("answer_reading", source_body=True, readings=readings)
             emit("answer_decision", decision=final.model_dump(exclude={"source_readings"}),
                  source_reading_refs=list(dict.fromkeys(reading.evidence_ref for reading in final.source_readings)))

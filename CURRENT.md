@@ -34,6 +34,10 @@ literal Answer readings, deterministic citations and historical selected-materia
 snapshots survive. Follow-ups start fresh Research/Answer decisions and can reread
 retained actual Evidence without external acquisition. Prior generated answers
 resolve conversation referents only.
+An otherwise valid Answer over selected Evidence that omits a required citation
+alias receives a bounded correction in the same Answer contract before acceptance.
+The final resolver still requires actual supplied Evidence citations for supported
+and partial answers; an empty Evidence packet supplies no alias to correct toward.
 
 Durable SQLite sessions retain atomic revision-checked commits, reopen/history,
 rename/delete and failure isolation. Native turns use `analysis: null` in the

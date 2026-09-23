@@ -169,9 +169,9 @@ def test_unable_empty_evidence_has_no_invented_sources_or_citations():
     assert not any(tag in {"details", "a"} for tag, attrs in Page(render_html(QUESTION, result)).tags)
 
 
-@pytest.mark.parametrize("draft", ["16 pounds.", "16 pounds. [1]", "16 pounds. [E2]", "16 pounds. [E1@0:10]",
+@pytest.mark.parametrize("draft", ["16 pounds. [E2]", "16 pounds. [E1@0:10]",
                                     "16 pounds. [E1] [E", "16 pounds. [E1] [[E1]]]", "16 pounds. [E999]"])
-def test_presentation_cannot_bypass_required_or_validated_aliases(draft):
+def test_presentation_cannot_bypass_validated_aliases(draft):
     with pytest.raises(research.RunError) as caught:
         answer(draft)
     assert caught.value.stage == "citations"

@@ -56,9 +56,12 @@ packet and each passage to occur in that exact material. Only whitespace
 differences are tolerated; the recorded reading reconstructs the original
 substring and offsets without changing words or punctuation. A malformed or
 nonmatching reading gets an output correction under the same Answer contract,
-deadline and semantic allowance. This proves literal membership, not sufficient
-scope or semantic entailment. Citation resolution then follows the completed
-answer; there is no subsequent verifier or prose-polishing model.
+deadline and semantic allowance. A source-bearing Answer that omits required
+citation aliases receives a fixed correction under that same allowance before
+acceptance; rejected prose is not fed back. This proves literal membership, not
+sufficient scope or semantic entailment. Final citation resolution and rendering
+then follow the accepted Answer; there is no subsequent verifier or prose-polishing
+model.
 
 ## Acquisition, custody, and reversible attention
 
