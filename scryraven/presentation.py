@@ -51,12 +51,30 @@ def source_label(citation: Citation) -> str:
     return parsed.hostname or "Untitled source"
 
 
+RESEARCH_BOUND_DISCLOSURE = (
+    "Research reached its operating limit; this answer uses the material gathered by then."
+)
+PREMISE_ONLY_DISCLOSURE = (
+    "Derived from assumptions you provided; no external sources were used."
+)
+
+
+def premise_only(result: Result | SessionTurn) -> bool:
+    """The completed-turn invariant identifies source-free premise answers."""
+    return result.posture != "unable" and not result.citations
+
+
 def render_cli(result: Result | SessionTurn) -> str:
+    status = [f"Status: {result.posture.capitalize()}"]
+    if result.stop_reason == "research_bound":
+        status.append(RESEARCH_BOUND_DISCLOSURE)
+    if premise_only(result):
+        status.append(PREMISE_ONLY_DISCLOSURE)
     sources = "\n".join(
         f"[{item.number}] {source_label(item)}\n    {item.url}"
         for item in result.citations
     )
-    return result.answer + ("\n\nSources\n" + sources if sources else "")
+    return result.answer + "\n\n" + "\n".join(status) + ("\n\nSources\n" + sources if sources else "")
 
 
 def answer_html(result: Result | SessionTurn, *, source_prefix: str = "source-") -> str:
@@ -181,6 +199,8 @@ p { margin: 0 0 1em; }
 .answer { overflow-wrap: anywhere; }
 .answer > :first-child { margin-top: 0; }
 .answer h1 { font-size: 1.2rem; margin-top: 1.5em; }
+.answer-status { margin-top: 1.5em; color: #526660; font-size: .82rem; }
+.answer-status p { margin: .3em 0; }
 a { color: #226653; text-underline-offset: 3px; }
 .answer a { font-size: .8em; font-weight: 650; white-space: nowrap; text-decoration: none; padding: 0 .08em; }
 a:hover { text-decoration: underline; }
@@ -241,6 +261,12 @@ def render_html(question: str, result: Result | SessionTurn) -> str:
               f"style-src {_hash_allowance(_STYLE)}; script-src {_hash_allowance(_SCRIPT)}")
     sources = ('<section class="sources" aria-label="Sources"><h2>Sources · open to inspect</h2>'
                + "".join(_source_html(item) for item in result.citations) + '</section>') if result.citations else ""
+    notices = [f"Status: {result.posture.capitalize()}"]
+    if result.stop_reason == "research_bound":
+        notices.append(RESEARCH_BOUND_DISCLOSURE)
+    if premise_only(result):
+        notices.append(PREMISE_ONLY_DISCLOSURE)
+    status = '<div class="answer-status">' + "".join(f"<p>{escape(note)}</p>" for note in notices) + '</div>'
     return (
         '<!doctype html>\n<html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
@@ -249,6 +275,6 @@ def render_html(question: str, result: Result | SessionTurn) -> str:
         f'<title>ScryRaven answer</title><style>{_STYLE}</style></head><body><main>'
         '<header><div class="brand">ScryRaven</div>'
         f'<h1>{escape(question)}</h1></header><article class="answer" aria-label="Answer">'
-        + answer_html(result) + '</article>' + sources
+        + answer_html(result) + '</article>' + status + sources
         + f'</main><script>{_SCRIPT}</script></body></html>\n'
     )

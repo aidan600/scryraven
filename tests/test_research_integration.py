@@ -102,7 +102,9 @@ def test_oversized_exact_read_can_be_delivered_or_revised_without_pending_deadlo
         calls.append((stage, packet))
         if stage == "answer":
             evidence = packet["evidence"]
-            output = (answer(f"A documented observation. [{evidence[0]['id']}]") if evidence
+            output = (answer(f"A documented observation. [{evidence[0]['id']}]", readings=[
+                {"evidence_ref": evidence[0]["id"], "passages": ["A documented observation."]},
+            ]) if evidence
                       else answer("No actual material was delivered.", "unable"))
         elif packet["evidence"]:
             output = decision("answer", [packet["evidence"][0]["id"]])
@@ -127,7 +129,8 @@ def test_final_selection_of_shelved_material_is_bounded_and_revisable():
     model = Script(
         decision(), decision(), decision(),
         decision("answer", ["E1", "E2", "E3"]),
-        decision("answer", ["E1"]), answer("A limited source-based answer. [E1]"),
+        decision("answer", ["E1"]), answer("A limited source-based answer. [E1]", readings=[
+            {"evidence_ref": "E1", "passages": ["Text Text"]}]),
     )
     result = run("Read the sources", model=model, search=several_sources, fetch=no_io,
                  limits=RunLimits(attention_characters=65536))

@@ -208,7 +208,8 @@ def test_real_model_transport_through_ordinary_run_and_session_with_fake_respons
     model, calls, records = transport
     outputs = list(first_turn(highlights=True))
     if session_mode:
-        outputs += list(local_turn()) + [decision(), decision("answer", ["E2"]), answer(FACT_C + " [E2]")]
+        outputs += list(local_turn()) + [decision(), decision("answer", ["E2"]),
+                                         answer(FACT_C + " [E2]", readings=[{"evidence_ref": "E2", "passages": [FACT_C]}])]
     replies = [("research" if "understanding" in output else "answer", output) for output in outputs]
     replies.insert(0, ("research", '{"understanding":'))
 

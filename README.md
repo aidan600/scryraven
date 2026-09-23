@@ -100,6 +100,10 @@ in the HTTP request, with an indeterminate working state and no token streaming.
 Completed answers, including limited results, are saved. A failed attempt keeps
 the question available to edit and leaves completed conversation intact.
 
+An answer completed after Research reaches its operating limit says so without
+changing its supported, partial or unable status. Source-free conditional answers
+are labeled as derived from your assumptions without external sources.
+
 Click **[1]** to inspect the exact material saved with that historical answer, or
 **Sources** for its publication overview. Evidence opens beside the answer on a
 wide screen, as an overlay on a laptop, and as a full sheet on a narrow screen.
@@ -273,8 +277,10 @@ Answer decisions over actual material, using prior conversation only for referen
 
 Answer selects literal passages in the same fresh semantic call. Mechanical
 membership checks verify those passages against the supplied exact material;
-they do not decide entailment. Valid citations receive compact source numbers in
-first-use order. Each answer saves its selected material and citation-use spans,
+supported and partial evidence answers require at least one validated passage
+from every cited source group. These checks do not decide entailment. Valid
+citations receive compact source numbers in first-use order. Each answer saves
+its selected material and citation-use spans,
 so later acquisitions cannot change historical inspection. Views carry exact
 parent bounds; highlights never receive guessed offsets or invented page numbers.
 Source labels use publication metadata, PDF filenames or hostnames without
@@ -299,7 +305,10 @@ assets under the existing content security policy.
 
 ## Observations and checks
 
-Answers and a compact source list appear on stdout. `--trace` adds compact diagnostics on stderr: model
+Answers, a compact posture/operating status, and a source list appear on stdout.
+Source-free conditional answers are labeled as derived from user assumptions;
+Research operating-bound completion is disclosed separately from answer posture.
+`--trace` adds compact diagnostics on stderr: model
 roles, public Research choices, acquisition results, exposure IDs/lengths/hashes,
 answer posture, bounds and citation resolution. Exact source bodies stay outside
 the compact trace. These diagnostics contain no private reasoning.
@@ -312,6 +321,10 @@ added as a diagnostic payload. Numeric source references start afresh in each an
 
 Execution errors exit 1 with a safe stage/code. Supported, partial and unable
 postures exit 0. An honest limit is not proof of nonexistence.
+
+Acquisition preserves fixed safe Exa, Serper and LinkUp configuration-missing
+codes and LinkUp material-unavailable codes; other Search/Read exceptions remain
+generic safe failures.
 
 Agents must use the existing doorman for credentialed commands and must not read
 `.env` or keys. An operator may configure `.env` using `.env.example`. For an

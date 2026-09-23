@@ -47,8 +47,12 @@ With an empty Evidence packet, a supported or partial conditional derivation may
 use only explicit user premises, empty source readings and no Evidence citations.
 An answer mixing user premises with external factual support uses the evidence
 basis and cites its external claims.
-An otherwise valid evidence-based Answer that omits a required citation alias
-receives a bounded correction in the same Answer contract before acceptance.
+
+Supported or partial evidence answers must supply validated literal readings,
+including a reading from each canonical source group they cite. This is a
+mechanical custody constraint, not a test of entailment. An otherwise valid
+evidence-based Answer that omits a required citation alias or reading receives
+a bounded correction in the same Answer contract before acceptance.
 Neither path promotes user premises or prior assistant prose into Evidence.
 
 Durable SQLite sessions retain atomic revision-checked commits, reopen/history,
@@ -61,6 +65,11 @@ The synthetic pre-supersession fixture exercises mixed historical/native session
 Reading Room and CLI use the same session application and store. The existing
 safe Markdown/source renderer, browser security, local assets, transport,
 credential doorman and exact-content prompt-cache mechanics remain in place.
+Both surfaces identify premise-only completed answers as conditional results
+without external sources and disclose a Research operating-bound completion
+without changing Answer's supported/partial/unable posture. Known safe Exa,
+Serper and LinkUp configuration errors and LinkUp material-unavailable errors
+retain their fixed codes through Acquisition; unknown failures remain generic.
 The legacy FAST and SMART transport configuration names remain readable for
 compatibility: FAST configures Research and SMART configures Answer. Explicit
 `ModelConfig` and environment overrides still apply.

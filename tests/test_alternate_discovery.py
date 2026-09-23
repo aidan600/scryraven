@@ -99,7 +99,8 @@ def test_research_and_session_can_choose_lexical_then_read():
         decision(requests=[request("search_lexical", query="public post")]),
         decision(requests=[request("read", query="", target="C1")]),
         decision("answer", ["E1"]),
-        answer("The source says seven. [E1]"),
+        answer("The source says seven. [E1]", readings=[
+            {"evidence_ref": "E1", "passages": ["The source says seven."]}]),
     )
     calls = []
     kwargs = dict(model=model,
@@ -119,7 +120,8 @@ def test_research_and_session_can_choose_lexical_then_read():
     model = Script(
         decision(requests=[request("search_lexical", query="public post")]),
         decision(requests=[request("read", query="", target="C1")]),
-        decision("answer", ["E1"]), answer("The source says seven. [E1]"),
+        decision("answer", ["E1"]), answer("The source says seven. [E1]", readings=[
+            {"evidence_ref": "E1", "passages": ["The source says seven."]}]),
     )
     session = ResearchSession(**{**kwargs, "model": model})
     assert session.ask("What does this public post say?").posture == "supported"
@@ -133,7 +135,8 @@ def test_cli_uses_serper_then_linkup_through_ordinary_run(monkeypatch, capsys):
     outputs = iter([
         decision(requests=[request("search_lexical", query="public post")]),
         decision(requests=[request("read", query="", target="C1")]),
-        decision("answer", ["E1"]), answer("The source says seven. [E1]"),
+        decision("answer", ["E1"]), answer("The source says seven. [E1]", readings=[
+            {"evidence_ref": "E1", "passages": ["The source says seven."]}]),
     ])
     providers = []
 
@@ -163,7 +166,8 @@ def test_reading_room_uses_same_lexical_capability(tmp_path):
     model_script = Script(
         decision(requests=[request("search_lexical", query="public post")]),
         decision(requests=[request("read", query="", target="C1")]),
-        decision("answer", ["E1"]), answer("The source says seven. [E1]"),
+        decision("answer", ["E1"]), answer("The source says seven. [E1]", readings=[
+            {"evidence_ref": "E1", "passages": ["The source says seven."]}]),
     )
     calls = []
     app = reading_room.create_app(

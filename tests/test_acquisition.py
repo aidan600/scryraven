@@ -1,10 +1,14 @@
 """Offline custody, local reading and navigation contracts; no semantic judgment."""
 
 import json
+from functools import partial
 
 import pytest
 
-from core.exa_transport import DiscoveryCandidate, FetchedMaterial
+from core import exa_transport, linkup_transport, serper_transport
+from core.exa_transport import DiscoveryCandidate, ExaTransportError, FetchedMaterial
+from core.linkup_transport import LinkupTransportError
+from core.serper_transport import SerperTransportError
 from scryraven.acquisition import FIND_RESULT_LIMIT, AcquisitionError, AcquisitionLibrary
 from scryraven.sources import Evidence, exact_view
 
@@ -260,6 +264,57 @@ def test_provider_exception_is_safe_and_budget_callback_exception_propagates(ope
     assert "SECRET" not in json.dumps(result) and library.acquisitions == []
     with pytest.raises(RuntimeError, match="SECRET"):
         library.execute(payload, before_external=failed)
+
+
+@pytest.mark.parametrize(("kind", "environment_name", "code"), [
+    ("search", exa_transport.EXA_API_KEY_ENV, "exa_configuration_missing"),
+    ("search_lexical", serper_transport.SERPER_API_KEY_ENV, "serper_configuration_missing"),
+    ("read", linkup_transport.LINKUP_API_KEY_ENV, "linkup_configuration_missing"),
+])
+def test_missing_provider_configuration_reaches_acquisition_result(monkeypatch, kind, environment_name, code):
+    monkeypatch.delenv(environment_name, raising=False)
+    library = AcquisitionLibrary()
+    library.allow_question_urls(URL)
+    result = request(library, kind, query="source query", target=URL)
+    assert result["status"] == "error" and result["code"] == code
+    assert result["external"] and not result["local"]
+    assert library.acquisitions == []
+
+
+def test_linkup_no_readable_material_reaches_acquisition_result():
+    class EmptyResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"markdown": "", "content": "   "}
+
+    fetch = partial(linkup_transport.fetch_linkup, api_key="offline",  # pragma: allowlist secret
+                    post=lambda *args, **kwargs: EmptyResponse())
+    library = AcquisitionLibrary(fetch=fetch)
+    library.allow_question_urls(URL)
+    result = request(library, "read", target=URL)
+    assert result["status"] == "error" and result["code"] == "linkup_material_unavailable"
+    assert result["external"] and not result["local"]
+    assert library.acquisitions == []
+
+
+@pytest.mark.parametrize(("kind", "error", "expected"), [
+    ("search", ExaTransportError("private provider detail"), "search_failed"),
+    ("search_lexical", SerperTransportError("private provider detail"), "search_failed"),
+    ("read", LinkupTransportError("private provider detail"), "read_failed"),
+    ("search", RuntimeError("exa_configuration_missing"), "search_failed"),
+    ("read", RuntimeError("linkup_material_unavailable"), "read_failed"),
+])
+def test_unknown_and_untyped_provider_errors_remain_generic(kind, error, expected):
+    def fail(*args):
+        raise error
+
+    library = AcquisitionLibrary(search=fail, lexical_search=fail, fetch=fail)
+    library.allow_question_urls(URL)
+    result = request(library, kind, query="source query", target=URL)
+    assert result["status"] == "error" and result["code"] == expected
+    assert "private provider detail" not in json.dumps(result)
 
 
 def test_mismatched_fetch_identity_is_never_admitted():

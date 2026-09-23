@@ -5,6 +5,7 @@ import pytest
 
 from core.exa_transport import DiscoveryCandidate, FetchedMaterial
 from scryraven.model import ModelError, OpenAIModel
+from scryraven.presentation import RESEARCH_BOUND_DISCLOSURE, render_cli
 from scryraven.research import (
     TERMINAL_ANSWER_RESERVE_SECONDS,
     AnswerDecision,
@@ -29,10 +30,13 @@ def decision(action="research", refs=(), requests=None, interpretation="Find the
 
 
 def answer(text="The stated value is seven. [E1]", posture="supported", missing=None,
-           support_basis=None):
-    return dict(source_readings=[], answer=text, posture=posture,
-                support_basis=support_basis or ("none" if posture == "unable" else "evidence"),
-                missing_information=missing)
+           support_basis=None, readings=None):
+    support_basis = support_basis or ("none" if posture == "unable" else "evidence")
+    if readings is None:
+        readings = ([{"evidence_ref": "E1", "passages": ["The stated value is seven."]}]
+                    if support_basis == "evidence" and posture != "unable" else [])
+    return dict(source_readings=readings, answer=text, posture=posture,
+                support_basis=support_basis, missing_information=missing)
 
 
 class Script:
@@ -107,7 +111,9 @@ def test_missing_need_returns_to_same_loop_without_draft_or_budget_reset():
     model = Script(decision(), decision("answer", ["E1"]),
                    answer("A provisional fragment. [E1]", "partial", "What conditions apply?"),
                    decision(requests=[request("read", query="", target="E1", mode="full", focus="conditions")], refs=["E1"]),
-                   decision("answer", ["E2"]), answer("Seven under the stated condition. [E2]"))
+                   decision("answer", ["E2"]),
+                   answer("Seven under the stated condition. [E2]", readings=[
+                       {"evidence_ref": "E2", "passages": ["Seven under the stated condition."]}]))
     result = run("What is the value?", model=model, search=search,
                  fetch=lambda url: FetchedMaterial(url, "Seven under the stated condition."))
     continuation = model.calls[3][2]
@@ -160,7 +166,9 @@ def test_partial_answer_at_a_semantic_bound_is_not_promoted_to_support():
                  limits=RunLimits(semantic_attempts=5, external_attempts=1))
     assert [call[0] for call in model.calls] == ["research", "research", "answer", "research"]
     assert result.posture == "partial"
-    assert result.stop_reason == "not_established"
+    assert result.stop_reason == "research_bound"
+    assert any(event["action"] == "research_bound" for event in result.trace)
+    assert RESEARCH_BOUND_DISCLOSURE in render_cli(result)
     assert result.trace[-1]["budget"]["semantic_attempts"] == 4
 
 
@@ -327,7 +335,9 @@ def test_pending_requested_reading_precedes_new_external_work():
     def large_search(q):
         return [DiscoveryCandidate(str(i), f"https://example.org/{i}", str(i) * 40000,
                                    context_kind="provider_highlights") for i in range(3)]
-    model = Script(decision(), decision(), decision(), decision("answer", ["E3"]), answer("A selected observation. [E3]"))
+    model = Script(decision(), decision(), decision(), decision("answer", ["E3"]),
+                   answer("A selected observation. [E3]", readings=[
+                       {"evidence_ref": "E3", "passages": ["222"]}]))
     result = run("Inspect", model=model, search=large_search, fetch=no_fetch,
                  limits=RunLimits(attention_characters=65536))
     # The packet is intentionally one material wide; all three are delivered.
@@ -443,7 +453,8 @@ def test_answer_reading_rejects_nonliteral_or_wrong_custody_passages(invalid_rea
     invalid = answer()
     invalid["source_readings"] = [invalid_reading]
     model = Script(decision(), decision("answer", ["E2", "E3"]), invalid,
-                   answer("First exact passage. [E2]"))
+                   answer("First exact passage. [E2]", readings=[
+                       {"evidence_ref": "E2", "passages": ["First exact passage."]}]))
     retained = Evidence("E1", "https://example.org/retained", "Retained", "Retained but unsupplied text.")
     events = []
     result = run("What are the facts?", model=model, search=multi_search, fetch=no_fetch,

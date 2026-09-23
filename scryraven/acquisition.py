@@ -12,9 +12,9 @@ from dataclasses import asdict
 from html import unescape
 from urllib.parse import quote, urljoin, urlsplit
 
-from core.exa_transport import DiscoveryCandidate, search_exa
-from core.linkup_transport import fetch_linkup
-from core.serper_transport import search_serper
+from core.exa_transport import DiscoveryCandidate, ExaTransportError, search_exa
+from core.linkup_transport import LinkupTransportError, fetch_linkup
+from core.serper_transport import SerperTransportError, search_serper
 from core.transport import FetchedMaterial
 from scryraven.sources import TARGETED_SOURCE_CHARACTERS, Evidence, SourceIndex, exact_view
 
@@ -300,10 +300,14 @@ class AcquisitionLibrary:
     def _search(self, request: dict, result: dict, before_external: Callable[[], None]) -> None:
         before_external()
         result.update(external=True, local=False)
+        lexical = request["kind"] == "search_lexical"
         try:
-            lexical = request["kind"] == "search_lexical"
             leads = (self.lexical_search if lexical else self.search)(request["query"])
-        except Exception:
+        except Exception as exc:
+            if lexical and isinstance(exc, SerperTransportError) and str(exc) == "serper_configuration_missing":
+                raise AcquisitionError("serper_configuration_missing") from None
+            if not lexical and isinstance(exc, ExaTransportError) and str(exc) == "exa_configuration_missing":
+                raise AcquisitionError("exa_configuration_missing") from None
             raise AcquisitionError("search_failed") from None
         if not isinstance(leads, list):
             raise AcquisitionError("invalid_search_response")
@@ -336,7 +340,11 @@ class AcquisitionLibrary:
             result.update(external=True, local=False)
             try:
                 fetched = self.fetch(url)
-            except Exception:
+            except Exception as exc:
+                if isinstance(exc, LinkupTransportError):
+                    code = str(exc)
+                    if code in {"linkup_configuration_missing", "linkup_material_unavailable"}:
+                        raise AcquisitionError(code) from None
                 raise AcquisitionError("read_failed") from None
             if (not isinstance(fetched, FetchedMaterial) or fetched.requested_url != url
                     or not isinstance(fetched.readable_text, str) or not fetched.readable_text.strip()):

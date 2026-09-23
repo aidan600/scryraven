@@ -65,8 +65,21 @@ def no_io(*args, **kwargs):
     raise AssertionError("Unexpected external I/O")
 
 
-def first_script(draft=DRAFT):
-    return (decision(), decision("answer", ["E1"]), answer(draft))
+def with_readings(final, *readings):
+    final["source_readings"] = [
+        {"evidence_ref": ref, "passages": [passage]} for ref, passage in readings
+    ]
+    return final
+
+
+def first_script(draft=DRAFT, *, reading=EARLY):
+    return (decision(), decision("answer", ["E1"]),
+            with_readings(answer(draft), ("E1", reading)))
+
+
+def early_local_turn(draft):
+    *research_decisions, final = local_turn(draft)
+    return *research_decisions, with_readings(final, ("E1", EARLY))
 
 
 def source_search(question):
@@ -82,13 +95,19 @@ def prepared_session(store):
         fetch=lambda url: FetchedMaterial(url, LATER), model=Script(
             decision(requests=[request("read", query="", target="E1", mode="local"), request("read", query="", target="E1", mode="full")]),
             decision("answer", ["E1", "E2"]),
-            answer("Humidity can reduce evaporative cooling. **Shade remains useful.** [E1, E2]\n\n"
-                   "The full material adds a qualification to the earlier field note: local conditions matter. [E2]")))
+            with_readings(answer("Humidity can reduce evaporative cooling. **Shade remains useful.** [E1, E2]\n\n"
+                                 "The full material adds a qualification to the earlier field note: local conditions matter. [E2]"),
+                          ("E1", EARLY), ("E2", LATER[:120]))))
     session.ask(FOLLOWUP)
     def select_packet(material):
         return decision("answer", [item["id"] for item in material["evidence"]])
     def cite_packet(material):
-        return answer("Start with the places where people spend time: **walking routes, bus stops and seating.** [" + material["evidence"][0]["id"] + "]")
+        selected = material["evidence"][0]
+        return with_readings(
+            answer("Start with the places where people spend time: **walking routes, bus stops and seating.** ["
+                   + selected["id"] + "]"),
+            (selected["id"], selected["content"][:120].strip()),
+        )
     session = ResearchSession.open(session.session_id, store=store,
         search=lambda q: [DiscoveryCandidate("Designing for shade · sample publication", OTHER_URL, "Navigation")],
         fetch=lambda url: FetchedMaterial(url, LARGE), model=Script(
@@ -113,7 +132,7 @@ class AcceptanceModel:
             if "unable" in question.lower():
                 replies = (decision("answer"), answer("The available material did not establish an answer to this question.", "unable"))
             else:
-                replies = local_turn(DRAFT) if material["conversation_context"] else first_script()
+                replies = early_local_turn(DRAFT) if material["conversation_context"] else first_script()
                 if "partial" in question.lower():
                     replies[-1].update(posture="partial", answer="The available material establishes that trees provide shade. [E1]\n\nSome aspects remain unresolved.")
             self.current.script = Script(*replies)
