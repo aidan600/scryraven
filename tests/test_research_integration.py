@@ -45,7 +45,19 @@ def test_ordinary_engine_reopens_and_rereads_retained_material_without_acquisiti
         assert [call[0] for call in followup_model.calls] == ["research", "research", "answer"]
         initial_packet, final_packet = followup_model.calls[0][2], followup_model.calls[-1][2]
         assert initial_packet["working_understanding"] is None and initial_packet["evidence"] == []
-        assert initial_packet["conversation_context"] == [{"question": "What is the value?", "answer": first.answer}]
+        assert initial_packet["conversation_context"] == [{
+            "question": "What is the value?", "answer": first.answer,
+            "provenance": {
+                "posture": first.posture, "stop_reason": first.stop_reason,
+                "citations": [{
+                    "number": 1, "source_id": "E1", "title": first.citations[0].title,
+                    "material_ids": ["E1"],
+                }],
+            },
+        }]
+        assert final_packet["conversation_context"] == [
+            {"question": "What is the value?", "answer": first.answer},
+        ]
         assert final_packet["evidence"][0]["content"] == first.evidence[0].content
         assert not {"analysis", "semantic_history", "working_understanding", "draft"} & final_packet.keys()
 

@@ -6,6 +6,7 @@ import math
 import re
 from bisect import bisect_right
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from typing import Literal
 
@@ -236,3 +237,45 @@ class SourceIndex:
             "full_body_in_packet": spans == [(0, len(self.source.content))],
             "regions": [{"id": view.id, "start_char": view.start_char, "end_char": view.end_char} for view in views],
         }
+
+
+def rank_corpus_regions(indexes: Sequence[SourceIndex], query: str) -> tuple[list[tuple[SourceIndex, int]], int]:
+    """Rank actual acquisition regions on one disposable corpus-wide lexical scale.
+
+    Each region is a document for frequency and length statistics. The scores
+    locate text for inspection; they make no claim about evidentiary support.
+    """
+    retained = [index for index in indexes if index.source.acquisition != "targeted_view"]
+    tokens = _terms(query)
+    terms = sorted(set(tokens))
+    pairs = sorted(set(zip(tokens, tokens[1:])))
+    region_count = sum(len(index.regions) for index in retained)
+    if not terms or not region_count:
+        return [], 0
+
+    frequency = {term: sum(index.frequency[term] for index in retained) for term in terms}
+    pair_frequency = {pair: sum(index.pair_frequency[pair] for index in retained) for pair in pairs}
+    total_length = sum(sum(index.lengths) for index in retained)
+    average_length = total_length / region_count
+
+    scored = []
+    for acquisition_order, index in enumerate(retained):
+        for region, counts in enumerate(index.counts):
+            length = index.lengths[region] / max(1, average_length)
+            score = 0.0
+            for term in terms:
+                count = counts[term]
+                if count:
+                    idf = math.log(1 + (region_count - frequency[term] + 0.5) / (frequency[term] + 0.5))
+                    score += idf * count * 2.2 / (count + 1.2 * (0.25 + 0.75 * length))
+            for pair in pairs:
+                if pair in index.pairs[region]:
+                    score += 2 * math.log(1 + (region_count - pair_frequency[pair] + 0.5)
+                                          / (pair_frequency[pair] + 0.5))
+            score *= sum(bool(counts[term]) for term in terms) / len(terms)
+            if score:
+                start, end = index.regions[region]
+                scored.append((score, index.source.source_id, start, end, acquisition_order, region, index))
+
+    scored.sort(key=lambda hit: (-hit[0], hit[1], hit[2], hit[3], hit[4], hit[5]))
+    return [(index, region) for _, _, _, _, _, region, index in scored], len(scored)

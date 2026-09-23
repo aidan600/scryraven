@@ -271,7 +271,11 @@ def _exercise_premise_followup_reopen(directory):
     assert second.evidence == second.selected_evidence == second.citations == ()
     for call in second_model.calls:
         packet = call[2]
-        assert packet["conversation_context"] == [{"question": first_question, "answer": first_answer}]
+        prior = {"question": first_question, "answer": first_answer}
+        if call[0] == "research":
+            prior["provenance"] = {"posture": first.posture,
+                                   "stop_reason": first.stop_reason, "citations": []}
+        assert packet["conversation_context"] == [prior]
         assert packet["question"] == followup_question and packet["evidence"] == []
         assert "working_understanding" not in packet or call[0] == "research"
     assert "prior assistant" in answers(second_model)[0][1].lower()
@@ -341,8 +345,11 @@ def test_narrative_battery_followup_selectively_changes_current_user_load():
     assert first.selected_evidence == second.selected_evidence == session.acquisitions == ()
     for stage, prompt, packet, _schema in model.calls[2:]:
         assert packet["question"] == BATTERY_FOLLOWUP
-        assert packet["conversation_context"] == [{"question": BATTERY_QUESTION,
-                                                   "answer": first_answer}]
+        prior = {"question": BATTERY_QUESTION, "answer": first_answer}
+        if stage == "research":
+            prior["provenance"] = {"posture": first.posture,
+                                   "stop_reason": first.stop_reason, "citations": []}
+        assert packet["conversation_context"] == [prior]
         assert packet["evidence"] == []
         assert "assistant" in prompt.lower() and "factual authority" in prompt.lower()
         if stage == "research":
@@ -409,7 +416,7 @@ def test_prior_assistant_scenario_answer_does_not_verify_actual_product_capacity
         return []
 
     session = ResearchSession(model=model, search=empty_search, fetch=no_acquisition)
-    session.ask(BATTERY_QUESTION)
+    first = session.ask(BATTERY_QUESTION)
     second = session.ask(second_question)
 
     assert searches == [route["query"]]
@@ -417,6 +424,9 @@ def test_prior_assistant_scenario_answer_does_not_verify_actual_product_capacity
     assert second.posture == "unable" and second.citations == second.selected_evidence == ()
     assert second.trace[-1]["budget"]["external_attempts"] == 1
     for call in model.calls[2:]:
-        assert call[2]["conversation_context"] == [{"question": BATTERY_QUESTION,
-                                                    "answer": first_answer}]
+        prior = {"question": BATTERY_QUESTION, "answer": first_answer}
+        if call[0] == "research":
+            prior["provenance"] = {"posture": first.posture,
+                                   "stop_reason": first.stop_reason, "citations": []}
+        assert call[2]["conversation_context"] == [prior]
         assert call[2]["evidence"] == []

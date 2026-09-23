@@ -106,8 +106,15 @@ its snippets never become Evidence. Research can Read an observed candidate URL
 through LinkUp to acquire actual source material. Navigation-only metadata is not
 admitted as source text.
 External Read retains LinkUp's readable source representation as fetched Evidence;
-local Read reuses actual retained material or constructs an exact view. Find locates
-lexical matches in retained material, including highlights, without provider I/O.
+local Read reuses actual retained material or constructs an exact view. A historical
+targeted-view ID can be rebuilt from its retained full parent without provider I/O;
+the view itself need not persist globally. Direct IDs follow the existing bounded
+targeted-view size; longer spans use an explicit parent range that splits into
+bounded views. Find locates lexical matches in retained
+material, including highlights, without provider I/O. Unscoped Find ranks regions
+from actual retained acquisitions on one corpus-wide lexical scale; scoped Find
+keeps its source-specific inspection behavior. Ranking is navigation, not a
+judgment of relevance or support.
 A failed search or local match says nothing about factual nonexistence.
 
 Acquisition retains fixed safe `exa_configuration_missing`,
@@ -122,7 +129,7 @@ Read's target and mode have explicit mechanical meaning:
 | --- | --- |
 | Exact material ID with `auto` | Reread that retained item locally, including highlights. |
 | `local` | Inspect available retained material without external acquisition. |
-| `full` | Reuse the latest retained full parent for the source or acquire full text if absent. |
+| `full` | Reuse the latest retained full parent for the source or acquire full text if absent. Large parents yield bounded exact views, so one Read need not expose the whole body. |
 | Candidate ID or observed URL with `auto` | Reuse an available full parent or acquire source text. |
 | `refresh` | Attempt another full-text acquisition while preserving earlier versions. |
 
@@ -136,6 +143,12 @@ material may reuse its immutable record. Different received versions preserve
 their own material IDs and share the source identity allocated to the same URL.
 Find merges overlapping hit regions only within the same immutable parent,
 preserving all matched text while reducing duplicate reading context.
+Read returns a mechanical receipt for the material actually returned: parent
+length, exact ranges, returned characters and whether the entire parent body was
+in that packet. Focused large-parent Reads also distinguish lexical hits from
+dispersed fallback after a lexical miss. The receipt does not establish what
+Research understood or whether the source contains an answer. Research can use
+Find, another focus or an exact range to inspect more of a large parent.
 Target URLs must be supplied by the user, returned through acquisition, or found
 as explicit links in exposed material. These mechanics validate addressability
 and custody, not semantic relevance.
@@ -192,8 +205,10 @@ generated notes. A limit is not evidence of support or nonexistence.
 When Research reaches its operating bound, presentation discloses that fact even
 if the independent Answer supports its conclusion. The bound does not mechanically
 change Answer posture.
-Safe run traces include monotonic elapsed time and model start, return and failure
-events. Incomplete provider responses retain only fixed `content_filter` and
+Safe run traces include monotonic elapsed time, body-free conversation and
+retained-library size counts at turn start, Research catalog and active Evidence
+character counts at model start, and model return and failure events. Incomplete
+provider responses retain only fixed `content_filter` and
 `max_output_tokens` classifications; missing, malformed or unknown reasons remain
 generic. No raw provider reason or response payload enters the trace.
 
@@ -209,7 +224,14 @@ the exact selected material, including versions and views. Identity validation i
 not semantic entailment checking.
 
 `ResearchSession` receives this native result from the ordinary Research loop. Every `ask` starts fresh Research understanding and attention over the
-retained acquisition library. Prior user questions may supply explicit premises
+retained acquisition library. Research receives the full prior question and answer
+text plus citation provenance derived from immutable saved turns. It identifies
+the exact source and material each earlier answer cited, including targeted views,
+without supplying the source body or claiming that the earlier answer was correct.
+Research must reopen actual retained Evidence before using it as current factual
+support. Answer continues to receive ordinary conversation without historical
+provenance aliases unless the material is independently selected as current
+Evidence. Prior user questions may supply explicit premises
 as task context; prior assistant answers are never Evidence. Only successful
 completed results commit session state;
 failures leave the previous in-memory and durable snapshot unchanged. A partial
@@ -222,7 +244,8 @@ commit boundary remain, with neutral-turn validation alongside legacy validation
 Run traces, working understanding, indexes, observer records and provider state
 are not session persistence fields. Reopening preserves actual Evidence and
 historical answer provenance without making past generated text evidentiary.
-Long-session conversation-context retention remains unproved. There is no
+All prior questions and answers are replayed verbatim for every Research call and
+for Answer. Long-session performance remains unproved. There is no
 context-compaction lifecycle in the ordinary product.
 
 Ordinary `run`, `ResearchSession.ask`, the CLI (isolated, ephemeral and durable),

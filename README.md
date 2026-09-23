@@ -141,8 +141,10 @@ python -m scryraven "According to the BIPM SI Brochure, what is the largest SI p
 After each answer, enter the next question at the prompt. Blank input or EOF ends
 the session. Every question gets fresh Research and Answer decisions and
 fresh research limits. Research can inspect actual retained sources without another
-provider call, or acquire additional material. Previous answers help interpret
-follow-up intent but cannot support facts or citations. This mode saves nothing
+provider call, or acquire additional material. Research can see which exact retained
+material a previous answer cited and reopen it locally, including an exact view
+reconstructed from its retained full parent. This citation history guides navigation;
+previous answers cannot support facts or citations. This mode saves nothing
 between processes. `--html` remains an isolated single-answer option.
 
 The equivalent sequential Python API accepts the same optional model, search,
@@ -221,7 +223,10 @@ They are not regenerated for display or automatically reused as current support.
 
 All actual acquisitions, including complete large-source parents, retain their
 original IDs and source relationships across restart. Future Research may select
-them or derive new exact views locally. Prior answers remain conversation context;
+them or derive new exact views locally, including views cited by earlier turns.
+The complete prior question and answer text remains available to each new Research
+and Answer call; Research alone receives historical citation IDs as navigation.
+Prior answers remain conversation context;
 Historical Analysis remains inspectable history; native turns have no Analysis.
 Each question receives fresh Research and Answer decisions. Storage contains no
 traces, credentials, raw model responses, corrections, lexical indexes or cache
@@ -264,8 +269,13 @@ guides navigation; actual highlights can support only what their text establishe
 Missing conditions, identity, applicability or connected context can require a Read.
 
 Search admits actual source-derived highlights mechanically. Read can acquire a
-full source, reread retained material, or select exact views. Find locates lexical
-matches in retained Evidence without provider I/O. All results return to Research
+full source, reread retained material, or select exact views. A `full` Read secures
+the full parent but may return bounded exact views when it is large. Each Read
+reports the exact text returned and whether a focused lexical lookup matched or
+fell back to dispersed windows. Unscoped Find ranks lexical matches across the
+retained library on a comparable corpus-wide scale; it remains navigation, not
+semantic evidence judgment. Local Read and Find need no provider I/O for retained text.
+All results return to Research
 for reassessment. Neither source count, failed search nor budget exhaustion proves
 support, completeness or nonexistence. The original/current request governs scope.
 
@@ -309,7 +319,8 @@ Answers, a compact posture/operating status, and a source list appear on stdout.
 Source-free conditional answers are labeled as derived from user assumptions;
 Research operating-bound completion is disclosed separately from answer posture.
 `--trace` adds compact diagnostics on stderr: model
-roles, public Research choices, acquisition results, exposure IDs/lengths/hashes,
+roles, public Research choices, acquisition results, body-free conversation,
+catalog, retained-library and active Evidence size counts, exposure IDs/lengths/hashes,
 answer posture, bounds and citation resolution. Exact source bodies stay outside
 the compact trace. These diagnostics contain no private reasoning.
 Raw payloads, credentials and hidden reasoning are excluded.

@@ -28,6 +28,27 @@ class _Snapshot:
     metadata: SessionMetadata | None = None
 
 
+def _research_conversation_entry(turn: SessionTurn) -> dict:
+    """Project saved answer citations as navigation, without source text or new state."""
+    return {
+        "question": turn.question,
+        "answer": turn.answer,
+        "provenance": {
+            "posture": turn.posture,
+            "stop_reason": turn.stop_reason,
+            "citations": [
+                {
+                    "number": citation.number,
+                    "source_id": citation.source_id,
+                    "title": citation.title,
+                    "material_ids": [material.id for material in citation.materials],
+                }
+                for citation in turn.citations
+            ],
+        },
+    }
+
+
 class ResearchSession:
     """Sequential ask(question) calls with fresh decisions over a retained corpus.
 
@@ -101,6 +122,7 @@ class ResearchSession:
         # Historical Analyst records are not supplied to new research.
         context = {
             "conversation_context": [{"question": turn.question, "answer": turn.answer} for turn in state.turns],
+            "research_conversation_context": [_research_conversation_entry(turn) for turn in state.turns],
         }
         result = (self._engine or _run_turn)(
             question, model=self._model, search=self._search, lexical_search=self._lexical_search,

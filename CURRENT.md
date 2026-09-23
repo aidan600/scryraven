@@ -34,7 +34,20 @@ verifier or additional semantic owner exists.
 Immutable acquisitions, canonical source identities, exact versions/views,
 literal Answer readings, deterministic citations and historical selected-material
 snapshots survive. Follow-ups start fresh Research/Answer decisions and can reread
-retained actual Evidence without external acquisition. Conversation supplies
+retained actual Evidence without external acquisition. Research receives historical
+citation provenance derived from saved turns: answer-local citation numbers,
+canonical source IDs and exact material IDs are navigation, not Evidence or a
+claim that the prior answer was correct. It can reconstruct a cited targeted view
+locally from its retained full parent. Answer sees ordinary conversation without
+historical provenance aliases unless exact material is selected into current
+Evidence. Unscoped Find ranks actual retained acquisition regions on a comparable
+corpus-wide lexical scale rather than interleaving results by acquisition order;
+lexical rank does not establish semantic relevance or support. Read gives a
+mechanical receipt for the exact text returned, including parent coverage and
+focused lexical hit or fallback status. `full` identifies the full-parent custody
+target; a large parent may expose bounded exact views in one Read. Safe traces
+include body-free conversation, catalog, retained-corpus and active-Evidence
+size counts. Conversation supplies
 non-evidentiary task context for intent, discourse, corrections and follow-up
 meaning. Explicit premises in prior user questions may remain task inputs, while
 user beliefs and narration are not automatically stipulated premises. Prior
@@ -194,8 +207,10 @@ These diagnostics and the longer hard ceiling do not establish user-perceived
 latency acceptability; that remains unresolved for dogfooding.
 
 Literal-reading and citation validation prove custody/membership, not semantic
-entailment. Very long-session performance and conversation-context retention
-remain unproved; no context-compaction lifecycle is implemented. General
+entailment. All prior question and answer text remains in every Research and Answer
+call without aging or trimming; very long-session performance remains unproved
+and no context-compaction lifecycle is implemented. Catalog scaling and caching
+remain unproved. General
 reliability remains unproved. Level 6 revision/recovery under superseding Evidence
 is **not established**. No Sol interpretation/decomposition pass is part of the
 ordinary product path or currently earned. Only repeated consequential exact
