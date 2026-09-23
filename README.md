@@ -281,10 +281,13 @@ Source labels use publication metadata, PDF filenames or hostnames without
 generating titles from evidence text.
 
 The established operating limits are 12 semantic attempts, 16 external acquisition
-attempts, 120 seconds and 128,000 characters of current Evidence attention. Local
+attempts, a 300-second hard run ceiling and 128,000 characters of current Evidence
+attention. Local
 Read/Find use no external allowance. Corrected model outputs use the same finite
-semantic allowance. The loop reserves terminal Answer time and returns an honest
-operational unable result when it cannot complete a source-grounded answer.
+semantic allowance. The loop reserves 180 seconds for terminal Answer once Evidence
+exists; each model call remains capped at 120 seconds. The longer ceiling gives
+operational diagnostic headroom and is not a product-latency target. The loop
+returns an honest operational unable result when it cannot complete a source-grounded answer.
 Supported, partial and unable results remain distinct.
 
 SQLite keeps the existing revision-checked atomic snapshot boundary. Native turns

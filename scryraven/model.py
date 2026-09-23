@@ -217,7 +217,13 @@ class OpenAIModel:
 
         try:
             if data.get("status") != "completed":
-                raise ModelError("model_response_incomplete")
+                details = data.get("incomplete_details")
+                reason = details.get("reason") if isinstance(details, dict) else None
+                code = {
+                    "content_filter": "model_response_incomplete_content_filter",
+                    "max_output_tokens": "model_response_incomplete_max_output_tokens",
+                }.get(reason) if isinstance(reason, str) else None
+                raise ModelError(code or "model_response_incomplete")
             # Intermediate assistant updates are not part of a structured final
             # response. Never concatenate commentary with the final JSON object.
             messages = [item for item in data["output"] if item.get("type") == "message"]

@@ -23,9 +23,11 @@ for a needed source class. Serper candidates and snippets guide navigation only;
 they are not Evidence. LinkUp static Fetch supplies external known-URL Read when
 Research selects one. Exa Contents has no ordinary Read authority; there is no
 search or Read fallback or provider router. Limits remain 12 semantic attempts,
-16 external attempts, 120 seconds
-and 128,000 characters of current attention. No semantic verifier or additional
-semantic owner exists.
+16 external attempts and 128,000 characters of current attention. The ordinary
+hard run ceiling is 300 seconds, with 180 seconds reserved for terminal Answer
+once Evidence exists; each model call remains capped at 120 seconds. This is
+diagnostic and completion headroom, not an acceptable-latency target. No semantic
+verifier or additional semantic owner exists.
 
 ## Sessions, Evidence and presentation
 
@@ -174,6 +176,13 @@ in both Level-8 baselines. An exact current-revision Answer replay at the unchan
 remain unknown because their safe traces did not preserve the provider reason.
 The replay supports no output-cap, prompt, retry or model repair, and it does not
 demonstrate a Research or Answer semantic failure.
+
+The ordinary transport now preserves fixed safe incomplete classifications for
+`content_filter` and `max_output_tokens` in failure diagnostics. Unknown or
+malformed incomplete reasons remain the generic `model_response_incomplete` code.
+The run trace records elapsed monotonic time and safe model return/failure events.
+These diagnostics and the longer hard ceiling do not establish user-perceived
+latency acceptability; that remains unresolved for dogfooding.
 
 Literal-reading and citation validation prove custody/membership, not semantic
 entailment. Very long-session performance and conversation-context retention

@@ -165,14 +165,21 @@ research across seven completed families, including selective revision and
 multi-turn scenario-premise handling. It did not establish arbitrary-length
 continuity or general reliability.
 
-`RunLimits` initially allows 12 semantic attempts, 16 external acquisition attempts,
-120 seconds, and 128,000 characters of current Evidence attention. These are
-operational settings. Local inspection uses no external allowance, while malformed
+`RunLimits` ordinarily allows 12 semantic attempts, 16 external acquisition attempts,
+a 300-second hard run ceiling, and 128,000 characters of current Evidence attention.
+After Evidence exists, the loop reserves 180 seconds for terminal Answer; each model
+call remains capped at 120 seconds. The longer run ceiling is diagnostic and
+completion headroom, not an acceptable product-latency target. Local inspection
+uses no external allowance, while malformed
 or corrected model attempts consume the same semantic allowance. Transport
 timeouts use the remaining run deadline. The loop reserves an answer attempt
 where time and allowance permit; if no supported answer can be completed,
 it returns an explicit operational unable result rather than synthesizing from
 generated notes. A limit is not evidence of support or nonexistence.
+Safe run traces include monotonic elapsed time and model start, return and failure
+events. Incomplete provider responses retain only fixed `content_filter` and
+`max_output_tokens` classifications; missing, malformed or unknown reasons remain
+generic. No raw provider reason or response payload enters the trace.
 
 ## Result, session, and presentation boundaries
 

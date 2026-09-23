@@ -4,7 +4,14 @@ import json
 import pytest
 
 from core.exa_transport import DiscoveryCandidate, FetchedMaterial
-from scryraven.research import AnswerDecision, RunError, RunLimits, run
+from scryraven.model import ModelError, OpenAIModel
+from scryraven.research import (
+    TERMINAL_ANSWER_RESERVE_SECONDS,
+    AnswerDecision,
+    RunError,
+    RunLimits,
+    run,
+)
 from scryraven.sources import Evidence
 
 
@@ -192,11 +199,56 @@ def test_deadline_prevents_additional_io_and_produces_honest_operational_result(
     assert not any(e["action"] == "model_started" and e["exposed"] for e in result.trace)
 
 
+def test_run_headroom_defaults_and_model_trace_use_one_monotonic_clock():
+    assert RunLimits() == RunLimits(semantic_attempts=12, external_attempts=16,
+                                     seconds=300, attention_characters=128_000)
+    assert TERMINAL_ANSWER_RESERVE_SECONDS == 180
+    now = [10.0]
+
+    def research_after_transport(_material):
+        now[0] = 11.25
+        return decision("answer")
+
+    def answer_after_transport(_material):
+        now[0] = 13.5
+        return answer("No source establishes this.", "unable")
+
+    result = run("Value?", model=Script(research_after_transport, answer_after_transport),
+                 search=search, fetch=no_fetch, clock=lambda: now[0])
+    events = [event for event in result.trace if event["action"].startswith("model_")]
+    assert [(event["action"], event["contract"], event["attempt"],
+             event["budget"]["elapsed_seconds"], event["budget"]["seconds_remaining"])
+            for event in events] == [
+                ("model_started", "research", 1, 0.0, 300.0),
+                ("model_returned", "research", 1, 1.25, 298.75),
+                ("model_started", "answer", 2, 1.25, 298.75),
+                ("model_returned", "answer", 2, 3.5, 296.5),
+            ]
+
+
+def test_model_failure_trace_has_later_time_and_only_safe_code():
+    now = [0.0]
+
+    def failed(_material):
+        now[0] = 2.5
+        return ModelError("model_response_incomplete_content_filter")
+
+    with pytest.raises(RunError) as caught:
+        run("Value?", model=Script(failed), search=search, fetch=no_fetch,
+            clock=lambda: now[0])
+    events = [event for event in caught.value.trace if event["action"].startswith("model_")]
+    assert [(event["action"], event["budget"]["elapsed_seconds"]) for event in events] == [
+        ("model_started", 0.0), ("model_failed", 2.5),
+    ]
+    assert events[-1]["code"] == "model_response_incomplete_content_filter"
+    assert set(events[-1]) == {"stage", "action", "contract", "attempt", "code", "budget"}
+
+
 def test_terminal_answer_reserve_preserves_a_source_first_answer_window():
     now = [0.0]
 
     def delayed(q):
-        now[0] = 66
+        now[0] = 120
         return search(q)
 
     model = Script(decision(), answer())
@@ -208,12 +260,32 @@ def test_terminal_answer_reserve_preserves_a_source_first_answer_window():
     assert model.calls[-1][2]["evidence"][0]["id"] == "E1"
 
 
+def test_individual_model_call_stays_capped_at_120_seconds():
+    now = [0.0]
+
+    class TimedModel(OpenAIModel):
+        def __init__(self):
+            super().__init__()
+            self.timeouts = []
+
+        def __call__(self, stage, prompt, material, schema):
+            self.timeouts.append(self.timeout_seconds)
+            if stage == "research":
+                now[0] = 200
+                return json.dumps(decision("answer"))
+            return json.dumps(answer("No source establishes this.", "unable"))
+
+    model = TimedModel()
+    run("Value?", model=model, search=search, fetch=no_fetch, clock=lambda: now[0])
+    assert model.timeouts == [120, 100]
+
+
 def test_pending_new_material_at_deadline_does_not_commit_a_stale_partial_answer():
     now = [0.0]
 
     def staged_search(query):
         if query == "new material":
-            now[0] = 121
+            now[0] = 301
             return [DiscoveryCandidate("New fact", "https://example.org/new", "A new fact.",
                                        context_kind="provider_highlights")]
         return search(query)
