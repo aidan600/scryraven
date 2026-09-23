@@ -14,7 +14,7 @@ from markupsafe import Markup
 from werkzeug.exceptions import HTTPException, SecurityError
 from werkzeug.serving import WSGIRequestHandler, make_server
 
-from scryraven.presentation import answer_html, source_body_html, source_label
+from scryraven.presentation import answer_html, premise_only, source_body_html, source_label
 from scryraven.session import ResearchSession
 from scryraven.session_store import (
     SessionConflictError,
@@ -116,6 +116,8 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
             prefix = f"turn-{number}-source-"
             turns.append({
                 "number": number, "question": turn.question, "posture": turn.posture,
+                "operating_bound": turn.stop_reason == "research_bound",
+                "premise_only": premise_only(turn),
                 "answer": Markup(answer_html(turn, source_prefix=prefix)),
                 "sources": [{"number": c.number, "id": prefix + str(c.number), "title": source_label(c),
                              "body": Markup(source_body_html(c, collapse_long=True))} for c in turn.citations],

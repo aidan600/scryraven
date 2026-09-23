@@ -13,20 +13,32 @@ from reading_room_samples import (
     LATER,
     QUESTION,
     Script,
+    early_local_turn,
     first_script,
     no_io,
     prepared_session,
     source_search,
 )
-from test_answer_presentation import Page
+from test_answer_presentation import Page, source_free_answer
+from test_answer_presentation import answer as cited_answer
 from test_persistent_sessions import tmp_path as external_tmp_path
 from test_research_loop import answer, decision
-from test_research_session import local_turn
 
 from scryraven import reading_room
-from scryraven.presentation import answer_html, source_body_html
+from scryraven.presentation import (
+    PREMISE_ONLY_DISCLOSURE,
+    RESEARCH_BOUND_DISCLOSURE,
+    answer_html,
+    source_body_html,
+)
 from scryraven.session import ResearchSession
-from scryraven.session_store import SessionConflictError, SQLiteSessionStore, default_session_path
+from scryraven.session_store import (
+    SessionConflictError,
+    SessionState,
+    SessionTurn,
+    SQLiteSessionStore,
+    default_session_path,
+)
 
 tmp_path = external_tmp_path
 
@@ -122,7 +134,7 @@ def test_followup_has_a_visible_label_and_the_native_session_form(tmp_path):
 
 def test_browser_new_and_followup_use_real_session_and_survive_app_replacement(tmp_path):
     store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
-    model = Script(*first_script(), *local_turn("A follow-up. [E1]"))
+    model = Script(*first_script(), *early_local_turn("A follow-up. [E1]"))
     client = app_for(store, model=model, search=source_search).test_client()
     response = submit(client)
     assert response.status_code == 303
@@ -156,7 +168,7 @@ def test_failure_preserves_all_prior_durable_state_and_keeps_question_for_edit(t
 @pytest.mark.parametrize("partial", [False, True])
 def test_partial_and_unable_are_completed_answers(tmp_path, partial):
     store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
-    outputs = local_turn("Some parts remain unresolved. [E1]") if partial else (decision("answer"), answer("An answer was not established.", "unable"))
+    outputs = early_local_turn("Some parts remain unresolved. [E1]") if partial else (decision("answer"), answer("An answer was not established.", "unable"))
     if partial:
         outputs[-1]["posture"] = "partial"
     model = Script(*outputs)
@@ -175,6 +187,36 @@ def test_partial_and_unable_are_completed_answers(tmp_path, partial):
     assert saved.state.turns[-1].posture == ("partial" if partial else "unable")
 
 
+@pytest.mark.parametrize(("posture", "bounded", "premise"), [
+    ("supported", False, False),
+    ("supported", True, False),
+    ("partial", False, False),
+    ("partial", True, False),
+    ("unable", False, False),
+    ("unable", True, False),
+    ("supported", False, True),
+    ("partial", False, True),
+])
+def test_reading_room_discloses_bound_and_premise_basis_from_saved_turn(tmp_path, posture, bounded, premise):
+    result = source_free_answer(posture) if premise or posture == "unable" else cited_answer()
+    result = replace(result, posture=posture,
+                     stop_reason="research_bound" if bounded else (
+                         "supported" if posture == "supported" else "not_established"))
+    store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
+    created = store.create("Status example")
+    turn = SessionTurn(QUESTION, result.answer, None, result.posture, result.stop_reason,
+                       result.selected_evidence, result.citations, result.citation_uses)
+    store.commit(created.metadata.session_id, created.metadata.revision,
+                 SessionState((turn,), result.evidence))
+    html = app_for(store).test_client().get(f"/sessions/{created.metadata.session_id}").get_data(as_text=True)
+    assert ('class="operating-bound-note"' in html) == bounded
+    assert (RESEARCH_BOUND_DISCLOSURE in html) == bounded
+    assert ('class="premise-note"' in html) == premise
+    assert (PREMISE_ONLY_DISCLOSURE in html) == premise
+    assert ('class="research-limitation"' in html) == (posture != "supported")
+    assert html.count('class="citation"') == (0 if premise or posture == "unable" else 1)
+
+
 def test_rename_edits_only_metadata_preserves_revision_and_inflight_commit_title(tmp_path):
     import sqlite3
     store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
@@ -184,7 +226,7 @@ def test_rename_edits_only_metadata_preserves_revision_and_inflight_commit_title
         payload = connection.execute("SELECT payload FROM sessions").fetchone()[0]
     # This ask object predates the title edit; commit must use the current title.
     inflight = ResearchSession.open(session.session_id, store=store, model=Script(
-        *local_turn("More. [E1]")), search=no_io, fetch=no_io)
+        *early_local_turn("More. [E1]")), search=no_io, fetch=no_io)
     client = app_for(store).test_client()
     location = f"/sessions/{session.session_id}"
     form = token(client.get(location + "?edit=rename"), location + "/rename")
@@ -232,7 +274,7 @@ def test_stale_research_and_delete_forms_do_not_run_or_remove_new_turns(tmp_path
     old = token(client.get(location), location + "/ask")
     deletion = token(client.get(location + "/delete"), location + "/delete")
     next_session = ResearchSession.open(session.session_id, store=store, model=Script(
-        *local_turn("A new answer. [E1]")), search=no_io, fetch=no_io)
+        *early_local_turn("A new answer. [E1]")), search=no_io, fetch=no_io)
     next_session.ask(FOLLOWUP)
     before = store.load(session.session_id)
     assert client.post(location + "/ask", data=old | {"question": FOLLOWUP}).status_code == 409
@@ -291,7 +333,7 @@ def test_forged_misdirected_and_restarted_forms_fail_without_io(tmp_path):
 def test_untrusted_question_title_answer_and_material_are_inert(tmp_path):
     attack = '<img src=x onerror="alert(1)"><script>alert(1)</script>'
     store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
-    client = app_for(store, model=Script(*first_script(attack + " [E1]")),
+    client = app_for(store, model=Script(*first_script(attack + " [E1]", reading=attack)),
                      search=lambda q: [replace(source_search(q)[0], title=attack, context=attack)]).test_client()
     response = submit(client, question=attack)
     html = client.get(response.location).get_data(as_text=True)
@@ -350,7 +392,7 @@ def test_unavailable_database_and_post_commit_conflict_are_bounded(tmp_path):
         def commit(self, *args):
             raise SessionConflictError()
     client = app_for(ConflictedStore(store.path), model=Script(
-        *local_turn("Unsaved. [E1]"))).test_client()
+        *early_local_turn("Unsaved. [E1]"))).test_client()
     response = submit(client, f"/sessions/{session.session_id}", FOLLOWUP)
     assert response.status_code == 409 and "Unsaved." not in response.get_data(as_text=True)
     assert store.load(session.session_id) == before

@@ -80,7 +80,13 @@ substring and offsets without changing words or punctuation. A malformed or
 nonmatching reading gets an output correction under the same Answer contract,
 deadline and semantic allowance. A source-bearing Answer that omits required
 citation aliases receives a fixed correction under that same allowance before
-acceptance; rejected prose is not fed back. For `user_premises`, the Evidence
+acceptance; rejected prose is not fed back. Supported and partial `evidence`
+answers also require at least one validated reading, with a reading from selected
+material in every canonical source group they cite. A targeted view counts for
+its canonical source group. Additional readings from uncited selected sources
+are allowed. Missing required readings receive fixed corrections under the
+existing Answer allowance; exhaustion retains the honest operational fallback.
+Evidence `unable` answers are exempt. For `user_premises`, the Evidence
 packet and `source_readings` must both be empty, and a supported or partial answer
 may derive solely from explicit user premises without a citation. This does not
 verify those premises externally or permit model memory to fill an omitted fact.
@@ -103,6 +109,12 @@ External Read retains LinkUp's readable source representation as fetched Evidenc
 local Read reuses actual retained material or constructs an exact view. Find locates
 lexical matches in retained material, including highlights, without provider I/O.
 A failed search or local match says nothing about factual nonexistence.
+
+Acquisition retains fixed safe `exa_configuration_missing`,
+`serper_configuration_missing`, `linkup_configuration_missing`, and
+`linkup_material_unavailable` failures. Unknown Search and Read exceptions retain
+generic safe failure codes. A single provider failure does not force a turn-wide
+fail-fast decision; Research judges the acquisition result.
 
 Read's target and mode have explicit mechanical meaning:
 
@@ -176,6 +188,10 @@ timeouts use the remaining run deadline. The loop reserves an answer attempt
 where time and allowance permit; if no supported answer can be completed,
 it returns an explicit operational unable result rather than synthesizing from
 generated notes. A limit is not evidence of support or nonexistence.
+
+When Research reaches its operating bound, presentation discloses that fact even
+if the independent Answer supports its conclusion. The bound does not mechanically
+change Answer posture.
 Safe run traces include monotonic elapsed time and model start, return and failure
 events. Incomplete provider responses retain only fixed `content_filter` and
 `max_output_tokens` classifications; missing, malformed or unknown reasons remain
@@ -216,6 +232,10 @@ Shared terminal/HTML presentation consumes `CompletedAnswer` and saved
 Analysis code is decode-only schema/reference validation in `scryraven.historical`.
 Historical judgments are excluded from new model packets. The stopped Investigator
 executable harness and its Author adapter are retired to their preserved Git lineage.
+
+The Reading Room and CLI label completed source-free supported/partial answers as
+derived from user assumptions with no external sources. Presentation derives this
+from posture and empty citations; it adds no persisted premise state.
 
 The model transport keeps exact JSON content and explicit prompt-cache boundaries
 for instructions, growing conversation history and stable Research turn context.

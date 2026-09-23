@@ -110,7 +110,8 @@ def test_new_exact_view_after_reopen_preserves_historical_selected_text(tmp_path
         req = request("read", query="", target="C1")
         req.update(start_char=start, end_char=end)
         ref = f"E1@{start}:{end}"
-        return decision(requests=[req]), decision("answer", [ref]), answer("Selected [" + ref + "]")
+        return (decision(requests=[req]), decision("answer", [ref]),
+                answer("Selected [" + ref + "]", readings=[{"evidence_ref": ref, "passages": [body[start:end]]}]))
     provider = Provider([candidate()], bodies={"https://example.test/pressure-standard": body})
     session = ResearchSession.create(store=store, model=Script(decision(), *read_range(0, 16)), search=provider.search, fetch=provider.fetch)
     first = session.ask(Q1)

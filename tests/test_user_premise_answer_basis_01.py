@@ -288,7 +288,8 @@ def test_mixed_user_assumptions_and_external_fact_keep_evidence_basis_and_citati
     model = RecordingModel(
         decision(), decision("answer", ["E1"]),
         answer("Under your ten-unit demand assumption, the documented seven-unit "
-               "supply leaves a three-unit shortfall. [E1]", support_basis="evidence"),
+               "supply leaves a three-unit shortfall. [E1]", support_basis="evidence",
+               readings=[{"evidence_ref": "E1", "passages": [source_text]}]),
     )
 
     result = run(question, model=model,

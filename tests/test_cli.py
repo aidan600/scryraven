@@ -13,7 +13,10 @@ from scryraven import model
 def test_cli_ordinary_run_invokes_research_and_answer_over_real_exa_adapter(monkeypatch, capsys, tmp_path):
     monkeypatch.setenv("OPENAI_API_KEY", "offline-test-value")
     monkeypatch.setenv("EXA_API_KEY", "offline-test-value")
-    outputs = iter([decision(), decision("answer", ["E1"]), answer("The exact value is seven. [E1]")])
+    outputs = iter([decision(), decision("answer", ["E1"]),
+                    answer("The exact value is seven. [E1]") | {"source_readings": [
+                        {"evidence_ref": "E1", "passages": ["The exact value is seven."]}
+                    ]}])
     stages, providers = [], []
 
     def post(url, **kwargs):
@@ -42,6 +45,7 @@ def test_cli_ordinary_run_invokes_research_and_answer_over_real_exa_adapter(monk
     assert stages == ['research', 'research', 'answer']
     assert len(providers) == 1 and providers[0].endswith('/search')
     assert 'The exact value is seven. [1]' in captured.out
+    assert 'Status: Supported' in captured.out
     diagnostics = json.loads(captured.err)
     assert diagnostics['selected_evidence'][0]['content'] == 'The exact value is seven.'
     assert 'Synthetic fact' in path.read_text(encoding='utf-8')
@@ -58,7 +62,9 @@ def test_cli_ordinary_search_then_read_uses_linkup_not_exa_contents(monkeypatch,
             "scope": [], "start_char": None, "end_char": None,
         }]),
         decision("answer", ["E1"]),
-        answer("The exact value is seven. [E1]"),
+        answer("The exact value is seven. [E1]") | {"source_readings": [
+            {"evidence_ref": "E1", "passages": ["The exact value is seven."]}
+        ]},
     ])
     providers = []
 

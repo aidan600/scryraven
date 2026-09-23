@@ -112,6 +112,12 @@
       <section class="turn" id="turn-{{ turn.number }}" aria-labelledby="question-{{ turn.number }}">
         <div class="question-block"><span class="eyebrow">{{ 'Your question' if loop.first else 'Your follow-up' }}</span><h2 id="question-{{ turn.number }}">{{ turn.question }}</h2></div>
         <article class="answer" aria-label="Answer to {{ turn.question }}">{{ turn.answer }}</article>
+        {% if turn.premise_only %}
+        <aside class="premise-note">Derived from assumptions you provided; no external sources were used.</aside>
+        {% endif %}
+        {% if turn.operating_bound %}
+        <aside class="operating-bound-note">Research reached its operating limit; this answer uses the material gathered by then.</aside>
+        {% endif %}
         {% if turn.posture != 'supported' %}
         <aside class="research-limitation"><strong>Research limitation</strong><p>{{ 'The available research did not establish an answer to this question.' if turn.posture == 'unable' else 'The available research did not establish every part of the question.' }}</p></aside>
         {% endif %}

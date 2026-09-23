@@ -458,14 +458,30 @@ def _run_turn(
                 emit("response_rejected", contract="answer", code=issue)
                 packet["output_correction"] = {"code": issue, "instruction": "Select separate literal contiguous passages only from the referenced supplied Evidence. Do not paraphrase, import another material/version, or stitch excerpts with ellipses."}
                 continue
+            requires_readings = final.support_basis == "evidence" and final.posture in {"supported", "partial"}
+            if requires_readings and not readings:
+                issue = "required_source_reading_missing"
+                emit("response_rejected", contract="answer", code=issue)
+                packet["output_correction"] = {
+                    "code": issue,
+                    "instruction": (
+                        "Return a fresh complete AnswerDecision with literal source_readings "
+                        "from the supplied Evidence for an evidence-backed supported or partial "
+                        "answer. Do not rely on or reproduce any rejected answer text."
+                    ),
+                }
+                continue
             # The final citation resolver already owns alias syntax and custody.
             # Probe it before accepting this Answer so a missing required alias
             # can use the existing bounded Answer correction loop. Other citation
             # errors still take their original finalization path below.
+            citations = ()
             try:
-                resolve_citations(final.answer, [library.materials[ref] for ref in refs],
-                                  list(library.acquisitions), [],
-                                  require_citation=final.support_basis == "evidence" and final.posture != "unable")
+                _, citations, _ = resolve_citations(
+                    final.answer, [library.materials[ref] for ref in refs],
+                    list(library.acquisitions), [],
+                    require_citation=final.support_basis == "evidence" and final.posture != "unable",
+                )
             except RunError as exc:
                 if refs and exc.stage == "citations" and exc.code == "missing_citation":
                     emit("response_rejected", contract="answer", code="missing_citation")
@@ -477,6 +493,25 @@ def _run_turn(
                             "Cite supported factual claims in answer using exact supplied aliases "
                             "such as [E1] or [E7@0:3200]. Do not rely on or reproduce any "
                             "rejected answer text."
+                        ),
+                    }
+                    continue
+            if requires_readings:
+                reading_groups = {library.materials[reading["evidence_ref"]].source_id
+                                  for reading in readings}
+                uncovered = sorted({citation.source_id for citation in citations} - reading_groups)
+                if uncovered:
+                    issue = "cited_source_without_reading"
+                    emit("response_rejected", contract="answer", code=issue,
+                         source_ids=uncovered)
+                    packet["output_correction"] = {
+                        "code": issue,
+                        "source_ids": uncovered,
+                        "instruction": (
+                            "Return a fresh complete AnswerDecision with a literal source_reading "
+                            "from selected material in every cited source group. You may revise "
+                            "the citations and answer. Do not rely on or reproduce any rejected "
+                            "answer text."
                         ),
                     }
                     continue
@@ -607,7 +642,7 @@ def _run_turn(
         emit("answer_committed_no_progress", posture=prior.posture,
              missing_information=prior.missing_information,
              prior_selected_refs=list(prior_refs), selected_refs=selected)
-        return finish(prior, list(prior_refs), "not_established")
+        return finish(prior, list(prior_refs), "research_bound")
     if budget.semantic < limits.semantic_attempts and budget.remaining_seconds > 0:
         if pending:
             reading_packet()

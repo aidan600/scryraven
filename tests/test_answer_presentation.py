@@ -10,7 +10,14 @@ from test_research_loop import answer as final_answer
 from core.exa_transport import DiscoveryCandidate, FetchedMaterial
 from scryraven import __main__ as cli
 from scryraven import research
-from scryraven.presentation import _SCRIPT, render_cli, render_html, source_body_html
+from scryraven.presentation import (
+    _SCRIPT,
+    PREMISE_ONLY_DISCLOSURE,
+    RESEARCH_BOUND_DISCLOSURE,
+    render_cli,
+    render_html,
+    source_body_html,
+)
 from scryraven.sources import Evidence, exact_view
 
 QUESTION = "What is the weight limit?"
@@ -18,10 +25,23 @@ URL = "https://example.test/rules"
 
 
 def answer(draft="The limit is **16 pounds**. [E1]", *, title="Official rules", content="Maximum: 16 pounds."):
-    model = Script(decision(), decision(requests=[request("read", query="", target="C1")]), decision("answer", ["E1"]), final_answer(draft))
+    final = final_answer(draft)
+    final["source_readings"] = [{"evidence_ref": "E1", "passages": [content.strip().splitlines()[0]]}]
+    model = Script(decision(), decision(requests=[request("read", query="", target="C1")]),
+                   decision("answer", ["E1"]), final)
     return research.run(QUESTION, model=model,
                         search=lambda q: [DiscoveryCandidate(title, URL, "navigation")],
                         fetch=lambda url: FetchedMaterial(url, content))
+
+
+def source_free_answer(posture="supported"):
+    basis = "none" if posture == "unable" else "user_premises"
+    prose = ("The available information did not establish a result." if posture == "unable"
+             else "Given your stated assumptions, the result is eight.")
+    final = final_answer(prose, posture, support_basis=basis)
+    return research.run(QUESTION, model=Script(decision("answer"), final),
+                        search=lambda q: pytest.fail("Unexpected search"),
+                        fetch=lambda url: pytest.fail("Unexpected read"))
 
 
 class Page(HTMLParser):
@@ -100,7 +120,10 @@ def test_first_validated_use_orders_sources_and_reuses_numbers_without_inline_ti
     sources = [DiscoveryCandidate(f"Long publication title {i}", URL + str(i), "navigation") for i in range(1, 4)]
     model = Script(decision(), decision(requests=[request("read", query="", target=f"C{i}") for i in range(1, 4)]),
                    decision("answer", ["E1", "E2", "E3"]),
-                   final_answer("First. [E2] Next. [[E1, E2]] Again. [[E1]] An ordinary [1] in prose."))
+                   final_answer("First. [E2] Next. [[E1, E2]] Again. [[E1]] An ordinary [1] in prose.")
+                   | {"source_readings": [
+                       {"evidence_ref": ref, "passages": ["Maximum: 16 pounds."]} for ref in ("E1", "E2")
+                   ]})
     result = research.run(QUESTION, model=model, search=lambda q: sources,
                           fetch=lambda url: FetchedMaterial(url, "Maximum: 16 pounds."))
     assert result.answer == "First. [1] Next. [2] [1] Again. [2] An ordinary [1] in prose."
@@ -165,8 +188,46 @@ def test_unable_empty_evidence_has_no_invented_sources_or_citations():
     result = research.run(QUESTION, model=model, search=lambda q: [], fetch=lambda url: None)
     assert result.posture == "unable"
     assert result.citations == result.citation_uses == result.selected_evidence == ()
-    assert render_cli(result) == result.answer
+    assert render_cli(result) == result.answer + "\n\nStatus: Unable"
     assert not any(tag in {"details", "a"} for tag, attrs in Page(render_html(QUESTION, result)).tags)
+
+
+def test_cli_and_local_view_disclose_posture_and_operating_bound_without_changing_citations():
+    supported = answer()
+    ordinary = render_cli(supported)
+    assert "Status: Supported" in ordinary
+    assert RESEARCH_BOUND_DISCLOSURE not in ordinary
+    assert PREMISE_ONLY_DISCLOSURE not in ordinary
+    assert "[1] Official rules" in ordinary
+
+    bounded = replace(supported, stop_reason="research_bound")
+    bounded_cli = render_cli(bounded)
+    assert "Status: Supported" in bounded_cli
+    assert RESEARCH_BOUND_DISCLOSURE in bounded_cli
+    assert bounded_cli.count("[1] Official rules") == 1
+    bounded_html = render_html(QUESTION, bounded)
+    assert RESEARCH_BOUND_DISCLOSURE in bounded_html
+    assert PREMISE_ONLY_DISCLOSURE not in bounded_html
+    assert [a["href"] for tag, a in Page(bounded_html).tags if a.get("class") == "citation"] == ["#source-1"]
+
+    partial = replace(supported, posture="partial", stop_reason="not_established")
+    assert "Status: Partial" in render_cli(partial)
+    assert PREMISE_ONLY_DISCLOSURE not in render_cli(partial)
+    unable = source_free_answer("unable")
+    assert "Status: Unable" in render_cli(unable)
+    assert PREMISE_ONLY_DISCLOSURE not in render_cli(unable)
+
+
+@pytest.mark.parametrize("posture", ["supported", "partial"])
+def test_cli_and_local_view_label_source_free_premise_answer(posture):
+    result = source_free_answer(posture)
+    cli_text = render_cli(result)
+    assert f"Status: {posture.capitalize()}" in cli_text
+    assert PREMISE_ONLY_DISCLOSURE in cli_text
+    assert "Sources" not in cli_text
+    html = render_html(QUESTION, result)
+    assert PREMISE_ONLY_DISCLOSURE in html
+    assert not any(tag == "details" for tag, _ in Page(html).tags)
 
 
 @pytest.mark.parametrize("draft", ["16 pounds. [E2]", "16 pounds. [E1@0:10]",

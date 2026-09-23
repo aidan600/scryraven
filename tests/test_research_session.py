@@ -41,14 +41,18 @@ def candidate(url=URL_A, context="", *, highlights=False):
                               context_kind="provider_highlights" if highlights else "navigation")
 
 
-def local_turn(text=FACT_B + " [E1]", refs=("E1",)):
+def local_turn(text=FACT_B + " [E1]", refs=("E1",), reading_passages=None):
+    reading_passages = reading_passages or {"E1": FACT_B}
     return (decision(requests=[request("read", query="", target=ref, mode="local") for ref in refs]),
-            decision("answer", refs), answer(text))
+            decision("answer", refs), answer(text, readings=[
+                {"evidence_ref": ref, "passages": [reading_passages[ref]]} for ref in refs]))
 
 
 def first_turn(*, highlights=False):
     reading = () if highlights else (decision(requests=[request("read", query="", target="C1")]),)
-    return (decision(), *reading, decision("answer", ["E1"]), answer(ANSWER_A + " [E1]"))
+    return (decision(), *reading, decision("answer", ["E1"]),
+            answer(ANSWER_A + " [E1]", readings=[
+                {"evidence_ref": "E1", "passages": [FACT_A]}]))
 
 
 def no_io(*args, **kwargs):
@@ -80,7 +84,10 @@ def test_followup_reads_retained_fact_with_fresh_research_and_answer(highlights)
 def test_new_source_and_comparison_keep_canonical_identity_and_per_answer_numbers():
     provider = Provider([candidate(context=BODY, highlights=True)], [candidate(URL_B, FACT_C, highlights=True)])
     model = Script(*first_turn(highlights=True), decision(), decision("answer", ["E2"]),
-                   answer(FACT_C + " [E2]"), *local_turn(FACT_C + " [E2] " + FACT_A + " [E1]", ["E1", "E2"]))
+                   answer(FACT_C + " [E2]", readings=[
+                       {"evidence_ref": "E2", "passages": [FACT_C]}]),
+                   *local_turn(FACT_C + " [E2] " + FACT_A + " [E1]", ["E1", "E2"],
+                               {"E1": FACT_A, "E2": FACT_C}))
     session = ResearchSession(model=model, search=provider.search, fetch=no_io)
     first, second, third = [session.ask(q) for q in [Q1, Q3, "Compare them."]]
     assert session.source_ids == ("E1", "E2") and len(provider.searches) == 2
@@ -89,7 +96,9 @@ def test_new_source_and_comparison_keep_canonical_identity_and_per_answer_number
     assert session.turns[0].selected_evidence == first.selected_evidence
 
 
-@pytest.mark.parametrize("failure", [ModelError("model_transport_failed"), answer("Invalid [E99]")])
+@pytest.mark.parametrize("failure", [ModelError("model_transport_failed"),
+                                      answer("Invalid [E99]", readings=[
+                                          {"evidence_ref": "E2", "passages": [FACT_C]}])])
 def test_failed_turn_leaves_in_memory_evidence_and_history_unchanged(failure):
     provider = Provider([candidate(context=BODY, highlights=True)], [candidate(URL_B, FACT_C, highlights=True)])
     model = Script(*first_turn(highlights=True), decision(), decision("answer", ["E2"]), failure)
