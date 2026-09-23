@@ -16,7 +16,7 @@ from core.exa_transport import DiscoveryCandidate, ExaTransportError, search_exa
 from core.linkup_transport import LinkupTransportError, fetch_linkup
 from core.serper_transport import SerperTransportError, search_serper
 from core.transport import FetchedMaterial
-from scryraven.sources import TARGETED_SOURCE_CHARACTERS, Evidence, SourceIndex, exact_view
+from scryraven.sources import TARGETED_SOURCE_CHARACTERS, Evidence, SourceIndex, exact_view, rank_corpus_regions
 
 FIND_RESULT_LIMIT = 8
 
@@ -175,28 +175,51 @@ class AcquisitionLibrary:
             self._indexes[item.id] = SourceIndex(item)
         return self._indexes[item.id]
 
-    def _views(self, item: Evidence, focus: str, start: int | None, end: int | None) -> list[Evidence]:
+    def _views(self, item: Evidence, focus: str, start: int | None, end: int | None) -> tuple[list[Evidence], dict]:
+        parent = self.materials[item.parent_id] if item.parent_id else item
+        lexical_match_found = None
         if start is not None or end is not None:
             if (isinstance(start, bool) or isinstance(end, bool)
                     or not isinstance(start, int) or not isinstance(end, int)):
                 raise AcquisitionError("invalid_exact_range")
-            parent = self.materials[item.parent_id] if item.parent_id else item
             if parent.acquisition != "fetched_source" or not 0 <= start < end <= len(parent.content):
                 raise AcquisitionError("invalid_exact_range")
             # Preserve the complete requested range in source order, with each
             # item small enough for the caller to deliver through bounded attention.
             items = [exact_view(parent, left, min(left + TARGETED_SOURCE_CHARACTERS, end))
                      for left in range(start, end, TARGETED_SOURCE_CHARACTERS)]
+            selection_mode = "exact_range"
         elif item.acquisition == "targeted_view":
             items = [item]
+            selection_mode = "targeted_view"
         else:
-            parent = self.materials[item.parent_id] if item.parent_id else item
             if parent.acquisition == "fetched_source" and len(parent.content) > TARGETED_SOURCE_CHARACTERS:
-                items, _ = self._index(parent).packet([focus])
+                items, metrics = self._index(parent).packet([focus])
+                selection_mode = "focused_packet" if focus else "dispersed_packet"
+                if focus:
+                    lexical_match_found = metrics["candidate_regions_considered"] > 0
             else:
                 items = [parent]
+                selection_mode = "provider_highlights" if parent.acquisition == "provider_highlights" else "full_parent"
         self.materials.update((item.id, item) for item in items)
-        return items
+        receipt = {"selection_mode": selection_mode,
+                   "returned_characters": sum(len(view.content) for view in items),
+                   "ranges": [{"id": view.id, "start_char": view.start_char, "end_char": view.end_char}
+                              for view in items if view.acquisition == "targeted_view"]}
+        if parent.acquisition == "fetched_source":
+            if items == [parent]:
+                receipt["ranges"] = [{"id": parent.id, "start_char": 0, "end_char": len(parent.content)}]
+            ranges = sorted((row["start_char"], row["end_char"]) for row in receipt["ranges"])
+            cursor = 0
+            for left, right in ranges:
+                if left != cursor:
+                    break
+                cursor = right
+            receipt.update(parent_id=parent.id, parent_characters=len(parent.content),
+                           full_body_in_packet=cursor == len(parent.content))
+        if lexical_match_found is not None:
+            receipt["lexical_match_found"] = lexical_match_found
+        return items, receipt
 
     def _coalesce_views(self, items: list[Evidence]) -> list[Evidence]:
         """Remove repeated characters within selected views, without changing selection."""
@@ -227,6 +250,24 @@ class AcquisitionLibrary:
     def _target(self, ref: str) -> tuple[str, str, Evidence | None]:
         if ref in self.materials:
             item = self.materials[ref]
+            return item.url, item.title, item
+        if "@" in ref and re.match(r"^E[1-9]\d*[@]", ref):
+            match = re.fullmatch(r"(E[1-9]\d*)@((?:0|[1-9]\d*)):((?:0|[1-9]\d*))", ref)
+            if match is None:
+                raise AcquisitionError("invalid_exact_range")
+            parent = self.materials.get(match.group(1))
+            if parent is None:
+                raise AcquisitionError("unknown_target")
+            try:
+                start, end = int(match.group(2)), int(match.group(3))
+            except ValueError:
+                raise AcquisitionError("invalid_exact_range") from None
+            # Ordinary targeted views are bounded; larger requests use the
+            # explicit parent range path, which splits them for delivery.
+            if (parent.acquisition != "fetched_source" or not 0 <= start < end <= len(parent.content)
+                    or end - start > TARGETED_SOURCE_CHARACTERS):
+                raise AcquisitionError("invalid_exact_range")
+            item = exact_view(parent, start, end)
             return item.url, item.title, item
         if ref in self.candidates:
             row = self.candidates[ref]
@@ -350,23 +391,62 @@ class AcquisitionLibrary:
                     or not isinstance(fetched.readable_text, str) or not fetched.readable_text.strip()):
                 raise AcquisitionError("unusable_fetch_material")
             item = self._retain(url, title, fetched.readable_text, "fetched_source")
-        items = self._views(item, request["focus"], request["start_char"], request["end_char"])
+        items, receipt = self._views(item, request["focus"], request["start_char"], request["end_char"])
         result["material_ids"] = [item.id for item in items]
         result["candidate_refs"] = [self._candidate_ids[url]]
+        result["read_receipt"] = receipt
 
     def _find(self, request: dict, result: dict) -> None:
+        if not request["scope"]:
+            hits, count = rank_corpus_regions([self._index(item) for item in self.acquisitions], request["query"])
+            chosen = []
+            seen_material_ids = set()
+            for index, region in hits:
+                item = index.source
+                if item.acquisition == "fetched_source":
+                    # Include adjacent exact context, as scoped Find does.
+                    start = index.regions[max(0, region - 1)][0]
+                    end = index.regions[min(len(index.regions) - 1, region + 1)][1]
+                    material = exact_view(item, start, end)
+                else:
+                    # A highlight acquisition is one retained text item even if
+                    # several of its regions match the query.
+                    material = item
+                if material.id in seen_material_ids:
+                    continue
+                seen_material_ids.add(material.id)
+                chosen.append(material)
+                if len(chosen) == FIND_RESULT_LIMIT:
+                    break
+            merged = self._coalesce_views(chosen)
+            self.materials.update((item.id, item) for item in merged)
+            # A selected view can contain several adjacent matching regions, and
+            # one selected highlight exposes all of its regions. Count only
+            # matching regions whose text was actually left out.
+            omitted = 0
+            for index, region in hits:
+                start, end = index.regions[region]
+                if not any(material.id == index.source.id or
+                           (material.parent_id == index.source.id
+                            and material.start_char <= start and end <= material.end_char)
+                           for material in chosen):
+                    omitted += 1
+            result.update(material_ids=[item.id for item in merged], matching_region_count=count,
+                          omitted_match_count=omitted,
+                          matched_source_count=len({index.source.source_id for index, _ in hits}))
+            return
         scoped = []
-        if request["scope"]:
-            for ref in request["scope"]:
-                url, _, item = self._target(ref)
-                scoped.extend([item] if item else [source for source in self.acquisitions if source.url == url])
-        else:
-            scoped = list(self.acquisitions)
+        for ref in request["scope"]:
+            url, _, item = self._target(ref)
+            scoped.extend([item] if item else [source for source in self.acquisitions if source.url == url])
         scoped = list({item.id: item for item in scoped}.values())
         matches = []
+        matched_sources = set()
         for item in scoped:
             index = self._index(item)
             ranked = index.rank(request["query"])
+            if ranked:
+                matched_sources.add(item.source_id)
             if item.acquisition != "fetched_source":
                 if ranked:
                     matches.append([item])
@@ -388,4 +468,5 @@ class AcquisitionLibrary:
         merged = self._coalesce_views(chosen)
         self.materials.update((item.id, item) for item in merged)
         result.update(material_ids=[item.id for item in merged], matching_region_count=count,
-                      omitted_match_count=max(0, count - len(chosen)))
+                      omitted_match_count=max(0, count - len(chosen)),
+                      matched_source_count=len(matched_sources))

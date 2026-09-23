@@ -204,8 +204,8 @@ def test_find_uses_retained_actual_text_and_returns_exact_context_without_fetch(
     library = AcquisitionLibrary(retained)
     result = library.execute({"kind": "find", "query": "threshold"}, before_external=no_external)
     assert result["status"] == "ok" and result["matching_region_count"] == 2
-    assert result["material_ids"] == [f"E1@0:{len(retained[0].content)}", "E2"]
-    assert library.materials[result["material_ids"][0]] == exact_view(retained[0], 0, len(retained[0].content))
+    assert set(result["material_ids"]) == {f"E1@0:{len(retained[0].content)}", "E2"}
+    assert library.materials[f"E1@0:{len(retained[0].content)}"] == exact_view(retained[0], 0, len(retained[0].content))
     assert library.acquisitions == list(retained) and not library.exposed
     assert request(library, "find", query="threshold", scope=["E3"])["material_ids"] == []
     assert request(library, "find", query="absentword")["material_ids"] == []
@@ -220,6 +220,40 @@ def test_find_is_bounded_with_observable_omission_and_scoped_reactivation():
     assert found["matching_region_count"] == 12 and found["omitted_match_count"] == 12 - FIND_RESULT_LIMIT
     scoped = request(library, "find", query="threshold", scope=["E12"])
     assert scoped["material_ids"] == [f"E12@0:{len(retained[-1].content)}"]
+
+
+def test_unscoped_find_ranks_strong_later_match_globally_and_ignores_ephemeral_view():
+    retained = tuple(
+        Evidence(f"E{number}", f"{URL}/{number}", "Title", "Amber marker")
+        for number in range(1, 9)
+    ) + (Evidence("E9", f"{URL}/9", "Title", "Amber cobalt quartz marker"),)
+    library = AcquisitionLibrary(retained)
+    # A local Read can add a targeted view to materials, but it is not a new
+    # corpus acquisition and must not enter the unscoped competition.
+    reread = library.execute({"kind": "read", "target": "E1", "start_char": 0,
+                              "end_char": len(retained[0].content)}, before_external=no_external)
+    assert reread["status"] == "ok"
+
+    first = library.execute({"kind": "find", "query": "amber cobalt quartz"}, before_external=no_external)
+    second = library.execute({"kind": "find", "query": "amber cobalt quartz"}, before_external=no_external)
+    assert first["material_ids"] == second["material_ids"]
+    assert first["material_ids"][0] == f"E9@0:{len(retained[-1].content)}"
+    assert len(first["material_ids"]) == FIND_RESULT_LIMIT
+    assert first["matching_region_count"] == 9
+    assert first["omitted_match_count"] == 1
+    assert first["matched_source_count"] == 9
+    assert first["local"] and not first["external"] and library.acquisitions == list(retained)
+
+
+@pytest.mark.parametrize("acquisition", ["fetched_source", "provider_highlights"])
+def test_unscoped_find_omission_counts_only_matching_regions_not_returned(acquisition):
+    item = Evidence("E1", URL, "Title", "needle " * 700, acquisition)
+    library = AcquisitionLibrary((item,))
+    found = request(library, "find", query="needle")
+    assert found["matching_region_count"] > 1
+    assert found["matched_source_count"] == 1
+    assert found["omitted_match_count"] == 0
+    assert len(found["material_ids"]) == 1
 
 
 def test_find_consolidates_overlap_without_losing_selected_source_characters():
@@ -249,6 +283,7 @@ def test_find_consolidation_keeps_same_url_versions_separate():
     views = [library.materials[ref] for ref in found["material_ids"]]
     assert {view.parent_id for view in views} == {"E1", "E2"}
     assert all(view == exact_view(library.materials[view.parent_id], view.start_char, view.end_char) for view in views)
+    assert found["matched_source_count"] == 1
     assert library.acquisitions == list(parents)
 
 
