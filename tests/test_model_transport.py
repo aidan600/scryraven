@@ -93,6 +93,16 @@ def test_environment_overrides_reach_their_stages(monkeypatch):
 
 @pytest.mark.parametrize("data,code", [
     ({"status": "incomplete", "output": []}, "model_response_incomplete"),
+    ({"status": "incomplete", "incomplete_details": {"reason": "content_filter"}},
+     "model_response_incomplete_content_filter"),
+    ({"status": "incomplete", "incomplete_details": {"reason": "max_output_tokens"}},
+     "model_response_incomplete_max_output_tokens"),
+    ({"status": "incomplete", "incomplete_details": {"reason": "private-provider-detail"}},
+     "model_response_incomplete"),
+    ({"status": "incomplete", "incomplete_details": {"reason": ["private-provider-detail"]}},
+     "model_response_incomplete"),
+    ({"status": "incomplete", "incomplete_details": "private-provider-detail"},
+     "model_response_incomplete"),
     ({"status": "completed", "output": []}, "model_response_empty"),
     ({"status": "completed", "output": [{"type": "message", "content": [{"type": "refusal", "refusal": "private details"}]}]}, "model_refused"),
     ({"status": "completed", "output": None}, "malformed_model_response"),
@@ -122,3 +132,15 @@ def test_timeout_has_a_safe_distinct_transport_code(monkeypatch):
 
     with pytest.raises(ModelError, match="^model_request_timed_out$"):
         OpenAIModel(post=timed_out)("answer", "prompt", {}, {})
+
+
+def test_http_failure_keeps_its_safe_transport_code(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "offline-test-value")
+
+    def rejected(*args, **kwargs):
+        response = requests.Response()
+        response.status_code = 429
+        raise requests.HTTPError("private-provider-detail", response=response)
+
+    with pytest.raises(ModelError, match="^model_rate_limited$"):
+        OpenAIModel(post=rejected)("answer", "prompt", {}, {})

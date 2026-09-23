@@ -26,7 +26,7 @@ from scryraven.results import CompletedAnswer, resolve_citations
 # Preserve enough of a bounded run for a source-first terminal Answer. This is
 # an operational reservation only: it never supplies evidence or changes a
 # model-derived posture.
-TERMINAL_ANSWER_RESERVE_SECONDS = 55
+TERMINAL_ANSWER_RESERVE_SECONDS = 180
 
 
 class _Contract(BaseModel):
@@ -230,7 +230,7 @@ follows you. Do not emit private reasoning.
 class RunLimits:
     semantic_attempts: int = 12
     external_attempts: int = 16
-    seconds: float = 120
+    seconds: float = 300
     attention_characters: int = 128_000
 
     def __post_init__(self):
@@ -268,10 +268,12 @@ class _Budget:
         self.external += 1
 
     def snapshot(self):
+        elapsed = max(0.0, self.clock() - self.started)
         return {"semantic_attempts": self.semantic, "external_attempts": self.external,
                 "semantic_remaining": self.limits.semantic_attempts - self.semantic,
                 "external_remaining": self.limits.external_attempts - self.external,
-                "seconds_remaining": round(self.remaining_seconds, 3)}
+                "seconds_remaining": round(max(0.0, self.limits.seconds - elapsed), 3),
+                "elapsed_seconds": round(elapsed, 3)}
 
 
 def run(question: str, **kwargs) -> CompletedAnswer:
@@ -326,7 +328,12 @@ def _run_turn(
         try:
             raw = model(stage, prompt, packet, shape.model_json_schema())
         except ModelError as exc:
-            raise RunError(stage, str(exc), trace) from None
+            code = str(exc)
+            emit("model_failed", contract=stage, attempt=budget.semantic,
+                 code=code, budget=budget.snapshot())
+            raise RunError(stage, code, trace) from None
+        emit("model_returned", contract=stage, attempt=budget.semantic,
+             budget=budget.snapshot())
         try:
             # A JSON fence is harmless presentation; invalid data is never traced.
             wrapped = re.fullmatch(r"\s*```(?:json)?\s*\n(.*?)\n```\s*", raw, re.S | re.I)
