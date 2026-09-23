@@ -227,9 +227,9 @@ def _decode(payload: str, revision: int) -> SessionState:
             end = use.end
         _require(list(dict.fromkeys(use.number for use in uses)) == list(range(1, len(citations) + 1)))
         if analysis is not None or saved.posture != "unable":
+            # Native source-free premise derivations have neither selected
+            # material nor citations. Answer validates their semantic basis.
             _require(bool(citations) == bool(selected))
-        if analysis is None and saved.posture != "unable":
-            _require(bool(citations))
         turns.append(SessionTurn(saved.question, saved.answer, analysis, saved.posture, saved.stop_reason,
                                  selected, citations, uses))
     return SessionState(tuple(turns), acquisitions)

@@ -24,12 +24,17 @@ The product must not silently fill an evidentiary gap from unsupported model mem
 
 ## Follow-up research
 
-A follow-up receives fresh research interpretation and answer decisions over the current
-question. Prior conversation helps interpret intent but is not evidence. Actual
-previously acquired source material may remain evidence and be reused when relevant;
-previous generated answers and semantic judgments never become factual evidence.
-Current findings require current supporting source material. New research occurs
-when retained evidence does not establish what the follow-up needs.
+A follow-up receives fresh research interpretation and answer decisions over the
+current user turn. Conversation is non-evidentiary task context for intent,
+discourse, corrections and follow-up meaning. Explicit premises, constraints
+and definitions in prior user questions may remain task inputs; user beliefs or
+narration are not automatically stipulated premises. Prior assistant text is
+discourse context only, never Evidence or a silent premise. A user may explicitly
+adopt a prior assistant value as a new scenario premise without making it an
+externally verified fact. Actual previously acquired source material may remain
+Evidence and be reused when relevant. Current external factual findings require
+current supporting source material. New research occurs when external facts are
+needed and retained evidence does not establish them.
 
 A research session may be reopened later, preserving its conversation, acquired
 Evidence, source identities and historical answer provenance. Reopening changes
@@ -53,11 +58,13 @@ honest, and the interface remains usable at narrow browser widths.
 
 - Research is question-directed and may adapt when an initial attempt is inadequate.
 - Search ranking, ordering, titles and other metadata guide navigation. Source-derived text returned with search results can support a claim when the received text itself establishes the claim and its materially necessary context.
-- Factual answer support comes from source material that ScryRaven has actually received and read. Missing qualifications, applicability or connecting context require further acquisition; provider provenance alone does not establish completeness.
+- External factual answer support comes from source material that ScryRaven has actually received and read. Missing qualifications, applicability or connecting context require further acquisition; provider provenance alone does not establish completeness.
+- Explicit premises and constraints supplied by the user may define a hypothetical or conditional task. A conclusion derived solely from those premises may be answered without an Evidence citation when its conditional basis is clear. User premises remain non-Evidence task inputs, not externally verified facts, and must not be supplemented with missing external facts from model memory.
+- Conversation helps interpret the user's task and corrections; a statement of belief or narration does not by itself stipulate a hypothetical premise. Prior assistant answers cannot become a premise without explicit user adoption.
 - A model semantically interprets acquired evidence in the context of the user's question, including relevant qualifications, conflicts, and limitations.
 - Semantic interpretation may identify an important unresolved information need and cause further research.
 - Acquired evidence retains its source identity as analysis and answer writing proceed.
-- Answer-relevant findings remain connected to the acquired evidence that supports them.
+- Answer-relevant external factual findings remain connected to the acquired evidence that supports them.
 - Answer writing may operate from a deliberately selected subset of supporting material rather than the complete research corpus.
 - Final citations resolve to acquired material that actually supports the cited answer.
 - Compact references let the user inspect the selected source material and open its
@@ -74,11 +81,11 @@ evidence-directed acquisition dependencies. The former Research -> Analyst ->
 Author semantic path is superseded, with no alternate path or fallback.
 One Research decision-maker interprets the original request and actual material,
 revises a compact working understanding, chooses acquisition, and proposes stopping.
-A mechanical executor performs Search, Read and local Find. A fresh source-first
-Answer call independently determines what the supplied sources justify. These are
-two semantic contracts; no verifier, Scout, specialist hierarchy or model router is
-part of this design. Current fixed model assignments are recorded in `CURRENT.md`;
-Exa supplies Search.
+A mechanical executor performs Search, Read and local Find. A fresh Answer call
+independently determines what the supplied sources or explicit user premises
+justify. These are two semantic contracts; no verifier, Scout, specialist hierarchy
+or model router is part of this design. Current fixed model assignments are
+recorded in `CURRENT.md`; Exa supplies Search.
 
 Actual Evidence remains immutable and locally rereadable. Generated understanding,
 past answers and candidate hypotheses are not Evidence. Currentness means applicable
@@ -89,9 +96,10 @@ neither support nor nonexistence. A useful honest partial or unable answer is va
 The CLI, durable sessions and Reading Room share this ordinary architecture.
 Historical Analyst judgments remain inspectable semantic records only; new turns
 must not fabricate Analyst objects or use historical judgments as factual authority.
-Research chooses when the Evidence packet is ready; Answer independently decides
-what the original/current request and actual selected sources justify. Research's
-generated verdict, notes or draft must not bind Answer.
+Research chooses when the Evidence packet is ready, including when an operation
+needs no external factual support; Answer independently decides what the
+original/current request, explicit user premises and actual selected sources
+justify. Research's generated verdict, notes or draft must not bind Answer.
 
 Bounded Levels 1–5 demonstrations are development evidence, not a universal
 reliability claim. Level 6 revision/recovery under superseding Evidence is not

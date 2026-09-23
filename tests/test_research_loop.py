@@ -21,8 +21,11 @@ def decision(action="research", refs=(), requests=None, interpretation="Find the
                 retain=list(refs), answer_evidence_refs=list(refs) if action == "answer" else [])
 
 
-def answer(text="The stated value is seven. [E1]", posture="supported", missing=None):
-    return dict(source_readings=[], answer=text, posture=posture, missing_information=missing)
+def answer(text="The stated value is seven. [E1]", posture="supported", missing=None,
+           support_basis=None):
+    return dict(source_readings=[], answer=text, posture=posture,
+                support_basis=support_basis or ("none" if posture == "unable" else "evidence"),
+                missing_information=missing)
 
 
 class Script:
@@ -338,12 +341,14 @@ def test_answer_reading_schema_replaces_the_obsolete_single_passage_shape():
     with pytest.raises(ValueError):
         AnswerDecision.model_validate({
             "source_readings": [{"evidence_ref": "E1", "passage": "Old shape."}],
-            "posture": "unable", "answer": "Unable.", "missing_information": None,
+            "posture": "unable", "support_basis": "none", "answer": "Unable.",
+            "missing_information": None,
         })
     with pytest.raises(ValueError):
         AnswerDecision.model_validate({
             "source_readings": [{"evidence_ref": "E1", "passages": []}],
-            "posture": "unable", "answer": "Unable.", "missing_information": None,
+            "posture": "unable", "support_basis": "none", "answer": "Unable.",
+            "missing_information": None,
         })
 
 

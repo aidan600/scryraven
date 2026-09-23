@@ -9,7 +9,7 @@ from test_research_loop import Script, answer, decision, request, search
 
 from core.exa_transport import DiscoveryCandidate
 from scryraven.presentation import render_html
-from scryraven.research import RunError, RunLimits, run
+from scryraven.research import RunLimits, run
 from scryraven.session import ResearchSession
 from scryraven.session_store import SQLiteSessionStore
 from scryraven.sources import Evidence
@@ -87,9 +87,11 @@ def test_multispan_answer_remains_neutral_and_durable_in_a_real_v2_session():
 
 
 def test_supported_answer_without_actual_supplied_evidence_cannot_complete():
-    model = Script(decision("answer"), answer("A factual answer from memory."))
-    with pytest.raises(RunError, match="missing_citation"):
-        run("What is the fact?", model=model, search=no_io, fetch=no_io)
+    model = Script(decision("answer"), answer("A factual answer from memory."),
+                   answer("An actual source is needed to establish this.", "unable"))
+    result = run("What is the fact?", model=model, search=no_io, fetch=no_io)
+    assert result.posture == "unable" and result.citations == ()
+    assert model.calls[-1][2]["output_correction"]["code"] == "basis_evidence_missing_packet"
 
 
 def test_oversized_exact_read_can_be_delivered_or_revised_without_pending_deadlock():
