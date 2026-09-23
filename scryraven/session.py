@@ -95,8 +95,10 @@ class ResearchSession:
     def ask(self, question: str) -> CompletedAnswer:
         snapshot = self._snapshot
         state = snapshot.state
-        # Conversation resolves referents only. Historical Analyst records are not
-        # supplied to new research; retained actual acquisitions are Evidence.
+        # Conversation is task context, never Evidence. Prior user questions can
+        # retain explicit premises; assistant answers can clarify discourse but
+        # have no factual authority. Retained acquisitions remain Evidence.
+        # Historical Analyst records are not supplied to new research.
         context = {
             "conversation_context": [{"question": turn.question, "answer": turn.answer} for turn in state.turns],
         }

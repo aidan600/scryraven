@@ -11,9 +11,9 @@ no architecture selector, Analyst checkpoint, old Author handoff or fallback.
 
 Research owns interpretation, compact revisable understanding, consequential
 needs, acquisition direction, attention and stopping. Generated state is never
-Evidence. Answer independently reads selected actual source material and decides
-what the current/original request justifies. The demonstrated prompts, structured
-contracts and acquisition/stopping semantics are preserved.
+Evidence. Answer independently assesses selected actual source material and
+explicit user-supplied premises against the current/original request. Research
+may select no Evidence when the requested operation needs no external fact.
 
 Ordinary Research uses GPT-6 Luna / high and Answer uses GPT-6 Sol / medium.
 This is a fixed assignment by semantic stage, not a model router; there is no
@@ -32,12 +32,22 @@ semantic owner exists.
 Immutable acquisitions, canonical source identities, exact versions/views,
 literal Answer readings, deterministic citations and historical selected-material
 snapshots survive. Follow-ups start fresh Research/Answer decisions and can reread
-retained actual Evidence without external acquisition. Prior generated answers
-resolve conversation referents only.
-An otherwise valid Answer over selected Evidence that omits a required citation
-alias receives a bounded correction in the same Answer contract before acceptance.
-The final resolver still requires actual supplied Evidence citations for supported
-and partial answers; an empty Evidence packet supplies no alias to correct toward.
+retained actual Evidence without external acquisition. Conversation supplies
+non-evidentiary task context for intent, discourse, corrections and follow-up
+meaning. Explicit premises in prior user questions may remain task inputs, while
+user beliefs and narration are not automatically stipulated premises. Prior
+assistant answers are discourse context only; they cannot silently become
+premises. A user's explicit adoption of a prior assistant value can define a new
+scenario premise without verifying that value externally.
+AnswerDecision declares an evidence, user-premises or no-support basis. Supported
+or partial external factual answers require selected Evidence and its citations.
+With an empty Evidence packet, a supported or partial conditional derivation may
+use only explicit user premises, empty source readings and no Evidence citations.
+An answer mixing user premises with external factual support uses the evidence
+basis and cites its external claims.
+An otherwise valid evidence-based Answer that omits a required citation alias
+receives a bounded correction in the same Answer contract before acceptance.
+Neither path promotes user premises or prior assistant prose into Evidence.
 
 Durable SQLite sessions retain atomic revision-checked commits, reopen/history,
 rename/delete and failure isolation. Native turns use `analysis: null` in the
@@ -128,8 +138,17 @@ evaluation candidates; prior frozen labels and packets remain unchanged.
 
 Aggregate/open-world sufficiency remains unresolved. Literal-reading and citation
 validation prove custody/membership, not semantic entailment. Very long-session
-performance and general reliability remain unproved. Level 6 revision/recovery
-under superseding Evidence is **not established**.
+performance and conversation-context retention remain unproved; no context
+compaction lifecycle is implemented. General reliability remains unproved. Level
+6 revision/recovery under superseding Evidence is **not established**.
+
+Preserve exact cases where Level-8 or later dogfooding shows materially
+recoverable requests with sufficient conversation context and working acquisition,
+yet Luna/high misidentifies the task, loses a user correction, or decomposes the
+wrong problem. Only repeated consequential cases would justify a separate bounded
+experiment comparing direct Luna Research with one Sol
+interpretation/decomposition pass followed by Luna Research. The pass is not part
+of the ordinary product path and is not prebuilt.
 
 ## Preserved development history
 
