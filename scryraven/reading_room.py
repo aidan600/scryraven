@@ -16,6 +16,7 @@ from werkzeug.exceptions import HTTPException, SecurityError
 from werkzeug.serving import WSGIRequestHandler, make_server
 
 from scryraven.dogfood_diagnostics import DogfoodLog, TurnDiagnostics
+from scryraven.forensic_log import ForensicLog
 from scryraven.presentation import answer_html, source_body_html, source_free_supported, source_label
 from scryraven.session import ResearchSession
 from scryraven.session_store import (
@@ -69,21 +70,35 @@ class _Forms:
 
 def create_app(*, database: str | Path | None = None, store: SessionStore | None = None,
                session_options: dict | None = None,
-               dogfood_log: str | Path | None = None) -> Flask:
+               dogfood_log: str | Path | None = None,
+               forensic_log: str | Path | None = None) -> Flask:
     """Inject only the existing store and ResearchSession's ordinary I/O options."""
     app = Flask(__name__)
     app.config.update(MAX_CONTENT_LENGTH=256 * 1024, TRUSTED_HOSTS=["127.0.0.1", "localhost"])
     custody = store if store is not None else SQLiteSessionStore(database)
     options = dict(session_options or {})
-    if dogfood_log is not None and isinstance(custody, SQLiteSessionStore):
-        diagnostic_path = Path(dogfood_log).expanduser().resolve()
-        if (diagnostic_path == custody.path
-                or (diagnostic_path.exists() and custody.path.exists()
-                    and diagnostic_path.samefile(custody.path))):
-            raise OSError("dogfood_log_matches_session_database")
-    diagnostics = (DogfoodLog(dogfood_log, session_database=custody.path
-                              if isinstance(custody, SQLiteSessionStore) else None)
-                   if dogfood_log is not None else None)
+    session_path = custody.path if isinstance(custody, SQLiteSessionStore) else None
+    diagnostic_path = Path(dogfood_log).expanduser().resolve() if dogfood_log is not None else None
+    forensic_path = Path(forensic_log).expanduser().resolve() if forensic_log is not None else None
+
+    def aliases(first: Path | None, second: Path | None) -> bool:
+        return (first is not None and second is not None
+                and (first == second or (first.exists() and second.exists()
+                                         and first.samefile(second))))
+
+    # Reject aliases before either JSONL target is opened. This includes paths
+    # that resolve through symlinks and existing files joined by a hard link.
+    if aliases(diagnostic_path, session_path):
+        raise OSError("dogfood_log_matches_session_database")
+    if aliases(forensic_path, session_path):
+        raise OSError("forensic_log_matches_session_database")
+    if aliases(forensic_path, diagnostic_path):
+        raise OSError("forensic_log_matches_dogfood_log")
+    diagnostics = (DogfoodLog(diagnostic_path, session_database=session_path)
+                   if diagnostic_path is not None else None)
+    forensics = (ForensicLog(forensic_path, session_database=session_path,
+                            dogfood_log=diagnostic_path)
+                 if forensic_path is not None else None)
     forms = _Forms()
 
     @app.before_request
@@ -173,16 +188,27 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
         failure = None
         turn_diagnostics = TurnDiagnostics(started_at=monotonic(), clock=monotonic) if diagnostics else None
         turn_options = options
-        if turn_diagnostics is not None:
+        if turn_diagnostics is not None or forensics is not None:
             turn_options = dict(options)
             prior_observer = turn_options.get("observe")
 
             def observe(event):
-                # Both callbacks are optional diagnostics. Neither may alter a turn.
-                try:
-                    turn_diagnostics.observe(event)
-                except Exception:
-                    pass
+                # Optional sinks see the engine's observer copy. A logger failure
+                # cannot affect the engine or the durable session commit.
+                if turn_diagnostics is not None:
+                    try:
+                        turn_diagnostics.observe(event)
+                    except Exception:
+                        pass
+                if forensics is not None:
+                    try:
+                        forensics.append(event, session_id=(session.session_id if session else session_id),
+                                         revision_before=revision)
+                    except Exception:
+                        try:
+                            forensics.disable()
+                        except Exception:
+                            pass
                 if prior_observer is not None:
                     try:
                         prior_observer(event)
@@ -304,16 +330,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--database", type=Path, metavar="PATH", help="Use a chosen session database location.")
     parser.add_argument("--dogfood-log", type=Path, metavar="PATH",
                         help="Append body-free local turn diagnostics to a chosen JSONL file.")
+    parser.add_argument("--forensic-log", type=Path, metavar="PATH",
+                        help="Append source-bearing observer events to a sensitive local JSONL file.")
     parser.add_argument("--port", type=int, default=_PORT, help=f"Local HTTP port (default: {_PORT}).")
     args = parser.parse_args(argv)
     if not 1 <= args.port <= 65535:
         parser.error("--port must be between 1 and 65535.")
     try:
-        serve(create_app(database=args.database, dogfood_log=args.dogfood_log), port=args.port)
+        serve(create_app(database=args.database, dogfood_log=args.dogfood_log,
+                         forensic_log=args.forensic_log), port=args.port)
     except KeyboardInterrupt:
         pass
     except (OSError, SessionStoreError):
-        print("The Reading Room could not start. Check the database or dogfood log location, or choose another --port.")
+        print("The Reading Room could not start. Check the database or log locations, or choose another --port.")
         return 1
     return 0
 

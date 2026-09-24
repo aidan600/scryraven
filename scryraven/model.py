@@ -99,7 +99,7 @@ _EVIDENCE_METADATA_ORDER = (
 )
 
 
-def _research_evidence_json(value: Any) -> str:
+def _evidence_json(value: Any) -> str:
     """Place each Evidence item's metadata before its exact content, without loss."""
     if not isinstance(value, list):
         return _json(value)
@@ -164,8 +164,9 @@ def _input_blocks(instructions: str, material: dict, stage: str, phase: str) -> 
                 flush("history" if item_index >= len(value) - 2 else None)
             pending += "]"
         else:
-            pending += (_research_evidence_json(value) if stage == "research"
-                        and phase == "research" and key == "evidence" else _json(value))
+            pending += (_evidence_json(value) if (stage, phase) in {
+                ("research", "research"), ("answer", "answer"),
+            } and key == "evidence" else _json(value))
         if stage == "research" and phase == "research" and index + 1 == boundary:
             flush("research_context")
     pending += "}"

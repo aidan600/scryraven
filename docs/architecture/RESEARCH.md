@@ -299,10 +299,13 @@ cache breakpoint. Present volatile fields serialize in this deliberate order:
 `output_correction` last. Any other material fields survive unchanged in
 deterministic order before a present correction. Placing previous generated
 understanding and navigation before the latest route and Evidence presents
-current source material near the decision edge. Within each Evidence object,
-metadata precedes exact `content`; the parsed object, exact text, IDs, Evidence
-membership and array ordering remain unchanged. This is presentation order, not
-an attention, retention, acquisition or Answer-policy change. Removing
+current source material near the decision edge. Both Research and Answer place
+known identifying metadata, then deterministic unknown metadata, before exact
+`content` inside each Evidence item. The parsed object, exact text, IDs,
+Evidence membership and array ordering remain unchanged. Answer's top-level
+packet order and cache boundaries remain unchanged. This is presentation order,
+not an attention, retention, acquisition or Answer-policy change. No quality or
+latency benefit has been established. Removing
 `purpose` changes the Research schema and can change its cache-family identity;
 no compatibility family or persistent generated state is added. The growing
 conversation boundary, stable Research-context breakpoint and separate Answer
@@ -322,6 +325,16 @@ its attempted text, reading coordinates, and selected Evidence content hash and
 length. The ordinary trace, body-free dogfood diagnostics, durable sessions and
 public presentation do not receive that rejected text. Successful readings do
 not generate rejected-reading detail events. The literal matcher is unchanged.
+
+Reading Room's optional `--forensic-log PATH` writes the ordinary observer stream
+to a distinct local JSONL file for development review. Its source-bearing events
+can reconstruct acquired/exposed material, Research selections, Answer readings,
+rejections, timing and available model telemetry. Each line includes the session,
+attempted turn, process run and event sequence. It receives no raw provider
+payloads or hidden reasoning, and it feeds nothing back into the engine, session
+or presentation. The ordinary DogfoodLog remains body-free. Startup rejects
+aliases between both logs and the session database; later forensic write failure
+disables only that observer sink.
 
 `scripts/v2_campaign.py` remains a development-only observation caller (its name
 identifies historical campaign files). It calls the ordinary session application
