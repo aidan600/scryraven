@@ -21,17 +21,10 @@ class Response:
         return self.data
 
 
-def test_split_defaults_preserve_independent_environment_overrides(monkeypatch):
-    for role in ("FAST", "SMART"):
-        for field in ("MODEL", "REASONING"):
-            monkeypatch.delenv(f"SCRYRAVEN_{role}_{field}", raising=False)
-    expected = ModelConfig(ModelRole("gpt-6-luna", "high"), ModelRole("gpt-6-sol", "medium"))
-    assert ModelConfig() == expected
-    assert ModelConfig.from_environment() == expected
-    monkeypatch.setenv("SCRYRAVEN_FAST_MODEL", "configured-fast")
-    monkeypatch.setenv("SCRYRAVEN_SMART_REASONING", "high")
-    assert ModelConfig.from_environment() == ModelConfig(
-        ModelRole("configured-fast", "high"), ModelRole("gpt-6-sol", "high"),
+def test_model_config_has_research_and_answer_fast_defaults():
+    assert ModelConfig() == ModelConfig(
+        research=ModelRole("gpt-6-luna", "high", "fast"),
+        answer=ModelRole("gpt-6-sol", "medium", "fast"),
     )
 
 
@@ -54,7 +47,7 @@ def test_roles_structured_request_and_final_message_only(monkeypatch, phase):
     schema = {"type": "object", "additionalProperties": False, "properties": {}, "required": []}
     for stage in ("research", "answer"):
         assert model(stage, "instructions", {"question": "test"}, schema) == '{"answer":"ok"}'
-    assert [call[1]["json"]["model"] for call in calls] == [config.fast.model, config.smart.model]
+    assert [call[1]["json"]["model"] for call in calls] == [config.research.model, config.answer.model]
     for url, kwargs in calls:
         assert url == "https://api.openai.com/v1/responses"
         payload = kwargs["json"]
@@ -63,13 +56,13 @@ def test_roles_structured_request_and_final_message_only(monkeypatch, phase):
         assert payload["text"]["format"]["strict"] is True
         assert payload["store"] is False
         assert "tools" not in payload
-        if payload["model"] == config.fast.model:
+        if payload["model"] == config.research.model:
             assert "reasoning" not in payload
         else:
-            assert payload["reasoning"] == {"effort": config.smart.reasoning}
+            assert payload["reasoning"] == {"effort": config.answer.reasoning}
 
 
-def test_environment_overrides_reach_their_stages(monkeypatch):
+def test_default_transport_uses_recommended_stages_not_obsolete_environment(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "offline-test-value")
     monkeypatch.setenv("SCRYRAVEN_FAST_MODEL", "configured-research")
     monkeypatch.setenv("SCRYRAVEN_FAST_REASONING", "low")
@@ -86,8 +79,9 @@ def test_environment_overrides_reach_their_stages(monkeypatch):
     model = OpenAIModel(post=post)
     model("research", "prompt", {}, {})
     model("answer", "prompt", {}, {})
-    assert [(call["model"], call["reasoning"]["effort"]) for call in calls] == [
-        ("configured-research", "low"), ("configured-answer", "high"),
+    assert [(call["model"], call["reasoning"]["effort"], call["service_tier"])
+            for call in calls] == [
+        ("gpt-6-luna", "high", "fast"), ("gpt-6-sol", "medium", "fast"),
     ]
 
 
@@ -121,7 +115,7 @@ def test_service_tier_is_selected_per_semantic_stage_and_returned_tier_is_observ
     ]
 
 
-def test_unconfigured_service_tier_leaves_existing_request_shape(monkeypatch):
+def test_explicit_none_service_tier_omits_request_field(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "offline-test-value")
     calls = []
 
@@ -131,7 +125,8 @@ def test_unconfigured_service_tier_leaves_existing_request_shape(monkeypatch):
             {"type": "message", "content": [{"type": "output_text", "text": "{}"}]},
         ]})
 
-    OpenAIModel(ModelConfig(), post=post)("research", "prompt", {}, {})
+    config = ModelConfig(research=ModelRole("gpt-6-luna", "high", None))
+    OpenAIModel(config, post=post)("research", "prompt", {}, {})
     assert "service_tier" not in calls[0]
 
 

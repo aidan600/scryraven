@@ -7,12 +7,17 @@ bounded demonstrations and remaining limitations.
 
 ## Two semantic contracts
 
-`scryraven.research` has two semantic model contracts: Research uses GPT-6 Luna
-with high reasoning and Standard processing, and Answer uses GPT-6 Sol with
-medium reasoning and Standard processing. These are fixed assignments to the
-existing contracts, with no model routing or escalation. A bounded latency
-comparison kept high after medium missed a controlling Passport identity lead;
-a separate Standard/Fast comparison did not support Fast promotion.
+`scryraven.research` has two semantic model contracts. The ordinary recommended
+profile uses GPT-6 Luna / high / Fast for Research and GPT-6 Sol / medium / Fast
+for Answer. These are reversible `ModelConfig.research` and `ModelConfig.answer`
+defaults, not architectural requirements or a model router. Compatible injected
+configurations may vary in quality and validation coverage. A bounded latency
+comparison kept high after medium missed a controlling Passport identity lead.
+The earlier ordinary-route Standard/Fast comparison did not isolate a Fast speed
+benefit; a later isolated fixed-packet screen showed a consistent latency benefit
+for Sol / medium / Fast and noisier evidence for Luna / high / Fast. Fast may cost
+more per token, and there is no runtime cost estimator. Model choices are not
+read from environment variables; `.env.example` contains credential placeholders.
 No Sol interpretation/decomposition pass precedes Research. Such a pass may be
 compared in a separate bounded experiment only if Level-8 or later dogfooding
 shows repeated, exact cases of materially recoverable requests with sufficient
@@ -66,9 +71,11 @@ premises. A user may explicitly adopt a prior assistant value as a new scenario
 premise without verifying that value externally. Answer determines what selected
 Evidence or user-supplied premises justify, with supported, partial, or unable
 posture.
-One consequential missing information need may return to Research within the
-same run allowance. Only that need returns; the provisional answer is not supplied
-as Research authority. Each subsequent answer attempt is fresh.
+One consequential missing information need from a validated Answer may return to
+Research within the same run allowance. Only that need returns; the provisional
+answer is not supplied as Research authority. Materially changed selected Evidence
+starts a fresh Answer-stage allowance; unchanged selection retains no-progress
+protection.
 
 Within the same semantic call, `AnswerDecision` declares `support_basis` as
 `evidence`, `user_premises`, or `none` and places `source_readings` before the
@@ -83,15 +90,22 @@ Mechanical checks require each reading reference to belong to the supplied
 packet and each passage to occur in that exact material. Only whitespace
 differences are tolerated; the recorded reading reconstructs the original
 substring and offsets without changing words or punctuation. A malformed or
-nonmatching reading gets an output correction under the same Answer contract,
-deadline and semantic allowance. A source-bearing Answer that omits required
+nonmatching reading may get one output correction under the same Answer contract,
+deadline and semantic allowance. Every invalid Answer category shares that single
+correction for an unchanged selected packet. The packet's total Answer-stage
+allowance is 120 seconds, and each real OpenAI call is timed within the remaining
+stage, whole-run and per-call limits. An invalid corrected Answer or exhausted
+stage allowance terminates with a fixed operational inability message, no rejected
+prose, citations or selected supporting Evidence, and no Research reentry on that
+packet. The safe trace records `answer_validation_exhausted`; durable sessions keep
+their existing result shape. A source-bearing Answer that omits required
 citation aliases receives a fixed correction under that same allowance before
 acceptance; rejected prose is not fed back. Supported and partial `evidence`
 answers also require at least one validated reading, with a reading from selected
 material in every canonical source group they cite. A targeted view counts for
 its canonical source group. Additional readings from uncited selected sources
 are allowed. Missing required readings receive fixed corrections under the
-existing Answer allowance; exhaustion retains the honest operational fallback.
+existing Answer allowance; exhaustion retains the operational inability fallback.
 Evidence `unable` answers are exempt. For `user_premises`, the Evidence
 packet and `source_readings` must both be empty, and a supported or partial answer
 may derive solely from explicit user premises without a citation. This does not
@@ -302,7 +316,12 @@ acquisition outcomes, budget facts, exact acquired/exposed public material,
 verified literal answer-reading selections, and exposure IDs, lengths and hashes. It never
 receives raw provider responses or hidden reasoning. The small returned trace
 excludes source bodies; exact bodies can be captured separately through the
-observer when an authorized development observation needs them.
+observer when an authorized development observation needs them. A rejected
+literal passage also generates an observer-only `source_body=True` event with
+its attempted text, reading coordinates, and selected Evidence content hash and
+length. The ordinary trace, body-free dogfood diagnostics, durable sessions and
+public presentation do not receive that rejected text. Successful readings do
+not generate rejected-reading detail events. The literal matcher is unchanged.
 
 `scripts/v2_campaign.py` remains a development-only observation caller (its name
 identifies historical campaign files). It calls the ordinary session application

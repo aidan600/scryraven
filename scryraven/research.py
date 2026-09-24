@@ -29,6 +29,9 @@ from scryraven.sources import Evidence, exact_view
 # an operational reservation only: it never supplies evidence or changes a
 # model-derived posture.
 TERMINAL_ANSWER_RESERVE_SECONDS = 180
+ANSWER_STAGE_SECONDS = 120
+MIN_ANSWER_CALL_SECONDS = 1
+ANSWER_VALIDATION_FAILURE_MESSAGE = "I couldn't complete a source-validated answer for this request."
 
 
 class _Contract(BaseModel):
@@ -200,6 +203,8 @@ passages from that material. When relying on discontinuous portions, return them
 as separate passages; never stitch them together with ellipses. Copy every passage
 without paraphrase or a claim-to-source justification. This is your own fresh
 reading selection, not Research's verdict.
+For every canonical source group you cite, include at least one source_reading
+from selected material in that group.
 Keep materially different cases and contradictory or qualifying passages available
 while composing. Selections are transient actual text, not a claim database or a
 count-based sufficiency test; their absence proves nothing. With no source material,
@@ -302,6 +307,8 @@ def _run_turn(
         raise ValueError("research_requires_run_limits")
     budget = _Budget(limits, clock)
     model = model or OpenAIModel(cache_namespace="scryraven")
+    model_call_timeout = (getattr(model, "timeout_seconds", None)
+                          if isinstance(model, OpenAIModel) else None)
     # All real transport requests obey the remaining run deadline. Injected offline
     # transports retain their ordinary signatures and never require credentials.
     search_call = (lambda query: search(query, timeout_seconds=budget.remaining_seconds)) if search is search_exa else search
@@ -324,13 +331,14 @@ def _run_turn(
             except Exception:
                 pass
 
-    def ask(stage, prompt, packet, shape):
+    def ask(stage, prompt, packet, shape, *, answer_deadline=None):
+        if answer_deadline is not None and answer_deadline - clock() <= MIN_ANSWER_CALL_SECONDS:
+            raise _Bound("answer_validation_exhausted")
         budget.before_model()
         role = None
         if isinstance(model, OpenAIModel):
-            model.timeout_seconds = min(120, budget.remaining_seconds)
             config = getattr(model, "config", None)
-            role = getattr(config, "smart" if stage == "answer" else "fast", None)
+            role = getattr(config, stage, None)
         evidence = packet.get("evidence", [])
         conversation_chars = sum(len(item["question"]) + len(item["answer"])
                                  for item in packet.get("conversation_context", []))
@@ -370,6 +378,15 @@ def _run_turn(
                 "breakpoints": list(usage.breakpoints) if usage else None,
             }
 
+        # Observer bookkeeping is part of the stage time. Set the real request
+        # timeout immediately before transport so it never outlives its packet.
+        if answer_deadline is not None and answer_deadline - clock() <= MIN_ANSWER_CALL_SECONDS:
+            raise _Bound("answer_validation_exhausted")
+        if model_call_timeout is not None:
+            model.timeout_seconds = min(
+                120, model_call_timeout, budget.remaining_seconds,
+                max(0.0, answer_deadline - clock()) if answer_deadline is not None else 120,
+            )
         try:
             with capture_model_usage(received_usage):
                 raw = model(stage, prompt, packet, shape.model_json_schema())
@@ -388,6 +405,9 @@ def _run_turn(
                  duration_seconds=round(max(0.0, ended_elapsed - started_elapsed), 6),
                  usage=usage_fields(), budget=budget.snapshot())
             raise
+        finally:
+            if model_call_timeout is not None:
+                model.timeout_seconds = model_call_timeout
         ended_elapsed = max(0.0, clock() - budget.started)
         emit("model_returned", contract=stage, attempt=budget.semantic,
              ended_elapsed_seconds=round(ended_elapsed, 6),
@@ -473,14 +493,42 @@ def _run_turn(
         return CompletedAnswer(result.answer, result.posture, result.stop_reason, result.evidence,
                                tuple(trace), result.selected_evidence, result.citations, result.citation_uses)
 
+    def finish_answer_validation_failure():
+        # The fixed inability is operational. It makes no judgment about what
+        # the selected sources establish and retains no rejected Answer text.
+        emit("answer_validation_exhausted", code="answer_validation_exhausted",
+             budget=budget.snapshot())
+        final = AnswerDecision(
+            source_readings=[], posture="unable", support_basis="none",
+            answer=ANSWER_VALIDATION_FAILURE_MESSAGE, missing_information=None,
+        )
+        # The existing persisted reason is used only for schema compatibility.
+        # The precise operational reason stays in the safe current-turn trace.
+        return finish(final, [], "not_established")
+
     def answer_from_sources(refs, limitations):
         packet = {**common, "phase": "answer",
                   "evidence": [library.materials[ref].material() for ref in refs],
                   "acquisition_limitations": [{key: item[key] for key in
                       ("kind", "code", "pending_delivery") if key in item} for item in limitations],
                   "budget": budget.snapshot()}
-        while budget.semantic < limits.semantic_attempts and budget.remaining_seconds > 0:
-            final = ask("answer", ANSWER_PROMPT, packet, AnswerDecision)
+        answer_deadline = clock() + ANSWER_STAGE_SECONDS
+        for _ in range(2):
+            if (budget.semantic >= limits.semantic_attempts or budget.remaining_seconds <= 0
+                    or answer_deadline - clock() <= MIN_ANSWER_CALL_SECONDS):
+                raise _Bound("answer_validation_exhausted")
+            try:
+                final = ask("answer", ANSWER_PROMPT, packet, AnswerDecision,
+                            answer_deadline=answer_deadline)
+            except _Bound:
+                raise _Bound("answer_validation_exhausted") from None
+            except RunError as exc:
+                if (clock() >= answer_deadline or
+                        (exc.stage == "answer" and exc.code == "model_request_timed_out")):
+                    raise _Bound("answer_validation_exhausted") from None
+                raise
+            if clock() > answer_deadline:
+                raise _Bound("answer_validation_exhausted")
             if final is None:
                 packet["output_correction"] = "Return a JSON object matching the schema."
                 continue
@@ -528,6 +576,7 @@ def _run_turn(
             readings = []
             seen_readings = set()
             issue = rejected = None
+            rejected_detail = None
             for reading_index, reading in enumerate(final.source_readings):
                 if reading.evidence_ref not in refs:
                     issue = "unselected_reading_reference"
@@ -536,6 +585,15 @@ def _run_turn(
                                 else None)
                     rejected = {"evidence_ref": safe_ref,
                                 "reading_index": reading_index, "passage_index": 0}
+                    known_source = library.materials.get(reading.evidence_ref)
+                    rejected_detail = {
+                        "evidence_ref": reading.evidence_ref,
+                        "source_id": known_source.source_id if known_source else None,
+                        "reading_index": reading_index, "passage_index": 0,
+                        "attempted_passage": reading.passages[0],
+                        "selected_content_sha256": None,
+                        "selected_content_characters": None,
+                    }
                     break
                 source = library.materials[reading.evidence_ref]
                 for passage_index, passage in enumerate(reading.passages):
@@ -547,6 +605,14 @@ def _run_turn(
                         issue = "reading_passage_not_in_source"
                         rejected = {"evidence_ref": source.id,
                                     "reading_index": reading_index, "passage_index": passage_index}
+                        rejected_detail = {
+                            "evidence_ref": source.id, "source_id": source.source_id,
+                            "reading_index": reading_index, "passage_index": passage_index,
+                            "attempted_passage": passage,
+                            "selected_content_sha256": hashlib.sha256(
+                                source.content.encode()).hexdigest(),
+                            "selected_content_characters": len(source.content),
+                        }
                         break
                     key = source.id, match.start(), match.end()
                     if key not in seen_readings:
@@ -557,6 +623,8 @@ def _run_turn(
                     break
             if issue:
                 emit("answer_reading_rejected", contract="answer", code=issue, **rejected)
+                emit("answer_reading_rejected_detail", source_body=True,
+                     contract="answer", code=issue, **rejected_detail)
                 emit("response_rejected", contract="answer", code=issue)
                 packet["output_correction"] = {
                     "code": issue, **rejected,
@@ -629,7 +697,7 @@ def _run_turn(
             emit("answer_decision", decision=final.model_dump(exclude={"source_readings", "answer"}),
                  source_reading_refs=list(dict.fromkeys(reading.evidence_ref for reading in final.source_readings)))
             return final
-        return None
+        raise _Bound("answer_validation_exhausted")
 
     # Every malformed/corrected call uses the same finite semantic allowance. One
     # attempt is reserved for source-first answering; exhaustion is never support.
@@ -705,11 +773,10 @@ def _run_turn(
                 final = answer_from_sources(selected, [
                     item for item in last_route if item.get("status") == "error"])
             except _Bound as exc:
+                if exc.code == "answer_validation_exhausted":
+                    return finish_answer_validation_failure()
                 bound = exc.code
                 break
-            if final is None:
-                correction = "The answer response was malformed; choose the useful next step within the remaining budget."
-                continue
             if final.missing_information:
                 if budget.semantic < limits.semantic_attempts - 1 and budget.remaining_seconds > 0:
                     answer_need = final.missing_information
@@ -773,7 +840,9 @@ def _run_turn(
             selected = active
         try:
             final = answer_from_sources(selected, [{"code": bound, "pending_delivery": pending}])
-        except _Bound:
+        except _Bound as exc:
+            if exc.code == "answer_validation_exhausted":
+                return finish_answer_validation_failure()
             final = None
         if final is not None:
             return finish(final, selected, "research_bound")

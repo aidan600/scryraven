@@ -121,7 +121,8 @@ def test_no_remaining_answer_allowance_uses_operational_fallback():
                  limits=RunLimits(semantic_attempts=4))
 
     assert len(answer_calls(model)) == 2
-    assert result.posture == "unable" and result.stop_reason == "research_bound"
+    assert result.posture == "unable" and result.stop_reason == "not_established"
+    assert result.answer == "I couldn't complete a source-validated answer for this request."
     assert result.citations == () and result.selected_evidence == ()
     assert "REJECTED PROSE" not in result.answer
     assert result.trace[-1]["budget"]["semantic_attempts"] == 4

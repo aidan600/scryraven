@@ -23,20 +23,8 @@ class ModelRole:
 
 @dataclass(frozen=True)
 class ModelConfig:
-    fast: ModelRole = ModelRole("gpt-6-luna", "high")
-    smart: ModelRole = ModelRole("gpt-6-sol", "medium")
-
-    @classmethod
-    def from_environment(cls) -> ModelConfig:
-        defaults = cls()
-        return cls(**{
-            name: ModelRole(
-                os.getenv(f"SCRYRAVEN_{name.upper()}_MODEL", role.model),
-                os.getenv(f"SCRYRAVEN_{name.upper()}_REASONING", role.reasoning),
-                role.service_tier,
-            )
-            for name, role in (("fast", defaults.fast), ("smart", defaults.smart))
-        })
+    research: ModelRole = ModelRole("gpt-6-luna", "high", "fast")
+    answer: ModelRole = ModelRole("gpt-6-sol", "medium", "fast")
 
 
 class ModelError(RuntimeError):
@@ -195,7 +183,7 @@ class OpenAIModel:
         cache_namespace: str = "scryraven",
         timeout_seconds: float = 120,
     ) -> None:
-        self.config = config or ModelConfig.from_environment()
+        self.config = config if config is not None else ModelConfig()
         self.post = post or requests.post
         self.usage_observer = usage_observer
         self.cache_namespace = cache_namespace
@@ -207,8 +195,7 @@ class OpenAIModel:
         token = os.getenv("OPENAI_API_KEY", "").strip()
         if not token:
             raise ModelError("model_configuration_missing")
-        # FAST and SMART are compatibility names for Research and Answer.
-        role = self.config.smart if stage == "answer" else self.config.fast
+        role = self.config.answer if stage == "answer" else self.config.research
         instructions += "\nReturn only JSON matching the response schema, with no Markdown or commentary."
         phase = material.get("phase", stage)
         # Only fixed transport labels reach telemetry, never arbitrary material.
