@@ -6,12 +6,15 @@
 INITIAL EXPOSURE.** The source-free presentation correction is independently
 verified offline. These decisions concern fixed Research execution and one
 bounded follow-up attention change; Answer remains GPT-6 Sol / medium / Standard.
-The 28 ordinary Reading Room submissions used 28 of the authorized 30. The
-live-tested revision was `ea20fd4072c14218ba9d96b883057e47653e90b2` on
+The 28 staged Reading Room submissions and one final default-path follow-up used
+29 of the authorized 30. The staged comparison revision was
+`ea20fd4072c14218ba9d96b883057e47653e90b2` on
 `codex/latency-consumption-01`, descended from the clean expected `main` at
 `82fa75de35a165574369680f3c13e0ea56ea7c55`. All 12 credential-broker
-invocations recorded that revision and identical hashes for the nine selected
-runtime/caller source files. No provider request was made outside ScryRaven.
+staged invocations recorded that revision and identical hashes for the nine
+selected runtime/caller source files. The final default-path canary exercised
+implementation revision `95cdbdd` after promotion. No provider request was made
+outside ScryRaven.
 
 The development-only campaign caller at checkpoint `ea20fd4` submitted fixed
 public questions through the ordinary Reading Room HTTP route,
@@ -158,6 +161,16 @@ input fell by 8,432. **Decision: PROMOTE PRIOR-CITED INITIAL EXPOSURE.** This
 is bounded evidence over two useful follow-ups and one unrelated control, not
 a guarantee for longer sessions or larger prior citations.
 
+After promotion, one additional ordinary Reading Room follow-up reopened a
+byte-for-byte copy of the BIPM seed with no experimental session or model option.
+The seed and copy both hashed to
+`5129cd0416d08db53a6fc6d44ed7e23d2734eb35891c1f325052ba22bf75a736`.
+At `95cdbdd`, the default path completed in 7.343 wall seconds with one
+3.609-second Luna/high Research call, 569 characters of cited E1 material in its
+first Evidence packet, no local Read or external attempt, and a supported answer
+citing E1. Research and Answer both returned `default` processing; Answer stayed
+Sol/medium. This validates the final ordinary default wiring on the product path.
+
 ## Cost, live ledger, and artifact custody
 
 Approximate Research dollars apply the current [OpenAI API pricing](https://developers.openai.com/api/docs/pricing) for GPT-6 Luna short-context
@@ -174,15 +187,20 @@ provider costs.
 | A paired R4 repeat | 2 | 14 | 2 | 17 |
 | B three Standard/Fast pairs | 6 | 23 | 6 | 26 |
 | C two seeds + three follow-up pairs | 8 | 15 | 8 | 8 |
-| **Total** | **28 / 30 authorized** | **82** | **28** | **75** |
+| Final default-path BIPM follow-up | 1 | 1 | 1 | 0 |
+| **Total** | **29 / 30 authorized** | **83** | **29** | **75** |
 
-All 28 submissions completed. The dogfood logs show 43 Luna/high/Standard,
+All 29 submissions completed. The dogfood logs show 44 Luna/high/Standard,
 25 Luna/medium/Standard, and 14 Luna/high/Fast Research calls; 28
-Sol/medium/Standard Answer calls. External acquisition consisted of 53 Exa
+Sol/medium/Standard Answer calls in the staged comparisons and one more in the
+final canary. External acquisition consisted of 53 Exa
 Searches, six Serper lexical Searches, and 16 LinkUp Reads. Five additional
 local Reads used no external attempt. No automatic retry occurred. The paired
-R4 repeat consumed the two contingency submissions; two authorized submissions
-remained unused.
+R4 repeat consumed two contingency submissions and the final default-path canary
+used one more; one authorized submission remained unused. The first sandboxed
+canary broker invocation reported `environment_file_permission_denied` and
+`target_launch_attempted=false`, so it consumed no submission. The same exact
+target ran through the approved credential-broker execution identity.
 
 The complete isolated evidence root is
 `C:\tmp\scryraven-latency-consumption-01`. Arm folders
@@ -191,7 +209,9 @@ The complete isolated evidence root is
 `stage-c-preexposed` hold durable session databases, body-free `turns.jsonl`,
 and whitelisted `trajectory.jsonl`. The campaign caller is available for audit
 at the live-tested checkpoint `ea20fd4`; it is not a final-tree runtime path.
-Broker stdout/status files hold sanitized
+`final-default-canary` contains the final copied database, dogfood log, and
+sanitized broker records; its external caller is `final_canary.py` at the artifact
+root. Broker stdout/status files hold sanitized
 public answers, citations, hashes, and invocation outcomes. Useful failures
 and controls should be retained under the local evaluation corpus policy
 before any destructive cleanup; no evidence was deleted in this phase.
@@ -209,6 +229,6 @@ No packet/catalog/working-understanding redesign, acquisition concurrency,
 route-width increase, model router, Answer configuration change, source summary,
 or generated memory was attempted. Provider timing and source acquisition vary;
 these compact comparisons do not establish universal latency or reliability.
-The final branch HEAD, full-suite/Ruff/diff checks after promotion, PR URL, and
-**NOT MERGED** handoff status are to be filled in by the root agent after the
-final runtime configuration is committed and verified.
+The final implementation revision is `95cdbdd`, followed by this report-only
+revision. Its full offline suite passed 447 tests; Ruff and Git diff checks
+passed. The branch is intended for one review PR and is **NOT MERGED**.

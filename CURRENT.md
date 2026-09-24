@@ -135,7 +135,10 @@ to 8.719 seconds, and wall time from 34.577 to 22.594 seconds. An unrelated
 Euclid follow-up still acquired new ESA material; treatment added 1.156 wall
 seconds in that negative control. These are bounded observations, not general
 latency or reliability guarantees. No packet/catalog, route-width or acquisition
-concurrency change was promoted. The sanitized campaign artifacts are under
+concurrency change was promoted. A final ordinary default-path BIPM follow-up
+at implementation revision `95cdbdd` answered from prior-cited Evidence in one
+Research call with no acquisition; Research and Answer returned Standard service.
+The sanitized campaign artifacts are under
 `C:\tmp\scryraven-latency-consumption-01`; see
 `docs/operator/LATENCY_CONSUMPTION_01.md` for the adjudication and ledger.
 
