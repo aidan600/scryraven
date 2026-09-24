@@ -134,7 +134,7 @@ def _trajectory_event(event: dict) -> dict | None:
             "decision_action": decision.get("action") if decision.get("action") in {"research", "answer"} else None,
             "requests": [{
                 "kind": item.get("kind"), "query": item.get("query"),
-                "target": item.get("target"), "focus": item.get("focus"),
+                "target": item.get("target"),
                 "mode": item.get("mode"), "scope": _safe_refs(item.get("scope")),
                 "start_char": item.get("start_char"), "end_char": item.get("end_char"),
             } for item in requests if isinstance(item, dict)] if isinstance(requests, list) else [],
@@ -278,7 +278,7 @@ def _run_questions(*, root: Path, directory: str, database_name: str,
     app = create_app(store=store, session_options=options, dogfood_log=dogfood)
     client = app.test_client()
     session_id = existing_session_id
-    for index, (case_id, question) in enumerate(cases, 1):
+    for case_id, question in cases:
         captured.clear()
         attempted_turn = (store.load(session_id).metadata.revision + 1) if session_id else 1
         _emit("submission_started", case_id=case_id, directory=directory,
@@ -398,7 +398,10 @@ def main(argv: list[str] | None = None) -> int:
     _emit("campaign_invocation", stage=args.stage, arm=args.arm, case_ids=cases,
           revision=args.revision, source_sha256=_source_hashes(),
           root=str(root), research_effort=args.arm if args.stage == "a" else args.effort,
-          research_service_tier="default" if args.stage == "a" else args.tier,
+          research_service_tier=("default" if args.stage == "a" else
+                                 "paired" if args.stage == "b" and args.arm == "pair" else
+                                 "default" if args.stage == "b" and args.arm == "standard" else
+                                 "fast" if args.stage == "b" else args.tier),
           answer_model="gpt-6-sol", answer_effort="medium", answer_service_tier="default",
           started_at=datetime.now(timezone.utc).isoformat())
     try:
