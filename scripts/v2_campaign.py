@@ -160,7 +160,7 @@ def main(argv: list[str] | None = None) -> int:
         seconds=args.seconds,
         attention_characters=128_000,
     )
-    model = runtime.model(runtime.config(fast=role, smart=role), usage_observer=record_usage)
+    model = runtime.model(runtime.config(research=role, answer=role), usage_observer=record_usage)
     options = {"observe": observe, "model": model, "limits": limits}
     _emit(
         "campaign_invocation", campaign_id=manifest["campaign_id"], manifest_sha256=manifest_hash,

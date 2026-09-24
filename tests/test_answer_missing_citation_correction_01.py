@@ -66,7 +66,7 @@ def test_citationless_answer_is_corrected_with_same_contract_and_exact_inputs(po
     assert any(event.get("code") == "missing_citation" for event in result.trace)
 
 
-def test_repeated_citation_omission_ends_at_existing_semantic_bound():
+def test_repeated_citation_omission_ends_with_operational_inability():
     model = RecordingModel(
         decision(), decision("answer", ["E1"]),
         with_reading("Citation omitted on first attempt."),
@@ -79,7 +79,8 @@ def test_repeated_citation_omission_ends_at_existing_semantic_bound():
     assert [call[0] for call in model.calls] == ["research", "research", "answer", "answer"]
     assert len(answer_calls(model)) == 2
     assert result.posture == "unable"
-    assert result.stop_reason == "research_bound"
+    assert result.stop_reason == "not_established"
+    assert result.answer == "I couldn't complete a source-validated answer for this request."
     assert result.citations == ()
     assert result.trace[-1]["budget"]["semantic_attempts"] == 4
     assert len([event for event in result.trace if event.get("code") == "missing_citation"]) == 2
@@ -126,7 +127,7 @@ def test_other_invalid_citation_syntax_keeps_existing_failure(bad_answer, code):
     assert not any(event.get("code") == "missing_citation" for event in caught.value.trace)
 
 
-def test_source_reading_correction_remains_separate_from_citation_correction():
+def test_reading_then_citation_rejection_share_one_correction_allowance():
     invalid_reading = answer("An invalid reading was selected. [E1]")
     invalid_reading["source_readings"] = [
         {"evidence_ref": "E1", "passages": ["An invented value is eight."]},
@@ -134,18 +135,21 @@ def test_source_reading_correction_remains_separate_from_citation_correction():
     model = RecordingModel(
         decision(), decision("answer", ["E1"]), invalid_reading,
         with_reading("Correct literal reading, but no citation."),
-        with_reading("The publication states seven. [E1]"),
     )
 
     result = run(QUESTION, model=model, search=search, fetch=no_fetch)
 
-    first, second, third = answer_calls(model)
+    first, second = answer_calls(model)
     assert second[2]["output_correction"]["code"] == "reading_passage_not_in_source"
-    assert third[2]["output_correction"]["code"] == "missing_citation"
-    assert first[2]["evidence"] == second[2]["evidence"] == third[2]["evidence"]
-    assert result.answer == "The publication states seven. [1]"
-    assert result.trace[-1]["budget"]["semantic_attempts"] == 5
-    assert len([event for event in result.trace if event["action"] == "answer_decision"]) == 1
+    assert first[2]["evidence"] == second[2]["evidence"]
+    assert result.answer == "I couldn't complete a source-validated answer for this request."
+    assert result.stop_reason == "not_established"
+    assert result.citations == result.selected_evidence == ()
+    assert result.trace[-1]["budget"]["semantic_attempts"] == 4
+    assert [event["code"] for event in result.trace if event["action"] == "response_rejected"] == [
+        "reading_passage_not_in_source", "missing_citation",
+    ]
+    assert not any(event["action"] == "answer_decision" for event in result.trace)
 
 
 def test_followup_over_retained_evidence_can_use_citation_correction():

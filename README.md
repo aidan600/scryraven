@@ -266,13 +266,19 @@ The bounded production restart observation and its limits are recorded in
 The process needs `OPENAI_API_KEY` and `EXA_API_KEY`; Research-selected lexical,
 community or current-web discovery needs `SERPER_API_KEY` only when invoked.
 External Read needs `LINKUP_API_KEY` when invoked. It does not load `.env`.
-The fixed ordinary assignments are GPT-6 Luna / high for Research and GPT-6 Sol /
-medium for Answer. The transport retains its existing `ModelConfig` and
-`SCRYRAVEN_FAST_*` / `SCRYRAVEN_SMART_*` environment interface: FAST is the
-compatibility role for Research, and SMART is the compatibility role for Answer.
-Explicit configuration overrides the defaults. There is no model router,
-automatic premium escalation or model fallback. One stateless OpenAI
-Responses transport uses structured output; no model has built-in web tools.
+The ordinary recommended profile uses GPT-6 Luna / high / Fast for Research and
+GPT-6 Sol / medium / Fast for Answer. `ModelConfig.research` and
+`ModelConfig.answer` hold these built-in defaults and accept compatible explicit
+injected settings. They are implementation choices, not architectural requirements
+or a semantic router; other injected configurations may vary in quality and
+validation coverage. The obsolete FAST/SMART model environment overrides are
+removed. `.env.example` contains product-process credential placeholders only;
+the product does not load `.env`. There is no automatic premium escalation or
+model fallback. One stateless OpenAI Responses transport uses structured output;
+no model has built-in web tools. The isolated fixed-packet Sol / medium / Fast
+screen showed a consistent latency benefit; Luna / high / Fast evidence was
+noisier. Fast is a reversible default, not a universal speedup, and may cost
+more per token. There is no runtime cost estimator.
 
 ## Acquisition and evidence
 
@@ -318,7 +324,14 @@ attempts, a 300-second hard run ceiling and 128,000 characters of current Eviden
 attention. Local
 Read/Find use no external allowance. Corrected model outputs use the same finite
 semantic allowance. The loop reserves 180 seconds for terminal Answer once Evidence
-exists; each model call remains capped at 120 seconds. The longer ceiling gives
+exists; each model call remains capped at 120 seconds. An unchanged selected
+Answer Evidence packet receives one initial attempt and at most one shared
+correction within a total 120-second Answer-stage allowance. Each real OpenAI
+Answer request timeout is bounded by the remaining stage time. A validated
+missing-information Answer may lead to a fresh allowance only after Research
+selects materially changed Evidence. An invalid correction or exhausted allowance
+ends with a fixed operational inability message, no citations or rejected prose,
+and no Research retry on that unchanged packet. The longer ceiling gives
 operational diagnostic headroom and is not a product-latency target. The loop
 returns an honest operational unable result when it cannot complete a source-grounded answer.
 Supported, partial and unable results remain distinct.
@@ -340,7 +353,11 @@ roles, public Research choices, acquisition results, body-free conversation,
 catalog, retained-library and active Evidence size counts, exposure IDs/lengths/hashes,
 answer posture, bounds and citation resolution. Exact source bodies stay outside
 the compact trace. These diagnostics contain no private reasoning.
-Raw payloads, credentials and hidden reasoning are excluded.
+Raw payloads, credentials and hidden reasoning are excluded. An explicitly
+authorized observer can receive a separate `source_body=True` event for a rejected
+literal passage, with its selected Evidence hash and length for forensics. This
+detail stays out of the compact trace, body-free dogfood log, durable sessions
+and public presentation. The literal matcher is unchanged.
 `--trace-evidence` also exposes exact selected supporting material, citations and provenance;
 unseen full parents remain out of the trace. Use public questions for observations.
 Session diagnostics identify the turn, retained material count, local reuse,

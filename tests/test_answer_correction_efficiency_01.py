@@ -54,7 +54,8 @@ def test_inconsistent_supported_answer_at_bound_is_not_downgraded_into_a_result(
                  limits=RunLimits(semantic_attempts=3))
 
     assert [call[0] for call in model.calls] == ["research", "research", "answer"]
-    assert result.posture == "unable" and result.stop_reason == "research_bound"
+    assert result.posture == "unable" and result.stop_reason == "not_established"
+    assert result.answer == "I couldn't complete a source-validated answer for this request."
     assert result.citations == ()
     assert not any(event["action"] == "answer_decision" for event in result.trace)
     assert any(event.get("code") == "supported_with_missing_information"

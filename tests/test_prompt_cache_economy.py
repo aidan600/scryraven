@@ -238,8 +238,8 @@ def test_family_separates_contracts_and_namespace_but_not_questions_or_correctio
     assert len({call["prompt_cache_key"] for call in calls[-3:]}) == 1
     base = calls[-1]["prompt_cache_key"]
     for kwargs in ({"cache_namespace": "cold-validation-2"},
-                   {"config": ModelConfig(smart=ModelRole("gpt-6-sol", "high"))},
-                   {"config": ModelConfig(smart=ModelRole("other-answer", "medium"))}):
+                   {"config": ModelConfig(answer=ModelRole("gpt-6-sol", "high"))},
+                   {"config": ModelConfig(answer=ModelRole("other-answer", "medium"))}):
         other = OpenAIModel(post=model.post, **kwargs)
         other("answer", "prompt", {"question": Q1}, {})
         assert calls[-1]["prompt_cache_key"] != base

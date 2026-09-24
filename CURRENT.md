@@ -15,19 +15,23 @@ Evidence. Answer independently assesses selected actual source material and
 explicit user-supplied premises against the current/original request. Research
 may select no Evidence when the requested operation needs no external fact.
 
-Ordinary Research uses GPT-6 Luna / high / Standard processing and Answer uses
-GPT-6 Sol / medium / Standard processing. These are fixed assignments by semantic
-stage, not a model router; there is no automatic premium escalation or model
-fallback. Exa supplies ordinary general Search. Research can explicitly select
-Serper lexical/community/current discovery for a needed source class. Serper
+The ordinary recommended model profile uses GPT-6 Luna / high / Fast for Research
+and GPT-6 Sol / medium / Fast for Answer. These are reversible defaults in
+`ModelConfig`, not architectural requirements or a semantic router. Compatible
+injected configurations may vary in quality and validation coverage; there is no
+automatic premium escalation or model fallback. Exa supplies ordinary general
+Search. Research can explicitly select Serper lexical/community/current
+discovery for a needed source class. Serper
 candidates and snippets guide navigation only;
 they are not Evidence. LinkUp static Fetch supplies external known-URL Read when
 Research selects one. Exa Contents has no ordinary Read authority; there is no
 search or Read fallback or provider router. Limits remain 12 semantic attempts,
 16 external attempts and 128,000 characters of current attention. The ordinary
 hard run ceiling is 300 seconds, with 180 seconds reserved for terminal Answer
-once Evidence exists; each model call remains capped at 120 seconds. This is
-diagnostic and completion headroom, not an acceptable-latency target. No semantic
+once Evidence exists. Each model call remains capped at 120 seconds, and one
+unchanged Answer Evidence packet has a 120-second total Answer-stage allowance.
+These limits provide diagnostic and completion headroom, not an acceptable-latency
+target. No semantic
 verifier or additional semantic owner exists.
 
 Research packet presentation now keeps the stable `conversation_context`,
@@ -84,14 +88,25 @@ basis and cites its external claims.
 Supported or partial evidence answers must supply validated literal readings,
 including a reading from each canonical source group they cite. This is a
 mechanical custody constraint, not a test of entailment. An otherwise valid
-evidence-based Answer that omits a required citation alias or reading receives
-a bounded correction in the same Answer contract before acceptance.
-An Answer that declares both supported posture and a consequential
-`missing_information` need now receives a bounded Answer-shape correction in
-that contract; it does not create a Research round trip or mechanically change
-the posture. Literal-reading corrections identify the failed reference and
-reading/passage indexes without copying the rejected passage into the correction
-or safe trace.
+evidence-based Answer that omits a required citation alias or reading may receive
+one correction in the same Answer contract. Every invalid Answer category shares
+that single correction allowance for an unchanged selected packet. If the
+corrected Answer is invalid or the packet's Answer-stage time is exhausted, the
+turn ends with a fixed operational inability message, without rejected prose,
+citations, selected support or a Research retry on the same packet. The safe
+trace records `answer_validation_exhausted`; the unchanged durable session shape
+uses its existing `not_established` stop reason. A validated
+`missing_information` Answer may return to Research; materially changed selected
+Evidence receives a fresh Answer allowance while unchanged selections retain
+the no-progress protection. An Answer that declares both supported posture and
+a consequential `missing_information` need is corrected as an Answer-shape error;
+it does not create a Research round trip or mechanically change the posture.
+Literal-reading corrections identify the failed reference and reading/passage
+indexes without copying the rejected passage into the correction or safe trace.
+An additional `source_body=True` observer event records rejected attempted
+passages, exact selected-content hashes and lengths for explicitly authorized
+forensics; ordinary traces, dogfood records, sessions and presentation remain
+body-free for that diagnostic.
 Neither path promotes user premises or prior assistant prose into Evidence.
 
 Durable SQLite sessions retain atomic revision-checked commits, reopen/history,
@@ -119,9 +134,10 @@ empty citations. They disclose a Research operating-bound completion without
 changing Answer's supported/partial/unable posture. Known safe Exa,
 Serper and LinkUp configuration errors and LinkUp material-unavailable errors
 retain their fixed codes through Acquisition; unknown failures remain generic.
-The legacy FAST and SMART transport configuration names remain readable for
-compatibility: FAST configures Research and SMART configures Answer. Explicit
-`ModelConfig` and environment overrides still apply.
+`ModelConfig.research` and `ModelConfig.answer` select the built-in OpenAI role
+settings. Explicit injected `ModelConfig` remains available. Obsolete FAST/SMART
+model environment overrides are removed; `.env.example` holds credential
+placeholders only, and the product does not load `.env`.
 
 ## Bounded evidence and limits
 
@@ -141,6 +157,10 @@ requested tier for every Research call, yet Fast took 73.608 Research seconds an
 115.094 wall seconds against Standard's 36.938 and 69.079 seconds, with greater
 token use and estimated cost. Answer remained Standard.
 Routes and cache outcomes differed, so these totals do not isolate service speed.
+In a later isolated fixed-packet screen, Sol / medium / Fast showed a consistent
+latency benefit. Luna / high / Fast evidence was noisier; the Fast default is a
+pragmatic, reversible operational choice, not a universal speedup. Fast may cost
+more per token. No runtime cost estimator is implemented.
 
 In two copied-session direct follow-ups, initial exposure of prior-cited exact
 Evidence reduced Research

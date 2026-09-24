@@ -205,7 +205,8 @@ def test_basis_correction_stays_within_existing_semantic_limit():
                  limits=RunLimits(semantic_attempts=3))
 
     assert len(answers(model)) == 2
-    assert result.posture == "unable" and result.stop_reason == "research_bound"
+    assert result.posture == "unable" and result.stop_reason == "not_established"
+    assert result.answer == "I couldn't complete a source-validated answer for this request."
     assert result.trace[-1]["budget"]["semantic_attempts"] == 3
     assert len([event for event in result.trace
                 if event.get("code") == "basis_none_requires_unable"]) == 2
@@ -225,7 +226,8 @@ def test_terminal_bound_does_not_promote_inconsistent_supported_answer():
                  limits=RunLimits(semantic_attempts=2))
 
     assert [call[0] for call in model.calls] == ["research", "answer"]
-    assert result.posture == "unable" and result.stop_reason == "research_bound"
+    assert result.posture == "unable" and result.stop_reason == "not_established"
+    assert result.answer == "I couldn't complete a source-validated answer for this request."
     assert result.selected_evidence == result.citations == ()
     assert any(event.get("code") == "supported_with_missing_information"
                for event in result.trace)
