@@ -49,6 +49,9 @@ guides roughly one to three independent requests per route. Results return to th
 same Research owner before semantically dependent follow-on requests are chosen.
 The executor performs selected requests and reports mechanical outcomes; it makes
 no truth, applicability, contradiction, sufficiency, or research-policy decisions.
+`ResearchDecision` has no `purpose` field or route-purpose prose requirement.
+Executable route intent is expressed by structured Search/Read/Find requests and
+the compact working understanding, without a new semantic owner or memory.
 
 **Answer** receives the immutable current user turn, conversation context,
 current date, exact selected Evidence, mechanical acquisition limitations, and
@@ -273,6 +276,23 @@ for instructions, growing conversation history and stable Research turn context.
 Research and Answer have separate cache families; mutable Evidence and corrections
 remain outside those stable boundaries. Transport, Exa policy and the credential
 broker remain mechanical infrastructure, with no semantic decision authority.
+
+For Research, the stable packet prefix remains `conversation_context`,
+`current_date`, `phase`, `question`, followed by the existing Research-context
+cache breakpoint. Present volatile fields serialize in this deliberate order:
+`working_understanding`, `catalog`, `last_route`, `evidence`,
+`answer_missing_information`, `pending_delivery`, `budget`, and
+`output_correction` last. Any other material fields survive unchanged in
+deterministic order before a present correction. Placing previous generated
+understanding and navigation before the latest route and Evidence presents
+current source material near the decision edge. Within each Evidence object,
+metadata precedes exact `content`; the parsed object, exact text, IDs, Evidence
+membership and array ordering remain unchanged. This is presentation order, not
+an attention, retention, acquisition or Answer-policy change. Removing
+`purpose` changes the Research schema and can change its cache-family identity;
+no compatibility family or persistent generated state is added. The growing
+conversation boundary, stable Research-context breakpoint and separate Answer
+family remain intact.
 
 ## Safe development observations
 

@@ -126,6 +126,85 @@ def test_navigation_prefix_stable_and_volatile_material_after_last_breakpoint(tr
     assert calls[0]["prompt_cache_key"] == calls[1]["prompt_cache_key"]
 
 
+def test_research_packet_orders_volatile_fields_and_evidence_without_changing_material(transport):
+    model, calls, _ = transport
+    history = {"answer": ANSWER_A, "question": Q1}
+    source_body = 'Exact source text: 17,325–18,920 lb.\n"Quoted" without rewriting.'
+    evidence = {
+        "content": source_body, "z_future": {"sequence": [3, 1, 2]},
+        "end_char": 83, "source_id": "S1", "id": "E1", "title": "GE Passport",
+        "acquisition": {"type": "search", "provider": "exa"},
+        "url": "https://example.test/passport", "parent_id": None,
+        "start_char": 0, "a_future": "additional metadata",
+    }
+    material = {
+        "z_unknown": {"nested": ["third", "first"]},
+        "output_correction": {"code": "invalid_reference"},
+        "budget": {"semantic_remaining": 8},
+        "pending_delivery": ["E2", "E1"],
+        "answer_missing_information": "Verify the engine range",
+        "evidence": [evidence, {"content": "Second exact body", "id": "E2"}],
+        "last_route": {"kind": "search"},
+        "catalog": {"materials": ["E2", "E1"]},
+        "working_understanding": {"interpretation": "Passport is the base engine"},
+        "a_unknown": ["keep", "this", "order"],
+        "question": Q2, "phase": "research", "current_date": "2026-09-20",
+        "conversation_context": [history],
+    }
+    original = deepcopy(material)
+    model("research", research.RESEARCH_PROMPT, material,
+          research.ResearchDecision.model_json_schema())
+    blocks = calls[0]["input"][1]["content"]
+    parsed = material_of(calls[0])
+    assert parsed == material == original
+    assert list(parsed) == [
+        "conversation_context", "current_date", "phase", "question",
+        "working_understanding", "catalog", "last_route", "evidence",
+        "answer_missing_information", "pending_delivery", "budget",
+        "a_unknown", "z_unknown", "output_correction",
+    ]
+    assert list(parsed["evidence"][0]) == [
+        "id", "source_id", "acquisition", "title", "url", "parent_id",
+        "start_char", "end_char", "a_future", "z_future", "content",
+    ]
+    assert [item["content"] for item in parsed["evidence"]] == [
+        source_body, "Second exact body",
+    ]
+    # The stable prefix retains the previous exact JSON bytes and the same
+    # breakpoint. Neither volatile field order nor Evidence bodies enter it.
+    assert blocks[0]["text"] == '{"conversation_context": [' + json.dumps(
+        history, ensure_ascii=False, sort_keys=True)
+    assert blocks[1]["text"] == (
+        '], "current_date": "2026-09-20", "phase": "research", "question": '
+        + json.dumps(Q2, ensure_ascii=False, sort_keys=True)
+    )
+    assert blocks[1]["prompt_cache_breakpoint"] == {"mode": "explicit"}
+    assert "prompt_cache_breakpoint" not in blocks[2]
+    assert blocks[2]["text"].startswith(', "working_understanding": ')
+    assert list(json.loads("{" + blocks[2]["text"][2:])) == [
+        "working_understanding", "catalog", "last_route", "evidence",
+        "answer_missing_information", "pending_delivery", "budget",
+        "a_unknown", "z_unknown", "output_correction",
+    ]
+    reordered = dict(reversed(list(deepcopy(material).items())))
+    reordered["evidence"][0] = dict(reversed(list(reordered["evidence"][0].items())))
+    model("research", research.RESEARCH_PROMPT, reordered,
+          research.ResearchDecision.model_json_schema())
+    assert calls[1]["input"][1]["content"] == blocks
+
+
+def test_research_order_does_not_apply_to_answer_or_manufacture_absent_fields(transport):
+    model, calls, _ = transport
+    material = {"phase": "answer", "question": Q2, "z_future": [2, 1],
+                "evidence": [{"content": BODY, "id": "E1"}], "a_future": "kept"}
+    model("answer", research.ANSWER_PROMPT, material,
+          research.AnswerDecision.model_json_schema())
+    parsed = material_of(calls[0])
+    assert parsed == material
+    assert list(parsed) == ["phase", "question", "a_future", "evidence", "z_future"]
+    assert list(parsed["evidence"][0]) == ["content", "id"]
+
+
 @pytest.mark.parametrize("stage,history_field", [("research", "conversation_context"), ("answer", "conversation_context")])
 def test_history_append_keeps_exact_previous_endpoint_without_truncating_history(transport, stage, history_field):
     model, calls, _ = transport

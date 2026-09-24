@@ -30,6 +30,20 @@ once Evidence exists; each model call remains capped at 120 seconds. This is
 diagnostic and completion headroom, not an acceptable-latency target. No semantic
 verifier or additional semantic owner exists.
 
+Research packet presentation now keeps the stable `conversation_context`,
+`current_date`, `phase`, `question` prefix and its Research-context cache
+breakpoint. Present volatile fields follow the deliberate order
+`working_understanding`, `catalog`, `last_route`, `evidence`,
+`answer_missing_information`, `pending_delivery`, `budget`, then
+`output_correction` last. Unknown fields remain lossless in deterministic order.
+Generated understanding and navigation precede the latest route and exact
+Evidence, placing current source material near the decision edge. Evidence
+metadata precedes its unchanged exact content; membership, array order,
+retention, catalog content and Answer packets are unchanged. `ResearchDecision`
+no longer contains `purpose`: executable route intent remains in structured
+requests and compact working state. This adds no semantic owner or memory and
+does not change the separate Research/Answer cache families.
+
 ## Sessions, Evidence and presentation
 
 Immutable acquisitions, canonical source identities, exact versions/views,
@@ -134,13 +148,26 @@ calls from four to two, local Reads from three to zero, Research time from 16.68
 to 8.719 seconds, and wall time from 34.577 to 22.594 seconds. An unrelated
 Euclid follow-up still acquired new ESA material; treatment added 1.156 wall
 seconds in that negative control. These are bounded observations, not general
-latency or reliability guarantees. No packet/catalog, route-width or acquisition
-concurrency change was promoted. A final ordinary default-path BIPM follow-up
+latency or reliability guarantees. That campaign promoted no packet/catalog,
+route-width or acquisition concurrency change. A final ordinary default-path
+BIPM follow-up
 at implementation revision `95cdbdd` answered from prior-cited Evidence in one
 Research call with no acquisition; Research and Answer returned Standard service.
 The sanitized campaign artifacts are under
 `C:\tmp\scryraven-latency-consumption-01`; see
 `docs/operator/LATENCY_CONSUMPTION_01.md` for the adjudication and ledger.
+
+Packet Efficiency Promotion 01 follows an 18-call frozen-packet screen: Layout
+and purpose removal each preserved the consequential obligation in 6/6 decisions.
+In ordinary-product confirmation, both independent treatments and their
+combination supported the exercised Passport dependency and retained parkrun
+follow-up; each parkrun arm used prior-cited Evidence without Search/Read/Find.
+The prior Passport Control draw remained partial, while the independent Layout,
+purpose-removal and Combined draws established the requested Passport range.
+These separate stochastic draws do not show that the treatments caused the
+Passport difference, guarantee fewer calls or establish a general latency win.
+The sanitized confirmation is under
+`C:\tmp\scryraven-packet-confirmation-01`.
 
 On the frozen Answer screen, GPT-6 Sol / medium produced 12/12 acceptable draws.
 In the ordinary product-path Research screen with that Answer role fixed, GPT-6
