@@ -7,6 +7,7 @@ assessment of truth, applicability or sufficiency. There is no model call here.
 from __future__ import annotations
 
 import re
+import time
 from collections.abc import Callable, Iterable
 from dataclasses import asdict
 from html import unescape
@@ -317,7 +318,12 @@ class AcquisitionLibrary:
             raise AcquisitionError("empty_target")
         return result
 
-    def execute(self, request: dict, *, before_external: Callable[[], None]) -> dict:
+    def execute(
+        self, request: dict, *, before_external: Callable[[], None],
+        observe_operation: Callable[[dict], None] | None = None,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> dict:
+        started_at = clock() if observe_operation is not None else None
         before = len(self.acquisitions)
         kind = request.get("kind") if isinstance(request, dict) else None
         result = {"kind": kind if isinstance(kind, str) and kind in {"search", "search_lexical", "read", "find"} else None,
@@ -336,6 +342,33 @@ class AcquisitionLibrary:
             result.update(status="error", code=str(exc))
         result["new_acquisition_ids"] = [item.id for item in self.acquisitions[before:]]
         result["material_ids"] = list(dict.fromkeys(result["material_ids"]))
+        if observe_operation is not None:
+            ended_at = clock()
+            kind = result["kind"]
+            provider = ({"search": "exa", "search_lexical": "serper", "read": "linkup"}.get(kind)
+                        if result["external"] else "local")
+            event = {
+                "kind": kind,
+                "mode": result.get("request", {}).get("mode") if kind == "read" else None,
+                "provider": provider,
+                "external": result["external"],
+                "started_at": started_at,
+                "ended_at": ended_at,
+                "duration_seconds": max(0.0, ended_at - started_at),
+                "status": result["status"],
+                "code": result.get("code"),
+                "returned_material_count": len(result["material_ids"]),
+                "new_acquisition_count": len(result["new_acquisition_ids"]),
+                "returned_material_characters": sum(len(self.materials[ref].content)
+                                                     for ref in result["material_ids"]),
+                "reused_retained_material": (not result["external"] and bool(result["material_ids"])
+                                             and not result["new_acquisition_ids"]),
+            }
+            # A diagnostics observer is never allowed to change the result or Evidence.
+            try:
+                observe_operation(event)
+            except Exception:
+                pass
         return result
 
     def _search(self, request: dict, result: dict, before_external: Callable[[], None]) -> None:

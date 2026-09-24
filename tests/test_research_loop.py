@@ -249,7 +249,11 @@ def test_model_failure_trace_has_later_time_and_only_safe_code():
         ("model_started", 0.0), ("model_failed", 2.5),
     ]
     assert events[-1]["code"] == "model_response_incomplete_content_filter"
-    assert set(events[-1]) == {"stage", "action", "contract", "attempt", "code", "budget"}
+    assert events[-1]["ended_elapsed_seconds"] == 2.5
+    assert events[-1]["duration_seconds"] == 2.5
+    assert all(value is None for value in events[-1]["usage"].values())
+    assert set(events[-1]) == {"stage", "action", "contract", "attempt", "code", "budget",
+                               "ended_elapsed_seconds", "duration_seconds", "usage"}
 
 
 def test_terminal_answer_reserve_preserves_a_source_first_answer_window():
@@ -363,9 +367,10 @@ def test_answer_reading_is_exact_source_text_and_invalid_reading_uses_same_budge
     rejected = [event for event in events if event["action"] == "answer_reading_rejected"]
     assert rejected == [{"stage": "research", "action": "answer_reading_rejected", "contract": "answer",
                          "code": "reading_passage_not_in_source", "evidence_ref": "E1",
-                         "passage": "The invented value is eight.", "reading_index": 0,
-                         "passage_index": 0}]
-    assert not any(event["action"] == "answer_reading_rejected" for event in result.trace)
+                         "reading_index": 0, "passage_index": 0}]
+    assert rejected == [event for event in result.trace
+                        if event["action"] == "answer_reading_rejected"]
+    assert "The invented value is eight." not in json.dumps(result.trace)
     trace_answer = next(event for event in result.trace if event["action"] == "answer_decision")
     assert "source_readings" not in trace_answer["decision"]
     assert trace_answer["source_reading_refs"] == ["E1"]
@@ -465,5 +470,7 @@ def test_answer_reading_rejects_nonliteral_or_wrong_custody_passages(invalid_rea
     rejected = [event for event in events if event["action"] == "answer_reading_rejected"]
     assert rejected[0]["code"] == code
     assert rejected[0]["evidence_ref"] == invalid_reading["evidence_ref"]
-    assert rejected[0]["passage"] == invalid_reading["passages"][passage_index]
+    assert "passage" not in rejected[0]
+    assert invalid_reading["passages"][passage_index] not in json.dumps(result.trace)
+    assert rejected[0]["reading_index"] == 0
     assert rejected[0]["passage_index"] == passage_index

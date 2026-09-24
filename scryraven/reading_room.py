@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import secrets
+import sys
 from pathlib import Path
 from threading import Lock
 from time import monotonic
@@ -14,6 +15,7 @@ from markupsafe import Markup
 from werkzeug.exceptions import HTTPException, SecurityError
 from werkzeug.serving import WSGIRequestHandler, make_server
 
+from scryraven.dogfood_diagnostics import DogfoodLog, TurnDiagnostics
 from scryraven.presentation import answer_html, premise_only, source_body_html, source_label
 from scryraven.session import ResearchSession
 from scryraven.session_store import (
@@ -66,12 +68,22 @@ class _Forms:
 
 
 def create_app(*, database: str | Path | None = None, store: SessionStore | None = None,
-               session_options: dict | None = None) -> Flask:
+               session_options: dict | None = None,
+               dogfood_log: str | Path | None = None) -> Flask:
     """Inject only the existing store and ResearchSession's ordinary I/O options."""
     app = Flask(__name__)
     app.config.update(MAX_CONTENT_LENGTH=256 * 1024, TRUSTED_HOSTS=["127.0.0.1", "localhost"])
     custody = store if store is not None else SQLiteSessionStore(database)
     options = dict(session_options or {})
+    if dogfood_log is not None and isinstance(custody, SQLiteSessionStore):
+        diagnostic_path = Path(dogfood_log).expanduser().resolve()
+        if (diagnostic_path == custody.path
+                or (diagnostic_path.exists() and custody.path.exists()
+                    and diagnostic_path.samefile(custody.path))):
+            raise OSError("dogfood_log_matches_session_database")
+    diagnostics = (DogfoodLog(dogfood_log, session_database=custody.path
+                              if isinstance(custody, SQLiteSessionStore) else None)
+                   if dogfood_log is not None else None)
     forms = _Forms()
 
     @app.before_request
@@ -157,13 +169,35 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
         if not question:
             return page(session_id, error="Write a research question to begin.", status=400)
         session = None
+        result = None
+        failure = None
+        turn_diagnostics = TurnDiagnostics(started_at=monotonic(), clock=monotonic) if diagnostics else None
+        turn_options = options
+        if turn_diagnostics is not None:
+            turn_options = dict(options)
+            prior_observer = turn_options.get("observe")
+
+            def observe(event):
+                # Both callbacks are optional diagnostics. Neither may alter a turn.
+                try:
+                    turn_diagnostics.observe(event)
+                except Exception:
+                    pass
+                if prior_observer is not None:
+                    try:
+                        prior_observer(event)
+                    except Exception:
+                        pass
+
+            turn_options["observe"] = observe
         try:
-            session = (ResearchSession.open(session_id, store=custody, **options) if session_id
-                       else ResearchSession.create(store=custody, **options))
+            session = (ResearchSession.open(session_id, store=custody, **turn_options) if session_id
+                       else ResearchSession.create(store=custody, **turn_options))
             if session.metadata.revision != revision:
                 raise SessionConflictError()
-            session.ask(question)
+            result = session.ask(question)
         except Exception as exc:
+            failure = exc
             # There is no completed turn on failure. Remove only our own new,
             # still-empty session; the revision guard protects a concurrent writer.
             if not session_id and session is not None:
@@ -172,16 +206,31 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                 except SessionStoreError:
                     pass
             if isinstance(exc, SessionStoreError) and exc.code == "session_not_found":
-                return page(error="That session was deleted. Your question is kept below; you can start new research.",
-                            question=question, status=409)
-            if isinstance(exc, SessionConflictError):
-                return page(session_id, question=question, status=409,
-                            error="This session changed. Review the latest conversation before submitting again.")
-            return page(session_id, question=question, status=503,
-                        error="Research didn’t complete. ScryRaven stopped before an answer was saved. "
-                              "Your existing conversation is unchanged. You can edit the question or try again.")
-        return redirect(url_for("open_session", session_id=session.session_id,
-                                _anchor=f"turn-{session.metadata.revision}"), 303)
+                response = page(error="That session was deleted. Your question is kept below; you can start new research.",
+                                question=question, status=409)
+            elif isinstance(exc, SessionConflictError):
+                response = page(session_id, question=question, status=409,
+                                error="This session changed. Review the latest conversation before submitting again.")
+            else:
+                response = page(session_id, question=question, status=503,
+                                error="Research didn’t complete. ScryRaven stopped before an answer was saved. "
+                                      "Your existing conversation is unchanged. You can edit the question or try again.")
+        else:
+            response = redirect(url_for("open_session", session_id=session.session_id,
+                                    _anchor=f"turn-{session.metadata.revision}"), 303)
+        if turn_diagnostics is not None:
+            try:
+                diagnostics.append(turn_diagnostics.record(
+                    session_id=session.session_id if session is not None else session_id,
+                    revision_before=revision,
+                    revision_after=session.metadata.revision if failure is None else None,
+                    result=result, error=failure,
+                ))
+            except Exception:
+                # The committed turn and redirect have already been chosen.
+                print("Reading Room dogfood diagnostics stopped: the local log could not be written.",
+                      file=sys.stderr, flush=True)
+        return response
 
     @app.post("/sessions/<session_id>/rename")
     def rename_session(session_id):
@@ -253,16 +302,18 @@ def serve(app: Flask, *, port: int = _PORT) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Open ScryRaven’s local Reading Room.")
     parser.add_argument("--database", type=Path, metavar="PATH", help="Use a chosen session database location.")
+    parser.add_argument("--dogfood-log", type=Path, metavar="PATH",
+                        help="Append body-free local turn diagnostics to a chosen JSONL file.")
     parser.add_argument("--port", type=int, default=_PORT, help=f"Local HTTP port (default: {_PORT}).")
     args = parser.parse_args(argv)
     if not 1 <= args.port <= 65535:
         parser.error("--port must be between 1 and 65535.")
     try:
-        serve(create_app(database=args.database), port=args.port)
+        serve(create_app(database=args.database, dogfood_log=args.dogfood_log), port=args.port)
     except KeyboardInterrupt:
         pass
     except (OSError, SessionStoreError):
-        print("The Reading Room could not start. Check the database location or choose another --port.")
+        print("The Reading Room could not start. Check the database or dogfood log location, or choose another --port.")
         return 1
     return 0
 

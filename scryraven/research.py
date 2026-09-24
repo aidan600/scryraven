@@ -21,7 +21,7 @@ from core.linkup_transport import fetch_linkup
 from core.serper_transport import search_serper
 from scryraven.acquisition import AcquisitionLibrary
 from scryraven.errors import RunError
-from scryraven.model import ModelError, OpenAIModel
+from scryraven.model import ModelError, ModelUsage, OpenAIModel, capture_model_usage
 from scryraven.results import CompletedAnswer, resolve_citations
 
 # Preserve enough of a bounded run for a source-first terminal Answer. This is
@@ -325,12 +325,19 @@ def _run_turn(
 
     def ask(stage, prompt, packet, shape):
         budget.before_model()
+        role = None
         if isinstance(model, OpenAIModel):
             model.timeout_seconds = min(120, budget.remaining_seconds)
+            config = getattr(model, "config", None)
+            role = getattr(config, "smart" if stage == "answer" else "fast", None)
         evidence = packet.get("evidence", [])
         conversation_chars = sum(len(item["question"]) + len(item["answer"])
                                  for item in packet.get("conversation_context", []))
+        started_elapsed = max(0.0, clock() - budget.started)
         emit("model_started", contract=stage, attempt=budget.semantic,
+             started_elapsed_seconds=round(started_elapsed, 6),
+             model=getattr(role, "model", None),
+             reasoning_effort=getattr(role, "reasoning", None),
              exposed=[{"id": item["id"], "characters": len(item["content"]),
                        "sha256": hashlib.sha256(item["content"].encode()).hexdigest()} for item in evidence],
              catalog_characters=(len(json.dumps(packet["catalog"], ensure_ascii=False, sort_keys=True))
@@ -341,15 +348,48 @@ def _run_turn(
                  packet.get("conversation_context", []), ensure_ascii=False, sort_keys=True)),
              budget=budget.snapshot())
         emit("exposure", source_body=True, contract=stage, attempt=budget.semantic, evidence=evidence)
+        usage: ModelUsage | None = None
+
+        def received_usage(value: ModelUsage) -> None:
+            nonlocal usage
+            usage = value
+
+        def usage_fields() -> dict:
+            return {
+                "input_tokens": usage.input_tokens if usage else None,
+                "cached_input_tokens": usage.cached_input_tokens if usage else None,
+                "cache_write_tokens": usage.cache_write_tokens if usage else None,
+                "ordinary_uncached_tokens": usage.ordinary_uncached_tokens if usage else None,
+                "output_tokens": usage.output_tokens if usage else None,
+                "reasoning_tokens": usage.reasoning_tokens if usage else None,
+                "cache_family": usage.cache_family if usage else None,
+                "breakpoints": list(usage.breakpoints) if usage else None,
+            }
+
         try:
-            raw = model(stage, prompt, packet, shape.model_json_schema())
+            with capture_model_usage(received_usage):
+                raw = model(stage, prompt, packet, shape.model_json_schema())
         except ModelError as exc:
             code = str(exc)
+            ended_elapsed = max(0.0, clock() - budget.started)
             emit("model_failed", contract=stage, attempt=budget.semantic,
-                 code=code, budget=budget.snapshot())
+                 code=code, ended_elapsed_seconds=round(ended_elapsed, 6),
+                 duration_seconds=round(max(0.0, ended_elapsed - started_elapsed), 6),
+                 usage=usage_fields(), budget=budget.snapshot())
             raise RunError(stage, code, trace) from None
+        except Exception:
+            ended_elapsed = max(0.0, clock() - budget.started)
+            emit("model_failed", contract=stage, attempt=budget.semantic,
+                 code="model_execution_failed", ended_elapsed_seconds=round(ended_elapsed, 6),
+                 duration_seconds=round(max(0.0, ended_elapsed - started_elapsed), 6),
+                 usage=usage_fields(), budget=budget.snapshot())
+            raise
+        ended_elapsed = max(0.0, clock() - budget.started)
         emit("model_returned", contract=stage, attempt=budget.semantic,
-             budget=budget.snapshot())
+             ended_elapsed_seconds=round(ended_elapsed, 6),
+             duration_seconds=round(max(0.0, ended_elapsed - started_elapsed), 6),
+             response_characters=len(raw) if isinstance(raw, str) else None,
+             usage=usage_fields(), budget=budget.snapshot())
         try:
             # A JSON fence is harmless presentation; invalid data is never traced.
             wrapped = re.fullmatch(r"\s*```(?:json)?\s*\n(.*?)\n```\s*", raw, re.S | re.I)
@@ -382,6 +422,7 @@ def _run_turn(
     selected: list[str] = []
     provisional_answer: tuple[AnswerDecision, tuple[str, ...]] | None = None
     bound = None
+    route_index = 0
 
     def reading_packet():
         nonlocal pending, active
@@ -424,6 +465,20 @@ def _run_turn(
             if final is None:
                 packet["output_correction"] = "Return a JSON object matching the schema."
                 continue
+            if final.posture == "supported" and final.missing_information is not None:
+                issue = "supported_with_missing_information"
+                emit("response_rejected", contract="answer", code=issue)
+                packet["output_correction"] = {
+                    "code": issue,
+                    "instruction": (
+                        "A supported conclusion cannot have a consequential missing_information need. "
+                        "Return a fresh complete AnswerDecision from the supplied material. "
+                        "If the need remains consequential, use an honest partial or unable posture; "
+                        "otherwise set missing_information to null. Do not rely on or reproduce "
+                        "any rejected answer text."
+                    ),
+                }
+                continue
             basis_issue = None
             if final.support_basis == "user_premises":
                 if refs:
@@ -457,7 +512,10 @@ def _run_turn(
             for reading_index, reading in enumerate(final.source_readings):
                 if reading.evidence_ref not in refs:
                     issue = "unselected_reading_reference"
-                    rejected = {"evidence_ref": reading.evidence_ref, "passage": reading.passages[0],
+                    safe_ref = (reading.evidence_ref if len(reading.evidence_ref) <= 80 and
+                                re.fullmatch(r"E[1-9][0-9]*(?:@[0-9]+:[0-9]+)?", reading.evidence_ref)
+                                else None)
+                    rejected = {"evidence_ref": safe_ref,
                                 "reading_index": reading_index, "passage_index": 0}
                     break
                 source = library.materials[reading.evidence_ref]
@@ -468,7 +526,7 @@ def _run_turn(
                     match = re.search(pattern, source.content) if pattern else None
                     if match is None:
                         issue = "reading_passage_not_in_source"
-                        rejected = {"evidence_ref": source.id, "passage": passage,
+                        rejected = {"evidence_ref": source.id,
                                     "reading_index": reading_index, "passage_index": passage_index}
                         break
                     key = source.id, match.start(), match.end()
@@ -479,9 +537,17 @@ def _run_turn(
                 if issue:
                     break
             if issue:
-                emit("answer_reading_rejected", source_body=True, contract="answer", code=issue, **rejected)
+                emit("answer_reading_rejected", contract="answer", code=issue, **rejected)
                 emit("response_rejected", contract="answer", code=issue)
-                packet["output_correction"] = {"code": issue, "instruction": "Select separate literal contiguous passages only from the referenced supplied Evidence. Do not paraphrase, import another material/version, or stitch excerpts with ellipses."}
+                packet["output_correction"] = {
+                    "code": issue, **rejected,
+                    "instruction": (
+                        "Return a fresh complete AnswerDecision. At the indicated reading and "
+                        "passage, select separate literal contiguous passages only from the "
+                        "referenced supplied Evidence. Do not paraphrase, import another "
+                        "material/version, stitch excerpts with ellipses, or reproduce rejected answer text."
+                    ),
+                }
                 continue
             requires_readings = final.support_basis == "evidence" and final.posture in {"supported", "partial"}
             if requires_readings and not readings:
@@ -626,21 +692,34 @@ def _run_turn(
                 correction = "The answer response was malformed; choose the useful next step within the remaining budget."
                 continue
             if final.missing_information:
-                if final.posture == "supported":
-                    correction = "A consequential missing need cannot coexist with a supported answer."
-                    continue
                 if budget.semantic < limits.semantic_attempts - 1 and budget.remaining_seconds > 0:
                     answer_need = final.missing_information
                     active = selected
                     provisional_answer = (final, tuple(selected))
                     # Deliberately do not feed the provisional answer back to Research.
-                    emit("answer_returned_to_research", missing_information=answer_need)
+                    emit("answer_returned_to_research")
                     continue
             return finish(final, selected, "supported" if final.posture == "supported" else "not_established")
         last_route = []
-        for request in decision.requests:
+        route_index += 1
+        for request_index, request in enumerate(decision.requests, 1):
+            def observe_operation(operation, *, route_index=route_index, request_index=request_index):
+                emit(
+                    "acquisition_timing", route_index=route_index, request_index=request_index,
+                    started_elapsed_seconds=round(max(0.0, operation["started_at"] - budget.started), 6),
+                    ended_elapsed_seconds=round(max(0.0, operation["ended_at"] - budget.started), 6),
+                    duration_seconds=round(operation["duration_seconds"], 6),
+                    kind=operation["kind"], mode=operation["mode"], provider=operation["provider"],
+                    external=operation["external"], status=operation["status"], code=operation["code"],
+                    returned_material_count=operation["returned_material_count"],
+                    new_acquisition_count=operation["new_acquisition_count"],
+                    returned_material_characters=operation["returned_material_characters"],
+                    reused_retained_material=operation["reused_retained_material"],
+                )
+
             try:
-                result = library.execute(request.model_dump(), before_external=budget.before_external)
+                result = library.execute(request.model_dump(), before_external=budget.before_external,
+                                         observe_operation=observe_operation, clock=clock)
             except _Bound as exc:
                 bound = exc.code
                 result = {"kind": request.kind, "status": "error", "code": exc.code, "material_ids": []}
@@ -678,8 +757,6 @@ def _run_turn(
         except _Bound:
             final = None
         if final is not None:
-            if final.missing_information and final.posture == "supported":
-                final.posture = "partial" if selected or final.support_basis == "user_premises" else "unable"
             return finish(final, selected, "research_bound")
     # No model-derived answer exists. A deterministic operational failure is an
     # honest unable result, never source synthesis from generated working notes.
