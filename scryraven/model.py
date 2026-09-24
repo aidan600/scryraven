@@ -97,8 +97,35 @@ def _counter(data: Any, *path: str) -> int | None:
 
 
 def _json(value: Any) -> str:
-    # Object ordering is mechanical; array order and every string remain intact.
+    # Default object ordering is mechanical; array order and strings remain intact.
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+_RESEARCH_VOLATILE_ORDER = (
+    "working_understanding", "catalog", "last_route", "evidence",
+    "answer_missing_information", "pending_delivery", "budget",
+)
+_EVIDENCE_METADATA_ORDER = (
+    "id", "source_id", "acquisition", "title", "url", "parent_id",
+    "start_char", "end_char",
+)
+
+
+def _research_evidence_json(value: Any) -> str:
+    """Place each Evidence item's metadata before its exact content, without loss."""
+    if not isinstance(value, list):
+        return _json(value)
+    items = []
+    for item in value:
+        if not isinstance(item, dict):
+            items.append(_json(item))
+            continue
+        keys = [key for key in _EVIDENCE_METADATA_ORDER if key in item]
+        keys += sorted(key for key in item if key not in _EVIDENCE_METADATA_ORDER and key != "content")
+        if "content" in item:
+            keys.append("content")
+        items.append("{" + ", ".join(f"{_json(key)}: {_json(item[key])}" for key in keys) + "}")
+    return "[" + ", ".join(items) + "]"
 
 
 def _input_blocks(instructions: str, material: dict, stage: str, phase: str) -> tuple[list[dict], tuple[str, ...]]:
@@ -119,7 +146,13 @@ def _input_blocks(instructions: str, material: dict, stage: str, phase: str) -> 
     corrections = ("output_correction",)
     order = [key for key in stable if key in material]
     boundary = len(order)
-    order += sorted(key for key in material if key not in stable and key not in corrections)
+    if stage == "research" and phase == "research":
+        order += [key for key in _RESEARCH_VOLATILE_ORDER if key in material]
+        order += sorted(key for key in material
+                        if key not in stable and key not in _RESEARCH_VOLATILE_ORDER
+                        and key not in corrections)
+    else:
+        order += sorted(key for key in material if key not in stable and key not in corrections)
     order += [key for key in corrections if key in material]
 
     def flush(label: str | None = None) -> None:
@@ -143,7 +176,8 @@ def _input_blocks(instructions: str, material: dict, stage: str, phase: str) -> 
                 flush("history" if item_index >= len(value) - 2 else None)
             pending += "]"
         else:
-            pending += _json(value)
+            pending += (_research_evidence_json(value) if stage == "research"
+                        and phase == "research" and key == "evidence" else _json(value))
         if stage == "research" and phase == "research" and index + 1 == boundary:
             flush("research_context")
     pending += "}"

@@ -61,7 +61,6 @@ class Request(_Contract):
 class ResearchDecision(_Contract):
     understanding: Understanding
     action: Literal["research", "answer"]
-    purpose: str = Field(max_length=1600)
     requests: list[Request]
     retain: list[str]
     answer_evidence_refs: list[str]
@@ -170,7 +169,7 @@ The fresh answer may identify one consequential missing need and return here wit
 the SAME budget. Revise your understanding from sources and pursue it if worthwhile.
 All refs must be exact Evidence IDs, including range suffixes when present; source
 identity alone does not imply exposure of its other versions. Empty unused lists
-and strings are valid. State concise research conclusions and route purpose, never
+and strings are valid. State concise research conclusions, never
 hidden chain of thought or a prose action-plan essay.
 """
 

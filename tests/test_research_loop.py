@@ -9,6 +9,7 @@ from scryraven.presentation import RESEARCH_BOUND_DISCLOSURE, render_cli
 from scryraven.research import (
     TERMINAL_ANSWER_RESERVE_SECONDS,
     AnswerDecision,
+    ResearchDecision,
     RunError,
     RunLimits,
     run,
@@ -24,9 +25,33 @@ def request(kind="search", query="public fact", target="", mode="auto", focus=""
 def decision(action="research", refs=(), requests=None, interpretation="Find the requested fact"):
     return dict(understanding=dict(interpretation=interpretation, established=[],
                                   still_needed=[] if action == "answer" else ["What is the fact?"],
-                                  last_route_result=""), action=action, purpose="Resolve the fact",
+                                  last_route_result=""), action=action,
                 requests=([request()] if requests is None and action == "research" else requests or []),
                 retain=list(refs), answer_evidence_refs=list(refs) if action == "answer" else [])
+
+
+def test_research_decision_schema_has_no_purpose_and_rejects_legacy_output():
+    expected = decision()
+    parsed = ResearchDecision.model_validate(expected)
+    assert parsed.model_dump() == expected
+    assert "purpose" not in ResearchDecision.model_fields
+    assert "purpose" not in ResearchDecision.model_json_schema()["properties"]
+    with pytest.raises(ValueError):
+        ResearchDecision.model_validate({**expected, "purpose": "Legacy route prose"})
+
+
+def test_legacy_purpose_output_uses_bounded_malformed_response_correction():
+    legacy = {**decision("answer"), "purpose": "Legacy route prose"}
+    model = Script(legacy, decision("answer"),
+                   answer("No source establishes this.", "unable"))
+    result = run("Value?", model=model, search=search, fetch=no_fetch)
+    assert [call[0] for call in model.calls] == ["research", "research", "answer"]
+    assert model.calls[1][2]["output_correction"]
+    assert "Legacy route prose" not in json.dumps(model.calls[1][2])
+    assert [event["code"] for event in result.trace
+            if event["action"] == "response_rejected"] == ["malformed_model_response"]
+    assert result.trace[-1]["budget"]["semantic_attempts"] == 3
+    assert result.posture == "unable"
 
 
 def answer(text="The stated value is seven. [E1]", posture="supported", missing=None,
