@@ -119,6 +119,34 @@ def test_prepare_unique_run_manifest_port_and_exact_command(tmp_path: Path) -> N
                 assert result.returncode == 0, result.stdout + result.stderr
 
 
+def test_prepare_records_detached_head_without_a_branch_name(tmp_path: Path) -> None:
+    # Pull-request CI checks out a detached commit. Shadow only the branch
+    # lookup; the revision still comes from the real repository.
+    environment = os.environ.copy()
+    environment["SR_LAUNCHER_SCRIPT"] = str(LAUNCHER)
+    wrapper = (
+        "function git { if ($args -contains 'branch') { $global:LASTEXITCODE = 0; return }; "
+        "& git.exe @args }; & $env:SR_LAUNCHER_SCRIPT -PrepareOnly"
+    )
+    result = subprocess.run(
+        [_powershell(), "-NoProfile", "-Command", wrapper],
+        cwd=REPOSITORY, env=environment, capture_output=True, text=True,
+        encoding="utf-8", check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    match = re.search(r"^Run directory: (.+)$", result.stdout, re.MULTILINE)
+    assert match is not None, result.stdout
+    run = Path(match.group(1).strip())
+    try:
+        manifest = json.loads((run / "manifest.json").read_text(encoding="utf-8"))
+        assert manifest["git_branch"] == "(detached HEAD)"
+        assert re.fullmatch(r"[0-9a-f]{40}", manifest["git_sha"])
+    finally:
+        if run.is_dir():
+            cleaned = _cleanup(str(run), tmp_path / "detached-clipboard.txt")
+            assert cleaned.returncode == 0, cleaned.stdout + cleaned.stderr
+
+
 def test_cleanup_rejects_unsafe_paths_and_deletes_only_selected_child(tmp_path: Path) -> None:
     selected, _, _ = _prepare()
     survivor, _, _ = _prepare()

@@ -41,6 +41,9 @@ $gitBranch = [string](& git -C $repository branch --show-current 2>&1)
 if ($LASTEXITCODE -ne 0) {
     throw "Could not read repository branch: $gitBranch"
 }
+if ([string]::IsNullOrWhiteSpace($gitBranch)) {
+    $gitBranch = '(detached HEAD)'
+}
 
 # Read only built-in role defaults. Importing ModelConfig makes no provider call
 # and avoids duplicating model policy in this development launcher.
