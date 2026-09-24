@@ -193,7 +193,7 @@ def test_research_packet_orders_volatile_fields_and_evidence_without_changing_ma
     assert calls[1]["input"][1]["content"] == blocks
 
 
-def test_research_order_does_not_apply_to_answer_or_manufacture_absent_fields(transport):
+def test_research_top_level_order_does_not_apply_to_answer_or_manufacture_absent_fields(transport):
     model, calls, _ = transport
     material = {"phase": "answer", "question": Q2, "z_future": [2, 1],
                 "evidence": [{"content": BODY, "id": "E1"}], "a_future": "kept"}
@@ -202,7 +202,7 @@ def test_research_order_does_not_apply_to_answer_or_manufacture_absent_fields(tr
     parsed = material_of(calls[0])
     assert parsed == material
     assert list(parsed) == ["phase", "question", "a_future", "evidence", "z_future"]
-    assert list(parsed["evidence"][0]) == ["content", "id"]
+    assert list(parsed["evidence"][0]) == ["id", "content"]
 
 
 @pytest.mark.parametrize("stage,history_field", [("research", "conversation_context"), ("answer", "conversation_context")])

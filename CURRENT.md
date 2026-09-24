@@ -41,9 +41,11 @@ breakpoint. Present volatile fields follow the deliberate order
 `answer_missing_information`, `pending_delivery`, `budget`, then
 `output_correction` last. Unknown fields remain lossless in deterministic order.
 Generated understanding and navigation precede the latest route and exact
-Evidence, placing current source material near the decision edge. Evidence
-metadata precedes its unchanged exact content; membership, array order,
-retention, catalog content and Answer packets are unchanged. `ResearchDecision`
+Evidence, placing current source material near the decision edge. Both Research
+and Answer serialize identifying metadata before each Evidence item's unchanged
+exact content. Evidence membership, array order, logical fields and body bytes
+are unchanged; Answer's top-level packet order remains unchanged. This layout
+promotion has no demonstrated quality or latency effect. `ResearchDecision`
 no longer contains `purpose`: executable route intent remains in structured
 requests and compact working state. This adds no semantic owner or memory and
 does not change the separate Research/Answer cache families.
@@ -127,7 +129,17 @@ turn. It is separate from the durable research-session schema and contains no
 question, answer, prompt or source text. An unusable explicit log path prevents
 launch; a later write failure disables only diagnostics while the completed
 research session remains intact. The same diagnostics supported ordinary live
-latency observations.
+latency observations. Opt-in `--forensic-log PATH` adds a separate local,
+development-only JSONL sink for the ordinary engine's observer events. It may
+retain acquired and exposed source text, selected readings, rejected attempted
+passages and Research decisions, correlated by session, attempted turn, process
+run and event sequence. It does not capture raw provider payloads or hidden
+reasoning. The body-free dogfood projection and durable session schema are
+unchanged; a forensic write failure disables only that sink. Log paths that
+alias one another or the session database are rejected at launch. The
+development launcher creates isolated runs under `C:\tmp\scryraven-forensic`;
+cleanup selects one exact child run explicitly. This instrumentation makes
+ordinary failures reconstructable and does not repair source-reading failures.
 Both surfaces disclose that no external sources were used for source-free
 supported/partial completed answers without inferring a user-premise basis from
 empty citations. They disclose a Research operating-bound completion without

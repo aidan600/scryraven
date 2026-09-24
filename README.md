@@ -111,6 +111,35 @@ still the durable product record, with questions, answers, retained Evidence and
 historical citations. For a doorman launch, append
 `'--dogfood-log', '"C:\tmp\scryraven-latency-01\turns.jsonl"'` to the target arguments above.
 
+**Forensic development dogfooding:** from a PowerShell session with the ordinary
+product credentials already available in its process environment, launch:
+
+```powershell
+pwsh -NoProfile -File .\scripts\forensic-reading-room.ps1
+```
+
+The launcher prints a sensitivity notice and opens the ordinary Reading Room on
+`http://127.0.0.1:7332` (`-Port 7442` overrides it). Each launch creates a unique
+child of `C:\tmp\scryraven-forensic` with `sessions.sqlite3`, a body-free
+`turns.jsonl`, a source-bearing `observer.jsonl`, and a safe `manifest.json`.
+It uses the existing process environment and does not load or copy `.env`.
+The equivalent Reading Room option is `--forensic-log PATH`; it is never enabled
+by default. The ordinary dogfood log remains body-free, and the normal session
+database is not used by this launcher.
+
+Ask real questions, note the turn that felt slow, shallow, wrong or failed, then
+stop the Reading Room. Give Codex the exact run directory only when authorizing
+that review; Codex should inspect only that named run. These local development
+artifacts may contain copied public source text and user questions. Do not commit
+or casually share them. When review is finished, explicitly remove that one run:
+
+```powershell
+pwsh -NoProfile -File .\scripts\clean-forensic-run.ps1 -RunDirectory 'C:\tmp\scryraven-forensic\<exact-run-name>'
+```
+
+The cleanup command accepts only one exact direct child of the fixed forensic
+root. It prints and copies a deletion summary to the Windows clipboard.
+
 Choose **New research**, ask a question, and use the composer for follow-ups. Submit
 with the arrow or Ctrl+Enter / Command+Enter; plain Enter adds a line. Research runs
 in the HTTP request, with an indeterminate working state and no token streaming.
