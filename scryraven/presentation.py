@@ -54,13 +54,11 @@ def source_label(citation: Citation) -> str:
 RESEARCH_BOUND_DISCLOSURE = (
     "Research reached its operating limit; this answer uses the material gathered by then."
 )
-PREMISE_ONLY_DISCLOSURE = (
-    "Derived from assumptions you provided; no external sources were used."
-)
+SOURCE_FREE_DISCLOSURE = "No external sources were used for this answer."
 
 
-def premise_only(result: Result | SessionTurn) -> bool:
-    """The completed-turn invariant identifies source-free premise answers."""
+def source_free_supported(result: Result | SessionTurn) -> bool:
+    """Presentation cannot infer premise provenance from a completed result."""
     return result.posture != "unable" and not result.citations
 
 
@@ -68,8 +66,8 @@ def render_cli(result: Result | SessionTurn) -> str:
     status = [f"Status: {result.posture.capitalize()}"]
     if result.stop_reason == "research_bound":
         status.append(RESEARCH_BOUND_DISCLOSURE)
-    if premise_only(result):
-        status.append(PREMISE_ONLY_DISCLOSURE)
+    if source_free_supported(result):
+        status.append(SOURCE_FREE_DISCLOSURE)
     sources = "\n".join(
         f"[{item.number}] {source_label(item)}\n    {item.url}"
         for item in result.citations
@@ -264,8 +262,8 @@ def render_html(question: str, result: Result | SessionTurn) -> str:
     notices = [f"Status: {result.posture.capitalize()}"]
     if result.stop_reason == "research_bound":
         notices.append(RESEARCH_BOUND_DISCLOSURE)
-    if premise_only(result):
-        notices.append(PREMISE_ONLY_DISCLOSURE)
+    if source_free_supported(result):
+        notices.append(SOURCE_FREE_DISCLOSURE)
     status = '<div class="answer-status">' + "".join(f"<p>{escape(note)}</p>" for note in notices) + '</div>'
     return (
         '<!doctype html>\n<html lang="en"><head><meta charset="utf-8">'

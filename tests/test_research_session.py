@@ -71,7 +71,8 @@ def test_followup_reads_retained_fact_with_fresh_research_and_answer(highlights)
     assert session.source_ids == ("E1",)
     assert all(turn.analysis is None for turn in session.turns)
     calls = [m for _, _, m, _ in model.calls if m["question"] == Q2]
-    assert calls[0]["working_understanding"] is None and calls[0]["evidence"] == []
+    assert calls[0]["working_understanding"] is None
+    assert calls[0]["evidence"] == [first.selected_evidence[0].material()]
     assert calls[-1]["conversation_context"] == [{"question": Q1, "answer": first.answer}]
     assert calls[-1]["evidence"][0]["content"] == BODY
     assert first.answer not in json.dumps(calls[-1]["evidence"])

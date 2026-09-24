@@ -124,10 +124,17 @@ class ResearchSession:
             "conversation_context": [{"question": turn.question, "answer": turn.answer} for turn in state.turns],
             "research_conversation_context": [_research_conversation_entry(turn) for turn in state.turns],
         }
+        # The immediately prior completed answer's cited material is available
+        # to the first Research decision. Citation snapshots hold exact actual
+        # material, including views of retained full parents.
+        prior_cited = (tuple(item for citation in state.turns[-1].citations for item in citation.materials)
+                       if state.turns else ())
+        initial_options = {"initial_evidence": prior_cited} if prior_cited else {}
         result = (self._engine or _run_turn)(
             question, model=self._model, search=self._search, lexical_search=self._lexical_search,
             fetch=self._fetch, limits=self._limits,
-            retained_acquisitions=state.acquisitions, context=context, session_turn=len(state.turns) + 1, observe=self._observe,
+            retained_acquisitions=state.acquisitions, context=context, session_turn=len(state.turns) + 1,
+            observe=self._observe, **initial_options,
         )
         turn = SessionTurn(question, result.answer, None,
                            result.posture, result.stop_reason, result.selected_evidence,

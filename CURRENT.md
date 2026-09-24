@@ -15,11 +15,12 @@ Evidence. Answer independently assesses selected actual source material and
 explicit user-supplied premises against the current/original request. Research
 may select no Evidence when the requested operation needs no external fact.
 
-Ordinary Research uses GPT-6 Luna / high and Answer uses GPT-6 Sol / medium.
-This is a fixed assignment by semantic stage, not a model router; there is no
-automatic premium escalation or model fallback. Exa supplies ordinary general
-Search. Research can explicitly select Serper lexical/community/current discovery
-for a needed source class. Serper candidates and snippets guide navigation only;
+Ordinary Research uses GPT-6 Luna / high / Standard processing and Answer uses
+GPT-6 Sol / medium / Standard processing. These are fixed assignments by semantic
+stage, not a model router; there is no automatic premium escalation or model
+fallback. Exa supplies ordinary general Search. Research can explicitly select
+Serper lexical/community/current discovery for a needed source class. Serper
+candidates and snippets guide navigation only;
 they are not Evidence. LinkUp static Fetch supplies external known-URL Read when
 Research selects one. Exa Contents has no ordinary Read authority; there is no
 search or Read fallback or provider router. Limits remain 12 semantic attempts,
@@ -34,14 +35,19 @@ verifier or additional semantic owner exists.
 Immutable acquisitions, canonical source identities, exact versions/views,
 literal Answer readings, deterministic citations and historical selected-material
 snapshots survive. Follow-ups start fresh Research/Answer decisions and can reread
-retained actual Evidence without external acquisition. Research receives historical
+retained actual Evidence without external acquisition. The first Research call of
+a follow-up receives the exact actual material cited by the immediately preceding
+completed answer when it fits the existing attention limit. No earlier library
+material is automatically exposed. Research may use, shelve or supplement that
+material; it is not automatic Answer support. Research also receives historical
 citation provenance derived from saved turns: answer-local citation numbers,
 canonical source IDs and exact material IDs are navigation, not Evidence or a
-claim that the prior answer was correct. It can reconstruct a cited targeted view
+claim that the prior answer was correct. A cited targeted view can be reconstructed
 locally from its retained full parent. Answer sees ordinary conversation without
-historical provenance aliases unless exact material is selected into current
-Evidence. Unscoped Find ranks actual retained acquisition regions on a comparable
-corpus-wide lexical scale rather than interleaving results by acquisition order;
+historical provenance aliases and receives only current-turn Evidence freshly
+selected by Research. Unscoped Find ranks actual retained acquisition regions on
+a comparable corpus-wide lexical scale rather than interleaving by acquisition
+order;
 lexical rank does not establish semantic relevance or support. Read gives a
 mechanical receipt for the exact text returned, including parent coverage and
 focused lexical hit or fallback status. `full` identifies the full-parent custody
@@ -91,11 +97,12 @@ per-request acquisition timing and safe sizes, keyed by session ID and attempted
 turn. It is separate from the durable research-session schema and contains no
 question, answer, prompt or source text. An unusable explicit log path prevents
 launch; a later write failure disables only diagnostics while the completed
-research session remains intact. This is offline-instrumented behavior; ordinary
-live dogfood latency measurements have not yet been collected for this phase.
-Both surfaces identify premise-only completed answers as conditional results
-without external sources and disclose a Research operating-bound completion
-without changing Answer's supported/partial/unable posture. Known safe Exa,
+research session remains intact. The same diagnostics supported ordinary live
+latency observations.
+Both surfaces disclose that no external sources were used for source-free
+supported/partial completed answers without inferring a user-premise basis from
+empty citations. They disclose a Research operating-bound completion without
+changing Answer's supported/partial/unable posture. Known safe Exa,
 Serper and LinkUp configuration errors and LinkUp material-unavailable errors
 retain their fixed codes through Acquisition; unknown failures remain generic.
 The legacy FAST and SMART transport configuration names remain readable for
@@ -103,6 +110,37 @@ compatibility: FAST configures Research and SMART configures Answer. Explicit
 `ModelConfig` and environment overrides still apply.
 
 ## Bounded evidence and limits
+
+The preceding ten-turn latency flight took 304.796 seconds: Research model time
+was 65.0%, Answer model time 25.4%, and external I/O 9.5%.
+
+Latency Consumption 01 kept Luna / high Research after bounded effort comparisons
+with Sol / medium / Standard Answer fixed. In the initial
+six-case effort comparison, high took 90.094 Research seconds and 146.047 wall
+seconds; medium took 60.234 and 104.250 seconds. A paired Passport repeat changed
+the decision: high found the controlling 17,325–18,920 lb base-engine range in
+15.842 Research seconds, while medium pursued the CT7 aircraft-engine tangent
+for 62.937 seconds and returned a partial answer without the range.
+
+The three-case Standard/Fast comparison kept Standard processing. It returned the
+requested tier for every Research call, yet Fast took 73.608 Research seconds and
+115.094 wall seconds against Standard's 36.938 and 69.079 seconds, with greater
+token use and estimated cost. Answer remained Standard.
+Routes and cache outcomes differed, so these totals do not isolate service speed.
+
+In two copied-session direct follow-ups, initial exposure of prior-cited exact
+Evidence reduced Research
+calls from four to two, local Reads from three to zero, Research time from 16.687
+to 8.719 seconds, and wall time from 34.577 to 22.594 seconds. An unrelated
+Euclid follow-up still acquired new ESA material; treatment added 1.156 wall
+seconds in that negative control. These are bounded observations, not general
+latency or reliability guarantees. No packet/catalog, route-width or acquisition
+concurrency change was promoted. A final ordinary default-path BIPM follow-up
+at implementation revision `95cdbdd` answered from prior-cited Evidence in one
+Research call with no acquisition; Research and Answer returned Standard service.
+The sanitized campaign artifacts are under
+`C:\tmp\scryraven-latency-consumption-01`; see
+`docs/operator/LATENCY_CONSUMPTION_01.md` for the adjudication and ledger.
 
 On the frozen Answer screen, GPT-6 Sol / medium produced 12/12 acceptable draws.
 In the ordinary product-path Research screen with that Answer role fixed, GPT-6
@@ -218,8 +256,8 @@ The ordinary transport now preserves fixed safe incomplete classifications for
 `content_filter` and `max_output_tokens` in failure diagnostics. Unknown or
 malformed incomplete reasons remain the generic `model_response_incomplete` code.
 The run trace records elapsed monotonic time and safe model return/failure events.
-These diagnostics and the longer hard ceiling do not establish user-perceived
-latency acceptability; that remains unresolved for dogfooding.
+The longer hard ceiling does not establish user-perceived latency acceptability;
+the bounded latency observations above leave broader dogfood latency unresolved.
 
 Literal-reading and citation validation prove custody/membership, not semantic
 entailment. All prior question and answer text remains in every Research and Answer

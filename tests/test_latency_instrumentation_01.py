@@ -70,7 +70,7 @@ def test_existing_model_usage_boundary_populates_safe_call_record(monkeypatch):
             "cached_tokens": 20, "cache_write_tokens": 10,
         }, "output_tokens": 50, "output_tokens_details": {"reasoning_tokens": 30}}
                  if stage == "research" else {})
-        return Response({"status": "completed", "usage": usage, "output": [{
+        return Response({"status": "completed", "service_tier": "default", "usage": usage, "output": [{
             "type": "message", "phase": "final_answer", "content": [{
                 "type": "output_text", "text": json.dumps(output),
             }],
@@ -98,3 +98,6 @@ def test_existing_model_usage_boundary_populates_safe_call_record(monkeypatch):
         "ordinary_uncached_tokens", "output_tokens", "reasoning_tokens",
     ))
     assert all(item["duration_seconds"] >= 0 for item in returned)
+    assert [item["usage"]["returned_service_tier"] for item in returned] == [
+        "default", "default",
+    ]

@@ -91,6 +91,50 @@ def test_environment_overrides_reach_their_stages(monkeypatch):
     ]
 
 
+def test_service_tier_is_selected_per_semantic_stage_and_returned_tier_is_observed(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "offline-test-value")
+    calls = []
+    usage = []
+
+    def post(_url, **kwargs):
+        payload = kwargs["json"]
+        calls.append(payload)
+        return Response({
+            "status": "completed",
+            "service_tier": "priority" if payload["service_tier"] == "fast" else "default",
+            "output": [{"type": "message", "content": [{"type": "output_text", "text": "{}"}]}],
+        })
+
+    model = OpenAIModel(ModelConfig(
+        ModelRole("gpt-6-luna", "medium", "fast"),
+        ModelRole("gpt-6-sol", "medium", "default"),
+    ), post=post, usage_observer=usage.append)
+    model("research", "prompt", {}, {})
+    model("answer", "prompt", {}, {})
+    assert [(call["model"], call["reasoning"]["effort"], call["service_tier"])
+            for call in calls] == [
+                ("gpt-6-luna", "medium", "fast"),
+                ("gpt-6-sol", "medium", "default"),
+            ]
+    assert [(item.requested_service_tier, item.returned_service_tier) for item in usage] == [
+        ("fast", "priority"), ("default", "default"),
+    ]
+
+
+def test_unconfigured_service_tier_leaves_existing_request_shape(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "offline-test-value")
+    calls = []
+
+    def post(_url, **kwargs):
+        calls.append(kwargs["json"])
+        return Response({"status": "completed", "output": [
+            {"type": "message", "content": [{"type": "output_text", "text": "{}"}]},
+        ]})
+
+    OpenAIModel(ModelConfig(), post=post)("research", "prompt", {}, {})
+    assert "service_tier" not in calls[0]
+
+
 @pytest.mark.parametrize("data,code", [
     ({"status": "incomplete", "output": []}, "model_response_incomplete"),
     ({"status": "incomplete", "incomplete_details": {"reason": "content_filter"}},

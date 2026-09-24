@@ -28,8 +28,8 @@ from test_research_loop import answer, decision
 from scryraven import reading_room
 from scryraven.dogfood_diagnostics import TurnDiagnostics
 from scryraven.presentation import (
-    PREMISE_ONLY_DISCLOSURE,
     RESEARCH_BOUND_DISCLOSURE,
+    SOURCE_FREE_DISCLOSURE,
     answer_html,
     source_body_html,
 )
@@ -190,7 +190,7 @@ def test_partial_and_unable_are_completed_answers(tmp_path, partial):
     assert saved.state.turns[-1].posture == ("partial" if partial else "unable")
 
 
-@pytest.mark.parametrize(("posture", "bounded", "premise"), [
+@pytest.mark.parametrize(("posture", "bounded", "source_free"), [
     ("supported", False, False),
     ("supported", True, False),
     ("partial", False, False),
@@ -200,8 +200,8 @@ def test_partial_and_unable_are_completed_answers(tmp_path, partial):
     ("supported", False, True),
     ("partial", False, True),
 ])
-def test_reading_room_discloses_bound_and_premise_basis_from_saved_turn(tmp_path, posture, bounded, premise):
-    result = source_free_answer(posture) if premise or posture == "unable" else cited_answer()
+def test_reading_room_discloses_bound_and_source_free_status_from_saved_turn(tmp_path, posture, bounded, source_free):
+    result = source_free_answer(posture) if source_free or posture == "unable" else cited_answer()
     result = replace(result, posture=posture,
                      stop_reason="research_bound" if bounded else (
                          "supported" if posture == "supported" else "not_established"))
@@ -214,10 +214,23 @@ def test_reading_room_discloses_bound_and_premise_basis_from_saved_turn(tmp_path
     html = app_for(store).test_client().get(f"/sessions/{created.metadata.session_id}").get_data(as_text=True)
     assert ('class="operating-bound-note"' in html) == bounded
     assert (RESEARCH_BOUND_DISCLOSURE in html) == bounded
-    assert ('class="premise-note"' in html) == premise
-    assert (PREMISE_ONLY_DISCLOSURE in html) == premise
+    assert ('class="source-free-note"' in html) == source_free
+    assert (SOURCE_FREE_DISCLOSURE in html) == source_free
     assert ('class="research-limitation"' in html) == (posture != "supported")
-    assert html.count('class="citation"') == (0 if premise or posture == "unable" else 1)
+    assert html.count('class="citation"') == (0 if source_free or posture == "unable" else 1)
+
+
+def test_reading_room_source_free_factual_limit_does_not_claim_user_assumptions(tmp_path):
+    question = "What was the British Museum's total number of visitors during calendar year 2027?"
+    result = replace(source_free_answer(),
+                     answer="That future calendar-year total is not yet available.")
+    store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
+    created = store.create("Future total")
+    turn = SessionTurn(question, result.answer, None, result.posture, result.stop_reason)
+    store.commit(created.metadata.session_id, created.metadata.revision, SessionState((turn,), ()))
+    html = app_for(store).test_client().get(f"/sessions/{created.metadata.session_id}").get_data(as_text=True)
+    assert SOURCE_FREE_DISCLOSURE in html
+    assert "assumptions you provided" not in html
 
 
 def test_rename_edits_only_metadata_preserves_revision_and_inflight_commit_title(tmp_path):

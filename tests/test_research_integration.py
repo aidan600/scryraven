@@ -19,7 +19,7 @@ def no_io(*args, **kwargs):
     pytest.fail("Unexpected provider acquisition")
 
 
-def test_ordinary_engine_reopens_and_rereads_retained_material_without_acquisition():
+def test_ordinary_engine_reopens_with_prior_cited_material_without_acquisition():
     with tempfile.TemporaryDirectory(prefix="scryraven-v2-real-session-") as directory:
         store = SQLiteSessionStore(Path(directory) / "sessions.sqlite3")
         first_model = Script(decision(), decision("answer", ["E1"]), answer())
@@ -32,7 +32,6 @@ def test_ordinary_engine_reopens_and_rereads_retained_material_without_acquisiti
         del session
 
         followup_model = Script(
-            decision(requests=[request("read", query="", target="E1", mode="local")]),
             decision("answer", ["E1"]), answer("The retained publication states seven. [E1]"),
         )
         reopened = ResearchSession.open(session_id, store=SQLiteSessionStore(store.path),
@@ -42,9 +41,11 @@ def test_ordinary_engine_reopens_and_rereads_retained_material_without_acquisiti
         assert second.evidence == first.evidence
         assert second.citations[0].materials == first.citations[0].materials
         assert second.trace[-1]["budget"]["external_attempts"] == 0
-        assert [call[0] for call in followup_model.calls] == ["research", "research", "answer"]
+        assert [call[0] for call in followup_model.calls] == ["research", "answer"]
         initial_packet, final_packet = followup_model.calls[0][2], followup_model.calls[-1][2]
-        assert initial_packet["working_understanding"] is None and initial_packet["evidence"] == []
+        assert initial_packet["working_understanding"] is None
+        assert initial_packet["evidence"] == [first.selected_evidence[0].material()]
+        assert not any(event["action"] == "acquisition_timing" for event in second.trace)
         assert initial_packet["conversation_context"] == [{
             "question": "What is the value?", "answer": first.answer,
             "provenance": {

@@ -112,8 +112,8 @@
       <section class="turn" id="turn-{{ turn.number }}" aria-labelledby="question-{{ turn.number }}">
         <div class="question-block"><span class="eyebrow">{{ 'Your question' if loop.first else 'Your follow-up' }}</span><h2 id="question-{{ turn.number }}">{{ turn.question }}</h2></div>
         <article class="answer" aria-label="Answer to {{ turn.question }}">{{ turn.answer }}</article>
-        {% if turn.premise_only %}
-        <aside class="premise-note">Derived from assumptions you provided; no external sources were used.</aside>
+        {% if turn.source_free %}
+        <aside class="source-free-note">No external sources were used for this answer.</aside>
         {% endif %}
         {% if turn.operating_bound %}
         <aside class="operating-bound-note">Research reached its operating limit; this answer uses the material gathered by then.</aside>
