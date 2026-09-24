@@ -18,6 +18,7 @@ import requests
 class ModelRole:
     model: str
     reasoning: str
+    service_tier: str | None = None
 
 
 @dataclass(frozen=True)
@@ -32,6 +33,7 @@ class ModelConfig:
             name: ModelRole(
                 os.getenv(f"SCRYRAVEN_{name.upper()}_MODEL", role.model),
                 os.getenv(f"SCRYRAVEN_{name.upper()}_REASONING", role.reasoning),
+                role.service_tier,
             )
             for name, role in (("fast", defaults.fast), ("smart", defaults.smart))
         })
@@ -59,6 +61,8 @@ class ModelUsage:
     cache_write_tokens: int | None
     output_tokens: int | None
     reasoning_tokens: int | None
+    requested_service_tier: str | None = None
+    returned_service_tier: str | None = None
 
     @property
     def ordinary_uncached_tokens(self) -> int | None:
@@ -194,6 +198,10 @@ class OpenAIModel:
         }
         if role.reasoning:
             payload["reasoning"] = {"effort": role.reasoning}
+        if role.service_tier is not None:
+            if role.service_tier not in {"default", "fast"}:
+                raise ValueError("invalid_service_tier")
+            payload["service_tier"] = role.service_tier
         data = None
         try:
             response = self.post(
@@ -226,6 +234,9 @@ class OpenAIModel:
                     _counter(data, "usage", "input_tokens_details", "cache_write_tokens"),
                     _counter(data, "usage", "output_tokens"),
                     _counter(data, "usage", "output_tokens_details", "reasoning_tokens"),
+                    role.service_tier,
+                    (data.get("service_tier") if isinstance(data, dict)
+                     and data.get("service_tier") in {"default", "fast", "priority"} else None),
                 )
                 for observer in observers:
                     if observer is not None:

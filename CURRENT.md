@@ -93,9 +93,10 @@ question, answer, prompt or source text. An unusable explicit log path prevents
 launch; a later write failure disables only diagnostics while the completed
 research session remains intact. This is offline-instrumented behavior; ordinary
 live dogfood latency measurements have not yet been collected for this phase.
-Both surfaces identify premise-only completed answers as conditional results
-without external sources and disclose a Research operating-bound completion
-without changing Answer's supported/partial/unable posture. Known safe Exa,
+Both surfaces disclose that no external sources were used for source-free
+supported/partial completed answers without inferring a user-premise basis from
+empty citations. They disclose a Research operating-bound completion without
+changing Answer's supported/partial/unable posture. Known safe Exa,
 Serper and LinkUp configuration errors and LinkUp material-unavailable errors
 retain their fixed codes through Acquisition; unknown failures remain generic.
 The legacy FAST and SMART transport configuration names remain readable for

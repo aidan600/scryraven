@@ -31,6 +31,7 @@ _KINDS = {"search", "search_lexical", "read", "find"}
 _READ_MODES = {"auto", "local", "full", "refresh"}
 _BREAKPOINTS = {"instructions", "history", "research_context"}
 _REASONING_EFFORTS = {"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"}
+_SERVICE_TIERS = {"default", "fast", "priority"}
 _CODES = {
     "malformed_model_response", "unexposed_reference_or_action_shape",
     "attention_packet_too_large", "supported_with_missing_information",
@@ -189,6 +190,8 @@ class TurnDiagnostics:
                 "status": "started", "code": None,
                 "model": _model_name(event.get("model")),
                 "reasoning_effort": _one_of(event.get("reasoning_effort"), _REASONING_EFFORTS),
+                "requested_service_tier": _one_of(event.get("requested_service_tier"), _SERVICE_TIERS),
+                "returned_service_tier": None,
                 "response_characters": None,
                 **{key: _nonnegative_int(event.get(key)) for key in _CALL_SIZE_FIELDS},
                 **{key: None for key in _TOKEN_FIELDS},
@@ -210,6 +213,12 @@ class TurnDiagnostics:
                 row["response_characters"] = _nonnegative_int(event.get("response_characters"))
             usage = event.get("usage")
             if isinstance(usage, dict):
+                row["requested_service_tier"] = _one_of(
+                    usage.get("requested_service_tier"), _SERVICE_TIERS,
+                ) or row["requested_service_tier"]
+                row["returned_service_tier"] = _one_of(
+                    usage.get("returned_service_tier"), _SERVICE_TIERS,
+                )
                 for key in _TOKEN_FIELDS:
                     row[key] = _nonnegative_int(usage.get(key))
                 family = usage.get("cache_family")

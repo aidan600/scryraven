@@ -19,10 +19,11 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from core.exa_transport import search_exa
 from core.linkup_transport import fetch_linkup
 from core.serper_transport import search_serper
-from scryraven.acquisition import AcquisitionLibrary
+from scryraven.acquisition import AcquisitionError, AcquisitionLibrary
 from scryraven.errors import RunError
 from scryraven.model import ModelError, ModelUsage, OpenAIModel, capture_model_usage
 from scryraven.results import CompletedAnswer, resolve_citations
+from scryraven.sources import Evidence, exact_view
 
 # Preserve enough of a bounded run for a source-first terminal Answer. This is
 # an operational reservation only: it never supplies evidence or changes a
@@ -292,6 +293,7 @@ def _run_turn(
     question: str, *, model=None, search=search_exa, lexical_search=search_serper, fetch=fetch_linkup,
     limits: RunLimits | None = None, retained_acquisitions=(), context=None,
     session_turn: int = 1, observe: Callable[[dict], None] | None = None,
+    initial_evidence: tuple[Evidence, ...] = (),
     clock: Callable[[], float] = time.monotonic,
 ) -> CompletedAnswer:
     if not isinstance(question, str) or not question.strip():
@@ -338,6 +340,7 @@ def _run_turn(
              started_elapsed_seconds=round(started_elapsed, 6),
              model=getattr(role, "model", None),
              reasoning_effort=getattr(role, "reasoning", None),
+             requested_service_tier=getattr(role, "service_tier", None),
              exposed=[{"id": item["id"], "characters": len(item["content"]),
                        "sha256": hashlib.sha256(item["content"].encode()).hexdigest()} for item in evidence],
              catalog_characters=(len(json.dumps(packet["catalog"], ensure_ascii=False, sort_keys=True))
@@ -362,6 +365,8 @@ def _run_turn(
                 "ordinary_uncached_tokens": usage.ordinary_uncached_tokens if usage else None,
                 "output_tokens": usage.output_tokens if usage else None,
                 "reasoning_tokens": usage.reasoning_tokens if usage else None,
+                "requested_service_tier": usage.requested_service_tier if usage else None,
+                "returned_service_tier": usage.returned_service_tier if usage else None,
                 "cache_family": usage.cache_family if usage else None,
                 "breakpoints": list(usage.breakpoints) if usage else None,
             }
@@ -412,7 +417,22 @@ def _run_turn(
          prior_provenance_citations=sum(len(item.get("provenance", {}).get("citations", []))
                                         for item in research_conversation),
          budget=budget.snapshot())
-    active: list[str] = []
+    # Prior cited material is a run-local attention choice, not a new
+    # acquisition or an Answer selection. A saved targeted view is rebuilt
+    # only from its immutable retained parent before entering the packet.
+    initial_items = list(dict((item.id, item) for item in initial_evidence).values())
+    if sum(len(item.content) for item in initial_items) <= limits.attention_characters:
+        for item in initial_items:
+            if item.acquisition == "targeted_view":
+                parent = library.materials.get(item.parent_id)
+                if parent is None or exact_view(parent, item.start_char, item.end_char) != item:
+                    raise AcquisitionError("invalid_prior_cited_material")
+                library.materials[item.id] = item
+            elif library.materials.get(item.id) != item:
+                raise AcquisitionError("invalid_prior_cited_material")
+    else:
+        initial_items = []
+    active: list[str] = [item.id for item in initial_items]
     pending: list[str] = []
     exposed: set[str] = set()
     understanding = None

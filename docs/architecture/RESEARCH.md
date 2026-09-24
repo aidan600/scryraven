@@ -256,9 +256,10 @@ Analysis code is decode-only schema/reference validation in `scryraven.historica
 Historical judgments are excluded from new model packets. The stopped Investigator
 executable harness and its Author adapter are retired to their preserved Git lineage.
 
-The Reading Room and CLI label completed source-free supported/partial answers as
-derived from user assumptions with no external sources. Presentation derives this
-from posture and empty citations; it adds no persisted premise state.
+The Reading Room and CLI disclose that no external sources were used for
+completed source-free supported/partial answers. Presentation derives this from
+posture and empty citations, which do not establish a user-premise basis; it
+adds no persisted premise state.
 
 The model transport keeps exact JSON content and explicit prompt-cache boundaries
 for instructions, growing conversation history and stable Research turn context.

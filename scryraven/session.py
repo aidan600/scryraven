@@ -67,11 +67,13 @@ class ResearchSession:
         limits: RunLimits = RunLimits(),
         engine: Callable[..., CompletedAnswer] | None = None,
         observe: Callable[[dict], None] | None = None,
+        preexpose_prior_cited: bool = False,
     ) -> None:
         self._model, self._search, self._lexical_search, self._fetch, self._limits = (
             model, search, lexical_search, fetch, limits)
         self._engine = engine
         self._observe = observe
+        self._preexpose_prior_cited = preexpose_prior_cited
         self._snapshot = _Snapshot(SessionState())
         self._store: SessionStore | None = None
 
@@ -124,10 +126,16 @@ class ResearchSession:
             "conversation_context": [{"question": turn.question, "answer": turn.answer} for turn in state.turns],
             "research_conversation_context": [_research_conversation_entry(turn) for turn in state.turns],
         }
+        # This opt-in only changes the first Research packet. Citation snapshots
+        # hold exact actual material, including views of retained full parents.
+        prior_cited = (tuple(item for citation in state.turns[-1].citations for item in citation.materials)
+                       if self._preexpose_prior_cited and state.turns else ())
+        initial_options = {"initial_evidence": prior_cited} if prior_cited else {}
         result = (self._engine or _run_turn)(
             question, model=self._model, search=self._search, lexical_search=self._lexical_search,
             fetch=self._fetch, limits=self._limits,
-            retained_acquisitions=state.acquisitions, context=context, session_turn=len(state.turns) + 1, observe=self._observe,
+            retained_acquisitions=state.acquisitions, context=context, session_turn=len(state.turns) + 1,
+            observe=self._observe, **initial_options,
         )
         turn = SessionTurn(question, result.answer, None,
                            result.posture, result.stop_reason, result.selected_evidence,

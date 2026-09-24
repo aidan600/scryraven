@@ -119,9 +119,9 @@ summary::-webkit-details-marker { display: none; }
 .research-limitation { font-size: 12px; line-height: 1.65; border-left: 2px solid #c5c7b4; padding-left: 12px; color: #737669; margin: 24px 0 8px; }
 .research-limitation strong { font-weight: 600; }
 .research-limitation p { margin: 3px 0 0; }
-.premise-note, .operating-bound-note { font-size: 12px; line-height: 1.65; color: #606e75; margin: 18px 0 0; }
+.source-free-note, .operating-bound-note { font-size: 12px; line-height: 1.65; color: #606e75; margin: 18px 0 0; }
 .operating-bound-note { border-left: 2px solid #b9c9cb; padding-left: 12px; }
-.premise-note + .operating-bound-note, .operating-bound-note + .research-limitation { margin-top: 12px; }
+.source-free-note + .operating-bound-note, .operating-bound-note + .research-limitation { margin-top: 12px; }
 .composer-footer { padding: 20px 38px; background: var(--cool); border-top: 1px solid #ced9d9; flex-shrink: 0; }
 .composer-wrap { max-width: 714px; width: 100%; margin-left: auto; margin-right: auto; }
 .composer-label { display: block; font-size: 15px; font-weight: 600; margin-bottom: 10px; color: #304f5e; }

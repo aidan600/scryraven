@@ -12,8 +12,8 @@ from scryraven import __main__ as cli
 from scryraven import research
 from scryraven.presentation import (
     _SCRIPT,
-    PREMISE_ONLY_DISCLOSURE,
     RESEARCH_BOUND_DISCLOSURE,
+    SOURCE_FREE_DISCLOSURE,
     render_cli,
     render_html,
     source_body_html,
@@ -197,7 +197,7 @@ def test_cli_and_local_view_disclose_posture_and_operating_bound_without_changin
     ordinary = render_cli(supported)
     assert "Status: Supported" in ordinary
     assert RESEARCH_BOUND_DISCLOSURE not in ordinary
-    assert PREMISE_ONLY_DISCLOSURE not in ordinary
+    assert SOURCE_FREE_DISCLOSURE not in ordinary
     assert "[1] Official rules" in ordinary
 
     bounded = replace(supported, stop_reason="research_bound")
@@ -207,27 +207,36 @@ def test_cli_and_local_view_disclose_posture_and_operating_bound_without_changin
     assert bounded_cli.count("[1] Official rules") == 1
     bounded_html = render_html(QUESTION, bounded)
     assert RESEARCH_BOUND_DISCLOSURE in bounded_html
-    assert PREMISE_ONLY_DISCLOSURE not in bounded_html
+    assert SOURCE_FREE_DISCLOSURE not in bounded_html
     assert [a["href"] for tag, a in Page(bounded_html).tags if a.get("class") == "citation"] == ["#source-1"]
 
     partial = replace(supported, posture="partial", stop_reason="not_established")
     assert "Status: Partial" in render_cli(partial)
-    assert PREMISE_ONLY_DISCLOSURE not in render_cli(partial)
+    assert SOURCE_FREE_DISCLOSURE not in render_cli(partial)
     unable = source_free_answer("unable")
     assert "Status: Unable" in render_cli(unable)
-    assert PREMISE_ONLY_DISCLOSURE not in render_cli(unable)
+    assert SOURCE_FREE_DISCLOSURE not in render_cli(unable)
 
 
 @pytest.mark.parametrize("posture", ["supported", "partial"])
-def test_cli_and_local_view_label_source_free_premise_answer(posture):
+def test_cli_and_local_view_disclose_source_free_premise_answer(posture):
     result = source_free_answer(posture)
     cli_text = render_cli(result)
     assert f"Status: {posture.capitalize()}" in cli_text
-    assert PREMISE_ONLY_DISCLOSURE in cli_text
+    assert SOURCE_FREE_DISCLOSURE in cli_text
     assert "Sources" not in cli_text
     html = render_html(QUESTION, result)
-    assert PREMISE_ONLY_DISCLOSURE in html
+    assert SOURCE_FREE_DISCLOSURE in html
     assert not any(tag == "details" for tag, _ in Page(html).tags)
+
+
+def test_source_free_factual_limit_does_not_claim_user_assumptions():
+    question = "What was the British Museum's total number of visitors during calendar year 2027?"
+    result = replace(source_free_answer(),
+                     answer="That future calendar-year total is not yet available.")
+    for rendered in (render_cli(result), render_html(question, result)):
+        assert SOURCE_FREE_DISCLOSURE in rendered
+        assert "assumptions you provided" not in rendered
 
 
 @pytest.mark.parametrize("draft", ["16 pounds. [E2]", "16 pounds. [E1@0:10]",
