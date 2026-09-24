@@ -8,8 +8,11 @@ bounded demonstrations and remaining limitations.
 ## Two semantic contracts
 
 `scryraven.research` has two semantic model contracts: Research uses GPT-6 Luna
-with high reasoning, and Answer uses GPT-6 Sol with medium reasoning. These are
-fixed assignments to the existing contracts, with no model routing or escalation.
+with high reasoning and Standard processing, and Answer uses GPT-6 Sol with
+medium reasoning and Standard processing. These are fixed assignments to the
+existing contracts, with no model routing or escalation. A bounded latency
+comparison kept high after medium missed a controlling Passport identity lead;
+a separate Standard/Fast comparison did not support Fast promotion.
 No Sol interpretation/decomposition pass precedes Research. Such a pass may be
 compared in a separate bounded experiment only if Level-8 or later dogfooding
 shows repeated, exact cases of materially recoverable requests with sufficient
@@ -223,17 +226,21 @@ links, and assign compact source numbers. Historical citation snapshots contain
 the exact selected material, including versions and views. Identity validation is
 not semantic entailment checking.
 
-`ResearchSession` receives this native result from the ordinary Research loop. Every `ask` starts fresh Research understanding and attention over the
-retained acquisition library. Research receives the full prior question and answer
-text plus citation provenance derived from immutable saved turns. It identifies
-the exact source and material each earlier answer cited, including targeted views,
-without supplying the source body or claiming that the earlier answer was correct.
-Research must reopen actual retained Evidence before using it as current factual
-support. Answer continues to receive ordinary conversation without historical
-provenance aliases unless the material is independently selected as current
-Evidence. Prior user questions may supply explicit premises
-as task context; prior assistant answers are never Evidence. Only successful
-completed results commit session state;
+`ResearchSession` receives this native result from the ordinary Research loop.
+Every `ask` starts fresh Research understanding and attention over the retained
+acquisition library. Research receives the full prior question and answer text
+plus citation provenance derived from immutable saved turns. The provenance
+identifies the exact source and material each earlier answer cited, including
+targeted views, without claiming that the earlier answer was correct. On the
+first Research call of a follow-up, the exact actual material cited by the
+immediately preceding completed answer is also exposed when it fits the existing
+attention limit. A targeted view is reconstructed from its retained full parent;
+no new acquisition or persistent memory is created. No other historical material
+is automatically exposed. Research may use, shelve or supplement this Evidence.
+Answer continues to receive ordinary conversation without historical provenance
+aliases and sees only Evidence freshly selected for the current answer. Prior user
+questions may supply explicit premises as task context; prior assistant answers
+are never Evidence. Only successful completed results commit session state;
 failures leave the previous in-memory and durable snapshot unchanged. A partial
 or unable completed answer can be retained honestly.
 

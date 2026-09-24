@@ -68,7 +68,7 @@ def test_persisted_historical_citation_reopens_exact_view_locally():
         assert second.trace[-1]["budget"]["external_attempts"] == 0
         assert [item.id for item in reopened.acquisitions] == ["E1"]
         assert first.citations == reopened.turns[0].citations
-        assert second_model.calls[0][2]["evidence"] == []
+        assert second_model.calls[0][2]["evidence"] == [first.selected_evidence[0].material()]
         assert second_model.calls[0][2]["catalog"]["materials"][0]["id"] == "E1"
         assert second_model.calls[1][2]["evidence"][0]["id"] == ref
         assert second_model.calls[1][2]["evidence"][0]["content"] == body[start:end]
