@@ -211,7 +211,7 @@ def test_basis_correction_stays_within_existing_semantic_limit():
                 if event.get("code") == "basis_none_requires_unable"]) == 2
 
 
-def test_terminal_bound_keeps_conditional_supported_fragment_partial_without_evidence():
+def test_terminal_bound_does_not_promote_inconsistent_supported_answer():
     model = RecordingModel(
         decision(),
         answer("Under your stipulated values, the gas cost is $800/year; the external "
@@ -225,8 +225,10 @@ def test_terminal_bound_keeps_conditional_supported_fragment_partial_without_evi
                  limits=RunLimits(semantic_attempts=2))
 
     assert [call[0] for call in model.calls] == ["research", "answer"]
-    assert result.posture == "partial" and result.stop_reason == "research_bound"
+    assert result.posture == "unable" and result.stop_reason == "research_bound"
     assert result.selected_evidence == result.citations == ()
+    assert any(event.get("code") == "supported_with_missing_information"
+               for event in result.trace)
 
 
 def test_user_premises_followup_reopen_uses_prior_user_question_without_evidence():

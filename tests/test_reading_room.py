@@ -1,5 +1,6 @@
 """The ordinary HTTP -> ResearchSession -> SQLite path, with external I/O faked."""
 
+import json
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from dataclasses import replace
@@ -25,6 +26,7 @@ from test_persistent_sessions import tmp_path as external_tmp_path
 from test_research_loop import answer, decision
 
 from scryraven import reading_room
+from scryraven.dogfood_diagnostics import TurnDiagnostics
 from scryraven.presentation import (
     PREMISE_ONLY_DISCLOSURE,
     RESEARCH_BOUND_DISCLOSURE,
@@ -65,8 +67,9 @@ def token(page, action):
     return Form(page.get_data(as_text=True), action).fields
 
 
-def app_for(store, **options):
-    return reading_room.create_app(store=store, session_options={"model": no_io, "search": no_io, "fetch": no_io} | options)
+def app_for(store, *, dogfood_log=None, **options):
+    return reading_room.create_app(store=store, dogfood_log=dogfood_log,
+                                   session_options={"model": no_io, "search": no_io, "fetch": no_io} | options)
 
 
 def submit(client, location="/", question=QUESTION):
@@ -410,3 +413,171 @@ def test_native_same_origin_post_and_external_links_preserve_privacy(tmp_path):
     assert '<meta name="referrer" content="same-origin">' in html
     assert all(a.get("rel") == "noopener noreferrer" and a.get("target") == "_blank"
                for tag, a in Page(html).tags if tag == "a" and a.get("href", "").startswith("https://"))
+
+
+def test_dogfood_log_is_opt_in_and_appends_correlated_turns_across_restart(tmp_path):
+    store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
+    log = tmp_path / "diagnostics" / "turns.jsonl"
+    no_log = app_for(store, model=Script(*first_script()), search=source_search).test_client()
+    assert submit(no_log).status_code == 303
+    assert not log.exists()
+    first_id = store.list_sessions()[0].session_id
+    model = Script(*early_local_turn("A follow-up. [E1]"))
+    client = app_for(store, dogfood_log=log, model=model).test_client()
+    location = f"/sessions/{first_id}"
+    assert submit(client, location, FOLLOWUP).status_code == 303
+    # Reopen both the application and the diagnostic sink; the file must append.
+    next_model = Script(*early_local_turn("A later answer. [E1]"))
+    restarted = app_for(SQLiteSessionStore(store.path), dogfood_log=log, model=next_model).test_client()
+    assert submit(restarted, location, "Another follow-up").status_code == 303
+    records = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+    assert len(records) == 2
+    assert [(row["session_id"], row["attempted_turn"], row["revision_before"], row["revision_after"])
+            for row in records] == [(first_id, 2, 1, 2), (first_id, 3, 2, 3)]
+    assert all(row["outcome"] == "completed" and row["posture"] == "supported" for row in records)
+    assert all(row["turn_elapsed_seconds"] >= 0 for row in records)
+    assert all(row["semantic_attempts"] == 3 and row["external_attempts"] == 0 for row in records)
+    assert all(row["model_calls"] and row["model_calls"][0]["input_tokens"] is None for row in records)
+    assert all(row["acquisitions"][0]["provider"] == "local"
+               and row["acquisitions"][0]["external"] is False
+               and row["retained_reuse_without_external"] for row in records)
+    assert len(store.load(first_id).state.turns) == 3
+
+
+def test_dogfood_records_external_acquisition_without_private_content(tmp_path):
+    store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
+    log = tmp_path / "turns.jsonl"
+    client = app_for(store, dogfood_log=log, model=Script(*first_script()),
+                     search=source_search).test_client()
+    assert submit(client).status_code == 303
+    raw = log.read_text(encoding="utf-8")
+    record = json.loads(raw)
+    assert record["session_id"] == store.list_sessions()[0].session_id
+    assert record["sizes"]["current_question_characters"] == len(QUESTION)
+    assert record["acquisitions"][0]["route_index"] == 1
+    assert record["acquisitions"][0]["request_index"] == 1
+    assert record["acquisitions"][0]["provider"] == "exa"
+    assert record["acquisitions"][0]["external"] is True
+    assert record["acquisitions"][0]["duration_seconds"] >= 0
+    assert record["retained_reuse_without_external"] is False
+    assert QUESTION not in raw and EARLY not in raw
+    assert "https://" not in raw and "OPENAI_API_KEY" not in raw
+    assert "Return only JSON" not in raw and "A first answer" not in raw
+    assert store.load(record["session_id"]).state.turns[0].question == QUESTION
+
+
+def test_failed_dogfood_attempt_preserves_session_and_uses_fixed_failure_code(tmp_path):
+    store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
+    saved = store.create("Existing")
+    before = store.load(saved.metadata.session_id)
+    log = tmp_path / "turns.jsonl"
+
+    def failing(*args):
+        raise RuntimeError("PRIVATE_EXCEPTION_C:/secret/path")
+
+    client = app_for(store, dogfood_log=log, model=failing).test_client()
+    response = submit(client, f"/sessions/{saved.metadata.session_id}", "PRIVATE_QUESTION_123")
+    record = json.loads(log.read_text(encoding="utf-8"))
+    assert response.status_code == 503
+    assert record["outcome"] == "failed" and record["failure"] == {
+        "stage": "reading_room", "code": "unexpected_failure",
+    }
+    assert record["session_id"] == saved.metadata.session_id
+    assert record["attempted_turn"] == 1 and record["revision_after"] is None
+    assert record["model_calls"][0]["status"] == "failed"
+    assert store.load(saved.metadata.session_id) == before
+    assert "PRIVATE_" not in log.read_text(encoding="utf-8")
+
+
+def test_dogfood_log_path_and_later_write_failure_are_operator_bounded(tmp_path, monkeypatch, capsys):
+    store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
+    with pytest.raises(OSError):
+        app_for(store, dogfood_log=tmp_path)
+    with pytest.raises(OSError):
+        app_for(store, dogfood_log=store.path)
+    assert store.list_sessions() == ()
+    log = tmp_path / "turns.jsonl"
+    client = app_for(store, dogfood_log=log, model=Script(*first_script()),
+                     search=source_search).test_client()
+    original_open = type(log).open
+
+    def denied(path, *args, **kwargs):
+        if path == log:
+            raise OSError("PRIVATE_LOG_PATH")
+        return original_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(type(log), "open", denied)
+    assert submit(client).status_code == 303
+    assert store.list_sessions()[0].revision == 1
+    assert "PRIVATE_LOG_PATH" not in capsys.readouterr().err
+    monkeypatch.undo()
+    assert log.read_text(encoding="utf-8") == ""
+
+
+def test_unexpected_diagnostic_failure_cannot_change_committed_response(tmp_path, monkeypatch, capsys):
+    store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
+    log = tmp_path / "turns.jsonl"
+    client = app_for(store, dogfood_log=log, model=Script(*first_script()),
+                     search=source_search).test_client()
+
+    def broken_record(*args, **kwargs):
+        raise RuntimeError("PRIVATE_DIAGNOSTIC_DETAILS")
+
+    monkeypatch.setattr(TurnDiagnostics, "record", broken_record)
+    assert submit(client).status_code == 303
+    assert store.list_sessions()[0].revision == 1
+    assert "PRIVATE_DIAGNOSTIC_DETAILS" not in capsys.readouterr().err
+    assert log.read_text(encoding="utf-8") == ""
+
+
+def test_replaced_log_hardlink_cannot_corrupt_session_database(tmp_path, capsys):
+    store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
+    saved = store.create("Existing")
+    log = tmp_path / "turns.jsonl"
+    client = app_for(store, dogfood_log=log,
+                     model=Script(decision("answer"), answer("No answer was established.", "unable"))).test_client()
+    log.unlink()
+    try:
+        log.hardlink_to(store.path)
+    except OSError:
+        pytest.skip("hard links unavailable on this filesystem")
+    assert submit(client, f"/sessions/{saved.metadata.session_id}").status_code == 303
+    assert store.load(saved.metadata.session_id).metadata.revision == 1
+    assert "dogfood diagnostics stopped" in capsys.readouterr().err
+
+
+def test_dogfood_projection_discards_source_bearing_events_and_unknown_fields():
+    diagnostic = TurnDiagnostics(started_at=1.0, clock=lambda: 3.0)
+    diagnostic.observe({"stage": "research", "action": "started",
+                        "current_question_characters": 18, "question": "PRIVATE_QUESTION"})
+    diagnostic.observe({"stage": "research", "action": "model_started", "contract": "answer",
+                        "attempt": 2, "started_elapsed_seconds": 0.5,
+                        "prompt": "PRIVATE_PROMPT", "model": "gpt-6-sol"})
+    diagnostic.observe({"stage": "research", "action": "model_returned", "contract": "answer",
+                        "attempt": 2, "ended_elapsed_seconds": 1.5, "duration_seconds": 1.0,
+                        "response_characters": 200, "raw_response": "PRIVATE_RESPONSE",
+                        "usage": {"input_tokens": 4}})
+    diagnostic.observe({"stage": "research", "action": "response_rejected",
+                        "contract": "answer", "code": "malformed_model_response"})
+    diagnostic.observe({"stage": "research", "action": "response_rejected",
+                        "contract": "research", "code": "malformed_model_response"})
+    diagnostic.observe({"stage": "research", "action": "acquisition_timing", "kind": "read",
+                        "route_index": 1, "request_index": 2, "provider": "local", "external": False,
+                        "status": "ok", "duration_seconds": 0.2, "url": "PRIVATE_URL",
+                        "returned_material_count": 1, "new_acquisition_count": 0,
+                        "returned_material_characters": 100, "reused_retained_material": True})
+    diagnostic.observe({"stage": "research", "action": "answer_reading_rejected",
+                        "code": "reading_passage_not_in_source", "evidence_ref": "E1",
+                        "reading_index": 0, "passage_index": 1, "passage": "PRIVATE_PASSAGE"})
+    diagnostic.observe({"stage": "research", "action": "exposure", "evidence": "PRIVATE_BODY"})
+    record = diagnostic.record(session_id="a" * 32, revision_before=0, revision_after=1)
+    raw = json.dumps(record)
+    assert "PRIVATE_" not in raw
+    assert record["reading_rejections"] == [{"code": "reading_passage_not_in_source",
+                                             "evidence_ref": "E1", "reading_index": 0,
+                                             "passage_index": 1}]
+    assert record["model_calls"][0]["cached_input_tokens"] is None
+    assert record["model_calls"][0]["response_characters"] == 200
+    assert record["corrections"] == {"research": {"malformed_model_response": 1},
+                                     "answer": {"malformed_model_response": 1}}
+    assert record["retained_reuse_without_external"] is True

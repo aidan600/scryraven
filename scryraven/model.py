@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Callable
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from hashlib import sha256
 from typing import Any
@@ -65,6 +67,21 @@ class ModelUsage:
             return None
         ordinary = values[0] - values[1] - values[2]
         return ordinary if ordinary >= 0 else None
+
+
+_call_usage_observer: ContextVar[Callable[[ModelUsage], None] | None] = ContextVar(
+    "scryraven_call_usage_observer", default=None,
+)
+
+
+@contextmanager
+def capture_model_usage(observer: Callable[[ModelUsage], None]):
+    """Observe one model invocation without changing a shared model's observer."""
+    token = _call_usage_observer.set(observer)
+    try:
+        yield
+    finally:
+        _call_usage_observer.reset(token)
 
 
 def _counter(data: Any, *path: str) -> int | None:
@@ -200,7 +217,8 @@ class OpenAIModel:
         except Exception:
             raise ModelError("model_transport_failed") from None
         finally:
-            if self.usage_observer is not None:
+            observers = (self.usage_observer, _call_usage_observer.get())
+            if any(observer is not None for observer in observers):
                 usage = ModelUsage(
                     safe_stage, safe_phase, cache_family, role.model, breakpoints,
                     _counter(data, "usage", "input_tokens"),
@@ -209,11 +227,13 @@ class OpenAIModel:
                     _counter(data, "usage", "output_tokens"),
                     _counter(data, "usage", "output_tokens_details", "reasoning_tokens"),
                 )
-                try:
-                    self.usage_observer(usage)
-                except Exception:
-                    # Optional diagnostics cannot change normal product execution.
-                    pass
+                for observer in observers:
+                    if observer is not None:
+                        try:
+                            observer(usage)
+                        except Exception:
+                            # Optional diagnostics cannot change normal product execution.
+                            pass
 
         try:
             if data.get("status") != "completed":

@@ -66,6 +66,12 @@ including a reading from each canonical source group they cite. This is a
 mechanical custody constraint, not a test of entailment. An otherwise valid
 evidence-based Answer that omits a required citation alias or reading receives
 a bounded correction in the same Answer contract before acceptance.
+An Answer that declares both supported posture and a consequential
+`missing_information` need now receives a bounded Answer-shape correction in
+that contract; it does not create a Research round trip or mechanically change
+the posture. Literal-reading corrections identify the failed reference and
+reading/passage indexes without copying the rejected passage into the correction
+or safe trace.
 Neither path promotes user premises or prior assistant prose into Evidence.
 
 Durable SQLite sessions retain atomic revision-checked commits, reopen/history,
@@ -78,6 +84,15 @@ The synthetic pre-supersession fixture exercises mixed historical/native session
 Reading Room and CLI use the same session application and store. The existing
 safe Markdown/source renderer, browser security, local assets, transport,
 credential doorman and exact-content prompt-cache mechanics remain in place.
+Reading Room can explicitly append one body-free JSONL diagnostic record per
+attempted question with `--dogfood-log PATH`. The default remains off. The local
+log records turn timing, model usage when returned, call/correction counts,
+per-request acquisition timing and safe sizes, keyed by session ID and attempted
+turn. It is separate from the durable research-session schema and contains no
+question, answer, prompt or source text. An unusable explicit log path prevents
+launch; a later write failure disables only diagnostics while the completed
+research session remains intact. This is offline-instrumented behavior; ordinary
+live dogfood latency measurements have not yet been collected for this phase.
 Both surfaces identify premise-only completed answers as conditional results
 without external sources and disclose a Research operating-bound completion
 without changing Answer's supported/partial/unable posture. Known safe Exa,

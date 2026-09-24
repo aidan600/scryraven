@@ -370,6 +370,75 @@ def test_malformed_requests_are_safe_and_do_not_spend_external_allowance(payload
     assert "private" not in json.dumps(result)
 
 
+def test_body_free_operation_timing_distinguishes_external_and_local_routes():
+    private_query = "PRIVATE question text"
+    private_highlight = "PRIVATE acquired highlight"
+    private_body = "PRIVATE fetched source body"
+    private_url = URL + "/private-path"
+    ticks = iter([10.0, 12.5, 13.0, 14.25, 20.0, 23.0, 25.0, 25.4, 30.0, 30.75])
+    operations = []
+    library = AcquisitionLibrary(
+        search=lambda query: [DiscoveryCandidate("Title", private_url, private_highlight,
+                                                  context_kind="provider_highlights")],
+        lexical_search=lambda query: [DiscoveryCandidate("Title", private_url, "PRIVATE snippet")],
+        fetch=lambda url: FetchedMaterial(url, private_body),
+    )
+    def execute(kind, **fields):
+        return library.execute({"kind": kind, **fields}, before_external=lambda: None,
+                               observe_operation=operations.append, clock=lambda: next(ticks))
+
+    search = execute("search", query=private_query)
+    lexical = execute("search_lexical", query=private_query)
+    external_read = execute("read", target=search["candidate_refs"][0], mode="refresh",
+                            focus="PRIVATE focus")
+    local_read = execute("read", target=external_read["material_ids"][0], mode="local")
+    local_find = execute("find", query="PRIVATE")
+
+    assert [operation["provider"] for operation in operations] == ["exa", "serper", "linkup", "local", "local"]
+    assert [operation["duration_seconds"] for operation in operations] == pytest.approx([2.5, 1.25, 3.0, 0.4, 0.75])
+    assert [operation["external"] for operation in operations] == [True, True, True, False, False]
+    assert [operation["started_at"] for operation in operations] == [10.0, 13.0, 20.0, 25.0, 30.0]
+    assert [operation["ended_at"] for operation in operations] == [12.5, 14.25, 23.0, 25.4, 30.75]
+    assert [operation["new_acquisition_count"] for operation in operations] == [1, 0, 1, 0, 0]
+    assert [operation["reused_retained_material"] for operation in operations] == [False, False, False, True, True]
+    assert operations[0]["returned_material_characters"] == len(private_highlight)
+    assert operations[1]["returned_material_count"] == 0
+    assert operations[2]["returned_material_characters"] == len(private_body)
+    assert operations[3]["mode"] == "local" and operations[4]["mode"] is None
+    assert local_read["status"] == local_find["status"] == lexical["status"] == "ok"
+    safe_record = json.dumps(operations)
+    assert all(value not in safe_record for value in
+               (private_query, private_highlight, private_body, private_url, "PRIVATE focus", "PRIVATE snippet"))
+    assert not {"request", "result", "material_ids", "candidate_refs"}.intersection(operations[0])
+
+
+def test_operation_observer_failure_cannot_change_acquisition_and_error_code_is_safe():
+    events = []
+    library = AcquisitionLibrary(search=lambda query: (_ for _ in ()).throw(
+        ExaTransportError("exa_configuration_missing")))
+    failed = library.execute({"kind": "search", "query": "PRIVATE query"}, before_external=lambda: None,
+                             observe_operation=events.append, clock=iter([4.0, 6.0]).__next__)
+    assert failed["status"] == "error" and failed["code"] == "exa_configuration_missing"
+    assert events == [{
+        "kind": "search", "mode": None, "provider": "exa", "external": True,
+        "started_at": 4.0, "ended_at": 6.0, "duration_seconds": 2.0,
+        "status": "error", "code": "exa_configuration_missing",
+        "returned_material_count": 0, "new_acquisition_count": 0,
+        "returned_material_characters": 0, "reused_retained_material": False,
+    }]
+    assert "PRIVATE" not in json.dumps(events)
+    retained = Evidence("E1", URL, "Title", "Retained body")
+    library = AcquisitionLibrary((retained,))
+    def broken_observer(event):
+        event["status"] = "changed"
+        raise RuntimeError("observer failure")
+    returned = library.execute({"kind": "read", "target": "E1", "mode": "local"},
+                               before_external=no_external, observe_operation=broken_observer,
+                               clock=iter([8.0, 8.5]).__next__)
+    assert returned["status"] == "ok" and returned["material_ids"] == ["E1"]
+    assert library.acquisitions == [retained]
+
+
 def test_retained_corpus_requires_contiguous_acquisition_ids_and_canonical_source():
     for retained in [(Evidence("E2", URL, "Title", "body"),),
                      (Evidence("E1", URL, "Title", "body"), Evidence("E2", URL, "Title", "new body")),

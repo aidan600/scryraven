@@ -94,6 +94,23 @@ opening these sessions from the CLI. The database holds your conversation and sa
 source material; browser storage holds none of it. For a doorman launch, append
 `'--database', '"D:\My Research\sessions.sqlite3"'` to the target arguments above.
 
+For local latency dogfooding, explicitly choose a separate JSONL file:
+
+```powershell
+python -m scryraven.reading_room --dogfood-log "C:\tmp\scryraven-latency-01\turns.jsonl"
+```
+
+The file appends one body-free diagnostic record per attempted research turn, across
+Reading Room restarts. It records timings, call and acquisition counts, safe usage
+numbers and fixed outcome codes. It excludes questions, answers, source bodies,
+prompts, URLs and credentials. Parent directories are created when requested.
+Without `--dogfood-log`, no diagnostic file is written. An invalid log path stops
+launch; if the file later becomes unwritable, Reading Room reports a generic
+terminal warning and continues saving research normally. The session database is
+still the durable product record, with questions, answers, retained Evidence and
+historical citations. For a doorman launch, append
+`'--dogfood-log', '"C:\tmp\scryraven-latency-01\turns.jsonl"'` to the target arguments above.
+
 Choose **New research**, ask a question, and use the composer for follow-ups. Submit
 with the arrow or Ctrl+Enter / Command+Enter; plain Enter adds a line. Research runs
 in the HTTP request, with an indeterminate working state and no token streaming.
