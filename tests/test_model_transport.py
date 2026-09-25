@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 
 import pytest
 import requests
@@ -183,3 +184,152 @@ def test_http_failure_keeps_its_safe_transport_code(monkeypatch):
 
     with pytest.raises(ModelError, match="^model_rate_limited$"):
         OpenAIModel(post=rejected)("answer", "prompt", {}, {})
+
+
+def test_answer_calculator_continues_statelessly_and_preserves_chained_results(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "offline-test-value")
+    calls, calculations, usage = [], [], []
+    replies = [
+        {"status": "completed", "usage": {"input_tokens": 11}, "output": [
+            {"type": "reasoning", "id": "rs_1", "encrypted_content": "opaque-1"},
+            {"type": "function_call", "id": "fc_1", "call_id": "call_1",
+             "name": "calculate", "arguments": '{"expression":"2 + 3"}'},
+        ]},
+        {"status": "completed", "usage": {"input_tokens": 17}, "output": [
+            {"type": "reasoning", "id": "rs_2", "encrypted_content": "opaque-2"},
+            {"type": "function_call", "id": "fc_2", "call_id": "call_2",
+             "name": "calculate", "arguments": '{"expression":"5 * 4"}'},
+        ]},
+        {"status": "completed", "usage": {"input_tokens": 23}, "output": [
+            {"type": "message", "phase": "final_answer", "content": [
+                {"type": "output_text", "text": '{"answer":"20"}'},
+            ]},
+        ]},
+    ]
+
+    def post(_url, **kwargs):
+        calls.append(deepcopy(kwargs["json"]))
+        return Response(replies.pop(0))
+
+    def calculate(expression):
+        return {"ok": True, "value": {"2 + 3": "5", "5 * 4": "20"}[expression]}
+
+    result = OpenAIModel(post=post, usage_observer=usage.append)(
+        "answer", "prompt", {"question": "private question"}, {},
+        calculator=calculate,
+        on_calculation=lambda sequence, expression, output: calculations.append(
+            (sequence, expression, output)),
+    )
+    assert result == '{"answer":"20"}'
+    assert not replies and len(calls) == 3
+    assert calculations == [
+        (1, "2 + 3", {"ok": True, "value": "5"}),
+        (2, "5 * 4", {"ok": True, "value": "20"}),
+    ]
+    assert len(usage) == 3 and [item.input_tokens for item in usage] == [11, 17, 23]
+    assert all(call["store"] is False and "previous_response_id" not in call for call in calls)
+    assert all(call["tools"][0]["name"] == "calculate" for call in calls)
+    assert all(call["include"] == ["reasoning.encrypted_content"] for call in calls)
+    assert calls[1]["input"][-3:] == [
+        {"type": "reasoning", "id": "rs_1", "encrypted_content": "opaque-1"},
+        {"type": "function_call", "id": "fc_1", "call_id": "call_1",
+         "name": "calculate", "arguments": '{"expression":"2 + 3"}'},
+        {"type": "function_call_output", "call_id": "call_1",
+         "output": '{"ok": true, "value": "5"}'},
+    ]
+    assert calls[2]["input"][-3:] == [
+        {"type": "reasoning", "id": "rs_2", "encrypted_content": "opaque-2"},
+        {"type": "function_call", "id": "fc_2", "call_id": "call_2",
+         "name": "calculate", "arguments": '{"expression":"5 * 4"}'},
+        {"type": "function_call_output", "call_id": "call_2",
+         "output": '{"ok": true, "value": "20"}'},
+    ]
+
+
+def test_invalid_tool_arguments_return_bounded_error_to_same_answer(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "offline-test-value")
+    calls, observed = [], []
+    replies = [
+        {"status": "completed", "output": [
+            {"type": "function_call", "call_id": "bad", "name": "calculate",
+             "arguments": "not-json"},
+        ]},
+        {"status": "completed", "output": [
+            {"type": "message", "content": [{"type": "output_text", "text": "{}"}]},
+        ]},
+    ]
+
+    def post(_url, **kwargs):
+        calls.append(deepcopy(kwargs["json"]))
+        return Response(replies.pop(0))
+
+    assert OpenAIModel(post=post)(
+        "answer", "prompt", {}, {},
+        calculator=lambda expression: (_ for _ in ()).throw(AssertionError(expression)),
+        on_calculation=lambda *item: observed.append(item),
+    ) == "{}"
+    assert calls[1]["input"][-1] == {
+        "type": "function_call_output", "call_id": "bad",
+        "output": '{"error": "invalid_tool_arguments"}',
+    }
+    assert observed == [(1, "not-json", {"error": "invalid_tool_arguments"})]
+
+
+def test_answer_continuation_obeys_remaining_time_before_next_request(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "offline-test-value")
+    calls = []
+    seconds = [4.0]
+
+    def post(_url, **kwargs):
+        calls.append(kwargs["timeout"])
+        seconds[0] = 0.0
+        return Response({"status": "completed", "output": [
+            {"type": "function_call", "call_id": "first", "name": "calculate",
+             "arguments": '{"expression":"1 + 1"}'},
+        ]})
+
+    with pytest.raises(ModelError, match="^model_request_timed_out$"):
+        OpenAIModel(post=post)("answer", "prompt", {}, {},
+                               calculator=lambda _: {"ok": True, "value": "2"},
+                               remaining_seconds=lambda: seconds[0])
+    assert len(calls) == 1 and 0 < calls[0] <= 4.0
+
+
+def test_runtime_deadline_keeps_configured_timeout_per_request(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "offline-test-value")
+    now = [0.0]
+    monkeypatch.setattr("scryraven.model.monotonic", lambda: now[0])
+    timeouts = []
+
+    def post(_url, **kwargs):
+        timeouts.append(kwargs["timeout"])
+        if len(timeouts) == 1:
+            now[0] = 18.0
+            return Response({"status": "completed", "output": [
+                {"type": "function_call", "call_id": "first", "name": "calculate",
+                 "arguments": '{"expression":"1 + 1"}'},
+            ]})
+        return Response({"status": "completed", "output": [
+            {"type": "message", "content": [{"type": "output_text", "text": "{}"}]},
+        ]})
+
+    model = OpenAIModel(post=post, timeout_seconds=17)
+    assert model("answer", "prompt", {}, {},
+                 calculator=lambda _: {"value": "2"},
+                 remaining_seconds=lambda: 50 - now[0]) == "{}"
+    assert timeouts == [17, 17]
+
+
+def test_research_never_receives_answer_calculator_even_if_supplied(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "offline-test-value")
+    calls = []
+
+    def post(_url, **kwargs):
+        calls.append(kwargs["json"])
+        return Response({"status": "completed", "output": [
+            {"type": "message", "content": [{"type": "output_text", "text": "{}"}]},
+        ]})
+
+    assert OpenAIModel(post=post)("research", "prompt", {}, {},
+                                    calculator=lambda _: {"ok": True}) == "{}"
+    assert "tools" not in calls[0]

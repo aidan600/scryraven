@@ -117,6 +117,23 @@ sufficient scope or semantic entailment. Final citation resolution and rendering
 follow the accepted Answer; there is no subsequent verifier or prose-polishing
 model.
 
+The same Answer semantic owner may call a bounded deterministic local arithmetic
+calculator while preparing an `AnswerDecision`. It may use numeric values from
+selected Evidence, explicit user premises, and prior results from that Answer
+attempt. A tool result returns to that Answer role; dependent calls can follow.
+The local parser accepts bounded arithmetic expressions only. It computes exact
+rational values from decimal literals, returning terminating decimals or
+parenthesized exact ratios that can be reused in later expressions.
+The calculator interprets neither sources nor provenance and creates no Evidence
+item or alias. Results are derived computation. Externally factual quantitative
+claims still cite the selected material establishing their inputs, and arithmetic
+cannot supply an absent contingent external premise. Research has no calculator
+tool. A calculator stop and its model continuation remain inside one Answer
+semantic attempt, without using the one validation correction. Each underlying
+Responses request still obeys its timeout and the remaining Answer-stage and
+whole-run deadlines. Reported per-request usage is aggregated for that semantic
+attempt; a missing continuation counter leaves a marked partial aggregate.
+
 ## Acquisition, custody, and reversible attention
 
 `scryraven.acquisition.AcquisitionLibrary` retains immutable actual

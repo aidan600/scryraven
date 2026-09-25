@@ -14,6 +14,13 @@ needs, acquisition direction, attention and stopping. Generated state is never
 Evidence. Answer independently assesses selected actual source material and
 explicit user-supplied premises against the current/original request. Research
 may select no Evidence when the requested operation needs no external fact.
+Answer may invoke a bounded deterministic local arithmetic calculator, including
+dependent calculations, while the same Answer role remains the sole semantic
+owner. Calculator results are derived computation, not Evidence or citation
+aliases. Externally factual numeric inputs retain the ordinary selected-Evidence
+and citation requirements; explicit user premises retain their conditional basis.
+The calculator and its Responses continuation are verified offline; this phase
+does not establish live model use or answer-quality reliability.
 
 The ordinary recommended model profile uses GPT-6 Luna / high / Fast for Research
 and GPT-6 Sol / medium / Fast for Answer. These are reversible defaults in
@@ -28,8 +35,12 @@ Research selects one. Exa Contents has no ordinary Read authority; there is no
 search or Read fallback or provider router. Limits remain 12 semantic attempts,
 16 external attempts and 128,000 characters of current attention. The ordinary
 hard run ceiling is 300 seconds, with 180 seconds reserved for terminal Answer
-once Evidence exists. Each model call remains capped at 120 seconds, and one
-unchanged Answer Evidence packet has a 120-second total Answer-stage allowance.
+once Evidence exists. Each underlying model request remains capped at 120
+seconds, and one unchanged Answer Evidence packet has a 120-second total
+Answer-stage allowance.
+Calculator tool stops and their model continuations consume no additional semantic
+attempts or Answer validation corrections. They remain subject to the whole-run,
+Answer-stage and per-request time bounds.
 These limits provide diagnostic and completion headroom, not an acceptable-latency
 target. No semantic
 verifier or additional semantic owner exists.
@@ -140,6 +151,11 @@ alias one another or the session database are rejected at launch. The
 development launcher creates isolated runs under `C:\tmp\scryraven-forensic`;
 cleanup selects one exact child run explicitly. This instrumentation makes
 ordinary failures reconstructable and does not repair source-reading failures.
+Explicit forensic observation also records each Answer calculator expression and
+its deterministic result or error in sequence. Ordinary traces and dogfood
+diagnostics retain only body-free calculator counts/status and request usage;
+Answer continuations aggregate reported provider usage within their one semantic
+attempt and mark partial usage when a continuation has no reported counters.
 Both surfaces disclose that no external sources were used for source-free
 supported/partial completed answers without inferring a user-premise basis from
 empty citations. They disclose a Research operating-bound completion without
