@@ -71,6 +71,14 @@ premises. A user may explicitly adopt a prior assistant value as a new scenario
 premise without verifying that value externally. Answer determines what selected
 Evidence or user-supplied premises justify, with supported, partial, or unable
 posture.
+Its composition instructions develop materially consequential relationships
+without displacing other qualifications needed to understand the result. A
+quantitative relationship states how its inputs determine the result; a comparison
+keeps the meaning and observed or modeled character of each supplied quantity
+visible. A partial answer explains what missing inputs would resolve and what
+incompatibilities would remain. These are instructions to the existing Answer
+owner, not a required outline, additional field, semantic actor or validation gate.
+Simple lookups stay direct and compact.
 One consequential missing information need from a validated Answer may return to
 Research within the same run allowance. Only that need returns; the provisional
 answer is not supplied as Research authority. Materially changed selected Evidence
@@ -83,7 +91,9 @@ answer. An evidence-based answer makes a small selection of literal passages
 with exact material references. These are Answer's own reading selections from
 the supplied sources, including material scope, identity, chronology, conditions
 and exceptions. They are not Research's findings or a claim-to-source
-justification. The selections are transient and do not create a claim database,
+justification. Selection supports the consequential relationships and qualifications
+needed for the complete synthesis, beyond support for a headline alone.
+The selections are transient and do not create a claim database,
 a source-count rule, or a new actor.
 
 Mechanical checks require each reading reference to belong to the supplied

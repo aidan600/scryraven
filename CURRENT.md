@@ -19,8 +19,17 @@ dependent calculations, while the same Answer role remains the sole semantic
 owner. Calculator results are derived computation, not Evidence or citation
 aliases. Externally factual numeric inputs retain the ordinary selected-Evidence
 and citation requirements; explicit user premises retain their conditional basis.
-The calculator and its Responses continuation are verified offline; this phase
-does not establish live model use or answer-quality reliability.
+The calculator and its Responses continuation are verified offline and exercised
+by live Answer calls over frozen Evidence. This does not establish end-to-end
+research reliability or general calculator-use reliability.
+
+Answer's composition instructions develop consequential relationships while
+retaining the qualifications that affect the conclusion. Quantitative answers
+explain how inputs determine the result; comparisons retain what each supplied
+quantity represents, including observed versus modeled status. Partial answers
+explain which gaps a missing input would resolve and which incompatibilities
+would remain. Reading selection supports the complete synthesis. Simple lookups
+remain direct; no fixed outline, coverage schema or additional actor is introduced.
 
 The ordinary recommended model profile uses GPT-6 Luna / high / Fast for Research
 and GPT-6 Sol / medium / Fast for Answer. These are reversible defaults in
@@ -168,6 +177,21 @@ model environment overrides are removed; `.env.example` holds credential
 placeholders only, and the product does not load `.env`.
 
 ## Bounded evidence and limits
+
+Answer Coverage Retention used unchanged development packets and the production
+Answer prompt, schema, model transport, calculator, validation and finalization.
+The promoted prompt retained both the MD-80 replacement-model versus historical
+777 distinction and the CASM/load-factor relationship in two draws. Both refused
+unsupported empirical subtraction and explained why occupancy alone cannot fix
+incompatible cost figures. Rich comparison, simple lookup, partial evidence,
+assumption-policy negative and quantitative controls preserved material quality.
+The lookup stayed one sentence; the quantitative control used the calculator and
+returned the correct $2,112 (8.4%) bill reduction. This is bounded direct-Answer
+evidence, not an ordinary research run or a universal coverage guarantee. Earlier
+prompt variants showed omissions and variability. Production support-basis
+semantics remain unchanged; the separate finding that Answer-chosen numerical
+assumptions are not user premises remains unresolved. See
+`docs/operator/ANSWER_COVERAGE_RETENTION.md` for scope, provenance and limits.
 
 The preceding ten-turn latency flight took 304.796 seconds: Research model time
 was 65.0%, Answer model time 25.4%, and external I/O 9.5%.
