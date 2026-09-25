@@ -71,14 +71,19 @@ premises. A user may explicitly adopt a prior assistant value as a new scenario
 premise without verifying that value externally. Answer determines what selected
 Evidence or user-supplied premises justify, with supported, partial, or unable
 posture.
-Its composition instructions develop materially consequential relationships
-without displacing other qualifications needed to understand the result. A
-quantitative relationship states how its inputs determine the result; a comparison
-keeps the meaning and observed or modeled character of each supplied quantity
-visible. A partial answer explains what missing inputs would resolve and what
-incompatibilities would remain. These are instructions to the existing Answer
-owner, not a required outline, additional field, semantic actor or validation gate.
-Simple lookups stay direct and compact.
+For non-lookup analytical questions, its composition instructions give the
+conclusion or controlling distinction early, then substantially develop the
+important supported relationships, representative evidence, calculations and
+consequential qualifications needed to understand the result. Development is
+substantial but non-exhaustive, with a soft roughly two-page editorial ceiling,
+not a length rule or required outline. Markdown structure is available when it
+clarifies the reasoning. Simple lookups stay direct and compact. A quantitative
+relationship states how its inputs determine the result; a comparison keeps the
+meaning and observed or modeled character of each supplied quantity visible. A
+partial answer explains what missing inputs would resolve and what incompatibilities
+would remain. Developing one dimension must not displace another consequential
+distinction. These are instructions to the existing Answer owner, not an additional
+field, semantic actor or validation gate.
 One consequential missing information need from a validated Answer may return to
 Research within the same run allowance. Only that need returns; the provisional
 answer is not supplied as Research authority. Materially changed selected Evidence
@@ -87,8 +92,9 @@ protection.
 
 Within the same semantic call, `AnswerDecision` declares `support_basis` as
 `evidence`, `user_premises`, or `none` and places `source_readings` before the
-answer. An evidence-based answer makes a small selection of literal passages
-with exact material references. These are Answer's own reading selections from
+answer. An evidence-based answer selects literal passages needed to support the
+developed explanation and its consequential qualifications, with exact material
+references. These are Answer's own reading selections from
 the supplied sources, including material scope, identity, chronology, conditions
 and exceptions. They are not Research's findings or a claim-to-source
 justification. Selection supports the consequential relationships and qualifications
