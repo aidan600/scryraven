@@ -19,9 +19,8 @@ dependent calculations, while the same Answer role remains the sole semantic
 owner. Calculator results are derived computation, not Evidence or citation
 aliases. Externally factual numeric inputs retain the ordinary selected-Evidence
 and citation requirements; explicit user premises retain their conditional basis.
-The calculator and its Responses continuation are verified offline and exercised
-in bounded direct frozen-Answer calls. That evidence does not establish reliable
-tool use on every quantitative task or ordinary-product answer-quality reliability.
+The calculator and its Responses continuation are verified offline; this phase
+does not establish live model use or answer-quality reliability.
 
 The ordinary recommended model profile uses GPT-6 Luna / high / Fast for Research
 and GPT-6 Sol / medium / Fast for Answer. These are reversible defaults in
@@ -169,24 +168,6 @@ model environment overrides are removed; `.env.example` holds credential
 placeholders only, and the product does not load `.env`.
 
 ## Bounded evidence and limits
-
-Answer Development & Assumptions 01 rejected its candidate after 24 direct
-Sol / medium / Fast semantic Answer attempts and 31 underlying Responses requests,
-with no Research or acquisition. Both MD80 candidate draws improved the
-CASM/load-factor explanation but omitted the supplied MD80 replacement-model
-character versus the historical 777 observation. Rich comparison, useful partial
-explanation, simple lookups and negative-assumption restraint were preserved in
-the exercised controls; calculator use remained inconsistent despite correct
-arithmetic. The baseline source-free illustration incorrectly labeled
-Answer-chosen prices as `user_premises`. A candidate `scenario` distinction corrected
-that classification in two draws, but the complete candidate did not meet the
-promotion bar. All candidate production changes were removed; the active basis
-remains `evidence`, `user_premises`, or `none`. Exact packets, outputs, counters and
-adjudications are preserved locally under
-`C:\tmp\scryraven-answer-development-assumptions-01`, with useful ignored corpus
-candidates. See `docs/operator/ANSWER_DEVELOPMENT_ASSUMPTIONS_01.md`. These are
-development observations, not an ordinary product-path improvement or a universal
-reliability result.
 
 The preceding ten-turn latency flight took 304.796 seconds: Research model time
 was 65.0%, Answer model time 25.4%, and external I/O 9.5%.
