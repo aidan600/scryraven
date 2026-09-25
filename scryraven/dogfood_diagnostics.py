@@ -156,6 +156,9 @@ class TurnDiagnostics:
         self.reading_rejections: list[dict] = []
         self.answer_returns = 0
         self.no_progress_commits = 0
+        self.calculator_calls = 0
+        self.calculator_failures = 0
+        self.calculator_seconds = 0.0
         self.research_bounds: Counter[str] = Counter()
         self.semantic_attempts = None
         self.external_attempts = None
@@ -195,6 +198,7 @@ class TurnDiagnostics:
                 "response_characters": None,
                 **{key: _nonnegative_int(event.get(key)) for key in _CALL_SIZE_FIELDS},
                 **{key: None for key in _TOKEN_FIELDS},
+                "usage_incomplete": None,
                 "cache_family": None, "breakpoints": [],
             }
             self.models.append(row)
@@ -221,6 +225,8 @@ class TurnDiagnostics:
                 )
                 for key in _TOKEN_FIELDS:
                     row[key] = _nonnegative_int(usage.get(key))
+                row["usage_incomplete"] = (usage.get("usage_incomplete")
+                                           if type(usage.get("usage_incomplete")) is bool else None)
                 family = usage.get("cache_family")
                 row["cache_family"] = family if type(family) is str and _CACHE_FAMILY.fullmatch(family) else None
                 labels = usage.get("breakpoints")
@@ -272,6 +278,14 @@ class TurnDiagnostics:
             self.answer_returns += 1
         elif action == "answer_committed_no_progress":
             self.no_progress_commits += 1
+        elif action == "calculator_used":
+            if event.get("contract") == "answer" and type(event.get("success")) is bool:
+                self.calculator_calls += 1
+                if not event["success"]:
+                    self.calculator_failures += 1
+                duration = _seconds(event.get("duration_seconds"))
+                if duration is not None:
+                    self.calculator_seconds += duration
         elif action == "research_bound":
             code = _one_of(event.get("code"), {
                 "deadline", "semantic_attempts", "external_attempts", "answer_deadline_reserve",
@@ -323,6 +337,11 @@ class TurnDiagnostics:
             "reading_rejections": self.reading_rejections,
             "answer_to_research_returns": self.answer_returns,
             "no_progress_commits": self.no_progress_commits,
+            "calculator": {
+                "calls": self.calculator_calls,
+                "failures": self.calculator_failures,
+                "duration_seconds": _seconds(self.calculator_seconds),
+            },
             "research_bounds": dict(self.research_bounds),
             "retained_reuse_without_external": (
                 any(item["reused_retained_material"] for item in self.acquisitions)

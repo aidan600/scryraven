@@ -19,7 +19,9 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from core.exa_transport import search_exa
 from core.linkup_transport import fetch_linkup
 from core.serper_transport import search_serper
+from scryraven import model as model_transport
 from scryraven.acquisition import AcquisitionError, AcquisitionLibrary
+from scryraven.calculator import calculate
 from scryraven.errors import RunError
 from scryraven.model import ModelError, ModelUsage, OpenAIModel, capture_model_usage
 from scryraven.results import CompletedAnswer, resolve_citations
@@ -215,6 +217,12 @@ partial conclusion follows solely from explicit premises or constraints in the
 current or prior USER questions. Arithmetic and unit definitions may be used, but
 do not add a missing contingent external premise from memory. Make the hypothetical
 or conditional basis clear; do not present stipulated values as verified facts.
+The deterministic local calculate tool is available when arithmetic materially
+affects the answer. You may call it repeatedly, including with a prior result.
+Its output is derived computation, not Evidence: use only numeric inputs from
+supplied Evidence or explicit user premises, and cite Evidence establishing
+external factual inputs under the existing citation rules. Do not invent a
+missing contingent external input to complete a calculation.
 Set support_basis=none with posture=unable when no supported conclusion is
 available. An ordinary external-fact question with no Evidence and no stipulated
 answer premise cannot use user_premises to produce a factual answer.
@@ -358,25 +366,72 @@ def _run_turn(
                  packet.get("conversation_context", []), ensure_ascii=False, sort_keys=True)),
              budget=budget.snapshot())
         emit("exposure", source_body=True, contract=stage, attempt=budget.semantic, evidence=evidence)
-        usage: ModelUsage | None = None
+        usage_records: list[ModelUsage] = []
 
         def received_usage(value: ModelUsage) -> None:
-            nonlocal usage
-            usage = value
+            usage_records.append(value)
 
         def usage_fields() -> dict:
+            # One Answer semantic attempt can contain several Responses requests.
+            # Preserve reported counters even if a later request fails before
+            # returning usage. A partial aggregate is marked explicitly.
+            def total(field: str) -> int | None:
+                values = [getattr(item, field) for item in usage_records]
+                known = [value for value in values if value is not None]
+                return sum(known) if known else None
+
+            def same(field: str):
+                values = [getattr(item, field) for item in usage_records]
+                return values[0] if values and all(value == values[0] for value in values) else None
+
+            counter_fields = ("input_tokens", "cached_input_tokens", "cache_write_tokens",
+                              "output_tokens", "reasoning_tokens")
+            incomplete = None
+            if usage_records:
+                incomplete = False
+                for field in counter_fields:
+                    values = [getattr(item, field) for item in usage_records]
+                    missing = any(value is None for value in values)
+                    if missing and (any(value is not None for value in values)
+                                    or field in {"input_tokens", "output_tokens"}):
+                        incomplete = True
+                        break
+            known_uncached = [item.ordinary_uncached_tokens for item in usage_records
+                              if item.ordinary_uncached_tokens is not None]
             return {
-                "input_tokens": usage.input_tokens if usage else None,
-                "cached_input_tokens": usage.cached_input_tokens if usage else None,
-                "cache_write_tokens": usage.cache_write_tokens if usage else None,
-                "ordinary_uncached_tokens": usage.ordinary_uncached_tokens if usage else None,
-                "output_tokens": usage.output_tokens if usage else None,
-                "reasoning_tokens": usage.reasoning_tokens if usage else None,
-                "requested_service_tier": usage.requested_service_tier if usage else None,
-                "returned_service_tier": usage.returned_service_tier if usage else None,
-                "cache_family": usage.cache_family if usage else None,
-                "breakpoints": list(usage.breakpoints) if usage else None,
+                "input_tokens": total("input_tokens"),
+                "cached_input_tokens": total("cached_input_tokens"),
+                "cache_write_tokens": total("cache_write_tokens"),
+                "ordinary_uncached_tokens": sum(known_uncached) if known_uncached else None,
+                "output_tokens": total("output_tokens"),
+                "reasoning_tokens": total("reasoning_tokens"),
+                "usage_incomplete": incomplete,
+                "requested_service_tier": same("requested_service_tier"),
+                "returned_service_tier": same("returned_service_tier"),
+                "cache_family": same("cache_family"),
+                "breakpoints": list(usage_records[0].breakpoints) if usage_records else None,
             }
+
+        calculation_duration: float | None = None
+
+        def do_calculate(expression: str) -> dict:
+            nonlocal calculation_duration
+            started = clock()
+            try:
+                return calculate(expression)
+            finally:
+                calculation_duration = max(0.0, clock() - started)
+
+        def observed_calculation(sequence: int, expression: str, result: dict) -> None:
+            nonlocal calculation_duration
+            emit("calculator_result", source_body=True, contract="answer",
+                 attempt=budget.semantic, sequence=sequence,
+                 expression=expression, result=result)
+            emit("calculator_used", contract="answer", attempt=budget.semantic,
+                 sequence=sequence, success="value" in result,
+                 duration_seconds=(round(calculation_duration, 6)
+                                   if calculation_duration is not None else None))
+            calculation_duration = None
 
         # Observer bookkeeping is part of the stage time. Set the real request
         # timeout immediately before transport so it never outlives its packet.
@@ -389,7 +444,18 @@ def _run_turn(
             )
         try:
             with capture_model_usage(received_usage):
-                raw = model(stage, prompt, packet, shape.model_json_schema())
+                if (stage == "answer" and
+                        type(model).__call__ is model_transport.OpenAIModel.__call__):
+                    raw = model(
+                        stage, prompt, packet, shape.model_json_schema(),
+                        calculator=do_calculate, on_calculation=observed_calculation,
+                        remaining_seconds=lambda: min(
+                            budget.remaining_seconds,
+                            max(0.0, answer_deadline - clock()),
+                        ),
+                    )
+                else:
+                    raw = model(stage, prompt, packet, shape.model_json_schema())
         except ModelError as exc:
             code = str(exc)
             ended_elapsed = max(0.0, clock() - budget.started)

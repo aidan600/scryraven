@@ -1,4 +1,4 @@
-"""One stateless OpenAI Responses transport; no provider routing or tools."""
+"""One stateless OpenAI Responses transport with Answer-only local calculation."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from hashlib import sha256
+from time import monotonic
 from typing import Any
 
 import requests
@@ -97,6 +98,18 @@ _EVIDENCE_METADATA_ORDER = (
     "id", "source_id", "acquisition", "title", "url", "parent_id",
     "start_char", "end_char",
 )
+_CALCULATOR_TOOL = {
+    "type": "function",
+    "name": "calculate",
+    "description": "Evaluate a bounded arithmetic expression using established numeric inputs.",
+    "strict": True,
+    "parameters": {
+        "type": "object",
+        "properties": {"expression": {"type": "string"}},
+        "required": ["expression"],
+        "additionalProperties": False,
+    },
+}
 
 
 def _evidence_json(value: Any) -> str:
@@ -174,6 +187,45 @@ def _input_blocks(instructions: str, material: dict, stage: str, phase: str) -> 
     return [{"role": "developer", "content": [developer]}, {"role": "user", "content": blocks}], tuple(labels)
 
 
+def _calculation_output(
+    call: dict, calculator: Callable[[str], dict],
+    on_calculation: Callable[[int, str, dict], None] | None, sequence: int,
+) -> dict:
+    """Turn one Responses function call into a bounded, serializable tool result."""
+    if (call.get("name") != "calculate" or not isinstance(call.get("call_id"), str)
+            or not call["call_id"] or not isinstance(call.get("arguments"), str)):
+        raise ModelError("malformed_model_response")
+    raw_arguments = call["arguments"]
+    try:
+        arguments = json.loads(raw_arguments)
+    except (ValueError, TypeError):
+        arguments = None
+    if (isinstance(arguments, dict) and set(arguments) == {"expression"}
+            and isinstance(arguments["expression"], str)):
+        expression = arguments["expression"]
+        try:
+            result = calculator(expression)
+        except Exception:
+            result = {"error": "calculator_failed"}
+    else:
+        expression = raw_arguments
+        result = {"error": "invalid_tool_arguments"}
+    try:
+        if not isinstance(result, dict):
+            raise TypeError("calculator result must be an object")
+        output = json.dumps(result, ensure_ascii=False, sort_keys=True, allow_nan=False)
+    except (TypeError, ValueError, OverflowError):
+        result = {"error": "calculator_failed"}
+        output = json.dumps(result, sort_keys=True)
+    if on_calculation is not None:
+        try:
+            on_calculation(sequence, expression, result)
+        except Exception:
+            # Forensic observation cannot change the Answer result.
+            pass
+    return {"type": "function_call_output", "call_id": call["call_id"], "output": output}
+
+
 class OpenAIModel:
     def __init__(
         self,
@@ -192,18 +244,28 @@ class OpenAIModel:
 
     def __call__(
         self, stage: str, instructions: str, material: dict, schema: dict,
+        *, calculator: Callable[[str], dict] | None = None,
+        on_calculation: Callable[[int, str, dict], None] | None = None,
+        remaining_seconds: Callable[[], float] | None = None,
     ) -> str:
         token = os.getenv("OPENAI_API_KEY", "").strip()
         if not token:
             raise ModelError("model_configuration_missing")
         role = self.config.answer if stage == "answer" else self.config.research
-        instructions += "\nReturn only JSON matching the response schema, with no Markdown or commentary."
+        use_calculator = stage == "answer" and calculator is not None
+        instructions += ("\nWhen finished, return only JSON matching the response schema, "
+                         "with no Markdown or commentary."
+                         if use_calculator else
+                         "\nReturn only JSON matching the response schema, with no Markdown or commentary.")
         phase = material.get("phase", stage)
         # Only fixed transport labels reach telemetry, never arbitrary material.
         safe_stage = stage if stage in {"research", "answer"} else "other"
         safe_phase = phase if phase in {"research", "answer"} else "other"
-        family = sha256(_json(["layout-v1", self.cache_namespace, role.model, role.reasoning,
-                              stage, phase, instructions, schema]).encode("utf-8")).hexdigest()[:32]
+        family_parts = ["layout-v1", self.cache_namespace, role.model, role.reasoning,
+                        stage, phase, instructions, schema]
+        if use_calculator:
+            family_parts.append(_CALCULATOR_TOOL)
+        family = sha256(_json(family_parts).encode("utf-8")).hexdigest()[:32]
         cache_family = f"sr-v1:{safe_stage}:{safe_phase}:{family}"
         inputs, breakpoints = _input_blocks(instructions, material, stage, phase)
         payload = {
@@ -224,73 +286,104 @@ class OpenAIModel:
             if role.service_tier not in {"default", "fast"}:
                 raise ValueError("invalid_service_tier")
             payload["service_tier"] = role.service_tier
-        data = None
-        try:
-            response = self.post(
-                "https://api.openai.com/v1/responses",
-                headers={"Authorization": f"Bearer {token}"},
-                json=payload,
-                timeout=self.timeout_seconds,
-            )
-            response.raise_for_status()
-            data = response.json()
-        except requests.Timeout:
-            raise ModelError("model_request_timed_out") from None
-        except requests.HTTPError as exc:
-            status = exc.response.status_code if exc.response is not None else None
-            code = {
-                400: "model_request_rejected", 401: "model_authentication_failed",
-                403: "model_access_denied", 404: "model_unavailable",
-                429: "model_rate_limited",
-            }.get(status, "model_transport_failed")
-            raise ModelError(code) from None
-        except Exception:
-            raise ModelError("model_transport_failed") from None
-        finally:
-            observers = (self.usage_observer, _call_usage_observer.get())
-            if any(observer is not None for observer in observers):
-                usage = ModelUsage(
-                    safe_stage, safe_phase, cache_family, role.model, breakpoints,
-                    _counter(data, "usage", "input_tokens"),
-                    _counter(data, "usage", "input_tokens_details", "cached_tokens"),
-                    _counter(data, "usage", "input_tokens_details", "cache_write_tokens"),
-                    _counter(data, "usage", "output_tokens"),
-                    _counter(data, "usage", "output_tokens_details", "reasoning_tokens"),
-                    role.service_tier,
-                    (data.get("service_tier") if isinstance(data, dict)
-                     and data.get("service_tier") in {"default", "fast", "priority"} else None),
+        if use_calculator:
+            payload["tools"] = [_CALCULATOR_TOOL]
+            payload["include"] = ["reasoning.encrypted_content"]
+        # Runtime gives this call at most the remaining Answer-stage and whole-run
+        # time. The configured transport timeout remains a per-request ceiling;
+        # for direct calls without a runtime deadline, bound the entire attempt.
+        deadline = (monotonic() + self.timeout_seconds
+                    if use_calculator and remaining_seconds is None else None)
+        sequence = 0
+        while True:
+            timeout = self.timeout_seconds
+            if use_calculator:
+                if deadline is not None:
+                    timeout = min(timeout, deadline - monotonic())
+                if remaining_seconds is not None:
+                    timeout = min(timeout, remaining_seconds())
+                if timeout <= 0:
+                    raise ModelError("model_request_timed_out")
+            data = None
+            try:
+                response = self.post(
+                    "https://api.openai.com/v1/responses",
+                    headers={"Authorization": f"Bearer {token}"},
+                    json=payload,
+                    timeout=timeout,
                 )
-                for observer in observers:
-                    if observer is not None:
-                        try:
-                            observer(usage)
-                        except Exception:
-                            # Optional diagnostics cannot change normal product execution.
-                            pass
-
-        try:
-            if data.get("status") != "completed":
-                details = data.get("incomplete_details")
-                reason = details.get("reason") if isinstance(details, dict) else None
+                response.raise_for_status()
+                data = response.json()
+            except requests.Timeout:
+                raise ModelError("model_request_timed_out") from None
+            except requests.HTTPError as exc:
+                status = exc.response.status_code if exc.response is not None else None
                 code = {
-                    "content_filter": "model_response_incomplete_content_filter",
-                    "max_output_tokens": "model_response_incomplete_max_output_tokens",
-                }.get(reason) if isinstance(reason, str) else None
-                raise ModelError(code or "model_response_incomplete")
-            # Intermediate assistant updates are not part of a structured final
-            # response. Never concatenate commentary with the final JSON object.
-            messages = [item for item in data["output"] if item.get("type") == "message"]
-            final = [item for item in messages if item.get("phase") == "final_answer"]
-            if not final:
-                final = [item for item in messages if item.get("phase") != "commentary"]
-            parts = final[-1]["content"] if final else []
-            if any(part.get("type") == "refusal" for part in parts):
-                raise ModelError("model_refused")
-            output = "".join(
-                part["text"] for part in parts if part.get("type") == "output_text"
-            )
-            if not output.strip():
-                raise ModelError("model_response_empty")
-            return output
-        except (KeyError, TypeError, AttributeError):
-            raise ModelError("malformed_model_response") from None
+                    400: "model_request_rejected", 401: "model_authentication_failed",
+                    403: "model_access_denied", 404: "model_unavailable",
+                    429: "model_rate_limited",
+                }.get(status, "model_transport_failed")
+                raise ModelError(code) from None
+            except Exception:
+                raise ModelError("model_transport_failed") from None
+            finally:
+                observers = (self.usage_observer, _call_usage_observer.get())
+                if any(observer is not None for observer in observers):
+                    usage = ModelUsage(
+                        safe_stage, safe_phase, cache_family, role.model, breakpoints,
+                        _counter(data, "usage", "input_tokens"),
+                        _counter(data, "usage", "input_tokens_details", "cached_tokens"),
+                        _counter(data, "usage", "input_tokens_details", "cache_write_tokens"),
+                        _counter(data, "usage", "output_tokens"),
+                        _counter(data, "usage", "output_tokens_details", "reasoning_tokens"),
+                        role.service_tier,
+                        (data.get("service_tier") if isinstance(data, dict)
+                         and data.get("service_tier") in {"default", "fast", "priority"} else None),
+                    )
+                    for observer in observers:
+                        if observer is not None:
+                            try:
+                                observer(usage)
+                            except Exception:
+                                # Optional diagnostics cannot change normal product execution.
+                                pass
+
+            try:
+                if data.get("status") != "completed":
+                    details = data.get("incomplete_details")
+                    reason = details.get("reason") if isinstance(details, dict) else None
+                    code = {
+                        "content_filter": "model_response_incomplete_content_filter",
+                        "max_output_tokens": "model_response_incomplete_max_output_tokens",
+                    }.get(reason) if isinstance(reason, str) else None
+                    raise ModelError(code or "model_response_incomplete")
+                items = data["output"]
+                if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
+                    raise ModelError("malformed_model_response")
+                calls = [item for item in items if item.get("type") == "function_call"]
+                if calls and use_calculator:
+                    # Replaying every output item also preserves encrypted reasoning
+                    # for stateless reasoning-model continuation with store=False.
+                    outputs = []
+                    for call in calls:
+                        sequence += 1
+                        outputs.append(_calculation_output(call, calculator, on_calculation, sequence))
+                    payload = {**payload, "input": [*payload["input"], *items, *outputs]}
+                    continue
+                # Intermediate assistant updates are not part of a structured final
+                # response. Never concatenate commentary with the final JSON object.
+                messages = [item for item in items if item.get("type") == "message"]
+                final = [item for item in messages if item.get("phase") == "final_answer"]
+                if not final:
+                    final = [item for item in messages if item.get("phase") != "commentary"]
+                parts = final[-1]["content"] if final else []
+                if any(part.get("type") == "refusal" for part in parts):
+                    raise ModelError("model_refused")
+                output = "".join(
+                    part["text"] for part in parts if part.get("type") == "output_text"
+                )
+                if not output.strip():
+                    raise ModelError("model_response_empty")
+                return output
+            except (KeyError, TypeError, AttributeError):
+                raise ModelError("malformed_model_response") from None
