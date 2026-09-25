@@ -6,6 +6,11 @@ of the frozen packet. The ordinary transport, calculator, deadlines, correction
 loop, reading validation and citation finalization remain the production code.
 No Research decision or acquisition route executes. Evaluation obligations stay
 outside the packet and are never model input.
+
+The packet's historical budget is immutable input. The direct execution has a
+fresh ordinary 120-second Answer stage and one validation correction, with every
+semantic attempt and underlying Responses request counted in the phase ledger.
+This is Answer-stage development evidence, not an ordinary PRODUCT observation.
 """
 
 from __future__ import annotations
@@ -252,10 +257,17 @@ def execute(envelope: dict, journal: Journal, *, post=None, clock=time.monotonic
     record = {"packet_id": envelope["packet_id"], "packet_sha256": initial_hash,
               "question": packet["question"], "model_profile": asdict(role),
               "integrity": integrity,
+              "answer_prompt": research.ANSWER_PROMPT,
+              "answer_schema": research.AnswerDecision.model_json_schema(),
               "prompt_sha256": digest(research.ANSWER_PROMPT.encode("utf-8")),
               "schema_sha256": digest(canonical(research.AnswerDecision.model_json_schema())),
               "structured_attempts": decisions, "events": events, "usage": usage,
               "provider_request_seconds": request_durations,
+              "execution_scope": "direct frozen Answer development; no ordinary PRODUCT run",
+              "execution_limits": {"answer_stage_seconds": research.ANSWER_STAGE_SECONDS,
+                                   "semantic_attempts_per_packet": 2,
+                                   "phase_semantic_attempts": MAX_SEMANTIC_ATTEMPTS,
+                                   "phase_provider_requests": MAX_PROVIDER_REQUESTS},
               "ordinary_research_runs": 0, "acquisition_calls": 0}
     started = clock()
     before = dict(journal.counts)

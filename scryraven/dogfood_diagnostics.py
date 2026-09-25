@@ -37,6 +37,7 @@ _CODES = {
     "attention_packet_too_large", "supported_with_missing_information",
     "basis_user_premises_has_evidence", "basis_user_premises_has_readings",
     "basis_user_premises_unable", "basis_none_requires_unable",
+    "basis_scenario_has_evidence", "basis_scenario_has_readings", "basis_scenario_unable",
     "basis_evidence_missing_packet", "reading_passage_not_in_source",
     "unselected_reading_reference", "required_source_reading_missing",
     "missing_citation", "cited_source_without_reading", "deadline",
