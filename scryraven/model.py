@@ -101,7 +101,7 @@ _EVIDENCE_METADATA_ORDER = (
 _CALCULATOR_TOOL = {
     "type": "function",
     "name": "calculate",
-    "description": "Evaluate a bounded arithmetic expression using explicit numeric inputs.",
+    "description": "Evaluate a bounded arithmetic expression using established numeric inputs.",
     "strict": True,
     "parameters": {
         "type": "object",
@@ -253,12 +253,10 @@ class OpenAIModel:
             raise ModelError("model_configuration_missing")
         role = self.config.answer if stage == "answer" else self.config.research
         use_calculator = stage == "answer" and calculator is not None
-        if stage == "answer":
-            instructions += ("\nWhen finished, return only JSON matching the response schema, "
-                             "without an outer code fence or commentary. The answer string "
-                             "may contain task-appropriate Markdown.")
-        else:
-            instructions += "\nReturn only JSON matching the response schema, with no Markdown or commentary."
+        instructions += ("\nWhen finished, return only JSON matching the response schema, "
+                         "with no Markdown or commentary."
+                         if use_calculator else
+                         "\nReturn only JSON matching the response schema, with no Markdown or commentary.")
         phase = material.get("phase", stage)
         # Only fixed transport labels reach telemetry, never arbitrary material.
         safe_stage = stage if stage in {"research", "answer"} else "other"
