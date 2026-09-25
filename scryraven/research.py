@@ -208,6 +208,8 @@ removal would not materially change the reader's understanding or next useful ac
 When a quantitative relationship controls the answer, state how its inputs determine
 the result, as an equation or an equally precise verbal relationship; naming the
 inputs alone is insufficient.
+For a comparison, keep what each side's supplied quantity represents visible,
+including whether it is observed or modeled, before relating the quantities.
 When the final fact remains unresolved, explain the supported relationship and
 keep independent obstacles distinct: say what supplying a missing input would
 resolve and what incompatibility would remain. Distinguish the factual inputs
