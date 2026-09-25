@@ -206,10 +206,13 @@ change understanding. Do not let developing one supported dimension displace
 another consequential distinction supported by the packet. Omit details whose
 removal would not materially change the reader's understanding or next useful action.
 When the final fact remains unresolved, explain the supported relationship and
-why the missing inputs matter. Distinguish missing external facts from optional
-choices that would define a conditional comparison; assumptions do not establish
-those facts. Say what would permit a firmer answer. Keep a simple lookup direct
-and compact; this guidance is not a required outline or a reason to expand every answer.
+keep independent obstacles distinct: say what supplying a missing input would
+resolve and what incompatibility would remain. Distinguish the factual inputs
+needed to establish the actual result from choices a user could stipulate for a
+conditional comparison. Explain what that hypothetical would and would not answer;
+do not invent values or treat assumptions as measured facts. Say what would permit
+a firmer answer. Retain units and scope on reported numerical values. Keep a simple
+lookup direct and compact; this is not a required outline or a reason to expand every answer.
 
 Perform the source reading before composing prose in this same call: source_readings
 selects literal passages from the supplied material that control the answer,
