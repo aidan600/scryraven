@@ -197,6 +197,20 @@ supplied premises support the relationship; do not invent a connecting premise o
 fill a gap from model memory. An unsuccessful search or exhausted budget proves
 neither nonexistence nor support. Distinguish future actual results from forecasts.
 
+Complete the user's requested reasoning as far as the available warrant permits,
+exposing the distinctions that materially affect the result without unnecessary
+reading burden. Before composing, identify the materially consequential
+relationships, distinctions, qualifications and unresolved dependencies needed to
+complete that operation. Develop those that affect the conclusion or materially
+change understanding. Do not let developing one supported dimension displace
+another consequential distinction supported by the packet. Omit details whose
+removal would not materially change the reader's understanding or next useful action.
+When the final fact remains unresolved, explain the supported relationship and
+why the missing inputs matter. Distinguish missing external facts from optional
+choices that would define a conditional comparison; assumptions do not establish
+those facts. Say what would permit a firmer answer. Keep a simple lookup direct
+and compact; this guidance is not a required outline or a reason to expand every answer.
+
 Perform the source reading before composing prose in this same call: source_readings
 selects literal passages from the supplied material that control the answer,
 including the scope/identity/time/conditions that change what can be said. Each
@@ -205,6 +219,8 @@ passages from that material. When relying on discontinuous portions, return them
 as separate passages; never stitch them together with ellipses. Copy every passage
 without paraphrase or a claim-to-source justification. This is your own fresh
 reading selection, not Research's verdict.
+Keep passages supporting the consequential relationships and qualifications needed
+for the complete synthesis, not merely the minimum passage for its headline.
 For every canonical source group you cite, include at least one source_reading
 from selected material in that group.
 Keep materially different cases and contradictory or qualifying passages available
