@@ -177,6 +177,14 @@ def test_answer_prompt_states_existing_cited_source_reading_coverage_rule():
     assert "selected material" in ANSWER_PROMPT.lower()
 
 
+def test_answer_prompt_distinguishes_developed_analysis_from_compact_lookup():
+    prompt = " ".join(ANSWER_PROMPT.lower().split())
+    assert "for non-lookup questions" in prompt
+    assert "substantially develop" in prompt
+    assert "lookups direct and compact" in prompt
+    assert "soft editorial ceiling" in prompt
+
+
 def test_correction_request_receives_only_remaining_answer_stage_seconds():
     now = [0.0]
     model = TimedModel(now, (0, decision()), (0, decision("answer", ["E1"])),

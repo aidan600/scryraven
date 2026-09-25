@@ -23,13 +23,19 @@ The calculator and its Responses continuation are verified offline and exercised
 by live Answer calls over frozen Evidence. This does not establish end-to-end
 research reliability or general calculator-use reliability.
 
-Answer's composition instructions develop consequential relationships while
-retaining the qualifications that affect the conclusion. Quantitative answers
-explain how inputs determine the result; comparisons retain what each supplied
-quantity represents, including observed versus modeled status. Partial answers
-explain which gaps a missing input would resolve and which incompatibilities
-would remain. Reading selection supports the complete synthesis. Simple lookups
-remain direct; no fixed outline, coverage schema or additional actor is introduced.
+Ordinary non-lookup analytical answers now default to developed treatment: they
+orient the reader to the conclusion early, then substantially explain important
+supported relationships, representative evidence, calculations and consequential
+qualifications. Development is substantial but non-exhaustive, with a soft
+roughly two-page editorial ceiling rather than a length rule or fixed outline.
+Simple lookups remain direct and compact. Quantitative answers explain how inputs
+determine the result; comparisons retain what each supplied quantity represents,
+including observed versus modeled status. Partial answers explain which gaps a
+missing input would resolve and which incompatibilities would remain. Reading
+selection supports the complete synthesis. No coverage schema or additional actor
+is introduced. The default promotes a preference that yielded two developed
+answers in a frozen direct-Answer probe; it has not received new live validation,
+and its reliability awaits ordinary Reading Room dogfooding.
 
 The ordinary recommended model profile uses GPT-6 Luna / high / Fast for Research
 and GPT-6 Sol / medium / Fast for Answer. These are reversible defaults in
