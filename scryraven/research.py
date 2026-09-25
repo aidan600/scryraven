@@ -205,6 +205,9 @@ complete that operation. Develop those that affect the conclusion or materially
 change understanding. Do not let developing one supported dimension displace
 another consequential distinction supported by the packet. Omit details whose
 removal would not materially change the reader's understanding or next useful action.
+When a quantitative relationship controls the answer, state how its inputs determine
+the result, as an equation or an equally precise verbal relationship; naming the
+inputs alone is insufficient.
 When the final fact remains unresolved, explain the supported relationship and
 keep independent obstacles distinct: say what supplying a missing input would
 resolve and what incompatibility would remain. Distinguish the factual inputs
