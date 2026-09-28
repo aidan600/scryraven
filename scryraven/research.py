@@ -910,6 +910,8 @@ def _run_turn(
                     new_acquisition_count=operation["new_acquisition_count"],
                     returned_material_characters=operation["returned_material_characters"],
                     reused_retained_material=operation["reused_retained_material"],
+                    **({"search_novelty_receipt": operation["search_novelty_receipt"]}
+                       if "search_novelty_receipt" in operation else {}),
                 )
 
             try:
@@ -918,7 +920,9 @@ def _run_turn(
             except _Bound as exc:
                 bound = exc.code
                 result = {"kind": request.kind, "status": "error", "code": exc.code, "material_ids": []}
-            last_route.append(result)
+            # Novelty is diagnostic metadata, never model-facing navigation.
+            last_route.append({key: value for key, value in result.items()
+                               if key != "search_novelty_receipt"})
             if "failed_external_read" in result:
                 failed_external_reads.append(result["failed_external_read"])
             pending.extend(ref for ref in result.get("material_ids", []) if ref not in pending)

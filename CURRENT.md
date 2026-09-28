@@ -89,6 +89,26 @@ stable packet prefix and breakpoint mechanics remain unchanged. Offline tests
 establish receipt mechanics and privacy, not improved stopping, retry choices,
 latency or LinkUp reliability; no live validation was performed for this change.
 
+Search novelty is mechanically measured for safe acquisition diagnostics and
+forensic analysis only. Each successful Exa or lexical/Serper Search reports
+provider/kind and eight numeric counts: returned/new/known candidates,
+returned/new material, new-candidate material, refreshed-known-candidate material
+and exact reused material. Identity, admission, duplicate handling and Serper's
+navigation-only role are unchanged. Body-free diagnostics contain no query,
+URL, title, highlights or source body. The diagnostic receipt is excluded from
+Research's `last_route`; no cumulative Search history or replacement novelty
+field enters Research or Answer, and session persistence is unchanged.
+
+Both model-facing experiments were **MIXED / INCONCLUSIVE** and were not promoted.
+Their history, including the second campaign's lost-draw limitation, remains in
+`docs/operator/SEARCH_NOVELTY_RECEIPTS_01.md`. The model-facing history, helper,
+accumulation and expected-yield prompt paragraph are removed. Research's prompt,
+packet ordering and cache family are restored to merged-main PR #660 behavior;
+`failed_external_reads` is unchanged. The final diagnostic-only disposition used
+zero live calls; no third campaign ran. Telemetry describes acquisition movement,
+not relevance, usefulness or sufficiency. No stopping, answer-quality, latency or
+cost improvement is established.
+
 ## Sessions, Evidence and presentation
 
 Immutable acquisitions, canonical source identities, exact versions/views,

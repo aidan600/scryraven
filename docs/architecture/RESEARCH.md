@@ -205,6 +205,36 @@ URLs, request text or bodies. The explanatory Research prompt changes the
 instruction-derived Research cache-family hash. The stable prefix, breakpoint
 mechanics, Evidence bytes and Answer packet/cache family remain unchanged.
 
+Successful Search and lexical Search produce `search_novelty_receipt` solely for
+safe acquisition diagnostics and forensic analysis. Its shape contains `provider`
+(`exa`/`serper`), `kind` (`search`/`search_lexical`) and eight numeric counts:
+
+- `returned_candidate_count`, `new_candidate_count`, `known_candidate_count`;
+- `returned_material_count`, `new_material_count`;
+- `new_candidate_material_count`, `refreshed_known_candidate_material_count`;
+- `exact_reused_material_count`.
+
+Candidate identity remains the library's exact observed URL key and existing
+public-URL admission check. Counts use unique valid candidate identities and
+unique returned material IDs, measured against the library before each request.
+`_retain` still compares exact URL, content and acquisition kind. New records
+partition by whether the URL was already known; returned preexisting records
+count as exact reuse. Duplicate identical slots add no counts; distinct versions
+of one URL remain separate material IDs. Empty successful Searches produce zero
+counts; failed or denied requests do not produce a success receipt. Serper
+remains navigation-only with zero material counts.
+
+Body-free acquisition timing and dogfood diagnostics retain only these counts and
+fixed provider/kind values, never queries, URLs, titles, highlights or bodies.
+Existing forensic acquisition-result events retain the diagnostic receipt under
+the existing privacy boundary. Research excludes it from model-facing
+`last_route`; no cumulative Search history, query-history field, novelty
+replacement or expected-yield prompt addition is supplied to the model. Answer
+and durable sessions are unchanged. Research prompt bytes, packet ordering,
+stable prefix, breakpoints and cache family match merged-main PR #660, whose
+`failed_external_reads` history remains intact. The telemetry has no stopping or
+semantic authority and establishes no stopping or answer-quality improvement.
+
 Read's target and mode have explicit mechanical meaning:
 
 | Request | Behavior |
