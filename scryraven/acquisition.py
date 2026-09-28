@@ -14,7 +14,7 @@ from html import unescape
 from urllib.parse import quote, urljoin, urlsplit
 
 from core.exa_transport import DiscoveryCandidate, ExaTransportError, search_exa
-from core.linkup_transport import LinkupTransportError, fetch_linkup
+from core.linkup_transport import LINKUP_FAILURE_CODES, LINKUP_FETCH_STRATEGY, LinkupTransportError, fetch_linkup
 from core.serper_transport import SerperTransportError, search_serper
 from core.transport import FetchedMaterial
 from scryraven.sources import TARGETED_SOURCE_CHARACTERS, Evidence, SourceIndex, exact_view, rank_corpus_regions
@@ -323,7 +323,7 @@ class AcquisitionLibrary:
         observe_operation: Callable[[dict], None] | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> dict:
-        started_at = clock() if observe_operation is not None else None
+        started_at = clock()
         before = len(self.acquisitions)
         kind = request.get("kind") if isinstance(request, dict) else None
         result = {"kind": kind if isinstance(kind, str) and kind in {"search", "search_lexical", "read", "find"} else None,
@@ -342,8 +342,11 @@ class AcquisitionLibrary:
             result.update(status="error", code=str(exc))
         result["new_acquisition_ids"] = [item.id for item in self.acquisitions[before:]]
         result["material_ids"] = list(dict.fromkeys(result["material_ids"]))
+        ended_at = clock()
+        duration = max(0.0, ended_at - started_at)
+        if "failed_external_read" in result:
+            result["failed_external_read"]["duration_seconds"] = round(duration, 6)
         if observe_operation is not None:
-            ended_at = clock()
             kind = result["kind"]
             provider = ({"search": "exa", "search_lexical": "serper", "read": "linkup"}.get(kind)
                         if result["external"] else "local")
@@ -354,7 +357,7 @@ class AcquisitionLibrary:
                 "external": result["external"],
                 "started_at": started_at,
                 "ended_at": ended_at,
-                "duration_seconds": max(0.0, ended_at - started_at),
+                "duration_seconds": duration,
                 "status": result["status"],
                 "code": result.get("code"),
                 "returned_material_count": len(result["material_ids"]),
@@ -415,14 +418,19 @@ class AcquisitionLibrary:
             try:
                 fetched = self.fetch(url)
             except Exception as exc:
-                if isinstance(exc, LinkupTransportError):
-                    code = str(exc)
-                    if code in {"linkup_configuration_missing", "linkup_material_unavailable"}:
-                        raise AcquisitionError(code) from None
-                raise AcquisitionError("read_failed") from None
-            if (not isinstance(fetched, FetchedMaterial) or fetched.requested_url != url
-                    or not isinstance(fetched.readable_text, str) or not fetched.readable_text.strip()):
-                raise AcquisitionError("unusable_fetch_material")
+                code = (str(exc) if isinstance(exc, LinkupTransportError)
+                        and str(exc) in LINKUP_FAILURE_CODES else "read_failed")
+            else:
+                code = None
+                if (not isinstance(fetched, FetchedMaterial) or fetched.requested_url != url
+                        or not isinstance(fetched.readable_text, str) or not fetched.readable_text.strip()):
+                    code = "unusable_fetch_material"
+            if code is not None:
+                result["failed_external_read"] = {
+                    "candidate_ref": self._candidate_ids[url], "provider": "linkup",
+                    "strategy": LINKUP_FETCH_STRATEGY, "requested_mode": mode, "code": code,
+                }
+                raise AcquisitionError(code) from None
             item = self._retain(url, title, fetched.readable_text, "fetched_source")
         items, receipt = self._views(item, request["focus"], request["start_char"], request["end_char"])
         result["material_ids"] = [item.id for item in items]

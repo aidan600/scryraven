@@ -148,6 +148,11 @@ Search/Read results are admitted mechanically, not promoted to truth. Assess the
 actual next-call text before choosing follow-ons. Failed requests are navigation
 results, never evidence of nonexistence. A repeat route must have a reason to yield
 new information; use actual linked/retained material when it can resolve the gap.
+failed_external_reads records failed external Reads earlier in this turn, with
+their safe failure class and elapsed time. It is navigation history, not Evidence.
+Consider it when judging expected cost and whether a repeated route has a changed
+reason to succeed. Changing only a Read focus does not change the external fetch
+strategy.
 
 retain selects exact currently exposed material IDs worth keeping in attention,
 especially controlling premises and live contradictions. Older finished material
@@ -558,6 +563,7 @@ def _run_turn(
     exposed: set[str] = set()
     understanding = None
     last_route: list[dict] = []
+    failed_external_reads: list[dict] = []
     correction = None
     answer_need = None
     selected: list[str] = []
@@ -820,6 +826,7 @@ def _run_turn(
                   "phase": "research", "working_understanding": understanding,
                   "evidence": reading_packet(), "catalog": library.catalog(),
                   "pending_delivery": pending, "last_route": last_route,
+                  "failed_external_reads": list(failed_external_reads),
                   "answer_missing_information": answer_need, "budget": budget.snapshot(),
                   "output_correction": correction}
         try:
@@ -912,6 +919,8 @@ def _run_turn(
                 bound = exc.code
                 result = {"kind": request.kind, "status": "error", "code": exc.code, "material_ids": []}
             last_route.append(result)
+            if "failed_external_read" in result:
+                failed_external_reads.append(result["failed_external_read"])
             pending.extend(ref for ref in result.get("material_ids", []) if ref not in pending)
             emit("acquisition_result", result=result, budget=budget.snapshot())
             if result.get("new_acquisition_ids"):

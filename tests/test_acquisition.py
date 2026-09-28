@@ -19,6 +19,38 @@ def no_external():
     raise AssertionError("No external request was expected")
 
 
+@pytest.mark.parametrize("failure, expected", [
+    *((LinkupTransportError(code), code) for code in sorted(linkup_transport.LINKUP_FAILURE_CODES)),
+    (LinkupTransportError("PRIVATE unknown provider error"), "read_failed"),
+    (RuntimeError("PRIVATE unknown error"), "read_failed"),
+    (None, "unusable_fetch_material"),
+])
+def test_safe_fetch_failures_propagate_with_measured_receipts(failure, expected):
+    def fetch(url):
+        if failure is not None:
+            raise failure
+        return FetchedMaterial(url, " ")
+
+    library = AcquisitionLibrary(fetch=fetch)
+    library.allow_question_urls(URL)
+    operations, attempts = [], []
+    result = library.execute(
+        {"kind": "read", "target": URL, "mode": "full", "focus": "PRIVATE focus"},
+        before_external=lambda: attempts.append(1), observe_operation=operations.append,
+        clock=iter([10.0, 33.578]).__next__,
+    )
+    assert result["code"] == expected
+    assert result["failed_external_read"] == {
+        "candidate_ref": "C1", "provider": "linkup", "strategy": "static_fetch",
+        "requested_mode": "full", "code": expected, "duration_seconds": 23.578,
+    }
+    assert operations[0]["code"] == expected
+    assert operations[0]["duration_seconds"] == pytest.approx(23.578)
+    assert attempts == [1] and not library.acquisitions
+    assert "PRIVATE" not in json.dumps(operations)
+    assert "PRIVATE" not in json.dumps(result["failed_external_read"])
+
+
 def request(library, kind, **kwargs):
     return library.execute({"kind": kind, **kwargs}, before_external=lambda: None)
 

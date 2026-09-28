@@ -63,7 +63,7 @@ verifier or additional semantic owner exists.
 Research packet presentation now keeps the stable `conversation_context`,
 `current_date`, `phase`, `question` prefix and its Research-context cache
 breakpoint. Present volatile fields follow the deliberate order
-`working_understanding`, `catalog`, `last_route`, `evidence`,
+`working_understanding`, `catalog`, `last_route`, `failed_external_reads`, `evidence`,
 `answer_missing_information`, `pending_delivery`, `budget`, then
 `output_correction` last. Unknown fields remain lossless in deterministic order.
 Generated understanding and navigation precede the latest route and exact
@@ -75,6 +75,19 @@ promotion has no demonstrated quality or latency effect. `ResearchDecision`
 no longer contains `purpose`: executable route intent remains in structured
 requests and compact working state. This adds no semantic owner or memory and
 does not change the separate Research/Answer cache families.
+
+Research receives an ordered, turn-scoped mechanical history of failed external
+Reads, including existing candidate identity, provider, effective fetch strategy,
+requested mode, fixed safe failure code and measured elapsed seconds. This history
+survives intervening routes and is navigation state, not Evidence. It resets for
+each user turn, is absent from Answer packets and is not durable session state.
+Successful acquisition remains represented by retained materials/catalog. Changing
+only Read focus does not change the `static_fetch` strategy. There is no automatic
+retry suppression or new provider strategy. The small Research prompt explanation
+changes its instruction-derived cache-family hash; Answer's cache family, the
+stable packet prefix and breakpoint mechanics remain unchanged. Offline tests
+establish receipt mechanics and privacy, not improved stopping, retry choices,
+latency or LinkUp reliability; no live validation was performed for this change.
 
 ## Sessions, Evidence and presentation
 
@@ -174,9 +187,16 @@ attempt and mark partial usage when a continuation has no reported counters.
 Both surfaces disclose that no external sources were used for source-free
 supported/partial completed answers without inferring a user-premise basis from
 empty citations. They disclose a Research operating-bound completion without
-changing Answer's supported/partial/unable posture. Known safe Exa,
-Serper and LinkUp configuration errors and LinkUp material-unavailable errors
-retain their fixed codes through Acquisition; unknown failures remain generic.
+changing Answer's supported/partial/unable posture. Known safe Exa and Serper
+configuration errors retain their fixed codes through Acquisition. LinkUp retains
+`linkup_timeout`, `linkup_connection_failed`, `linkup_endpoint_access_rejected`
+(401/403), `linkup_endpoint_rate_limited` (429), `linkup_endpoint_server_failed`
+(5xx), `linkup_json_invalid`, `linkup_response_invalid`,
+`linkup_material_unavailable`, `linkup_configuration_missing` and the unknown
+transport fallback `linkup_transport_failed` through Acquisition and body-free
+diagnostics. Endpoint codes describe the LinkUp API, not the target website.
+Unrecognized injected Read failures remain `read_failed`. No raw provider failure
+body, exception text, headers or credentials enter these receipts or diagnostics.
 `ModelConfig.research` and `ModelConfig.answer` select the built-in OpenAI role
 settings. Explicit injected `ModelConfig` remains available. Obsolete FAST/SMART
 model environment overrides are removed; `.env.example` holds credential

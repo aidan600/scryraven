@@ -16,6 +16,7 @@ from pathlib import Path
 from threading import Lock
 from time import monotonic
 
+from core.linkup_transport import LINKUP_FAILURE_CODES
 from scryraven.errors import RunError
 from scryraven.session_store import SessionStoreError
 
@@ -45,7 +46,7 @@ _CODES = {
     "empty_answer", "invalid_citation_reference", "malformed_citation_reference",
     "unknown_or_unselected_alias", "unresolved_answer_link", "answer_link_or_image",
     "exa_configuration_missing", "serper_configuration_missing",
-    "linkup_configuration_missing", "linkup_material_unavailable",
+    *LINKUP_FAILURE_CODES,
     "invalid_request", "invalid_request_kind", "invalid_request_field",
     "invalid_read_mode", "invalid_find_scope", "invalid_exact_range",
     "empty_query", "empty_target", "invalid_public_url",

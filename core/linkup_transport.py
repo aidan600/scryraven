@@ -14,6 +14,13 @@ from core.transport import FetchedMaterial
 LINKUP_FETCH_URL = "https://api.linkup.so/v1/fetch"
 LINKUP_API_KEY_ENV = "LINKUP_API_KEY"  # pragma: allowlist secret
 DEFAULT_TIMEOUT_SECONDS = 30.0
+LINKUP_FETCH_STRATEGY = "static_fetch"
+LINKUP_FAILURE_CODES = frozenset({
+    "linkup_timeout", "linkup_connection_failed", "linkup_endpoint_access_rejected",
+    "linkup_endpoint_rate_limited", "linkup_endpoint_server_failed",
+    "linkup_json_invalid", "linkup_response_invalid", "linkup_material_unavailable",
+    "linkup_configuration_missing", "linkup_transport_failed",
+})
 
 
 class LinkupTransportError(RuntimeError):
@@ -43,7 +50,28 @@ def fetch_linkup(
             timeout=timeout,
         )
         response.raise_for_status()
+    except requests.exceptions.Timeout:
+        raise LinkupTransportError("linkup_timeout") from None
+    except requests.exceptions.ConnectionError:
+        raise LinkupTransportError("linkup_connection_failed") from None
+    except requests.exceptions.HTTPError as exc:
+        # These are LinkUp API endpoint statuses, not target-site diagnoses.
+        status = getattr(exc.response, "status_code", None)
+        code = "linkup_transport_failed"
+        if type(status) is int:
+            if status in {401, 403}:
+                code = "linkup_endpoint_access_rejected"
+            elif status == 429:
+                code = "linkup_endpoint_rate_limited"
+            elif 500 <= status <= 599:
+                code = "linkup_endpoint_server_failed"
+        raise LinkupTransportError(code) from None
+    except Exception:
+        raise LinkupTransportError("linkup_transport_failed") from None
+    try:
         payload = response.json()
+    except ValueError:
+        raise LinkupTransportError("linkup_json_invalid") from None
     except Exception:
         raise LinkupTransportError("linkup_transport_failed") from None
     if not isinstance(payload, Mapping):
