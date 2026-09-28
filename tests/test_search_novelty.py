@@ -1,4 +1,4 @@
-"""Mechanical Search accounting and turn-local navigation history."""
+"""Mechanical Search diagnostics without changing model or session contracts."""
 import json
 
 import pytest
@@ -7,7 +7,7 @@ from test_research_loop import Script, answer, decision, request
 from core.exa_transport import DiscoveryCandidate
 from scryraven.acquisition import SEARCH_NOVELTY_COUNTS, AcquisitionLibrary
 from scryraven.dogfood_diagnostics import TurnDiagnostics
-from scryraven.research import RunLimits, _search_route_receipt, run
+from scryraven.research import run
 from scryraven.session import ResearchSession
 from scryraven.session_store import SQLiteSessionStore
 
@@ -73,64 +73,78 @@ def test_failed_search_has_no_success_receipt(bad):
     assert "search_novelty_receipt" not in execute(library)
 
 
-def test_history_survives_local_routes_and_all_known_search_allows_continuation():
-    batches = iter([[lead(0)], [lead(0, "Changed highlights.")], [lead(0, "Changed highlights.")]])
-    diagnostics = TurnDiagnostics()
-    queries = ["PRIVATE first exact route?", "PRIVATE differently worded route", "PRIVATE repeat route"]
-    model = Script(
-        decision(requests=[request(query=queries[0])]),
-        decision(requests=[request("read", target="E1", mode="local")]),
-        decision(requests=[request(query=queries[1])]),
-        decision(requests=[request("find", query="Changed")]),
-        decision(requests=[request(query=queries[2])]),
-        decision("answer", ["E1"]), answer(),
-    )
-    result = run("Value?", model=model, search=lambda q: next(batches), observe=diagnostics.observe)
-    packets = [p for stage, _, p, _ in model.calls if stage == "research"]
-    assert [len(p["search_route_receipts"]) for p in packets] == [0, 1, 1, 2, 2, 3]
-    receipts = packets[-1]["search_route_receipts"]
-    assert [r["new_candidate_count"] for r in receipts] == [1, 0, 0]
-    assert receipts[1]["refreshed_known_candidate_material_count"] == 1
-    assert receipts[2]["exact_reused_material_count"] == 1
-    assert result.trace[-1]["budget"]["external_attempts"] == 3
-    assert result.trace[-1]["budget"]["semantic_attempts"] == 7
-    assert [r["query"] for r in receipts] == queries
-    assert all(set(r) == {"provider", "kind", "query", *SEARCH_NOVELTY_COUNTS}
-               - {"new_material_count", "returned_material_count"} for r in receipts)
-    assert "search_route" not in json.dumps(model.calls[-1][2])
-    assert "PRIVATE" not in json.dumps(model.calls[-1][2])
-    assert "PRIVATE" not in json.dumps(diagnostics.acquisitions)
-    internal = [a["search_novelty_receipt"] for a in diagnostics.acquisitions
-                if "search_novelty_receipt" in a]
-    assert [_search_route_receipt({"request": {"query": q}, "search_novelty_receipt": r})
-            for q, r in zip(queries, internal)] == receipts
-
-
 @pytest.mark.parametrize("reopen", [False, True])
-def test_next_turn_resets_history_and_persistence_excludes_it(tmp_path, reopen):
-    model = Script(decision(requests=[request(query="PRIVATE ephemeral query")]), decision("answer", ["E1"]), answer(),
-                   decision(), decision("answer", ["E1"]), answer())
-    store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
-    session = ResearchSession.create(store=store, model=model, search=lambda q: [lead(0)])
-    session.ask("Value?")
-    assert len(model.calls[1][2]["search_route_receipts"]) == 1
-    assert "search_route" not in repr(store.load(session.metadata.session_id).state)
-    assert "PRIVATE ephemeral query" not in repr(store.load(session.metadata.session_id).state)
-    if reopen:
-        session = ResearchSession.open(session.metadata.session_id, store=store,
-                                       model=model, search=lambda q: [lead(0)])
-    session.ask("Value again?")
-    assert model.calls[3][2]["search_route_receipts"] == []
-    assert model.calls[4][2]["search_route_receipts"][0]["exact_reused_material_count"] == 1
-    assert all("search_route" not in json.dumps(p) and "PRIVATE ephemeral query" not in json.dumps(p)
-               for stage, _, p, _ in model.calls if stage == "answer")
+def test_diagnostic_accounting_does_not_change_model_packets_or_session_state(tmp_path, monkeypatch, reopen):
+    def exercise(name):
+        model = Script(
+            decision(requests=[request(query="PRIVATE initial query")]),
+            decision(requests=[request("read", target="E1", mode="local")]),
+            decision(requests=[request("search_lexical", query="PRIVATE lexical query")]),
+            decision(requests=[request("find", query="seven")]),
+            decision(requests=[request(query="PRIVATE repeated query")]),
+            decision("answer", ["E1"]), answer(),
+            decision("answer", ["E1"]), answer(),
+        )
+        diagnostics = TurnDiagnostics()
+        events = []
 
+        def observe(event):
+            events.append(event)
+            diagnostics.observe(event)
 
-def test_budget_denial_does_not_append_receipt():
-    model = Script(decision(), decision("answer"), answer("Unknown.", "unable"))
-    result = run("Value?", model=model, limits=RunLimits(external_attempts=0))
-    assert model.calls[1][2]["search_route_receipts"] == []
-    assert result.trace[-1]["budget"]["external_attempts"] == 0
+        store = SQLiteSessionStore(tmp_path / f"{name}.sqlite3")
+        options = dict(model=model, search=lambda q: [lead(0)],
+                       lexical_search=lambda q: [lead(0), lead(1)], observe=observe,
+                       engine=lambda *args, **kwargs: run(*args, **kwargs, clock=lambda: 0.0))
+        session = ResearchSession.create(store=store, **options)
+        session.ask("Value?")
+        if reopen:
+            session = ResearchSession.open(session.metadata.session_id, store=store, **options)
+        session.ask("Value again?")
+        state = store.load(session.metadata.session_id).state
+        return model.calls, state, diagnostics, events
+
+    calls, state, diagnostics, events = exercise("instrumented")
+    for stage, _, packet, _ in calls:
+        serialized = json.dumps(packet)
+        assert "search_route_receipts" not in serialized
+        assert "search_novelty" not in serialized
+        assert not any(field in serialized for field in SEARCH_NOVELTY_COUNTS)
+        if stage == "research":
+            assert set(packet) == {
+                "question", "current_date", "conversation_context", "phase", "working_understanding",
+                "evidence", "catalog", "pending_delivery", "last_route", "failed_external_reads",
+                "answer_missing_information", "budget", "output_correction",
+            }
+        else:
+            assert "PRIVATE" not in serialized
+    assert "PRIVATE" not in repr(state)
+    assert "search_novelty" not in repr(state) and "search_route_receipts" not in repr(state)
+    assert "PRIVATE" not in json.dumps(diagnostics.acquisitions)
+    receipts = [event["search_novelty_receipt"] for event in diagnostics.acquisitions
+                if "search_novelty_receipt" in event]
+    assert [r["provider"] for r in receipts] == ["exa", "serper", "exa"]
+    assert [r["new_candidate_count"] for r in receipts] == [1, 1, 0]
+    assert receipts[-1]["exact_reused_material_count"] == 1
+    assert sum(e["action"] == "acquisition_timing" for e in events) == 5
+    assert next(e for e in events if e["action"] == "completed")["budget"]["external_attempts"] == 3
+    forensic_results = [e["result"] for e in events if e["action"] == "acquisition_result"]
+    assert [r["search_novelty_receipt"] for r in forensic_results
+            if "search_novelty_receipt" in r] == receipts
+
+    # Compare every Research/Answer packet and persisted source/answer snapshot
+    # with the same acquisition results before diagnostic metadata was added.
+    execute_with_diagnostics = AcquisitionLibrary.execute
+
+    def without_metadata(self, *args, **kwargs):
+        result = execute_with_diagnostics(self, *args, **kwargs)
+        result.pop("search_novelty_receipt", None)
+        return result
+
+    monkeypatch.setattr(AcquisitionLibrary, "execute", without_metadata)
+    old_calls, old_state, _, _ = exercise("without_metadata")
+    assert calls == old_calls
+    assert state == old_state
 
 
 def test_body_free_diagnostics_allow_only_fixed_counts_and_enums():

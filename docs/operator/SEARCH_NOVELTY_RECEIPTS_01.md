@@ -328,3 +328,59 @@ No production behavior changed after seeing live outputs. The same branch and
 PR #661 are retained, **NOT MERGED**. Human architectural choice is required:
 strip model-facing history and keep diagnostics, abandon/revert the PR, or
 pursue a different semantic hypothesis later. None was applied automatically.
+
+## Final disposition: retain diagnostics, remove model-facing feature
+
+The human-selected focused fix starts at PR HEAD
+`d6db5fb3b7aa3e9f3b7ae818bcefa3d01ddf2435` on the existing branch and PR #661.
+
+- Counts-only model-facing experiment: **MIXED / INCONCLUSIVE**.
+- Query-attributed expected-yield experiment: **MIXED / INCONCLUSIVE**.
+- Model-facing feature: **not promoted; removed**.
+- Mechanical diagnostic accounting: **retained**.
+- Third campaign: **not run**. This disposition uses **zero live calls**.
+
+The earlier experiment sections remain historical records, including the lost
+A/treatment/2 output and its limitation. No frozen evidence or campaign output
+was rewritten or deleted by this removal.
+
+Production no longer contains the Search-history field, helper, accumulation,
+volatile-order addition or expected-yield prompt paragraph. The internal
+`search_novelty_receipt` is also excluded from Research's `last_route`, preventing
+per-request diagnostic counts from leaking into the model packet. The diagnostic
+observer and existing forensic acquisition-result event retain the complete
+receipt. No substitute field, query summary, score or recommendation was added.
+
+The surviving shape is `provider`, `kind` and the original eight numeric counts
+shown in the first experiment. Existing identity, Exa admission, Serper
+navigation-only semantics, duplicate/invalid handling and body-free allowlisting
+remain. Query text, URLs, titles, highlight text and source bodies do not enter
+the body-free receipt. No session-schema, provider, Answer, budget or timeout
+change accompanies this disposition. Counts describe movement in candidate and
+material identities, not relevance, usefulness, sufficiency or stopping.
+
+Research's prompt and cache contract return to merged-main PR #660
+(`016d3198e4ecabf3b68171ddbaea1c97cace87c6`), with `failed_external_reads` preserved.
+The model serializer and its packet/cache tests are restored exactly to that
+revision. The remaining Research code changes only forward diagnostic metadata
+to observers and exclude it from model-facing route results. Focused regression
+checks compare every Research/Answer packet and persisted session snapshot with
+and without acquisition diagnostic metadata, including reopened-session use.
+Obsolete tests protecting cumulative Search-history behavior were removed.
+
+Final offline verification: **117 focused tests passed**, including accounting,
+Exa/Serper, privacy, packet/session equivalence, PR #660 failed Reads and cache
+behavior; **583 full offline tests passed**. Ruff, configured pre-commit hooks
+and `git diff --check` passed. No live validation was performed.
+
+Direct comparison to PR #660 confirms identical Research/Answer prompt bytes,
+ResearchDecision/AnswerDecision schema definitions, model serializer, packet/cache
+tests and session application/store code. Research prompt SHA-256 is
+`d1220f972cc7161fba2c038b63101ef9ba78fafa292f99f411bd513d45616d38`;
+the restored default Research cache family is
+`sr-v1:research:research:b5259e2c1a1be0c789ec99a605ce29ec`.
+Only `scryraven/acquisition.py`, `scryraven/dogfood_diagnostics.py` and
+`scryraven/research.py` remain changed in production relative to PR #660.
+
+No stopping or answer-quality improvement is established; telemetry supports
+forensic analysis only. The same branch and PR are retained, **NOT MERGED**.

@@ -63,8 +63,7 @@ verifier or additional semantic owner exists.
 Research packet presentation now keeps the stable `conversation_context`,
 `current_date`, `phase`, `question` prefix and its Research-context cache
 breakpoint. Present volatile fields follow the deliberate order
-`working_understanding`, `catalog`, `last_route`, `failed_external_reads`,
-`search_route_receipts`, `evidence`,
+`working_understanding`, `catalog`, `last_route`, `failed_external_reads`, `evidence`,
 `answer_missing_information`, `pending_delivery`, `budget`, then
 `output_correction` last. Unknown fields remain lossless in deterministic order.
 Generated understanding and navigation precede the latest route and exact
@@ -90,43 +89,25 @@ stable packet prefix and breakpoint mechanics remain unchanged. Offline tests
 establish receipt mechanics and privacy, not improved stopping, retry choices,
 latency or LinkUp reliability; no live validation was performed for this change.
 
-The PR #661 candidate supplies ordered turn-local `search_route_receipts` for
-successful Exa and lexical/Serper Searches. Each entry pairs the exact executed
-query with six counts: returned/new/known candidate identities, new-candidate
-material, refreshed-known-candidate material and exact reused material. Counts
-use unique valid candidate identities and unique returned material IDs against
-the library before each request. Internal/body-free diagnostics keep all eight
-original counts without queries; model-facing history omits only the two
-derivable material totals. Serper remains navigation-only. History survives
-intervening routes, resets on new/reopened-session turns, and never enters
-Answer or durable session state. The old counts-only model-facing field is gone.
+Search novelty is mechanically measured for safe acquisition diagnostics and
+forensic analysis only. Each successful Exa or lexical/Serper Search reports
+provider/kind and eight numeric counts: returned/new/known candidates,
+returned/new material, new-candidate material, refreshed-known-candidate material
+and exact reused material. Identity, admission, duplicate handling and Serper's
+navigation-only role are unchanged. Body-free diagnostics contain no query,
+URL, title, highlights or source body. The diagnostic receipt is excluded from
+Research's `last_route`; no cumulative Search history or replacement novelty
+field enters Research or Answer, and session persistence is unchanged.
 
-The candidate prompt asks the existing Research owner to judge expected marginal
-yield from actual Evidence, unresolved needs, route history and failed Reads,
-and to distinguish direct empirical evidence from adjacent proxies. No score,
-stopping gate, Search suppression or additional decision field is introduced.
-Research's instruction/cache family changes; stable prefix bytes, breakpoints,
-Evidence and Answer serialization/cache family remain unchanged.
-
-The model-facing candidate is **not earned for merge**. The original four-call
-novelty calibration was MIXED / INCONCLUSIVE. The paired ten-submission
-continuation at `b01db48e1d50fc6b1fc68db538ae60eaff70f147` is also
-**MIXED / INCONCLUSIVE** and requires human architectural review. Case A controls
-split between a similar Search and answering; one treatment answered and the
-other is unadjudicable because the campaign runner lost its output during local
-validation. Both Case B controls sought direct performance evidence, while one
-treatment answered from adjacent indicators without a low-yield justification.
-Both Case C arms preserved comparable-cost investigation. Nine structured
-decisions and all ten usage records survive; the missing decision is not evidence
-of model semantic failure. The runner's current-packet reference check was
-stricter than production's previously-exposed-reference rule, and the exact
-failure trigger is unknown. No replacement submission, further tuning or automatic
-removal occurred. All ten requested/returned Luna / high / Fast; no acquisition
-route or Answer was executed. No improvement is established, and ten submissions
-are a bounded signal, not reliability proof. See
-`docs/operator/SEARCH_NOVELTY_RECEIPTS_01.md` for preserved experiments, limitations
-and the human choice among diagnostics-only, abandoning the PR, or a different
-semantic hypothesis later.
+Both model-facing experiments were **MIXED / INCONCLUSIVE** and were not promoted.
+Their history, including the second campaign's lost-draw limitation, remains in
+`docs/operator/SEARCH_NOVELTY_RECEIPTS_01.md`. The model-facing history, helper,
+accumulation and expected-yield prompt paragraph are removed. Research's prompt,
+packet ordering and cache family are restored to merged-main PR #660 behavior;
+`failed_external_reads` is unchanged. The final diagnostic-only disposition used
+zero live calls; no third campaign ran. Telemetry describes acquisition movement,
+not relevance, usefulness or sufficiency. No stopping, answer-quality, latency or
+cost improvement is established.
 
 ## Sessions, Evidence and presentation
 

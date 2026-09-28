@@ -185,7 +185,7 @@ A single provider failure does not force a turn-wide fail-fast decision;
 Research judges the acquisition result.
 
 Every Research packet includes `failed_external_reads` after `last_route` and
-before `search_route_receipts` and `evidence`. This ordered list records each failed external materialization:
+before `evidence`. This ordered list records each failed external materialization:
 `candidate_ref`, `provider`, `strategy`, `requested_mode`, `code`, and
 `duration_seconds` (monotonic operation elapsed time rounded to six decimals).
 The existing candidate identity joins URL, candidate and material references to
@@ -205,53 +205,35 @@ URLs, request text or bodies. The explanatory Research prompt changes the
 instruction-derived Research cache-family hash. The stable prefix, breakpoint
 mechanics, Evidence bytes and Answer packet/cache family remain unchanged.
 
-Each successful Search or lexical Search also produces a compact
-`search_novelty_receipt`; Research accumulates these in ordered turn-local
-`search_route_receipts`. Internal acquisition receipts and body-free diagnostics
-contain `provider`, `kind` and all eight integer counts:
+Successful Search and lexical Search produce `search_novelty_receipt` solely for
+safe acquisition diagnostics and forensic analysis. Its shape contains `provider`
+(`exa`/`serper`), `kind` (`search`/`search_lexical`) and eight numeric counts:
 
 - `returned_candidate_count`, `new_candidate_count`, `known_candidate_count`;
 - `returned_material_count`, `new_material_count`;
 - `new_candidate_material_count`, `refreshed_known_candidate_material_count`;
 - `exact_reused_material_count`.
 
-Model-facing history adds the exact executed `query` and omits the two derivable
-`returned_material_count` and `new_material_count` totals. The remaining six
-counts retain explicit names, including zero exact reuse, so absence is never
-ambiguous. Query text stays out of body-free diagnostics, Answer and durable
-session state. The old counts-only model-facing history is replaced, without a
-compatibility alias. The current `last_route` still carries its concrete request,
-refs and complete internal mechanical receipt.
+Candidate identity remains the library's exact observed URL key and existing
+public-URL admission check. Counts use unique valid candidate identities and
+unique returned material IDs, measured against the library before each request.
+`_retain` still compares exact URL, content and acquisition kind. New records
+partition by whether the URL was already known; returned preexisting records
+count as exact reuse. Duplicate identical slots add no counts; distinct versions
+of one URL remain separate material IDs. Empty successful Searches produce zero
+counts; failed or denied requests do not produce a success receipt. Serper
+remains navigation-only with zero material counts.
 
-Research uses this history with actual Evidence, failed Reads and the unresolved
-need to judge expected marginal yield. The prompt asks whether the next route
-can plausibly improve the answer at reasonable expected cost and distinguishes
-direct evidence for a new empirical dimension from adjacent proxies. No score,
-probability field, semantic similarity mechanism or additional owner implements
-that judgment.
-
-Candidate identity is the existing exact observed URL key in AcquisitionLibrary,
-without additional URL normalization. Only unique candidates passing the existing
-public-URL admission check count. Known/new is measured before the request,
-including candidates from retained acquisitions, user links and exposed text.
-Material counts use unique returned material IDs; `_retain` still compares exact
-URL, text and acquisition kind. New records partition by whether their URL was
-known before the request; returned IDs already retained before the request count
-as exact reuse. Repeated identical provider slots do not add counts. Multiple
-new text versions for one URL count separately, all classified against that same
-pre-request candidate state. Returned materials equal new plus exact reused;
-new materials equal new-candidate plus refreshed-known-candidate materials.
-Successful empty Searches append a zero receipt; failed or budget-denied requests
-do not. Serper counts candidates with all material counts zero.
-
-History survives Read/Find and later Search routes but resets for every user turn,
-including reopening a session. It never enters Answer or session serialization.
-`last_route` retains the request and concrete refs. Body-free acquisition timing
-and dogfood diagnostics carry only allowlisted counts and provider/kind, without
-queries, URLs, titles or bodies. These facts do not measure semantic value and
-never deny a Search or require stopping. Research retains expected-cost and
-sufficiency judgment. The prompt addition changes only Research's instruction
-cache family; the existing stable prefix and explicit breakpoint stay intact.
+Body-free acquisition timing and dogfood diagnostics retain only these counts and
+fixed provider/kind values, never queries, URLs, titles, highlights or bodies.
+Existing forensic acquisition-result events retain the diagnostic receipt under
+the existing privacy boundary. Research excludes it from model-facing
+`last_route`; no cumulative Search history, query-history field, novelty
+replacement or expected-yield prompt addition is supplied to the model. Answer
+and durable sessions are unchanged. Research prompt bytes, packet ordering,
+stable prefix, breakpoints and cache family match merged-main PR #660, whose
+`failed_external_reads` history remains intact. The telemetry has no stopping or
+semantic authority and establishes no stopping or answer-quality improvement.
 
 Read's target and mode have explicit mechanical meaning:
 
@@ -404,8 +386,7 @@ broker remain mechanical infrastructure, with no semantic decision authority.
 For Research, the stable packet prefix remains `conversation_context`,
 `current_date`, `phase`, `question`, followed by the existing Research-context
 cache breakpoint. Present volatile fields serialize in this deliberate order:
-`working_understanding`, `catalog`, `last_route`, `failed_external_reads`,
-`search_route_receipts`, `evidence`,
+`working_understanding`, `catalog`, `last_route`, `failed_external_reads`, `evidence`,
 `answer_missing_information`, `pending_delivery`, `budget`, and
 `output_correction` last. Any other material fields survive unchanged in
 deterministic order before a present correction. Placing previous generated

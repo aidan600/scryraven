@@ -153,15 +153,6 @@ their safe failure class and elapsed time. It is navigation history, not Evidenc
 Consider it when judging expected cost and whether a repeated route has a changed
 reason to succeed. Changing only a Read focus does not change the external fetch
 strategy.
-search_route_receipts records earlier Search queries and mechanical candidate/
-material returns. Use it with current Evidence, failed_external_reads and the
-unresolved need to judge expected marginal yield: does a consequential question
-remain, and can this route plausibly improve the answer at reasonable expected
-cost? Novelty alone warrants neither continuing nor stopping: new candidates can
-be irrelevant; known sources can expose decisive information or consequential
-leads. Do not research merely because more material can be found. For a new
-empirical dimension, distinguish Evidence that bears on it from adjacent
-indicators or proxies when more direct Evidence is reasonably obtainable.
 
 retain selects exact currently exposed material IDs worth keeping in attention,
 especially controlling premises and live contradictions. Older finished material
@@ -345,15 +336,6 @@ class _Budget:
                 "external_remaining": self.limits.external_attempts - self.external,
                 "seconds_remaining": round(max(0.0, self.limits.seconds - elapsed), 3),
                 "elapsed_seconds": round(elapsed, 3)}
-
-
-def _search_route_receipt(result: dict) -> dict:
-    """Query-attributed Research navigation; never use this in body-free diagnostics."""
-    return {
-        "query": result["request"]["query"],
-        **{key: value for key, value in result["search_novelty_receipt"].items()
-           if key not in {"returned_material_count", "new_material_count"}},
-    }
 
 
 def run(question: str, **kwargs) -> CompletedAnswer:
@@ -582,7 +564,6 @@ def _run_turn(
     understanding = None
     last_route: list[dict] = []
     failed_external_reads: list[dict] = []
-    search_route_receipts: list[dict] = []
     correction = None
     answer_need = None
     selected: list[str] = []
@@ -846,7 +827,6 @@ def _run_turn(
                   "evidence": reading_packet(), "catalog": library.catalog(),
                   "pending_delivery": pending, "last_route": last_route,
                   "failed_external_reads": list(failed_external_reads),
-                  "search_route_receipts": list(search_route_receipts),
                   "answer_missing_information": answer_need, "budget": budget.snapshot(),
                   "output_correction": correction}
         try:
@@ -940,9 +920,9 @@ def _run_turn(
             except _Bound as exc:
                 bound = exc.code
                 result = {"kind": request.kind, "status": "error", "code": exc.code, "material_ids": []}
-            last_route.append(result)
-            if "search_novelty_receipt" in result:
-                search_route_receipts.append(_search_route_receipt(result))
+            # Novelty is diagnostic metadata, never model-facing navigation.
+            last_route.append({key: value for key, value in result.items()
+                               if key != "search_novelty_receipt"})
             if "failed_external_read" in result:
                 failed_external_reads.append(result["failed_external_read"])
             pending.extend(ref for ref in result.get("material_ids", []) if ref not in pending)
