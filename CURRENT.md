@@ -90,34 +90,43 @@ stable packet prefix and breakpoint mechanics remain unchanged. Offline tests
 establish receipt mechanics and privacy, not improved stopping, retry choices,
 latency or LinkUp reliability; no live validation was performed for this change.
 
-Research also receives compact ordered `search_route_receipts` for successful
-Exa and lexical/Serper Searches within the current turn. Each entry includes the
-exact executed query and six counts; internal/body-free diagnostics retain all
-eight counts without query text. The two omitted material totals are derivable
-from their partitions. Counts distinguish
-first-seen versus already-known candidate URL identities and newly retained
-material for new candidates, refreshed material for known candidates, and exact
-reuse of retained Search material. Counts use unique valid candidate identities
-and unique returned material IDs against the library before each request.
-The history survives intervening routes, resets on each new or reopened-session
-turn, and is neither Evidence nor durable session state or Answer input.
-Serper remains navigation-only. No score, stopping gate or Search suppression is
-introduced. The compact prompt asks Research to judge expected marginal yield
-from the unresolved need, actual Evidence, Search route history and failed Reads,
-and to distinguish direct empirical evidence from adjacent proxies. This remains
-semantic judgment, without scores or an additional decision field. The prompt
-changes the Research instruction/cache
-family; stable prefix bytes, breakpoints and Answer serialization/cache family
-remain unchanged. Offline tests establish mechanics and privacy, not semantic
-usefulness, stopping quality, latency or answer quality. A four-submission frozen
-Research-only calibration at `8c678813ff61660bf8c3055b007553ab24c17b11` was
-**MIXED / INCONCLUSIVE**: the viewer-profile state produced one near-equivalent
-Search and one qualified answer proposal; both MD-80/777 draws continued toward
-the unresolved comparable-cost basis, one explicitly selecting the new FAA lead.
-All four used Luna / high / Fast and returned Fast. No requested acquisition or
-Answer was executed. Historical decisions supplied the baseline; Case A already
-proposed answering. This does not demonstrate improved stopping, and four calls
-are not reliability proof. See `docs/operator/SEARCH_NOVELTY_RECEIPTS_01.md`.
+The PR #661 candidate supplies ordered turn-local `search_route_receipts` for
+successful Exa and lexical/Serper Searches. Each entry pairs the exact executed
+query with six counts: returned/new/known candidate identities, new-candidate
+material, refreshed-known-candidate material and exact reused material. Counts
+use unique valid candidate identities and unique returned material IDs against
+the library before each request. Internal/body-free diagnostics keep all eight
+original counts without queries; model-facing history omits only the two
+derivable material totals. Serper remains navigation-only. History survives
+intervening routes, resets on new/reopened-session turns, and never enters
+Answer or durable session state. The old counts-only model-facing field is gone.
+
+The candidate prompt asks the existing Research owner to judge expected marginal
+yield from actual Evidence, unresolved needs, route history and failed Reads,
+and to distinguish direct empirical evidence from adjacent proxies. No score,
+stopping gate, Search suppression or additional decision field is introduced.
+Research's instruction/cache family changes; stable prefix bytes, breakpoints,
+Evidence and Answer serialization/cache family remain unchanged.
+
+The model-facing candidate is **not earned for merge**. The original four-call
+novelty calibration was MIXED / INCONCLUSIVE. The paired ten-submission
+continuation at `b01db48e1d50fc6b1fc68db538ae60eaff70f147` is also
+**MIXED / INCONCLUSIVE** and requires human architectural review. Case A controls
+split between a similar Search and answering; one treatment answered and the
+other is unadjudicable because the campaign runner lost its output during local
+validation. Both Case B controls sought direct performance evidence, while one
+treatment answered from adjacent indicators without a low-yield justification.
+Both Case C arms preserved comparable-cost investigation. Nine structured
+decisions and all ten usage records survive; the missing decision is not evidence
+of model semantic failure. The runner's current-packet reference check was
+stricter than production's previously-exposed-reference rule, and the exact
+failure trigger is unknown. No replacement submission, further tuning or automatic
+removal occurred. All ten requested/returned Luna / high / Fast; no acquisition
+route or Answer was executed. No improvement is established, and ten submissions
+are a bounded signal, not reliability proof. See
+`docs/operator/SEARCH_NOVELTY_RECEIPTS_01.md` for preserved experiments, limitations
+and the human choice among diagnostics-only, abandoning the PR, or a different
+semantic hypothesis later.
 
 ## Sessions, Evidence and presentation
 

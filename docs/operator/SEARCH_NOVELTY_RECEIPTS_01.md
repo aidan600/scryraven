@@ -174,7 +174,157 @@ No numeric mechanism, semantic similarity, new decision field, stopping gate or
 suppression is introduced. Existing stopping principles remain. Provider,
 Read/Find, Answer, model defaults, budgets, timeouts and session schema stay fixed.
 
-Continuation calibration is pending offline verification and the authorized
-maximum ten submissions. It uses same-state merged-main controls from `016d3198`
-and the candidate treatment, including reconstructed PR #660 failed-Read history
-in both arms. No conclusion about efficacy is established by implementation.
+Continuation result: **MIXED / INCONCLUSIVE; architectural decision required**.
+The model-facing feature is **not earned for merge**. No further tuning, third
+campaign or automatic removal/revert is authorized by this result. PR #661 remains
+a review surface, not a merge recommendation.
+
+### Continuation verification and exact shapes
+
+Tested implementation: `b01db48e1d50fc6b1fc68db538ae60eaff70f147`.
+Focused acquisition/history/privacy/cache checks: **165 passed**. Full offline
+suite: **585 passed**. Ruff, every configured pre-commit hook and diff checks
+passed before live submissions. Subsequent tracked changes are documentation only.
+Tests retain query attribution across differently worded Searches and Read/Find,
+continued acquisition with repeated candidates, attempt counts, next-turn/reopen
+reset, Answer/session exclusion and body-free diagnostic query exclusion.
+Control serialization was also checked against merged-main code for all three
+states: exact input bytes and cache breakpoints match. Answer prompt bytes remain
+unchanged. No scores or semantic flags were added.
+
+Model-facing entry (example values):
+
+```json
+{
+  "query": "the exact executed Search query",
+  "provider": "exa",
+  "kind": "search",
+  "returned_candidate_count": 6,
+  "new_candidate_count": 2,
+  "known_candidate_count": 4,
+  "new_candidate_material_count": 2,
+  "refreshed_known_candidate_material_count": 4,
+  "exact_reused_material_count": 0
+}
+```
+
+The unchanged internal `search_novelty_receipt` and body-free diagnostic shape
+shown in the first experiment contain no query and additionally retain
+`returned_material_count` and `new_material_count`. The latter equals
+new-candidate plus refreshed-known material; returned material adds exact reuse.
+The exact-reuse field remains present even at zero for unambiguous semantics.
+The ordinary model-facing `last_route` still contains concrete requests/refs and
+the complete internal accounting; only cumulative history omits derivable totals.
+
+### State selection and paired controls
+
+Controls use the exact merged-main Research prompt at
+`016d3198e4ecabf3b68171ddbaea1c97cace87c6`, without the Search history or expected-yield
+paragraph. Treatments use the candidate prompt above. Both receive the same
+question, conversation, actual Evidence, working understanding, catalog, pending
+state and budget, plus the same reconstructed PR #660 failed-Read history.
+Treatment alone adds query-attributed history and the ordinary internal novelty
+receipt on a Search result in `last_route`. Historical decisions are provenance,
+not the paired controls. Draws alternated control then treatment for each pair.
+
+- **A:** `20260925-121921-60961b775260`, session
+  `8b902152d5b940679bcf88838ab99c35`, turn 2; model-start event 83, exposure 84,
+  decision 86 (Research call 7). This follows the full USA Today/Keeso success
+  at result 79 and failed full Reads at results 77 (Dipp/C26) and 82
+  (Telegraph/C27), before the broad Search cycle at decision 86. Five Search
+  route receipts are supplied to treatment. Both arms receive the two failures,
+  with recorded durations 23.578 and 11.797 seconds.
+- **B:** `20260927-200208-927589c2e2c1`, session
+  `a85afe306c1b4a3eb08b2985803543d1`, turn 4; model-start event 70, exposure 71,
+  decision 73. This is the commercial-success decision before market-research
+  pushback, with zero current-turn Searches and empty failed-Read history.
+  Both arms therefore have no earlier routes; treatment history is empty.
+  The named preserved candidate documents turn 5 and its turn-4 prior answer,
+  so it was used as provenance, not mistaken for this replay state. Its use
+  status is now development; its frozen artifacts and provisional gold were
+  not changed. No personal conversation was duplicated into the campaign files.
+- **C:** the first experiment's MD-80 state: `20260924-162747-84ca18fe82ca`,
+  session `7757bee8dd7e453c8aacb83e40c07bce`, turn 1; model-start 77, exposure 78,
+  decision 80. Seven Search receipts are supplied to treatment. Both arms include
+  the prior C11 failed full Read (2.922 seconds). The new FAA lead remains E42/C122.
+
+Every reconstructed acquisition result and ordered Evidence exposure matched the
+preserved trace; catalog and conversation character counts matched at every
+replayed model call. Control/treatment shared state is asserted equal after
+removing only candidate Search-history/accounting fields. Packet and prompt
+hashes and observer provenance remain in local case records. As in the first
+experiment, full historical packets were not logged, and budget timing has only
+the recorded rounded precision. Historical failures carry generic `read_failed`;
+missing transport details cannot justify inventing more specific current codes.
+
+### Ten-submission result
+
+Exactly **10** OpenAI submissions used Luna / high / Fast. All ten returned Fast
+usage records; no transport failure was recorded. **Nine structured decisions
+were preserved; one draw is unadjudicable.** No returned route was executed, and
+no Exa, Serper, LinkUp, other source provider, Answer or end-to-end turn ran.
+
+| Case/draw | Control | Treatment | Paired assessment |
+| --- | --- | --- | --- |
+| A/1 | Similar Wayne motivation/emotional-life Search | Answer at supported depth | One favorable treatment observation |
+| A/2 | Answer at supported depth | Local validation failed; decision lost | Pair cannot be adjudicated |
+| B/1 | Direct commercial-performance Search | Direct performance Search plus full business-article Read | Both address the empirical dimension |
+| B/2 | Direct commercial-performance Search | Qualified yes from launch attention and ancillary business activity | Treatment fails the low-yield-justification requirement |
+| C/1 | Two comparable-cost Searches | Two comparable-cost Searches | Both preserve unresolved comparison and continuation |
+
+A/control/1 states a desire to strengthen Wayne coverage but offers another
+near-equivalent broad route without a distinct consequential missing answer
+capability. A/treatment/1 answers while distinguishing creator commentary and
+interpretation. B/treatment/2 acknowledges missing financial totals but declares
+no remaining need and gives no reason a direct performance route would have low
+expected yield; this is negative under the approved rubric despite its qualified
+wording. Both C arms engage the FAA aggregate/type-specific limitation and
+preserve the unresolved cost/load-factor basis, without novelty-based stopping.
+
+No clear directional improvement satisfying the merge standard is established:
+A is incomplete, B has a treatment regression against two direct-acquisition
+controls, and C is preserved. This is MIXED / INCONCLUSIVE, not a positive signal.
+Even a positive ten-call campaign would be a bounded signal, not reliability proof.
+
+### Lost-draw limitation
+
+The executed local runner applied schema parsing and extra reference/action
+checks before saving the structured result. A/treatment/2 hit its generic
+`campaign_validation_failed` path. Its decision and exact exception details were
+not retained, so the trigger cannot be determined or its action recovered.
+In particular, the runner incorrectly required references to belong to the
+current packet, while production accepts references exposed earlier in the same
+turn. That overly strict check could reject a product-valid decision. It is
+not evidence of a model semantic failure or transport failure. The original
+executed runner is retained unchanged for audit, and no claim is made that all
+ten decisions were preserved. The submission counts against the cap; no
+replacement, correction call or third campaign was made. This evidence-capture
+defect limits the experiment independently of the observed B treatment regression.
+
+### Safe totals and handoff
+
+| Arm | Seconds | Input | Cached | Cache-write | Ordinary uncached | Output | Reasoning tokens |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Control (5) | 36.297 | 109,331 | 9,733 | 4,465 | 95,133 | 4,943 | 2,664 |
+| Treatment (5) | 45.531 | 111,587 | 10,237 | 4,591 | 96,759 | 5,411 | 3,368 |
+| Total (10) | 81.828 | 220,918 | 19,970 | 9,056 | 191,892 | 10,354 | 6,032 |
+
+Totals include the unadjudicable draw. Reasoning counts are usage metadata;
+no hidden reasoning was saved. These timings do not establish general speed or
+cost effects. The original four-call experiment remains separate and unchanged.
+
+Local continuation packet:
+`C:\Users\aidan\ScryRaven\local-evals\campaigns\search-novelty-receipts-01\expected-yield-continuation\`.
+It retains the preregistered plan/rubric, reconstruction and executed runner,
+case/arm packet hashes, supplied route history, ten exclusive submission records,
+nine decisions, all ten safe usage/timing records, offline verification and
+adjudication. Source bodies remain only at the original authorized forensic paths.
+A local diagnostic candidate, `search-route-commercial-premature-stop-20260928`,
+references B/treatment/2 and the paired evidence without duplicating full sources.
+
+The old counts-only model-facing field and explanation are completely replaced;
+internal novelty accounting survives intentionally. No other removal was requested.
+No production behavior changed after seeing live outputs. The same branch and
+PR #661 are retained, **NOT MERGED**. Human architectural choice is required:
+strip model-facing history and keep diagnostics, abandon/revert the PR, or
+pursue a different semantic hypothesis later. None was applied automatically.
