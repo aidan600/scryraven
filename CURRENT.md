@@ -63,7 +63,8 @@ verifier or additional semantic owner exists.
 Research packet presentation now keeps the stable `conversation_context`,
 `current_date`, `phase`, `question` prefix and its Research-context cache
 breakpoint. Present volatile fields follow the deliberate order
-`working_understanding`, `catalog`, `last_route`, `failed_external_reads`, `evidence`,
+`working_understanding`, `catalog`, `last_route`, `failed_external_reads`,
+`search_novelty_receipts`, `evidence`,
 `answer_missing_information`, `pending_delivery`, `budget`, then
 `output_correction` last. Unknown fields remain lossless in deterministic order.
 Generated understanding and navigation precede the latest route and exact
@@ -88,6 +89,20 @@ changes its instruction-derived cache-family hash; Answer's cache family, the
 stable packet prefix and breakpoint mechanics remain unchanged. Offline tests
 establish receipt mechanics and privacy, not improved stopping, retry choices,
 latency or LinkUp reliability; no live validation was performed for this change.
+
+Research also receives compact ordered `search_novelty_receipts` for successful
+Exa and lexical/Serper Searches within the current turn. Counts distinguish
+first-seen versus already-known candidate URL identities and newly retained
+material for new candidates, refreshed material for known candidates, and exact
+reuse of retained Search material. Counts use unique valid candidate identities
+and unique returned material IDs against the library before each request.
+The history survives intervening routes, resets on each new or reopened-session
+turn, and is neither Evidence nor durable session state or Answer input.
+Serper remains navigation-only. No score, stopping gate or Search suppression is
+introduced. The compact prompt explanation changes the Research instruction/cache
+family; stable prefix bytes, breakpoints and Answer serialization/cache family
+remain unchanged. Offline tests establish mechanics and privacy, not semantic
+usefulness, stopping quality, latency or answer quality.
 
 ## Sessions, Evidence and presentation
 

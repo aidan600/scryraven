@@ -185,7 +185,7 @@ A single provider failure does not force a turn-wide fail-fast decision;
 Research judges the acquisition result.
 
 Every Research packet includes `failed_external_reads` after `last_route` and
-before `evidence`. This ordered list records each failed external materialization:
+before `search_novelty_receipts` and `evidence`. This ordered list records each failed external materialization:
 `candidate_ref`, `provider`, `strategy`, `requested_mode`, `code`, and
 `duration_seconds` (monotonic operation elapsed time rounded to six decimals).
 The existing candidate identity joins URL, candidate and material references to
@@ -204,6 +204,38 @@ safe receipt; body-free dogfood retains fixed codes and numeric timing without
 URLs, request text or bodies. The explanatory Research prompt changes the
 instruction-derived Research cache-family hash. The stable prefix, breakpoint
 mechanics, Evidence bytes and Answer packet/cache family remain unchanged.
+
+Each successful Search or lexical Search also produces a compact
+`search_novelty_receipt`; Research accumulates these in ordered turn-local
+`search_novelty_receipts`. Each contains `provider`, `kind` and integer counts:
+
+- `returned_candidate_count`, `new_candidate_count`, `known_candidate_count`;
+- `returned_material_count`, `new_material_count`;
+- `new_candidate_material_count`, `refreshed_known_candidate_material_count`;
+- `exact_reused_material_count`.
+
+Candidate identity is the existing exact observed URL key in AcquisitionLibrary,
+without additional URL normalization. Only unique candidates passing the existing
+public-URL admission check count. Known/new is measured before the request,
+including candidates from retained acquisitions, user links and exposed text.
+Material counts use unique returned material IDs; `_retain` still compares exact
+URL, text and acquisition kind. New records partition by whether their URL was
+known before the request; returned IDs already retained before the request count
+as exact reuse. Repeated identical provider slots do not add counts. Multiple
+new text versions for one URL count separately, all classified against that same
+pre-request candidate state. Returned materials equal new plus exact reused;
+new materials equal new-candidate plus refreshed-known-candidate materials.
+Successful empty Searches append a zero receipt; failed or budget-denied requests
+do not. Serper counts candidates with all material counts zero.
+
+History survives Read/Find and later Search routes but resets for every user turn,
+including reopening a session. It never enters Answer or session serialization.
+`last_route` retains the request and concrete refs. Body-free acquisition timing
+and dogfood diagnostics carry only allowlisted counts and provider/kind, without
+queries, URLs, titles or bodies. These facts do not measure semantic value and
+never deny a Search or require stopping. Research retains expected-cost and
+sufficiency judgment. The prompt addition changes only Research's instruction
+cache family; the existing stable prefix and explicit breakpoint stay intact.
 
 Read's target and mode have explicit mechanical meaning:
 
@@ -356,7 +388,8 @@ broker remain mechanical infrastructure, with no semantic decision authority.
 For Research, the stable packet prefix remains `conversation_context`,
 `current_date`, `phase`, `question`, followed by the existing Research-context
 cache breakpoint. Present volatile fields serialize in this deliberate order:
-`working_understanding`, `catalog`, `last_route`, `failed_external_reads`, `evidence`,
+`working_understanding`, `catalog`, `last_route`, `failed_external_reads`,
+`search_novelty_receipts`, `evidence`,
 `answer_missing_information`, `pending_delivery`, `budget`, and
 `output_correction` last. Any other material fields survive unchanged in
 deterministic order before a present correction. Placing previous generated

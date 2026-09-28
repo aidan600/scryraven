@@ -17,6 +17,7 @@ from threading import Lock
 from time import monotonic
 
 from core.linkup_transport import LINKUP_FAILURE_CODES
+from scryraven.acquisition import SEARCH_NOVELTY_COUNTS
 from scryraven.errors import RunError
 from scryraven.session_store import SessionStoreError
 
@@ -255,6 +256,13 @@ class TurnDiagnostics:
                     if type(event.get("reused_retained_material")) is bool else None
                 ),
             }
+            receipt = event.get("search_novelty_receipt")
+            if isinstance(receipt, dict):
+                row["search_novelty_receipt"] = {
+                    "provider": _one_of(receipt.get("provider"), {"exa", "serper"}),
+                    "kind": _one_of(receipt.get("kind"), {"search", "search_lexical"}),
+                    **{key: _nonnegative_int(receipt.get(key)) for key in SEARCH_NOVELTY_COUNTS},
+                }
             self.acquisitions.append(row)
         elif action in {"response_rejected", "decision_rejected"}:
             code = _one_of(event.get("code"), _CODES)

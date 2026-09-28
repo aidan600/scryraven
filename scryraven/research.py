@@ -153,6 +153,13 @@ their safe failure class and elapsed time. It is navigation history, not Evidenc
 Consider it when judging expected cost and whether a repeated route has a changed
 reason to succeed. Changing only a Read focus does not change the external fetch
 strategy.
+search_novelty_receipts records mechanical novelty of successful Searches earlier
+in this turn. Candidate counts distinguish first-seen and already-known URL
+identities; material counts distinguish new-candidate, refreshed-known-candidate
+and exact-reused Search material. These are navigation facts, not judgments of
+relevance, support or semantic value. Falling novelty can inform expected-cost
+judgment but does not itself require stopping: repeated sources or known
+candidates can still expose consequential information or leads.
 
 retain selects exact currently exposed material IDs worth keeping in attention,
 especially controlling premises and live contradictions. Older finished material
@@ -564,6 +571,7 @@ def _run_turn(
     understanding = None
     last_route: list[dict] = []
     failed_external_reads: list[dict] = []
+    search_novelty_receipts: list[dict] = []
     correction = None
     answer_need = None
     selected: list[str] = []
@@ -827,6 +835,7 @@ def _run_turn(
                   "evidence": reading_packet(), "catalog": library.catalog(),
                   "pending_delivery": pending, "last_route": last_route,
                   "failed_external_reads": list(failed_external_reads),
+                  "search_novelty_receipts": list(search_novelty_receipts),
                   "answer_missing_information": answer_need, "budget": budget.snapshot(),
                   "output_correction": correction}
         try:
@@ -910,6 +919,8 @@ def _run_turn(
                     new_acquisition_count=operation["new_acquisition_count"],
                     returned_material_characters=operation["returned_material_characters"],
                     reused_retained_material=operation["reused_retained_material"],
+                    **({"search_novelty_receipt": operation["search_novelty_receipt"]}
+                       if "search_novelty_receipt" in operation else {}),
                 )
 
             try:
@@ -919,6 +930,8 @@ def _run_turn(
                 bound = exc.code
                 result = {"kind": request.kind, "status": "error", "code": exc.code, "material_ids": []}
             last_route.append(result)
+            if "search_novelty_receipt" in result:
+                search_novelty_receipts.append(result["search_novelty_receipt"])
             if "failed_external_read" in result:
                 failed_external_reads.append(result["failed_external_read"])
             pending.extend(ref for ref in result.get("material_ids", []) if ref not in pending)

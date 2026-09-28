@@ -20,6 +20,11 @@ from core.transport import FetchedMaterial
 from scryraven.sources import TARGETED_SOURCE_CHARACTERS, Evidence, SourceIndex, exact_view, rank_corpus_regions
 
 FIND_RESULT_LIMIT = 8
+SEARCH_NOVELTY_COUNTS = (
+    "returned_candidate_count", "new_candidate_count", "known_candidate_count",
+    "returned_material_count", "new_material_count", "new_candidate_material_count",
+    "refreshed_known_candidate_material_count", "exact_reused_material_count",
+)
 
 
 def _public_url(url: str) -> bool:
@@ -367,6 +372,8 @@ class AcquisitionLibrary:
                 "reused_retained_material": (not result["external"] and bool(result["material_ids"])
                                              and not result["new_acquisition_ids"]),
             }
+            if "search_novelty_receipt" in result:
+                event["search_novelty_receipt"] = dict(result["search_novelty_receipt"])
             # A diagnostics observer is never allowed to change the result or Evidence.
             try:
                 observe_operation(event)
@@ -375,6 +382,8 @@ class AcquisitionLibrary:
         return result
 
     def _search(self, request: dict, result: dict, before_external: Callable[[], None]) -> None:
+        known_urls = set(self._candidate_ids)
+        prior_material_ids = set(self.materials)
         before_external()
         result.update(external=True, local=False)
         lexical = request["kind"] == "search_lexical"
@@ -398,6 +407,20 @@ class AcquisitionLibrary:
                 item = self._retain(lead.url, lead.title, lead.context, "provider_highlights")
                 result["material_ids"].append(item.id)
         result["candidate_refs"] = list(dict.fromkeys(result["candidate_refs"]))
+        returned_urls = {self.candidates[ref]["url"] for ref in result["candidate_refs"]}
+        returned_ids = set(result["material_ids"])
+        new_ids = returned_ids - prior_material_ids
+        new_candidate_materials = sum(self.materials[ref].url not in known_urls for ref in new_ids)
+        result["search_novelty_receipt"] = {
+            "provider": "serper" if lexical else "exa", "kind": request["kind"],
+            "returned_candidate_count": len(returned_urls),
+            "new_candidate_count": len(returned_urls - known_urls),
+            "known_candidate_count": len(returned_urls & known_urls),
+            "returned_material_count": len(returned_ids), "new_material_count": len(new_ids),
+            "new_candidate_material_count": new_candidate_materials,
+            "refreshed_known_candidate_material_count": len(new_ids) - new_candidate_materials,
+            "exact_reused_material_count": len(returned_ids & prior_material_ids),
+        }
 
     def _read(self, request: dict, result: dict, before_external: Callable[[], None]) -> None:
         url, title, exact_item = self._target(request["target"])

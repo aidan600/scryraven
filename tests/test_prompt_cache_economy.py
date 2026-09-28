@@ -109,7 +109,7 @@ def test_navigation_prefix_stable_and_volatile_material_after_last_breakpoint(tr
     model, calls, _ = transport
     original = rich_material()
     changed = deepcopy(original)
-    for field in ("evidence", "working_understanding", "catalog", "failed_external_reads", "budget", "output_correction"):
+    for field in ("evidence", "working_understanding", "catalog", "failed_external_reads", "search_novelty_receipts", "budget", "output_correction"):
         changed[field] = {"changed": "volatile"}
     for material in (original, changed):
         model("research", research.RESEARCH_PROMPT, material, research.ResearchDecision.model_json_schema())
@@ -146,6 +146,7 @@ def test_research_packet_orders_volatile_fields_and_evidence_without_changing_ma
         "evidence": [evidence, {"content": "Second exact body", "id": "E2"}],
         "last_route": {"kind": "search"},
         "failed_external_reads": [{"candidate_ref": "C1", "code": "linkup_timeout"}],
+        "search_novelty_receipts": [{"provider": "exa", "new_candidate_count": 2}],
         "catalog": {"materials": ["E2", "E1"]},
         "working_understanding": {"interpretation": "Passport is the base engine"},
         "a_unknown": ["keep", "this", "order"],
@@ -160,7 +161,7 @@ def test_research_packet_orders_volatile_fields_and_evidence_without_changing_ma
     assert parsed == material == original
     assert list(parsed) == [
         "conversation_context", "current_date", "phase", "question",
-        "working_understanding", "catalog", "last_route", "failed_external_reads", "evidence",
+        "working_understanding", "catalog", "last_route", "failed_external_reads", "search_novelty_receipts", "evidence",
         "answer_missing_information", "pending_delivery", "budget",
         "a_unknown", "z_unknown", "output_correction",
     ]
@@ -183,7 +184,7 @@ def test_research_packet_orders_volatile_fields_and_evidence_without_changing_ma
     assert "prompt_cache_breakpoint" not in blocks[2]
     assert blocks[2]["text"].startswith(', "working_understanding": ')
     assert list(json.loads("{" + blocks[2]["text"][2:])) == [
-        "working_understanding", "catalog", "last_route", "failed_external_reads", "evidence",
+        "working_understanding", "catalog", "last_route", "failed_external_reads", "search_novelty_receipts", "evidence",
         "answer_missing_information", "pending_delivery", "budget",
         "a_unknown", "z_unknown", "output_correction",
     ]
