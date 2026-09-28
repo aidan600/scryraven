@@ -170,11 +170,40 @@ keeps its source-specific inspection behavior. Ranking is navigation, not a
 judgment of relevance or support.
 A failed search or local match says nothing about factual nonexistence.
 
-Acquisition retains fixed safe `exa_configuration_missing`,
-`serper_configuration_missing`, `linkup_configuration_missing`, and
-`linkup_material_unavailable` failures. Unknown Search and Read exceptions retain
-generic safe failure codes. A single provider failure does not force a turn-wide
-fail-fast decision; Research judges the acquisition result.
+Acquisition retains fixed safe `exa_configuration_missing` and
+`serper_configuration_missing` failures. LinkUp transport, Acquisition and
+body-free diagnostics preserve `linkup_timeout`, `linkup_connection_failed`,
+`linkup_endpoint_access_rejected` (401/403), `linkup_endpoint_rate_limited` (429),
+`linkup_endpoint_server_failed` (5xx), `linkup_json_invalid`,
+`linkup_response_invalid`, `linkup_material_unavailable`,
+`linkup_configuration_missing` and `linkup_transport_failed` (unknown transport
+fallback). Endpoint classifications establish only a LinkUp API response, not a
+target website status. Unknown injected Read exceptions remain `read_failed`;
+invalid injected fetched material remains `unusable_fetch_material`. Raw failure
+text, bodies, headers and credentials do not cross these diagnostic boundaries.
+A single provider failure does not force a turn-wide fail-fast decision;
+Research judges the acquisition result.
+
+Every Research packet includes `failed_external_reads` after `last_route` and
+before `evidence`. This ordered list records each failed external materialization:
+`candidate_ref`, `provider`, `strategy`, `requested_mode`, `code`, and
+`duration_seconds` (monotonic operation elapsed time rounded to six decimals).
+The existing candidate identity joins URL, candidate and material references to
+the catalog. The effective strategy is currently `linkup` / `static_fetch`,
+independent of focus and requested Read mode. A future materially different fetch
+configuration would need a distinct strategy value; none is implemented here.
+The history survives intervening routes, including successful Search, Read and
+Find. Local failures, budget denials before an attempt, and successful fetches
+are not failed external materialization receipts. Success remains in retained
+materials/catalog. The existing external-attempt budget bounds this list.
+
+This is navigation history for the existing Research owner, not Evidence or a
+retry gate. It is local to one user turn, never persisted in session state, and
+never supplied to Answer. Existing forensic acquisition-result events carry the
+safe receipt; body-free dogfood retains fixed codes and numeric timing without
+URLs, request text or bodies. The explanatory Research prompt changes the
+instruction-derived Research cache-family hash. The stable prefix, breakpoint
+mechanics, Evidence bytes and Answer packet/cache family remain unchanged.
 
 Read's target and mode have explicit mechanical meaning:
 
@@ -327,7 +356,7 @@ broker remain mechanical infrastructure, with no semantic decision authority.
 For Research, the stable packet prefix remains `conversation_context`,
 `current_date`, `phase`, `question`, followed by the existing Research-context
 cache breakpoint. Present volatile fields serialize in this deliberate order:
-`working_understanding`, `catalog`, `last_route`, `evidence`,
+`working_understanding`, `catalog`, `last_route`, `failed_external_reads`, `evidence`,
 `answer_missing_information`, `pending_delivery`, `budget`, and
 `output_correction` last. Any other material fields survive unchanged in
 deterministic order before a present correction. Placing previous generated

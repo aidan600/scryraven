@@ -91,7 +91,7 @@ def _json(value: Any) -> str:
 
 
 _RESEARCH_VOLATILE_ORDER = (
-    "working_understanding", "catalog", "last_route", "evidence",
+    "working_understanding", "catalog", "last_route", "failed_external_reads", "evidence",
     "answer_missing_information", "pending_delivery", "budget",
 )
 _EVIDENCE_METADATA_ORDER = (
