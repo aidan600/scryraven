@@ -1,6 +1,7 @@
 # Search Novelty Receipts 01
 
-Outcome: implementation and bounded calibration completed. Campaign signal:
+Initial experiment (before the focused continuation below): implementation and
+bounded calibration completed. Campaign signal:
 **MIXED / INCONCLUSIVE**. No stopping improvement is established.
 
 ## Implementation and semantics
@@ -139,3 +140,41 @@ The A/1 continuation is also preserved as a local diagnostic candidate
 and frozen artifacts. It is a development candidate, not a proven semantic error
 or a self-contained frozen test. The commercial-success candidate was untouched.
 No commercial-success sufficiency or Answer-voice work occurred.
+
+## Focused continuation: query attribution and expected marginal yield
+
+Starting PR HEAD: `a392a087ff5527475084ba124d2a1ca7aeec32d2`.
+The first experiment above remains MIXED / INCONCLUSIVE. Counts alone could not
+identify which evidentiary avenue had returned them, and changed highlight bytes
+did not establish informational progress. This continuation replaces the
+model-facing `search_novelty_receipts` field with `search_route_receipts`, without
+an alias or parallel history. Each entry adds the exact executed query to
+provider/kind and six counts: returned/new/known candidates, new-candidate
+material, refreshed-known-candidate material and exact reused material. Internal
+acquisition receipts and body-free diagnostics retain all eight original counts;
+the two model-history material totals are derivable from the partitions.
+Diagnostics never receive query text. Answer and session state receive no history.
+
+The novelty-only prompt paragraph is replaced with:
+
+```text
+search_route_receipts records earlier Search queries and mechanical candidate/
+material returns. Use it with current Evidence, failed_external_reads and the
+unresolved need to judge expected marginal yield: does a consequential question
+remain, and can this route plausibly improve the answer at reasonable expected
+cost? Novelty alone warrants neither continuing nor stopping: new candidates can
+be irrelevant; known sources can expose decisive information or consequential
+leads. Do not research merely because more material can be found. For a new
+empirical dimension, distinguish Evidence that bears on it from adjacent
+indicators or proxies when more direct Evidence is reasonably obtainable.
+```
+
+Expected marginal yield remains the existing Research owner's semantic judgment.
+No numeric mechanism, semantic similarity, new decision field, stopping gate or
+suppression is introduced. Existing stopping principles remain. Provider,
+Read/Find, Answer, model defaults, budgets, timeouts and session schema stay fixed.
+
+Continuation calibration is pending offline verification and the authorized
+maximum ten submissions. It uses same-state merged-main controls from `016d3198`
+and the candidate treatment, including reconstructed PR #660 failed-Read history
+in both arms. No conclusion about efficacy is established by implementation.

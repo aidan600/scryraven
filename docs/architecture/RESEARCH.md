@@ -185,7 +185,7 @@ A single provider failure does not force a turn-wide fail-fast decision;
 Research judges the acquisition result.
 
 Every Research packet includes `failed_external_reads` after `last_route` and
-before `search_novelty_receipts` and `evidence`. This ordered list records each failed external materialization:
+before `search_route_receipts` and `evidence`. This ordered list records each failed external materialization:
 `candidate_ref`, `provider`, `strategy`, `requested_mode`, `code`, and
 `duration_seconds` (monotonic operation elapsed time rounded to six decimals).
 The existing candidate identity joins URL, candidate and material references to
@@ -207,12 +207,28 @@ mechanics, Evidence bytes and Answer packet/cache family remain unchanged.
 
 Each successful Search or lexical Search also produces a compact
 `search_novelty_receipt`; Research accumulates these in ordered turn-local
-`search_novelty_receipts`. Each contains `provider`, `kind` and integer counts:
+`search_route_receipts`. Internal acquisition receipts and body-free diagnostics
+contain `provider`, `kind` and all eight integer counts:
 
 - `returned_candidate_count`, `new_candidate_count`, `known_candidate_count`;
 - `returned_material_count`, `new_material_count`;
 - `new_candidate_material_count`, `refreshed_known_candidate_material_count`;
 - `exact_reused_material_count`.
+
+Model-facing history adds the exact executed `query` and omits the two derivable
+`returned_material_count` and `new_material_count` totals. The remaining six
+counts retain explicit names, including zero exact reuse, so absence is never
+ambiguous. Query text stays out of body-free diagnostics, Answer and durable
+session state. The old counts-only model-facing history is replaced, without a
+compatibility alias. The current `last_route` still carries its concrete request,
+refs and complete internal mechanical receipt.
+
+Research uses this history with actual Evidence, failed Reads and the unresolved
+need to judge expected marginal yield. The prompt asks whether the next route
+can plausibly improve the answer at reasonable expected cost and distinguishes
+direct evidence for a new empirical dimension from adjacent proxies. No score,
+probability field, semantic similarity mechanism or additional owner implements
+that judgment.
 
 Candidate identity is the existing exact observed URL key in AcquisitionLibrary,
 without additional URL normalization. Only unique candidates passing the existing
@@ -389,7 +405,7 @@ For Research, the stable packet prefix remains `conversation_context`,
 `current_date`, `phase`, `question`, followed by the existing Research-context
 cache breakpoint. Present volatile fields serialize in this deliberate order:
 `working_understanding`, `catalog`, `last_route`, `failed_external_reads`,
-`search_novelty_receipts`, `evidence`,
+`search_route_receipts`, `evidence`,
 `answer_missing_information`, `pending_delivery`, `budget`, and
 `output_correction` last. Any other material fields survive unchanged in
 deterministic order before a present correction. Placing previous generated

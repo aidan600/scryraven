@@ -7,7 +7,7 @@ from test_research_loop import Script, answer, decision, request
 from core.exa_transport import DiscoveryCandidate
 from scryraven.acquisition import SEARCH_NOVELTY_COUNTS, AcquisitionLibrary
 from scryraven.dogfood_diagnostics import TurnDiagnostics
-from scryraven.research import RunLimits, run
+from scryraven.research import RunLimits, _search_route_receipt, run
 from scryraven.session import ResearchSession
 from scryraven.session_store import SQLiteSessionStore
 
@@ -76,50 +76,60 @@ def test_failed_search_has_no_success_receipt(bad):
 def test_history_survives_local_routes_and_all_known_search_allows_continuation():
     batches = iter([[lead(0)], [lead(0, "Changed highlights.")], [lead(0, "Changed highlights.")]])
     diagnostics = TurnDiagnostics()
+    queries = ["PRIVATE first exact route?", "PRIVATE differently worded route", "PRIVATE repeat route"]
     model = Script(
-        decision(),
+        decision(requests=[request(query=queries[0])]),
         decision(requests=[request("read", target="E1", mode="local")]),
-        decision(),
+        decision(requests=[request(query=queries[1])]),
         decision(requests=[request("find", query="Changed")]),
-        decision(),
+        decision(requests=[request(query=queries[2])]),
         decision("answer", ["E1"]), answer(),
     )
     result = run("Value?", model=model, search=lambda q: next(batches), observe=diagnostics.observe)
     packets = [p for stage, _, p, _ in model.calls if stage == "research"]
-    assert [len(p["search_novelty_receipts"]) for p in packets] == [0, 1, 1, 2, 2, 3]
-    receipts = packets[-1]["search_novelty_receipts"]
+    assert [len(p["search_route_receipts"]) for p in packets] == [0, 1, 1, 2, 2, 3]
+    receipts = packets[-1]["search_route_receipts"]
     assert [r["new_candidate_count"] for r in receipts] == [1, 0, 0]
     assert receipts[1]["refreshed_known_candidate_material_count"] == 1
     assert receipts[2]["exact_reused_material_count"] == 1
     assert result.trace[-1]["budget"]["external_attempts"] == 3
     assert result.trace[-1]["budget"]["semantic_attempts"] == 7
-    assert "search_novelty" not in json.dumps(model.calls[-1][2])
-    assert [a["search_novelty_receipt"] for a in diagnostics.acquisitions
-            if "search_novelty_receipt" in a] == receipts
+    assert [r["query"] for r in receipts] == queries
+    assert all(set(r) == {"provider", "kind", "query", *SEARCH_NOVELTY_COUNTS}
+               - {"new_material_count", "returned_material_count"} for r in receipts)
+    assert "search_route" not in json.dumps(model.calls[-1][2])
+    assert "PRIVATE" not in json.dumps(model.calls[-1][2])
+    assert "PRIVATE" not in json.dumps(diagnostics.acquisitions)
+    internal = [a["search_novelty_receipt"] for a in diagnostics.acquisitions
+                if "search_novelty_receipt" in a]
+    assert [_search_route_receipt({"request": {"query": q}, "search_novelty_receipt": r})
+            for q, r in zip(queries, internal)] == receipts
 
 
 @pytest.mark.parametrize("reopen", [False, True])
 def test_next_turn_resets_history_and_persistence_excludes_it(tmp_path, reopen):
-    model = Script(decision(), decision("answer", ["E1"]), answer(),
+    model = Script(decision(requests=[request(query="PRIVATE ephemeral query")]), decision("answer", ["E1"]), answer(),
                    decision(), decision("answer", ["E1"]), answer())
     store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
     session = ResearchSession.create(store=store, model=model, search=lambda q: [lead(0)])
     session.ask("Value?")
-    assert len(model.calls[1][2]["search_novelty_receipts"]) == 1
-    assert "search_novelty" not in repr(store.load(session.metadata.session_id).state)
+    assert len(model.calls[1][2]["search_route_receipts"]) == 1
+    assert "search_route" not in repr(store.load(session.metadata.session_id).state)
+    assert "PRIVATE ephemeral query" not in repr(store.load(session.metadata.session_id).state)
     if reopen:
         session = ResearchSession.open(session.metadata.session_id, store=store,
                                        model=model, search=lambda q: [lead(0)])
     session.ask("Value again?")
-    assert model.calls[3][2]["search_novelty_receipts"] == []
-    assert model.calls[4][2]["search_novelty_receipts"][0]["exact_reused_material_count"] == 1
-    assert all("search_novelty" not in json.dumps(p) for stage, _, p, _ in model.calls if stage == "answer")
+    assert model.calls[3][2]["search_route_receipts"] == []
+    assert model.calls[4][2]["search_route_receipts"][0]["exact_reused_material_count"] == 1
+    assert all("search_route" not in json.dumps(p) and "PRIVATE ephemeral query" not in json.dumps(p)
+               for stage, _, p, _ in model.calls if stage == "answer")
 
 
 def test_budget_denial_does_not_append_receipt():
     model = Script(decision(), decision("answer"), answer("Unknown.", "unable"))
     result = run("Value?", model=model, limits=RunLimits(external_attempts=0))
-    assert model.calls[1][2]["search_novelty_receipts"] == []
+    assert model.calls[1][2]["search_route_receipts"] == []
     assert result.trace[-1]["budget"]["external_attempts"] == 0
 
 
