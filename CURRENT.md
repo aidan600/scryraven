@@ -102,7 +102,15 @@ Serper remains navigation-only. No score, stopping gate or Search suppression is
 introduced. The compact prompt explanation changes the Research instruction/cache
 family; stable prefix bytes, breakpoints and Answer serialization/cache family
 remain unchanged. Offline tests establish mechanics and privacy, not semantic
-usefulness, stopping quality, latency or answer quality.
+usefulness, stopping quality, latency or answer quality. A four-submission frozen
+Research-only calibration at `8c678813ff61660bf8c3055b007553ab24c17b11` was
+**MIXED / INCONCLUSIVE**: the viewer-profile state produced one near-equivalent
+Search and one qualified answer proposal; both MD-80/777 draws continued toward
+the unresolved comparable-cost basis, one explicitly selecting the new FAA lead.
+All four used Luna / high / Fast and returned Fast. No requested acquisition or
+Answer was executed. Historical decisions supplied the baseline; Case A already
+proposed answering. This does not demonstrate improved stopping, and four calls
+are not reliability proof. See `docs/operator/SEARCH_NOVELTY_RECEIPTS_01.md`.
 
 ## Sessions, Evidence and presentation
 
