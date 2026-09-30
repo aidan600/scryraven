@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from collections.abc import Callable
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from hashlib import sha256
+from pathlib import Path
 from time import monotonic
 from typing import Any
 
@@ -22,10 +24,79 @@ class ModelRole:
     service_tier: str | None = None
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class ModelConfig:
-    research: ModelRole = ModelRole("gpt-6-luna", "high", "fast")
-    answer: ModelRole = ModelRole("gpt-6-sol", "medium", "fast")
+    research: ModelRole
+    answer: ModelRole
+
+    def __init__(self, research: ModelRole | None = None, answer: ModelRole | None = None) -> None:
+        if research is None or answer is None:
+            ordinary = default_model_config()
+            research = ordinary.research if research is None else research
+            answer = ordinary.answer if answer is None else answer
+        object.__setattr__(self, "research", research)
+        object.__setattr__(self, "answer", answer)
+
+
+def user_model_config_path() -> Path:
+    """One per-user settings location, independent of the checkout and cwd."""
+    if sys.platform == "win32":
+        root = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+        if not root.is_absolute():
+            root = Path.home() / "AppData" / "Local"
+        return root / "ScryRaven" / "model_roles.json"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "ScryRaven" / "model_roles.json"
+    root = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+    if not root.is_absolute():
+        root = Path.home() / ".config"
+    return root / "scryraven" / "model_roles.json"
+
+
+def _unique_role_keys(pairs: list[tuple[str, Any]]) -> dict:
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("invalid_model_role_configuration")
+        result[key] = value
+    return result
+
+
+def _load_model_config(path: Path) -> ModelConfig:
+    """Validate one complete role snapshot with the same rules for either owner."""
+    try:
+        data = json.loads(
+            path.read_text(encoding="utf-8"),
+            object_pairs_hook=_unique_role_keys,
+        )
+    except (OSError, UnicodeError, ValueError):
+        raise ValueError("invalid_model_role_configuration") from None
+    if not isinstance(data, dict) or set(data) != {"research", "answer"}:
+        raise ValueError("invalid_model_role_configuration")
+    for role in data.values():
+        if (not isinstance(role, dict) or set(role) != {"model", "reasoning", "service_tier"}
+                or not isinstance(role["model"], str) or not role["model"].strip()
+                or not isinstance(role["reasoning"], str)
+                or role["service_tier"] not in (None, "default", "fast")):
+            raise ValueError("invalid_model_role_configuration")
+    return ModelConfig(**{name: ModelRole(**role) for name, role in data.items()})
+
+
+def built_in_model_config() -> ModelConfig:
+    """Resolve the package's shipped defaults, independently of user settings."""
+    return _load_model_config(Path(__file__).with_name("model_roles.defaults.json"))
+
+
+def default_model_config() -> ModelConfig:
+    """Resolve active ordinary settings: complete user file, else shipped defaults."""
+    path = user_model_config_path()
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return built_in_model_config()
+    except OSError:
+        raise ValueError("invalid_model_role_configuration") from None
+    return _load_model_config(path)
 
 
 class ModelError(RuntimeError):
@@ -252,7 +323,7 @@ class OpenAIModel:
         cache_namespace: str = "scryraven",
         timeout_seconds: float = 120,
     ) -> None:
-        self.config = config if config is not None else ModelConfig()
+        self.config = config if config is not None else default_model_config()
         self.post = post or requests.post
         self.usage_observer = usage_observer
         self.cache_namespace = cache_namespace

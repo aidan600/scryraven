@@ -7,16 +7,40 @@ bounded demonstrations and remaining limitations.
 
 ## Two semantic contracts
 
-`scryraven.research` has two semantic model contracts. The ordinary recommended
-profile uses GPT-6 Luna / high / Fast for Research and GPT-6 Sol / medium / Fast
-for Answer. These are reversible `ModelConfig.research` and `ModelConfig.answer`
-defaults, not architectural requirements or a model router. Compatible injected
-configurations may vary in quality and validation coverage. A bounded latency
-comparison kept high after medium missed a controlling Passport identity lead.
+`scryraven.research` has two semantic model contracts: Research and Answer.
+Ordinary runtime selects `ModelConfig.research` or `ModelConfig.answer`; the
+package ships tracked defaults in `scryraven/model_roles.defaults.json`: GPT-6 Luna /
+high / Fast for Research and GPT-6.1 Sol / medium / Fast for Answer. An optional
+complete user/operator `model_roles.json` outside the repository overrides all
+three execution settings. Explicit injected `ModelConfig` takes precedence over
+the user file, which takes precedence over shipped defaults. `built_in_model_config()`
+reads shipped values; `default_model_config()`, `ModelConfig()` and `OpenAIModel()`
+resolve one coherent effective snapshot. Both files receive the same strict
+validation; malformed user settings fail locally without falling back.
+
+Windows uses `%LOCALAPPDATA%\ScryRaven\model_roles.json`, with
+`~/AppData/Local/ScryRaven/model_roles.json` as the absent, empty or relative-root
+fallback. macOS uses `~/Library/Application Support/ScryRaven/model_roles.json`.
+Unix uses `$XDG_CONFIG_HOME/scryraven/model_roles.json`, falling back to
+`~/.config/scryraven/model_roles.json` for an absent, empty or relative root.
+The loader creates no file and reads no model-value environment overrides.
+CLI, Reading Room, sessions and direct `run()` construct a fresh ordinary model
+per turn, so a user edit applies to the next turn without restarting the process
+or editing source, committing or opening a PR. Explicitly retained model instances
+keep their resolved settings. Full injection bypasses both files; partial injection
+fills only the missing role from effective settings. Injection is invocation-local
+and writes nothing. The external file is the current settings boundary; no UI,
+settings endpoint, write API, database settings, watcher or merging layer exists.
+These values are reversible product configuration, not architectural requirements
+or a model router. Compatible injected configurations may vary in quality and
+validation coverage. A bounded latency comparison kept high after medium missed
+a controlling Passport identity lead.
 The earlier ordinary-route Standard/Fast comparison did not isolate a Fast speed
 benefit; a later isolated fixed-packet screen showed a consistent latency benefit
-for Sol / medium / Fast and noisier evidence for Luna / high / Fast. Fast may cost
-more per token, and there is no runtime cost estimator. Model choices are not
+for GPT-6 Sol / medium / Fast and noisier evidence for Luna / high / Fast. The
+GPT-6.1 Sol Answer configuration has offline verification only; no new live
+quality or latency benefit is established. Fast may cost more per token, and
+there is no runtime cost estimator. Model choices are not
 read from environment variables; `.env.example` contains credential placeholders.
 No Sol interpretation/decomposition pass precedes Research. Such a pass may be
 compared in a separate bounded experiment only if Level-8 or later dogfooding

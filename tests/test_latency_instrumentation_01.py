@@ -5,7 +5,7 @@ import json
 from test_research_loop import Script, answer, decision, no_fetch, request
 
 from core.exa_transport import DiscoveryCandidate
-from scryraven.model import ModelConfig, OpenAIModel
+from scryraven.model import OpenAIModel
 from scryraven.research import RunLimits, run
 
 
@@ -76,7 +76,7 @@ def test_existing_model_usage_boundary_populates_safe_call_record(monkeypatch):
             }],
         }]})
 
-    model = OpenAIModel(ModelConfig(), post=post)
+    model = OpenAIModel(post=post)
     result = run("What follows?", model=model, search=lambda _: [], fetch=no_fetch)
     starts = [event for event in result.trace if event["action"] == "model_started"]
     returned = [event for event in result.trace if event["action"] == "model_returned"]
@@ -84,7 +84,7 @@ def test_existing_model_usage_boundary_populates_safe_call_record(monkeypatch):
     assert [(item["contract"], item["model"], item["reasoning_effort"])
             for item in starts] == [
                 ("research", "gpt-6-luna", "high"),
-                ("answer", "gpt-6-sol", "medium"),
+                ("answer", "gpt-6.1-sol", "medium"),
             ]
     assert {key: returned[0]["usage"][key] for key in (
         "input_tokens", "cached_input_tokens", "cache_write_tokens",
@@ -101,3 +101,4 @@ def test_existing_model_usage_boundary_populates_safe_call_record(monkeypatch):
     assert [item["usage"]["returned_service_tier"] for item in returned] == [
         "default", "default",
     ]
+    assert [item["requested_service_tier"] for item in starts] == ["fast", "fast"]

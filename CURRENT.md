@@ -37,11 +37,39 @@ is introduced. The default promotes a preference that yielded two developed
 answers in a frozen direct-Answer probe; it has not received new live validation,
 and its reliability awaits ordinary Reading Room dogfooding.
 
-The ordinary recommended model profile uses GPT-6 Luna / high / Fast for Research
-and GPT-6 Sol / medium / Fast for Answer. These are reversible defaults in
-`ModelConfig`, not architectural requirements or a semantic router. Compatible
-injected configurations may vary in quality and validation coverage; there is no
-automatic premium escalation or model fallback. Exa supplies ordinary general
+Ordinary runtime selects semantic Research and Answer roles through
+`ModelConfig.research` and `ModelConfig.answer`. Tracked package-owned shipped
+defaults in `scryraven/model_roles.defaults.json` are GPT-6 Luna / high / Fast for
+Research and GPT-6.1 Sol / medium / Fast for Answer. An optional complete per-user
+`model_roles.json` outside the checkout controls active ordinary model IDs,
+reasoning and service tiers. The precedence is explicit injected `ModelConfig`,
+then the user file, then shipped defaults. Windows uses
+`%LOCALAPPDATA%\ScryRaven\model_roles.json`, falling back to
+`~/AppData/Local/ScryRaven/model_roles.json` for an absent, empty or relative root.
+macOS uses `~/Library/Application Support/ScryRaven/model_roles.json`; Unix uses
+`$XDG_CONFIG_HOME/scryraven/model_roles.json` with `~/.config/scryraven/model_roles.json`
+as the absent, empty or relative-root fallback.
+
+`built_in_model_config()` reads shipped defaults; `default_model_config()`,
+`ModelConfig()` and `OpenAIModel()` resolve one coherent effective snapshot with
+strict validation. A present invalid user file fails locally without fallback
+or provider I/O. The loader creates no settings file. Full explicit injection
+bypasses both files; partial injection resolves the missing role from effective
+ordinary settings. CLI, Reading Room, sessions and direct `run()` construct a
+fresh ordinary model per turn. Editing the user file affects the next turn in
+the same process without any source edit, commit or PR; an explicitly retained
+model keeps its resolved snapshot. The external file is the current user/operator
+settings boundary, with no settings UI, write API or watcher.
+
+Offline mocked transport checks cover those ordinary surfaces and between-turn
+amendments, actual resolved-model telemetry and model/effort-sensitive cache
+identity. The unchanged shipped Research role retains its baseline cache family;
+the shipped Answer model change produces a distinct family. This cleanup used
+zero live calls and establishes no GPT-6.1 Sol quality or latency result.
+These are reversible configuration values, not architectural requirements or a
+semantic router. Compatible injected configurations may vary in quality and
+validation coverage; there is no automatic premium escalation or model fallback.
+Exa supplies ordinary general
 Search. Research can explicitly select Serper lexical/community/current
 discovery for a needed source class. Serper
 candidates and snippets guide navigation only;
@@ -249,10 +277,10 @@ transport fallback `linkup_transport_failed` through Acquisition and body-free
 diagnostics. Endpoint codes describe the LinkUp API, not the target website.
 Unrecognized injected Read failures remain `read_failed`. No raw provider failure
 body, exception text, headers or credentials enter these receipts or diagnostics.
-`ModelConfig.research` and `ModelConfig.answer` select the built-in OpenAI role
-settings. Explicit injected `ModelConfig` remains available. Obsolete FAST/SMART
-model environment overrides are removed; `.env.example` holds credential
-placeholders only, and the product does not load `.env`.
+`ModelConfig.research` and `ModelConfig.answer` hold the resolved OpenAI role
+settings from effective user configuration or shipped defaults. Explicit injected
+`ModelConfig` remains available. Obsolete FAST/SMART model environment overrides are removed;
+`.env.example` holds credential placeholders only, and the product does not load `.env`.
 
 ## Bounded evidence and limits
 

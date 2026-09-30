@@ -8,7 +8,7 @@ from copy import deepcopy
 import pytest
 import requests
 
-from scryraven.model import ModelConfig, ModelError, ModelRole, OpenAIModel
+from scryraven.model import ModelConfig, ModelError, ModelRole, OpenAIModel, default_model_config
 
 
 class Response:
@@ -22,10 +22,10 @@ class Response:
         return self.data
 
 
-def test_model_config_has_research_and_answer_fast_defaults():
-    assert ModelConfig() == ModelConfig(
+def test_model_config_loads_research_and_answer_fast_defaults():
+    assert default_model_config() == ModelConfig() == ModelConfig(
         research=ModelRole("gpt-6-luna", "high", "fast"),
-        answer=ModelRole("gpt-6-sol", "medium", "fast"),
+        answer=ModelRole("gpt-6.1-sol", "medium", "fast"),
     )
 
 
@@ -82,7 +82,7 @@ def test_default_transport_uses_recommended_stages_not_obsolete_environment(monk
     model("answer", "prompt", {}, {})
     assert [(call["model"], call["reasoning"]["effort"], call["service_tier"])
             for call in calls] == [
-        ("gpt-6-luna", "high", "fast"), ("gpt-6-sol", "medium", "fast"),
+        ("gpt-6-luna", "high", "fast"), ("gpt-6.1-sol", "medium", "fast"),
     ]
 
 

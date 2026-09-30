@@ -30,9 +30,13 @@ ScryRaven does **not** load `.env`. With the applicable variables supplied:
 python -m scryraven "What is the maximum allowed weight of a ten-pin bowling ball?"
 ```
 
-The ordinary runtime uses GPT-6 Luna / high for Research and GPT-6 Sol / medium
-for Answer. Exa supplies ordinary general Search; Research can select Serper for
-lexical/community/current discovery; LinkUp Fetch supplies external known-URL
+The ordinary runtime selects semantic Research and Answer roles. Shipped defaults
+in `scryraven/model_roles.defaults.json` configure GPT-6 Luna / high / Fast for
+Research and GPT-6.1 Sol / medium / Fast for Answer. An optional per-user file
+controls active settings; see [model configuration](#model-configuration).
+Exa supplies ordinary general
+Search; Research can select Serper for lexical/community/current discovery;
+LinkUp Fetch supplies external known-URL
 Read. There is no architecture selector, Analyst checkpoint,
 separate old Author handoff or fallback engine.
 See [research architecture](docs/architecture/RESEARCH.md) for the promoted contract.
@@ -295,19 +299,65 @@ The bounded production restart observation and its limits are recorded in
 The process needs `OPENAI_API_KEY` and `EXA_API_KEY`; Research-selected lexical,
 community or current-web discovery needs `SERPER_API_KEY` only when invoked.
 External Read needs `LINKUP_API_KEY` when invoked. It does not load `.env`.
-The ordinary recommended profile uses GPT-6 Luna / high / Fast for Research and
-GPT-6 Sol / medium / Fast for Answer. `ModelConfig.research` and
-`ModelConfig.answer` hold these built-in defaults and accept compatible explicit
-injected settings. They are implementation choices, not architectural requirements
-or a semantic router; other injected configurations may vary in quality and
-validation coverage. The obsolete FAST/SMART model environment overrides are
-removed. `.env.example` contains product-process credential placeholders only;
+Ordinary code selects the semantic roles `research` and `answer` through
+`ModelConfig.research` and `ModelConfig.answer`. The package ships tracked defaults
+in `scryraven/model_roles.defaults.json`: Research is GPT-6 Luna / high / Fast;
+Answer is GPT-6.1 Sol / medium / Fast. `built_in_model_config()` reads these shipped
+values independently of local choices. Active ordinary settings use this precedence:
+explicit injected `ModelConfig` > complete per-user file > shipped defaults.
+
+The optional user/operator settings file lives outside the checkout:
+
+| Platform | Model-role configuration path |
+| --- | --- |
+| Windows | `%LOCALAPPDATA%\ScryRaven\model_roles.json` |
+| macOS | `~/Library/Application Support/ScryRaven/model_roles.json` |
+| Linux / other Unix | `$XDG_CONFIG_HOME/scryraven/model_roles.json`, otherwise `~/.config/scryraven/model_roles.json` |
+
+Windows falls back to `~/AppData/Local/ScryRaven/model_roles.json` when
+`LOCALAPPDATA` is absent, empty or relative. A relative `XDG_CONFIG_HOME` also
+uses the fallback. `user_model_config_path()` returns the deterministic location.
+The loader creates no file or directory. An absent user file uses shipped
+defaults; a present invalid file fails locally before provider I/O, without
+silently falling back. Both files use the same strict complete two-role schema.
+
+To choose a different Answer model, effort and tier, create or edit the per-user
+`model_roles.json`, keeping both roles. Replace `YOUR_ANSWER_MODEL_ID` with your
+compatible provider model ID, for example:
+
+```json
+{
+  "research": {"model": "gpt-6-luna", "reasoning": "high", "service_tier": "fast"},
+  "answer": {"model": "YOUR_ANSWER_MODEL_ID", "reasoning": "high", "service_tier": "default"}
+}
+```
+
+The Answer role's `model`, `reasoning` and `service_tier` are all operator choices.
+An empty reasoning string omits the effort parameter; service tier accepts
+`"default"`, `"fast"` or `null` (omit the request field). The loader does not
+contact a provider to validate model availability or model/effort compatibility.
+**No source edit, commit or PR is required for a local active configuration change.**
+`default_model_config()`, `ModelConfig()` and `OpenAIModel()` resolve one coherent
+effective snapshot. CLI, Reading Room, sessions and direct `run()` resolve a fresh
+ordinary model for each turn, so edits apply on the next turn without restarting
+the process. An explicitly constructed and retained `OpenAIModel` keeps its
+resolved snapshot. Full explicit injection reads neither user nor shipped files;
+partial injection retains the supplied role and resolves the missing role from
+the effective configuration. Injection neither changes nor persists user settings.
+This external file is the current user/operator settings boundary; there is no
+graphical settings UI or settings write API yet. Compatible injected or local
+configurations may vary in quality and validation coverage.
+
+The obsolete FAST/SMART model environment overrides are removed. Model values are
+not read from environment variables. `.env.example` contains credential placeholders only;
 the product does not load `.env`. There is no automatic premium escalation or
 model fallback. One stateless OpenAI Responses transport uses structured output;
-no model has built-in web tools. The isolated fixed-packet Sol / medium / Fast
-screen showed a consistent latency benefit; Luna / high / Fast evidence was
-noisier. Fast is a reversible default, not a universal speedup, and may cost
-more per token. There is no runtime cost estimator.
+no model has built-in web tools. The historical isolated fixed-packet GPT-6 Sol /
+medium / Fast screen showed a consistent latency benefit; Luna / high / Fast
+evidence was noisier. The GPT-6.1 Sol Answer configuration has offline verification
+only, with no new live quality or latency claim. Fast is a reversible default,
+not a universal speedup, and may cost more per token. There is no runtime cost
+estimator.
 
 ## Acquisition and evidence
 
