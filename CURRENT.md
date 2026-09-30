@@ -76,6 +76,18 @@ no longer contains `purpose`: executable route intent remains in structured
 requests and compact working state. This adds no semantic owner or memory and
 does not change the separate Research/Answer cache families.
 
+Research now presents the logical acquisition catalog to the model as lossless
+compact column-labeled tables. `AcquisitionLibrary.catalog()` and custody stay
+unchanged: full field names, every value, row order and absent-versus-null
+distinctions survive. The previously tested representation reduced repeated
+Research catalog characters by 28.75% and reconstructed packet characters by
+8.98% across 35 historical states (8.57% counting the added instruction per
+call). The minimal format instruction changes Research's instruction-derived
+cache family; Answer and the stable cache breakpoint remain unchanged. This
+efficiency evidence does not establish better Research judgment, stopping,
+retention or general reliability. See
+`docs/operator/CATALOG_TABLE_INTEGRATION_01.md`.
+
 Research receives an ordered, turn-scoped mechanical history of failed external
 Reads, including existing candidate identity, provider, effective fetch strategy,
 requested mode, fixed safe failure code and measured elapsed seconds. This history
