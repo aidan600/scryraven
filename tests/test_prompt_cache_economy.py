@@ -93,7 +93,7 @@ def test_lossless_layout_unchanged_instructions_schema_defaults_and_stateless_co
         "prompt_cache_breakpoint": {"mode": "explicit"},
     }]}
     assert payload["input"][1]["role"] == "user"
-    assert payload["model"] == ("gpt-6-luna" if stage == "research" else "gpt-6-sol")
+    assert payload["model"] == ("gpt-6-luna" if stage == "research" else "gpt-6.1-sol")
     assert payload["reasoning"] == {"effort": "high" if stage == "research" else "medium"}
     assert payload["text"] == {"format": {"type": "json_schema", "name": stage, "strict": True, "schema": schema}}
     assert payload["store"] is False and payload["max_output_tokens"] == 12000
@@ -245,12 +245,34 @@ def test_family_separates_contracts_and_namespace_but_not_questions_or_correctio
     assert len({call["prompt_cache_key"] for call in calls[-3:]}) == 1
     base = calls[-1]["prompt_cache_key"]
     for kwargs in ({"cache_namespace": "cold-validation-2"},
-                   {"config": ModelConfig(answer=ModelRole("gpt-6-sol", "high"))},
+                   {"config": ModelConfig(answer=ModelRole("gpt-6.1-sol", "high"))},
                    {"config": ModelConfig(answer=ModelRole("other-answer", "medium"))}):
         other = OpenAIModel(post=model.post, **kwargs)
         other("answer", "prompt", {"question": Q1}, {})
         assert calls[-1]["prompt_cache_key"] != base
     assert all(len(call["prompt_cache_key"]) <= 64 for call in calls)
+
+
+def test_configured_answer_upgrade_changes_only_answer_cache_identity(transport):
+    model, calls, records = transport
+    previous = OpenAIModel(ModelConfig(
+        ModelRole("gpt-6-luna", "high", "fast"),
+        ModelRole("gpt-6-sol", "medium", "fast"),
+    ), post=model.post, usage_observer=records.append)
+    for stage, phase, prompt, _, shape in FAMILIES:
+        previous(stage, prompt, {"phase": phase}, shape.model_json_schema())
+        model(stage, prompt, {"phase": phase}, shape.model_json_schema())
+        before, after = calls[-2:]
+        if stage == "research":
+            assert after == before
+        else:
+            assert after["model"] == "gpt-6.1-sol"
+            assert before["prompt_cache_key"] != after["prompt_cache_key"]
+            assert {key: value for key, value in before.items() if key not in {"model", "prompt_cache_key"}} == {
+                key: value for key, value in after.items() if key not in {"model", "prompt_cache_key"}
+            }
+        assert records[-1].model == after["model"]
+        assert records[-1].cache_family == after["prompt_cache_key"]
 
 
 @pytest.mark.parametrize("usage,expected", [
@@ -328,7 +350,7 @@ def test_real_model_transport_through_ordinary_run_and_session_with_fake_respons
     assert not replies and not provider.fetches
     assert [(call["model"], call["reasoning"]["effort"]) for call in calls] == [
         ("gpt-6-luna", "high") if call["text"]["format"]["name"] == "research"
-        else ("gpt-6-sol", "medium") for call in calls
+        else ("gpt-6.1-sol", "medium") for call in calls
     ]
     assert len({call["prompt_cache_key"] for call in calls if call["text"]["format"]["name"] == "research"}) == 1
     assert len({call["prompt_cache_key"] for call in calls if call["text"]["format"]["name"] == "answer"}) == 1

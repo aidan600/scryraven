@@ -37,11 +37,22 @@ is introduced. The default promotes a preference that yielded two developed
 answers in a frozen direct-Answer probe; it has not received new live validation,
 and its reliability awaits ordinary Reading Room dogfooding.
 
-The ordinary recommended model profile uses GPT-6 Luna / high / Fast for Research
-and GPT-6 Sol / medium / Fast for Answer. These are reversible defaults in
-`ModelConfig`, not architectural requirements or a semantic router. Compatible
-injected configurations may vary in quality and validation coverage; there is no
-automatic premium escalation or model fallback. Exa supplies ordinary general
+Ordinary runtime selects semantic Research and Answer roles through
+`ModelConfig.research` and `ModelConfig.answer`. One tracked package-owned
+`scryraven/model_roles.json` configures GPT-6 Luna / high / Fast for Research and
+GPT-6.1 Sol / medium / Fast for Answer. `default_model_config()`, `ModelConfig()`
+and `OpenAIModel()` resolve these concrete defaults locally with strict validation;
+model IDs, reasoning and service tiers can change without editing runtime Python
+or changing the semantic contracts. Explicit injection remains available without
+loading ordinary defaults when both roles are supplied. Offline mocked transport
+checks cover CLI, Reading Room, sessions and direct `run()`, actual resolved-model
+telemetry and cache identity: the unchanged Research role retains its family;
+the Answer model change produces a distinct family. This configuration cleanup
+used zero live calls and establishes no GPT-6.1 Sol quality or latency result.
+These are reversible configuration values, not architectural requirements or a
+semantic router. Compatible injected configurations may vary in quality and
+validation coverage; there is no automatic premium escalation or model fallback.
+Exa supplies ordinary general
 Search. Research can explicitly select Serper lexical/community/current
 discovery for a needed source class. Serper
 candidates and snippets guide navigation only;
@@ -249,10 +260,10 @@ transport fallback `linkup_transport_failed` through Acquisition and body-free
 diagnostics. Endpoint codes describe the LinkUp API, not the target website.
 Unrecognized injected Read failures remain `read_failed`. No raw provider failure
 body, exception text, headers or credentials enter these receipts or diagnostics.
-`ModelConfig.research` and `ModelConfig.answer` select the built-in OpenAI role
-settings. Explicit injected `ModelConfig` remains available. Obsolete FAST/SMART
-model environment overrides are removed; `.env.example` holds credential
-placeholders only, and the product does not load `.env`.
+`ModelConfig.research` and `ModelConfig.answer` hold the resolved OpenAI role
+settings from tracked configuration. Explicit injected `ModelConfig` remains
+available. Obsolete FAST/SMART model environment overrides are removed;
+`.env.example` holds credential placeholders only, and the product does not load `.env`.
 
 ## Bounded evidence and limits
 

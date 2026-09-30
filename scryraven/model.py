@@ -7,8 +7,9 @@ import os
 from collections.abc import Callable
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from hashlib import sha256
+from pathlib import Path
 from time import monotonic
 from typing import Any
 
@@ -24,8 +25,37 @@ class ModelRole:
 
 @dataclass(frozen=True)
 class ModelConfig:
-    research: ModelRole = ModelRole("gpt-6-luna", "high", "fast")
-    answer: ModelRole = ModelRole("gpt-6-sol", "medium", "fast")
+    research: ModelRole = field(default_factory=lambda: default_model_config().research)
+    answer: ModelRole = field(default_factory=lambda: default_model_config().answer)
+
+
+def _unique_role_keys(pairs: list[tuple[str, Any]]) -> dict:
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("invalid_model_role_configuration")
+        result[key] = value
+    return result
+
+
+def default_model_config() -> ModelConfig:
+    """Resolve the two semantic roles from the package's tracked configuration."""
+    try:
+        data = json.loads(
+            Path(__file__).with_name("model_roles.json").read_text(encoding="utf-8"),
+            object_pairs_hook=_unique_role_keys,
+        )
+    except (OSError, UnicodeError, ValueError):
+        raise ValueError("invalid_model_role_configuration") from None
+    if not isinstance(data, dict) or set(data) != {"research", "answer"}:
+        raise ValueError("invalid_model_role_configuration")
+    for role in data.values():
+        if (not isinstance(role, dict) or set(role) != {"model", "reasoning", "service_tier"}
+                or not isinstance(role["model"], str) or not role["model"].strip()
+                or not isinstance(role["reasoning"], str)
+                or role["service_tier"] not in (None, "default", "fast")):
+            raise ValueError("invalid_model_role_configuration")
+    return ModelConfig(**{name: ModelRole(**role) for name, role in data.items()})
 
 
 class ModelError(RuntimeError):
@@ -252,7 +282,7 @@ class OpenAIModel:
         cache_namespace: str = "scryraven",
         timeout_seconds: float = 120,
     ) -> None:
-        self.config = config if config is not None else ModelConfig()
+        self.config = config if config is not None else default_model_config()
         self.post = post or requests.post
         self.usage_observer = usage_observer
         self.cache_namespace = cache_namespace

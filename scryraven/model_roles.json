@@ -1,0 +1,12 @@
+{
+  "research": {
+    "model": "gpt-6-luna",
+    "reasoning": "high",
+    "service_tier": "fast"
+  },
+  "answer": {
+    "model": "gpt-6.1-sol",
+    "reasoning": "medium",
+    "service_tier": "fast"
+  }
+}

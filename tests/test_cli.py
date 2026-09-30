@@ -24,7 +24,7 @@ def test_cli_ordinary_run_invokes_research_and_answer_over_real_exa_adapter(monk
             stages.append(kwargs["json"]["text"]["format"]["name"])
             assert (kwargs["json"]["model"], kwargs["json"]["reasoning"]) == (
                 ("gpt-6-luna", {"effort": "high"}) if stages[-1] == "research"
-                else ("gpt-6-sol", {"effort": "medium"})
+                else ("gpt-6.1-sol", {"effort": "medium"})
             )
             material = json.loads(''.join(b['text'] for b in kwargs['json']['input'][1]['content']))
             assert 'analysis' not in material and 'semantic_history' not in material

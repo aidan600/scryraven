@@ -7,16 +7,25 @@ bounded demonstrations and remaining limitations.
 
 ## Two semantic contracts
 
-`scryraven.research` has two semantic model contracts. The ordinary recommended
-profile uses GPT-6 Luna / high / Fast for Research and GPT-6 Sol / medium / Fast
-for Answer. These are reversible `ModelConfig.research` and `ModelConfig.answer`
-defaults, not architectural requirements or a model router. Compatible injected
-configurations may vary in quality and validation coverage. A bounded latency
-comparison kept high after medium missed a controlling Passport identity lead.
+`scryraven.research` has two semantic model contracts: Research and Answer.
+Ordinary runtime selects `ModelConfig.research` or `ModelConfig.answer`; the
+package-owned tracked `scryraven/model_roles.json` supplies the concrete model ID,
+reasoning and service tier for each. `default_model_config()`, `ModelConfig()` and
+`OpenAIModel()` load the same strictly validated local configuration, shared by
+CLI, Reading Room, sessions and direct `run()`. Current values are GPT-6 Luna /
+high / Fast for Research and GPT-6.1 Sol / medium / Fast for Answer. Model identity
+can change in configuration without editing runtime Python or changing either
+semantic contract. Explicit injected roles remain available for frozen experiments.
+These values are reversible product configuration, not architectural requirements
+or a model router. Compatible injected configurations may vary in quality and
+validation coverage. A bounded latency comparison kept high after medium missed
+a controlling Passport identity lead.
 The earlier ordinary-route Standard/Fast comparison did not isolate a Fast speed
 benefit; a later isolated fixed-packet screen showed a consistent latency benefit
-for Sol / medium / Fast and noisier evidence for Luna / high / Fast. Fast may cost
-more per token, and there is no runtime cost estimator. Model choices are not
+for GPT-6 Sol / medium / Fast and noisier evidence for Luna / high / Fast. The
+GPT-6.1 Sol Answer configuration has offline verification only; no new live
+quality or latency benefit is established. Fast may cost more per token, and
+there is no runtime cost estimator. Model choices are not
 read from environment variables; `.env.example` contains credential placeholders.
 No Sol interpretation/decomposition pass precedes Research. Such a pass may be
 compared in a separate bounded experiment only if Level-8 or later dogfooding
