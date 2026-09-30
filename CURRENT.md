@@ -121,6 +121,26 @@ zero live calls; no third campaign ran. Telemetry describes acquisition movement
 not relevance, usefulness or sufficiency. No stopping, answer-quality, latency or
 cost improvement is established.
 
+Ordinary generic Exa Search uses `type=auto`, six results and
+`contents.text=false`. Query-specific Highlights now use provider-native Dynamic
+allocation with `dynamic=true`, `verbosity=high` and the
+`Exa-Beta: dynamic-highlights-2026-08-28` header; no fixed `maxCharacters` is
+requested. Actual returned source selections retain `provider_highlights` custody,
+explicit separation and the existing size guard. Serper discovery and LinkUp
+known-URL Read are unchanged. This integration received offline verification but
+no new live validation; it establishes no universal answer-quality, latency or
+cost improvement.
+
+Dynamic Highlights Context Allocation 01 remains formally **INCONCLUSIVE** under
+its original whole-product promotion gate. Nine provider-only calls showed uneven
+allocation without a repeated custody failure. The five product runs did not
+establish whole-product superiority: MD-80's extra Research cost had no shown
+allocation cause, and St. Dorothy's omitted chronology in Answer after relevant
+material arrived. Later architecture adjudication separated that downstream
+outcome from retrieval-mechanism evidence and selected Dynamic/high for this
+integration. See `docs/operator/DYNAMIC_HIGHLIGHTS_INTEGRATION_01.md`; sanitized
+experiment evidence remains under ignored `local-evals/runs/dynamic-highlights-01/`.
+
 ## Sessions, Evidence and presentation
 
 Immutable acquisitions, canonical source identities, exact versions/views,

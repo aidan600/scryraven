@@ -1,4 +1,4 @@
-"""The fixed Exa path preserves source text and excludes generated outputs."""
+"""The Exa path preserves source text and excludes generated outputs."""
 import pytest
 
 from core import exa_transport as exa
@@ -30,14 +30,75 @@ def test_search_preserves_highlights_and_excludes_summary_and_metadata(monkeypat
 
     results = exa.search_exa("meaning sought", post=post)
     assert calls[0][0] == exa.EXA_SEARCH_URL
-    payload = calls[0][1]["json"]
-    assert payload["contents"] == {"text": False, "highlights": {"query": "meaning sought", "maxCharacters": 4000}}
-    assert payload["type"] == "auto" and payload["numResults"] == 6
-    assert all(passage in results[0].context for passage in passages)
-    assert "Separate provider highlight" in results[0].context
+    assert calls[0] == (exa.EXA_SEARCH_URL, {
+        "json": {
+            "query": "meaning sought", "type": "auto", "numResults": 6,
+            "contents": {"text": False, "highlights": {
+                "query": "meaning sought", "dynamic": True, "verbosity": "high",
+            }},
+        },
+        "headers": {
+            "x-api-key": "offline-test-key", "Content-Type": "application/json",
+            "Exa-Beta": "dynamic-highlights-2026-08-28",
+        },
+        "timeout": exa.DEFAULT_TIMEOUT_SECONDS,
+    })
+    assert results[0].context == (
+        passages[0] + "\n\n[Separate provider highlight; intervening context omitted]\n\n" + passages[1]
+    )
     assert "Generated" not in results[0].context and "Unrequested" not in results[0].context
     assert results[0].context_kind == "provider_highlights"
     assert results[1].context_kind == "navigation" and not results[1].context
+
+
+def test_search_uses_requested_result_count_and_preserves_six_result_order():
+    query = "specific question"
+    calls = []
+    rows = [{"url": f"https://example.test/{i}", "title": f"Result {i}",
+             "highlights": [f"Excerpt {i}"]} for i in range(6)]
+
+    def post(url, **kwargs):
+        calls.append((url, kwargs))
+        return Response({"results": rows})
+
+    results = exa.search_exa(query, result_count=6, api_key="offline", post=post)  # pragma: allowlist secret
+    assert calls[0][1]["json"]["numResults"] == 6
+    assert [(r.url, r.title, r.context) for r in results] == [
+        (row["url"], row["title"], row["highlights"][0]) for row in rows
+    ]
+    exa.search_exa(query, result_count=3, api_key="offline", post=post)  # pragma: allowlist secret
+    assert calls[1][1]["json"]["numResults"] == 3
+
+
+@pytest.mark.parametrize(("highlights", "context", "kind"), [
+    (["A single selection."], "A single selection.", "provider_highlights"),
+    (["First…\nline", "Second café…"],
+     "First…\nline\n\n[Separate provider highlight; intervening context omitted]\n\nSecond café…",
+     "provider_highlights"),
+    ([], "", "navigation"),
+    (None, "", "navigation"),
+    ("malformed", "", "navigation"),
+    ([None, 7, "  "], "", "navigation"),
+])
+def test_highlight_custody_and_navigation(highlights, context, kind):
+    result = exa.search_exa("query", api_key="offline", post=lambda *a, **k: Response({  # pragma: allowlist secret
+        "results": [{"url": "https://example.test/page", "title": "Page", "highlights": highlights}],
+    }))[0]
+    assert (result.url, result.title, result.context, result.context_kind) == (
+        "https://example.test/page", "Page", context, kind,
+    )
+
+
+def test_uneven_highlight_lengths_have_no_fixed_per_result_cap():
+    long_selection = "長" * 5_000
+    results = exa.search_exa("query", api_key="offline", post=lambda *a, **k: Response({  # pragma: allowlist secret
+        "results": [
+            {"url": "https://example.test/short", "highlights": ["Short."]},
+            {"url": "https://example.test/long", "highlights": [long_selection]},
+        ],
+    }))
+    assert [r.context for r in results] == ["Short.", long_selection]
+    assert all(r.context_kind == "provider_highlights" for r in results)
 
 
 def test_pathological_highlights_are_visible_as_omitted_navigation():
@@ -55,13 +116,17 @@ def test_contents_uses_full_fresh_text_and_exact_requested_identity():
     body = "  Publication date: 26 March 2026\nActual source.  "
 
     def post(endpoint, **kwargs):
-        calls.append((endpoint, kwargs["json"]))
+        calls.append((endpoint, kwargs))
         return Response({"results": [{"url": "https://example.test/wrong", "text": "wrong source"},
                                      {"id": url, "url": url, "text": body, "summary": "Generated"}]})
 
     result = exa.fetch_exa(url, api_key="offline", post=post)  # pragma: allowlist secret
     assert result == exa.FetchedMaterial(url, body)
-    assert calls == [(exa.EXA_CONTENTS_URL, {"ids": [url], "text": {"verbosity": "full"}, "highlights": False, "maxAgeHours": 0})]
+    assert calls == [(exa.EXA_CONTENTS_URL, {
+        "json": {"ids": [url], "text": {"verbosity": "full"}, "highlights": False, "maxAgeHours": 0},
+        "headers": {"x-api-key": "offline", "Content-Type": "application/json"},
+        "timeout": exa.DEFAULT_TIMEOUT_SECONDS,
+    })]
 
 
 @pytest.mark.parametrize("payload", [

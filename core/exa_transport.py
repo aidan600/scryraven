@@ -18,7 +18,7 @@ EXA_API_KEY_ENV = "EXA_API_KEY"  # pragma: allowlist secret
 DEFAULT_TIMEOUT_SECONDS = 60.0
 DEFAULT_DISCOVERY_RESULT_COUNT = 6
 DISCOVERY_CONTEXT_SAFETY_LIMIT = 65_536
-HIGHLIGHT_CHARACTERS = 4_000
+EXA_DYNAMIC_HIGHLIGHTS_BETA = "dynamic-highlights-2026-08-28"
 
 
 class ExaTransportError(RuntimeError):
@@ -44,8 +44,11 @@ def search_exa(
         raise ValueError("result_count must be an integer between 1 and 100")
     data = _post_json(EXA_SEARCH_URL, {
         "query": query, "type": "auto", "numResults": result_count,
-        "contents": {"text": False, "highlights": {"query": query, "maxCharacters": HIGHLIGHT_CHARACTERS}},
-    }, api_key, timeout_seconds, post)
+        "contents": {"text": False, "highlights": {
+            "query": query, "dynamic": True, "verbosity": "high",
+        }},
+    }, api_key, timeout_seconds, post,
+        extra_headers={"Exa-Beta": EXA_DYNAMIC_HIGHLIGHTS_BETA})
     candidates = []
     for row in _results(data):
         url = _text(row.get("url"))
@@ -89,16 +92,20 @@ def fetch_exa(
     raise ExaTransportError("contents_material_unavailable")
 
 
-def _post_json(url, payload, api_key, timeout_seconds, post) -> Mapping[str, Any]:
+def _post_json(url, payload, api_key, timeout_seconds, post, *,
+               extra_headers: Mapping[str, str] | None = None) -> Mapping[str, Any]:
     token = api_key if api_key is not None else os.getenv(EXA_API_KEY_ENV)
     if not isinstance(token, str) or not token.strip():
         raise ExaTransportError("exa_configuration_missing")
     timeout = float(timeout_seconds)
     if timeout <= 0:
         raise ValueError("timeout_seconds must be positive")
+    headers = {"x-api-key": token.strip(), "Content-Type": "application/json"}
+    if extra_headers:
+        headers.update(extra_headers)
     try:
         response = (post or requests.post)(
-            url, json=payload, headers={"x-api-key": token.strip(), "Content-Type": "application/json"}, timeout=timeout,
+            url, json=payload, headers=headers, timeout=timeout,
         )
         response.raise_for_status()
         data = response.json()
