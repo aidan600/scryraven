@@ -45,14 +45,14 @@ if ([string]::IsNullOrWhiteSpace($gitBranch)) {
     $gitBranch = '(detached HEAD)'
 }
 
-# Read only built-in role defaults. Importing ModelConfig makes no provider call
+# Read effective local role settings. Importing ModelConfig makes no provider call
 # and avoids duplicating model policy in this development launcher.
 $profileCode = 'import json; from dataclasses import asdict; from scryraven.model import ModelConfig; print(json.dumps(asdict(ModelConfig())))'
 Push-Location $repository
 try {
     $profileJson = [string](& $pythonExecutable -c $profileCode)
     if ($LASTEXITCODE -ne 0) {
-        throw 'Could not read the built-in model profile.'
+        throw 'Could not read the effective model profile.'
     }
 }
 finally {

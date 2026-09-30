@@ -9,13 +9,28 @@ bounded demonstrations and remaining limitations.
 
 `scryraven.research` has two semantic model contracts: Research and Answer.
 Ordinary runtime selects `ModelConfig.research` or `ModelConfig.answer`; the
-package-owned tracked `scryraven/model_roles.json` supplies the concrete model ID,
-reasoning and service tier for each. `default_model_config()`, `ModelConfig()` and
-`OpenAIModel()` load the same strictly validated local configuration, shared by
-CLI, Reading Room, sessions and direct `run()`. Current values are GPT-6 Luna /
-high / Fast for Research and GPT-6.1 Sol / medium / Fast for Answer. Model identity
-can change in configuration without editing runtime Python or changing either
-semantic contract. Explicit injected roles remain available for frozen experiments.
+package ships tracked defaults in `scryraven/model_roles.defaults.json`: GPT-6 Luna /
+high / Fast for Research and GPT-6.1 Sol / medium / Fast for Answer. An optional
+complete user/operator `model_roles.json` outside the repository overrides all
+three execution settings. Explicit injected `ModelConfig` takes precedence over
+the user file, which takes precedence over shipped defaults. `built_in_model_config()`
+reads shipped values; `default_model_config()`, `ModelConfig()` and `OpenAIModel()`
+resolve one coherent effective snapshot. Both files receive the same strict
+validation; malformed user settings fail locally without falling back.
+
+Windows uses `%LOCALAPPDATA%\ScryRaven\model_roles.json`, with
+`~/AppData/Local/ScryRaven/model_roles.json` as the absent, empty or relative-root
+fallback. macOS uses `~/Library/Application Support/ScryRaven/model_roles.json`.
+Unix uses `$XDG_CONFIG_HOME/scryraven/model_roles.json`, falling back to
+`~/.config/scryraven/model_roles.json` for an absent, empty or relative root.
+The loader creates no file and reads no model-value environment overrides.
+CLI, Reading Room, sessions and direct `run()` construct a fresh ordinary model
+per turn, so a user edit applies to the next turn without restarting the process
+or editing source, committing or opening a PR. Explicitly retained model instances
+keep their resolved settings. Full injection bypasses both files; partial injection
+fills only the missing role from effective settings. Injection is invocation-local
+and writes nothing. The external file is the current settings boundary; no UI,
+settings endpoint, write API, database settings, watcher or merging layer exists.
 These values are reversible product configuration, not architectural requirements
 or a model router. Compatible injected configurations may vary in quality and
 validation coverage. A bounded latency comparison kept high after medium missed
