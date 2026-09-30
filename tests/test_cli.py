@@ -87,7 +87,9 @@ def test_cli_ordinary_search_then_read_uses_linkup_not_exa_contents(monkeypatch,
     assert providers == [
         (exa_transport.EXA_SEARCH_URL, {
             "query": "public fact", "type": "auto", "numResults": 6,
-            "contents": {"text": False, "highlights": {"query": "public fact", "maxCharacters": 4000}},
+            "contents": {"text": False, "highlights": {
+                "query": "public fact", "dynamic": True, "verbosity": "high",
+            }},
         }),
         (linkup_transport.LINKUP_FETCH_URL, {"url": "https://example.org/fact"}),
     ]
