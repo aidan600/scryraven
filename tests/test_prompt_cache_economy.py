@@ -6,6 +6,7 @@ from dataclasses import asdict
 
 import pytest
 import requests
+from test_catalog_tables import decode
 from test_model_transport import Response
 from test_research_loop import answer, decision
 from test_research_session import (
@@ -83,7 +84,10 @@ def test_lossless_layout_unchanged_instructions_schema_defaults_and_stateless_co
     schema = shape.model_json_schema()
     assert model(stage, instructions, material, schema) == '{"answer":"ok"}'
     payload = calls[0]
-    assert material == original == material_of(payload)
+    parsed = material_of(payload)
+    if stage == phase == "research":
+        parsed["catalog"] = decode(parsed["catalog"])
+    assert material == original == parsed
     assert payload["input"][0] == {"role": "developer", "content": [{
         "type": "input_text", "text": instructions + SUFFIX,
         "prompt_cache_breakpoint": {"mode": "explicit"},
@@ -111,6 +115,7 @@ def test_navigation_prefix_stable_and_volatile_material_after_last_breakpoint(tr
     changed = deepcopy(original)
     for field in ("evidence", "working_understanding", "catalog", "failed_external_reads", "budget", "output_correction"):
         changed[field] = {"changed": "volatile"}
+    changed["catalog"] = {"materials": [{"id": "E2"}]}
     for material in (original, changed):
         model("research", research.RESEARCH_PROMPT, material, research.ResearchDecision.model_json_schema())
     before, after = [call["input"][1]["content"] for call in calls]
@@ -146,7 +151,7 @@ def test_research_packet_orders_volatile_fields_and_evidence_without_changing_ma
         "evidence": [evidence, {"content": "Second exact body", "id": "E2"}],
         "last_route": {"kind": "search"},
         "failed_external_reads": [{"candidate_ref": "C1", "code": "linkup_timeout"}],
-        "catalog": {"materials": ["E2", "E1"]},
+        "catalog": {"materials": [{"id": "E2"}, {"id": "E1"}]},
         "working_understanding": {"interpretation": "Passport is the base engine"},
         "a_unknown": ["keep", "this", "order"],
         "question": Q2, "phase": "research", "current_date": "2026-09-20",
@@ -157,7 +162,8 @@ def test_research_packet_orders_volatile_fields_and_evidence_without_changing_ma
           research.ResearchDecision.model_json_schema())
     blocks = calls[0]["input"][1]["content"]
     parsed = material_of(calls[0])
-    assert parsed == material == original
+    assert parsed["catalog"] == {"materials": [{"columns": ["id"], "rows": [["E2"], ["E1"]]}]}
+    assert {**parsed, "catalog": material["catalog"]} == material == original
     assert list(parsed) == [
         "conversation_context", "current_date", "phase", "question",
         "working_understanding", "catalog", "last_route", "failed_external_reads", "evidence",

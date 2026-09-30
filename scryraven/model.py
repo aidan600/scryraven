@@ -90,6 +90,20 @@ def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
 
 
+def _catalog_tables(catalog: dict) -> dict:
+    """Encode adjacent equal-key rows without conflating absent and null fields."""
+    result = {}
+    for collection, rows in catalog.items():
+        groups = []
+        for row in rows:
+            columns = sorted(row)
+            if not groups or groups[-1]["columns"] != columns:
+                groups.append({"columns": columns, "rows": []})
+            groups[-1]["rows"].append([row[key] for key in columns])
+        result[collection] = groups
+    return result
+
+
 _RESEARCH_VOLATILE_ORDER = (
     "working_understanding", "catalog", "last_route", "failed_external_reads", "evidence",
     "answer_missing_information", "pending_delivery", "budget",
@@ -168,6 +182,8 @@ def _input_blocks(instructions: str, material: dict, stage: str, phase: str) -> 
     for index, key in enumerate(order):
         pending += (", " if index else "") + _json(key) + ": "
         value = material[key]
+        if key == "catalog" and (stage, phase) == ("research", "research"):
+            value = _catalog_tables(value)
         if key == history and isinstance(value, list) and value:
             pending += "["
             for item_index, item in enumerate(value):
