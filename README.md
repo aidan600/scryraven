@@ -10,6 +10,11 @@ The CLI, sessions and Reading Room use this same ordinary path.
 See `CURRENT.md` for implementation, demonstrations and limits. `PRODUCT.md` owns
 approved product intent.
 
+## History and learning
+
+The [historical reference library](docs/history/README.md) includes the dated
+*ScryRaven Research 101 and Counting* retrospective.
+
 ## Run
 
 Use Python 3.10 or later from the repository root:
