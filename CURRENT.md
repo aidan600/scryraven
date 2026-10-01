@@ -34,8 +34,9 @@ including observed versus modeled status. Partial answers explain which gaps a
 missing input would resolve and which incompatibilities would remain. Reading
 selection supports the complete synthesis. No coverage schema or additional actor
 is introduced. The default promotes a preference that yielded two developed
-answers in a frozen direct-Answer probe; it has not received new live validation,
-and its reliability awaits ordinary Reading Room dogfooding.
+answers in a frozen direct-Answer probe. Exa Evidence-Objective Search 01 later
+exercised it in three completed ordinary answers and one separately recovered
+frozen-packet Answer; this bounded evidence does not establish general reliability.
 
 Ordinary runtime selects semantic Research and Answer roles through
 `ModelConfig.research` and `ModelConfig.answer`. Tracked package-owned shipped
@@ -155,9 +156,38 @@ allocation with `dynamic=true`, `verbosity=high` and the
 `Exa-Beta: dynamic-highlights-2026-08-28` header; no fixed `maxCharacters` is
 requested. Actual returned source selections retain `provider_highlights` custody,
 explicit separation and the existing size guard. Serper discovery and LinkUp
-known-URL Read are unchanged. This integration received offline verification but
-no new live validation; it establishes no universal answer-quality, latency or
-cost improvement.
+known-URL Read are unchanged. The initial integration received offline
+verification; Exa Evidence-Objective Search 01 subsequently exercised the same
+request mechanics in four ordinary product runs. No universal answer-quality,
+latency or cost improvement is established.
+
+Research formulates ordinary generic Exa queries as concise natural-language
+evidence objectives describing what source material should establish, retaining
+consequential known entity, relationship, source-class, time, scope, applicability
+and comparison constraints. Useful proper nouns, exact terminology, quotations
+and source constraints remain available; lexical/community/current navigation
+retains its separate lane. No mechanical query rewrite, new semantic owner,
+schema, provider/model router or custody change was added. The prompt changes
+Research's instruction-derived cache family only.
+
+Four fresh ordinary treatment sessions produced twenty generic queries:
+eighteen objective-aligned, one acceptable neutral and one misdirected candidate
+confirmation. BIPM stayed a correct one-Search lookup; Passport established the
+applicable GE relationship and published range. St. Dorothy's remained a weaker
+honest partial after failed Reads, with appointment/chronology unestablished.
+MD-80 Research preserved comparability qualifications but its Answer was
+interrupted by the ignored campaign reservation wrapper. A separately authorized
+Answer-only recovery reused the exact Evidence and saved arithmetic without
+Research or acquisition. It completed through unchanged production Answer
+validation as a partial preserving denominator, aircraft variant, period/operator,
+cost scope and estimated-versus-reported qualifications, without a clean scalar.
+The trace lacked the original provider continuation envelope, so this was a fresh
+Answer-only frozen-packet invocation, not a byte-exact HTTP resume or fifth
+end-to-end product run. Historical efficiency is mixed and noncausal; no repeated
+attributable material formulation-quality regression was established. The human
+accepted mixed efficiency with valid recovery, satisfying the bounded promotion
+gate. See `docs/operator/EXA_EVIDENCE_OBJECTIVE_SEARCH_01.md`; no general stopping,
+quality, latency or cost improvement is claimed.
 
 Dynamic Highlights Context Allocation 01 remains formally **INCONCLUSIVE** under
 its original whole-product promotion gate. Nine provider-only calls showed uneven

@@ -51,8 +51,15 @@ must be preserved. The comparison would test direct Luna Research against one
 Sol interpretation/decomposition pass followed by Luna Research; it is not a
 production route to prebuild. No tested current case has earned that experiment.
 
-Exa supplies ordinary general Search. Research may select lexical/community/current
-discovery through Serper when the needed source class calls for it. LinkUp static
+Exa supplies ordinary general Search. Research formulates generic Exa queries as
+concise natural-language evidence objectives describing what source material should
+establish, preserving consequential already-known entity, relationship,
+source-class, time, scope, applicability and comparison constraints. Proper nouns,
+exact terminology, quotations and source constraints remain available when part
+of the need. Research writes the query directly; no mechanical query transformer,
+extra model call, new schema or semantic owner is introduced. Research may select
+lexical/community/current discovery through Serper for literal phrases, site
+constraints, social/community sources or exact/current navigation when useful. LinkUp static
 Fetch supplies ordinary external known-URL Read. There is no automatic search
 fallback, Read fallback, provider router, model router,
 premium escalation, Scout, specialist hierarchy, verifier, or prose polisher.
