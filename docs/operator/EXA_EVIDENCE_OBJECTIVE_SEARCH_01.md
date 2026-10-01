@@ -2,18 +2,22 @@
 
 ## Disposition
 
-**Not promoted; ordinary-product quality validation is incomplete.** The local
-candidate changes only the existing Research owner's generic Search prompt.
-Research produced predominantly evidence objectives, and the simple lookup stayed
-small. St. Dorothy's was weaker than its preserved comparator. The MD-80 final
-Answer was interrupted by the campaign budget wrapper, so its answer quality
-cannot be assessed. No push or PR is authorized by this disposition.
+**Promotion standard met; prompt change proposed for production.** Research
+produced predominantly evidence objectives, the simple lookup stayed small, and
+no repeated attributable material quality regression was established. Historical
+efficiency is mixed and noncausal. The original MD-80 Answer was interrupted by
+the campaign wrapper; the separately authorized Answer-only recovery over its
+exact preserved Evidence completed as an honest partial with all consequential
+qualifications. The human accepted mixed efficiency if this recovery was valid.
+The original brief authorizes push and PR at this disposition; merge is not authorized.
 
 Production baseline: `6fe29be60b41d65a9d958f0fd5d6c4a7640679f6`.
 Tested prompt checkpoint: `d14ada1b8d4209337809562fbf134ab2e29710d5`.
-The stopped candidate remains on `codex/exa-evidence-objective-search-01` in its
-isolated worktree. `CURRENT.md` and `docs/architecture/RESEARCH.md` remain unchanged;
-this note does not establish new in-force product behavior.
+The phase branch is `codex/exa-evidence-objective-search-01` in its isolated
+worktree. The recovery ran at `18ffeb4ea965c44bf2a7bbeeeb4531f2a7a97023`, with
+runtime hashes equal to the tested prompt checkpoint. Final changes after those
+observations are documentation only. `CURRENT.md` and `docs/architecture/RESEARCH.md`
+describe the state after merge; this PR does not carry merge authority.
 
 ## Basis and implementation
 
@@ -54,7 +58,11 @@ output. There was no fresh untreated baseline, quality retry or replacement run.
 | BIPM | Supported, lookup obligations met | 2 | 1 | 1 | 0 | 0/0 | 0 | 27.344 |
 | Passport | Supported, relationship and range established | 4 | 1 | 2 | 0 | 3/0 | 0 | 65.531 |
 | St. Dorothy's | Honest partial; appointment not established | 9 | 1 | 7 | 3 | 5/0 | 0 | 181.891 |
-| MD-80/777-300 | Research observed; final Answer unassessed | 11 | 1 | 10 | 0 | 2/2 | 2 | 204.656 |
+| MD-80/777-300 | Original Answer interrupted; recovery below | 11 | 1 | 10 | 0 | 2/2 | 2 | 204.656 |
+
+The separately authorized MD-80 recovery used one Answer semantic attempt and two
+physical Answer requests in 95.953 seconds. It performed zero Research, Search,
+external/local Read or Find operations and is not a fifth end-to-end product run.
 
 BIPM returned all four correct names, symbols and powers from acquired BIPM
 material, with one Search and two Research calls. Passport established the
@@ -83,8 +91,21 @@ cost table and variant-specific navigation, without establishing a common
 passenger-mile difference. The 1997 hourly-cost lead is titled DC-9/MD-80, but
 its exposed numeric rows concern DC-9-30; an MD-80-specific cost figure is not
 established by that excerpt. It reached the semantic bound after eleven Research
-calls. The final Answer packet and one successful calculator result survive;
-final prose, citations and complete Answer usage do not.
+calls. The exact final Evidence packet and successful calculator result survived;
+the original final prose and complete original Answer usage remain unavailable.
+
+The recovered evidence-based partial explicitly declines a reliable numerical
+passenger-mile difference. It distinguishes MD-80 carrier-specific, secondary
+reported DOT costs for the twelve months ending Q3 2013 from American Airlines'
+estimated 2017 combined 777-300/300ER seat-kilometer costs. Direct 4.6 plus allocated
+indirect 2.6 cents/seat-km becomes 11.5872768 cents/seat-mile (rounded to 11.6), using
+the exact saved calculator result. That is a qualified unit conversion, not the
+requested passenger-mile cost or two-aircraft difference. Answer explains the
+CASM/load-factor relationship and that load factors alone would not resolve
+period, variant or accounting-scope incompatibilities. It portrays neither
+modeled costs nor a DC-9-30 excerpt as observed MD-80/777-300 comparables.
+Literal readings and citations passed unchanged production validation without
+correction. Two adjacent citations resolve to the same source, a cosmetic issue.
 
 ## Query adjudication and interruption
 
@@ -113,10 +134,23 @@ campaign-plumbing error, not evidence that billed spend reached the hard cap.
 The explicit preserved stop row is `campaign_ceiling`; the existing diagnostic
 projection maps the wrapper's generic RuntimeError to `unexpected_failure`.
 The run had already produced meaningful product observations, so the authorized
-infrastructure replacement exception did not apply. No fifth run or reconstructed
-Answer replay was attempted. No prompt-wording repair was made: the intended
-query instruction was predominantly followed, and the incomplete Answer was not
-a prompt-following failure.
+infrastructure replacement exception did not apply. No fifth full product run
+was attempted. The human then explicitly authorized only the interrupted Answer
+recovery, bypassing/correcting the faulty reservation logic without repeating
+Research or acquisition. No prompt-wording repair was made: the intended query
+instruction was predominantly followed, and the interruption was not a prompt failure.
+
+The original trace lacks the opaque provider continuation envelope, so recovery
+was a fresh Answer-only invocation over the exact frozen thirteen-item,
+68,191-character Evidence array. Packet metadata was restored from the original
+manifest/trace and production code. Acquisitions and exact views were restored
+locally; the saved arithmetic result was reused when the identical expression
+was requested. This is not a byte-exact resume of the original HTTP exchange.
+The existing production Answer prompt, schema, model/calculator continuation,
+literal-reading checks and citation finalization ran unchanged. An ignored local
+harness restored the packet and bypassed campaign reservation; it added no product
+path or owner. Newly returned continuation items remained in memory for ordinary
+transport, without inspecting or logging hidden reasoning/provider envelopes.
 
 ## Historical comparisons and limits
 
@@ -152,8 +186,11 @@ and locators are frozen in `historical-comparators.json`.
 
 This is mixed, noncausal historical evidence. Passport was shorter; St. Dorothy's
 was longer and did not establish the appointment; MD-80 did not reduce generic
-acquisition and lacks final Answer evidence. No statistical superiority, general
-quality/latency improvement, or complete four-case promotion validation is claimed.
+acquisition. Its separately recovered Answer now establishes qualification fidelity
+for that frozen packet. No statistical superiority or general quality/latency
+improvement is claimed. Fewer calls were not a promotion requirement; the faithful
+minimal implementation, query classifications, simple control and absence of
+repeated attributable material quality regression meet the approved gate.
 
 ## Verification, costs and preservation
 
@@ -175,7 +212,18 @@ The conservative wrapper booked $1.885537 including the outstanding MD-80 Answer
 reservation; that value is not actual spend. No new pricing lookup or independent
 factual verification was performed. MD-80 Answer's 39.781 seconds to interruption
 is incomplete stage elapsed time, not a complete measured model duration;
-unavailable usage remains unknown rather than zero.
+unavailable original usage remains unknown rather than zero.
+
+Recovery added two physical Answer requests and no external attempts: combined
+totals are 32 model submissions and 33 external attempts. Recovery usage is
+52,644 input tokens, 1,594 cached input, 1,594 cache writes, 49,456 ordinary uncached,
+3,277 output and 2,405 reasoning tokens; reported service tier is `default`.
+Its returned-token estimate under the same inflated $10/$50 accounting rates is
+$0.690290. Adding that to the unchanged original booking, including its outstanding
+reservation, gives $2.575827; neither estimate is billed spend. The effective
+Answer family remains `sr-v1:answer:answer:6e03f9c63ca7865503e37b4c02f9a4f9`.
+An offline fake-transport recovery check verified direct Answer entry, exact packet
+restoration, saved calculator reuse and zero Research/acquisition before live recovery.
 
 The full local bundle, every query, role usage, acquisition timings, source
 opportunities, final selected Evidence or incomplete Answer packet, answers,
@@ -187,8 +235,14 @@ unrelated log/session or hidden reasoning was inspected or retained.
 
 Four new sanitized development candidates were captured and indexed under ignored
 `local-evals/candidates/exa-evidence-objective-search-01-*-20261001/`.
+The recovered expected-partial boundary is a fifth, separate development candidate:
+`exa-evidence-objective-search-01-md80-answer-recovery-20261001`. Recovery prose,
+readings, packet, calculator state, usage, adjudication and hashes are frozen under
+the campaign's `recovery/` directory. The original stopped report and frozen
+artifacts remain unchanged; `recovery/REPORT.md` records the final disposition.
 Prior labels/gold are unchanged; no evidence was deleted. The primary checkout's
 two known dirty files, primary HEAD/main and unrelated worktrees are preserved.
 No production responsibility, restriction, lifecycle, authority boundary or
 alternate path was introduced. There is no explicit removal obligation.
-The local experimental bundle stops here, without publication or Auto/Deep work.
+The completed phase is published for review under the original conditional
+authority. Merge, Auto/Deep work and unrelated cleanup are not authorized.
