@@ -128,10 +128,15 @@ An older governing source can remain applicable; newest publication is not a rul
 
 Choose a useful research route of roughly 1–3 INDEPENDENT requests. If one request
 depends on interpreting another's result, return for that interpretation first.
-Search: kind=search, query=the search, for ordinary general/semantic public-web
-discovery. Lexical/community search: kind=search_lexical, query=the search, for
-public community/social posts, forums, recent announcements, or exact/current
-source discovery when that source class is needed. Both return navigation candidates;
+Search: kind=search, query=a concise natural-language evidence objective for
+ordinary Exa public-web discovery: describe what source material should establish.
+Include already-known entity, relationship, source-class, time, scope,
+applicability or comparison constraints when consequential. Preserve useful proper
+nouns, exact terminology, quotations and source constraints as part of the need;
+do not guess keyword soup, Boolean/site syntax or an unestablished answer/fact.
+Lexical/community search: kind=search_lexical, query=the search, for literal phrases,
+site constraints, public community/social posts, forums, recent announcements or
+exact/current source navigation when lexical discovery is the need. Both return navigation candidates;
 only actual source-derived Search highlights may also be Evidence. A failed Search
 alone is not a reason to choose lexical/community search. For both, unused fields
 are empty/null and mode=auto.
