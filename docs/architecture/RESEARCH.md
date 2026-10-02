@@ -64,6 +64,27 @@ Fetch supplies ordinary external known-URL Read. There is no automatic search
 fallback, Read fallback, provider router, model router,
 premium escalation, Scout, specialist hierarchy, verifier, or prose polisher.
 
+For a fresh first session turn (`session_turn == 1`) with no retained acquisitions
+entering the turn, a private run-local transport wrapper sends the first executed
+generic Exa Search with `type=deep`. It consumes the bootstrap on execution,
+including a failed request, and sends subsequent generic Searches with
+`type=auto`. Other turns and retained-entry turns use Auto throughout. Earlier
+lexical Search, Read or Find does not consume it; an Answer without generic Search
+makes no Deep request. Direct `search_exa()` callers default to Auto and its
+accepted types are bounded to Auto and Deep. Research selects the ordinary route
+and writes the evidence objective; it has no provider-depth field or decision.
+There is no fresh-problem classifier, persistent token, feature flag or new
+semantic owner. Later unrelated questions and follow-up eligibility are not
+classified beyond the existing turn/retained-entry boundary.
+
+Both modes request six results, `text=false` and Dynamic/high Highlights with
+the existing beta header. Only exact source-bound `results[].highlights[]` enter
+the unchanged Highlight custody path, including separate-selection markers and
+the size guard. Generated synthesis, summaries, grounding, confidence and provider
+reasoning are excluded. Body-free acquisition timing and optional dogfood
+diagnostics report the requested `provider_search_type`, not inferred internal
+provider routing. They add no query, payload or authentication material.
+
 **Research** owns interpretation of the current user turn, non-evidentiary
 conversation context, explicit user task premises and supplied actual Evidence,
 a compact revisable understanding, route selection, and a proposal to answer.

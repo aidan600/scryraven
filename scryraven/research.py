@@ -367,7 +367,19 @@ def _run_turn(
                           if isinstance(model, OpenAIModel) else None)
     # All real transport requests obey the remaining run deadline. Injected offline
     # transports retain their ordinary signatures and never require credentials.
-    search_call = (lambda query: search(query, timeout_seconds=budget.remaining_seconds)) if search is search_exa else search
+    deep_available = session_turn == 1 and not retained_acquisitions
+    provider_search_type = None
+
+    def search_call(query):
+        nonlocal deep_available, provider_search_type
+        if search is not search_exa:
+            return search(query)
+        provider_search_type = "deep" if deep_available else "auto"
+        # Acquisition has already admitted this external attempt. Even a failed
+        # executed request consumes the bootstrap; later searches use Auto.
+        deep_available = False
+        return search(query, search_type=provider_search_type, timeout_seconds=budget.remaining_seconds)
+
     lexical_call = (lambda query: lexical_search(query, timeout_seconds=budget.remaining_seconds)) if lexical_search is search_serper else lexical_search
     fetch_call = (lambda url: fetch(url, timeout_seconds=budget.remaining_seconds)) if fetch is fetch_linkup else fetch
     library = AcquisitionLibrary(retained_acquisitions=retained_acquisitions, search=search_call,
@@ -919,6 +931,8 @@ def _run_turn(
                     reused_retained_material=operation["reused_retained_material"],
                     **({"search_novelty_receipt": operation["search_novelty_receipt"]}
                        if "search_novelty_receipt" in operation else {}),
+                    **({"provider_search_type": provider_search_type}
+                       if operation["kind"] == "search" and provider_search_type is not None else {}),
                 )
 
             try:
