@@ -150,8 +150,13 @@ zero live calls; no third campaign ran. Telemetry describes acquisition movement
 not relevance, usefulness or sufficiency. No stopping, answer-quality, latency or
 cost improvement is established.
 
-Ordinary generic Exa Search uses `type=auto`, six results and
-`contents.text=false`. Query-specific Highlights now use provider-native Dynamic
+Ordinary generic Exa Search uses six results and `contents.text=false`.
+On `session_turn == 1` with no retained acquisitions entering the turn, the first
+executed generic Exa Search uses `type=deep`; every later generic Search uses
+`type=auto`. Other turns and retained-entry turns use Auto throughout. Read,
+Find, lexical Search or Answer may come first; only execution of generic Search
+consumes this run-local bootstrap, including a failed executed attempt. Direct
+`search_exa()` callers still default to Auto. Query-specific Highlights use provider-native Dynamic
 allocation with `dynamic=true`, `verbosity=high` and the
 `Exa-Beta: dynamic-highlights-2026-08-28` header; no fixed `maxCharacters` is
 requested. Actual returned source selections retain `provider_highlights` custody,
@@ -160,6 +165,34 @@ known-URL Read are unchanged. The initial integration received offline
 verification; Exa Evidence-Objective Search 01 subsequently exercised the same
 request mechanics in four ordinary product runs. No universal answer-quality,
 latency or cost improvement is established.
+
+Exa Deep Bootstrap 01 met its bounded promotion gate in four ordinary fresh
+sessions at `0da7f2843eebf7c2be8052e04ec32f5e9c20a59f`, without a prompt repair.
+The effective settings were Luna / high / Fast Research and Sol 6.1 / high /
+Standard Answer; user settings were not changed. BIPM remained correct with two
+Research calls and one Search; Deep took 4.328 seconds versus a preserved Auto
+acquisition's 1.297 seconds. Passport obtained the NASA relationship and GE range
+in one Deep batch, reducing the observed trajectory from four Research calls,
+two generic Searches and three Reads to two Research calls and one Search.
+MD-80 used four generic Searches rather than ten, but still used eleven Research
+calls, more Research input and repeated local Find; its honest partial Answer
+omitted acquired unmatched MD-80 cost leads after Research shelved them.
+Dorothy's final supported selection relied on later lexical discovery and Read;
+its first Deep batch did not find the appointee and earns no appointment-frontier
+credit. Historical observations differ in revision, time/index, stochastic routes,
+cache behavior and completion; these are descriptive comparisons, not causal
+latency or cost estimates. The MD-80 historical ordinary Answer was interrupted
+by its campaign wrapper, and its separate recovery is only a frozen-packet
+quality reference. No general Research-call, context-cost or reliability gain is
+established. See `docs/operator/EXA_DEEP_BOOTSTRAP_01.md`.
+
+Deep retains only the existing source-bound Highlight custody. Generated provider
+answers, summaries, output/grounding, confidence and reasoning are excluded.
+Body-free acquisition timing and dogfood diagnostics report the requested
+`provider_search_type` (`auto` or `deep`), without query or payload additions.
+AcquisitionLibrary, Request/ResearchDecision/AnswerDecision, sessions, budgets,
+Research/Answer prompts and citation semantics are unchanged. There is no depth
+decision field, semantic router, feature flag or persistent bootstrap state.
 
 Research formulates ordinary generic Exa queries as concise natural-language
 evidence objectives describing what source material should establish, retaining
