@@ -256,6 +256,10 @@ class TurnDiagnostics:
                     if type(event.get("reused_retained_material")) is bool else None
                 ),
             }
+            if row["kind"] == "search" and row["provider"] == "exa":
+                search_type = _one_of(event.get("provider_search_type"), {"auto", "deep"})
+                if search_type is not None:
+                    row["provider_search_type"] = search_type
             receipt = event.get("search_novelty_receipt")
             if isinstance(receipt, dict):
                 row["search_novelty_receipt"] = {

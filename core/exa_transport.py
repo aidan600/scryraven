@@ -36,14 +36,17 @@ class DiscoveryCandidate:
 
 def search_exa(
     query: str, *, result_count: int = DEFAULT_DISCOVERY_RESULT_COUNT,
+    search_type: str = "auto",
     api_key: str | None = None, timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
     post: Callable[..., Any] | None = None,
 ) -> list[DiscoveryCandidate]:
     query = _required_text(query, "query")
     if isinstance(result_count, bool) or not isinstance(result_count, int) or not 1 <= result_count <= 100:
         raise ValueError("result_count must be an integer between 1 and 100")
+    if not isinstance(search_type, str) or search_type not in {"auto", "deep"}:
+        raise ValueError("search_type must be auto or deep")
     data = _post_json(EXA_SEARCH_URL, {
-        "query": query, "type": "auto", "numResults": result_count,
+        "query": query, "type": search_type, "numResults": result_count,
         "contents": {"text": False, "highlights": {
             "query": query, "dynamic": True, "verbosity": "high",
         }},

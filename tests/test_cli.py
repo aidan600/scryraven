@@ -86,7 +86,7 @@ def test_cli_ordinary_search_then_read_uses_linkup_not_exa_contents(monkeypatch,
     captured = capsys.readouterr()
     assert providers == [
         (exa_transport.EXA_SEARCH_URL, {
-            "query": "public fact", "type": "auto", "numResults": 6,
+            "query": "public fact", "type": "deep", "numResults": 6,
             "contents": {"text": False, "highlights": {
                 "query": "public fact", "dynamic": True, "verbosity": "high",
             }},
