@@ -9,6 +9,7 @@ import hashlib
 import json
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import date
@@ -20,7 +21,7 @@ from core.exa_transport import search_exa
 from core.linkup_transport import fetch_linkup
 from core.serper_transport import search_serper
 from scryraven import model as model_transport
-from scryraven.acquisition import AcquisitionError, AcquisitionLibrary
+from scryraven.acquisition import AcquisitionError, AcquisitionLibrary, generic_search_failure
 from scryraven.calculator import calculate
 from scryraven.errors import RunError
 from scryraven.model import ModelError, ModelUsage, OpenAIModel, capture_model_usage
@@ -34,6 +35,9 @@ TERMINAL_ANSWER_RESERVE_SECONDS = 180
 ANSWER_STAGE_SECONDS = 120
 MIN_ANSWER_CALL_SECONDS = 1
 ANSWER_VALIDATION_FAILURE_MESSAGE = "I couldn't complete a source-validated answer for this request."
+# One Research route may already contain several independent generic Searches.
+# Overlap their Exa transports only; never fan out past this contiguous group.
+GENERIC_SEARCH_CONCURRENCY_LIMIT = 3
 
 
 class _Contract(BaseModel):
@@ -335,6 +339,20 @@ class _Budget:
         if self.external >= self.limits.external_attempts:
             raise _Bound("external_attempts")
         self.external += 1
+
+    def try_reserve_external(self, count: int) -> float | None:
+        """Reserve a whole concurrent Search group, or leave the budget unchanged.
+
+        The returned timeout is the run time remaining at this reservation.
+        Workers must not call ``before_external`` themselves.
+        """
+        if type(count) is not int or not 1 <= count <= GENERIC_SEARCH_CONCURRENCY_LIMIT:
+            return None
+        remaining = self.remaining_seconds
+        if remaining <= 0 or self.external + count > self.limits.external_attempts:
+            return None
+        self.external += count
+        return remaining
 
     def snapshot(self):
         elapsed = max(0.0, self.clock() - self.started)
@@ -916,31 +934,26 @@ def _run_turn(
             return finish(final, selected, "supported" if final.posture == "supported" else "not_established")
         last_route = []
         route_index += 1
-        for request_index, request in enumerate(decision.requests, 1):
-            def observe_operation(operation, *, route_index=route_index, request_index=request_index):
-                emit(
-                    "acquisition_timing", route_index=route_index, request_index=request_index,
-                    started_elapsed_seconds=round(max(0.0, operation["started_at"] - budget.started), 6),
-                    ended_elapsed_seconds=round(max(0.0, operation["ended_at"] - budget.started), 6),
-                    duration_seconds=round(operation["duration_seconds"], 6),
-                    kind=operation["kind"], mode=operation["mode"], provider=operation["provider"],
-                    external=operation["external"], status=operation["status"], code=operation["code"],
-                    returned_material_count=operation["returned_material_count"],
-                    new_acquisition_count=operation["new_acquisition_count"],
-                    returned_material_characters=operation["returned_material_characters"],
-                    reused_retained_material=operation["reused_retained_material"],
-                    **({"search_novelty_receipt": operation["search_novelty_receipt"]}
-                       if "search_novelty_receipt" in operation else {}),
-                    **({"provider_search_type": provider_search_type}
-                       if operation["kind"] == "search" and provider_search_type is not None else {}),
-                )
 
-            try:
-                result = library.execute(request.model_dump(), before_external=budget.before_external,
-                                         observe_operation=observe_operation, clock=clock)
-            except _Bound as exc:
-                bound = exc.code
-                result = {"kind": request.kind, "status": "error", "code": exc.code, "material_ids": []}
+        def record_timing(operation, request_index, search_type):
+            emit(
+                "acquisition_timing", route_index=route_index, request_index=request_index,
+                started_elapsed_seconds=round(max(0.0, operation["started_at"] - budget.started), 6),
+                ended_elapsed_seconds=round(max(0.0, operation["ended_at"] - budget.started), 6),
+                duration_seconds=round(operation["duration_seconds"], 6),
+                kind=operation["kind"], mode=operation["mode"], provider=operation["provider"],
+                external=operation["external"], status=operation["status"], code=operation["code"],
+                returned_material_count=operation["returned_material_count"],
+                new_acquisition_count=operation["new_acquisition_count"],
+                returned_material_characters=operation["returned_material_characters"],
+                reused_retained_material=operation["reused_retained_material"],
+                **({"search_novelty_receipt": operation["search_novelty_receipt"]}
+                   if "search_novelty_receipt" in operation else {}),
+                **({"provider_search_type": search_type}
+                   if operation["kind"] == "search" and search_type is not None else {}),
+            )
+
+        def apply_acquisition(result):
             # Novelty is diagnostic metadata, never model-facing navigation.
             last_route.append({key: value for key, value in result.items()
                                if key != "search_novelty_receipt"})
@@ -951,8 +964,122 @@ def _run_turn(
             if result.get("new_acquisition_ids"):
                 emit("acquired_material", source_body=True, evidence=[
                     library.materials[ref].material() for ref in result["new_acquisition_ids"]])
-            if bound == "deadline":
+
+        def run_serial(request_index, request):
+            nonlocal bound
+
+            def observe_operation(operation, *, request_index=request_index):
+                # Serial Search records the mode search_call assigned during this call.
+                record_timing(operation, request_index,
+                              provider_search_type if operation["kind"] == "search" else None)
+
+            try:
+                result = library.execute(request.model_dump(), before_external=budget.before_external,
+                                         observe_operation=observe_operation, clock=clock)
+            except _Bound as exc:
+                bound = exc.code
+                result = {"kind": request.kind, "status": "error", "code": exc.code, "material_ids": []}
+            apply_acquisition(result)
+            return bound == "deadline"
+
+        def transport_generic_search(query, search_type, timeout_seconds):
+            """External Search only. No library, ID, budget or Deep/Auto mutation."""
+            started_at = clock()
+            code = None
+            leads = None
+            try:
+                if search is search_exa:
+                    leads = search(query, search_type=search_type, timeout_seconds=timeout_seconds)
+                else:
+                    leads = search(query)
+            except Exception as exc:
+                code = generic_search_failure(exc)
+                leads = None
+            else:
+                if not isinstance(leads, list):
+                    code = "invalid_search_response"
+                    leads = None
+                else:
+                    leads = list(leads)
+            ended_at = clock()
+            return {"code": code, "leads": leads, "started_at": started_at, "ended_at": ended_at}
+
+        def run_concurrent(group, timeout_seconds):
+            nonlocal deep_available
+            modes = []
+            for _request_index, _request, _plan in group:
+                if search is search_exa:
+                    mode = "deep" if deep_available else "auto"
+                    deep_available = False
+                else:
+                    mode = None
+                modes.append(mode)
+            with ThreadPoolExecutor(max_workers=len(group)) as pool:
+                futures = [
+                    pool.submit(transport_generic_search, plan["query"], mode, timeout_seconds)
+                    for (_request_index, _request, plan), mode in zip(group, modes)
+                ]
+                outcomes = []
+                for future in futures:
+                    try:
+                        outcomes.append(future.result())
+                    except Exception:
+                        now = clock()
+                        outcomes.append({"code": "search_failed", "leads": None,
+                                         "started_at": now, "ended_at": now})
+            results = []
+            for (request_index, _request, plan), outcome, mode in zip(group, outcomes, modes):
+                def observe_operation(operation, *, request_index=request_index, search_type=mode):
+                    record_timing(operation, request_index, search_type)
+
+                result = library.admit_transported_search(
+                    plan, outcome, observe_operation=observe_operation)
+                apply_acquisition(result)
+                results.append(result)
+            starts = [item["started_at"] for item in outcomes]
+            ends = [item["ended_at"] for item in outcomes]
+            durations = [max(0.0, end - start) for start, end in zip(starts, ends)]
+            summed = sum(durations)
+            span = max(0.0, max(ends) - min(starts))
+            emit(
+                "search_concurrency_group", route_index=route_index,
+                first_request_index=group[0][0], last_request_index=group[-1][0],
+                request_count=len(group),
+                successful_request_count=sum(item["status"] == "ok" for item in results),
+                started_elapsed_seconds=round(max(0.0, min(starts) - budget.started), 6),
+                ended_elapsed_seconds=round(max(0.0, max(ends) - budget.started), 6),
+                group_span_seconds=round(span, 6),
+                summed_transport_seconds=round(summed, 6),
+                overlap_seconds=round(max(0.0, summed - span), 6),
+            )
+
+        # Parallel transport, serial admission. Only a contiguous group of 2–3
+        # already-independent generic Searches overlaps. Deep/Auto is assigned
+        # here, before dispatch. A group that cannot reserve every external
+        # attempt falls through to the ordinary one-at-a-time executor.
+        cursor = 0
+        route_requests = list(decision.requests)
+        while cursor < len(route_requests):
+            request = route_requests[cursor]
+            plan = library.plan_generic_search(request.model_dump())
+            if plan is not None:
+                group = [(cursor + 1, request, plan)]
+                nxt = cursor + 1
+                while nxt < len(route_requests) and len(group) < GENERIC_SEARCH_CONCURRENCY_LIMIT:
+                    nxt_plan = library.plan_generic_search(route_requests[nxt].model_dump())
+                    if nxt_plan is None:
+                        break
+                    group.append((nxt + 1, route_requests[nxt], nxt_plan))
+                    nxt += 1
+                if len(group) >= 2:
+                    timeout_seconds = budget.try_reserve_external(len(group))
+                    if timeout_seconds is not None:
+                        run_concurrent(group, timeout_seconds)
+                        cursor = nxt
+                        continue
+            if run_serial(cursor + 1, request):
                 break
+            cursor += 1
         # Newly requested material must be read before finalization, even when the
         # next call is forced to be the final answer because the budget is ending.
         if budget.semantic >= limits.semantic_attempts - 1:

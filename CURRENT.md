@@ -166,6 +166,34 @@ verification; Exa Evidence-Objective Search 01 subsequently exercised the same
 request mechanics in four ordinary product runs. No universal answer-quality,
 latency or cost improvement is established.
 
+A contiguous group of two or three ordinary generic Exa Searches inside one
+Research route may send those Exa requests concurrently. Deep or Auto is assigned
+before dispatch in original request order, including inside that group, and a
+failed Deep still consumes the bootstrap. After transport settles, admission,
+identity, catalog order, and novelty run serially in that same request order.
+One Search failure does not cancel another already-dispatched Search. A run of
+more than three generic Searches is divided into groups of at most three. If the
+whole group cannot be reserved against the existing 16-attempt external budget,
+or the run deadline has already expired, those requests stay on the serial path.
+Read, Find, lexical Search, and any mixed route stay serial. Transport workers
+do not allocate IDs or mutate the acquisition library. Body-free
+`search_concurrency_groups` diagnostics record the route span, summed transport,
+and overlap, without query or payload text.
+
+Concurrent Exa Search 01 met its promotion gate on four fresh ordinary
+single-turn sessions from base `2d589a7339a3a95fc11641dd1e4365a6cb87a14b`.
+Effective settings were GPT-6 Luna / high / Fast for Research and GPT-6.1 Sol /
+high / Standard for Answer. Seven successful concurrent Search groups occurred
+across three of the four runs. Aggregate measured overlap was 16.516 seconds,
+and the largest single group was 4.094 seconds. The St. Dorothy's turn produced
+no same-route Search pair and remained serial. No concurrent group returned a
+provider failure, rate limit, or malformed response. Completed postures were
+supported, partial, and research-bound partial, and citations resolved to
+selected Evidence. Estimated campaign spend was $0.71, under the $2 ceiling.
+Two predetermined reserve questions were not run. Measured overlap is observed
+concurrent transport, not a guaranteed user-visible speedup, a lower model cost,
+or better answer quality. See `docs/operator/CONCURRENT_EXA_SEARCH_01.md`.
+
 Exa Deep Bootstrap 01 met its bounded promotion gate in four ordinary fresh
 sessions at `0da7f2843eebf7c2be8052e04ec32f5e9c20a59f`, without a prompt repair.
 The effective settings were Luna / high / Fast Research and Sol 6.1 / high /

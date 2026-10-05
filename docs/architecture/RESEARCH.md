@@ -77,6 +77,23 @@ There is no fresh-problem classifier, persistent token, feature flag or new
 semantic owner. Later unrelated questions and follow-up eligibility are not
 classified beyond the existing turn/retained-entry boundary.
 
+A contiguous run of two or three ordinary generic Exa Search requests inside one
+Research route may send those Exa calls concurrently. The executor assigns Deep
+or Auto before dispatch, in original request order, and admits each result
+serially in that same order after every transport in the group has settled.
+Finish order does not allocate candidate, Evidence, or source identity and does
+not change novelty, which is calculated against library state that already
+contains earlier requests from the group. A failed Deep still consumes the
+bootstrap. One Search failure does not cancel a sibling that was already
+dispatched, and there is no automatic serial retry. A group that cannot be
+reserved under the existing external-attempt allowance, or that is reached after
+the run deadline has expired, uses the ordinary serial executor. Read, Find,
+lexical Search, and any request that breaks the contiguous generic-Search run
+stay serial. At most three generic Searches share one transport group. Body-free
+diagnostics may record that group's route indexes, transport sum, span, and
+overlap. This is transport overlap only. Research remains the only semantic
+owner, and the Research prompt is unchanged.
+
 Both modes request six results, `text=false` and Dynamic/high Highlights with
 the existing beta header. Only exact source-bound `results[].highlights[]` enter
 the unchanged Highlight custody path, including separate-selection markers and

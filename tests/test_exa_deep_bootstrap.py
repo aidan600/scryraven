@@ -1,6 +1,7 @@
 """The fresh-turn bootstrap changes provider effort, never evidence authority."""
 
 import json
+from threading import Lock
 
 import pytest
 from test_exa_transport import Response
@@ -48,11 +49,14 @@ def test_only_auto_and_deep_are_accepted_before_io(search_type):
 
 def production_post(monkeypatch, calls, *, fail_first=False):
     monkeypatch.setenv(exa.EXA_API_KEY_ENV, "offline-test-value")
+    gate = Lock()
 
     def post(url, **kwargs):
         assert url == exa.EXA_SEARCH_URL
-        calls.append(kwargs)
-        if fail_first and len(calls) == 1:
+        with gate:
+            calls.append(kwargs)
+            failed = fail_first and len(calls) == 1
+        if failed:
             raise OSError("Unexposed provider failure")
         return Response({"results": [{"url": "https://example.test/fact",
                                       "highlights": ["The stated value is seven."]}]})
@@ -72,8 +76,10 @@ def test_one_shot_across_same_and_later_routes_with_safe_mode_telemetry(monkeypa
     model = Script(decision(requests=[request(query="first"), request(query="second")]),
                    decision(requests=[request(query="third")]), decision("answer", ["E1"]), answer())
     result = run("Value?", model=model, observe=observe)
-    assert [call["json"]["type"] for call in calls] == ["deep", "auto", "auto"]
-    assert [call["json"]["query"] for call in calls] == ["first", "second", "third"]
+    assert sorted((call["json"]["query"], call["json"]["type"]) for call in calls[:2]) == [
+        ("first", "deep"), ("second", "auto"),
+    ]
+    assert (calls[2]["json"]["query"], calls[2]["json"]["type"]) == ("third", "auto")
     timings = [event for event in observed if event["action"] == "acquisition_timing"]
     assert [event["provider_search_type"] for event in timings] == ["deep", "auto", "auto"]
     assert [row["provider_search_type"] for row in diagnostics.acquisitions] == ["deep", "auto", "auto"]

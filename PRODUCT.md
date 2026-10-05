@@ -109,7 +109,7 @@ development history.
 
 That capability should allow one user question to create several research needs, research those needs using the same evidence-grounded behavior, reason across the combined relevant evidence, and produce one coherent answer.
 
-Multi-component scheduling, graphs, parallel execution, specialist systems, generalized recovery systems, and other broader capabilities are not part of the first supported promise and should not be prebuilt merely in anticipation of future use.
+Multi-component scheduling, graphs, parallel execution, specialist systems, generalized recovery systems, and other broader capabilities are not part of the first supported promise and should not be prebuilt merely in anticipation of future use. That exclusion does not prohibit mechanical overlap of network transport for acquisition requests Research has already emitted as independent requests in one route. It does not authorize a scheduler, a second semantic owner, or parallel interpretation.
 
 ## Implementation posture
 
