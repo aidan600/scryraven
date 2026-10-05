@@ -1,6 +1,7 @@
 """Body-free per-call timing and usage through the ordinary Research path."""
 
 import json
+import threading
 
 from test_research_loop import Script, answer, decision, no_fetch, request
 
@@ -10,10 +11,16 @@ from scryraven.research import RunLimits, run
 
 
 def test_same_route_request_indexes_and_durations_use_the_injected_clock():
-    now = [0.0]
+    shared = {"t": 0.0}
+    local = threading.local()
+    entered = threading.Barrier(2, timeout=2)
+
+    def clock():
+        return getattr(local, "now", shared["t"])
 
     def search(query):
-        now[0] += {"first": 2.0, "second": 3.0}[query]
+        entered.wait()
+        local.now = {"first": 2.0, "second": 3.0}[query]
         return [DiscoveryCandidate(query, f"https://example.org/{query}",
                                    f"The {query} exact source text.",
                                    context_kind="provider_highlights")]
@@ -23,18 +30,19 @@ def test_same_route_request_indexes_and_durations_use_the_injected_clock():
         decision("answer"),
         answer("The available material does not establish the requested conclusion.", "unable"),
     )
-    result = run("What can be established?", model=model, search=search, fetch=no_fetch,
-                 clock=lambda: now[0])
+    result = run("What can be established?", model=model, search=search, fetch=no_fetch, clock=clock)
 
     operations = [event for event in result.trace if event["action"] == "acquisition_timing"]
     assert [(item["route_index"], item["request_index"], item["provider"], item["external"],
              item["started_elapsed_seconds"], item["ended_elapsed_seconds"], item["duration_seconds"])
             for item in operations] == [
                 (1, 1, "exa", True, 0.0, 2.0, 2.0),
-                (1, 2, "exa", True, 2.0, 5.0, 3.0),
+                (1, 2, "exa", True, 0.0, 3.0, 3.0),
             ]
-    assert sum(item["duration_seconds"] for item in operations) - max(
-        item["duration_seconds"] for item in operations) == 2.0
+    group = next(event for event in result.trace if event["action"] == "search_concurrency_group")
+    assert group["overlap_seconds"] == 2.0
+    assert group["summed_transport_seconds"] == 5.0
+    assert group["group_span_seconds"] == 3.0
     assert all("query" not in item and "source" not in item and "url" not in item
                for item in operations)
 

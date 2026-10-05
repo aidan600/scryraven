@@ -95,6 +95,13 @@ class AcquisitionError(ValueError):
     """A fixed mechanical code; never contains provider, source or model text."""
 
 
+def generic_search_failure(exc: BaseException) -> str:
+    """Map a generic Exa failure to a fixed code. The exception text stays here."""
+    if isinstance(exc, ExaTransportError) and str(exc) == "exa_configuration_missing":
+        return "exa_configuration_missing"
+    return "search_failed"
+
+
 class AcquisitionLibrary:
     def __init__(
         self, retained_acquisitions: Iterable[Evidence] = (), *,
@@ -345,9 +352,51 @@ class AcquisitionLibrary:
                 self._find(normalized, result)
         except AcquisitionError as exc:
             result.update(status="error", code=str(exc))
+        ended_at = clock()
+        return self._finish_execution(result, before, started_at, ended_at, observe_operation)
+
+    def plan_generic_search(self, request: dict) -> dict | None:
+        """Validate one ordinary generic Search without external I/O or library mutation."""
+        try:
+            normalized = self._request(request)
+        except AcquisitionError:
+            return None
+        if normalized["kind"] != "search":
+            return None
+        return normalized
+
+    def admit_transported_search(
+        self, normalized: dict, outcome: dict, *,
+        observe_operation: Callable[[dict], None] | None = None,
+    ) -> dict:
+        """Admit one finished generic Search. Callers must do this serially, in request order.
+
+        ``outcome`` carries only the transport clock and either leads or a fixed
+        error code. This method allocates candidates, materials and Evidence IDs.
+        """
+        before = len(self.acquisitions)
+        result = {"kind": "search", "status": "ok", "material_ids": [], "new_acquisition_ids": [],
+                  "candidate_refs": [], "external": True, "local": False, "request": normalized}
+        try:
+            code = outcome.get("code")
+            leads = outcome.get("leads")
+            if code:
+                raise AcquisitionError(str(code))
+            if not isinstance(leads, list):
+                raise AcquisitionError("invalid_search_response")
+            self._admit_search_leads(normalized, result, leads)
+        except AcquisitionError as exc:
+            result.update(status="error", code=str(exc))
+        return self._finish_execution(
+            result, before, outcome["started_at"], outcome["ended_at"], observe_operation,
+        )
+
+    def _finish_execution(
+        self, result: dict, before: int, started_at: float, ended_at: float,
+        observe_operation: Callable[[dict], None] | None,
+    ) -> dict:
         result["new_acquisition_ids"] = [item.id for item in self.acquisitions[before:]]
         result["material_ids"] = list(dict.fromkeys(result["material_ids"]))
-        ended_at = clock()
         duration = max(0.0, ended_at - started_at)
         if "failed_external_read" in result:
             result["failed_external_read"]["duration_seconds"] = round(duration, 6)
@@ -382,8 +431,6 @@ class AcquisitionLibrary:
         return result
 
     def _search(self, request: dict, result: dict, before_external: Callable[[], None]) -> None:
-        known_urls = set(self._candidate_ids)
-        prior_material_ids = set(self.materials)
         before_external()
         result.update(external=True, local=False)
         lexical = request["kind"] == "search_lexical"
@@ -392,11 +439,18 @@ class AcquisitionLibrary:
         except Exception as exc:
             if lexical and isinstance(exc, SerperTransportError) and str(exc) == "serper_configuration_missing":
                 raise AcquisitionError("serper_configuration_missing") from None
-            if not lexical and isinstance(exc, ExaTransportError) and str(exc) == "exa_configuration_missing":
-                raise AcquisitionError("exa_configuration_missing") from None
-            raise AcquisitionError("search_failed") from None
+            if lexical:
+                raise AcquisitionError("search_failed") from None
+            raise AcquisitionError(generic_search_failure(exc)) from None
         if not isinstance(leads, list):
             raise AcquisitionError("invalid_search_response")
+        self._admit_search_leads(request, result, leads)
+
+    def _admit_search_leads(self, request: dict, result: dict, leads: list) -> None:
+        """Apply provider leads to library state. Novelty is measured at this moment."""
+        known_urls = set(self._candidate_ids)
+        prior_material_ids = set(self.materials)
+        lexical = request["kind"] == "search_lexical"
         for lead in leads:
             if not isinstance(lead, DiscoveryCandidate) or not _public_url(lead.url):
                 continue

@@ -152,6 +152,7 @@ class TurnDiagnostics:
         self.models: list[dict] = []
         self._model_by_attempt: dict[tuple[str, int], dict] = {}
         self.acquisitions: list[dict] = []
+        self.search_concurrency_groups: list[dict] = []
         self.corrections: dict[str, Counter[str]] = {
             "research": Counter(), "answer": Counter(),
         }
@@ -268,6 +269,19 @@ class TurnDiagnostics:
                     **{key: _nonnegative_int(receipt.get(key)) for key in SEARCH_NOVELTY_COUNTS},
                 }
             self.acquisitions.append(row)
+        elif action == "search_concurrency_group":
+            self.search_concurrency_groups.append({
+                "route_index": _nonnegative_int(event.get("route_index")),
+                "first_request_index": _nonnegative_int(event.get("first_request_index")),
+                "last_request_index": _nonnegative_int(event.get("last_request_index")),
+                "request_count": _nonnegative_int(event.get("request_count")),
+                "successful_request_count": _nonnegative_int(event.get("successful_request_count")),
+                "started_elapsed_seconds": _seconds(event.get("started_elapsed_seconds")),
+                "ended_elapsed_seconds": _seconds(event.get("ended_elapsed_seconds")),
+                "group_span_seconds": _seconds(event.get("group_span_seconds")),
+                "summed_transport_seconds": _seconds(event.get("summed_transport_seconds")),
+                "overlap_seconds": _seconds(event.get("overlap_seconds")),
+            })
         elif action in {"response_rejected", "decision_rejected"}:
             code = _one_of(event.get("code"), _CODES)
             if code is not None:
@@ -346,6 +360,7 @@ class TurnDiagnostics:
             "sizes": self.sizes,
             "model_calls": self.models,
             "acquisitions": self.acquisitions,
+            "search_concurrency_groups": self.search_concurrency_groups,
             "corrections": {contract: dict(counts) for contract, counts in self.corrections.items()},
             "reading_rejections": self.reading_rejections,
             "answer_to_research_returns": self.answer_returns,
