@@ -55,10 +55,10 @@ def serial_library(batches, queries):
 
 def test_prompt_and_decision_contracts_stay_byte_stable():
     assert hashlib.sha256(RESEARCH_PROMPT.encode()).hexdigest() == (
-        "dffa58c64c759c28200f2d65c181fe1d70a44f038604a5f58e60529354a51487"
+        "dffa58c64c759c28200f2d65c181fe1d70a44f038604a5f58e60529354a51487"  # pragma: allowlist secret
     )
     assert hashlib.sha256(ANSWER_PROMPT.encode()).hexdigest() == (
-        "6a7eff715c2030be461b81a21aed21c646de464f5d2b4570ba0ca5ed47ba217b"
+        "6a7eff715c2030be461b81a21aed21c646de464f5d2b4570ba0ca5ed47ba217b"  # pragma: allowlist secret
     )
 
 
