@@ -380,6 +380,38 @@ class _Budget:
                 "elapsed_seconds": round(elapsed, 3)}
 
 
+def _complete_selected_sources(seed_refs, materials, exposed, attention_characters):
+    """Append only exposed exact material from the seed's canonical sources."""
+    seed = list(dict.fromkeys(seed_refs))
+    source_ids = dict.fromkeys(materials[ref].source_id for ref in seed)
+    omitted = {source_id: [] for source_id in source_ids}
+    seen = set(seed)
+    for ref in exposed:
+        item = materials[ref]
+        if ref not in seen and item.source_id in omitted:
+            omitted[item.source_id].append(item)
+
+    def order(item):
+        if item.source_kind == "user_document":
+            return item.start_char, item.end_char
+        # Versions retain acquisition/Evidence-ID order; exact views keep their
+        # parent's position, then source offsets. No version is preferred.
+        return (int(item.id.split("@")[0][1:]),
+                item.start_char if item.start_char is not None else -1,
+                item.end_char if item.end_char is not None else -1)
+
+    appended = [item.id for items in omitted.values() for item in sorted(items, key=order)]
+    completed = [*seed, *appended]
+    characters = sum(len(materials[ref].content) for ref in completed)
+    status = "completed" if appended else "no_op"
+    if characters > attention_characters:
+        completed, appended = seed, []
+        characters = sum(len(materials[ref].content) for ref in seed)
+        status = "skipped_over_attention"
+    return completed, {"seed_refs": seed, "appended_refs": appended,
+                       "evidence_characters": characters, "status": status}
+
+
 def run(question: str, **kwargs) -> CompletedAnswer:
     return _run_turn(question, **kwargs)
 
@@ -681,6 +713,12 @@ def _run_turn(
         # The precise operational reason stays in the safe current-turn trace.
         return finish(final, [], "not_established")
 
+    def complete_answer_refs(refs):
+        completed, receipt = _complete_selected_sources(
+            refs, library.materials, exposed, limits.attention_characters)
+        emit("answer_source_completion", **receipt)
+        return completed
+
     def answer_from_sources(refs, limitations):
         packet = {**common, "phase": "answer",
                   "evidence": [library.materials[ref].material() for ref in refs],
@@ -932,7 +970,8 @@ def _run_turn(
             correction = "Requested material remains undelivered. Inspect its next packet before executing another route."
             continue
         if decision.action == "answer":
-            selected = list(dict.fromkeys(decision.answer_evidence_refs))
+            seed = list(dict.fromkeys(decision.answer_evidence_refs))
+            selected = complete_answer_refs(seed)
             if provisional_answer is not None:
                 prior, prior_refs = provisional_answer
                 # Research has reconsidered the Answer's stated need but selected
@@ -956,7 +995,7 @@ def _run_turn(
             if final.missing_information:
                 if budget.semantic < limits.semantic_attempts - 1 and budget.remaining_seconds > 0:
                     answer_need = final.missing_information
-                    active = selected
+                    active = seed
                     provisional_answer = (final, tuple(selected))
                     # Deliberately do not feed the provisional answer back to Research.
                     emit("answer_returned_to_research")
@@ -1121,6 +1160,10 @@ def _run_turn(
             break
 
     emit("research_bound", code=bound, budget=budget.snapshot())
+    # Compare the same effective packet that Answer would receive. Pending
+    # delivery still prevents a stale provisional commit, as before.
+    if not pending:
+        selected = complete_answer_refs(selected)
     # A newly acquired pending item has not yet been supplied to Answer. Do not
     # discard it by treating the prior packet as unchanged at a hard bound.
     if provisional_answer is not None and not pending and set(selected).issubset(provisional_answer[1]):
@@ -1132,7 +1175,7 @@ def _run_turn(
     if budget.semantic < limits.semantic_attempts and budget.remaining_seconds > 0:
         if pending:
             reading_packet()
-            selected = active
+            selected = complete_answer_refs(active)
         try:
             final = answer_from_sources(selected, [{"code": bound, "pending_delivery": pending}])
         except _Bound as exc:

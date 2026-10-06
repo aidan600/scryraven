@@ -274,8 +274,21 @@ citation provenance derived from saved turns: answer-local citation numbers,
 canonical source IDs and exact material IDs are navigation, not Evidence or a
 claim that the prior answer was correct. A cited targeted view can be reconstructed
 locally from its retained full parent. Answer sees ordinary conversation without
-historical provenance aliases and receives only current-turn Evidence freshly
-selected by Research. Unscoped Find ranks actual retained acquisition regions on
+historical provenance aliases. Research chooses the source identities for Answer
+through its ordinary exact Evidence selection. Immediately before explicit or
+forced terminal Answer handoff, mechanics append omitted exact material already
+exposed during the current turn from those same stored canonical source IDs.
+Seed refs retain their order; appended document views follow source character
+start and web material follows acquisition/Evidence-ID order, within selected
+source order. Completion is all-or-nothing within the existing 128,000-character
+Evidence allowance: an over-limit proposal leaves the seed packet unchanged.
+No semantic ranking, version preference, summarization or new owner is involved.
+Provisional Answer no-progress compares the effective completed packet; Research
+reentry attention still uses its ordinary seed choice. Literal readings, citation
+validation and saved source snapshots use the completed packet actually supplied
+to Answer. A body-free trace receipt records seed/appended refs, final content
+characters and completion status; no durable session state is added.
+Unscoped Find ranks actual retained acquisition regions on
 a comparable corpus-wide lexical scale rather than interleaving by acquisition
 order;
 lexical rank does not establish semantic relevance or support. Read gives a
@@ -420,6 +433,26 @@ settings from effective user configuration or shipped defaults. Explicit injecte
 `.env.example` holds credential placeholders only, and the product does not load `.env`.
 
 ## Bounded evidence and limits
+
+Selected-Source Completion Product 01 met its bounded mechanical gate at runtime
+revision `4c0c447216895115b0aaa7dbf59653ebe2b61db9`. Two ordinary durable-session
+observations used five Research calls, two Answer calls and four external attempts.
+The PDF run completed the selected `D1` packet with its exposed page-5 table of
+contents and whitespace-only page-11 range. Research itself selected page 8;
+Answer retained the proposed conservation transfer, up-to-$2.5 million scale,
+hiking/program access and conditional status alongside the broader turnaround.
+This does not demonstrate a completion-caused rescue of page-8 coverage. The web
+run appended a previously exposed 495-character ABC7 highlight to its selected
+full article. Answer preserved diagnosis uncertainty, geographic risk scope and
+California's separate wildlife-associated risk; that ABC7 group was not cited.
+No material regression attributable to completion was observed. Both turns passed
+ordinary literal-reading/citation validation; their cited exact-material snapshots
+persisted unchanged after reopen. The PDF Answer prose did not disclose extracted-text-only coverage
+or its two textless pages; the separate disclosure limitation was not repaired.
+No third run, untreated control, independent source checking or model judge was
+used. Overflow and missing-information reentry were verified offline, not exercised
+live. General coverage, currentness and reliability remain unproved. Exact local
+evidence is under ignored `local-evals/runs/answer-selected-source-completion-product-01-20261006/`.
 
 Answer Coverage Retention used unchanged development packets and the production
 Answer prompt, schema, model transport, calculator, validation and finalization.

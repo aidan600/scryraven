@@ -367,7 +367,8 @@ def test_find_keeps_document_and_web_identities_distinct():
         decision(requests=[scoped]), choose, respond), documents=(document,),
         search=no_provider, fetch=no_provider, lexical_search=no_provider)
     assert found.trace[-1]["budget"]["external_attempts"] == 0
-    assert found.citations[0].page_start == 3 and QUALIFICATION in found.selected_evidence[0].content
+    assert found.citations[0].page_end == 3 and QUALIFICATION in found.selected_evidence[0].content
+    assert all(item.source_id == "D1" for item in found.selected_evidence)
 
     def inspect(material):
         contents = {entry["content"] for entry in material["evidence"]}
@@ -410,9 +411,11 @@ def test_followup_reopens_the_same_document_without_reupload(tmp_path):
         return answer(f"The document says the crane count is 14. [{item['id']}]",
                       readings=[{"evidence_ref": item["id"], "passages": [CRANE]}])
 
+    first_page = {**request("read", query="", target="D1", mode="local"),
+                  "start_char": 0, "end_char": len(document.pages[0])}
     session = ResearchSession.open(
         created.metadata.session_id, store=store,
-        model=Script(decision(requests=[request("read", query="", target="D1", mode="local")]), select, respond),
+        model=Script(decision(requests=[first_page]), select, respond),
         search=no_provider, fetch=no_provider, lexical_search=no_provider)
     first = session.ask("What crane count does the document state?")
     assert first.citations[0].document_id == "D1" and CRANE in first.selected_evidence[0].content
@@ -447,7 +450,7 @@ def test_followup_reopens_the_same_document_without_reupload(tmp_path):
     assert reopened.documents[0].original_pdf == pdf
     assert reopened.turns[0].selected_evidence[0] == cited
     second = reopened.ask("What does the document exclude?")
-    assert second.citations[0].document_id == "D1" and second.citations[0].page_start == 2
+    assert second.citations[0].document_id == "D1" and second.citations[0].page_end == 2
     assert SPARE in second.selected_evidence[0].content
     assert second.trace[-1]["budget"]["external_attempts"] == 0
     stored = SQLiteSessionStore(store.path).load(created.metadata.session_id)
@@ -490,6 +493,13 @@ def test_discontiguous_document_pages_stay_exact_after_reopen(tmp_path):
     store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
     created = store.create()
     store.attach_document(created.metadata.session_id, 0, "yard-report.pdf", "application/pdf", pdf)
+    document = store.load(created.metadata.session_id).documents[0]
+    # Only these discontiguous pages are exposed. Completion must not add the
+    # intervening catalog-only document text.
+    reads = [{**request("read", query="", target="D1", mode="local"),
+              "start_char": start, "end_char": end} for start, end in (
+                  (0, len(document.pages[0])),
+                  (sum(len(page) for page in document.pages[:-1]), document.text_character_count))]
 
     def select(material):
         chosen = [entry for entry in material["evidence"] if early in entry["content"] or late in entry["content"]]
@@ -509,7 +519,7 @@ def test_discontiguous_document_pages_stay_exact_after_reopen(tmp_path):
 
     session = ResearchSession.open(
         created.metadata.session_id, store=store,
-        model=Script(decision(requests=[request("read", query="", target="D1", mode="local")]), select, respond),
+        model=Script(decision(requests=reads), select, respond),
         search=no_provider, fetch=no_provider, lexical_search=no_provider)
     result = session.ask("What count does the document state, and what does it exclude?")
     citation = result.citations[0]
