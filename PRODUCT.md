@@ -42,6 +42,10 @@ lifetime only: previous generated answers remain non-evidentiary, prior Analyst
 judgments remain semantic history, and follow-ups receive fresh semantic decisions
 over actual acquired Evidence.
 
+A research session may contain user-provided text documents. Research may use
+exact material from those documents and combine it with ordinary web evidence.
+Document provenance does not itself independently verify outside-world claims.
+
 ## Local Reading Room
 
 The local browser product operates the same research-session application and
@@ -49,6 +53,8 @@ durable store as the CLI. It offers a continuous, readable research conversation
 persistent history, follow-up questions, session rename and confirmed permanent
 deletion. Compact citations open the exact selected source material saved with
 that historical answer, alongside publication identity and its original URL.
+A user-provided document citation shows the filename and page locator instead
+of a publication URL, and can open the original PDF attached to that session.
 Citation numbering belongs to each answer. Later acquisitions must not change
 historical inspection. The answer is the primary reading surface; evidence is
 available in depth when requested. Working states and research limitations remain

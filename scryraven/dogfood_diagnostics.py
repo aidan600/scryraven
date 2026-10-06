@@ -22,7 +22,7 @@ from scryraven.errors import RunError
 from scryraven.session_store import SessionStoreError
 
 _SESSION_ID = re.compile(r"[0-9a-f]{32}\Z")
-_EVIDENCE_REF = re.compile(r"E[1-9][0-9]*(?:@[0-9]+:[0-9]+)?\Z")
+_EVIDENCE_REF = re.compile(r"(?:E|D)[1-9][0-9]*(?:@[0-9]+:[0-9]+)?\Z")
 _MODEL_NAME = re.compile(r"(?:gpt|o[1-9])[-a-zA-Z0-9._]{1,70}\Z")
 _CACHE_FAMILY = re.compile(r"sr-v1:(?:research|answer):(?:research|answer):[0-9a-f]{32}\Z")
 _CONTRACTS = {"research", "answer"}
@@ -67,7 +67,13 @@ _CODES = {
 _SIZE_FIELDS = (
     "prior_conversation_turns", "conversation_characters", "current_question_characters",
     "retained_acquisition_count", "total_retained_source_characters",
-    "prior_provenance_citations",
+    "prior_provenance_citations", "document_count", "document_page_count",
+    "document_character_count",
+)
+_DOCUMENT_NAVIGATION_FIELDS = (
+    "document_count", "document_page_count", "document_character_count",
+    "local_read_packet_characters", "matching_region_count",
+    "candidate_regions_considered", "exact_returned_region_count",
 )
 _CALL_SIZE_FIELDS = (
     "catalog_characters", "current_evidence_characters", "conversation_characters",
@@ -267,6 +273,12 @@ class TurnDiagnostics:
                     "provider": _one_of(receipt.get("provider"), {"exa", "serper"}),
                     "kind": _one_of(receipt.get("kind"), {"search", "search_lexical"}),
                     **{key: _nonnegative_int(receipt.get(key)) for key in SEARCH_NOVELTY_COUNTS},
+                }
+            navigation = event.get("document_navigation")
+            if isinstance(navigation, dict):
+                row["document_navigation"] = {
+                    key: _nonnegative_int(navigation.get(key)) for key in _DOCUMENT_NAVIGATION_FIELDS
+                    if key in navigation
                 }
             self.acquisitions.append(row)
         elif action == "search_concurrency_group":

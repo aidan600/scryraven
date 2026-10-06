@@ -298,10 +298,12 @@ fixed provider/kind values, never queries, URLs, titles, highlights or bodies.
 Existing forensic acquisition-result events retain the diagnostic receipt under
 the existing privacy boundary. Research excludes it from model-facing
 `last_route`; no cumulative Search history, query-history field, novelty
-replacement or expected-yield prompt addition is supplied to the model. Answer
-and durable sessions are unchanged. Research prompt bytes, packet ordering,
-stable prefix, breakpoints and cache family match merged-main PR #660, whose
-`failed_external_reads` history remains intact. The telemetry has no stopping or
+replacement or expected-yield prompt addition is supplied to the model. That
+novelty receipt does not change Answer or durable session records. Research and
+Answer instruction text includes the compact user-document clarification, so
+those instruction-derived cache families differ from the previous prompt.
+Packet ordering, the stable prefix, breakpoints and the `failed_external_reads`
+history remain intact. The telemetry has no stopping or
 semantic authority and establishes no stopping or answer-quality improvement.
 
 Read's target and mode have explicit mechanical meaning:
@@ -312,6 +314,7 @@ Read's target and mode have explicit mechanical meaning:
 | `local` | Inspect available retained material without external acquisition. |
 | `full` | Reuse the latest retained full parent for the source or acquire full text if absent. Large parents yield bounded exact views, so one Read need not expose the whole body. |
 | Candidate ID or observed URL with `auto` | Reuse an available full parent or acquire source text. |
+| `D#` user-document ID | Read retained extracted text locally. No provider I/O and no external attempt. A large document returns bounded exact views, not the whole extraction. |
 | `refresh` | Attempt another full-text acquisition while preserving earlier versions. |
 
 An exact targeted-view ID preserves that view when reread, including when a focus
@@ -333,6 +336,22 @@ Find, another focus or an exact range to inspect more of a large parent.
 Target URLs must be supplied by the user, returned through acquisition, or found
 as explicit links in exposed material. These mechanics validate addressability
 and custody, not semantic relevance.
+
+A session may also hold user-provided text PDFs. They are durable source custody,
+not Evidence until Research selects exact extracted text. The catalog lists each
+document as metadata (`D1`, filename, media type, pages, characters,
+`user_document`, `visual_analysis=false`, and the count of pages with no
+extracted text). That metadata is navigation. It does not establish what the
+document says, and it does not claim that omitted visual content says anything.
+Read with `target=D1` and Find with `scope=["D1"]` use the retained extraction
+locally. Unscoped Find may also inspect retained web material. Exact document
+refs use `D1@start:end` over the deterministic extracted text, with real PDF
+page indexes. Those refs are accepted as Evidence and as Answer source readings.
+A document read spends no external attempt and does not consume the Exa Deep
+bootstrap. The first eligible generic web Search still uses Deep. Document text
+is authoritative for what the document states. It does not by itself verify an
+outside-world claim. Web Search and known-URL Read remain available on the same
+turn. No OCR, vision model, embedding, or semantic reranker is used.
 
 Three distinctions remain separate:
 
@@ -412,8 +431,10 @@ identifies the exact source and material each earlier answer cited, including
 targeted views, without claiming that the earlier answer was correct. On the
 first Research call of a follow-up, the exact actual material cited by the
 immediately preceding completed answer is also exposed when it fits the existing
-attention limit. A targeted view is reconstructed from its retained full parent;
-no new acquisition or persistent memory is created. No other historical material
+attention limit. A targeted web view is reconstructed from its retained
+acquisition parent. A user-document view is reconstructed from that session's
+stored extraction and must match it. No new acquisition or persistent memory is
+created. No other historical material
 is automatically exposed. Research may use, shelve or supplement this Evidence.
 Answer continues to receive ordinary conversation without historical provenance
 aliases and sees only Evidence freshly selected for the current answer. Prior user
@@ -424,8 +445,9 @@ or unable completed answer can be retained honestly.
 
 Durable `SessionTurn` records allow `analysis=None` for a source-first answer;
 legacy Analyst-bearing turns retain their actual saved Analysis. No fake
-Analysis is manufactured. The existing SQLite schema and atomic revision-checked
-commit boundary remain, with neutral-turn validation alongside legacy validation.
+Analysis is manufactured. Completed-turn commits remain revision-checked, with
+neutral-turn validation alongside legacy validation. User documents live in an
+additive SQLite schema-2 table and are not copied into the turn payload.
 Run traces, working understanding, indexes, observer records and provider state
 are not session persistence fields. Reopening preserves actual Evidence and
 historical answer provenance without making past generated text evidentiary.

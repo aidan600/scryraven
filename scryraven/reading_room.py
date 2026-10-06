@@ -9,12 +9,22 @@ from pathlib import Path
 from threading import Lock
 from time import monotonic
 
-from flask import Flask, abort, redirect, render_template, request, url_for
+from flask import Flask, Response, abort, redirect, render_template, request, url_for
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 from markupsafe import Markup
 from werkzeug.exceptions import HTTPException, SecurityError
 from werkzeug.serving import WSGIRequestHandler, make_server
 
+from scryraven.documents import (
+    ALREADY_ATTACHED_NOTICE,
+    DOCUMENT_ERROR_MESSAGES,
+    DOCUMENT_ID,
+    MAX_PDF_BYTES,
+    TEXT_ONLY_WARNING,
+    DocumentRejected,
+    content_disposition,
+    textless_page_warning,
+)
 from scryraven.dogfood_diagnostics import DogfoodLog, TurnDiagnostics
 from scryraven.forensic_log import ForensicLog
 from scryraven.presentation import answer_html, source_body_html, source_free_supported, source_label
@@ -28,6 +38,8 @@ from scryraven.session_store import (
 
 _HOST = "127.0.0.1"
 _PORT = 7331
+_FORM_BODY_BYTES = 256 * 1024
+_PDF_UPLOADS = {"attach_new_document", "attach_session_document"}
 
 
 class _FormError(Exception):
@@ -74,7 +86,10 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                forensic_log: str | Path | None = None) -> Flask:
     """Inject only the existing store and ResearchSession's ordinary I/O options."""
     app = Flask(__name__)
-    app.config.update(MAX_CONTENT_LENGTH=256 * 1024, TRUSTED_HOSTS=["127.0.0.1", "localhost"])
+    # Ordinary forms keep the 256 KiB bound below. Only the PDF routes may use the
+    # larger ceiling, and they still reject anything past MAX_PDF_BYTES.
+    app.config.update(MAX_CONTENT_LENGTH=MAX_PDF_BYTES, MAX_FORM_MEMORY_SIZE=MAX_PDF_BYTES,
+                      TRUSTED_HOSTS=["127.0.0.1", "localhost"])
     custody = store if store is not None else SQLiteSessionStore(database)
     options = dict(session_options or {})
     session_path = custody.path if isinstance(custody, SQLiteSessionStore) else None
@@ -104,14 +119,22 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
     @app.before_request
     def protect_local_requests():
         # Host validation also prevents DNS rebinding. Do not trust proxy headers.
+        upload = request.endpoint in _PDF_UPLOADS
+        limit = MAX_PDF_BYTES if upload else _FORM_BODY_BYTES
+        # Ordinary forms stay at 256 KiB even when the PDF ceiling is configured
+        # for the two upload routes. This also bounds a body without Content-Length.
+        request.max_content_length = limit
+        request.max_form_memory_size = limit
         if request.method not in {"GET", "HEAD", "OPTIONS"}:
             origin = request.headers.get("Origin")
             if (origin is not None and origin != request.host_url.rstrip("/")) or (
                 request.headers.get("Sec-Fetch-Site") == "cross-site"
             ):
                 abort(403)
-            if request.mimetype != "application/x-www-form-urlencoded":
+            if request.mimetype != ("multipart/form-data" if upload else "application/x-www-form-urlencoded"):
                 abort(415)
+            if request.content_length is not None and request.content_length > limit:
+                abort(413)
 
     @app.after_request
     def response_safety(response):
@@ -135,9 +158,20 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
         except SessionStoreError as exc:
             if exc.code == "session_not_found":
                 return redirect(url_for("new_research", notice="missing"), 303)
-            return render_template("reading_room.html", history=(), saved=None, turns=(),
+            return render_template("reading_room.html", history=(), saved=None, turns=(), documents=(),
+                                   text_only_warning=TEXT_ONLY_WARNING,
                                    error="Saved research is unavailable. Please try reopening the Reading Room.",
                                    unavailable=True), 503
+        metadata = saved.metadata if saved else None
+        documents = []
+        if saved:
+            for document in saved.documents:
+                documents.append({
+                    "filename": document.filename, "pages": document.page_count,
+                    "textless": textless_page_warning(document.textless_page_count),
+                    "href": url_for("original_pdf", session_id=metadata.session_id,
+                                    document_id=document.document_id),
+                })
         turns = []
         for number, turn in enumerate(saved.state.turns if saved else (), 1):
             prefix = f"turn-{number}-source-"
@@ -147,15 +181,21 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                 "source_free": source_free_supported(turn),
                 "answer": Markup(answer_html(turn, source_prefix=prefix)),
                 "sources": [{"number": c.number, "id": prefix + str(c.number), "title": source_label(c),
-                             "body": Markup(source_body_html(c, collapse_long=True))} for c in turn.citations],
+                             "body": Markup(source_body_html(
+                                 c, collapse_long=True,
+                                 original_href=(url_for("original_pdf", session_id=metadata.session_id,
+                                                        document_id=c.document_id)
+                                                if c.source_kind == "user_document" and c.document_id else None),
+                             ))} for c in turn.citations],
             })
-        metadata = saved.metadata if saved else None
         issue = lambda action: forms.issue(action, metadata.session_id if metadata else "",
                                            metadata.revision if metadata else 0)
         notice = {"missing": "That session is no longer available. Your other research is here.",
-                  "deleted": "Session deleted.", "renamed": "Session renamed."}.get(request.args.get("notice"))
+                  "deleted": "Session deleted.", "renamed": "Session renamed.",
+                  "already_attached": ALREADY_ATTACHED_NOTICE}.get(request.args.get("notice"))
         return render_template(
-            "reading_room.html", history=history, saved=saved, turns=turns, question=question,
+            "reading_room.html", history=history, saved=saved, turns=turns, documents=documents,
+            text_only_warning=TEXT_ONLY_WARNING, question=question,
             error=error, notice=notice, confirmation=confirmation, form_token=issue,
             renaming=bool(saved and (edit_title or request.args.get("edit") == "rename")),
         ), status
@@ -302,8 +342,99 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
             return ("<!doctype html><html lang=en><meta charset=utf-8><title>Reading Room</title>"
                     "<p>Open the local Reading Room address shown when you launched it.</p></html>"), 400
         status = exc.code if isinstance(exc, HTTPException) else 500
-        return render_template("reading_room.html", history=(), saved=None, turns=(), unavailable=True,
+        return render_template("reading_room.html", history=(), saved=None, turns=(), documents=(),
+                               text_only_warning=TEXT_ONLY_WARNING, unavailable=True,
                                error="This page or request is unavailable. Reopen the Reading Room to continue."), status
+
+    def upload_error(exc: DocumentRejected):
+        return DOCUMENT_ERROR_MESSAGES.get(exc.code, DOCUMENT_ERROR_MESSAGES["pdf_malformed"])
+
+    def read_upload() -> tuple[str, str, bytes]:
+        storage = request.files.get("pdf")
+        if storage is None:
+            raise DocumentRejected("pdf_required")
+        filename = storage.filename or ""
+        media_type = storage.mimetype or ""
+        try:
+            data = storage.read(MAX_PDF_BYTES + 1)
+        finally:
+            storage.close()
+        if len(data) > MAX_PDF_BYTES:
+            raise DocumentRejected("pdf_too_large")
+        return filename, media_type, data
+
+    @app.post("/documents")
+    def attach_new_document():
+        try:
+            revision = claim("attach", "")
+        except _FormError as exc:
+            message = ("This PDF was already submitted. Reopen the session from history if it was saved."
+                       if exc.repeated else "This form has expired. Choose the PDF and submit it again.")
+            return page(error=message, status=409)
+        if revision != 0:
+            return page(error="This form has expired. Choose the PDF and submit it again.", status=409)
+        try:
+            filename, media_type, data = read_upload()
+        except DocumentRejected as exc:
+            return page(error=upload_error(exc), status=400)
+        session = custody.create()
+        try:
+            attached = custody.attach_document(session.metadata.session_id, 0, filename, media_type, data)
+        except DocumentRejected as exc:
+            try:
+                custody.delete(session.metadata.session_id, revision=0)
+            except SessionStoreError:
+                pass
+            return page(error=upload_error(exc), status=400)
+        except Exception:
+            try:
+                custody.delete(session.metadata.session_id, revision=0)
+            except SessionStoreError:
+                pass
+            raise
+        target = {"session_id": session.metadata.session_id}
+        if not attached.created:
+            target["notice"] = "already_attached"
+        return redirect(url_for("open_session", **target), 303)
+
+    @app.post("/sessions/<session_id>/documents")
+    def attach_session_document(session_id):
+        try:
+            revision = claim("attach", session_id)
+        except _FormError as exc:
+            message = ("This PDF was already submitted. Reopen the session from history if it was saved."
+                       if exc.repeated else "This form has expired. Choose the PDF and submit it again.")
+            return page(session_id, error=message, status=409)
+        try:
+            filename, media_type, data = read_upload()
+            attached = custody.attach_document(session_id, revision, filename, media_type, data)
+        except DocumentRejected as exc:
+            return page(session_id, error=upload_error(exc), status=400)
+        target = {"session_id": session_id}
+        if not attached.created:
+            target["notice"] = "already_attached"
+        return redirect(url_for("open_session", **target), 303)
+
+    @app.get("/sessions/<session_id>/documents/<document_id>/original")
+    def original_pdf(session_id, document_id):
+        if not DOCUMENT_ID.fullmatch(document_id or ""):
+            abort(404)
+        try:
+            saved = custody.load(session_id)
+        except SessionStoreError as exc:
+            if exc.code == "session_not_found":
+                abort(404)
+            raise
+        document = next((item for item in saved.documents if item.document_id == document_id), None)
+        if document is None:
+            abort(404)
+        response = Response(document.original_pdf, mimetype="application/pdf")
+        response.headers["Content-Disposition"] = content_disposition(document.filename)
+        return response
+
+    @app.errorhandler(413)
+    def request_too_large(exc):
+        return page(error="That request is too large.", status=413)
 
     return app
 

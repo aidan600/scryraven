@@ -20,6 +20,29 @@
 </details>
 {%- endmacro %}
 
+{% macro attach_form(is_new=false) -%}
+<form class="attach-form" method="post" enctype="multipart/form-data" action="{{ url_for('attach_new_document') if is_new else url_for('attach_session_document', session_id=saved.metadata.session_id) }}">
+  <input type="hidden" name="form_token" value="{{ form_token('attach') }}">
+  <label class="attach-label">Attach PDF <input type="file" name="pdf" accept="application/pdf,.pdf" required></label>
+  <button class="small-button" type="submit">Attach</button>
+  <p class="attach-note">{{ text_only_warning }}</p>
+</form>
+{%- endmacro %}
+
+{% macro document_list() -%}
+{% if documents %}
+<section class="session-documents" aria-label="Documents">
+  <h2>Documents</h2>
+  {% for document in documents %}
+  <p class="document-chip"><a href="{{ document.href }}">[PDF] {{ document.filename }}</a> · {{ document.pages }} {{ 'page' if document.pages == 1 else 'pages' }}
+    {% if document.textless %}<span class="document-warning">Text-only analysis · {{ document.textless }}</span>{% else %}<span class="document-warning">Text-only analysis</span>{% endif %}
+  </p>
+  {% endfor %}
+  <p class="attach-note">{{ text_only_warning }}</p>
+</section>
+{% endif %}
+{%- endmacro %}
+
 {% macro composer(is_new=false) -%}
 <div class="composer-wrap{% if is_new %} welcome-composer{% endif %}">
   <form class="ask-form" method="post" action="{{ url_for('ask', session_id=saved.metadata.session_id) if saved else url_for('ask') }}">
@@ -104,10 +127,12 @@
         <h1 id="welcome-title">What do you want<br>to understand?</h1>
         <p class="welcome-description">ScryRaven researches public sources and writes an answer with citations you can inspect.</p>
         {{ composer(true) }}
+        {{ attach_form(true) }}
         <p class="welcome-note">Open any citation to read the source material used.</p>
       </section>
       {% endif %}
 
+      {{ document_list() }}
       {% for turn in turns %}
       <section class="turn" id="turn-{{ turn.number }}" aria-labelledby="question-{{ turn.number }}">
         <div class="question-block"><span class="eyebrow">{{ 'Your question' if loop.first else 'Your follow-up' }}</span><h2 id="question-{{ turn.number }}">{{ turn.question }}</h2></div>
@@ -139,7 +164,7 @@
       {% if saved and not turns %}<p class="empty-session">This research hasn’t saved an answer yet. Ask a question below.</p>{% endif %}
     </div>
   </div>
-  {% if saved and not unavailable %}<footer class="composer-footer">{{ composer() }}</footer>{% endif %}
+  {% if saved and not unavailable %}<footer class="composer-footer">{{ composer() }}{{ attach_form() }}</footer>{% endif %}
 </main>
 
 <dialog class="inspector" id="evidence-inspector" aria-labelledby="inspector-title">
@@ -152,7 +177,7 @@
 <dialog class="delete-dialog" id="delete-confirmation" open aria-labelledby="delete-title" aria-describedby="delete-description">
   <p class="eyebrow">Delete research</p>
   <h2 id="delete-title">Delete “{{ saved.metadata.title or 'Untitled research' }}”?</h2>
-  <p id="delete-description">This permanently removes this research session, including its conversation and saved source material.</p>
+  <p id="delete-description">This permanently removes this research session, including its conversation, attached documents, and saved source material.</p>
   <div class="dialog-actions">
     <a class="small-button delete-cancel" href="{{ url_for('open_session', session_id=saved.metadata.session_id) }}" autofocus>Cancel</a>
     <form method="post" action="{{ url_for('delete_session', session_id=saved.metadata.session_id) }}">

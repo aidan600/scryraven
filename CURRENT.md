@@ -106,16 +106,16 @@ requests and compact working state. This adds no semantic owner or memory and
 does not change the separate Research/Answer cache families.
 
 Research now presents the logical acquisition catalog to the model as lossless
-compact column-labeled tables. `AcquisitionLibrary.catalog()` and custody stay
-unchanged: full field names, every value, row order and absent-versus-null
-distinctions survive. The previously tested representation reduced repeated
-Research catalog characters by 28.75% and reconstructed packet characters by
-8.98% across 35 historical states (8.57% counting the added instruction per
-call). The minimal format instruction changes Research's instruction-derived
-cache family; Answer and the stable cache breakpoint remain unchanged. This
-efficiency evidence does not establish better Research judgment, stopping,
-retention or general reliability. See
-`docs/operator/CATALOG_TABLE_INTEGRATION_01.md`.
+compact column-labeled tables. Material tables keep full field names, every
+value, row order and absent-versus-null distinctions. The catalog also includes
+a `documents` collection of user-document metadata without body text. The
+previously tested representation reduced repeated Research catalog characters by
+28.75% and reconstructed packet characters by 8.98% across 35 historical states
+(8.57% counting the added instruction per call). User-document prompt
+clarifications change the Research and Answer instruction-derived cache families.
+The stable cache breakpoint remains unchanged. This efficiency evidence does not
+establish better Research judgment, stopping, retention or general reliability.
+See `docs/operator/CATALOG_TABLE_INTEGRATION_01.md`.
 
 Research receives an ordered, turn-scoped mechanical history of failed external
 Reads, including existing candidate identity, provider, effective fetch strategy,
@@ -218,18 +218,18 @@ Deep retains only the existing source-bound Highlight custody. Generated provide
 answers, summaries, output/grounding, confidence and reasoning are excluded.
 Body-free acquisition timing and dogfood diagnostics report the requested
 `provider_search_type` (`auto` or `deep`), without query or payload additions.
-AcquisitionLibrary, Request/ResearchDecision/AnswerDecision, sessions, budgets,
-Research/Answer prompts and citation semantics are unchanged. There is no depth
-decision field, semantic router, feature flag or persistent bootstrap state.
+Request, ResearchDecision, AnswerDecision and budgets are unchanged by Deep.
+There is no depth decision field, semantic router, feature flag or persistent
+bootstrap state. User-document custody does not consume or disable that bootstrap.
 
 Research formulates ordinary generic Exa queries as concise natural-language
 evidence objectives describing what source material should establish, retaining
 consequential known entity, relationship, source-class, time, scope, applicability
 and comparison constraints. Useful proper nouns, exact terminology, quotations
 and source constraints remain available; lexical/community/current navigation
-retains its separate lane. No mechanical query rewrite, new semantic owner,
-schema, provider/model router or custody change was added. The prompt changes
-Research's instruction-derived cache family only.
+retains its separate lane. That formulation change added no mechanical query rewrite, semantic owner,
+schema, provider/model router, or custody change. That prompt changes
+Research's instruction-derived cache family.
 
 Four fresh ordinary treatment sessions produced twenty generic queries:
 eighteen objective-aligned, one acceptable neutral and one misdirected candidate
@@ -323,10 +323,56 @@ Neither path promotes user premises or prior assistant prose into Evidence.
 
 Durable SQLite sessions retain atomic revision-checked commits, reopen/history,
 rename/delete and failure isolation. Native turns use `analysis: null` in the
-existing backward-readable snapshot schema. Historical Analysis is retained and
+backward-readable snapshot schema. Historical Analysis is retained and
 validated only on serialization/reopen; it never controls new research or becomes
 Evidence. Historical turns and citations are not rewritten on reopening.
 The synthetic pre-supersession fixture exercises mixed historical/native sessions.
+
+The session store is schema 2. A version-1 database gains the additive
+`session_documents` table and advances `PRAGMA user_version` to 2 without
+rewriting existing session payloads. Opening a current database does not rewrite
+those payloads. An unknown newer schema still fails as `incompatible_session_store`
+without being rewritten. Each text PDF belongs to one session as `D1`, `D2`, and
+so on. The row stores the original PDF blob, filename, SHA-256, page count, and
+the deterministic pypdf page extraction. The same SHA-256 uploaded again into
+that session returns the existing document and does not allocate another ID.
+Another session can hold its own copy. Attaching a document does not create a
+turn or advance the completed-turn revision, including a blank session at
+revision 0. Deleting the session deletes its document rows and PDF blobs.
+Selected exact document views may be saved with a completed turn; the extracted
+parent is not copied into every turn payload. A document citation's displayed
+page locator lists those exact selected pages. Contiguous pages compact into a
+run, and unselected pages between them are not included. Stored `page_start`
+and `page_end` remain the coarse bounds of the citation group.
+
+Extraction uses `pypdf>=6.19,<7` (this verification used 6.19.0). The bounds are
+20 MiB, 500 pages, and 2,000,000 extracted characters. There is no OCR, image
+analysis, or vision-model path. The product states that it analyzes extracted
+PDF text only and that images and scanned content are not analyzed. Pages with
+no extracted text are counted, not described as images. Encrypted, malformed,
+empty, and over-limit PDFs are rejected with fixed messages. Research sees
+document metadata in the catalog, not the PDF bytes or the whole extraction.
+Local Read and Find use the retained text, spend no external attempt, and do not
+consume the Exa Deep bootstrap. A large document uses the existing bounded
+packet and exact-view limits. Document text is Evidence of what that document
+states. Web Search, Serper, and LinkUp remain available on the same turn.
+Body-free diagnostics may count documents, pages, characters, local Read size,
+and Find region counts. They do not record filenames, queries, or page text.
+No Jev, Clef, embedding, or vector index is part of this path.
+
+Offline verification on this branch was `771 passed`, `ruff check .`, and
+`git diff --check`. Four ordinary product turns, brokered with the repository
+credential doorman and frozen synthetic or public text, then confirmed custody
+and citations: a direct document fact with zero external attempts; a later-page
+fiscal-year and exclusion qualification retained from the extracted text; a
+new-process follow-up on the same `D1` without re-upload; and a PDF claim of a
+1948 WHO founding compared with `https://www.who.int/about` and
+`https://www.who.int/about/history` after one external Exa search. The first
+Research call on a fresh document session received no document body. Campaign
+external attempts were 1. Two frozen reserve cases were not run. Search width
+remains 6. Semantic, external, time, and attention limits remain 12, 16, 300
+seconds, and 128,000 characters. Targeted and expansion packets remain 32,000
+and 48,000 characters.
 
 Reading Room and CLI use the same session application and store. The existing
 safe Markdown/source renderer, browser security, local assets, transport,

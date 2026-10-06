@@ -7,7 +7,7 @@ import re
 from bisect import bisect_right
 from collections import Counter
 from collections.abc import Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import Literal
 
 # Provisional, observable economics choices; none decides evidentiary sufficiency.
@@ -29,6 +29,15 @@ class Evidence:
     parent_id: str | None = None
     start_char: int | None = None
     end_char: int | None = None
+    # Web publications omit the document fields. User-document views keep them so
+    # URL is not a fake identity for a file the user attached.
+    source_kind: Literal["web", "user_document"] = "web"
+    document_id: str | None = None
+    filename: str | None = None
+    page_start: int | None = None
+    page_end: int | None = None
+    visual_analysis: bool | None = None
+    textless_page_count: int | None = None
 
     def __post_init__(self) -> None:
         if not self.source_id:
@@ -40,9 +49,39 @@ class Evidence:
                 raise ValueError("invalid_source_range")
         elif any(value is not None for value in (self.parent_id, self.start_char, self.end_char)):
             raise ValueError("non_view_has_source_offsets")
+        document_fields = (self.document_id, self.filename, self.page_start, self.page_end,
+                           self.visual_analysis, self.textless_page_count)
+        if self.source_kind == "web":
+            if any(value is not None for value in document_fields):
+                raise ValueError("web_source_has_document_fields")
+        elif self.source_kind == "user_document":
+            if (not self.document_id or not self.filename or self.url != ""
+                    or self.source_id != self.document_id or self.visual_analysis is not False
+                    or type(self.textless_page_count) is not int or self.textless_page_count < 0):
+                raise ValueError("invalid_document_identity")
+            if self.acquisition == "targeted_view" and self.parent_id != self.document_id:
+                raise ValueError("invalid_document_identity")
+            if (self.page_start is None) != (self.page_end is None):
+                raise ValueError("invalid_source_range")
+            if self.page_start is not None and not 1 <= self.page_start <= self.page_end:
+                raise ValueError("invalid_source_range")
+            if self.acquisition not in {"fetched_source", "targeted_view"}:
+                raise ValueError("invalid_document_identity")
+        else:
+            raise ValueError("invalid_source_kind")
 
     def material(self) -> dict:
-        return asdict(self)
+        """Model and storage projection. Web records keep their previous keys."""
+        row = {
+            "id": self.id, "url": self.url, "title": self.title, "content": self.content,
+            "acquisition": self.acquisition, "source_id": self.source_id,
+            "parent_id": self.parent_id, "start_char": self.start_char, "end_char": self.end_char,
+        }
+        if self.source_kind != "web":
+            row.update(source_kind=self.source_kind, document_id=self.document_id,
+                       filename=self.filename, page_start=self.page_start, page_end=self.page_end,
+                       visual_analysis=self.visual_analysis, textless_page_count=self.textless_page_count)
+        return row
 
 
 def exact_view(parent: Evidence, start: int, end: int) -> Evidence:
@@ -50,7 +89,9 @@ def exact_view(parent: Evidence, start: int, end: int) -> Evidence:
         raise ValueError("invalid_source_range")
     return Evidence(
         f"{parent.id}@{start}:{end}", parent.url, parent.title, parent.content[start:end],
-        "targeted_view", parent.source_id, parent.id, start, end,
+        "targeted_view", parent.source_id, parent.id, start, end, parent.source_kind,
+        parent.document_id, parent.filename, None, None, parent.visual_analysis,
+        parent.textless_page_count,
     )
 
 
@@ -89,15 +130,18 @@ def _spans(text: str, start: int, end: int) -> list[tuple[int, int]]:
 class SourceIndex:
     """A disposable structure/lexical locator, with the immutable parent intact."""
 
-    def __init__(self, source: Evidence) -> None:
+    def __init__(self, source: Evidence, structural_boundaries: Sequence[int] = ()) -> None:
         self.source = source
         text = source.content
-        # Only explicit line structure. Flattened PDFs do not acquire invented headings/pages.
+        # Only explicit line structure. Page offsets are structural boundaries,
+        # not generated "Page N" prose inserted into the source text.
         self.headings = [(m.start(), m.end()) for m in re.finditer(
             r"(?m)^(?:#{1,6}[ \t]+[^\n]+|[1-9]\d{0,2}(?:\.\d+)+\.?[ \t]+[^\W\d_][^\n]{0,159}"
             r"|[^|\n]{1,80}[ \t]+\|[ \t]+[^|\n]{1,160})$", text,
         )]
-        boundaries = sorted({0, len(text), *(start for start, _ in self.headings)})
+        extra = [boundary for boundary in structural_boundaries
+                 if type(boundary) is int and 0 < boundary < len(text)]
+        boundaries = sorted({0, len(text), *(start for start, _ in self.headings), *extra})
         self.section_starts = boundaries[:-1]
         self.sections = list(zip(boundaries, boundaries[1:]))
         self.regions = [span for start, end in zip(boundaries, boundaries[1:]) for span in _spans(text, start, end)]
