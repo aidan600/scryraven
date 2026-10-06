@@ -251,4 +251,12 @@ dialog::backdrop { background: #1e323d26; }
   .small-button, .delete-button { min-height: 40px; display: inline-flex; align-items: center; }
   .action-menu a { min-height: 44px; }
 }
+.session-documents { margin: 0 0 28px; }
+.session-documents h2 { margin: 0 0 8px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.document-chip { margin: 0 0 10px; font-size: 14px; }
+.document-warning { display: block; color: var(--muted); font-size: 12px; }
+.attach-form { margin-top: 14px; }
+.attach-label { display: inline-flex; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); }
+.attach-note { margin: 8px 0 0; color: var(--muted); font-size: 12px; max-width: 460px; }
+.composer-footer .session-documents { margin-bottom: 12px; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; scroll-behavior: auto !important; } }

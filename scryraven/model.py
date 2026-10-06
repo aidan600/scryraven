@@ -181,7 +181,8 @@ _RESEARCH_VOLATILE_ORDER = (
 )
 _EVIDENCE_METADATA_ORDER = (
     "id", "source_id", "acquisition", "title", "url", "parent_id",
-    "start_char", "end_char",
+    "start_char", "end_char", "source_kind", "document_id", "filename",
+    "page_start", "page_end", "visual_analysis", "textless_page_count",
 )
 _CALCULATOR_TOOL = {
     "type": "function",

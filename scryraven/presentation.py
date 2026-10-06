@@ -6,11 +6,12 @@ import base64
 import hashlib
 from dataclasses import dataclass
 from html import escape
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 from urllib.parse import unquote, urlsplit
 
 from markdown_it import MarkdownIt
 
+from scryraven.documents import TEXT_ONLY_WARNING, safe_original_href, textless_page_warning
 from scryraven.sources import Evidence
 
 if TYPE_CHECKING:
@@ -25,6 +26,11 @@ class Citation:
     title: str
     url: str
     materials: tuple[Evidence, ...]
+    source_kind: Literal["web", "user_document"] = "web"
+    document_id: str | None = None
+    filename: str | None = None
+    page_start: int | None = None
+    page_end: int | None = None
 
 
 @dataclass(frozen=True)
@@ -36,7 +42,17 @@ class CitationUse:
     end: int
 
 
+def document_page_label(citation: Citation) -> str:
+    if citation.page_start is None or citation.page_end is None:
+        return "User-provided document"
+    if citation.page_start == citation.page_end:
+        return f"User-provided document · p. {citation.page_start}"
+    return f"User-provided document · pp. {citation.page_start}\u2013{citation.page_end}"
+
+
 def source_label(citation: Citation) -> str:
+    if citation.source_kind == "user_document" and citation.filename:
+        return " ".join(citation.filename.split())
     if title := " ".join(citation.title.split()):
         return title
     # Missing display metadata does not license generating a publication title
@@ -69,7 +85,9 @@ def render_cli(result: Result | SessionTurn) -> str:
     if source_free_supported(result):
         status.append(SOURCE_FREE_DISCLOSURE)
     sources = "\n".join(
-        f"[{item.number}] {source_label(item)}\n    {item.url}"
+        f"[{item.number}] {source_label(item)}\n    {document_page_label(item)}"
+        if item.source_kind == "user_document"
+        else f"[{item.number}] {source_label(item)}\n    {item.url}"
         for item in result.citations
     )
     return result.answer + "\n\n" + "\n".join(status) + ("\n\nSources\n" + sources if sources else "")
@@ -148,11 +166,31 @@ _ACQUISITION_LABELS = {
 }
 
 
-def source_body_html(citation: Citation, *, collapse_long: bool = False) -> str:
+def _document_identity(citation: Citation, original_href: str | None) -> str:
+    warning = textless_page_warning(next((item.textless_page_count or 0 for item in citation.materials), 0))
+    detail = document_page_label(citation)
+    if warning:
+        detail += " · " + warning
+    link = ""
+    if original_href and safe_original_href(original_href):
+        link = (f'<p class="source-url"><a href="{escape(original_href, quote=True)}">Open original PDF</a></p>')
+    return ('<div class="source-identity"><p class="publisher-domain">User-provided document</p>'
+            f'<p class="source-url">{escape(detail)}</p>{link}'
+            f'<p class="scope">{escape(TEXT_ONLY_WARNING)}</p></div>')
+
+
+def source_body_html(citation: Citation, *, collapse_long: bool = False, original_href: str | None = None) -> str:
     """Exact saved material, shared by standalone disclosures and the Reading Room."""
     materials = []
     for index, item in enumerate(citation.materials, 1):
-        label, qualification = _ACQUISITION_LABELS[item.acquisition]
+        if item.source_kind == "user_document":
+            if item.page_start == item.page_end:
+                label, qualification = ("Extracted document text", f"Exact text from page {item.page_start}.")
+            else:
+                label, qualification = ("Extracted document text",
+                                        f"Exact text from pages {item.page_start}\u2013{item.page_end}.")
+        else:
+            label, qualification = _ACQUISITION_LABELS[item.acquisition]
         content = f'<pre class="material-text"><code>{escape(item.content)}</code></pre>'
         if collapse_long and (len(item.content) > 1200 or len(item.content.splitlines()) > 12):
             # A literal prefix only. Bound line-heavy extractions as well as prose;
@@ -167,7 +205,9 @@ def source_body_html(citation: Citation, *, collapse_long: bool = False) -> str:
         materials.append('<section class="material">'
                          + selection + f'<p class="acquisition"><span>{label}</span> · {qualification}</p>'
                          + content + '</section>')
-    return (_source_link(citation.url)
+    identity = (_document_identity(citation, original_href) if citation.source_kind == "user_document"
+                else _source_link(citation.url))
+    return (identity
             + '<h2>Material ScryRaven used from this source</h2>'
             '<p class="scope">Exact text saved with this answer. '
             'Selections may not include the whole publication.</p>'

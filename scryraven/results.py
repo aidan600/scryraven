@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from scryraven.documents import SessionDocument, document_text_view
 from scryraven.errors import RunError
 from scryraven.presentation import Citation, CitationUse
 from scryraven.sources import Evidence, exact_view
@@ -27,6 +28,7 @@ class CompletedAnswer:
 def resolve_citations(
     draft: str, selected: list[Evidence] | tuple[Evidence, ...],
     acquisitions: list[Evidence] | tuple[Evidence, ...], trace: list[dict], *,
+    documents: tuple[SessionDocument, ...] = (),
     require_citation: bool = True,
 ) -> tuple[str, tuple[Citation, ...], tuple[CitationUse, ...]]:
     """Resolve only aliases for actual supplied material, grouping by source.
@@ -36,17 +38,23 @@ def resolve_citations(
     retained versions or the unsupplied remainder of a full parent.
     """
     acquired = {item.id: item for item in acquisitions}
+    stored_documents = {item.document_id: item for item in documents}
     aliases: dict[str, str] = {}
     materials: dict[str, list[Evidence]] = {}
     for item in selected:
         try:
-            original = (exact_view(acquired[item.parent_id], item.start_char, item.end_char)
-                        if item.acquisition == "targeted_view" else acquired[item.id])
-            source = acquired[item.source_id]
+            if item.source_kind == "user_document":
+                original = document_text_view(stored_documents[item.document_id], item.start_char, item.end_char)
+                if original != item or item.source_id != item.document_id:
+                    raise ValueError("invalid_document_view")
+            else:
+                original = (exact_view(acquired[item.parent_id], item.start_char, item.end_char)
+                            if item.acquisition == "targeted_view" else acquired[item.id])
+                source = acquired[item.source_id]
+                if original != item or source.id != source.source_id or source.url != item.url:
+                    raise ValueError("invalid_web_view")
         except (KeyError, TypeError, ValueError):
             raise RunError("citations", "invalid_selected_material", trace) from None
-        if original != item or source.id != source.source_id or source.url != item.url:
-            raise RunError("citations", "invalid_selected_material", trace)
         if item.id in aliases:
             raise RunError("citations", "duplicate_selected_material", trace)
         aliases[item.id] = item.source_id
@@ -58,7 +66,7 @@ def resolve_citations(
     used: list[str] = []
     uses: list[CitationUse] = []
     offset = 0
-    alias = r"E[0-9]+(?:@[0-9]+:[0-9]+)?"
+    alias = r"(?:E|D)[0-9]+(?:@[0-9]+:[0-9]+)?"
     alias_list = rf"\s*{alias}(?:\s*,\s*{alias})*\s*"
     token = re.compile(rf"\[(?:\[{alias_list}\](?:\s*,\s*\[{alias_list}\])*|{alias_list})\]")
 
@@ -110,7 +118,9 @@ def resolve_citations(
         return rendered
 
     prose = token.sub(lambda match: " " * len(match.group()), draft)
-    malformed = re.search(r"\[\s*[Ee](?=\d|\s|\]|,|$)[0-9]*|(?<!\w)[Ee][0-9]*(?:@[^\s\]]*)?\s*\]", prose)
+    malformed = re.search(
+        r"\[\s*[EDed](?=\d|\s|\]|,|$)[0-9]*|(?<!\w)[EDed][0-9]*(?:@[^\s\]]*)?\s*\]", prose,
+    )
     if malformed:
         reject("malformed_citation_reference", "incomplete_alias", malformed)
     answer = token.sub(replace, draft)
@@ -118,11 +128,18 @@ def resolve_citations(
         raise RunError("answer", "empty_answer", trace)
     if require_citation and not used:
         reject("missing_citation", "no_alias")
-    citations = tuple(
-        Citation(number, source_id, acquired[source_id].title, acquired[source_id].url,
-                 tuple(materials[source_id]))
-        for number, source_id in enumerate(used, 1)
-    )
+    citations = []
+    for number, source_id in enumerate(used, 1):
+        group = tuple(materials[source_id])
+        if group[0].source_kind == "user_document":
+            document = stored_documents[source_id]
+            citations.append(Citation(
+                number, source_id, document.filename, "", group, "user_document", document.document_id,
+                document.filename, min(item.page_start for item in group), max(item.page_end for item in group),
+            ))
+        else:
+            citations.append(Citation(number, source_id, acquired[source_id].title, acquired[source_id].url, group))
+    citations = tuple(citations)
     trace.append({"stage": "citations", "action": "resolved", "source_ids": used,
                   "material_ids": [item.id for citation in citations for item in citation.materials]})
     return answer, citations, tuple(uses)

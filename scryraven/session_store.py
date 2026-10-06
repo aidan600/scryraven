@@ -15,6 +15,12 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict
 
+from scryraven.documents import (
+    DOCUMENT_ID,
+    SessionDocument,
+    document_text_view,
+    prepare_pdf,
+)
 from scryraven.errors import RunError
 from scryraven.historical import Analysis, validate_historical_analysis
 from scryraven.presentation import Citation, CitationUse
@@ -56,6 +62,13 @@ class SessionMetadata:
 class StoredSession:
     metadata: SessionMetadata
     state: SessionState
+    documents: tuple[SessionDocument, ...] = ()
+
+
+@dataclass(frozen=True)
+class AttachedDocument:
+    document: SessionDocument
+    created: bool
 
 
 class SessionStoreError(RuntimeError):
@@ -80,6 +93,8 @@ class SessionStore(Protocol):
     def commit(self, session_id: str, revision: int, state: SessionState) -> SessionMetadata: ...
     def rename(self, session_id: str, title: str) -> SessionMetadata: ...
     def delete(self, session_id: str, *, revision: int | None = None) -> None: ...
+    def attach_document(self, session_id: str, revision: int, filename: str,
+                        media_type: str, data: bytes) -> AttachedDocument: ...
 
 
 def default_session_path() -> Path:
@@ -113,6 +128,13 @@ class _EvidenceRecord(_Record):
     parent_id: str | None
     start_char: int | None
     end_char: int | None
+    source_kind: Literal["web", "user_document"] = "web"
+    document_id: str | None = None
+    filename: str | None = None
+    page_start: int | None = None
+    page_end: int | None = None
+    visual_analysis: bool | None = None
+    textless_page_count: int | None = None
 
 
 class _CitationRecord(_Record):
@@ -121,6 +143,11 @@ class _CitationRecord(_Record):
     title: str
     url: str
     material_ids: list[str]
+    source_kind: Literal["web", "user_document"] = "web"
+    document_id: str | None = None
+    filename: str | None = None
+    page_start: int | None = None
+    page_end: int | None = None
 
 
 class _UseRecord(_Record):
@@ -168,15 +195,20 @@ def _metadata(row: sqlite3.Row) -> SessionMetadata:
 
 
 def _evidence(record: _EvidenceRecord) -> Evidence:
-    _require(bool(record.id and record.source_id and record.url.strip() and record.content.strip()))
+    if record.source_kind == "user_document":
+        _require(bool(record.id and record.source_id and record.content and not record.url.strip()))
+    else:
+        _require(bool(record.id and record.source_id and record.url.strip() and record.content.strip()))
     return Evidence(**record.model_dump())
 
 
-def _decode(payload: str, revision: int) -> SessionState:
+def _decode(payload: str, revision: int, documents: tuple[SessionDocument, ...] = ()) -> SessionState:
     record = _StateRecord.model_validate_json(payload)
     _require(len(record.turns) == revision)
     acquisitions = tuple(_evidence(item) for item in record.acquisitions)
+    _require(all(item.source_kind == "web" for item in acquisitions))
     by_id = {item.id: item for item in acquisitions}
+    by_document = {item.document_id: item for item in documents}
     by_url: dict[str, str] = {}
     for index, item in enumerate(acquisitions, 1):
         # The existing allocator uses corpus length. Validate its invariant, never
@@ -191,7 +223,9 @@ def _decode(payload: str, revision: int) -> SessionState:
         materials = {item.id: item for item in selected}
         _require(len(materials) == len(selected))
         for item in selected:
-            if item.acquisition == "targeted_view":
+            if item.source_kind == "user_document":
+                _require(item == document_text_view(by_document[item.document_id], item.start_char, item.end_char))
+            elif item.acquisition == "targeted_view":
                 parent = by_id[item.parent_id]
                 _require(item == exact_view(parent, item.start_char, item.end_char))
             else:
@@ -210,15 +244,28 @@ def _decode(payload: str, revision: int) -> SessionState:
                 _require(saved.stop_reason == "research_bound")
             else:
                 _require(saved.stop_reason in {"not_established", "navigation_bound"})
-        citations = tuple(Citation(c.number, c.source_id, c.title, c.url,
-                                   tuple(materials[ref] for ref in c.material_ids)) for c in saved.citations)
+        citations = tuple(Citation(
+            c.number, c.source_id, c.title, c.url, tuple(materials[ref] for ref in c.material_ids),
+            c.source_kind, c.document_id, c.filename, c.page_start, c.page_end,
+        ) for c in saved.citations)
         _require(len({c.source_id for c in citations}) == len(citations))
         for number, citation in enumerate(citations, 1):
-            source = by_id[citation.source_id]
-            _require(citation.number == number and source.id == source.source_id)
-            _require((citation.title, citation.url) == (source.title, source.url))
+            _require(citation.number == number)
             _require(bool(citation.materials) and citation.materials == tuple(
                 item for item in selected if item.source_id == citation.source_id))
+            if citation.source_kind == "user_document":
+                document = by_document[citation.document_id]
+                pages = [item.page_start for item in citation.materials]
+                page_ends = [item.page_end for item in citation.materials]
+                _require(citation.source_id == document.document_id == citation.document_id)
+                _require(citation.url == "" and citation.title == citation.filename == document.filename)
+                _require(citation.page_start == min(pages) and citation.page_end == max(page_ends))
+            else:
+                source = by_id[citation.source_id]
+                _require(citation.source_kind == "web" and citation.document_id is None)
+                _require(citation.filename is None and citation.page_start is None and citation.page_end is None)
+                _require(source.id == source.source_id)
+                _require((citation.title, citation.url) == (source.title, source.url))
         uses = tuple(CitationUse(**item.model_dump()) for item in saved.citation_uses)
         end = 0
         for use in uses:
@@ -235,23 +282,70 @@ def _decode(payload: str, revision: int) -> SessionState:
     return SessionState(tuple(turns), acquisitions)
 
 
-def _encode(state: SessionState) -> str:
+def _citation_record(citation: Citation) -> dict:
+    row = {"number": citation.number, "source_id": citation.source_id, "title": citation.title,
+           "url": citation.url, "material_ids": [item.id for item in citation.materials]}
+    if citation.source_kind != "web":
+        row.update(source_kind=citation.source_kind, document_id=citation.document_id,
+                   filename=citation.filename, page_start=citation.page_start, page_end=citation.page_end)
+    return row
+
+
+def _encode(state: SessionState, documents: tuple[SessionDocument, ...] = ()) -> str:
     # Citation material references resolve only against this turn's saved packet.
+    # Web evidence keeps the schema-1 key set. Document bytes stay out of this payload.
     turns = []
     for turn in state.turns:
         turns.append({
             "question": turn.question, "answer": turn.answer,
             "analysis": turn.analysis.model_dump() if turn.analysis is not None else None,
             "posture": turn.posture, "stop_reason": turn.stop_reason,
-            "selected_evidence": [asdict(item) for item in turn.selected_evidence],
-            "citations": [{"number": c.number, "source_id": c.source_id, "title": c.title, "url": c.url,
-                           "material_ids": [item.id for item in c.materials]} for c in turn.citations],
+            "selected_evidence": [item.material() for item in turn.selected_evidence],
+            "citations": [_citation_record(c) for c in turn.citations],
             "citation_uses": [asdict(item) for item in turn.citation_uses],
         })
-    payload = json.dumps({"turns": turns, "acquisitions": [asdict(item) for item in state.acquisitions]},
+    payload = json.dumps({"turns": turns, "acquisitions": [item.material() for item in state.acquisitions]},
                          ensure_ascii=True, separators=(",", ":"), allow_nan=False)
-    _require(_decode(payload, len(state.turns)) == state)
+    _require(_decode(payload, len(state.turns), documents) == state)
     return payload
+
+
+_SESSIONS_SQL = """CREATE TABLE sessions (
+    session_id TEXT PRIMARY KEY, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+    title TEXT NOT NULL, revision INTEGER NOT NULL CHECK (revision >= 0), payload TEXT NOT NULL
+)"""
+
+_DOCUMENTS_SQL = """CREATE TABLE IF NOT EXISTS session_documents (
+    session_id TEXT NOT NULL, document_id TEXT NOT NULL, filename TEXT NOT NULL,
+    media_type TEXT NOT NULL, byte_length INTEGER NOT NULL, sha256 TEXT NOT NULL,
+    created_at TEXT NOT NULL, page_count INTEGER NOT NULL, text_character_count INTEGER NOT NULL,
+    textless_page_count INTEGER NOT NULL, original_pdf BLOB NOT NULL, pages_json TEXT NOT NULL,
+    PRIMARY KEY (session_id, document_id), UNIQUE (session_id, sha256)
+)"""
+
+
+def _load_documents(connection: sqlite3.Connection, session_id: str) -> tuple[SessionDocument, ...]:
+    rows = connection.execute(
+        "SELECT document_id, filename, media_type, byte_length, sha256, created_at, page_count, "
+        "text_character_count, textless_page_count, original_pdf, pages_json "
+        "FROM session_documents WHERE session_id = ? ORDER BY length(document_id), document_id",
+        (session_id,),
+    ).fetchall()
+    documents = []
+    for row in rows:
+        pages = json.loads(row["pages_json"])
+        _require(isinstance(pages, list) and bool(DOCUMENT_ID.fullmatch(row["document_id"])))
+        blob = row["original_pdf"]
+        if isinstance(blob, memoryview):
+            blob = blob.tobytes()
+        _require(isinstance(blob, bytes))
+        documents.append(SessionDocument(
+            row["document_id"], row["filename"], row["media_type"], row["byte_length"], row["sha256"],
+            row["created_at"], row["page_count"], row["text_character_count"], row["textless_page_count"],
+            tuple(pages), blob,
+        ))
+    _require([item.document_id for item in documents] == [f"D{index}" for index in range(1, len(documents) + 1)])
+    return tuple(documents)
 
 
 class SQLiteSessionStore:
@@ -262,7 +356,7 @@ class SQLiteSessionStore:
     from research are stored. This is local plaintext data, not cloud account state.
     """
 
-    SCHEMA_VERSION = 1
+    SCHEMA_VERSION = 2
 
     def __init__(self, path: str | Path | None = None) -> None:
         try:
@@ -282,10 +376,12 @@ class SQLiteSessionStore:
             if version == 0:
                 if connection.execute("SELECT 1 FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'").fetchone():
                     raise SessionStoreError("incompatible_session_store")
-                connection.execute("""CREATE TABLE sessions (
-                    session_id TEXT PRIMARY KEY, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-                    title TEXT NOT NULL, revision INTEGER NOT NULL CHECK (revision >= 0), payload TEXT NOT NULL
-                )""")
+                connection.execute(_SESSIONS_SQL)
+                connection.execute(_DOCUMENTS_SQL)
+                connection.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
+            elif version == 1:
+                # Additive only. Existing session payloads are not rewritten.
+                connection.execute(_DOCUMENTS_SQL)
                 connection.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
             elif version != self.SCHEMA_VERSION:
                 raise SessionStoreError("incompatible_session_store")
@@ -313,7 +409,7 @@ class SQLiteSessionStore:
             state = SessionState()
             connection.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?)",
                                (*asdict(metadata).values(), _encode(state)))
-        return StoredSession(metadata, state)
+        return StoredSession(metadata, state, ())
 
     @staticmethod
     def _load(connection: sqlite3.Connection, session_id: str) -> StoredSession:
@@ -321,7 +417,8 @@ class SQLiteSessionStore:
         if row is None:
             raise SessionStoreError("session_not_found")
         metadata = _metadata(row)
-        return StoredSession(metadata, _decode(row["payload"], metadata.revision))
+        documents = _load_documents(connection, session_id)
+        return StoredSession(metadata, _decode(row["payload"], metadata.revision, documents), documents)
 
     def load(self, session_id: str) -> StoredSession:
         with self._transaction() as connection:
@@ -342,7 +439,8 @@ class SQLiteSessionStore:
                 raise SessionConflictError()
             _require(len(state.turns) == revision + 1 and state.turns[:-1] == current.state.turns)
             _require(state.acquisitions[:len(current.state.acquisitions)] == current.state.acquisitions)
-            payload = _encode(state)
+            documents = _load_documents(connection, session_id)
+            payload = _encode(state, documents)
             # A clock adjustment must not invalidate otherwise valid saved metadata.
             now = max(current.metadata.updated_at, datetime.now(timezone.utc).isoformat())
             title = current.metadata.title or " ".join(state.turns[0].question.split())[:100]
@@ -375,4 +473,47 @@ class SQLiteSessionStore:
             current = self._load(connection, session_id)
             if revision is not None and current.metadata.revision != revision:
                 raise SessionConflictError()
+            connection.execute("DELETE FROM session_documents WHERE session_id = ?", (session_id,))
             connection.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
+
+    def attach_document(self, session_id: str, revision: int, filename: str,
+                        media_type: str, data: bytes) -> AttachedDocument:
+        """Store one PDF without creating a turn or advancing the completed-turn revision."""
+        prepared = prepare_pdf(filename, media_type, data)
+        with self._transaction() as connection:
+            current = self._load(connection, session_id)
+            if current.metadata.revision != revision:
+                raise SessionConflictError()
+            existing = connection.execute(
+                "SELECT document_id FROM session_documents WHERE session_id = ? AND sha256 = ?",
+                (session_id, prepared.sha256),
+            ).fetchone()
+            if existing is not None:
+                document = next(item for item in current.documents if item.document_id == existing["document_id"])
+                return AttachedDocument(document, False)
+            numbers = [int(item.document_id[1:]) for item in current.documents]
+            document_id = f"D{max(numbers, default=0) + 1}"
+            _require(bool(DOCUMENT_ID.fullmatch(document_id)))
+            created_at = datetime.now(timezone.utc).isoformat()
+            document = SessionDocument(
+                document_id, prepared.filename, prepared.media_type, prepared.byte_length, prepared.sha256,
+                created_at, prepared.page_count, prepared.text_character_count, prepared.textless_page_count,
+                prepared.pages, prepared.original_pdf,
+            )
+            connection.execute(
+                "INSERT INTO session_documents (session_id, document_id, filename, media_type, byte_length, "
+                "sha256, created_at, page_count, text_character_count, textless_page_count, original_pdf, pages_json) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (session_id, document.document_id, document.filename, document.media_type, document.byte_length,
+                 document.sha256, document.created_at, document.page_count, document.text_character_count,
+                 document.textless_page_count, document.original_pdf,
+                 json.dumps(list(document.pages), ensure_ascii=False, separators=(",", ":"))),
+            )
+            now = max(current.metadata.updated_at, created_at)
+            updated = connection.execute(
+                "UPDATE sessions SET updated_at = ? WHERE session_id = ? AND revision = ?",
+                (now, session_id, revision),
+            )
+            if updated.rowcount != 1:
+                raise SessionConflictError()
+        return AttachedDocument(document, True)

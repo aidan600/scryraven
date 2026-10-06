@@ -10,6 +10,7 @@ from core.exa_transport import DiscoveryCandidate, search_exa
 from core.linkup_transport import fetch_linkup
 from core.serper_transport import search_serper
 from core.transport import FetchedMaterial
+from scryraven.documents import SessionDocument
 from scryraven.research import RunLimits, _run_turn
 from scryraven.results import CompletedAnswer
 from scryraven.session_store import (
@@ -26,6 +27,7 @@ from scryraven.sources import Evidence
 class _Snapshot:
     state: SessionState
     metadata: SessionMetadata | None = None
+    documents: tuple[SessionDocument, ...] = ()
 
 
 def _research_conversation_entry(turn: SessionTurn) -> dict:
@@ -81,7 +83,7 @@ class ResearchSession:
         session = cls(**kwargs)
         session._store = store if store is not None else SQLiteSessionStore()
         saved = session._store.create(title)
-        session._snapshot = _Snapshot(saved.state, saved.metadata)
+        session._snapshot = _Snapshot(saved.state, saved.metadata, saved.documents)
         return session
 
     @classmethod
@@ -90,7 +92,7 @@ class ResearchSession:
         session = cls(**kwargs)
         session._store = store if store is not None else SQLiteSessionStore()
         saved = session._store.load(session_id)
-        session._snapshot = _Snapshot(saved.state, saved.metadata)
+        session._snapshot = _Snapshot(saved.state, saved.metadata, saved.documents)
         return session
 
     @property
@@ -113,6 +115,10 @@ class ResearchSession:
     def source_ids(self) -> tuple[str, ...]:
         return tuple(dict.fromkeys(item.source_id for item in self.acquisitions))
 
+    @property
+    def documents(self) -> tuple[SessionDocument, ...]:
+        return self._snapshot.documents
+
     def ask(self, question: str) -> CompletedAnswer:
         snapshot = self._snapshot
         state = snapshot.state
@@ -134,7 +140,7 @@ class ResearchSession:
             question, model=self._model, search=self._search, lexical_search=self._lexical_search,
             fetch=self._fetch, limits=self._limits,
             retained_acquisitions=state.acquisitions, context=context, session_turn=len(state.turns) + 1,
-            observe=self._observe, **initial_options,
+            observe=self._observe, documents=snapshot.documents, **initial_options,
         )
         turn = SessionTurn(question, result.answer, None,
                            result.posture, result.stop_reason, result.selected_evidence,
@@ -144,5 +150,5 @@ class ResearchSession:
         if self._store is not None:
             metadata = self._store.commit(metadata.session_id, metadata.revision, staged)
         # Nothing is exposed as completed until all validation and durable I/O succeed.
-        self._snapshot = _Snapshot(staged, metadata)
+        self._snapshot = _Snapshot(staged, metadata, snapshot.documents)
         return result

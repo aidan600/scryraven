@@ -99,8 +99,13 @@ python -m scryraven.reading_room --database "D:\My Research\sessions.sqlite3"
 ```
 
 Missing parent directories are created. Use the same path when restarting or when
-opening these sessions from the CLI. The database holds your conversation and saved
-source material; browser storage holds none of it. For a doorman launch, append
+opening these sessions from the CLI. The database holds your conversation, saved
+source material and any PDFs attached to a session; browser storage holds none of
+it. New research and an open session can attach one text PDF at a time. ScryRaven
+analyzes extracted PDF text only; images and scanned content are not analyzed.
+The bounds are 20 MiB, 500 pages and 2,000,000 extracted characters. Research
+reads bounded exact text from the attached document and can still search the web.
+See [PDF documents](docs/operator/PDF_DOCUMENTS_01.md). For a doorman launch, append
 `'--database', '"D:\My Research\sessions.sqlite3"'` to the target arguments above.
 
 For local latency dogfooding, explicitly choose a separate JSONL file:
