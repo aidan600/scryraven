@@ -42,12 +42,36 @@ class CitationUse:
     end: int
 
 
+def _selected_pages(materials: tuple[Evidence, ...]) -> tuple[int, ...]:
+    """Pages actually covered by selected views, not the group's coarse min/max."""
+    pages: set[int] = set()
+    for item in materials:
+        if item.page_start is None or item.page_end is None:
+            continue
+        pages.update(range(item.page_start, item.page_end + 1))
+    return tuple(sorted(pages))
+
+
+def _page_runs(pages: tuple[int, ...]) -> str:
+    ranges: list[str] = []
+    start = end = pages[0]
+    for page in pages[1:]:
+        if page == end + 1:
+            end = page
+            continue
+        ranges.append(str(start) if start == end else f"{start}\u2013{end}")
+        start = end = page
+    ranges.append(str(start) if start == end else f"{start}\u2013{end}")
+    return ", ".join(ranges)
+
+
 def document_page_label(citation: Citation) -> str:
-    if citation.page_start is None or citation.page_end is None:
+    pages = _selected_pages(citation.materials)
+    if not pages:
         return "User-provided document"
-    if citation.page_start == citation.page_end:
-        return f"User-provided document · p. {citation.page_start}"
-    return f"User-provided document · pp. {citation.page_start}\u2013{citation.page_end}"
+    locator = _page_runs(pages)
+    kind = "p." if len(pages) == 1 else "pp."
+    return f"User-provided document · {kind} {locator}"
 
 
 def source_label(citation: Citation) -> str:

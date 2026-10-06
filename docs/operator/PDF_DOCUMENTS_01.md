@@ -57,7 +57,9 @@ Page numbers are the PDF page indexes from extraction, starting at 1. Page
 boundaries are not crossed as one source sentence.
 
 Web citations are unchanged. A document citation shows the filename and page
-locator, not a publication URL. The original PDF for that session is
+locator, not a publication URL. The locator lists the pages of the exact
+selected views. Contiguous pages compact into a run, and a gap stays a gap, so
+pages 1 and 7 appear as “pp. 1, 7”. The original PDF for that session is
 `/sessions/<session_id>/documents/<document_id>/original`.
 
 Reading Room accepts `multipart/form-data` only on the two attach routes.

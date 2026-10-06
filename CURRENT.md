@@ -340,7 +340,10 @@ Another session can hold its own copy. Attaching a document does not create a
 turn or advance the completed-turn revision, including a blank session at
 revision 0. Deleting the session deletes its document rows and PDF blobs.
 Selected exact document views may be saved with a completed turn; the extracted
-parent is not copied into every turn payload.
+parent is not copied into every turn payload. A document citation's displayed
+page locator lists those exact selected pages. Contiguous pages compact into a
+run, and unselected pages between them are not included. Stored `page_start`
+and `page_end` remain the coarse bounds of the citation group.
 
 Extraction uses `pypdf>=6.19,<7` (this verification used 6.19.0). The bounds are
 20 MiB, 500 pages, and 2,000,000 extracted characters. There is no OCR, image
@@ -357,7 +360,7 @@ Body-free diagnostics may count documents, pages, characters, local Read size,
 and Find region counts. They do not record filenames, queries, or page text.
 No Jev, Clef, embedding, or vector index is part of this path.
 
-Offline verification on this branch was `770 passed`, `ruff check .`, and
+Offline verification on this branch was `771 passed`, `ruff check .`, and
 `git diff --check`. Four ordinary product turns, brokered with the repository
 credential doorman and frozen synthetic or public text, then confirmed custody
 and citations: a direct document fact with zero external attempts; a later-page

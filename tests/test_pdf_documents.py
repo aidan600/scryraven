@@ -34,7 +34,7 @@ from scryraven.documents import (
     textless_page_warning,
 )
 from scryraven.dogfood_diagnostics import TurnDiagnostics
-from scryraven.presentation import render_cli, source_body_html
+from scryraven.presentation import Citation, document_page_label, render_cli, source_body_html
 from scryraven.research import RunLimits, run
 from scryraven.results import resolve_citations
 from scryraven.session import ResearchSession
@@ -457,6 +457,80 @@ def test_followup_reopens_the_same_document_without_reupload(tmp_path):
     body = payload_of(store.path, created.metadata.session_id)
     assert body.count(SPARE) == 1 and CRANE in body
     assert pdf.hex() not in body
+
+
+def _page_view(page: int, end: int | None = None) -> Evidence:
+    stop = page if end is None else end
+    return Evidence(
+        f"D1@{page}:{stop}", "", "report.pdf", "x", "targeted_view", "D1", "D1",
+        page, page + 1, "user_document", "D1", "report.pdf", page, stop, False, 0,
+    )
+
+
+def _labeled(pages: list[tuple[int, int]]) -> str:
+    materials = tuple(_page_view(start, end) for start, end in pages)
+    citation = Citation(
+        1, "D1", "report.pdf", "", materials, "user_document", "D1", "report.pdf",
+        min(start for start, _end in pages), max(end for _start, end in pages),
+    )
+    return document_page_label(citation)
+
+
+def test_discontiguous_document_pages_stay_exact_after_reopen(tmp_path):
+    assert _labeled([(1, 1)]) == "User-provided document · p. 1"
+    assert _labeled([(1, 3)]) == "User-provided document · pp. 1\u20133"
+    assert _labeled([(1, 1), (7, 7)]) == "User-provided document · pp. 1, 7"
+    assert _labeled([(1, 3), (7, 7), (9, 10)]) == "User-provided document · pp. 1\u20133, 7, 9\u201310"
+    assert "1\u20137" not in _labeled([(1, 1), (7, 7)])
+
+    early = "The crane count is 14."
+    late = "Returned units are excluded from the count."
+    pages = [early, *[f"The cafeteria lists item {index}." for index in range(2, 7)], late]
+    pdf = text_pdf(pages)
+    store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
+    created = store.create()
+    store.attach_document(created.metadata.session_id, 0, "yard-report.pdf", "application/pdf", pdf)
+
+    def select(material):
+        chosen = [entry for entry in material["evidence"] if early in entry["content"] or late in entry["content"]]
+        assert [entry["page_start"] for entry in chosen] == [1, 7]
+        return decision("answer", [entry["id"] for entry in chosen])
+
+    def respond(material):
+        chosen = [entry for entry in material["evidence"] if early in entry["content"] or late in entry["content"]]
+        return answer(
+            f"The document states a crane count of 14. [{chosen[0]['id']}] "
+            f"It excludes returned units. [{chosen[1]['id']}]",
+            readings=[
+                {"evidence_ref": chosen[0]["id"], "passages": [early]},
+                {"evidence_ref": chosen[1]["id"], "passages": [late]},
+            ],
+        )
+
+    session = ResearchSession.open(
+        created.metadata.session_id, store=store,
+        model=Script(decision(requests=[request("read", query="", target="D1", mode="local")]), select, respond),
+        search=no_provider, fetch=no_provider, lexical_search=no_provider)
+    result = session.ask("What count does the document state, and what does it exclude?")
+    citation = result.citations[0]
+    assert citation.page_start == 1 and citation.page_end == 7
+    assert len(citation.materials) == 2
+    shown = render_cli(result)
+    body = source_body_html(citation)
+    assert "User-provided document · pp. 1, 7" in shown
+    assert "User-provided document · pp. 1, 7" in body
+    assert "pp. 1\u20137" not in shown and "pp. 1\u20137" not in body
+    assert "Exact text from page 1." in body and "Exact text from page 7." in body
+
+    reopened = SQLiteSessionStore(store.path).load(created.metadata.session_id)
+    saved = reopened.state.turns[0].citations[0]
+    assert saved.page_start == 1 and saved.page_end == 7
+    assert [item.page_start for item in saved.materials] == [1, 7]
+    reopened_cli = render_cli(reopened.state.turns[0])
+    reopened_body = source_body_html(saved)
+    assert "User-provided document · pp. 1, 7" in reopened_cli
+    assert "User-provided document · pp. 1, 7" in reopened_body
+    assert "pp. 1\u20137" not in reopened_cli and "pp. 1\u20137" not in reopened_body
 
 
 def test_document_and_web_citations_resolve_without_a_fake_url():
