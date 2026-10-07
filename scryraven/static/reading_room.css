@@ -8,6 +8,7 @@
   --line: #e1e3df;
   --cool: #f3f6f6;
   --sidebar-width: 258px;
+  --reader-width: clamp(560px, 50vw, 780px);
   font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background: var(--paper);
   color: var(--ink);
@@ -154,15 +155,15 @@ summary::-webkit-details-marker { display: none; }
 .text-button:hover { text-decoration: underline; }
 dialog { color: var(--ink); border: 1px solid #d9e0dc; }
 dialog::backdrop { background: #1e323d26; }
-.inspector { position: fixed; inset: 0 0 0 auto; margin: 0; padding: 0; width: 470px; height: 100vh; height: 100dvh; max-width: 100%; max-height: 100%; background: var(--cool); border: 0; border-left: 1px solid #d9e1e0; box-shadow: -10px 0 40px #213a4410; }
+.inspector { position: fixed; inset: 0 0 0 auto; margin: 0; padding: 0; width: var(--reader-width); height: 100vh; height: 100dvh; max-width: 100%; max-height: 100%; background: var(--cool); border: 0; border-left: 1px solid #d9e1e0; box-shadow: -10px 0 40px #213a4410; }
 .inspector[open] { display: flex; flex-direction: column; }
 .inspector-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 21px 23px; height: 79px; flex-shrink: 0; border-bottom: 1px solid #dfe6e5; }
 .inspector-back { display: none; }
 .inspector.showing-source .inspector-back { display: inline-flex; }
 .inspector.showing-source .inspector-label { display: none; }
-.inspector-scroll { padding: 28px 28px 40px; overflow-y: auto; scrollbar-width: thin; flex: 1; overscroll-behavior-y: contain; }
+.inspector-scroll { padding: 32px 36px 48px; min-height: 0; overflow-y: auto; scrollbar-width: thin; flex: 1; overscroll-behavior-y: contain; }
 .inspector-number { margin: 0 0 12px; color: #607f8b; }
-.inspector h2#inspector-title { font: 400 25px/1.3 Georgia, serif; letter-spacing: -.4px; margin: 0 0 24px; overflow-wrap: anywhere; }
+.inspector h2#inspector-title { font: 400 30px/1.3 Georgia, serif; letter-spacing: -.4px; margin: 0 0 24px; overflow-wrap: anywhere; }
 .source-identity { margin-bottom: 28px; }
 .publisher-domain { display: flex; align-items: center; gap: 10px; overflow-wrap: anywhere; font-size: 13px; color: #50636c; margin: 0 0 16px; }
 .publication-mark { position: relative; display: inline-block; flex-shrink: 0; width: 26px; height: 30px; border: 1px solid #a9bcbe; border-radius: 3px; background: var(--paper); }
@@ -186,8 +187,12 @@ dialog::backdrop { background: #1e323d26; }
 .citation-support > summary, .support-context > summary { cursor: pointer; color: #355f71; font-size: 13px; padding: 10px 0; }
 .citation-support h2 { font-size: 15px; margin: 0 0 8px; }
 .selected-support > summary { display: none; }
-.support-text { padding: 16px; background: #fffefb; border-left: 3px solid #607f8b; margin: 12px 0; }
-.context-text { padding: 16px; background: #f1f5f4; margin: 12px 0; }
+.support-passage { margin: 22px 0; }
+.source-prose { font: 17px/1.8 Georgia, "Times New Roman", serif; white-space: pre-wrap; overflow-wrap: anywhere; color: #58666a; }
+.support-text, .context-support { color: #283238; background: #fff0ad; padding: 2px 0; box-decoration-break: clone; }
+.support-location { color: #385e70; font-size: 12px; font-weight: 650; margin-bottom: 8px; }
+.support-context { border-top: 1px solid #dce4e3; margin-top: 24px; }
+.context-text .source-prose { font-size: 16px; }
 .preview-label { font: 500 11px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #606e75; margin: 0 0 10px; }
 .full-material { margin-top: 8px; }
 .full-material > summary { list-style: none; color: #355f71; font-size: 12px; font-weight: 600; padding: 10px 0; text-decoration: underline; text-underline-offset: 3px; }
@@ -211,9 +216,19 @@ dialog::backdrop { background: #1e323d26; }
 .question-block .eyebrow, .composer-caption, .keyboard-hint,
 .scope, .acquisition, .inspector-foot { color: #606e75; }
 .composer textarea::placeholder { color: #68747a; }
-@media (min-width: 1700px) {
-  body.evidence-open .workspace { margin-right: 470px; }
+@media (min-width: 1024px) {
+  body.evidence-open .workspace { margin-right: var(--reader-width); }
   .inspector { box-shadow: none; }
+}
+/* Yield history while comparing on laptops; retain it when all three fit. */
+@media (min-width: 1024px) and (max-width: 1799px) {
+  body.evidence-open { grid-template-columns: minmax(0, 1fr); }
+  body.evidence-open .sidebar { display: none; }
+  body.evidence-open .reading-content { padding-left: 28px; padding-right: 28px; }
+  body.evidence-open .room-header { padding-left: 24px; padding-right: 24px; }
+}
+@media (max-width: 1023px) {
+  .inspector { width: 100%; border: 0; }
 }
 @media (max-width: 1000px) {
   :root { --sidebar-width: 225px; }

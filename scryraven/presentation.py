@@ -206,26 +206,61 @@ def _document_identity(citation: Citation, original_href: str | None) -> str:
             f'<p class="scope">{escape(TEXT_ONLY_WARNING)}</p></div>')
 
 
+def _support_excerpts(material: Evidence, regions: list[SupportRegion], radius: int,
+                      *, mark_class: str) -> str:
+    """Render exact nearby text with saved support highlighted, never paraphrased."""
+    windows = []
+    for region in sorted(regions, key=lambda item: (item.start_char, item.end_char)):
+        left = max(0, region.start_char - radius)
+        right = min(len(material.content), region.end_char + radius)
+        if windows and left <= windows[-1][1]:
+            windows[-1][1] = max(windows[-1][1], right)
+            windows[-1][2].append(region)
+        else:
+            windows.append([left, right, [region]])
+    locator = ""
+    if material.source_kind == "user_document" and material.page_start is not None:
+        pages = (f"Page {material.page_start}" if material.page_start == material.page_end
+                 else f"Pages {material.page_start}\u2013{material.page_end}")
+        locator = f'<figcaption class="support-location">{escape(pages)}</figcaption>'
+    excerpts = []
+    for left, right, selected in windows:
+        parts = []
+        cursor = left
+        for region in selected:
+            start = max(cursor, region.start_char)
+            parts.append(escape(material.content[cursor:start]))
+            if start < region.end_char:
+                parts.append(f'<mark class="{mark_class}">{escape(material.content[start:region.end_char])}</mark>')
+            cursor = max(cursor, region.end_char)
+        parts.append(escape(material.content[cursor:right]))
+        excerpts.append('<figure class="support-passage">' + locator
+                        + '<div class="source-prose">' + "".join(parts) + '</div></figure>')
+    return "".join(excerpts)
+
+
 def _support_html(citation: Citation, use: CitationUse) -> str:
     materials = {item.id: item for item in citation.materials}
-    passages, contexts = [], []
+    selected = {}
     for region in use.support:
         try:
             material = materials[region.evidence_ref]
-            text = support_text(region, material)
+            support_text(region, material)
         except (KeyError, ValueError):
             # Never present coordinates from another material/version as support.
             return ""
-        passages.append(f'<pre class="material-text support-text"><code>{escape(text)}</code></pre>')
-        left = max(0, region.start_char - 360)
-        right = min(len(material.content), region.end_char + 360)
-        contexts.append(f'<pre class="material-text context-text"><code>{escape(material.content[left:right])}</code></pre>')
+        selected.setdefault(material.id, []).append(region)
+    passages = "".join(_support_excerpts(materials[ref], regions, 160, mark_class="support-text")
+                       for ref, regions in selected.items())
+    contexts = "".join(_support_excerpts(materials[ref], regions, 700, mark_class="context-support")
+                       for ref, regions in selected.items())
     return (f'<details class="citation-support" data-citation-start="{use.start}">'
             '<summary>Read passages for this citation</summary><h2>Support for this citation</h2>'
-            '<p class="scope">Exact passages from the source material saved with this answer.</p>'
-            + "".join(passages)
+            '<p class="scope">Highlighted text is the exact support saved for this citation. '
+            'Nearby text provides context.</p>'
+            + passages
             + '<details class="support-context"><summary>Surrounding context</summary>'
-            + "".join(contexts) + '</details></details>')
+            + '<div class="context-text">' + contexts + '</div></details></details>')
 
 
 def source_body_html(citation: Citation, *, collapse_long: bool = False, original_href: str | None = None,
@@ -318,6 +353,15 @@ summary { padding: 14px 18px; cursor: pointer; font-size: .92rem; font-weight: 5
 pre { white-space: pre-wrap; overflow-wrap: anywhere; font: .86rem/1.65 system-ui, sans-serif;
       background: #f5f7f4; border-left: 2px solid #c9d7ce; padding: 16px; margin: 10px 0 0; }
 pre code { font: inherit; }
+.citation-support { border: 0; background: transparent; margin: 24px 0; }
+.citation-support > summary, .support-context > summary { color: #355f71; padding: 10px 0; }
+.citation-support h2 { font-size: 1rem; margin: 0 0 8px; }
+.support-passage { margin: 22px 0; }
+.source-prose { font: 17px/1.8 Georgia, "Times New Roman", serif; white-space: pre-wrap; overflow-wrap: anywhere; color: #58666a; }
+.support-text, .context-support { color: #283238; background: #fff0ad; padding: 2px 0; box-decoration-break: clone; }
+.support-location { color: #385e70; font-size: 12px; font-weight: 650; margin-bottom: 8px; }
+.support-context { border: 0; border-top: 1px solid #d7dfda; background: transparent; border-radius: 0; }
+.context-text .source-prose { font-size: 16px; }
 @media (max-width: 560px) { main { padding: 26px 18px 50px; } .source-body { padding: 4px 14px 16px; } }
 @media print { body { background: #fff; } main { max-width: none; padding: 0; } }
 """
@@ -330,8 +374,14 @@ function revealSource() {
   const source = document.getElementById(location.hash.slice(1));
   if (!source || source.tagName !== 'DETAILS') return;
   source.open = true;
+  document.querySelectorAll('.citation-support').forEach(support => {
+    support.hidden = true;
+    support.open = false;
+  });
   source.querySelectorAll('.citation-support').forEach(support => {
-    support.open = support.dataset.citationStart === inspectedCitationStart;
+    const selected = support.dataset.citationStart === inspectedCitationStart;
+    support.open = selected;
+    support.hidden = !selected;
   });
   source.querySelector('summary').focus({preventScroll: true});
   source.scrollIntoView({block: 'start'});
@@ -342,6 +392,16 @@ document.querySelector('.answer').addEventListener('click', event => {
     inspectedCitationStart = link.dataset.citationStart;
     if (link.getAttribute('href') === location.hash) revealSource();
   }
+});
+document.querySelectorAll('.citation-support').forEach(support => { support.hidden = true; });
+document.querySelector('.sources')?.addEventListener('click', event => {
+  const summary = event.target.closest('.sources > details > summary');
+  if (!summary) return;
+  inspectedCitationStart = null;
+  summary.parentElement.querySelectorAll('.citation-support').forEach(support => {
+    support.hidden = true;
+    support.open = false;
+  });
 });
 window.addEventListener('hashchange', revealSource);
 revealSource();

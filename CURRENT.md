@@ -340,6 +340,15 @@ not. Reopen validates ranges, source membership and exact hashes against retaine
 Evidence without model or provider I/O. Reading Room citation clicks display that
 occurrence's exact support first, expandable surrounding context second, and
 full saved material third, with the original publication or PDF action prominent.
+At widths of at least 1,024 px, the Reader occupies a 560–780 px companion pane;
+the Answer yields space and the history column yields on laptops. Below that
+breakpoint the Reader fills the screen. Support is highlighted within exact
+retained source prose; PDF support identifies its saved Evidence page or page
+range without deriving pages from character offsets. Standalone HTML uses the
+same highlighting and occurrence-specific inspection. Offline browser checks
+at nine widths from 320 to 1,920 px verified exact support, generic source overview,
+keyboard return and no horizontal overflow; this presentation review fix made
+no additional model or PRODUCT calls.
 Old turns and legacy-fallback turns without coordinates retain generic saved-source
 inspection. This presentation fallback does not change new-answer publication
 eligibility. Two ordinary Reading Room turns at runtime revision

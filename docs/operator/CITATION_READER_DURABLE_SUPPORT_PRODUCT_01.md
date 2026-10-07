@@ -7,8 +7,9 @@ OUTCOME: Met over the authorized bounded implementation and PRODUCT observations
 - Phase worktree: `C:\Users\aidan\sr-phases\citation-reader-durable-support-product-01`
 - Branch: `codex/citation-reader-durable-support-product-01`
 - Exact merged baseline: `6b3dac8761133dd27868852cd7d2337a9b9e9883` (PR #671).
-- Runtime tested: `30889acc1783608dae653e8e05d0b023fe5e1ae7`.
-- Later changes are documentation and evidence reporting only.
+- Ordinary PRODUCT runtime tested: `30889acc1783608dae653e8e05d0b023fe5e1ae7`.
+- PR #672's subsequent focused Reader presentation fix was verified offline
+  against the retained turns; it made no new PRODUCT/model/search calls.
 
 The historical primary checkout was excluded throughout this implementation.
 The external credential file was passed by path to the phase's existing doorman;
@@ -79,7 +80,7 @@ servers were stopped after verification; all exact artifacts remain saved.
 
 ## Offline verification
 
-The full suite passed: `823 passed`. The only warning was inability to write the
+The original phase's full suite passed: `823 passed`. The only warning was inability to write the
 pytest cache previously created under a different execution identity; it did not
 affect tests. A fresh phase-specific external basetemp avoided that identity's
 old temporary-directory deletion conflict.
@@ -93,6 +94,35 @@ rendering. Existing Sol semantic, deadline, no-progress, calculator and legacy
 literal-reading checks survive. Ruff, Git whitespace checks and all configured
 pre-commit hooks passed.
 
+### Focused Reader presentation review fix
+
+The former 470 px inspector and 1,700 px companion breakpoint were replaced by a
+560–780 px Reader alongside the Answer from 1,024 px. The history column yields
+while the Reader is open on laptops and returns on close; wider desktops retain
+it. Below 1,024 px, the Reader fills the screen. Exact selected text is highlighted
+within readable retained source prose. Each PDF support excerpt labels the page
+or page range already present on its saved Evidence view, independently of the
+overall source group's page locator. Coordinates, source selection and custody
+are unchanged. Standalone HTML shares the highlighting and only reveals the
+clicked occurrence's support; manual source overview remains generic.
+
+Six focused tests protect exact escaped source text, nearby context, mechanical
+PDF locators, use isolation, generic inspection and standalone rendering. The
+full revised suite passed: `829 passed`; Ruff, pre-commit and `git diff --check`
+passed. No backend architecture, persistence, session schema, model, prompt,
+Search, fallback or localization changes were made for this fix.
+
+An uncredentialed local Reading Room process reopened the existing web/PDF
+turns. Offline browser checks at 320, 390, 760, 900, 1,024, 1,280, 1,366, 1,440
+and 1,920 px verified every occurrence's exact highlights, page locators, context,
+full saved material and generic overview. Desktop Reader widths were 560, 640,
+683, 720 and 780 px, with Answer text widths of 408–714 px. Mobile filled the
+viewport. Keyboard opening, original-action focus, Escape/close and return to
+the originating citation or Sources control passed. Standalone HTML passed at
+1,440 and 390 px. No horizontal overflow or JavaScript errors were observed;
+inspection used local GET requests only. These are offline presentation checks,
+not a third ordinary PRODUCT observation.
+
 ## Scope, removal and limits
 
 The normal quote-copy localization schema, prompt and validator loop were removed.
@@ -105,10 +135,12 @@ ordinary turns; it does not establish general semantic localization reliability
 or a general latency improvement. Deterministic hashes validate identity, not
 entailment. Saved material may be provider highlights or retained views rather
 than the entire original publication; the Reader discloses this distinction.
-No runtime changes were made after the tested revision.
+The subsequent presentation changes were verified offline as described above;
+the two ordinary observations remain evidence for the earlier runtime revision.
 
 `CURRENT.md` and `docs/architecture/RESEARCH.md` describe the resulting state.
-Push, PR creation, merge and historical-checkout aftercare were not performed.
+The branch is published for review in PR #672. Merge and historical-checkout
+aftercare were not performed.
 
 ## Local evidence and handoff
 
@@ -121,6 +153,9 @@ Exact public/synthetic evidence is preserved outside Git in:
   `local-evals/candidates/citation-reader-product-01-pdf/`: sanitized candidates,
   exact selected Evidence, answer, coordinates, hashes and provenance. These are
   phase-local because the canonical corpus in the primary checkout is excluded.
+- `C:\tmp\scryraven-citation-reader-presentation-fix-20261007\`: offline browser
+  checks, screenshots, standalone HTML and exact expectations derived from the
+  already retained turns. These local artifacts are not tracked or uploaded.
 
-Review this local branch against the exact baseline. Publication requires explicit
-human authority; this bundle does not grant merge authority.
+Review PR #672 against the exact baseline. Publication and the focused presentation
+fix were explicitly authorized; this bundle does not grant merge authority.

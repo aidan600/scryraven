@@ -6,7 +6,7 @@
   const inspectorTitle = inspector.querySelector('#inspector-title');
   const inspectorNumber = inspector.querySelector('.inspector-number');
   const inspectorScroll = inspector.querySelector('.inspector-scroll');
-  const wide = matchMedia('(min-width: 1700px)');
+  const companion = matchMedia('(min-width: 1024px)');
   const narrow = matchMedia('(max-width: 760px)');
   let origin = null;
   let sourceGroup = null;
@@ -16,7 +16,7 @@
     if (!inspector.open) {
       readingPosition = reader.scrollTop;
       document.body.classList.add('evidence-open');
-      if (wide.matches) inspector.show();
+      if (companion.matches) inspector.show();
       else inspector.showModal();
       reader.scrollTop = readingPosition;
     }
@@ -93,7 +93,7 @@
     if (inspector.open) readingPosition = reader.scrollTop;
   }, {passive: true});
   // Close when changing between dock and sheet so modal/focus state stays sound.
-  wide.addEventListener('change', () => {
+  companion.addEventListener('change', () => {
     if (!inspector.open) return;
     inspector.close();
   });
