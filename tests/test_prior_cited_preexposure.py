@@ -47,7 +47,7 @@ def test_reopened_session_exposes_exact_prior_view_in_first_research_call(tmp_pa
     assert research[0]["evidence"] == [view.material()]
     assert not any(event["action"] == "acquisition_timing" for event in result.trace)
     assert result.selected_evidence == (view,)
-    assert [item["id"] for item in model.calls[-1][2]["evidence"]] == [view.id]
+    assert [item["id"] for item in [call[2] for call in model.calls if call[0] == "answer"][-1]["evidence"]] == [view.id]
     assert session.acquisitions == (parent,)
 
 

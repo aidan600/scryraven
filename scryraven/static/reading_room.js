@@ -6,7 +6,7 @@
   const inspectorTitle = inspector.querySelector('#inspector-title');
   const inspectorNumber = inspector.querySelector('.inspector-number');
   const inspectorScroll = inspector.querySelector('.inspector-scroll');
-  const wide = matchMedia('(min-width: 1700px)');
+  const companion = matchMedia('(min-width: 1024px)');
   const narrow = matchMedia('(max-width: 760px)');
   let origin = null;
   let sourceGroup = null;
@@ -16,7 +16,7 @@
     if (!inspector.open) {
       readingPosition = reader.scrollTop;
       document.body.classList.add('evidence-open');
-      if (wide.matches) inspector.show();
+      if (companion.matches) inspector.show();
       else inspector.showModal();
       reader.scrollTop = readingPosition;
     }
@@ -24,11 +24,17 @@
     inspector.querySelector('.inspector-close').focus({preventScroll: true});
   }
 
-  function showSource(source) {
+  function showSource(source, citationStart = null) {
     sourceGroup = source.closest('.sources-overview');
     inspectorTitle.textContent = source.querySelector('.source-title').textContent;
     inspectorNumber.textContent = 'Source ' + source.querySelector('.source-number').textContent;
     inspectorContent.replaceChildren(...source.querySelector('.source-body').cloneNode(true).childNodes);
+    inspectorContent.querySelectorAll('.citation-support').forEach(support => {
+      if (citationStart !== null && support.dataset.citationStart === citationStart) {
+        support.open = true;
+        support.classList.add('selected-support');
+      } else support.remove();
+    });
     inspector.classList.add('showing-source');
     showInspector();
   }
@@ -62,7 +68,7 @@
       origin?.classList.remove('is-inspected');
       origin = citation;
       origin.classList.add('is-inspected');
-      showSource(source);
+      showSource(source, citation.dataset.citationStart);
     }
     const overview = event.target.closest('.sources-control');
     if (overview) {
@@ -87,7 +93,7 @@
     if (inspector.open) readingPosition = reader.scrollTop;
   }, {passive: true});
   // Close when changing between dock and sheet so modal/focus state stays sound.
-  wide.addEventListener('change', () => {
+  companion.addEventListener('change', () => {
     if (!inspector.open) return;
     inspector.close();
   });

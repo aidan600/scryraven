@@ -205,8 +205,7 @@ def test_evidence_derived_result_cites_inputs_not_calculator(monkeypatch):
         ("research", model_reply(decision("answer", ["E1"])), 0),
         ("answer", tool_reply("100 * 12", "calc_a"), 0),
         ("answer", model_reply(valid), 0),
-        ("localize", model_reply({"readings": [{"evidence_ref": "E1", "passages": [source]}],
-                                   "insufficient_source_ids": []}), 0),
+        ("localize", model_reply({"U1": ["S1"]}), 0),
     )
     result, _ = run_offline(
         monkeypatch, transport, "What is the energy?",
@@ -231,8 +230,7 @@ def test_missing_external_premise_remains_unestablished(monkeypatch):
         ("research", model_reply(decision()), 0),
         ("research", model_reply(decision("answer", ["E1"])), 0),
         ("answer", model_reply(partial), 0),
-        ("localize", model_reply({"readings": [{"evidence_ref": "E1", "passages": [source]}],
-                                   "insufficient_source_ids": []}), 0),
+        ("localize", model_reply({"U1": ["S1"]}), 0),
     )
     result, _ = run_offline(
         monkeypatch, transport, "What is the energy in Wh?",

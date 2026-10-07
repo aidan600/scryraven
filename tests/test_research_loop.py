@@ -65,22 +65,17 @@ def answer(text="The stated value is seven. [E1]", posture="supported", missing=
 
 
 def failed_localization(source_id="E1"):
-    return {"readings": [], "insufficient_source_ids": [source_id]}
+    return {"U1": []}
 
 
 def synthetic_localization(material):
-    readings = []
-    for item in material.get("evidence") or []:
-        content = item.get("content") or ""
-        if not str(content).strip():
-            continue
-        passage = content if len(content) <= 4000 else content[:4000]
-        readings.append({"evidence_ref": item["id"], "passages": [passage]})
-    return {"readings": readings, "insufficient_source_ids": []}
+    return {use["id"]: [row["id"] for row in material["regions"]
+                        if row["source_id"] == use["source_id"] and row["text"].strip()][:1]
+            for use in material["citation_uses"]}
 
 
 def _is_localization(value):
-    return (isinstance(value, dict) and "readings" in value and "insufficient_source_ids" in value
+    return (isinstance(value, dict) and (any(key.startswith("U") for key in value) or "readings" in value)
             and "posture" not in value and "understanding" not in value)
 
 
