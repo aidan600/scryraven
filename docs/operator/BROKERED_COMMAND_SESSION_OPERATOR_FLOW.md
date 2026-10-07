@@ -31,14 +31,23 @@ From the repository root, prepare output paths outside the repository:
     $stderr = 'C:\tmp\broker.stderr.txt'
     $status = 'C:\tmp\broker.status.json'
 
-Run one command with the repository-local private environment:
+For phase worktrees, the human-approved external credential source is:
 
-    .\.venv\Scripts\python.exe scripts\run_brokered_command_once.py --repo-root C:\Users\aidan\ScryRaven --repo-env --stdout $stdout --stderr $stderr --status $status --replace-output --timeout-seconds 90 --target-current-python -- <exact-target> <exact-argv> <tokens>
+    C:\Users\aidan\AppData\Local\ScryRaven\credentials.env
+
+Run the doorman from the current phase worktree and pass that worktree as
+`--repo-root`, for example:
+
+    .\.venv\Scripts\python.exe scripts\run_brokered_command_once.py --repo-root C:\Users\aidan\sr-phases\citation-reader-durable-support-product-01 --env-file C:\Users\aidan\AppData\Local\ScryRaven\credentials.env --stdout $stdout --stderr $stderr --status $status --timeout-seconds 90 --target-current-python -- <exact-target> <exact-argv> <tokens>
 
 Everything after the required separator is the exact target argv. The
 separator prevents option ambiguity and the child is launched with shell=False.
-Use --env-file followed by a privately supplied path instead of --repo-env only
-when that is the approved environment source.
+This external file remains the credential source for future phase worktrees
+unless the human changes it. Do not use `--repo-env` or inspect/copy credentials
+from the historical primary checkout. The public/controller process must not
+open, parse, print, inspect or copy credential values; only the doorman private
+child owns environment-file custody. Already-authorized bounded PRODUCT work
+can proceed through this boundary without another per-call approval.
 
 Output files must be absolute, must have existing parents, and must be outside
 the repository. Existing output requires explicit --replace-output authority.

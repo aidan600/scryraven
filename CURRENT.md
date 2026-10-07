@@ -342,8 +342,15 @@ occurrence's exact support first, expandable surrounding context second, and
 full saved material third, with the original publication or PDF action prominent.
 Old turns and legacy-fallback turns without coordinates retain generic saved-source
 inspection. This presentation fallback does not change new-answer publication
-eligibility. Offline and browser checks establish these mechanics; bounded live
-observations for this phase remain pending.
+eligibility. Two ordinary Reading Room turns at runtime revision
+`30889acc1783608dae653e8e05d0b023fe5e1ae7` exercised public-web and uploaded-PDF
+material. All fourteen citation occurrences retained exact support, with no
+legacy fallback. A fresh process without credentials reopened both sessions;
+desktop/mobile Reader clicks matched every occurrence's exact saved support.
+Offline checks cover malformed/insufficient binding fallback, old-turn generic
+inspection and corrupted coordinate/hash rejection. This bounded sample does
+not establish general semantic localization reliability. The phase evidence is
+recorded in `docs/operator/CITATION_READER_DURABLE_SUPPORT_PRODUCT_01.md`.
 
 With an empty Evidence packet, a supported or partial conditional derivation may
 use only explicit user premises, empty source readings and no Evidence citations.
