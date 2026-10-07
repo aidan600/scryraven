@@ -77,7 +77,7 @@ def test_followup_reads_retained_fact_with_fresh_research_and_answer(highlights)
     assert calls[-1]["evidence"][0]["content"] == BODY
     assert first.answer not in json.dumps(calls[-1]["evidence"])
     assert all("analysis" not in m and "semantic_history" not in m for m in calls)
-    assert [s for s, _, _, _ in model.calls[-3:]] == ["research", "research", "answer"]
+    assert [s for s, _, _, _ in model.calls[-4:]] == ["research", "research", "answer", "localize"]
     assert second.trace[-1]["budget"]["external_attempts"] == 0
     assert first.citations == session.turns[0].citations
 
@@ -114,6 +114,6 @@ def test_failed_turn_leaves_in_memory_evidence_and_history_unchanged(failure):
 def test_isolated_run_has_no_session_evidence_and_only_two_semantic_roles():
     model = Script(*first_turn(highlights=True))
     result = run(Q1, model=model, search=lambda q: [candidate(context=BODY, highlights=True)], fetch=no_io)
-    assert {stage for stage, _, _, _ in model.calls} == {"research", "answer"}
+    assert {stage for stage, _, _, _ in model.calls} == {"research", "answer", "localize"}
     assert not hasattr(result, "analysis")
     assert model.calls[0][2]["catalog"]["materials"] == []

@@ -3,7 +3,7 @@
 import json
 
 from test_model_transport import Response
-from test_research_loop import Script, answer, decision, request
+from test_research_loop import Script, answer, decision, request, synthetic_localization
 
 from core import exa_transport, linkup_transport, serper_transport
 from core.exa_transport import DiscoveryCandidate
@@ -142,8 +142,17 @@ def test_cli_uses_serper_then_linkup_through_ordinary_run(monkeypatch, capsys):
 
     def post(url, **kwargs):
         if url.endswith("/v1/responses"):
+            stage = kwargs["json"]["text"]["format"]["name"]
+            material = json.loads("".join(block["text"] for block in kwargs["json"]["input"][1]["content"]))
+            if stage == "localize":
+                text = json.dumps(synthetic_localization(material))
+            else:
+                output = next(outputs)
+                if isinstance(output, dict):
+                    output = {key: value for key, value in output.items() if key != "source_readings"}
+                text = json.dumps(output)
             return Response({"status": "completed", "output": [{"type": "message", "phase": "final_answer",
-                             "content": [{"type": "output_text", "text": json.dumps(next(outputs))}]}]})
+                             "content": [{"type": "output_text", "text": text}]}]})
         providers.append(url)
         if url == serper_transport.SERPER_SEARCH_URL:
             return Response({"organic": [{"title": "Post", "link": URL, "snippet": "A claim"}]})

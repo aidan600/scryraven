@@ -199,14 +199,14 @@ def test_tool_continuation_obeys_answer_and_whole_run_deadlines(
 
 def test_evidence_derived_result_cites_inputs_not_calculator(monkeypatch):
     source = "Capacity is 100 Ah and voltage is 12 V under the stated conditions."
-    valid = answer("The derived energy is 1200 Wh. [E1]", readings=[
-        {"evidence_ref": "E1", "passages": [source]},
-    ])
+    valid = answer("The derived energy is 1200 Wh. [E1]")
     transport = ScriptedResponses(
         ("research", model_reply(decision()), 0),
         ("research", model_reply(decision("answer", ["E1"])), 0),
         ("answer", tool_reply("100 * 12", "calc_a"), 0),
         ("answer", model_reply(valid), 0),
+        ("localize", model_reply({"readings": [{"evidence_ref": "E1", "passages": [source]}],
+                                   "insufficient_source_ids": []}), 0),
     )
     result, _ = run_offline(
         monkeypatch, transport, "What is the energy?",
@@ -226,14 +226,13 @@ def test_evidence_derived_result_cites_inputs_not_calculator(monkeypatch):
 
 def test_missing_external_premise_remains_unestablished(monkeypatch):
     source = "Capacity is 100 Ah. No voltage is stated."
-    partial = answer("The source gives 100 Ah [E1], but no voltage needed for Wh.",
-                     posture="partial", readings=[
-                         {"evidence_ref": "E1", "passages": [source]},
-                     ])
+    partial = answer("The source gives 100 Ah [E1], but no voltage needed for Wh.", posture="partial")
     transport = ScriptedResponses(
         ("research", model_reply(decision()), 0),
         ("research", model_reply(decision("answer", ["E1"])), 0),
         ("answer", model_reply(partial), 0),
+        ("localize", model_reply({"readings": [{"evidence_ref": "E1", "passages": [source]}],
+                                   "insufficient_source_ids": []}), 0),
     )
     result, _ = run_offline(
         monkeypatch, transport, "What is the energy in Wh?",

@@ -6,7 +6,18 @@ from copy import deepcopy
 from dataclasses import asdict
 
 import pytest
-from test_research_loop import answer, decision, multi_search, no_fetch, request, search
+from test_research_loop import (
+    answer,
+    decision,
+    failed_localization,
+    multi_search,
+    next_scripted,
+    no_fetch,
+    request,
+    search,
+    synthetic_localization,
+    without_semantic_readings,
+)
 
 from core.exa_transport import DiscoveryCandidate
 from scryraven.dogfood_diagnostics import DogfoodLog, TurnDiagnostics
@@ -22,12 +33,12 @@ SOURCE_TEXT = "The stated value is seven."
 
 class RecordingModel:
     def __init__(self, *outputs):
-        self.outputs = iter(outputs)
+        self.outputs = list(outputs)
         self.calls = []
 
     def __call__(self, stage, prompt, packet, schema):
         self.calls.append((stage, prompt, deepcopy(packet), schema))
-        output = next(self.outputs)
+        output = without_semantic_readings(stage, next_scripted(self.outputs, stage, packet), schema)
         return output if isinstance(output, str) else json.dumps(output)
 
 
@@ -42,7 +53,10 @@ class TimedModel(OpenAIModel):
 
     def __call__(self, stage, prompt, packet, schema):
         self.calls.append((stage, self.timeout_seconds, deepcopy(packet)))
+        if stage == "localize":
+            return json.dumps(synthetic_localization(packet))
         advance, output = next(self.steps)
+        output = without_semantic_readings(stage, output, schema)
         self.now[0] += advance
         if isinstance(output, Exception):
             raise output
@@ -81,20 +95,25 @@ def test_f2_surrogate_e13_repeated_invalid_reading_stops_on_same_packet():
     refs = [f"E{i}" for i in range(4, 14)]
     first = rejected_reading("E13", "F2_SURROGATE_INVALID_E13_PASSAGE_ONE")
     second = rejected_reading("E13", "F2_SURROGATE_INVALID_E13_PASSAGE_TWO")
-    model = RecordingModel(decision(), decision("answer", refs), first, second)
+    model = RecordingModel(
+        decision(), decision("answer", refs),
+        answer("The selected publication says thirteen. [E13]"), failed_localization("E13"),
+        first, second)
 
     result = run("What does the selected publication establish?", model=model,
                  search=f2_surrogate_search, fetch=no_fetch)
 
-    assert [call[0] for call in model.calls] == ["research", "research", "answer", "answer"]
-    initial, correction = answer_calls(model)
+    assert [call[0] for call in model.calls] == [
+        "research", "research", "answer", "localize", "answer", "answer"]
+    legacy = [call for call in answer_calls(model) if "source_readings" in call[3]["properties"]]
+    initial, correction = legacy
     assert [item["id"] for item in initial[2]["evidence"]] == refs
     assert initial[2]["evidence"] == correction[2]["evidence"]
     assert correction[2]["output_correction"]["code"] == "reading_passage_not_in_source"
     assert [event["code"] for event in result.trace if event["action"] == "answer_reading_rejected"] == [
         "reading_passage_not_in_source", "reading_passage_not_in_source",
     ]
-    assert result.trace[-1]["budget"]["semantic_attempts"] == 4
+    assert result.trace[-1]["budget"]["semantic_attempts"] == 5
     assert_operational_inability(result)
     assert "REJECTED_MODEL_PROSE" not in json.dumps(result.trace)
     assert "F2_SURROGATE_INVALID" not in json.dumps(result.trace)
@@ -103,7 +122,9 @@ def test_f2_surrogate_e13_repeated_invalid_reading_stops_on_same_packet():
 def test_f2_surrogate_e13_exact_corrected_reading_completes_normally():
     refs = [f"E{i}" for i in range(4, 14)]
     model = RecordingModel(
-        decision(), decision("answer", refs), rejected_reading("E13"),
+        decision(), decision("answer", refs),
+        answer("The selected publication says thirteen. [E13]"), failed_localization("E13"),
+        rejected_reading("E13"),
         answer("The selected publication says thirteen. [E13]", readings=[
             {"evidence_ref": "E13", "passages": ["Exact public material 13."]},
         ]),
@@ -112,7 +133,8 @@ def test_f2_surrogate_e13_exact_corrected_reading_completes_normally():
     result = run("What does the selected publication establish?", model=model,
                  search=f2_surrogate_search, fetch=no_fetch)
 
-    assert len(answer_calls(model)) == 2
+    assert len([call for call in answer_calls(model)
+                if "source_readings" in call[3]["properties"]]) == 2
     assert result.posture == "supported" and result.stop_reason == "supported"
     assert result.answer == "The selected publication says thirteen. [1]"
     assert [item.id for item in result.selected_evidence] == ["E13"]
@@ -121,14 +143,14 @@ def test_f2_surrogate_e13_exact_corrected_reading_completes_normally():
 
 def test_malformed_response_then_nonliteral_reading_uses_one_shared_correction():
     model = RecordingModel(decision(), decision("answer", ["E1"]),
-                           "not valid JSON", rejected_reading())
+                           "not valid JSON", answer("REJECTED_MODEL_PROSE"))
 
     result = run("What is the value?", model=model, search=search, fetch=no_fetch)
 
     assert [call[0] for call in model.calls] == ["research", "research", "answer", "answer"]
     assert answer_calls(model)[1][2]["output_correction"]
     assert [event["code"] for event in result.trace if event["action"] == "response_rejected"] == [
-        "malformed_model_response", "reading_passage_not_in_source",
+        "malformed_model_response", "missing_citation",
     ]
     assert_operational_inability(result)
 
@@ -140,12 +162,16 @@ def test_missing_citation_then_unread_cited_group_uses_one_shared_correction():
     second = answer("REJECTED_UNREAD_GROUP_PROSE [E2]", readings=[
         {"evidence_ref": "E1", "passages": ["First exact passage."]},
     ])
-    model = RecordingModel(decision(), decision("answer", ["E1", "E2"]), first, second)
+    model = RecordingModel(
+        decision(), decision("answer", ["E1", "E2"]),
+        answer("The two facts differ. [E1, E2]"), failed_localization("E1"), first, second)
 
     result = run("Compare the publications.", model=model, search=multi_search, fetch=no_fetch)
 
-    assert [call[0] for call in model.calls] == ["research", "research", "answer", "answer"]
-    assert answer_calls(model)[1][2]["output_correction"]["code"] == "missing_citation"
+    assert [call[0] for call in model.calls] == [
+        "research", "research", "answer", "localize", "answer", "answer"]
+    legacy = [call for call in answer_calls(model) if "source_readings" in call[3]["properties"]]
+    assert legacy[1][2]["output_correction"]["code"] == "missing_citation"
     assert [event["code"] for event in result.trace if event["action"] == "response_rejected"] == [
         "missing_citation", "cited_source_without_reading",
     ]
@@ -155,7 +181,7 @@ def test_missing_citation_then_unread_cited_group_uses_one_shared_correction():
 
 def test_no_op_research_after_valid_corrected_need_does_not_start_new_answer():
     model = RecordingModel(
-        decision(), decision("answer", ["E1"]), rejected_reading(),
+        decision(), decision("answer", ["E1"]), answer("REJECTED_CITELESS"),
         answer("Only an initial fact is established. [E1]", "partial", "What condition applies?"),
         decision("answer", ["E1"]),
     )
@@ -188,7 +214,7 @@ def test_answer_prompt_distinguishes_developed_analysis_from_compact_lookup():
 def test_correction_request_receives_only_remaining_answer_stage_seconds():
     now = [0.0]
     model = TimedModel(now, (0, decision()), (0, decision("answer", ["E1"])),
-                       (118, rejected_reading()), (0, answer()))
+                       (118, answer("REJECTED_MODEL_PROSE")), (0, answer()))
 
     result = run("What is the value?", model=model, search=search, fetch=no_fetch,
                  clock=lambda: now[0])
@@ -200,7 +226,7 @@ def test_correction_request_receives_only_remaining_answer_stage_seconds():
 def test_no_correction_starts_when_answer_stage_has_no_meaningful_time():
     now = [0.0]
     model = TimedModel(now, (0, decision()), (0, decision("answer", ["E1"])),
-                       (119.5, rejected_reading()))
+                       (119.5, answer("REJECTED_MODEL_PROSE")))
 
     result = run("What is the value?", model=model, search=search, fetch=no_fetch,
                  clock=lambda: now[0])
@@ -212,7 +238,7 @@ def test_no_correction_starts_when_answer_stage_has_no_meaningful_time():
 def test_correction_timeout_stops_without_another_answer_attempt():
     now = [0.0]
     model = TimedModel(now, (0, decision()), (0, decision("answer", ["E1"])),
-                       (118, rejected_reading()),
+                       (118, answer("REJECTED_MODEL_PROSE")),
                        (2, ModelError("model_request_timed_out")))
 
     result = run("What is the value?", model=model, search=search, fetch=no_fetch,
@@ -228,7 +254,7 @@ def test_correction_timeout_stops_without_another_answer_attempt():
 def test_non_timeout_model_failure_after_answer_stage_deadline_is_operational_inability():
     now = [0.0]
     model = TimedModel(now, (0, decision()), (0, decision("answer", ["E1"])),
-                       (118, rejected_reading()),
+                       (118, answer("REJECTED_MODEL_PROSE")),
                        (3, ModelError("model_request_rejected")))
 
     result = run("What is the value?", model=model, search=search, fetch=no_fetch,
@@ -291,8 +317,11 @@ def test_materially_new_answer_evidence_after_valid_need_resets_stage_allowance(
 def test_rejected_reading_detail_is_observer_only_and_success_is_not_reported_as_rejected(tmp_path):
     rejected = "SURROGATE_REJECTED_PASSAGE_FOR_FORENSICS"
     first = rejected_reading(passage=rejected)
-    corrected = answer("The stated value is seven. [E1]")
-    model = RecordingModel(decision(), decision("answer", ["E1"]), first, corrected)
+    corrected = answer("The stated value is seven. [E1]", readings=[
+        {"evidence_ref": "E1", "passages": [SOURCE_TEXT]}])
+    model = RecordingModel(decision(), decision("answer", ["E1"]),
+                           answer("The stated value is seven. [E1]"), failed_localization(),
+                           first, corrected)
     observed = []
     diagnostic = TurnDiagnostics(started_at=0.0, clock=lambda: 0.0)
 
@@ -346,6 +375,7 @@ def test_successful_reading_emits_no_rejected_detail():
 def test_operational_inability_round_trips_through_existing_session_schema(tmp_path):
     rejected = "SURROGATE_FAILED_SESSION_PASSAGE"
     model = RecordingModel(decision(), decision("answer", ["E1"]),
+                           answer("The stated value is seven. [E1]"), failed_localization(),
                            rejected_reading(passage=rejected),
                            rejected_reading(passage=rejected))
     store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")

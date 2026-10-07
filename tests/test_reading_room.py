@@ -147,7 +147,7 @@ def test_browser_new_and_followup_use_real_session_and_survive_app_replacement(t
     assert submit(client, location, FOLLOWUP).status_code == 303
     assert store.load(metadata.session_id).metadata.revision == 2
     answer_inputs = [m for stage, _, m, _ in model.calls if stage == "answer"]
-    assert {stage for stage, _, _, _ in model.calls} == {"research", "answer"}
+    assert {stage for stage, _, _, _ in model.calls} == {"research", "answer", "localize"}
     assert answer_inputs[-1]["conversation_context"] == [{"question": QUESTION, "answer": store.load(metadata.session_id).state.turns[0].answer}]
     fresh = app_for(SQLiteSessionStore(store.path)).test_client()
     assert "A follow-up." in fresh.get(location).get_data(as_text=True)

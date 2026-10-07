@@ -24,8 +24,9 @@ from scryraven.session_store import SessionStoreError
 _SESSION_ID = re.compile(r"[0-9a-f]{32}\Z")
 _EVIDENCE_REF = re.compile(r"(?:E|D)[1-9][0-9]*(?:@[0-9]+:[0-9]+)?\Z")
 _MODEL_NAME = re.compile(r"(?:gpt|o[1-9])[-a-zA-Z0-9._]{1,70}\Z")
-_CACHE_FAMILY = re.compile(r"sr-v1:(?:research|answer):(?:research|answer):[0-9a-f]{32}\Z")
-_CONTRACTS = {"research", "answer"}
+_CACHE_FAMILY = re.compile(
+    r"sr-v1:(?:research|answer|localize):(?:research|answer|localize):[0-9a-f]{32}\Z")
+_CONTRACTS = {"research", "answer", "localize"}
 _POSTURES = {"supported", "partial", "unable"}
 _STOP_REASONS = {"supported", "not_established", "research_bound"}
 _PROVIDERS = {"exa", "serper", "linkup", "local"}
@@ -300,7 +301,7 @@ class TurnDiagnostics:
                 contract = (_one_of(event.get("contract"), _CONTRACTS)
                             if action == "response_rejected" else "research")
                 if contract is not None:
-                    self.corrections[contract][code] += 1
+                    self.corrections.setdefault(contract, Counter())[code] += 1
         elif action == "answer_reading_rejected":
             code = _one_of(event.get("code"), {
                 "reading_passage_not_in_source", "unselected_reading_reference",

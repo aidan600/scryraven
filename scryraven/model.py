@@ -266,7 +266,7 @@ def _input_blocks(instructions: str, material: dict, stage: str, phase: str) -> 
             pending += "]"
         else:
             pending += (_evidence_json(value) if (stage, phase) in {
-                ("research", "research"), ("answer", "answer"),
+                ("research", "research"), ("answer", "answer"), ("localize", "localize"),
             } and key == "evidence" else _json(value))
         if stage == "research" and phase == "research" and index + 1 == boundary:
             flush("research_context")
@@ -347,8 +347,8 @@ class OpenAIModel:
                          "\nReturn only JSON matching the response schema, with no Markdown or commentary.")
         phase = material.get("phase", stage)
         # Only fixed transport labels reach telemetry, never arbitrary material.
-        safe_stage = stage if stage in {"research", "answer"} else "other"
-        safe_phase = phase if phase in {"research", "answer"} else "other"
+        safe_stage = stage if stage in {"research", "answer", "localize"} else "other"
+        safe_phase = phase if phase in {"research", "answer", "localize"} else "other"
         family_parts = ["layout-v1", self.cache_namespace, role.model, role.reasoning,
                         stage, phase, instructions, schema]
         if use_calculator:

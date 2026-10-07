@@ -4,7 +4,16 @@ import json
 from copy import deepcopy
 
 import pytest
-from test_research_loop import answer, decision, no_fetch, request, search
+from test_research_loop import (
+    answer,
+    decision,
+    failed_localization,
+    next_scripted,
+    no_fetch,
+    request,
+    search,
+    without_semantic_readings,
+)
 
 from scryraven.research import RunError, RunLimits, run
 from scryraven.session import ResearchSession
@@ -17,12 +26,12 @@ class RecordingModel:
     """Keep the packet as it existed at each call, before correction mutates it."""
 
     def __init__(self, *outputs):
-        self.outputs = iter(outputs)
+        self.outputs = list(outputs)
         self.calls = []
 
     def __call__(self, stage, prompt, packet, schema):
         self.calls.append((stage, prompt, deepcopy(packet), schema))
-        output = next(self.outputs)
+        output = without_semantic_readings(stage, next_scripted(self.outputs, stage, packet), schema)
         return output if isinstance(output, str) else json.dumps(output)
 
 
@@ -57,7 +66,7 @@ def test_citationless_answer_is_corrected_with_same_contract_and_exact_inputs(po
     assert "[E1]" in corrected[2]["output_correction"]["instruction"]
     assert rejected_prose not in json.dumps(corrected[2])
     assert rejected_prose not in json.dumps(result.trace)
-    assert [call[0] for call in model.calls] == ["research", "research", "answer", "answer"]
+    assert [call[0] for call in model.calls] == ["research", "research", "answer", "answer", "localize"]
     assert result.posture == posture
     assert result.answer == "The publication states seven. [1]"
     assert result.citations[0].materials == result.selected_evidence
@@ -133,19 +142,21 @@ def test_reading_then_citation_rejection_share_one_correction_allowance():
         {"evidence_ref": "E1", "passages": ["An invented value is eight."]},
     ]
     model = RecordingModel(
-        decision(), decision("answer", ["E1"]), invalid_reading,
-        with_reading("Correct literal reading, but no citation."),
+        decision(), decision("answer", ["E1"]),
+        answer("The stated value is seven. [E1]"), failed_localization(),
+        invalid_reading, with_reading("Correct literal reading, but no citation."),
     )
 
     result = run(QUESTION, model=model, search=search, fetch=no_fetch)
 
-    first, second = answer_calls(model)
+    legacy = [call for call in answer_calls(model) if "source_readings" in call[3]["properties"]]
+    first, second = legacy
     assert second[2]["output_correction"]["code"] == "reading_passage_not_in_source"
     assert first[2]["evidence"] == second[2]["evidence"]
     assert result.answer == "I couldn't complete a source-validated answer for this request."
     assert result.stop_reason == "not_established"
     assert result.citations == result.selected_evidence == ()
-    assert result.trace[-1]["budget"]["semantic_attempts"] == 4
+    assert result.trace[-1]["budget"]["semantic_attempts"] == 5
     assert [event["code"] for event in result.trace if event["action"] == "response_rejected"] == [
         "reading_passage_not_in_source", "missing_citation",
     ]

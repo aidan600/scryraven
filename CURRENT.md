@@ -303,35 +303,48 @@ user beliefs and narration are not automatically stipulated premises. Prior
 assistant answers are discourse context only; they cannot silently become
 premises. A user's explicit adoption of a prior assistant value can define a new
 scenario premise without verifying that value externally.
-AnswerDecision declares an evidence, user-premises or no-support basis. Supported
-or partial external factual answers require selected Evidence and its citations.
+Research chooses and acquires Evidence. Selected-source completion widens only
+within chosen source identities. The primary semantic Answer,
+`SemanticAnswerDecision`, has posture, `support_basis`, answer, and
+`missing_information`, and no `source_readings`. Sol, on the existing Answer
+model role, owns meaning, prose, adequacy, and citations. Luna, using the
+existing Research model-role settings as transport only, performs
+non-authoritative exact support localization on stage `localize`. That stage is
+not a Research decision and is not a third persistent model role. Deterministic
+checks validate literal custody. Localization does not consume
+`semantic_attempts` and runs at most once per accepted terminal semantic Answer.
+A consequential `missing_information` Answer returns to Research before any
+localization when budget and no-progress rules allow another round. Unchanged
+selection still publishes that provisional answer without localization.
+User-premise answers with no Evidence, and unable answers, skip localization.
+
+A terminal evidence-backed supported or partial Answer is localized only after
+its semantic decision is frozen. Every cited canonical source group needs at
+least one validated passage, and an invalid candidate can be dropped when other
+valid passages still cover that group. Localization failure discards the
+semantic decision for publication and falls back once to the existing
+`AnswerDecision`, `ANSWER_PROMPT`, and `source_readings` path on the same
+completed Evidence packet, with no hint from the discarded answer or localizer.
+That fallback is a semantic Answer request and receives a fresh Answer-stage
+ceiling bounded by remaining whole-run time. Its one-correction behavior is
+unchanged. If it fails, the turn keeps the operational inability message and
+`answer_validation_exhausted` trace. Validated support spans are forensic
+observations only; durable session state and Reading Room are unchanged.
+Two ordinary product turns completed this path without legacy fallback. That
+sample does not establish general reliability or a general latency improvement.
+
 With an empty Evidence packet, a supported or partial conditional derivation may
 use only explicit user premises, empty source readings and no Evidence citations.
 An answer mixing user premises with external factual support uses the evidence
-basis and cites its external claims.
-
-Supported or partial evidence answers must supply validated literal readings,
-including a reading from each canonical source group they cite. This is a
-mechanical custody constraint, not a test of entailment. An otherwise valid
-evidence-based Answer that omits a required citation alias or reading may receive
-one correction in the same Answer contract. Every invalid Answer category shares
-that single correction allowance for an unchanged selected packet. If the
-corrected Answer is invalid or the packet's Answer-stage time is exhausted, the
-turn ends with a fixed operational inability message, without rejected prose,
-citations, selected support or a Research retry on the same packet. The safe
-trace records `answer_validation_exhausted`; the unchanged durable session shape
-uses its existing `not_established` stop reason. A validated
-`missing_information` Answer may return to Research; materially changed selected
-Evidence receives a fresh Answer allowance while unchanged selections retain
-the no-progress protection. An Answer that declares both supported posture and
-a consequential `missing_information` need is corrected as an Answer-shape error;
-it does not create a Research round trip or mechanically change the posture.
-Literal-reading corrections identify the failed reference and reading/passage
-indexes without copying the rejected passage into the correction or safe trace.
-An additional `source_body=True` observer event records rejected attempted
-passages, exact selected-content hashes and lengths for explicitly authorized
-forensics; ordinary traces, dogfood records, sessions and presentation remain
-body-free for that diagnostic.
+basis and cites its external claims. An Answer that declares both supported
+posture and a consequential `missing_information` need is corrected as an
+Answer-shape error; it does not create a Research round trip or mechanically
+change the posture. Literal-reading corrections on the legacy path identify the
+failed reference and reading/passage indexes without copying the rejected
+passage into the correction or safe trace. Localization passage rejections use
+the same boundary: a safe trace event plus a `source_body=True` observer record.
+Ordinary traces, dogfood records, sessions and presentation remain body-free for
+that diagnostic.
 Neither path promotes user premises or prior assistant prose into Evidence.
 
 Durable SQLite sessions retain atomic revision-checked commits, reopen/history,

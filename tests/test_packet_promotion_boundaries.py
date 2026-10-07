@@ -64,10 +64,10 @@ def test_identity_evidence_can_redirect_research_without_becoming_answer_authori
     )
 
     assert queries == ["hybrid demonstration base engine", "GE Passport takeoff-thrust range"]
-    assert [call[0] for call in model.calls] == ["research", "research", "research", "answer"]
+    assert [call[0] for call in model.calls] == ["research", "research", "research", "answer", "localize"]
     assert {item["id"] for item in model.calls[1][2]["evidence"]} == {"E1", "E2"}
     assert model.calls[2][2]["working_understanding"] == redirect["understanding"]
-    answer_packet = model.calls[-1][2]
+    answer_packet = next(call[2] for call in model.calls if call[0] == "answer")
     assert [item["id"] for item in answer_packet["evidence"]] == ["E1", "E3"]
     assert not {"working_understanding", "established", "still_needed"} & answer_packet.keys()
     assert "CT7" in answer_packet["conversation_context"][0]["answer"]

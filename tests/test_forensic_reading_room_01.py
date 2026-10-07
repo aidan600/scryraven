@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 from test_reading_room import submit
-from test_research_loop import Script, answer, decision, no_fetch, search
+from test_research_loop import Script, answer, decision, failed_localization, no_fetch, search
 
 from scryraven import reading_room
 from scryraven.forensic_log import ForensicLog
@@ -31,7 +31,8 @@ def test_forensic_events_capture_exposure_rejection_and_stay_out_of_product_reco
     rejected = "SYNTHETIC_REJECTED_PASSAGE_837_ONLY_FOR_FORENSICS"
     source_body = "The stated value is seven."
     bad = answer(readings=[{"evidence_ref": "E1", "passages": [rejected]}])
-    model = Script(decision(), decision("answer", ["E1"]), bad, answer())
+    model = Script(decision(), decision("answer", ["E1"]), answer(), failed_localization(), bad,
+                   answer(readings=[{"evidence_ref": "E1", "passages": [source_body]}]))
     store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
     dogfood = tmp_path / "turns.jsonl"
     forensic = tmp_path / "observer.jsonl"
@@ -52,7 +53,8 @@ def test_forensic_events_capture_exposure_rejection_and_stay_out_of_product_reco
     assert {"started", "research_decision", "acquired_material", "answer_reading_rejected_detail",
             "answer_reading", "answer_decision", "completed"} <= set(actions)
     exposures = [row["event"] for row in records if row["event"]["action"] == "exposure"]
-    assert [event["contract"] for event in exposures] == ["research", "research", "answer", "answer"]
+    assert [event["contract"] for event in exposures] == [
+        "research", "research", "answer", "localize", "answer", "answer"]
     assert exposures[1]["evidence"][0]["content"] == source_body
     assert exposures[2]["evidence"][0]["content"] == source_body
     detail = next(row["event"] for row in records
