@@ -31,7 +31,7 @@ from scryraven.research import (
 from scryraven.session import ResearchSession
 from scryraven.session_store import SessionTurn, SQLiteSessionStore
 
-_LEGACY_PROMPT_HASH = "b5bd95717485690e130a6c8060ba168b510862cd27ec5b617598d4992b4eabd9"
+_LEGACY_PROMPT_HASH = "b5bd95717485690e130a6c8060ba168b510862cd27ec5b617598d4992b4eabd9"  # pragma: allowlist secret
 _PASSAGE = "The stated value is seven."
 _TURN_KEYS = {
     "question", "answer", "analysis", "posture", "stop_reason",
