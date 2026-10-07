@@ -74,7 +74,8 @@ equal to the uploaded file. A separate synthetic Reader control also exercised
 The credentialed observation server was intentionally stopped after both turns.
 Its broker status records target exit 1 from that termination, with no timeout;
 both ordinary turn diagnostics independently record completed revisions. The
-uncredentialed inspection server uses port 7445.
+uncredentialed inspection server used port 7445. Both temporary inspection
+servers were stopped after verification; all exact artifacts remain saved.
 
 ## Offline verification
 
