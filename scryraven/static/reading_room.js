@@ -24,11 +24,17 @@
     inspector.querySelector('.inspector-close').focus({preventScroll: true});
   }
 
-  function showSource(source) {
+  function showSource(source, citationStart = null) {
     sourceGroup = source.closest('.sources-overview');
     inspectorTitle.textContent = source.querySelector('.source-title').textContent;
     inspectorNumber.textContent = 'Source ' + source.querySelector('.source-number').textContent;
     inspectorContent.replaceChildren(...source.querySelector('.source-body').cloneNode(true).childNodes);
+    inspectorContent.querySelectorAll('.citation-support').forEach(support => {
+      if (citationStart !== null && support.dataset.citationStart === citationStart) {
+        support.open = true;
+        support.classList.add('selected-support');
+      } else support.remove();
+    });
     inspector.classList.add('showing-source');
     showInspector();
   }
@@ -62,7 +68,7 @@
       origin?.classList.remove('is-inspected');
       origin = citation;
       origin.classList.add('is-inspected');
-      showSource(source);
+      showSource(source, citation.dataset.citationStart);
     }
     const overview = event.target.closest('.sources-control');
     if (overview) {

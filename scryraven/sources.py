@@ -8,6 +8,7 @@ from bisect import bisect_right
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
+from hashlib import sha256
 from typing import Literal
 
 # Provisional, observable economics choices; none decides evidentiary sufficiency.
@@ -82,6 +83,30 @@ class Evidence:
                        filename=self.filename, page_start=self.page_start, page_end=self.page_end,
                        visual_analysis=self.visual_analysis, textless_page_count=self.textless_page_count)
         return row
+
+
+@dataclass(frozen=True)
+class SupportRegion:
+    """Exact half-open coordinates in a historical selected Evidence snapshot."""
+
+    evidence_ref: str
+    start_char: int
+    end_char: int
+    material_sha256: str
+    passage_sha256: str
+
+
+def support_text(region: SupportRegion, material: Evidence) -> str:
+    """Validate custody and reconstruct source text, never model-written text."""
+    if (region.evidence_ref != material.id
+            or type(region.start_char) is not int or type(region.end_char) is not int
+            or not 0 <= region.start_char < region.end_char <= len(material.content)
+            or region.material_sha256 != sha256(material.content.encode("utf-8")).hexdigest()):
+        raise ValueError("invalid_support_coordinates")
+    text = material.content[region.start_char:region.end_char]
+    if not text.strip() or region.passage_sha256 != sha256(text.encode("utf-8")).hexdigest():
+        raise ValueError("invalid_support_coordinates")
+    return text
 
 
 def exact_view(parent: Evidence, start: int, end: int) -> Evidence:

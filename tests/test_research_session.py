@@ -74,8 +74,9 @@ def test_followup_reads_retained_fact_with_fresh_research_and_answer(highlights)
     assert calls[0]["working_understanding"] is None
     assert calls[0]["evidence"] == [first.selected_evidence[0].material()]
     assert calls[-1]["conversation_context"] == [{"question": Q1, "answer": first.answer}]
-    assert calls[-1]["evidence"][0]["content"] == BODY
-    assert first.answer not in json.dumps(calls[-1]["evidence"])
+    answer_packet = [m for stage, _, m, _ in model.calls if stage == "answer" and m["question"] == Q2][-1]
+    assert answer_packet["evidence"][0]["content"] == BODY
+    assert first.answer not in json.dumps(answer_packet["evidence"])
     assert all("analysis" not in m and "semantic_history" not in m for m in calls)
     assert [s for s, _, _, _ in model.calls[-4:]] == ["research", "research", "answer", "localize"]
     assert second.trace[-1]["budget"]["external_attempts"] == 0

@@ -182,26 +182,28 @@ and without a legacy Answer call. Materially changed selected Evidence starts a
 fresh Answer-stage allowance.
 
 A terminal evidence-backed supported or partial Answer freezes its prose,
-posture, `support_basis`, `missing_information`, and citation aliases. Luna,
-using the existing Research model-role settings as transport only, then locates
-exact literal passages for the claims those sources are cited to support. The
-transport stage is `localize`. It is not a Research decision and does not add a
-persistent model role. The localizer cannot rewrite, approve, reject, or
-reinterpret the frozen answer, and it has no calculator. Its packet contains the
-question context needed to understand the cited claims, the frozen answer, the
-cited canonical source IDs, and the exact selected Evidence for those groups
-only.
+posture, `support_basis`, `missing_information`, and citation aliases. Code first
+resolves the final numbered answer and individual `CitationUse` occurrences,
+then mechanically partitions all exact material in its cited source snapshots.
+The regions exhaust the full saved text, preserve its characters, and contain
+no semantic ranking, lexical top-k selection or answer-independent preselection.
+Line/sentence boundaries are preferred; long unbroken text is split mechanically.
+No publication page boundaries are invented.
 
-Deterministic validation reuses the whitespace-flexible literal membership
-check. An evidence reference must belong to the localization packet, and each
-passage must occur in that exact material. The recorded span reconstructs the
-original substring and offsets without changing words or punctuation. An
-individually invalid candidate is rejected and recorded. It does not fail the
-cited source group when another valid passage still covers that group.
-Localization succeeds only when every cited canonical source group has at least
-one valid passage and `insufficient_source_ids` is empty. Validated spans stay
-on the authorized forensic observer. They are not added to durable session state
-or Reading Room.
+Luna, using the existing Research model-role settings as transport only, receives
+the frozen answer, each occurrence's paragraph context, saved material identity,
+and all region IDs and exact text. On stage `localize` it returns only the mapping
+of every temporary U ID to S IDs from that occurrence's cited source. It selects
+support and material qualifications, including noncontiguous conditions and
+exceptions. It cannot rewrite, approve, reject or reinterpret the answer, and
+has no calculator. This is not a Research decision or a third persistent role.
+
+Deterministic validation requires complete occurrence coverage and rejects empty,
+unknown, duplicate, cross-source or malformed bindings. Code resolves IDs into
+exact Evidence references and half-open Python character coordinates relative to
+that saved material, with SHA-256 hashes of both the complete material and selected
+substring encoded as UTF-8. No model-written quotation or temporary U/S ID enters
+durable product state. Identity/custody validation is not semantic entailment.
 
 Localization failure discards the semantic decision for publication and falls
 back once to the existing `AnswerDecision` contract, `ANSWER_PROMPT`, and
@@ -442,7 +444,8 @@ generic. No raw provider reason or response payload enters the trace.
 
 `scryraven.results.CompletedAnswer` contains the public answer, posture, stop
 reason, retained acquisitions, selected exact material, citations, citation-use
-spans, and safe run trace. It has no Analyst-shaped interpretation object.
+spans with optional durable support coordinates/hashes, and safe run trace. It
+has no Analyst-shaped interpretation object.
 Citation mechanics validate selected material against immutable acquisitions or
 exact parent slices, reject unknown/unselected aliases and unresolved answer
 links, and assign compact source numbers. Historical citation snapshots contain
@@ -489,6 +492,20 @@ Analysis code is decode-only schema/reference validation in `scryraven.historica
 Historical judgments are excluded from new model packets. The stopped Investigator
 executable harness and its Author adapter are retired to their preserved Git lineage.
 
+Successful normal-path citation uses retain exact support coordinates and hashes
+in completed-turn JSON. Opening a session validates every region against its
+own citation snapshot; a corrupt material, range or hash cannot reopen as trusted
+support. Historical records missing the additive support field remain readable
+without payload rewriting. Legacy-fallback turns retain generic inspection.
+
+Reading Room citation links identify their occurrence by the saved answer offset.
+The Reader renders exact retained Evidence: that use's support first, expandable
+surrounding context second, then the full saved material. The original source
+or PDF action remains prominent. Source-overview inspection remains generic.
+Reopening and inspection do not invoke models, fetch current publication text,
+or relocalize support. These presentation fallbacks do not grant publication
+eligibility to a new semantic answer whose localization failed.
+
 The Reading Room and CLI disclose that no external sources were used for
 completed source-free supported/partial answers. Presentation derives this from
 posture and empty citations, which do not establish a user-premise basis; it
@@ -525,7 +542,7 @@ family remain intact.
 An optional observer receives normalized public events: bounded structured
 decisions, field-specific rejected-decision diagnostics, selected requests and
 acquisition outcomes, budget facts, exact acquired/exposed public material,
-verified literal answer-reading selections, non-authoritative localization spans,
+verified literal legacy answer-reading selections, exact resolved localization spans,
 and exposure IDs, lengths and hashes. It never
 receives raw provider responses or hidden reasoning. The small returned trace
 excludes source bodies; exact bodies can be captured separately through the

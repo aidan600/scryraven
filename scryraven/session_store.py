@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Literal, Protocol
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from scryraven.documents import (
     DOCUMENT_ID,
@@ -24,7 +24,7 @@ from scryraven.documents import (
 from scryraven.errors import RunError
 from scryraven.historical import Analysis, validate_historical_analysis
 from scryraven.presentation import Citation, CitationUse
-from scryraven.sources import Evidence, exact_view
+from scryraven.sources import Evidence, SupportRegion, exact_view, support_text
 
 
 @dataclass(frozen=True)
@@ -150,10 +150,19 @@ class _CitationRecord(_Record):
     page_end: int | None = None
 
 
+class _SupportRecord(_Record):
+    evidence_ref: str
+    start_char: int
+    end_char: int
+    material_sha256: str
+    passage_sha256: str
+
+
 class _UseRecord(_Record):
     number: int
     start: int
     end: int
+    support: list[_SupportRecord] = Field(default_factory=list)
 
 
 class _TurnRecord(_Record):
@@ -266,13 +275,20 @@ def _decode(payload: str, revision: int, documents: tuple[SessionDocument, ...] 
                 _require(citation.filename is None and citation.page_start is None and citation.page_end is None)
                 _require(source.id == source.source_id)
                 _require((citation.title, citation.url) == (source.title, source.url))
-        uses = tuple(CitationUse(**item.model_dump()) for item in saved.citation_uses)
+        uses = tuple(CitationUse(item.number, item.start, item.end,
+                                tuple(SupportRegion(**region.model_dump()) for region in item.support))
+                     for item in saved.citation_uses)
         end = 0
         for use in uses:
             _require(1 <= use.number <= len(citations) and end <= use.start < use.end <= len(saved.answer))
             _require(saved.answer[use.start:use.end] == f"[{use.number}]")
+            source_materials = {item.id: item for item in citations[use.number - 1].materials}
+            _require(len(use.support) == len(set(use.support)))
+            for region in use.support:
+                support_text(region, source_materials[region.evidence_ref])
             end = use.end
         _require(list(dict.fromkeys(use.number for use in uses)) == list(range(1, len(citations) + 1)))
+        _require(not any(use.support for use in uses) or all(use.support for use in uses))
         if analysis is not None or saved.posture != "unable":
             # Native source-free premise derivations have neither selected
             # material nor citations. Answer validates their semantic basis.
@@ -302,7 +318,9 @@ def _encode(state: SessionState, documents: tuple[SessionDocument, ...] = ()) ->
             "posture": turn.posture, "stop_reason": turn.stop_reason,
             "selected_evidence": [item.material() for item in turn.selected_evidence],
             "citations": [_citation_record(c) for c in turn.citations],
-            "citation_uses": [asdict(item) for item in turn.citation_uses],
+            "citation_uses": [{"number": use.number, "start": use.start, "end": use.end,
+                               **({"support": [asdict(region) for region in use.support]} if use.support else {})}
+                              for use in turn.citation_uses],
         })
     payload = json.dumps({"turns": turns, "acquisitions": [item.material() for item in state.acquisitions]},
                          ensure_ascii=True, separators=(",", ":"), allow_nan=False)

@@ -57,7 +57,7 @@ class Page(HTMLParser):
 
     def handle_starttag(self, tag, attrs):
         self.tags.append((tag, dict(attrs)))
-        if tag == "pre":
+        if tag == "pre" and dict(attrs).get("class") == "material-text":
             self.in_pre = True
             self.pre.append("")
         if dict(attrs).get("class") == "preview-text":
@@ -136,7 +136,7 @@ def test_first_validated_use_orders_sources_and_reuses_numbers_without_inline_ti
     assert [a["href"] for tag, a in page.tags if tag == "a" and a["href"].startswith("#")] == [
         "#source-1", "#source-2", "#source-1", "#source-2",
     ]
-    assert [a["id"] for tag, a in page.tags if tag == "details"] == ["source-1", "source-2"]
+    assert [a["id"] for tag, a in page.tags if tag == "details" and "id" in a] == ["source-1", "source-2"]
     assert "Long publication title 3" not in html
     assert render_cli(result).count("Long publication title 2") == 1
 

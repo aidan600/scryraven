@@ -30,6 +30,7 @@ from scryraven.errors import RunError
 from scryraven.model import ModelError, ModelUsage, OpenAIModel, capture_model_usage
 from scryraven.results import CompletedAnswer, resolve_citations
 from scryraven.sources import Evidence, exact_view
+from scryraven.support import LOCALIZATION_PROMPT, bind_support, localization_packet
 
 # Preserve enough of a bounded run for a source-first terminal Answer. This is
 # an operational reservation only: it never supplies evidence or changes a
@@ -98,18 +99,6 @@ class SemanticAnswerDecision(_Contract):
     support_basis: Literal["evidence", "user_premises", "none"]
     answer: str
     missing_information: str | None
-
-
-class LocalizedReading(_Contract):
-    evidence_ref: str
-    passages: list[Annotated[str, Field(min_length=1, max_length=4000)]] = Field(min_length=1, max_length=16)
-
-
-class SupportLocalization(_Contract):
-    """Non-authoritative locations of frozen cited claims. Not an Answer."""
-
-    readings: list[LocalizedReading] = Field(max_length=24)
-    insufficient_source_ids: list[Annotated[str, Field(min_length=1, max_length=80)]] = Field(max_length=24)
 
 
 RESEARCH_PROMPT = """You are the sole Research decision-maker for a general research
@@ -359,21 +348,6 @@ def _semantic_answer_prompt() -> str:
 
 SEMANTIC_ANSWER_PROMPT = _semantic_answer_prompt()
 
-LOCALIZATION_PROMPT = """The final answer, posture, support basis, missing information and
-citations are frozen. Locate exact literal passages from the supplied cited-source
-material that support or materially qualify the claims for which those sources are
-cited. Do not rewrite, approve, reject or reinterpret the final answer. Return
-independently contiguous literal passages. Do not stitch passages with ellipses.
-Do not paraphrase. If honest support for a cited canonical source group cannot be
-located, report that source ID in insufficient_source_ids. Never choose easier text
-by silently changing the meaning of the claim. No prose essay. No factual verdict.
-No calculator.
-"""
-
-_EVIDENCE_REF = re.compile(r"(?:E|D)[1-9][0-9]*(?:@[0-9]+:[0-9]+)?\Z")
-_CANONICAL_SOURCE_ID = re.compile(r"(?:E|D)[1-9][0-9]*\Z")
-
-
 def literal_passage_span(passage: str, content: str) -> tuple[int, int, str] | None:
     """Whitespace-flexible literal membership. Words and punctuation stay unchanged."""
     words = passage.split()
@@ -550,6 +524,8 @@ def _run_turn(
             role_name = "research" if stage == "localize" else stage
             role = getattr(config, role_name, None)
         evidence = packet.get("evidence", [])
+        if stage == "localize":
+            evidence = [{"id": row["id"], "content": row["text"]} for row in packet.get("regions", [])]
         conversation_chars = sum(len(item["question"]) + len(item["answer"])
                                  for item in packet.get("conversation_context", []))
         started_elapsed = max(0.0, clock() - budget.started)
@@ -743,6 +719,7 @@ def _run_turn(
     provisional_answer: tuple[AnswerDecision, tuple[str, ...]] | None = None
     bound = None
     route_index = 0
+    localized_result = None
 
     def reading_packet():
         nonlocal pending, active
@@ -765,6 +742,10 @@ def _run_turn(
             decision.answer, items, list(library.acquisitions), trace, documents=library.documents,
             require_citation=decision.support_basis == "evidence" and decision.posture != "unable",
         )
+        if localized_result is not None:
+            localized_decision, localized_refs, bound_uses = localized_result
+            if decision == localized_decision and tuple(refs) == localized_refs:
+                uses = bound_uses
         # Store only exact material actually cited; unused answer context remains
         # acquired, and exposure receipts retain what the answer call received.
         cited = {item.id for citation in citations for item in citation.materials}
@@ -792,9 +773,6 @@ def _run_turn(
             refs, library.materials, exposed, limits.attention_characters)
         emit("answer_source_completion", **receipt)
         return completed
-
-    def _safe_ref(value: str) -> str | None:
-        return value if len(value) <= 80 and _EVIDENCE_REF.fullmatch(value) else None
 
     def _semantic_decision_event(final):
         return {"posture": final.posture, "support_basis": final.support_basis,
@@ -893,101 +871,48 @@ def _run_turn(
         return code
 
     def localize_support(final, refs):
-        """One non-authoritative localization. Failure never edits the semantic Answer."""
+        """Bind each frozen citation use to exact saved regions; failure keeps legacy fallback."""
+        nonlocal localized_result
         try:
-            _answer, citations, _uses = resolve_citations(
+            answer, citations, uses = resolve_citations(
                 final.answer, [library.materials[ref] for ref in refs],
                 list(library.acquisitions), [], documents=library.documents,
                 require_citation=True,
             )
         except RunError:
             return _localization_failure("citation_custody_failed")
-        cited_ids = list(dict.fromkeys(citation.source_id for citation in citations))
-        cited_set = set(cited_ids)
-        cited_refs = [ref for ref in refs if library.materials[ref].source_id in cited_set]
+        cited_ids = [citation.source_id for citation in citations]
+        body, address_book, shape = localization_packet(answer, citations, uses)
+        packet = {**common, "phase": "localize", "posture": final.posture,
+                  "support_basis": final.support_basis, "missing_information": final.missing_information,
+                  "cited_source_ids": cited_ids, **body}
         emit("support_localization_started", cited_source_ids=cited_ids,
-             evidence_refs=cited_refs, evidence_count=len(cited_refs))
-        packet = {
-            "question": question,
-            "current_date": common["current_date"],
-            "conversation_context": conversation,
-            "phase": "localize",
-            "posture": final.posture,
-            "support_basis": final.support_basis,
-            "answer": final.answer,
-            "missing_information": final.missing_information,
-            "cited_source_ids": cited_ids,
-            "evidence": [library.materials[ref].material() for ref in cited_refs],
-        }
+             evidence_refs=[item["id"] for item in body["materials"]],
+             evidence_count=len(body["materials"]), citation_use_count=len(uses),
+             region_count=len(address_book))
         try:
-            located = ask("localize", LOCALIZATION_PROMPT, packet, SupportLocalization,
-                          consume_semantic=False)
+            located = ask("localize", LOCALIZATION_PROMPT, packet, shape, consume_semantic=False)
         except RunError as exc:
             return _localization_failure(exc.code, cited_source_ids=cited_ids)
         except _Bound as exc:
             return _localization_failure(exc.code, cited_source_ids=cited_ids)
         if located is None:
             return _localization_failure("malformed_localization", cited_source_ids=cited_ids)
-        unknown_groups = [item for item in located.insufficient_source_ids if item not in cited_set]
-        if unknown_groups:
-            return _localization_failure(
-                "invalid_source_group", cited_source_ids=cited_ids,
-                insufficient_source_ids=[item for item in located.insufficient_source_ids
-                                         if _CANONICAL_SOURCE_ID.fullmatch(item)])
-        valid = []
-        seen = set()
-        rejected = 0
-        packet_refs = set(cited_refs)
-        for reading_index, reading in enumerate(located.readings):
-            if reading.evidence_ref not in packet_refs:
-                source = library.materials.get(reading.evidence_ref)
-                for passage_index, passage in enumerate(reading.passages):
-                    rejected += 1
-                    safe_ref = _safe_ref(reading.evidence_ref)
-                    emit("support_localization_passage_rejected", code="unselected_reading_reference",
-                         evidence_ref=safe_ref, reading_index=reading_index, passage_index=passage_index)
-                    emit("support_localization_passage_rejected_detail", source_body=True,
-                         code="unselected_reading_reference", evidence_ref=reading.evidence_ref,
-                         source_id=source.source_id if source else None,
-                         reading_index=reading_index, passage_index=passage_index,
-                         attempted_passage=passage)
-                continue
-            source = library.materials[reading.evidence_ref]
-            for passage_index, passage in enumerate(reading.passages):
-                span = literal_passage_span(passage, source.content)
-                if span is None:
-                    rejected += 1
-                    emit("support_localization_passage_rejected", code="reading_passage_not_in_source",
-                         evidence_ref=source.id, reading_index=reading_index, passage_index=passage_index)
-                    emit("support_localization_passage_rejected_detail", source_body=True,
-                         code="reading_passage_not_in_source", evidence_ref=source.id,
-                         source_id=source.source_id, reading_index=reading_index,
-                         passage_index=passage_index, attempted_passage=passage,
-                         selected_content_sha256=hashlib.sha256(source.content.encode()).hexdigest(),
-                         selected_content_characters=len(source.content))
-                    continue
-                start, end, text = span
-                key = source.id, start, end
-                if key not in seen:
-                    seen.add(key)
-                    valid.append({"evidence_ref": source.id, "source_id": source.source_id,
-                                  "start_char": start, "end_char": end, "passage": text})
-        if located.insufficient_source_ids:
-            return _localization_failure(
-                "insufficient_source_ids", cited_source_ids=cited_ids,
-                insufficient_source_ids=list(located.insufficient_source_ids),
-                valid_passage_count=len(valid), rejected_passage_count=rejected)
-        covered = {item["source_id"] for item in valid}
-        uncovered = [source_id for source_id in cited_ids if source_id not in covered]
-        if uncovered:
-            return _localization_failure(
-                "cited_source_without_localized_support", cited_source_ids=cited_ids,
-                uncovered_source_ids=uncovered, valid_passage_count=len(valid),
-                rejected_passage_count=rejected)
+        try:
+            bound_uses = bind_support(located, body, address_book, citations, uses)
+        except ValueError as exc:
+            return _localization_failure(str(exc), cited_source_ids=cited_ids)
+        localized_result = (final, tuple(refs), bound_uses)
         emit("support_localization_completed", cited_source_ids=cited_ids,
-             covered_source_ids=sorted(covered), valid_passage_count=len(valid),
-             rejected_passage_count=rejected)
-        emit("answer_reading", source_body=True, readings=valid)
+             covered_source_ids=sorted(cited_ids), citation_use_count=len(bound_uses),
+             support_region_count=sum(len(use.support) for use in bound_uses))
+        # Forensics reconstructs text from custody too; generated quotations never enter this path.
+        materials = {item.id: item for citation in citations for item in citation.materials}
+        emit("answer_reading", source_body=True, readings=[
+            {"evidence_ref": region.evidence_ref, "source_id": materials[region.evidence_ref].source_id,
+             "start_char": region.start_char, "end_char": region.end_char,
+             "passage": materials[region.evidence_ref].content[region.start_char:region.end_char]}
+            for use in bound_uses for region in use.support])
         return None
 
     def answer_from_sources(refs, limitations, *, allow_research_return=True):

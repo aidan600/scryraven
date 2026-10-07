@@ -172,7 +172,7 @@ def test_missing_citation_then_unread_cited_group_uses_one_shared_correction():
         "research", "research", "answer", "localize", "answer", "answer"]
     legacy = [call for call in answer_calls(model) if "source_readings" in call[3]["properties"]]
     assert legacy[1][2]["output_correction"]["code"] == "missing_citation"
-    assert [event["code"] for event in result.trace if event["action"] == "response_rejected"] == [
+    assert [event["code"] for event in result.trace if event["action"] == "response_rejected" and event["contract"] == "answer"] == [
         "missing_citation", "cited_source_without_reading",
     ]
     assert_operational_inability(result)

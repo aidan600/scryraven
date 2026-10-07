@@ -182,7 +182,7 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                 "answer": Markup(answer_html(turn, source_prefix=prefix)),
                 "sources": [{"number": c.number, "id": prefix + str(c.number), "title": source_label(c),
                              "body": Markup(source_body_html(
-                                 c, collapse_long=True,
+                                 c, collapse_long=True, uses=turn.citation_uses,
                                  original_href=(url_for("original_pdf", session_id=metadata.session_id,
                                                         document_id=c.document_id)
                                                 if c.source_kind == "user_document" and c.document_id else None),

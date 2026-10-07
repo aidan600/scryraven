@@ -319,19 +319,31 @@ selection still publishes that provisional answer without localization.
 User-premise answers with no Evidence, and unable answers, skip localization.
 
 A terminal evidence-backed supported or partial Answer is localized only after
-its semantic decision is frozen. Every cited canonical source group needs at
-least one validated passage, and an invalid candidate can be dropped when other
-valid passages still cover that group. Localization failure discards the
-semantic decision for publication and falls back once to the existing
-`AnswerDecision`, `ANSWER_PROMPT`, and `source_readings` path on the same
+its semantic decision and individual citation occurrences are frozen. Code
+partitions the entire cited saved material into exact addressable regions without
+ranking, clipping or selecting support. Luna receives the final answer,
+citation-use contexts and every region; it returns only a use-ID to region-ID
+mapping. Every occurrence must bind to at least one valid region from its own
+source. Unknown IDs, malformed mappings, duplicate regions and insufficient
+bindings discard the semantic decision for publication and fall back once to the
+existing `AnswerDecision`, `ANSWER_PROMPT`, and `source_readings` path on the same
 completed Evidence packet, with no hint from the discarded answer or localizer.
 That fallback is a semantic Answer request and receives a fresh Answer-stage
 ceiling bounded by remaining whole-run time. Its one-correction behavior is
 unchanged. If it fails, the turn keeps the operational inability message and
-`answer_validation_exhausted` trace. Validated support spans are forensic
-observations only; durable session state and Reading Room are unchanged.
-Two ordinary product turns completed this path without legacy fallback. That
-sample does not establish general reliability or a general latency improvement.
+`answer_validation_exhausted` trace.
+
+Successful normal localization resolves temporary IDs into use-specific support
+coordinates, exact material references, and SHA-256 material/passage hashes.
+These coordinates are durable; Luna quotations and temporary use/region IDs are
+not. Reopen validates ranges, source membership and exact hashes against retained
+Evidence without model or provider I/O. Reading Room citation clicks display that
+occurrence's exact support first, expandable surrounding context second, and
+full saved material third, with the original publication or PDF action prominent.
+Old turns and legacy-fallback turns without coordinates retain generic saved-source
+inspection. This presentation fallback does not change new-answer publication
+eligibility. Offline and browser checks establish these mechanics; bounded live
+observations for this phase remain pending.
 
 With an empty Evidence packet, a supported or partial conditional derivation may
 use only explicit user premises, empty source readings and no Evidence citations.

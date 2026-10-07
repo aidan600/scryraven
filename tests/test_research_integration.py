@@ -150,7 +150,7 @@ def test_final_selection_of_shelved_material_is_bounded_and_revisable():
     result = run("Read the sources", model=model, search=several_sources, fetch=no_io,
                  limits=RunLimits(attention_characters=65536))
     assert any(event.get("code") == "attention_packet_too_large" for event in result.trace)
-    final_packet = model.calls[-1][2]
+    final_packet = [call[2] for call in model.calls if call[0] == "answer"][-1]
     assert sum(len(item["content"]) for item in final_packet["evidence"]) <= 65536
     assert [item["id"] for item in final_packet["evidence"]] == ["E1"]
     assert len(result.evidence) == 3 and result.selected_evidence[0].id == "E1"
@@ -177,7 +177,7 @@ def test_observer_cannot_change_model_evidence_execution_or_returned_trace(obser
     result = run("What is the value?", model=model, search=search, fetch=no_io, observe=observer)
     assert notifications and result.posture == "supported"
     assert [call[0] for call in model.calls] == ["research", "research", "answer", "localize"]
-    for call in model.calls[1:]:
+    for call in [call for call in model.calls[1:] if call[0] != "localize"]:
         assert call[2]["evidence"][0]["content"] == "The stated value is seven."
     assert model.calls[1][2]["last_route"][0]["material_ids"] == ["E1"]
     assert result.evidence[0].content == "The stated value is seven."

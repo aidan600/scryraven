@@ -12,7 +12,7 @@ from urllib.parse import unquote, urlsplit
 from markdown_it import MarkdownIt
 
 from scryraven.documents import TEXT_ONLY_WARNING, safe_original_href, textless_page_warning
-from scryraven.sources import Evidence
+from scryraven.sources import Evidence, SupportRegion, support_text
 
 if TYPE_CHECKING:
     from scryraven.research import Result
@@ -40,6 +40,7 @@ class CitationUse:
     number: int
     start: int
     end: int
+    support: tuple[SupportRegion, ...] = ()
 
 
 def _selected_pages(materials: tuple[Evidence, ...]) -> tuple[int, ...]:
@@ -124,11 +125,11 @@ def answer_html(result: Result | SessionTurn, *, source_prefix: str = "source-")
     # A content-derived marker distinguishes our links from answer-authored links.
     # It never survives rendering and contains no user-controlled HTML/URL syntax.
     marker = "sr-" + hashlib.sha256(result.answer.encode()).hexdigest() + "-"
-    destinations = {f"#{marker}{c.number}": c.number for c in result.citations}
+    destinations = {f"#{marker}{use.number}-{use.start}": use for use in result.citation_uses}
     parts = []
     previous = 0
     for use in result.citation_uses:
-        parts.extend((result.answer[previous:use.start], f"[[{use.number}]](#{marker}{use.number})"))
+        parts.extend((result.answer[previous:use.start], f"[[{use.number}]](#{marker}{use.number}-{use.start})"))
         previous = use.end
     parts.append(result.answer[previous:])
     markdown = MarkdownIt("commonmark", {"html": False}).enable("table").disable(["image", "autolink"])
@@ -145,9 +146,11 @@ def answer_html(result: Result | SessionTurn, *, source_prefix: str = "source-")
                 continue
             destination = token.attrGet("href") or ""
             if destination in destinations:
-                number = destinations[destination]
+                use = destinations[destination]
+                number = use.number
                 token.attrSet("href", f"#{source_prefix}{number}")
                 token.attrSet("class", "citation")
+                token.attrSet("data-citation-start", str(use.start))
                 token.attrSet("aria-label", f"Inspect source {number}")
             elif safe_publication_url(destination):
                 token.attrSet("target", "_blank")
@@ -203,7 +206,30 @@ def _document_identity(citation: Citation, original_href: str | None) -> str:
             f'<p class="scope">{escape(TEXT_ONLY_WARNING)}</p></div>')
 
 
-def source_body_html(citation: Citation, *, collapse_long: bool = False, original_href: str | None = None) -> str:
+def _support_html(citation: Citation, use: CitationUse) -> str:
+    materials = {item.id: item for item in citation.materials}
+    passages, contexts = [], []
+    for region in use.support:
+        try:
+            material = materials[region.evidence_ref]
+            text = support_text(region, material)
+        except (KeyError, ValueError):
+            # Never present coordinates from another material/version as support.
+            return ""
+        passages.append(f'<pre class="material-text support-text"><code>{escape(text)}</code></pre>')
+        left = max(0, region.start_char - 360)
+        right = min(len(material.content), region.end_char + 360)
+        contexts.append(f'<pre class="material-text context-text"><code>{escape(material.content[left:right])}</code></pre>')
+    return (f'<details class="citation-support" data-citation-start="{use.start}">'
+            '<summary>Read passages for this citation</summary><h2>Support for this citation</h2>'
+            '<p class="scope">Exact passages from the source material saved with this answer.</p>'
+            + "".join(passages)
+            + '<details class="support-context"><summary>Surrounding context</summary>'
+            + "".join(contexts) + '</details></details>')
+
+
+def source_body_html(citation: Citation, *, collapse_long: bool = False, original_href: str | None = None,
+                     uses: tuple[CitationUse, ...] = ()) -> str:
     """Exact saved material, shared by standalone disclosures and the Reading Room."""
     materials = []
     for index, item in enumerate(citation.materials, 1):
@@ -231,19 +257,21 @@ def source_body_html(citation: Citation, *, collapse_long: bool = False, origina
                          + content + '</section>')
     identity = (_document_identity(citation, original_href) if citation.source_kind == "user_document"
                 else _source_link(citation.url))
+    support = "".join(_support_html(citation, use) for use in uses if use.number == citation.number and use.support)
     return (identity
-            + '<h2>Material ScryRaven used from this source</h2>'
-            '<p class="scope">Exact text saved with this answer. '
+            + support
+            + ('<h2>Full saved material</h2>' if support else '<h2>Material ScryRaven used from this source</h2>')
+            + '<p class="scope">Exact text saved with this answer. '
             'Selections may not include the whole publication.</p>'
             + "".join(materials))
 
 
-def _source_html(citation: Citation) -> str:
+def _source_html(citation: Citation, uses: tuple[CitationUse, ...] = ()) -> str:
     return (
         f'<details id="source-{citation.number}">'
         f'<summary><span class="source-number">[{citation.number}]</span> '
         f'{escape(source_label(citation))}</summary>'
-        '<div class="source-body">' + source_body_html(citation) + '</div></details>'
+        '<div class="source-body">' + source_body_html(citation, uses=uses) + '</div></details>'
     )
 
 
@@ -296,17 +324,24 @@ pre code { font: inherit; }
 
 # Fixed code only: no model, question or evidence string is interpolated here.
 _SCRIPT = """
+let inspectedCitationStart = null;
 function revealSource() {
   if (!/^#source-[0-9]+$/.test(location.hash)) return;
   const source = document.getElementById(location.hash.slice(1));
   if (!source || source.tagName !== 'DETAILS') return;
   source.open = true;
+  source.querySelectorAll('.citation-support').forEach(support => {
+    support.open = support.dataset.citationStart === inspectedCitationStart;
+  });
   source.querySelector('summary').focus({preventScroll: true});
   source.scrollIntoView({block: 'start'});
 }
 document.querySelector('.answer').addEventListener('click', event => {
   const link = event.target.closest('a');
-  if (link && link.getAttribute('href') === location.hash) revealSource();
+  if (link && link.classList.contains('citation')) {
+    inspectedCitationStart = link.dataset.citationStart;
+    if (link.getAttribute('href') === location.hash) revealSource();
+  }
 });
 window.addEventListener('hashchange', revealSource);
 revealSource();
@@ -322,7 +357,7 @@ def render_html(question: str, result: Result | SessionTurn) -> str:
     policy = ("default-src 'none'; base-uri 'none'; form-action 'none'; "
               f"style-src {_hash_allowance(_STYLE)}; script-src {_hash_allowance(_SCRIPT)}")
     sources = ('<section class="sources" aria-label="Sources"><h2>Sources · open to inspect</h2>'
-               + "".join(_source_html(item) for item in result.citations) + '</section>') if result.citations else ""
+               + "".join(_source_html(item, result.citation_uses) for item in result.citations) + '</section>') if result.citations else ""
     notices = [f"Status: {result.posture.capitalize()}"]
     if result.stop_reason == "research_bound":
         notices.append(RESEARCH_BOUND_DISCLOSURE)

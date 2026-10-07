@@ -76,7 +76,7 @@ def test_historical_reopen_keeps_records_and_fresh_followup_never_sees_analyst(t
     assert current.answer == FACT_B + " [1]" and current.trace[-1]["budget"]["external_attempts"] == 0
     assert all("semantic_history" not in m and "analysis" not in m for _, _, m, _ in model.calls)
     assert model.calls[0][2]["working_understanding"] is None
-    assert model.calls[-1][2]["evidence"][0]["content"] == BODY
+    assert [call[2] for call in model.calls if call[0] == "answer"][-1]["evidence"][0]["content"] == BODY
     restored = reopen(path, session.session_id)
     assert restored.turns[0] == old and render_html(Q1, restored.turns[0]) == html
     assert render_cli(restored.turns[1]) == render_cli(current)

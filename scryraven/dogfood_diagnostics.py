@@ -43,6 +43,8 @@ _CODES = {
     "basis_evidence_missing_packet", "reading_passage_not_in_source",
     "unselected_reading_reference", "required_source_reading_missing",
     "missing_citation", "cited_source_without_reading", "deadline",
+    "malformed_localization", "citation_custody_failed", "citation_use_without_support",
+    "duplicate_support_region", "invalid_support_region", "invalid_support_coordinates",
     "semantic_attempts", "external_attempts", "answer_deadline_reserve",
     "empty_question", "invalid_selected_material", "duplicate_selected_material",
     "empty_answer", "invalid_citation_reference", "malformed_citation_reference",
