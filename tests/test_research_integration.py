@@ -41,8 +41,9 @@ def test_ordinary_engine_reopens_with_prior_cited_material_without_acquisition()
         assert second.evidence == first.evidence
         assert second.citations[0].materials == first.citations[0].materials
         assert second.trace[-1]["budget"]["external_attempts"] == 0
-        assert [call[0] for call in followup_model.calls] == ["research", "answer"]
-        initial_packet, final_packet = followup_model.calls[0][2], followup_model.calls[-1][2]
+        assert [call[0] for call in followup_model.calls] == ["research", "answer", "localize"]
+        initial_packet = followup_model.calls[0][2]
+        final_packet = next(call[2] for call in followup_model.calls if call[0] == "answer")
         assert initial_packet["working_understanding"] is None
         assert initial_packet["evidence"] == [first.selected_evidence[0].material()]
         assert not any(event["action"] == "acquisition_timing" for event in second.trace)
@@ -113,11 +114,12 @@ def test_oversized_exact_read_can_be_delivered_or_revised_without_pending_deadlo
 
     def model(stage, prompt, packet, schema):
         calls.append((stage, packet))
+        if stage == "localize":
+            from test_research_loop import synthetic_localization
+            return json.dumps(synthetic_localization(packet))
         if stage == "answer":
             evidence = packet["evidence"]
-            output = (answer(f"A documented observation. [{evidence[0]['id']}]", readings=[
-                {"evidence_ref": evidence[0]["id"], "passages": ["A documented observation."]},
-            ]) if evidence
+            output = (answer(f"A documented observation. [{evidence[0]['id']}]") if evidence
                       else answer("No actual material was delivered.", "unable"))
         elif packet["evidence"]:
             output = decision("answer", [packet["evidence"][0]["id"]])
@@ -174,7 +176,7 @@ def test_observer_cannot_change_model_evidence_execution_or_returned_trace(obser
     model = Script(decision(), decision("answer", ["E1"]), answer())
     result = run("What is the value?", model=model, search=search, fetch=no_io, observe=observer)
     assert notifications and result.posture == "supported"
-    assert [call[0] for call in model.calls] == ["research", "research", "answer"]
+    assert [call[0] for call in model.calls] == ["research", "research", "answer", "localize"]
     for call in model.calls[1:]:
         assert call[2]["evidence"][0]["content"] == "The stated value is seven."
     assert model.calls[1][2]["last_route"][0]["material_ids"] == ["E1"]

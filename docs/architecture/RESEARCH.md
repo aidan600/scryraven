@@ -159,48 +159,73 @@ answer is not supplied as Research authority. Materially changed selected Eviden
 starts a fresh Answer-stage allowance; unchanged selection retains no-progress
 protection.
 
-Within the same semantic call, `AnswerDecision` declares `support_basis` as
-`evidence`, `user_premises`, or `none` and places `source_readings` before the
-answer. An evidence-based answer selects literal passages needed to support the
-developed explanation and its consequential qualifications, with exact material
-references. These are Answer's own reading selections from
-the supplied sources, including material scope, identity, chronology, conditions
-and exceptions. They are not Research's findings or a claim-to-source
-justification. Selection supports the consequential relationships and qualifications
-needed for the complete synthesis, beyond support for a headline alone.
-The selections are transient and do not create a claim database,
-a source-count rule, or a new actor.
+The primary semantic Answer is `SemanticAnswerDecision`: posture, `support_basis`,
+answer, and `missing_information`. It does not output `source_readings`. Sol,
+through the existing Answer model role, owns meaning, prose, adequacy, and
+citations. It reads the supplied Evidence before composing and cites exact
+Evidence aliases beside supported factual claims. A separate localization step
+may run only after that semantic decision is frozen.
 
-Mechanical checks require each reading reference to belong to the supplied
-packet and each passage to occur in that exact material. Only whitespace
-differences are tolerated; the recorded reading reconstructs the original
-substring and offsets without changing words or punctuation. A malformed or
-nonmatching reading may get one output correction under the same Answer contract,
-deadline and semantic allowance. Every invalid Answer category shares that single
-correction for an unchanged selected packet. The packet's total Answer-stage
-allowance is 120 seconds, and each real OpenAI call is timed within the remaining
-stage, whole-run and per-call limits. An invalid corrected Answer or exhausted
-stage allowance terminates with a fixed operational inability message, no rejected
-prose, citations or selected supporting Evidence, and no Research reentry on that
-packet. The safe trace records `answer_validation_exhausted`; durable sessions keep
-their existing result shape. A source-bearing Answer that omits required
-citation aliases receives a fixed correction under that same allowance before
-acceptance; rejected prose is not fed back. Supported and partial `evidence`
-answers also require at least one validated reading, with a reading from selected
-material in every canonical source group they cite. A targeted view counts for
-its canonical source group. Additional readings from uncited selected sources
-are allowed. Missing required readings receive fixed corrections under the
-existing Answer allowance; exhaustion retains the operational inability fallback.
-Evidence `unable` answers are exempt. For `user_premises`, the Evidence
-packet and `source_readings` must both be empty, and a supported or partial answer
+Before localization, the semantic checks that do not depend on `source_readings`
+still apply: schema, supported posture together with consequential
+`missing_information`, `support_basis` consistency, the Evidence requirement,
+citation alias syntax and custody, and required citation presence. An invalid
+semantic Answer may receive one correction under the Answer-stage deadline and
+semantic allowance. A malformed or rejected semantic decision is not localized.
+
+If a valid semantic Answer returns consequential `missing_information` and the
+existing budget and no-progress rules permit another Research round, that need
+returns to Research immediately. Localization does not run, and the provisional
+answer is not supplied as Research authority. Unchanged selection keeps the
+no-progress protection and publishes that provisional answer without localization
+and without a legacy Answer call. Materially changed selected Evidence starts a
+fresh Answer-stage allowance.
+
+A terminal evidence-backed supported or partial Answer freezes its prose,
+posture, `support_basis`, `missing_information`, and citation aliases. Luna,
+using the existing Research model-role settings as transport only, then locates
+exact literal passages for the claims those sources are cited to support. The
+transport stage is `localize`. It is not a Research decision and does not add a
+persistent model role. The localizer cannot rewrite, approve, reject, or
+reinterpret the frozen answer, and it has no calculator. Its packet contains the
+question context needed to understand the cited claims, the frozen answer, the
+cited canonical source IDs, and the exact selected Evidence for those groups
+only.
+
+Deterministic validation reuses the whitespace-flexible literal membership
+check. An evidence reference must belong to the localization packet, and each
+passage must occur in that exact material. The recorded span reconstructs the
+original substring and offsets without changing words or punctuation. An
+individually invalid candidate is rejected and recorded. It does not fail the
+cited source group when another valid passage still covers that group.
+Localization succeeds only when every cited canonical source group has at least
+one valid passage and `insufficient_source_ids` is empty. Validated spans stay
+on the authorized forensic observer. They are not added to durable session state
+or Reading Room.
+
+Localization failure discards the semantic decision for publication and falls
+back once to the existing `AnswerDecision` contract, `ANSWER_PROMPT`, and
+`source_readings` validation on the same completed Evidence packet. The fallback
+receives no hint from the discarded answer or the localizer. It is a real
+semantic Answer request. Localization is not: at most one localizer request per
+accepted terminal semantic Answer, and it does not consume `semantic_attempts`.
+A fallback receives a fresh 120-second Answer-stage ceiling bounded by remaining
+whole-run time. Legacy validation still shares one correction across its invalid
+categories, including literal readings. If that legacy Answer fails under the
+existing validation and time rules, the turn keeps the operational inability
+behavior: fixed message, no rejected prose, no citations, no selected supporting
+Evidence, and `answer_validation_exhausted` in the safe trace.
+
+User-premise answers with no Evidence, and unable answers, do not call the
+localizer. The legacy `user_premises` path still requires an empty Evidence
+packet and empty `source_readings`. A supported or partial user-premise answer
 may derive solely from explicit user premises without a citation. This does not
 verify those premises externally or permit model memory to fill an omitted fact.
 An answer that mixes user premises with external factual support uses `evidence`
 and cites external claims. The `none` basis has unable posture and no supported
 conclusion. Mechanical checks prove literal membership or basis shape, not
 sufficient scope or semantic entailment. Final citation resolution and rendering
-follow the accepted Answer; there is no subsequent verifier or prose-polishing
-model.
+follow the accepted Answer. Luna is not a verifier or prose polisher.
 
 The same Answer semantic owner may call a bounded deterministic local arithmetic
 calculator while preparing an `AnswerDecision`. It may use numeric values from
@@ -213,7 +238,8 @@ The calculator interprets neither sources nor provenance and creates no Evidence
 item or alias. Results are derived computation. Externally factual quantitative
 claims still cite the selected material establishing their inputs, and arithmetic
 cannot supply an absent contingent external premise. Research has no calculator
-tool. A calculator stop and its model continuation remain inside one Answer
+tool, and neither does support localization. The primary semantic Answer uses
+the same Answer-stage calculator. A calculator stop and its model continuation remain inside one Answer
 semantic attempt, without using the one validation correction. Each underlying
 Responses request still obeys its timeout and the remaining Answer-stage and
 whole-run deadlines. Reported per-request usage is aggregated for that semantic
@@ -499,7 +525,8 @@ family remain intact.
 An optional observer receives normalized public events: bounded structured
 decisions, field-specific rejected-decision diagnostics, selected requests and
 acquisition outcomes, budget facts, exact acquired/exposed public material,
-verified literal answer-reading selections, and exposure IDs, lengths and hashes. It never
+verified literal answer-reading selections, non-authoritative localization spans,
+and exposure IDs, lengths and hashes. It never
 receives raw provider responses or hidden reasoning. The small returned trace
 excludes source bodies; exact bodies can be captured separately through the
 observer when an authorized development observation needs them. A rejected

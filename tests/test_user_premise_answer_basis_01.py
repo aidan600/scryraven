@@ -6,7 +6,15 @@ from copy import deepcopy
 from pathlib import Path
 
 import pytest
-from test_research_loop import answer, decision, no_fetch, request, search
+from test_research_loop import (
+    answer,
+    decision,
+    next_scripted,
+    no_fetch,
+    request,
+    search,
+    without_semantic_readings,
+)
 
 from core.exa_transport import DiscoveryCandidate
 from scryraven.research import AnswerDecision, RunError, RunLimits, run
@@ -18,12 +26,12 @@ class RecordingModel:
     """Capture each exact call packet before the correction loop changes it."""
 
     def __init__(self, *outputs):
-        self.outputs = iter(outputs)
+        self.outputs = list(outputs)
         self.calls = []
 
     def __call__(self, stage, prompt, packet, schema):
         self.calls.append((stage, prompt, deepcopy(packet), schema))
-        output = next(self.outputs)
+        output = without_semantic_readings(stage, next_scripted(self.outputs, stage, packet), schema)
         return output if isinstance(output, str) else json.dumps(output)
 
 
@@ -129,11 +137,18 @@ def test_user_premises_basis_with_evidence_is_rejected_under_same_answer_contrac
 
 
 def test_user_premises_basis_requires_empty_source_readings():
+    from pydantic import ValidationError
+
+    from scryraven.research import AnswerDecision, SemanticAnswerDecision
+
     invalid = answer("Under your assumptions, the arithmetic is conditional.",
                      support_basis="user_premises")
     invalid["source_readings"] = [{"evidence_ref": "E1", "passages": ["Imaginary passage"]}]
+    with pytest.raises(ValidationError):
+        SemanticAnswerDecision.model_validate(invalid)
+    AnswerDecision.model_validate(invalid)
     model = RecordingModel(
-        decision("answer"), invalid,
+        decision("answer"), json.dumps(invalid),
         answer("Under your assumptions, the arithmetic is conditional.",
                support_basis="user_premises"),
     )
@@ -142,8 +157,10 @@ def test_user_premises_basis_requires_empty_source_readings():
                  search=no_acquisition, fetch=no_acquisition)
 
     assert len(answers(model)) == 2
-    assert answers(model)[1][2]["output_correction"]["code"] == "basis_user_premises_has_readings"
+    assert any(event["action"] == "response_rejected" and event["code"] == "malformed_model_response"
+               for event in result.trace)
     assert result.posture == "supported" and result.selected_evidence == ()
+    assert "Imaginary passage" not in result.answer
 
 
 def test_user_premises_basis_cannot_emit_a_fabricated_evidence_alias():
@@ -393,7 +410,7 @@ def test_user_assertion_about_aircraft_cost_routes_to_acquisition_under_research
     result = run(question, model=model, search=synthetic_search, fetch=no_acquisition)
 
     assert searches == [route["query"]]
-    assert [call[0] for call in model.calls] == ["research", "research", "answer"]
+    assert [call[0] for call in model.calls] == ["research", "research", "answer", "localize"]
     assert model.calls[0][2]["question"] == question
     assert model.calls[0][2]["evidence"] == []
     assert model.calls[0][2]["working_understanding"] is None

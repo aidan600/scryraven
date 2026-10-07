@@ -3,7 +3,7 @@ import json
 
 import pytest
 from test_model_transport import Response
-from test_research_loop import answer, decision
+from test_research_loop import answer, decision, synthetic_localization
 
 from core import exa_transport, linkup_transport
 from scryraven import __main__ as cli
@@ -23,7 +23,7 @@ def test_cli_ordinary_run_invokes_research_and_answer_over_real_exa_adapter(monk
         if url.endswith('/v1/responses'):
             stages.append(kwargs["json"]["text"]["format"]["name"])
             assert (kwargs["json"]["model"], kwargs["json"]["reasoning"]) == (
-                ("gpt-6-luna", {"effort": "high"}) if stages[-1] == "research"
+                ("gpt-6-luna", {"effort": "high"}) if stages[-1] in {"research", "localize"}
                 else ("gpt-6.1-sol", {"effort": "medium"})
             )
             material = json.loads(''.join(b['text'] for b in kwargs['json']['input'][1]['content']))
@@ -31,8 +31,15 @@ def test_cli_ordinary_run_invokes_research_and_answer_over_real_exa_adapter(monk
             if stages[-1] == 'answer':
                 assert material['evidence'][0]['content'] == 'The exact value is seven.'
                 assert 'working_understanding' not in material
+            if stages[-1] == "localize":
+                text = json.dumps(synthetic_localization(material))
+            else:
+                output = next(outputs)
+                if isinstance(output, dict):
+                    output = {key: value for key, value in output.items() if key != "source_readings"}
+                text = json.dumps(output)
             return Response({'status': 'completed', 'output': [{'type': 'message', 'phase': 'final_answer',
-                             'content': [{'type': 'output_text', 'text': json.dumps(next(outputs))}]}]})
+                             'content': [{'type': 'output_text', 'text': text}]}]})
         providers.append(url)
         return Response({'results': [{'url': 'https://example.org/fact', 'title': 'Synthetic fact',
                                       'highlights': ['The exact value is seven.']}]})
@@ -42,7 +49,7 @@ def test_cli_ordinary_run_invokes_research_and_answer_over_real_exa_adapter(monk
     path = tmp_path / 'answer.html'
     assert cli.main(['What is the value?', '--trace-evidence', '--html', str(path)]) == 0
     captured = capsys.readouterr()
-    assert stages == ['research', 'research', 'answer']
+    assert stages == ['research', 'research', 'answer', 'localize']
     assert len(providers) == 1 and providers[0].endswith('/search')
     assert 'The exact value is seven. [1]' in captured.out
     assert 'Status: Supported' in captured.out
@@ -70,8 +77,17 @@ def test_cli_ordinary_search_then_read_uses_linkup_not_exa_contents(monkeypatch,
 
     def post(url, **kwargs):
         if url.endswith('/v1/responses'):
+            stage = kwargs["json"]["text"]["format"]["name"]
+            material = json.loads(''.join(block['text'] for block in kwargs['json']['input'][1]['content']))
+            if stage == "localize":
+                text = json.dumps(synthetic_localization(material))
+            else:
+                output = next(outputs)
+                if isinstance(output, dict):
+                    output = {key: value for key, value in output.items() if key != "source_readings"}
+                text = json.dumps(output)
             return Response({'status': 'completed', 'output': [{'type': 'message', 'phase': 'final_answer',
-                             'content': [{'type': 'output_text', 'text': json.dumps(next(outputs))}]}]})
+                             'content': [{'type': 'output_text', 'text': text}]}]})
         providers.append((url, kwargs.get("json")))
         if url == exa_transport.EXA_SEARCH_URL:
             return Response({'results': [{'url': 'https://example.org/fact', 'title': 'Synthetic fact'}]})

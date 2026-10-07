@@ -323,8 +323,15 @@ def test_real_model_transport_through_ordinary_run_and_session_with_fake_respons
 
     def post(url, **kwargs):
         calls.append(kwargs["json"])
-        stage, reply = replies.pop(0)
-        assert kwargs["json"]["text"]["format"]["name"] == stage
+        stage = kwargs["json"]["text"]["format"]["name"]
+        if stage == "localize":
+            from test_research_loop import synthetic_localization
+            reply = synthetic_localization(material_of(kwargs["json"]))
+        else:
+            expected, reply = replies.pop(0)
+            assert stage == expected
+            if stage == "answer" and isinstance(reply, dict):
+                reply = {key: value for key, value in reply.items() if key != "source_readings"}
         return response(reply if isinstance(reply, str) else json.dumps(reply), usage={
             "input_tokens": 100, "input_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0},
             "output_tokens": 20, "output_tokens_details": {"reasoning_tokens": 5},
@@ -349,7 +356,7 @@ def test_real_model_transport_through_ordinary_run_and_session_with_fake_respons
     assert first.answer == ANSWER_A + " [1]" and first.citations[0].url == URL_A
     assert not replies and not provider.fetches
     assert [(call["model"], call["reasoning"]["effort"]) for call in calls] == [
-        ("gpt-6-luna", "high") if call["text"]["format"]["name"] == "research"
+        ("gpt-6-luna", "high") if call["text"]["format"]["name"] in {"research", "localize"}
         else ("gpt-6.1-sol", "medium") for call in calls
     ]
     assert len({call["prompt_cache_key"] for call in calls if call["text"]["format"]["name"] == "research"}) == 1
@@ -360,5 +367,5 @@ def test_real_model_transport_through_ordinary_run_and_session_with_fake_respons
     assert "output_correction" in material_of(calls[1])
     assert calls[0]["prompt_cache_key"] == calls[1]["prompt_cache_key"]
     assert calls[0]["input"][0] == calls[1]["input"][0]
-    assert len(records) == len(calls) == (10 if session_mode else 4)
+    assert len(records) == len(calls) == (13 if session_mode else 5)
     assert sum(record.ordinary_uncached_tokens for record in records) == 100 * len(calls)

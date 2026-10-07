@@ -4,7 +4,17 @@ import json
 from copy import deepcopy
 
 import pytest
-from test_research_loop import answer, decision, multi_search, no_fetch, request, search
+from test_research_loop import (
+    answer,
+    decision,
+    failed_localization,
+    multi_search,
+    next_scripted,
+    no_fetch,
+    request,
+    search,
+    without_semantic_readings,
+)
 
 from scryraven.research import RunLimits, run
 from scryraven.sources import Evidence
@@ -12,12 +22,13 @@ from scryraven.sources import Evidence
 
 class RecordingModel:
     def __init__(self, *outputs):
-        self.outputs = iter(outputs)
+        self.outputs = list(outputs)
         self.calls = []
 
     def __call__(self, stage, prompt, packet, schema):
         self.calls.append((stage, prompt, deepcopy(packet), schema))
-        return json.dumps(next(self.outputs))
+        output = without_semantic_readings(stage, next_scripted(self.outputs, stage, packet), schema)
+        return json.dumps(output)
 
 
 def readings(*items):
@@ -30,19 +41,25 @@ def answer_calls(model):
 
 @pytest.mark.parametrize("posture", ["supported", "partial"])
 def test_evidence_answer_without_readings_is_corrected_in_same_contract(posture):
-    rejected = answer("REJECTED PROSE [E1]", posture, readings=[])
-    corrected = answer("The publication states seven. [E1]", posture)
-    model = RecordingModel(decision(), decision("answer", ["E1"]), rejected, corrected)
+    rejected = answer("REJECTED PROSE [E1]", posture)
+    rejected["source_readings"] = []
+    corrected = answer("The publication states seven. [E1]", posture, readings=[
+        {"evidence_ref": "E1", "passages": ["The stated value is seven."]}])
+    model = RecordingModel(
+        decision(), decision("answer", ["E1"]),
+        answer("The publication states seven. [E1]", posture), failed_localization(),
+        rejected, corrected)
 
     result = run("What does the publication state?", model=model, search=search, fetch=no_fetch)
 
-    first, second = answer_calls(model)
+    legacy = [call for call in answer_calls(model) if "source_readings" in call[3]["properties"]]
+    first, second = legacy
     assert first[1] == second[1] and first[3] == second[3]
     assert first[2]["evidence"] == second[2]["evidence"]
     assert second[2]["output_correction"]["code"] == "required_source_reading_missing"
     assert "REJECTED PROSE" not in json.dumps(second[2])
     assert result.posture == posture and result.answer == "The publication states seven. [1]"
-    assert result.trace[-1]["budget"]["semantic_attempts"] == 4
+    assert result.trace[-1]["budget"]["semantic_attempts"] == 5
 
 
 def test_every_cited_source_group_needs_a_validated_reading():
@@ -51,16 +68,19 @@ def test_every_cited_source_group_needs_a_validated_reading():
     rejected = answer("REJECTED PROSE [E1, E2]", readings=readings(("E1", first)))
     corrected = answer("The two facts differ. [E1, E2]",
                        readings=readings(("E1", first), ("E2", second)))
-    model = RecordingModel(decision(), decision("answer", ["E1", "E2"]), rejected, corrected)
+    model = RecordingModel(
+        decision(), decision("answer", ["E1", "E2"]),
+        answer("The two facts differ. [E1, E2]"), failed_localization("E1"),
+        rejected, corrected)
 
     result = run("Compare the two facts.", model=model, search=multi_search, fetch=no_fetch)
 
-    correction = answer_calls(model)[1][2]["output_correction"]
+    correction = answer_calls(model)[-1][2]["output_correction"]
     assert correction["code"] == "cited_source_without_reading"
     assert correction["source_ids"] == ["E2"]
-    assert "REJECTED PROSE" not in json.dumps(answer_calls(model)[1][2])
+    assert "REJECTED PROSE" not in json.dumps(answer_calls(model)[-1][2])
     assert [citation.source_id for citation in result.citations] == ["E1", "E2"]
-    assert result.trace[-1]["budget"]["semantic_attempts"] == 4
+    assert result.trace[-1]["budget"]["semantic_attempts"] == 5
 
 
 def test_targeted_view_reading_covers_its_canonical_citation_group():
@@ -114,8 +134,11 @@ def test_unable_answer_is_exempt_from_new_reading_requirement(basis):
 
 
 def test_no_remaining_answer_allowance_uses_operational_fallback():
-    invalid = answer("REJECTED PROSE [E1]", readings=[])
-    model = RecordingModel(decision(), decision("answer", ["E1"]), invalid, invalid)
+    invalid = answer("REJECTED PROSE [E1]")
+    invalid["source_readings"] = []
+    model = RecordingModel(
+        decision(), decision("answer", ["E1"]),
+        answer("The stated value is seven. [E1]"), failed_localization(), invalid)
 
     result = run("What does the source say?", model=model, search=search, fetch=no_fetch,
                  limits=RunLimits(semantic_attempts=4))
@@ -127,4 +150,4 @@ def test_no_remaining_answer_allowance_uses_operational_fallback():
     assert "REJECTED PROSE" not in result.answer
     assert result.trace[-1]["budget"]["semantic_attempts"] == 4
     assert len([event for event in result.trace
-                if event.get("code") == "required_source_reading_missing"]) == 2
+                if event.get("code") == "required_source_reading_missing"]) == 1
