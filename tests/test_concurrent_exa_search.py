@@ -14,7 +14,7 @@ from core.exa_transport import DiscoveryCandidate, ExaTransportError
 from core.transport import FetchedMaterial
 from scryraven.acquisition import AcquisitionLibrary
 from scryraven.dogfood_diagnostics import TurnDiagnostics
-from scryraven.research import ANSWER_PROMPT, RESEARCH_PROMPT, RunLimits, run
+from scryraven.research import RESEARCH_PROMPT, RunLimits, run
 from scryraven.sources import Evidence
 
 ALPHA = "Alpha fact is seven."
@@ -57,9 +57,7 @@ def test_prompt_and_decision_contracts_stay_byte_stable():
     assert hashlib.sha256(RESEARCH_PROMPT.encode()).hexdigest() == (
         "f038acc358829f11e2345d918a2a1d07cbe42d2b441981b58cac5d16bbf726fc"  # pragma: allowlist secret
     )
-    assert hashlib.sha256(ANSWER_PROMPT.encode()).hexdigest() == (
-        "b5bd95717485690e130a6c8060ba168b510862cd27ec5b617598d4992b4eabd9"  # pragma: allowlist secret
-    )
+
 
 
 def test_two_search_workers_enter_transport_together_and_out_of_order_completion_keeps_ids():
@@ -81,7 +79,7 @@ def test_two_search_workers_enter_transport_together_and_out_of_order_completion
     model = Script(
         decision(requests=[request(query="one"), request(query="two")]),
         decision("answer", ["E1"]),
-        answer(f"{ALPHA} [E1]", readings=[{"evidence_ref": "E1", "passages": [ALPHA]}]),
+        answer(f"{ALPHA} [E1]"),
     )
     result = run("What is the alpha fact?", model=model, search=search, fetch=no_fetch)
     library, serial = serial_library(batches, ("one", "two"))
@@ -494,7 +492,7 @@ def test_observer_failure_does_not_change_evidence_or_the_answer():
     def script():
         return Script(decision(requests=[request(query="one"), request(query="two")]),
                       decision("answer", ["E1"]),
-                      answer(f"{ALPHA} [E1]", readings=[{"evidence_ref": "E1", "passages": [ALPHA]}]))
+                      answer(f"{ALPHA} [E1]"))
 
     control = run("What is the alpha fact?", model=script(), search=search, fetch=no_fetch)
 

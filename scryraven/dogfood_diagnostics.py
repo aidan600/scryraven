@@ -22,11 +22,10 @@ from scryraven.errors import RunError
 from scryraven.session_store import SessionStoreError
 
 _SESSION_ID = re.compile(r"[0-9a-f]{32}\Z")
-_EVIDENCE_REF = re.compile(r"(?:E|D)[1-9][0-9]*(?:@[0-9]+:[0-9]+)?\Z")
 _MODEL_NAME = re.compile(r"(?:gpt|o[1-9])[-a-zA-Z0-9._]{1,70}\Z")
 _CACHE_FAMILY = re.compile(
-    r"sr-v1:(?:research|answer|localize):(?:research|answer|localize):[0-9a-f]{32}\Z")
-_CONTRACTS = {"research", "answer", "localize"}
+    r"sr-v1:(?:research|answer):(?:research|answer):[0-9a-f]{32}\Z")
+_CONTRACTS = {"research", "answer"}
 _POSTURES = {"supported", "partial", "unable"}
 _STOP_REASONS = {"supported", "not_established", "research_bound"}
 _PROVIDERS = {"exa", "serper", "linkup", "local"}
@@ -41,10 +40,10 @@ _CODES = {
     "basis_user_premises_has_evidence", "basis_user_premises_has_readings",
     "basis_user_premises_unable", "basis_none_requires_unable",
     "basis_evidence_missing_packet", "reading_passage_not_in_source",
-    "unselected_reading_reference", "required_source_reading_missing",
-    "missing_citation", "cited_source_without_reading", "deadline",
-    "malformed_localization", "citation_custody_failed", "citation_use_without_support",
-    "duplicate_support_region", "invalid_support_region", "invalid_support_coordinates",
+    "required_source_reading_missing",
+    "missing_citation", "deadline",
+    "citation_use_without_support",
+    "invalid_support_coordinates",
     "semantic_attempts", "external_attempts", "answer_deadline_reserve",
     "empty_question", "invalid_selected_material", "duplicate_selected_material",
     "empty_answer", "invalid_citation_reference", "malformed_citation_reference",
@@ -165,7 +164,6 @@ class TurnDiagnostics:
         self.corrections: dict[str, Counter[str]] = {
             "research": Counter(), "answer": Counter(),
         }
-        self.reading_rejections: list[dict] = []
         self.answer_returns = 0
         self.no_progress_commits = 0
         self.calculator_calls = 0
@@ -304,18 +302,6 @@ class TurnDiagnostics:
                             if action == "response_rejected" else "research")
                 if contract is not None:
                     self.corrections.setdefault(contract, Counter())[code] += 1
-        elif action == "answer_reading_rejected":
-            code = _one_of(event.get("code"), {
-                "reading_passage_not_in_source", "unselected_reading_reference",
-            })
-            if code is not None:
-                ref = event.get("evidence_ref")
-                self.reading_rejections.append({
-                    "code": code,
-                    "evidence_ref": ref if type(ref) is str and _EVIDENCE_REF.fullmatch(ref) else None,
-                    "reading_index": _nonnegative_int(event.get("reading_index")),
-                    "passage_index": _nonnegative_int(event.get("passage_index")),
-                })
         elif action == "answer_returned_to_research":
             self.answer_returns += 1
         elif action == "answer_committed_no_progress":
@@ -377,7 +363,6 @@ class TurnDiagnostics:
             "acquisitions": self.acquisitions,
             "search_concurrency_groups": self.search_concurrency_groups,
             "corrections": {contract: dict(counts) for contract, counts in self.corrections.items()},
-            "reading_rejections": self.reading_rejections,
             "answer_to_research_returns": self.answer_returns,
             "no_progress_commits": self.no_progress_commits,
             "calculator": {

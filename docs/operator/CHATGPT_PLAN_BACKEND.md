@@ -12,7 +12,7 @@ result = run("Your research question", model=model)
 ```
 
 Model-role settings, Research/Answer instructions, strict schemas, selected-source
-completion, deterministic Calculate, localization and publication remain the
+completion, deterministic Calculate and publication remain the
 ordinary production implementation. There is no API-key fallback; plan mode
 does not read `OPENAI_API_KEY`. `plan_auth=...` permits injection of the same
 approved Auth implementation for brokered operation and offline tests. Production

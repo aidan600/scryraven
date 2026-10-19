@@ -33,11 +33,9 @@ def tmp_path():
         yield Path(directory)
 
 
-
 def reopen(path, session_id, **kwargs):
     return ResearchSession.open(session_id, store=SQLiteSessionStore(path),
                                 **({"model": no_io, "search": no_io, "fetch": no_io} | kwargs))
-
 
 
 def opening(tmp_path):
@@ -111,7 +109,7 @@ def test_new_exact_view_after_reopen_preserves_historical_selected_text(tmp_path
         req.update(start_char=start, end_char=end)
         ref = f"E1@{start}:{end}"
         return (decision(requests=[req]), decision("answer", [ref]),
-                answer("Selected [" + ref + "]", readings=[{"evidence_ref": ref, "passages": [body[start:end]]}]))
+                answer("Selected [" + ref + "]"))
     provider = Provider([candidate()], bodies={"https://example.test/pressure-standard": body})
     session = ResearchSession.create(store=store, model=Script(decision(), *read_range(0, 16)), search=provider.search, fetch=provider.fetch)
     first = session.ask(Q1)
@@ -155,7 +153,6 @@ def test_cli_store_errors_do_not_print_unsaved_answers(tmp_path, monkeypatch, ca
     assert "session_store_unavailable" in output.err
 
 
-
 def test_sqlite_commit_failure_rolls_back_completed_result_and_memory(tmp_path, monkeypatch):
     path, original, _ = opening(tmp_path)
     before = SQLiteSessionStore(path).load(original.session_id)
@@ -178,7 +175,6 @@ def test_sqlite_commit_failure_rolls_back_completed_result_and_memory(tmp_path, 
     assert SQLiteSessionStore(path).load(original.session_id) == before
 
 
-
 def test_stale_writer_cannot_overwrite_winner_or_advance_its_own_memory(tmp_path):
     path, original, _ = opening(tmp_path)
     winner = reopen(path, original.session_id, model=Script(*local_turn()))
@@ -190,13 +186,11 @@ def test_stale_writer_cannot_overwrite_winner_or_advance_its_own_memory(tmp_path
     assert reopen(path, original.session_id).turns == winner.turns
 
 
-
 def mutate_payload(path, mutate):
     with closing(sqlite3.connect(path)) as connection, connection:
         payload = json.loads(connection.execute("SELECT payload FROM sessions").fetchone()[0])
         mutate(payload)
         connection.execute("UPDATE sessions SET payload = ?", (json.dumps(payload),))
-
 
 
 @pytest.mark.parametrize("mutate", [
@@ -228,7 +222,6 @@ def test_corrupt_product_state_fails_before_research_without_rewriting_data(tmp_
     assert path.read_bytes() == before
 
 
-
 @pytest.mark.parametrize("statement", [
     "UPDATE sessions SET revision = 8",
     "UPDATE sessions SET created_at = 'invalid'",
@@ -243,7 +236,6 @@ def test_invalid_metadata_and_json_are_safe(tmp_path, statement):
         reopen(path, session.session_id)
 
 
-
 @pytest.mark.parametrize("statement", ["PRAGMA user_version = 99", "CREATE TABLE unrelated (value TEXT)"])
 def test_unknown_schema_is_not_migrated_or_overwritten(tmp_path, statement):
     path = tmp_path / "incompatible.sqlite3"
@@ -253,7 +245,6 @@ def test_unknown_schema_is_not_migrated_or_overwritten(tmp_path, statement):
     with pytest.raises(SessionStoreError, match="^incompatible_session_store$"):
         SQLiteSessionStore(path).list_sessions()
     assert path.read_bytes() == before
-
 
 
 def test_missing_store_id_and_unreadable_database_return_fixed_errors(tmp_path):
@@ -269,7 +260,6 @@ def test_missing_store_id_and_unreadable_database_return_fixed_errors(tmp_path):
         SQLiteSessionStore(tmp_path).create()
 
 
-
 def test_default_path_is_external_and_ephemeral_run_never_opens_store(tmp_path, monkeypatch):
     repository = Path(__file__).resolve().parents[1]
     assert not default_session_path().resolve().is_relative_to(repository)
@@ -282,7 +272,6 @@ def test_default_path_is_external_and_ephemeral_run_never_opens_store(tmp_path, 
     assert session.session_id is None and session.metadata is None
     assert len(isolated.evidence) == 1 and isolated.evidence[0].id == "E1"
     assert not list(tmp_path.iterdir())
-
 
 
 @pytest.mark.parametrize("args", [[], [Q1, "--database", "unused"], [Q1, "--list-sessions"],

@@ -18,7 +18,7 @@ from core.exa_transport import DiscoveryCandidate
 from core.transport import FetchedMaterial
 from scryraven.errors import RunError
 from scryraven.model import _CALCULATOR_TOOL, ModelError, OpenAIModel, built_in_model_config
-from scryraven.research import ANSWER_PROMPT, RESEARCH_PROMPT, SEMANTIC_ANSWER_PROMPT, RunLimits, run
+from scryraven.research import ANSWER_PROMPT, RESEARCH_PROMPT, RunLimits, run
 from scryraven.session import ResearchSession
 from scryraven.session_store import SQLiteSessionStore
 
@@ -146,18 +146,12 @@ def plan_model(*replies):
     return model, auth
 
 
-def synthetic_localization(value):
-    return {use["id"]: [row["id"] for row in value["regions"]
-                        if row["source_id"] == use["source_id"] and row["text"].strip()][:1]
-            for use in value["citation_uses"]}
-
-
 def search(_query, **_kwargs):
     return [DiscoveryCandidate("Synthetic public standard", URL, HIGHLIGHT, context_kind="provider_highlights")]
 
 
 def test_plan_native_research_dependent_calculation_and_unknown_usage():
-    final = answer("30 units from the stipulated amount.", support_basis="user_premises", readings=[])
+    final = answer("30 units from the stipulated amount.", support_basis="user_premises")
     model, auth = plan_model(
         Reply("research", decision("answer"), headerless=True, empty_terminal=True),
         Reply("answer", tool="100 * 1.2", call_id="calc_a", empty_terminal=True),
@@ -191,7 +185,7 @@ def test_plan_native_research_dependent_calculation_and_unknown_usage():
     first_instructions = auth.calls[0]["input"][0]["content"][0]["text"]
     assert first_instructions == RESEARCH_PROMPT + "\nReturn only JSON matching the response schema, with no Markdown or commentary."
     answer_instructions = auth.calls[1]["input"][0]["content"][0]["text"]
-    assert answer_instructions == SEMANTIC_ANSWER_PROMPT + "\nWhen finished, return only JSON matching the response schema, with no Markdown or commentary."
+    assert answer_instructions == ANSWER_PROMPT + "\nWhen finished, return only JSON matching the response schema, with no Markdown or commentary."
     outputs = [item for item in auth.calls[-1]["input"] if item.get("type") == "function_call_output"]
     assert [(item["call_id"], json.loads(item["output"])) for item in outputs] == [
         ("calc_a", {"value": "120"}), ("calc_b", {"value": "30"})]
@@ -202,13 +196,13 @@ def test_plan_native_research_dependent_calculation_and_unknown_usage():
     assert result.trace[-1]["budget"]["semantic_attempts"] == 2
 
 
-def test_plan_selected_source_completion_citations_session_reopen_and_localization(tmp_path):
+def test_plan_selected_source_completion_citations_session_reopen_without_localization(tmp_path):
     model, auth = plan_model(
         Reply("research", decision()),
         Reply("research", decision(requests=[request("read", query="", target="E1", mode="full")])),
         Reply("research", decision("answer", ["E2"])),
         Reply("answer", answer("Seven units under sheltered conditions. [E2]"), empty_terminal=True),
-        Reply("localize", synthetic_localization, headerless=True),
+
     )
     store = SQLiteSessionStore(tmp_path / "plan-session.sqlite3")
     session = ResearchSession.create(store=store, model=model, search=search,
@@ -220,31 +214,14 @@ def test_plan_selected_source_completion_citations_session_reopen_and_localizati
     answer_packet = packet(auth.calls[3])
     assert [item["id"] for item in answer_packet["evidence"]] == ["E2", "E1"]
     assert [item["content"] for item in answer_packet["evidence"]] == [FULL_TEXT, HIGHLIGHT]
-    assert len(result.citation_uses) == 1 and result.citation_uses[0].support
+    assert len(result.citation_uses) == 1 and not result.citation_uses[0].support
     assert result.citations[0].materials == result.selected_evidence
     reopened = ResearchSession.open(session.session_id, store=store, model=model,
                                     search=forbidden, fetch=forbidden, lexical_search=forbidden)
     assert reopened.turns == session.turns and reopened.acquisitions == session.acquisitions
     assert [p["text"]["format"]["name"] for p in auth.calls] == [
-        "research", "research", "research", "answer", "localize"]
-    assert auth.calls[-1]["model"] == "gpt-6-luna" and auth.calls[-1]["reasoning"] == {"effort": "high"}
-
-
-def test_plan_invalid_localization_uses_unchanged_independent_legacy_fallback():
-    first = "Seven units with a qualification. [E1]"
-    def legacy(value):
-        assert first not in json.dumps(value)
-        return answer("Seven units under sheltered conditions. [E1]", readings=[
-            {"evidence_ref": "E1", "passages": [HIGHLIGHT]}])
-    model, auth = plan_model(
-        Reply("research", decision()), Reply("research", decision("answer", ["E1"])),
-        Reply("answer", answer(first)), Reply("localize", {"U1": []}), Reply("answer", legacy),
-    )
-    result = run("What quantity applies?", model=model, search=search, fetch=forbidden, lexical_search=forbidden)
-    assert result.answer == "Seven units under sheltered conditions. [1]"
-    assert all(not use.support for use in result.citation_uses)
-    assert any(event["action"] == "answer_legacy_fallback" for event in result.trace)
-    assert "source_readings" in auth.calls[-1]["text"]["format"]["schema"]["properties"]
+        "research", "research", "research", "answer"]
+    assert auth.calls[-1]["model"] == "gpt-6.1-sol" and auth.calls[-1]["reasoning"] == {"effort": "medium"}
 
 
 @pytest.mark.parametrize("reply", [Reply("answer", answer(), interrupted=True),

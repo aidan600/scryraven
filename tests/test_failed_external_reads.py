@@ -40,8 +40,7 @@ def test_receipts_survive_routes_and_focus_changes_without_suppressing_retries()
                            request("read", target="C3", mode="full")]),
         decision(requests=[request("find", query="recovered")]),
         decision("answer", ["E2"]),
-        answer("The recovered fact. [E2]", readings=[
-            {"evidence_ref": "E2", "passages": ["The recovered fact."]}]),
+        answer("The recovered fact. [E2]"),
     )
     result = run(
         f"Compare {URL} and {URL}/second and {URL}/success", model=model,

@@ -10,93 +10,30 @@ from test_research_loop import Script, answer, decision, no_fetch, request
 
 from scryraven import reading_room
 from scryraven.presentation import source_body_html
-from scryraven.research import run
 from scryraven.session import ResearchSession
 from scryraven.session_store import SessionStoreError, SQLiteSessionStore
-from scryraven.sources import Evidence, SupportRegion, support_text
-from scryraven.support import bind_support, localization_packet, region_spans
+from scryraven.sources import Evidence, SupportRegion
 
 BODY = "Opening context.\n\nAlpha is seven.\n\nA consequential exception applies.\n\nOmega is nine.\n\nEnd context."
 PARENT = Evidence("E1", "https://example.org/record", "Public record", BODY)
 DRAFT = "Alpha is seven, with the stated exception. [E1]\n\nOmega is nine. [E1]"
 
 
-class BoundModel(Script):
-    def __init__(self, binding=None):
-        super().__init__(decision(requests=[request("read", query="", target="E1", mode="local")]),
-                         decision("answer", ["E1"]), answer(DRAFT),
-                         answer("Legacy fact. [E1]", readings=[{"evidence_ref": "E1", "passages": ["Alpha is seven."]}]))
-        self.binding = binding
+def bound_result():
+    """Historical fixture: saved coordinates predate this publication change."""
+    from scryraven.results import CompletedAnswer, resolve_citations
 
-    def __call__(self, stage, prompt, material, schema):
-        if stage != "localize":
-            return super().__call__(stage, prompt, material, schema)
-        self.calls.append((stage, prompt, material, schema))
-        if self.binding is not None:
-            return json.dumps(self.binding)
-        ids = {row["text"].strip(): row["id"] for row in material["regions"]}
-        return json.dumps({"U1": [ids["Alpha is seven."], ids["A consequential exception applies."]],
-                           "U2": [ids["Omega is nine."]]})
+    prose, citations, uses = resolve_citations(DRAFT, [PARENT], [PARENT], [])
 
+    def region(text):
+        start = BODY.index(text)
+        return SupportRegion(PARENT.id, start, start + len(text),
+                             sha256(BODY.encode()).hexdigest(), sha256(text.encode()).hexdigest())
 
-def bound_result(binding=None):
-    model = BoundModel(binding)
-    result = run("What are Alpha and Omega?", model=model, retained_acquisitions=(PARENT,), fetch=no_fetch)
-    return model, result
-
-
-@pytest.mark.parametrize("text", [BODY, "x" * 7000, "🙂 e\u0301\r\n" * 800, "   \n\n", ""])
-def test_regions_partition_all_exact_saved_characters_without_ranking(text):
-    spans = list(region_spans(text))
-    assert "".join(text[start:end] for start, end in spans) == text
-    assert all(0 < end - start <= 1200 for start, end in spans)
-    assert all(left[1] == right[0] for left, right in zip(spans, spans[1:]))
-
-
-def test_repeated_source_uses_bind_different_noncontiguous_regions_after_answer():
-    model, result = bound_result()
-    assert [call[0] for call in model.calls] == ["research", "research", "answer", "localize"]
-    packet = model.calls[-1][2]
-    assert packet["answer"] == result.answer
-    assert "".join(row["text"] for row in packet["regions"]) == BODY
-    assert set(model.calls[-1][3]["properties"]) == {"U1", "U2"}
-    first, second = result.citation_uses
-    assert [support_text(region, PARENT).strip() for region in first.support] == [
-        "Alpha is seven.", "A consequential exception applies."]
-    assert [support_text(region, PARENT).strip() for region in second.support] == ["Omega is nine."]
-    assert first.number == second.number == 1
-    assert result.answer == DRAFT.replace("[E1]", "[1]")
-
-
-@pytest.mark.parametrize("binding", [
-    {"U1": [], "U2": ["S7"]},
-    {"U1": ["S999"], "U2": ["S7"]},
-    {"U1": ["S3"]},
-    {"U1": ["S3"], "U2": ["S7"], "quotation": "INVENTED_TEXT"},
-    {"U1": ["S3", "S3"], "U2": ["S7"]},
-])
-def test_failed_binding_publishes_only_the_existing_legacy_fallback(binding):
-    model, result = bound_result(binding)
-    assert result.answer == "Legacy fact. [1]"
-    assert all(not use.support for use in result.citation_uses)
-    assert model.calls[-1][0] == "answer" and "source_readings" in model.calls[-1][3]["properties"]
-    assert DRAFT not in json.dumps(model.calls[-1][2])
-    assert any(event["action"] == "answer_legacy_fallback" for event in result.trace)
-
-
-def test_cross_source_id_and_wrong_version_coordinates_are_rejected():
-    from scryraven.results import resolve_citations
-
-    other = Evidence("E2", "https://example.org/other", "Other", "Other actual fact.")
-    prose, citations, uses = resolve_citations("First [E1]. Other [E2].", [PARENT, other], [PARENT, other], [])
-    packet, addresses, shape = localization_packet(prose, citations, uses)
-    wrong_source = next(row["id"] for row in packet["regions"] if row["source_id"] == "E2")
-    with pytest.raises(ValueError, match="invalid_support_region"):
-        bind_support(shape.model_validate({"U1": [wrong_source], "U2": [wrong_source]}),
-                     packet, addresses, citations, uses)
-    region = next(iter(addresses.values()))
-    with pytest.raises(ValueError, match="invalid_support_coordinates"):
-        support_text(region, replace(PARENT, content="changed version"))
+    uses = (replace(uses[0], support=(region("Alpha is seven."),
+                                    region("A consequential exception applies."))),
+            replace(uses[1], support=(region("Omega is nine."),)))
+    return None, CompletedAnswer(prose, "supported", "supported", (PARENT,), (), (PARENT,), citations, uses)
 
 
 def saved_session(tmp_path):
@@ -184,13 +121,15 @@ def test_document_views_keep_exact_coordinates_and_original_pdf_action(tmp_path)
                           text_pdf(["Alpha is seven.", "Omega is nine."]))
     session = ResearchSession.open(session.session_id, store=store, model=model, fetch=no_fetch)
     result = session.ask("What does the document state?")
-    assert all(use.support for use in result.citation_uses)
-    selected = {item.id: item for item in result.selected_evidence}
-    for use in result.citation_uses:
-        for region in use.support:
-            assert support_text(region, selected[region.evidence_ref])
-            assert region.evidence_ref.startswith("D1@")
+    assert all(not use.support for use in result.citation_uses)
+    assert all(item.id.startswith("D1@") and item.document_id == "D1"
+               for item in result.selected_evidence)
+    assert result.citations[0].page_start == 1 and result.citations[0].page_end == 2
     restored = ResearchSession.open(session.session_id, store=SQLiteSessionStore(store.path))
     assert restored.turns[0].citation_uses == result.citation_uses
-    html = reading_room.create_app(store=store).test_client().get(f"/sessions/{session.session_id}").get_data(as_text=True)
-    assert "Open original PDF" in html and "Support for this citation" in html
+    client = reading_room.create_app(store=store).test_client()
+    html = client.get(f"/sessions/{session.session_id}").get_data(as_text=True)
+    original = client.get(f"/sessions/{session.session_id}/documents/D1/original")
+    assert original.status_code == 200 and original.data == restored.documents[0].original_pdf
+    assert "Open original PDF" in html and "Support for this citation" not in html
+    assert "Material ScryRaven used from this source" in html

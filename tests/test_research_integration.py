@@ -41,7 +41,7 @@ def test_ordinary_engine_reopens_with_prior_cited_material_without_acquisition()
         assert second.evidence == first.evidence
         assert second.citations[0].materials == first.citations[0].materials
         assert second.trace[-1]["budget"]["external_attempts"] == 0
-        assert [call[0] for call in followup_model.calls] == ["research", "answer", "localize"]
+        assert [call[0] for call in followup_model.calls] == ["research", "answer"]
         initial_packet = followup_model.calls[0][2]
         final_packet = next(call[2] for call in followup_model.calls if call[0] == "answer")
         assert initial_packet["working_understanding"] is None
@@ -77,9 +77,6 @@ def test_multispan_answer_remains_neutral_and_durable_in_a_real_v2_session():
                           "First exact passage. A material qualification applies.",
                           acquisition="provider_highlights")
         final = answer("First qualified fact. [E1]")
-        final["source_readings"] = [{"evidence_ref": "E1", "passages": [
-            "First exact passage.", "A material qualification applies.",
-        ]}]
         model = Script(
             decision(),
             decision("answer", ["E1"]),
@@ -114,9 +111,6 @@ def test_oversized_exact_read_can_be_delivered_or_revised_without_pending_deadlo
 
     def model(stage, prompt, packet, schema):
         calls.append((stage, packet))
-        if stage == "localize":
-            from test_research_loop import synthetic_localization
-            return json.dumps(synthetic_localization(packet))
         if stage == "answer":
             evidence = packet["evidence"]
             output = (answer(f"A documented observation. [{evidence[0]['id']}]") if evidence
@@ -144,8 +138,7 @@ def test_final_selection_of_shelved_material_is_bounded_and_revisable():
     model = Script(
         decision(), decision(), decision(),
         decision("answer", ["E1", "E2", "E3"]),
-        decision("answer", ["E1"]), answer("A limited source-based answer. [E1]", readings=[
-            {"evidence_ref": "E1", "passages": ["Text Text"]}]),
+        decision("answer", ["E1"]), answer("A limited source-based answer. [E1]"),
     )
     result = run("Read the sources", model=model, search=several_sources, fetch=no_io,
                  limits=RunLimits(attention_characters=65536))
@@ -176,7 +169,7 @@ def test_observer_cannot_change_model_evidence_execution_or_returned_trace(obser
     model = Script(decision(), decision("answer", ["E1"]), answer())
     result = run("What is the value?", model=model, search=search, fetch=no_io, observe=observer)
     assert notifications and result.posture == "supported"
-    assert [call[0] for call in model.calls] == ["research", "research", "answer", "localize"]
+    assert [call[0] for call in model.calls] == ["research", "research", "answer"]
     for call in [call for call in model.calls[1:] if call[0] != "localize"]:
         assert call[2]["evidence"][0]["content"] == "The stated value is seven."
     assert model.calls[1][2]["last_route"][0]["material_ids"] == ["E1"]
