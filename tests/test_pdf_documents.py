@@ -317,7 +317,6 @@ def test_local_read_and_find_stay_bounded_and_off_provider_budget():
         item = material["evidence"][0]
         return answer(
             f"The report's revenue figure uses the fiscal year 1998 denominator. [{item['id']}]",
-            readings=[{"evidence_ref": item["id"], "passages": [QUALIFICATION]}],
         )
 
     result = run(
@@ -358,8 +357,7 @@ def test_find_keeps_document_and_web_identities_distinct():
 
     def respond(material):
         item = material["evidence"][0]
-        return answer(f"The denominator is fiscal year 1998. [{item['id']}]",
-                      readings=[{"evidence_ref": item["id"], "passages": [QUALIFICATION]}])
+        return answer(f"The denominator is fiscal year 1998. [{item['id']}]")
 
     scoped = request("find", query="fiscal year 1998 denominator")
     scoped["scope"] = ["D1"]
@@ -384,8 +382,7 @@ def test_find_keeps_document_and_web_identities_distinct():
 
     def respond_berth(material):
         item = material["evidence"][0]
-        return answer(f"The document says nine meters. [{item['id']}]",
-                      readings=[{"evidence_ref": item["id"], "passages": [BERTH]}])
+        return answer(f"The document says nine meters. [{item['id']}]")
 
     unscoped = request("find", query="meters")
     mixed = run("Locate both notices.", model=Script(decision(requests=[unscoped]), inspect, respond_berth),
@@ -408,8 +405,7 @@ def test_followup_reopens_the_same_document_without_reupload(tmp_path):
 
     def respond(material):
         item = material["evidence"][0]
-        return answer(f"The document says the crane count is 14. [{item['id']}]",
-                      readings=[{"evidence_ref": item["id"], "passages": [CRANE]}])
+        return answer(f"The document says the crane count is 14. [{item['id']}]")
 
     first_page = {**request("read", query="", target="D1", mode="local"),
                   "start_char": 0, "end_char": len(document.pages[0])}
@@ -439,8 +435,7 @@ def test_followup_reopens_the_same_document_without_reupload(tmp_path):
 
     def respond_spare(material):
         item = material["evidence"][0]
-        return answer(f"The count excludes spare units. [{item['id']}]",
-                      readings=[{"evidence_ref": item["id"], "passages": [SPARE]}])
+        return answer(f"The count excludes spare units. [{item['id']}]")
 
     reopened = ResearchSession.open(
         created.metadata.session_id, store=SQLiteSessionStore(store.path),
@@ -511,10 +506,6 @@ def test_discontiguous_document_pages_stay_exact_after_reopen(tmp_path):
         return answer(
             f"The document states a crane count of 14. [{chosen[0]['id']}] "
             f"It excludes returned units. [{chosen[1]['id']}]",
-            readings=[
-                {"evidence_ref": chosen[0]["id"], "passages": [early]},
-                {"evidence_ref": chosen[1]["id"], "passages": [late]},
-            ],
         )
 
     session = ResearchSession.open(
@@ -580,10 +571,6 @@ def test_document_and_web_citations_resolve_without_a_fake_url():
         return answer(
             f"The document says the berth clearance is nine meters. [{document_item['id']}] "
             f"The web source says the harbor depth is twelve meters. [{web_item['id']}]",
-            readings=[
-                {"evidence_ref": document_item["id"], "passages": [BERTH]},
-                {"evidence_ref": web_item["id"], "passages": [HARBOR]},
-            ],
         )
 
     result = run(
@@ -628,7 +615,6 @@ def test_documents_do_not_consume_deep_or_disable_web_search(monkeypatch):
             lambda material: decision("answer", [material["evidence"][0]["id"]]),
             lambda material: answer(
                 f"The document says revenue was 184 million dollars. [{material['evidence'][0]['id']}]",
-                readings=[{"evidence_ref": material["evidence"][0]["id"], "passages": [PAGE_FACT]}],
             ),
         ),
         documents=(document,), search=no_provider, fetch=no_provider, lexical_search=no_provider,

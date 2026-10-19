@@ -31,7 +31,7 @@ from scryraven.session import ResearchSession
 SUFFIX = "\nReturn only JSON matching the response schema, with no Markdown or commentary."
 FAMILIES = [
     ("research", "research", research.RESEARCH_PROMPT, "", research.ResearchDecision),
-    ("answer", "answer", research.ANSWER_PROMPT, "", research.AnswerDecision),
+    ("answer", "answer", research.ANSWER_PROMPT, "", research.SemanticAnswerDecision),
 ]
 
 
@@ -205,7 +205,7 @@ def test_research_top_level_order_does_not_apply_to_answer_or_manufacture_absent
     material = {"phase": "answer", "question": Q2, "z_future": [2, 1],
                 "evidence": [{"content": BODY, "id": "E1"}], "a_future": "kept"}
     model("answer", research.ANSWER_PROMPT, material,
-          research.AnswerDecision.model_json_schema())
+          research.SemanticAnswerDecision.model_json_schema())
     parsed = material_of(calls[0])
     assert parsed == material
     assert list(parsed) == ["phase", "question", "a_future", "evidence", "z_future"]
@@ -317,21 +317,15 @@ def test_real_model_transport_through_ordinary_run_and_session_with_fake_respons
     outputs = list(first_turn(highlights=True))
     if session_mode:
         outputs += list(local_turn()) + [decision(), decision("answer", ["E2"]),
-                                         answer(FACT_C + " [E2]", readings=[{"evidence_ref": "E2", "passages": [FACT_C]}])]
+                                         answer(FACT_C + " [E2]")]
     replies = [("research" if "understanding" in output else "answer", output) for output in outputs]
     replies.insert(0, ("research", '{"understanding":'))
 
     def post(url, **kwargs):
         calls.append(kwargs["json"])
         stage = kwargs["json"]["text"]["format"]["name"]
-        if stage == "localize":
-            from test_research_loop import synthetic_localization
-            reply = synthetic_localization(material_of(kwargs["json"]))
-        else:
-            expected, reply = replies.pop(0)
-            assert stage == expected
-            if stage == "answer" and isinstance(reply, dict):
-                reply = {key: value for key, value in reply.items() if key != "source_readings"}
+        expected, reply = replies.pop(0)
+        assert stage == expected
         return response(reply if isinstance(reply, str) else json.dumps(reply), usage={
             "input_tokens": 100, "input_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0},
             "output_tokens": 20, "output_tokens_details": {"reasoning_tokens": 5},
@@ -356,7 +350,7 @@ def test_real_model_transport_through_ordinary_run_and_session_with_fake_respons
     assert first.answer == ANSWER_A + " [1]" and first.citations[0].url == URL_A
     assert not replies and not provider.fetches
     assert [(call["model"], call["reasoning"]["effort"]) for call in calls] == [
-        ("gpt-6-luna", "high") if call["text"]["format"]["name"] in {"research", "localize"}
+        ("gpt-6-luna", "high") if call["text"]["format"]["name"] in {"research"}
         else ("gpt-6.1-sol", "medium") for call in calls
     ]
     assert len({call["prompt_cache_key"] for call in calls if call["text"]["format"]["name"] == "research"}) == 1
@@ -367,5 +361,5 @@ def test_real_model_transport_through_ordinary_run_and_session_with_fake_respons
     assert "output_correction" in material_of(calls[1])
     assert calls[0]["prompt_cache_key"] == calls[1]["prompt_cache_key"]
     assert calls[0]["input"][0] == calls[1]["input"][0]
-    assert len(records) == len(calls) == (13 if session_mode else 5)
+    assert len(records) == len(calls) == (10 if session_mode else 4)
     assert sum(record.ordinary_uncached_tokens for record in records) == 100 * len(calls)

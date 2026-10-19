@@ -159,78 +159,40 @@ answer is not supplied as Research authority. Materially changed selected Eviden
 starts a fresh Answer-stage allowance; unchanged selection retains no-progress
 protection.
 
-The primary semantic Answer is `SemanticAnswerDecision`: posture, `support_basis`,
-answer, and `missing_information`. It does not output `source_readings`. Sol,
-through the existing Answer model role, owns meaning, prose, adequacy, and
-citations. It reads the supplied Evidence before composing and cites exact
-Evidence aliases beside supported factual claims. A separate localization step
-may run only after that semantic decision is frozen.
+The Answer contract is `SemanticAnswerDecision`: posture, `support_basis`,
+answer, and `missing_information`. Sol, through the existing Answer model role,
+owns meaning, prose, adequacy and citations. It reads the supplied Evidence before
+composing and cites exact supplied aliases beside supported factual claims.
+A completed valid Answer proceeds directly to deterministic citation resolution
+and publication. No model localizes passages, copies `source_readings`, or
+regenerates an otherwise valid whole answer for presentation.
 
-Before localization, the semantic checks that do not depend on `source_readings`
-still apply: schema, supported posture together with consequential
-`missing_information`, `support_basis` consistency, the Evidence requirement,
-citation alias syntax and custody, and required citation presence. An invalid
-semantic Answer may receive one correction under the Answer-stage deadline and
-semantic allowance. A malformed or rejected semantic decision is not localized.
+The existing schema, posture/need and support-basis checks remain. A missing
+required Evidence citation receives the existing single correction; all invalid
+primary response categories share that allowance and the Answer-stage deadline.
+Invalid aliases, unavailable selected versions and custody failures still reject
+publication through the unchanged citation resolver. Exhausted correction yields
+the fixed operational inability message, with no rejected prose, selected support
+or citations. Custody/membership is not a semantic entailment check.
 
-If a valid semantic Answer returns consequential `missing_information` and the
-existing budget and no-progress rules permit another Research round, that need
-returns to Research immediately. Localization does not run, and the provisional
-answer is not supplied as Research authority. Unchanged selection keeps the
-no-progress protection and publishes that provisional answer without localization
-and without a legacy Answer call. Materially changed selected Evidence starts a
-fresh Answer-stage allowance.
+A valid consequential `missing_information` need may return to Research under
+the existing budget and no-progress rules. The provisional answer is not Research
+authority. Unchanged selection preserves no-progress protection; materially changed
+selected Evidence receives a fresh Answer allowance.
 
-A terminal evidence-backed supported or partial Answer freezes its prose,
-posture, `support_basis`, `missing_information`, and citation aliases. Code first
-resolves the final numbered answer and individual `CitationUse` occurrences,
-then mechanically partitions all exact material in its cited source snapshots.
-The regions exhaust the full saved text, preserve its characters, and contain
-no semantic ranking, lexical top-k selection or answer-independent preselection.
-Line/sentence boundaries are preferred; long unbroken text is split mechanically.
-No publication page boundaries are invented.
+With empty Evidence, a supported or partial conditional derivation may use explicit
+user premises without citations. Mixed premise-and-Evidence answers use the
+`evidence` basis and cite external claims. The `none` basis requires unable
+posture. User premises and previous assistant prose do not become Evidence.
 
-Luna, using the existing Research model-role settings as transport only, receives
-the frozen answer, each occurrence's paragraph context, saved material identity,
-and all region IDs and exact text. On stage `localize` it returns only the mapping
-of every temporary U ID to S IDs from that occurrence's cited source. It selects
-support and material qualifications, including noncontiguous conditions and
-exceptions. It cannot rewrite, approve, reject or reinterpret the answer, and
-has no calculator. This is not a Research decision or a third persistent role.
-
-Deterministic validation requires complete occurrence coverage and rejects empty,
-unknown, duplicate, cross-source or malformed bindings. Code resolves IDs into
-exact Evidence references and half-open Python character coordinates relative to
-that saved material, with SHA-256 hashes of both the complete material and selected
-substring encoded as UTF-8. No model-written quotation or temporary U/S ID enters
-durable product state. Identity/custody validation is not semantic entailment.
-
-Localization failure discards the semantic decision for publication and falls
-back once to the existing `AnswerDecision` contract, `ANSWER_PROMPT`, and
-`source_readings` validation on the same completed Evidence packet. The fallback
-receives no hint from the discarded answer or the localizer. It is a real
-semantic Answer request. Localization is not: at most one localizer request per
-accepted terminal semantic Answer, and it does not consume `semantic_attempts`.
-A fallback receives a fresh 120-second Answer-stage ceiling bounded by remaining
-whole-run time. Legacy validation still shares one correction across its invalid
-categories, including literal readings. If that legacy Answer fails under the
-existing validation and time rules, the turn keeps the operational inability
-behavior: fixed message, no rejected prose, no citations, no selected supporting
-Evidence, and `answer_validation_exhausted` in the safe trace.
-
-User-premise answers with no Evidence, and unable answers, do not call the
-localizer. The legacy `user_premises` path still requires an empty Evidence
-packet and empty `source_readings`. A supported or partial user-premise answer
-may derive solely from explicit user premises without a citation. This does not
-verify those premises externally or permit model memory to fill an omitted fact.
-An answer that mixes user premises with external factual support uses `evidence`
-and cites external claims. The `none` basis has unable posture and no supported
-conclusion. Mechanical checks prove literal membership or basis shape, not
-sufficient scope or semantic entailment. Final citation resolution and rendering
-follow the accepted Answer. Luna is not a verifier or prose polisher.
+New citation uses have no passage coordinates. They open the exact selected
+saved source material through the generic Reader, with original publication or
+retained PDF/page actions. They make no exact highlighted-support claim.
+Historical support coordinates, source snapshots and hash validation remain
+readable and render their saved occurrence-specific support without inference.
 
 The same Answer semantic owner may call a bounded deterministic local arithmetic
-calculator while preparing an `AnswerDecision`. It may use numeric values from
+calculator while preparing a `SemanticAnswerDecision`. It may use numeric values from
 selected Evidence, explicit user premises, and prior results from that Answer
 attempt. A tool result returns to that Answer role; dependent calls can follow.
 The local parser accepts bounded arithmetic expressions only. It computes exact
@@ -240,8 +202,7 @@ The calculator interprets neither sources nor provenance and creates no Evidence
 item or alias. Results are derived computation. Externally factual quantitative
 claims still cite the selected material establishing their inputs, and arithmetic
 cannot supply an absent contingent external premise. Research has no calculator
-tool, and neither does support localization. The primary semantic Answer uses
-the same Answer-stage calculator. A calculator stop and its model continuation remain inside one Answer
+tool. A calculator stop and its model continuation remain inside one Answer
 semantic attempt, without using the one validation correction. Each underlying
 Responses request still obeys its timeout and the remaining Answer-stage and
 whole-run deadlines. Reported per-request usage is aggregated for that semantic
@@ -503,8 +464,8 @@ The Reader renders exact retained Evidence: that use's support first, expandable
 surrounding context second, then the full saved material. The original source
 or PDF action remains prominent. Source-overview inspection remains generic.
 Reopening and inspection do not invoke models, fetch current publication text,
-or relocalize support. These presentation fallbacks do not grant publication
-eligibility to a new semantic answer whose localization failed.
+or generate support coordinates. New answers use the generic saved-material Reader;
+historical localized turns retain their original occurrence-specific support.
 
 The Reading Room and CLI disclose that no external sources were used for
 completed source-free supported/partial answers. Presentation derives this from
@@ -542,20 +503,14 @@ family remain intact.
 An optional observer receives normalized public events: bounded structured
 decisions, field-specific rejected-decision diagnostics, selected requests and
 acquisition outcomes, budget facts, exact acquired/exposed public material,
-verified literal legacy answer-reading selections, exact resolved localization spans,
-and exposure IDs, lengths and hashes. It never
-receives raw provider responses or hidden reasoning. The small returned trace
-excludes source bodies; exact bodies can be captured separately through the
-observer when an authorized development observation needs them. A rejected
-literal passage also generates an observer-only `source_body=True` event with
-its attempted text, reading coordinates, and selected Evidence content hash and
-length. The ordinary trace, body-free dogfood diagnostics, durable sessions and
-public presentation do not receive that rejected text. Successful readings do
-not generate rejected-reading detail events. The literal matcher is unchanged.
+and exposure IDs, lengths and hashes. It never receives raw provider responses
+or hidden reasoning. The small returned trace excludes source bodies; exact
+bodies can be captured separately through the observer when an authorized
+development observation needs them.
 
 Reading Room's optional `--forensic-log PATH` writes the ordinary observer stream
 to a distinct local JSONL file for development review. Its source-bearing events
-can reconstruct acquired/exposed material, Research selections, Answer readings,
+can reconstruct acquired/exposed material, Research selections, response
 rejections, timing and available model telemetry. Each line includes the session,
 attempted turn, process run and event sequence. It receives no raw provider
 payloads or hidden reasoning, and it feeds nothing back into the engine, session

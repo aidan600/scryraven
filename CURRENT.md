@@ -31,8 +31,8 @@ roughly two-page editorial ceiling rather than a length rule or fixed outline.
 Simple lookups remain direct and compact. Quantitative answers explain how inputs
 determine the result; comparisons retain what each supplied quantity represents,
 including observed versus modeled status. Partial answers explain which gaps a
-missing input would resolve and which incompatibilities would remain. Reading
-selection supports the complete synthesis. No coverage schema or additional actor
+missing input would resolve and which incompatibilities would remain. Answer's fresh
+reading supports the complete synthesis. No coverage schema or additional actor
 is introduced. The default promotes a preference that yielded two developed
 answers in a frozen direct-Answer probe. Exa Evidence-Objective Search 01 later
 exercised it in three completed ordinary answers and one separately recovered
@@ -95,7 +95,7 @@ ChatGPT-plan backend with the existing sign-in flow and Windows CurrentUser DPAP
 vault. The CLI and Reading Room have no transport selector; their existing model
 injection seam can use the explicitly selected backend. No API-key or billing
 fallback exists. Research/Answer contracts, calculator continuations, citation
-validation, localization and source/session behavior remain unchanged.
+validation and source/session behavior remain production responsibilities.
 Plan requests stream with `store=false`, omit the unsupported output-token cap,
 API cache extensions and service overrides, and promise no equivalent caching or
 service tier. API requests retain their 12,000-token output cap. Stream completion
@@ -279,7 +279,7 @@ experiment evidence remains under ignored `local-evals/runs/dynamic-highlights-0
 ## Sessions, Evidence and presentation
 
 Immutable acquisitions, canonical source identities, exact versions/views,
-literal Answer readings, deterministic citations and historical selected-material
+deterministic citations, historical passage support and selected-material
 snapshots survive. Follow-ups start fresh Research/Answer decisions and can reread
 retained actual Evidence without external acquisition. The first Research call of
 a follow-up receives the exact actual material cited by the immediately preceding
@@ -300,8 +300,8 @@ source order. Completion is all-or-nothing within the existing 128,000-character
 Evidence allowance: an over-limit proposal leaves the seed packet unchanged.
 No semantic ranking, version preference, summarization or new owner is involved.
 Provisional Answer no-progress compares the effective completed packet; Research
-reentry attention still uses its ordinary seed choice. Literal readings, citation
-validation and saved source snapshots use the completed packet actually supplied
+reentry attention still uses its ordinary seed choice. Citation validation
+and saved source snapshots use the completed packet actually supplied
 to Answer. A body-free trace receipt records seed/appended refs, final content
 characters and completion status; no durable session state is added.
 Unscoped Find ranks actual retained acquisition regions on
@@ -320,76 +320,61 @@ assistant answers are discourse context only; they cannot silently become
 premises. A user's explicit adoption of a prior assistant value can define a new
 scenario premise without verifying that value externally.
 Research chooses and acquires Evidence. Selected-source completion widens only
-within chosen source identities. The primary semantic Answer,
-`SemanticAnswerDecision`, has posture, `support_basis`, answer, and
-`missing_information`, and no `source_readings`. Sol, on the existing Answer
-model role, owns meaning, prose, adequacy, and citations. Luna, using the
-existing Research model-role settings as transport only, performs
-non-authoritative exact support localization on stage `localize`. That stage is
-not a Research decision and is not a third persistent model role. Deterministic
-checks validate literal custody. Localization does not consume
-`semantic_attempts` and runs at most once per accepted terminal semantic Answer.
-A consequential `missing_information` Answer returns to Research before any
-localization when budget and no-progress rules allow another round. Unchanged
-selection still publishes that provisional answer without localization.
-User-premise answers with no Evidence, and unable answers, skip localization.
+within chosen source identities. Answer independently owns meaning, interpretation,
+prose, completeness, supported/partial/unable posture, consequential missing needs
+and citations. The existing `SemanticAnswerDecision` schema and Evidence packet
+are unchanged. A completed valid primary Answer now publishes directly through
+the strict deterministic citation resolver. Mandatory model localization, its
+region/use mapping machinery, automatic legacy whole-answer regeneration,
+executable `source_readings` schema and literal-reading correction machinery are
+removed. No replacement model call, validator or semantic owner is introduced.
+The sole Answer prompt retains the former primary semantic instructions, removing
+only its obsolete announcement of a later localization step. Removing that
+sentence changes the instruction-derived Answer cache identity; cache breakpoints
+and the ordinary API transport remain unchanged.
 
-A terminal evidence-backed supported or partial Answer is localized only after
-its semantic decision and individual citation occurrences are frozen. Code
-partitions the entire cited saved material into exact addressable regions without
-ranking, clipping or selecting support. Luna receives the final answer,
-citation-use contexts and every region; it returns only a use-ID to region-ID
-mapping. Every occurrence must bind to at least one valid region from its own
-source. Unknown IDs, malformed mappings, duplicate regions and insufficient
-bindings discard the semantic decision for publication and fall back once to the
-existing `AnswerDecision`, `ANSWER_PROMPT`, and `source_readings` path on the same
-completed Evidence packet, with no hint from the discarded answer or localizer.
-That fallback is a semantic Answer request and receives a fresh Answer-stage
-ceiling bounded by remaining whole-run time. Its one-correction behavior is
-unchanged. If it fails, the turn keeps the operational inability message and
-`answer_validation_exhausted` trace.
+Unknown citation aliases, unsupplied versions and invalid selected-material custody
+still reject publication. Missing required citations and invalid Answer shapes
+share the existing one-correction allowance and Answer-stage deadline. Exhaustion
+retains the fixed operational inability message and `answer_validation_exhausted`
+trace, with no rejected prose, citations or selected support. A supported verdict
+with consequential `missing_information` remains an Answer-shape error. A valid
+need may return to Research under unchanged budget/no-progress rules. Empty-Evidence
+explicit user-premise derivations remain distinct from external factual support;
+neither user premises nor previous assistant prose become Evidence. Calculator,
+Research semantics, acquisition, source selection and the API output cap are unchanged.
 
-Successful normal localization resolves temporary IDs into use-specific support
-coordinates, exact material references, and SHA-256 material/passage hashes.
-These coordinates are durable; Luna quotations and temporary use/region IDs are
-not. Reopen validates ranges, source membership and exact hashes against retained
-Evidence without model or provider I/O. Reading Room citation clicks display that
-occurrence's exact support first, expandable surrounding context second, and
-full saved material third, with the original publication or PDF action prominent.
-At widths of at least 1,024 px, the Reader occupies a 560–780 px companion pane;
-the Answer yields space and the history column yields on laptops. Below that
-breakpoint the Reader fills the screen. Support is highlighted within exact
-retained source prose; PDF support identifies its saved Evidence page or page
-range without deriving pages from character offsets. Standalone HTML uses the
-same highlighting and occurrence-specific inspection. Offline browser checks
-at nine widths from 320 to 1,920 px verified exact support, generic source overview,
-keyboard return and no horizontal overflow; this presentation review fix made
-no additional model or PRODUCT calls.
-Old turns and legacy-fallback turns without coordinates retain generic saved-source
-inspection. This presentation fallback does not change new-answer publication
-eligibility. Two ordinary Reading Room turns at runtime revision
-`30889acc1783608dae653e8e05d0b023fe5e1ae7` exercised public-web and uploaded-PDF
-material. All fourteen citation occurrences retained exact support, with no
-legacy fallback. A fresh process without credentials reopened both sessions;
-desktop/mobile Reader clicks matched every occurrence's exact saved support.
-Offline checks cover malformed/insufficient binding fallback, old-turn generic
-inspection and corrupted coordinate/hash rejection. This bounded sample does
-not establish general semantic localization reliability. The phase evidence is
-recorded in `docs/operator/CITATION_READER_DURABLE_SUPPORT_PRODUCT_01.md`.
+New citations open the exact selected saved material through the existing generic
+Reader, with its original publication or retained PDF and selected-page identity.
+They have no passage coordinates or highlighted-support claim. Historical citation
+records, occurrence-specific support coordinates and material/passage hashes remain
+readable and validated on reopen, without model/provider I/O or payload rewriting.
+Historical localized turns still show their saved support and surrounding context.
+The Reader's existing desktop/mobile layout and source overview are unchanged.
+Earlier public-web/PDF localization observations remain historical evidence in
+`docs/operator/CITATION_READER_DURABLE_SUPPORT_PRODUCT_01.md`.
 
-With an empty Evidence packet, a supported or partial conditional derivation may
-use only explicit user premises, empty source readings and no Evidence citations.
-An answer mixing user premises with external factual support uses the evidence
-basis and cites its external claims. An Answer that declares both supported
-posture and a consequential `missing_information` need is corrected as an
-Answer-shape error; it does not create a Research round trip or mechanically
-change the posture. Literal-reading corrections on the legacy path identify the
-failed reference and reading/passage indexes without copying the rejected
-passage into the correction or safe trace. Localization passage rejections use
-the same boundary: a safe trace event plus a `source_body=True` observer record.
-Ordinary traces, dogfood records, sessions and presentation remain body-free for
-that diagnostic.
-Neither path promotes user premises or prior assistant prose into Evidence.
+Six authentic frozen campaign primary Answer packets replay with identical primary
+prose (apart from ordinary alias numbering) and exact cited selected materials.
+The original traces contain nine now-obsolete dispatched requests, reporting
+166,683 input tokens and 11,441 output tokens; their public serialized projections
+contain 570,138 UTF-8 bytes. These are removed observed workloads, not replay-derived
+wall-time savings or a general reliability claim. See
+`docs/operator/ANSWER_FINALIZATION_SIMPLIFICATION_01.md` for verification and limits.
+
+Two bounded plan-backed Answer confirmations used the exact registered IMO and
+EU Data Act questions and selected public Evidence, with no new acquisition.
+Data Act completed as partial, preserving its completed primary return and exact
+source bindings through production finalization, durable save/reopen and Reader
+rendering. IMO failed `answer:model_transport_failed` before returning an Answer;
+its generation and usage remain unknown. Neither confirmation was retried.
+Two physical plan requests were attempted: Data Act reported 12,937 input and
+2,052 output tokens (163 reasoning tokens included); IMO counters were absent.
+Zero API-billed model requests, product Search/Read, embeddings or evaluator calls
+were made. This is direct-Answer confirmation, not fresh end-to-end Research or
+proof of general factual or transport reliability. Offline checks cover web/PDF
+inspection, calculator continuations, correction bounds, historical support,
+follow-ups and exact source-version rejection.
 
 Durable SQLite sessions retain atomic revision-checked commits, reopen/history,
 rename/delete and failure isolation. Native turns use `analysis: null` in the
@@ -457,15 +442,15 @@ launch; a later write failure disables only diagnostics while the completed
 research session remains intact. The same diagnostics supported ordinary live
 latency observations. Opt-in `--forensic-log PATH` adds a separate local,
 development-only JSONL sink for the ordinary engine's observer events. It may
-retain acquired and exposed source text, selected readings, rejected attempted
-passages and Research decisions, correlated by session, attempted turn, process
+retain acquired and exposed source text and Research decisions, correlated by
+session, attempted turn, process
 run and event sequence. It does not capture raw provider payloads or hidden
-reasoning. The body-free dogfood projection and durable session schema are
-unchanged; a forensic write failure disables only that sink. Log paths that
+reasoning. The dogfood projection omits retired reading-rejection bookkeeping;
+the durable session schema is unchanged; a forensic write failure disables only that sink. Log paths that
 alias one another or the session database are rejected at launch. The
 development launcher creates isolated runs under `C:\tmp\scryraven-forensic`;
 cleanup selects one exact child run explicitly. This instrumentation makes
-ordinary failures reconstructable and does not repair source-reading failures.
+ordinary failures reconstructable and does not establish semantic source support.
 Explicit forensic observation also records each Answer calculator expression and
 its deterministic result or error in sequence. Ordinary traces and dogfood
 diagnostics retain only body-free calculator counts/status and request usage;
@@ -503,7 +488,7 @@ run appended a previously exposed 495-character ABC7 highlight to its selected
 full article. Answer preserved diagnosis uncertainty, geographic risk scope and
 California's separate wildlife-associated risk; that ABC7 group was not cited.
 No material regression attributable to completion was observed. Both turns passed
-ordinary literal-reading/citation validation; their cited exact-material snapshots
+the then-current literal-reading/citation validation; their cited exact-material snapshots
 persisted unchanged after reopen. The PDF Answer prose did not disclose extracted-text-only coverage
 or its two textless pages; the separate disclosure limitation was not repaired.
 No third run, untreated control, independent source checking or model judge was
@@ -691,7 +676,7 @@ The run trace records elapsed monotonic time and safe model return/failure event
 The longer hard ceiling does not establish user-perceived latency acceptability;
 the bounded latency observations above leave broader dogfood latency unresolved.
 
-Literal-reading and citation validation prove custody/membership, not semantic
+Citation and historical support validation prove custody/membership, not semantic
 entailment. All prior question and answer text remains in every Research and Answer
 call without aging or trimming; very long-session performance remains unproved
 and no context-compaction lifecycle is implemented. Catalog scaling and caching
@@ -709,12 +694,20 @@ preserved organic failures rather than additional capability machinery by defaul
 
 ## Preserved development history
 
-The stopped Investigator and earlier architecture-lab branches remain intact.
-The failed Observation/Inference/scope-contract experiment and invalid Sol closure
-probe remain historical records, not active semantics. Their executable old-owner
-harness is absent from the product tree. Operator campaign scripts, frozen
-manifests, external packets and ignored `local-evals/` are development evidence;
-ordinary runtime has no dependency on them. No evaluation evidence was deleted.
+Retired experiment worktrees, local phase branches, duplicated corpora and
+transient campaign output were reclaimed by Experimental Closure 01. A verified
+compact local history bundle, comparison questions/assessments, selected exact
+finalization packets and representative sanitized development cases survive at
+C:\Users\aidan\ScryRaven\local-evals\closure-2026-10-19\HISTORICAL_INDEX.md.
+Original campaign paths elsewhere in this document identify historical provenance;
+they are superseded by that canonical index and do not promise surviving copies.
+The selected local corpus remains optional and outside ordinary runtime.
 
-Current architecture: `docs/architecture/RESEARCH.md`. Earlier V2/baseline and
+The failed Observation/Inference/scope-contract experiment, invalid Sol closure
+probe and stopped Investigator/architecture-lab lineages remain historical Git
+records, not active semantics. Executable experimental corpora are not required
+for the product. Active unrelated uncommitted work, saved sessions, user settings,
+production credential storage and broker infrastructure are preserved.
+
+Current architecture: docs/architecture/RESEARCH.md. Earlier V2/baseline and
 Investigator architecture documents are explicitly historical snapshots.

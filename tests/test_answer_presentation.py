@@ -26,7 +26,6 @@ URL = "https://example.test/rules"
 
 def answer(draft="The limit is **16 pounds**. [E1]", *, title="Official rules", content="Maximum: 16 pounds."):
     final = final_answer(draft)
-    final["source_readings"] = [{"evidence_ref": "E1", "passages": [content.strip().splitlines()[0]]}]
     model = Script(decision(), decision(requests=[request("read", query="", target="C1")]),
                    decision("answer", ["E1"]), final)
     return research.run(QUESTION, model=model,
@@ -120,10 +119,7 @@ def test_first_validated_use_orders_sources_and_reuses_numbers_without_inline_ti
     sources = [DiscoveryCandidate(f"Long publication title {i}", URL + str(i), "navigation") for i in range(1, 4)]
     model = Script(decision(), decision(requests=[request("read", query="", target=f"C{i}") for i in range(1, 4)]),
                    decision("answer", ["E1", "E2", "E3"]),
-                   final_answer("First. [E2] Next. [[E1, E2]] Again. [[E1]] An ordinary [1] in prose.")
-                   | {"source_readings": [
-                       {"evidence_ref": ref, "passages": ["Maximum: 16 pounds."]} for ref in ("E1", "E2")
-                   ]})
+                   final_answer("First. [E2] Next. [[E1, E2]] Again. [[E1]] An ordinary [1] in prose."))
     result = research.run(QUESTION, model=model, search=lambda q: sources,
                           fetch=lambda url: FetchedMaterial(url, "Maximum: 16 pounds."))
     assert result.answer == "First. [1] Next. [2] [1] Again. [2] An ordinary [1] in prose."

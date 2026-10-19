@@ -3,7 +3,7 @@
 import json
 
 from test_model_transport import Response
-from test_research_loop import Script, answer, decision, request, synthetic_localization
+from test_research_loop import Script, answer, decision, request
 
 from core import exa_transport, linkup_transport, serper_transport
 from core.exa_transport import DiscoveryCandidate
@@ -99,8 +99,7 @@ def test_research_and_session_can_choose_lexical_then_read():
         decision(requests=[request("search_lexical", query="public post")]),
         decision(requests=[request("read", query="", target="C1")]),
         decision("answer", ["E1"]),
-        answer("The source says seven. [E1]", readings=[
-            {"evidence_ref": "E1", "passages": ["The source says seven."]}]),
+        answer("The source says seven. [E1]"),
     )
     calls = []
     kwargs = dict(model=model,
@@ -120,8 +119,7 @@ def test_research_and_session_can_choose_lexical_then_read():
     model = Script(
         decision(requests=[request("search_lexical", query="public post")]),
         decision(requests=[request("read", query="", target="C1")]),
-        decision("answer", ["E1"]), answer("The source says seven. [E1]", readings=[
-            {"evidence_ref": "E1", "passages": ["The source says seven."]}]),
+        decision("answer", ["E1"]), answer("The source says seven. [E1]"),
     )
     session = ResearchSession(**{**kwargs, "model": model})
     assert session.ask("What does this public post say?").posture == "supported"
@@ -135,22 +133,16 @@ def test_cli_uses_serper_then_linkup_through_ordinary_run(monkeypatch, capsys):
     outputs = iter([
         decision(requests=[request("search_lexical", query="public post")]),
         decision(requests=[request("read", query="", target="C1")]),
-        decision("answer", ["E1"]), answer("The source says seven. [E1]", readings=[
-            {"evidence_ref": "E1", "passages": ["The source says seven."]}]),
+        decision("answer", ["E1"]), answer("The source says seven. [E1]"),
     ])
     providers = []
 
     def post(url, **kwargs):
         if url.endswith("/v1/responses"):
-            stage = kwargs["json"]["text"]["format"]["name"]
-            material = json.loads("".join(block["text"] for block in kwargs["json"]["input"][1]["content"]))
-            if stage == "localize":
-                text = json.dumps(synthetic_localization(material))
-            else:
-                output = next(outputs)
-                if isinstance(output, dict):
-                    output = {key: value for key, value in output.items() if key != "source_readings"}
-                text = json.dumps(output)
+            kwargs["json"]["text"]["format"]["name"]
+            json.loads("".join(block["text"] for block in kwargs["json"]["input"][1]["content"]))
+            output = next(outputs)
+            text = json.dumps(output)
             return Response({"status": "completed", "output": [{"type": "message", "phase": "final_answer",
                              "content": [{"type": "output_text", "text": text}]}]})
         providers.append(url)
@@ -175,8 +167,7 @@ def test_reading_room_uses_same_lexical_capability(tmp_path):
     model_script = Script(
         decision(requests=[request("search_lexical", query="public post")]),
         decision(requests=[request("read", query="", target="C1")]),
-        decision("answer", ["E1"]), answer("The source says seven. [E1]", readings=[
-            {"evidence_ref": "E1", "passages": ["The source says seven."]}]),
+        decision("answer", ["E1"]), answer("The source says seven. [E1]"),
     )
     calls = []
     app = reading_room.create_app(

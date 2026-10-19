@@ -148,7 +148,7 @@ def test_browser_new_and_followup_use_real_session_and_survive_app_replacement(t
     assert submit(client, location, FOLLOWUP).status_code == 303
     assert store.load(metadata.session_id).metadata.revision == 2
     answer_inputs = [m for stage, _, m, _ in model.calls if stage == "answer"]
-    assert {stage for stage, _, _, _ in model.calls} == {"research", "answer", "localize"}
+    assert {stage for stage, _, _, _ in model.calls} == {"research", "answer"}
     assert answer_inputs[-1]["conversation_context"] == [{"question": QUESTION, "answer": store.load(metadata.session_id).state.turns[0].answer}]
     fresh = app_for(SQLiteSessionStore(store.path)).test_client()
     assert "A follow-up." in fresh.get(location).get_data(as_text=True)
@@ -580,16 +580,10 @@ def test_dogfood_projection_discards_source_bearing_events_and_unknown_fields():
                         "status": "ok", "duration_seconds": 0.2, "url": "PRIVATE_URL",
                         "returned_material_count": 1, "new_acquisition_count": 0,
                         "returned_material_characters": 100, "reused_retained_material": True})
-    diagnostic.observe({"stage": "research", "action": "answer_reading_rejected",
-                        "code": "reading_passage_not_in_source", "evidence_ref": "E1",
-                        "reading_index": 0, "passage_index": 1, "passage": "PRIVATE_PASSAGE"})
     diagnostic.observe({"stage": "research", "action": "exposure", "evidence": "PRIVATE_BODY"})
     record = diagnostic.record(session_id="a" * 32, revision_before=0, revision_after=1)
     raw = json.dumps(record)
     assert "PRIVATE_" not in raw
-    assert record["reading_rejections"] == [{"code": "reading_passage_not_in_source",
-                                             "evidence_ref": "E1", "reading_index": 0,
-                                             "passage_index": 1}]
     assert record["model_calls"][0]["cached_input_tokens"] is None
     assert record["model_calls"][0]["response_characters"] == 200
     assert record["corrections"] == {"research": {"malformed_model_response": 1},

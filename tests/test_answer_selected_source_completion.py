@@ -110,8 +110,7 @@ def test_explicit_handoff_cites_appended_material_and_preserves_historical_custo
     reopened = ResearchSession.open(session.session_id, store=store, model=Script(
         decision(requests=[request("read", query="", target="E2", mode="local")]),
         decision("answer", ["E2"]),
-        answer("Seven under the stated condition. [E2]", readings=[
-            {"evidence_ref": "E2", "passages": [second_text]}])), search=search, fetch=no_fetch)
+        answer("Seven under the stated condition. [E2]")), search=search, fetch=no_fetch)
     later = reopened.ask("What is the condition?")
     assert reopened.turns[0] == before
     assert reopened.acquisitions == session.acquisitions
@@ -130,8 +129,7 @@ def test_pdf_session_handoff_appends_only_exposed_exact_views(tmp_path):
         decision(requests=[{**request("read", query="", target="D1", mode="local"),
                             "start_char": 0, "end_char": views[1].end_char}]),
         decision("answer", [views[1].id]),
-        answer(f"First page. [{views[0].id}]", readings=[
-            {"evidence_ref": views[0].id, "passages": ["First page."]}]))
+        answer(f"First page. [{views[0].id}]"))
     session = ResearchSession.open(session.session_id, store=store, model=model, search=no_fetch, fetch=no_fetch)
     result = session.ask("Takeaways?")
     assert answer_ids(model) == [[views[1].id, views[0].id]]
@@ -169,10 +167,10 @@ def test_missing_information_new_same_source_material_defeats_no_progress(termin
                    answer("A fragment. [E1]", "partial", "What condition applies?"),
                    decision(refs=["E1"], requests=[request("read", query="", target="E1", mode="full")]),
                    decision("answer", ["E1"]),
-                   answer("A new qualification. [E2]", readings=[{"evidence_ref": "E2", "passages": [third_text]}]))
+                   answer("A new qualification. [E2]"))
     if terminal:
         model = Script(*list(model.outputs)[:4],
-                       answer("A new qualification. [E2]", readings=[{"evidence_ref": "E2", "passages": [third_text]}]))
+                       answer("A new qualification. [E2]"))
     result = run("Value?", model=model, search=search, fetch=lambda url: FetchedMaterial(url, third_text),
                  limits=RunLimits(semantic_attempts=5 if terminal else 12))
     assert answer_ids(model) == [["E1"], (["E2", "E1"] if terminal else ["E1", "E2"])]
@@ -207,7 +205,7 @@ def test_over_limit_handoff_preserves_seed_and_existing_citation_boundary():
     second = Evidence("E2", old.url, old.title, "y" * 32_000, "provider_highlights", "E1")
     new_text = "New exact fact.".ljust(2_000, "z")
     model = Script(decision(), decision("answer", ["E3"]),
-                   answer("New exact fact. [E3]", readings=[{"evidence_ref": "E3", "passages": [new_text]}]))
+                   answer("New exact fact. [E3]"))
     result = run("Value?", model=model, retained_acquisitions=(old, second), initial_evidence=(old, second),
                  search=lambda query: [DiscoveryCandidate(old.title, old.url, new_text, context_kind="provider_highlights")],
                  fetch=no_fetch, limits=RunLimits(attention_characters=65_536))

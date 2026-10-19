@@ -66,9 +66,6 @@ def no_io(*args, **kwargs):
 
 
 def with_readings(final, *readings):
-    final["source_readings"] = [
-        {"evidence_ref": ref, "passages": [passage]} for ref, passage in readings
-    ]
     return final
 
 
