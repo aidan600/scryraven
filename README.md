@@ -397,14 +397,18 @@ provide exact bounded views through the existing source index; shelving attentio
 does not discard Evidence. New turns begin with fresh Research state and fresh
 Answer decisions over actual material, using prior conversation only for referents.
 
-Answer selects literal passages in the same fresh semantic call. Mechanical
-membership checks verify those passages against the supplied exact material;
-supported and partial evidence answers require at least one validated passage
-from every cited source group. These checks do not decide entailment. Valid
-citations receive compact source numbers in first-use order. Each answer saves
-its selected material and citation-use spans,
-so later acquisitions cannot change historical inspection. Views carry exact
-parent bounds; highlights never receive guessed offsets or invented page numbers.
+Answer reads the supplied Evidence and cites exact supplied aliases. A valid
+completed Answer publishes through deterministic citation checks, without a
+localization model call or a second whole-answer writer. Invalid aliases,
+unsupplied versions and custody failures remain rejected; a missing required
+citation can receive the existing single bounded Answer correction. Mechanical
+checks establish source custody, not semantic entailment. Citations receive
+compact source numbers in first-use order and save their exact selected material
+and citation-use spans, so later acquisitions cannot change historical inspection.
+New citations use generic saved-material inspection, with no invented passage
+highlights. Historical occurrence-specific passage support remains readable.
+Views carry exact parent bounds; highlights never receive guessed offsets or
+invented page numbers.
 Source labels use publication metadata, PDF filenames or hostnames without
 generating titles from evidence text.
 
@@ -443,10 +447,8 @@ catalog, retained-library and active Evidence size counts, exposure IDs/lengths/
 answer posture, bounds and citation resolution. Exact source bodies stay outside
 the compact trace. These diagnostics contain no private reasoning.
 Raw payloads, credentials and hidden reasoning are excluded. An explicitly
-authorized observer can receive a separate `source_body=True` event for a rejected
-literal passage, with its selected Evidence hash and length for forensics. This
-detail stays out of the compact trace, body-free dogfood log, durable sessions
-and public presentation. The literal matcher is unchanged.
+authorized observer can retain actual acquired/exposed material for forensics;
+source bodies stay out of the compact trace and body-free dogfood log.
 `--trace-evidence` also exposes exact selected supporting material, citations and provenance;
 unseen full parents remain out of the trace. Use public questions for observations.
 Session diagnostics identify the turn, retained material count, local reuse,

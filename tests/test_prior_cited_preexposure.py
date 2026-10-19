@@ -34,9 +34,7 @@ def test_reopened_session_exposes_exact_prior_view_in_first_research_call(tmp_pa
     seed_store.commit(seed.metadata.session_id, 0,
                       SessionState((saved_cited_turn(view),), (parent,)))
 
-    cited_answer = answer(f"The finding is 17 units. [{view.id}]", readings=[
-        {"evidence_ref": view.id, "passages": [view.content]},
-    ])
+    cited_answer = answer(f"The finding is 17 units. [{view.id}]")
     model = Script(decision("answer", [view.id]), cited_answer)
     session = ResearchSession.open(seed.metadata.session_id, store=SQLiteSessionStore(seed_store.path),
                                    model=model, search=no_external, fetch=no_external)

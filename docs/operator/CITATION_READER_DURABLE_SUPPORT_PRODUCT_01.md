@@ -1,5 +1,9 @@
 # Citation Reader / Durable Support Product 01
 
+Historical observation record. New-answer localization and fallback are superseded
+by [Answer Finalization Simplification 01](ANSWER_FINALIZATION_SIMPLIFICATION_01.md).
+Saved historical support and the Reader remain supported.
+
 OUTCOME: Met over the authorized bounded implementation and PRODUCT observations.
 
 ## Baseline and tested revision

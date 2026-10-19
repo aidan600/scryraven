@@ -7,12 +7,10 @@ import pytest
 from test_research_loop import (
     answer,
     decision,
-    failed_localization,
     next_scripted,
     no_fetch,
     request,
     search,
-    without_semantic_readings,
 )
 
 from scryraven.research import RunError, RunLimits, run
@@ -31,14 +29,8 @@ class RecordingModel:
 
     def __call__(self, stage, prompt, packet, schema):
         self.calls.append((stage, prompt, deepcopy(packet), schema))
-        output = without_semantic_readings(stage, next_scripted(self.outputs, stage, packet), schema)
+        output = next_scripted(self.outputs, stage, packet)
         return output if isinstance(output, str) else json.dumps(output)
-
-
-def with_reading(text, posture="supported"):
-    output = answer(text, posture)
-    output["source_readings"] = [{"evidence_ref": "E1", "passages": [SOURCE_TEXT]}]
-    return output
 
 
 def answer_calls(model):
@@ -50,8 +42,8 @@ def test_citationless_answer_is_corrected_with_same_contract_and_exact_inputs(po
     rejected_prose = "REJECTED PRIVATE PROSE: the publication states seven."
     model = RecordingModel(
         decision(), decision("answer", ["E1"]),
-        with_reading(rejected_prose, posture),
-        with_reading("The publication states seven. [E1]", posture),
+        answer(rejected_prose, posture),
+        answer("The publication states seven. [E1]", posture),
     )
 
     result = run(QUESTION, model=model, search=search, fetch=no_fetch)
@@ -66,7 +58,7 @@ def test_citationless_answer_is_corrected_with_same_contract_and_exact_inputs(po
     assert "[E1]" in corrected[2]["output_correction"]["instruction"]
     assert rejected_prose not in json.dumps(corrected[2])
     assert rejected_prose not in json.dumps(result.trace)
-    assert [call[0] for call in model.calls] == ["research", "research", "answer", "answer", "localize"]
+    assert [call[0] for call in model.calls] == ["research", "research", "answer", "answer"]
     assert result.posture == posture
     assert result.answer == "The publication states seven. [1]"
     assert result.citations[0].materials == result.selected_evidence
@@ -78,8 +70,8 @@ def test_citationless_answer_is_corrected_with_same_contract_and_exact_inputs(po
 def test_repeated_citation_omission_ends_with_operational_inability():
     model = RecordingModel(
         decision(), decision("answer", ["E1"]),
-        with_reading("Citation omitted on first attempt."),
-        with_reading("Citation omitted on second attempt."),
+        answer("Citation omitted on first attempt."),
+        answer("Citation omitted on second attempt."),
     )
 
     result = run(QUESTION, model=model, search=search, fetch=no_fetch,
@@ -110,7 +102,7 @@ def test_unable_answer_without_citation_needs_no_correction():
 @pytest.mark.parametrize("posture", ["supported", "partial"])
 def test_already_cited_answer_needs_no_additional_model_call(posture):
     model = RecordingModel(decision(), decision("answer", ["E1"]),
-                           with_reading("The publication states seven. [E1]", posture))
+                           answer("The publication states seven. [E1]", posture))
 
     result = run(QUESTION, model=model, search=search, fetch=no_fetch)
 
@@ -125,7 +117,7 @@ def test_already_cited_answer_needs_no_additional_model_call(posture):
     ("A malformed alias. [E1", "malformed_citation_reference"),
 ])
 def test_other_invalid_citation_syntax_keeps_existing_failure(bad_answer, code):
-    model = RecordingModel(decision(), decision("answer", ["E1"]), with_reading(bad_answer))
+    model = RecordingModel(decision(), decision("answer", ["E1"]), answer(bad_answer))
 
     with pytest.raises(RunError) as caught:
         run(QUESTION, model=model, search=search, fetch=no_fetch)
@@ -136,40 +128,13 @@ def test_other_invalid_citation_syntax_keeps_existing_failure(bad_answer, code):
     assert not any(event.get("code") == "missing_citation" for event in caught.value.trace)
 
 
-def test_reading_then_citation_rejection_share_one_correction_allowance():
-    invalid_reading = answer("An invalid reading was selected. [E1]")
-    invalid_reading["source_readings"] = [
-        {"evidence_ref": "E1", "passages": ["An invented value is eight."]},
-    ]
-    model = RecordingModel(
-        decision(), decision("answer", ["E1"]),
-        answer("The stated value is seven. [E1]"), failed_localization(),
-        invalid_reading, with_reading("Correct literal reading, but no citation."),
-    )
-
-    result = run(QUESTION, model=model, search=search, fetch=no_fetch)
-
-    legacy = [call for call in answer_calls(model) if "source_readings" in call[3]["properties"]]
-    first, second = legacy
-    assert second[2]["output_correction"]["code"] == "reading_passage_not_in_source"
-    assert first[2]["evidence"] == second[2]["evidence"]
-    assert result.answer == "I couldn't complete a source-validated answer for this request."
-    assert result.stop_reason == "not_established"
-    assert result.citations == result.selected_evidence == ()
-    assert result.trace[-1]["budget"]["semantic_attempts"] == 5
-    assert [event["code"] for event in result.trace if event["action"] == "response_rejected"] == [
-        "reading_passage_not_in_source", "missing_citation",
-    ]
-    assert not any(event["action"] == "answer_decision" for event in result.trace)
-
-
 def test_followup_over_retained_evidence_can_use_citation_correction():
     model = RecordingModel(
-        decision(), decision("answer", ["E1"]), with_reading("Seven. [E1]"),
+        decision(), decision("answer", ["E1"]), answer("Seven. [E1]"),
         decision(requests=[request("read", query="", target="E1", mode="local")]),
         decision("answer", ["E1"]),
-        with_reading("The retained publication still states seven."),
-        with_reading("The retained publication still states seven. [E1]"),
+        answer("The retained publication still states seven."),
+        answer("The retained publication still states seven. [E1]"),
     )
     session = ResearchSession(model=model, search=search, fetch=no_fetch)
 

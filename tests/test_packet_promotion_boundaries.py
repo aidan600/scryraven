@@ -29,10 +29,6 @@ def test_identity_evidence_can_redirect_research_without_becoming_answer_authori
         finish,
         answer(
             "NASA and GE modified the GE Passport. [E1] GE lists 17,325–18,920 lb. [E3]",
-            readings=[
-                {"evidence_ref": "E1", "passages": [identity]},
-                {"evidence_ref": "E3", "passages": [range_text]},
-            ],
         ),
     )
     queries = []
@@ -64,7 +60,7 @@ def test_identity_evidence_can_redirect_research_without_becoming_answer_authori
     )
 
     assert queries == ["hybrid demonstration base engine", "GE Passport takeoff-thrust range"]
-    assert [call[0] for call in model.calls] == ["research", "research", "research", "answer", "localize"]
+    assert [call[0] for call in model.calls] == ["research", "research", "research", "answer"]
     assert {item["id"] for item in model.calls[1][2]["evidence"]} == {"E1", "E2"}
     assert model.calls[2][2]["working_understanding"] == redirect["understanding"]
     answer_packet = next(call[2] for call in model.calls if call[0] == "answer")

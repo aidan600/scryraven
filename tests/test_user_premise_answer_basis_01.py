@@ -13,11 +13,10 @@ from test_research_loop import (
     no_fetch,
     request,
     search,
-    without_semantic_readings,
 )
 
 from core.exa_transport import DiscoveryCandidate
-from scryraven.research import AnswerDecision, RunError, RunLimits, run
+from scryraven.research import RunError, RunLimits, SemanticAnswerDecision, run
 from scryraven.session import ResearchSession
 from scryraven.session_store import SQLiteSessionStore
 
@@ -31,7 +30,7 @@ class RecordingModel:
 
     def __call__(self, stage, prompt, packet, schema):
         self.calls.append((stage, prompt, deepcopy(packet), schema))
-        output = without_semantic_readings(stage, next_scripted(self.outputs, stage, packet), schema)
+        output = next_scripted(self.outputs, stage, packet)
         return output if isinstance(output, str) else json.dumps(output)
 
 
@@ -77,7 +76,7 @@ def test_empty_evidence_user_premises_answer_keeps_inputs_non_evidentiary(questi
 
 def test_answer_decision_requires_explicit_basis():
     with pytest.raises(ValueError):
-        AnswerDecision.model_validate(answer("Unable.", "unable") | {"support_basis": None})
+        SemanticAnswerDecision.model_validate(answer("Unable.", "unable") | {"support_basis": None})
 
 
 def test_evidence_basis_with_citation_keeps_ordinary_selection_and_no_extra_call():
@@ -134,33 +133,6 @@ def test_user_premises_basis_with_evidence_is_rejected_under_same_answer_contrac
     assert "REJECTED PROSE" not in json.dumps(second[2])
     assert result.answer == "The publication states seven. [1]"
     assert result.trace[-1]["budget"]["semantic_attempts"] == 4
-
-
-def test_user_premises_basis_requires_empty_source_readings():
-    from pydantic import ValidationError
-
-    from scryraven.research import AnswerDecision, SemanticAnswerDecision
-
-    invalid = answer("Under your assumptions, the arithmetic is conditional.",
-                     support_basis="user_premises")
-    invalid["source_readings"] = [{"evidence_ref": "E1", "passages": ["Imaginary passage"]}]
-    with pytest.raises(ValidationError):
-        SemanticAnswerDecision.model_validate(invalid)
-    AnswerDecision.model_validate(invalid)
-    model = RecordingModel(
-        decision("answer"), json.dumps(invalid),
-        answer("Under your assumptions, the arithmetic is conditional.",
-               support_basis="user_premises"),
-    )
-
-    result = run("Assume one plus one equals two for this scenario.", model=model,
-                 search=no_acquisition, fetch=no_acquisition)
-
-    assert len(answers(model)) == 2
-    assert any(event["action"] == "response_rejected" and event["code"] == "malformed_model_response"
-               for event in result.trace)
-    assert result.posture == "supported" and result.selected_evidence == ()
-    assert "Imaginary passage" not in result.answer
 
 
 def test_user_premises_basis_cannot_emit_a_fabricated_evidence_alias():
@@ -313,8 +285,7 @@ def test_mixed_user_assumptions_and_external_fact_keep_evidence_basis_and_citati
     model = RecordingModel(
         decision(), decision("answer", ["E1"]),
         answer("Under your ten-unit demand assumption, the documented seven-unit "
-               "supply leaves a three-unit shortfall. [E1]", support_basis="evidence",
-               readings=[{"evidence_ref": "E1", "passages": [source_text]}]),
+               "supply leaves a three-unit shortfall. [E1]", support_basis="evidence"),
     )
 
     result = run(question, model=model,
@@ -396,7 +367,6 @@ def test_user_assertion_about_aircraft_cost_routes_to_acquisition_under_research
         "that the MD-80 is twice as costly as a 777.",
         "partial", support_basis="evidence",
     )
-    final["source_readings"] = [{"evidence_ref": "E1", "passages": [source_text]}]
     model = RecordingModel(
         decision(requests=[route]), decision("answer", ["E1"]), final,
     )
@@ -410,7 +380,7 @@ def test_user_assertion_about_aircraft_cost_routes_to_acquisition_under_research
     result = run(question, model=model, search=synthetic_search, fetch=no_acquisition)
 
     assert searches == [route["query"]]
-    assert [call[0] for call in model.calls] == ["research", "research", "answer", "localize"]
+    assert [call[0] for call in model.calls] == ["research", "research", "answer"]
     assert model.calls[0][2]["question"] == question
     assert model.calls[0][2]["evidence"] == []
     assert model.calls[0][2]["working_understanding"] is None

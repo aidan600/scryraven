@@ -75,8 +75,7 @@ def calculations_in(payload):
 
 
 def test_basic_user_premise_calculation_is_one_answer_attempt(monkeypatch):
-    valid = answer("25 units from the stipulated 100 units.", support_basis="user_premises",
-                   readings=[])
+    valid = answer("25 units from the stipulated 100 units.", support_basis="user_premises")
     transport = ScriptedResponses(
         ("research", model_reply(decision("answer")), 0),
         ("answer", tool_reply("100 * 0.25", "calc_1"), 0),
@@ -106,7 +105,7 @@ def test_basic_user_premise_calculation_is_one_answer_attempt(monkeypatch):
 
 
 def test_chained_calculations_reuse_prior_result_and_aggregate_usage(monkeypatch):
-    valid = answer("The stipulated result is 35.", support_basis="user_premises", readings=[])
+    valid = answer("The stipulated result is 35.", support_basis="user_premises")
     transport = ScriptedResponses(
         ("research", model_reply(decision("answer")), 0),
         ("answer", tool_reply("100 * 1.2", "calc_a"), 0),
@@ -141,9 +140,8 @@ def test_chained_calculations_reuse_prior_result_and_aggregate_usage(monkeypatch
 
 
 def test_answer_correction_allows_calculations_in_both_attempts(monkeypatch):
-    invalid = answer("A rejected provisional number.", support_basis="user_premises",
-                     readings=[], missing="A consequential need")
-    valid = answer("The stipulated result is 30.", support_basis="user_premises", readings=[])
+    invalid = answer("A rejected provisional number.", support_basis="user_premises", missing="A consequential need")
+    valid = answer("The stipulated result is 30.", support_basis="user_premises")
     transport = ScriptedResponses(
         ("research", model_reply(decision("answer")), 0),
         ("answer", tool_reply("100 * 1.2", "calc_a"), 0),
@@ -205,7 +203,7 @@ def test_evidence_derived_result_cites_inputs_not_calculator(monkeypatch):
         ("research", model_reply(decision("answer", ["E1"])), 0),
         ("answer", tool_reply("100 * 12", "calc_a"), 0),
         ("answer", model_reply(valid), 0),
-        ("localize", model_reply({"U1": ["S1"]}), 0),
+
     )
     result, _ = run_offline(
         monkeypatch, transport, "What is the energy?",
@@ -230,7 +228,7 @@ def test_missing_external_premise_remains_unestablished(monkeypatch):
         ("research", model_reply(decision()), 0),
         ("research", model_reply(decision("answer", ["E1"])), 0),
         ("answer", model_reply(partial), 0),
-        ("localize", model_reply({"U1": ["S1"]}), 0),
+
     )
     result, _ = run_offline(
         monkeypatch, transport, "What is the energy in Wh?",
@@ -274,8 +272,7 @@ def test_failed_continuation_preserves_known_usage_as_incomplete(monkeypatch):
 def test_real_tool_round_trip_reaches_forensic_log_without_safe_body_leak(
     monkeypatch, tmp_path,
 ):
-    valid = answer("The stipulated 25% is 25 units.", support_basis="user_premises",
-                   readings=[])
+    valid = answer("The stipulated 25% is 25 units.", support_basis="user_premises")
     transport = ScriptedResponses(
         ("research", model_reply(decision("answer")), 0),
         ("answer", tool_reply("100 * 0.25", "calc_a"), 0),
@@ -318,8 +315,7 @@ def test_invalid_tool_arguments_do_not_reuse_previous_calculation_timing(monkeyp
         ("research", model_reply(decision("answer")), 0),
         ("answer", tool_reply("1 + 1", "calc_a"), 0),
         ("answer", malformed, 0),
-        ("answer", model_reply(answer("Two units.", support_basis="user_premises",
-                                      readings=[])), 0),
+        ("answer", model_reply(answer("Two units.", support_basis="user_premises")), 0),
         now=now,
     )
 
