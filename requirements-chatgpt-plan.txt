@@ -1,0 +1,4 @@
+# Optional official Sign in with ChatGPT transport. API mode needs neither.
+PyJWT[crypto]>=2.10,<3
+# Public HTTPResponse.shutdown interrupts blocked streams at the deadline.
+urllib3>=2.6,<3

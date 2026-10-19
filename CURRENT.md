@@ -89,6 +89,22 @@ These limits provide diagnostic and completion headroom, not an acceptable-laten
 target. No semantic
 verifier or additional semantic owner exists.
 
+The ordinary model transport remains API-default. Programmatic opt-in via
+`OpenAIModel(backend="chatgpt_plan", plan_account="personal")` uses the optional
+ChatGPT-plan backend with the existing sign-in flow and Windows CurrentUser DPAPI
+vault. The CLI and Reading Room have no transport selector; their existing model
+injection seam can use the explicitly selected backend. No API-key or billing
+fallback exists. Research/Answer contracts, calculator continuations, citation
+validation, localization and source/session behavior remain unchanged.
+Plan requests stream with `store=false`, omit the unsupported output-token cap,
+API cache extensions and service overrides, and promise no equivalent caching or
+service tier. API requests retain their 12,000-token output cap. Stream completion
+must be verified before use; reported usage remains unknown when counters are
+absent. Offline tests cover native dispatch, dependent calculations, stream
+assembly/failures, custody and session commit/reopen. No live inference was run
+for this integration. See `docs/operator/CHATGPT_PLAN_BACKEND.md` for setup and
+operational differences.
+
 Research packet presentation now keeps the stable `conversation_context`,
 `current_date`, `phase`, `question` prefix and its Research-context cache
 breakpoint. Present volatile fields follow the deliberate order
