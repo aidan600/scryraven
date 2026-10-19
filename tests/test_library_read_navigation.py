@@ -33,16 +33,12 @@ def test_persisted_historical_citation_reopens_exact_view_locally():
     first_model = Script(
         decision(requests=[first_read]),
         decision("answer", [ref]),
-        answer(f"The value is 17. [{ref}]", readings=[
-            {"evidence_ref": ref, "passages": [body[start:end]]},
-        ]),
+        answer(f"The value is 17. [{ref}]"),
     )
     second_model = Script(
         decision(requests=[request("read", query="", target=ref, mode="local")]),
         decision("answer", [ref]),
-        answer(f"The retained value remains 17. [{ref}]", readings=[
-            {"evidence_ref": ref, "passages": [body[start:end]]},
-        ]),
+        answer(f"The retained value remains 17. [{ref}]"),
     )
     fetches = []
 

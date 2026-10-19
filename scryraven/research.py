@@ -1,9 +1,8 @@
-"""Adaptive Research, one semantic Answer, and non-authoritative support localization.
+"""Adaptive Research and one source-cited semantic Answer.
 
 Acquisition, custody, exposure and reference checks are mechanical. Neither the
 working understanding nor the safe decision trace is source Evidence. Sol owns the
-semantic Answer. A separate localizer may only point at exact cited passages, and
-localization failure falls back to the legacy AnswerDecision source-reading contract.
+semantic Answer. Deterministic citation checks preserve exact source custody.
 """
 from __future__ import annotations
 
@@ -15,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import date
-from typing import Annotated, Callable, Literal
+from typing import Callable, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -30,7 +29,6 @@ from scryraven.errors import RunError
 from scryraven.model import ModelError, ModelUsage, OpenAIModel, capture_model_usage
 from scryraven.results import CompletedAnswer, resolve_citations
 from scryraven.sources import Evidence, exact_view
-from scryraven.support import LOCALIZATION_PROMPT, bind_support, localization_packet
 
 # Preserve enough of a bounded run for a source-first terminal Answer. This is
 # an operational reservation only: it never supplies evidence or changes a
@@ -77,19 +75,6 @@ class ResearchDecision(_Contract):
     requests: list[Request]
     retain: list[str]
     answer_evidence_refs: list[str]
-
-
-class SourceReading(_Contract):
-    evidence_ref: str
-    passages: list[Annotated[str, Field(min_length=1, max_length=4000)]] = Field(min_length=1, max_length=12)
-
-
-class AnswerDecision(_Contract):
-    source_readings: list[SourceReading] = Field(max_length=12)
-    posture: Literal["supported", "partial", "unable"]
-    support_basis: Literal["evidence", "user_premises", "none"]
-    answer: str
-    missing_information: str | None
 
 
 class SemanticAnswerDecision(_Contract):
@@ -275,24 +260,7 @@ conditional comparison. Explain what that hypothetical would and would not answe
 do not invent values or treat assumptions as measured facts. Say what would permit
 a firmer answer. Retain units and scope on reported numerical values.
 
-Perform the source reading before composing prose in this same call: source_readings
-selects literal passages from the supplied material that control the answer,
-including the scope/identity/time/conditions that change what can be said. Each
-entry has one exact evidence_ref and one or more independently literal contiguous
-passages from that material. When relying on discontinuous portions, return them
-as separate passages; never stitch them together with ellipses. Copy every passage
-without paraphrase or a claim-to-source justification. This is your own fresh
-reading selection, not Research's verdict.
-Keep passages supporting the developed explanation and consequential qualifications
-needed for the complete synthesis, not merely the minimum passage for its headline.
-Do not select passages merely to increase coverage.
-For every canonical source group you cite, include at least one source_reading
-from selected material in that group.
-Keep materially different cases and contradictory or qualifying passages available
-while composing. Selections are transient actual text, not a claim database or a
-count-based sufficiency test; their absence proves nothing. With no source material,
-the list is empty. Set support_basis=evidence when supported or partial claims rely
-on supplied Evidence; source_readings and citations then apply. Set
+Read the supplied Evidence yourself before composing. Keep controlling scope, identity, time, conditions, materially different cases, and contradictory or qualifying material in view while composing. This is your own fresh reading of the supplied Evidence, not Research's verdict. Cite exact supplied Evidence aliases beside supported factual claims. Do not output copied support passages or localization metadata. Set support_basis=evidence when supported or partial claims rely on supplied Evidence; citations then apply. Set
 support_basis=user_premises only when Evidence is empty and the useful supported or
 partial conclusion follows solely from explicit premises or constraints in the
 current or prior USER questions. Arithmetic and unit definitions may be used, but
@@ -326,37 +294,6 @@ consequential need remains. Otherwise missing_information=null. Remaining budget
 limits further work, not evidentiary sufficiency. No separate verifier or polisher
 follows you. Do not emit private reasoning.
 """
-
-
-def _semantic_answer_prompt() -> str:
-    """Drop only the obligation to output source_readings from the production prompt."""
-    start = ANSWER_PROMPT.index("Perform the source reading before composing prose in this same call:")
-    marker = "source_readings and citations then apply. "
-    end = ANSWER_PROMPT.index(marker) + len(marker)
-    replacement = (
-        "Read the supplied Evidence yourself before composing. Keep controlling "
-        "scope, identity, time, conditions, materially different cases, and contradictory "
-        "or qualifying material in view while composing. This is your own fresh reading "
-        "of the supplied Evidence, not Research's verdict. Cite exact supplied Evidence "
-        "aliases beside supported factual claims. Do not output copied support passages "
-        "or localization metadata. A separate non-authoritative localization step may run "
-        "only after this semantic decision is frozen. Set support_basis=evidence when "
-        "supported or partial claims rely on supplied Evidence; citations then apply. "
-    )
-    return ANSWER_PROMPT[:start] + replacement + ANSWER_PROMPT[end:]
-
-
-SEMANTIC_ANSWER_PROMPT = _semantic_answer_prompt()
-
-def literal_passage_span(passage: str, content: str) -> tuple[int, int, str] | None:
-    """Whitespace-flexible literal membership. Words and punctuation stay unchanged."""
-    words = passage.split()
-    if not words:
-        return None
-    match = re.search(r"\s+".join(re.escape(word) for word in words), content)
-    if match is None:
-        return None
-    return match.start(), match.end(), match.group()
 
 
 @dataclass(frozen=True)
@@ -510,22 +447,15 @@ def _run_turn(
             except Exception:
                 pass
 
-    def ask(stage, prompt, packet, shape, *, answer_deadline=None, consume_semantic=True):
+    def ask(stage, prompt, packet, shape, *, answer_deadline=None):
         if answer_deadline is not None and answer_deadline - clock() <= MIN_ANSWER_CALL_SECONDS:
             raise _Bound("answer_validation_exhausted")
-        if consume_semantic:
-            budget.before_model()
-        elif budget.remaining_seconds <= 0:
-            raise _Bound("deadline")
+        budget.before_model()
         role = None
         if isinstance(model, OpenAIModel):
             config = getattr(model, "config", None)
-            # Localization borrows Research transport settings only. It is not Research.
-            role_name = "research" if stage == "localize" else stage
-            role = getattr(config, role_name, None)
+            role = getattr(config, stage, None)
         evidence = packet.get("evidence", [])
-        if stage == "localize":
-            evidence = [{"id": row["id"], "content": row["text"]} for row in packet.get("regions", [])]
         conversation_chars = sum(len(item["question"]) + len(item["answer"])
                                  for item in packet.get("conversation_context", []))
         started_elapsed = max(0.0, clock() - budget.started)
@@ -716,10 +646,9 @@ def _run_turn(
     correction = None
     answer_need = None
     selected: list[str] = []
-    provisional_answer: tuple[AnswerDecision, tuple[str, ...]] | None = None
+    provisional_answer: tuple[SemanticAnswerDecision, tuple[str, ...]] | None = None
     bound = None
     route_index = 0
-    localized_result = None
 
     def reading_packet():
         nonlocal pending, active
@@ -742,10 +671,6 @@ def _run_turn(
             decision.answer, items, list(library.acquisitions), trace, documents=library.documents,
             require_citation=decision.support_basis == "evidence" and decision.posture != "unable",
         )
-        if localized_result is not None:
-            localized_decision, localized_refs, bound_uses = localized_result
-            if decision == localized_decision and tuple(refs) == localized_refs:
-                uses = bound_uses
         # Store only exact material actually cited; unused answer context remains
         # acquired, and exposure receipts retain what the answer call received.
         cited = {item.id for citation in citations for item in citation.materials}
@@ -760,8 +685,8 @@ def _run_turn(
         # the selected sources establish and retains no rejected Answer text.
         emit("answer_validation_exhausted", code="answer_validation_exhausted",
              budget=budget.snapshot())
-        final = AnswerDecision(
-            source_readings=[], posture="unable", support_basis="none",
+        final = SemanticAnswerDecision(
+            posture="unable", support_basis="none",
             answer=ANSWER_VALIDATION_FAILURE_MESSAGE, missing_information=None,
         )
         # The existing persisted reason is used only for schema compatibility.
@@ -774,11 +699,7 @@ def _run_turn(
         emit("answer_source_completion", **receipt)
         return completed
 
-    def _semantic_decision_event(final):
-        return {"posture": final.posture, "support_basis": final.support_basis,
-                "missing_information": final.missing_information}
-
-    def semantic_answer_from_sources(refs, limitations):
+    def answer_from_sources(refs, limitations):
         packet = {**common, "phase": "answer",
                   "evidence": [library.materials[ref].material() for ref in refs],
                   "acquisition_limitations": [{key: item[key] for key in
@@ -790,7 +711,7 @@ def _run_turn(
                     or answer_deadline - clock() <= MIN_ANSWER_CALL_SECONDS):
                 raise _Bound("answer_validation_exhausted")
             try:
-                final = ask("answer", SEMANTIC_ANSWER_PROMPT, packet, SemanticAnswerDecision,
+                final = ask("answer", ANSWER_PROMPT, packet, SemanticAnswerDecision,
                             answer_deadline=answer_deadline)
             except _Bound:
                 raise _Bound("answer_validation_exhausted") from None
@@ -862,277 +783,7 @@ def _run_turn(
                         ),
                     }
                     continue
-            return final
-        raise _Bound("answer_validation_exhausted")
-
-    def _localization_failure(code, **fields):
-        safe = {key: value for key, value in fields.items() if key != "answer"}
-        emit("support_localization_failed", code=code, **safe)
-        return code
-
-    def localize_support(final, refs):
-        """Bind each frozen citation use to exact saved regions; failure keeps legacy fallback."""
-        nonlocal localized_result
-        try:
-            answer, citations, uses = resolve_citations(
-                final.answer, [library.materials[ref] for ref in refs],
-                list(library.acquisitions), [], documents=library.documents,
-                require_citation=True,
-            )
-        except RunError:
-            return _localization_failure("citation_custody_failed")
-        cited_ids = [citation.source_id for citation in citations]
-        body, address_book, shape = localization_packet(answer, citations, uses)
-        packet = {**common, "phase": "localize", "posture": final.posture,
-                  "support_basis": final.support_basis, "missing_information": final.missing_information,
-                  "cited_source_ids": cited_ids, **body}
-        emit("support_localization_started", cited_source_ids=cited_ids,
-             evidence_refs=[item["id"] for item in body["materials"]],
-             evidence_count=len(body["materials"]), citation_use_count=len(uses),
-             region_count=len(address_book))
-        try:
-            located = ask("localize", LOCALIZATION_PROMPT, packet, shape, consume_semantic=False)
-        except RunError as exc:
-            return _localization_failure(exc.code, cited_source_ids=cited_ids)
-        except _Bound as exc:
-            return _localization_failure(exc.code, cited_source_ids=cited_ids)
-        if located is None:
-            return _localization_failure("malformed_localization", cited_source_ids=cited_ids)
-        try:
-            bound_uses = bind_support(located, body, address_book, citations, uses)
-        except ValueError as exc:
-            return _localization_failure(str(exc), cited_source_ids=cited_ids)
-        localized_result = (final, tuple(refs), bound_uses)
-        emit("support_localization_completed", cited_source_ids=cited_ids,
-             covered_source_ids=sorted(cited_ids), citation_use_count=len(bound_uses),
-             support_region_count=sum(len(use.support) for use in bound_uses))
-        # Forensics reconstructs text from custody too; generated quotations never enter this path.
-        materials = {item.id: item for citation in citations for item in citation.materials}
-        emit("answer_reading", source_body=True, readings=[
-            {"evidence_ref": region.evidence_ref, "source_id": materials[region.evidence_ref].source_id,
-             "start_char": region.start_char, "end_char": region.end_char,
-             "passage": materials[region.evidence_ref].content[region.start_char:region.end_char]}
-            for use in bound_uses for region in use.support])
-        return None
-
-    def answer_from_sources(refs, limitations, *, allow_research_return=True):
-        final = semantic_answer_from_sources(refs, limitations)
-        emit("answer_semantic_decision", **_semantic_decision_event(final))
-        returning = (allow_research_return and bool(final.missing_information)
-                     and budget.semantic < limits.semantic_attempts - 1
-                     and budget.remaining_seconds > 0)
-        if returning:
             emit("answer_decision", decision=final.model_dump(exclude={"answer"}))
-            return final
-        if (refs and final.support_basis == "evidence" and final.posture in {"supported", "partial"}):
-            # Citation errors other than a correctable missing alias still fail in
-            # ordinary finalization. They are not a localization failure.
-            try:
-                resolve_citations(
-                    final.answer, [library.materials[ref] for ref in refs],
-                    list(library.acquisitions), [], documents=library.documents,
-                    require_citation=True,
-                )
-            except RunError:
-                emit("answer_decision", decision=final.model_dump(exclude={"answer"}))
-                return final
-            failure = localize_support(final, refs)
-            if failure is not None:
-                emit("answer_legacy_fallback", code=failure)
-                return legacy_answer_from_sources(refs, limitations)
-        emit("answer_decision", decision=final.model_dump(exclude={"answer"}))
-        return final
-
-    def legacy_answer_from_sources(refs, limitations):
-        packet = {**common, "phase": "answer",
-                  "evidence": [library.materials[ref].material() for ref in refs],
-                  "acquisition_limitations": [{key: item[key] for key in
-                      ("kind", "code", "pending_delivery") if key in item} for item in limitations],
-                  "budget": budget.snapshot()}
-        answer_deadline = clock() + ANSWER_STAGE_SECONDS
-        for _ in range(2):
-            if (budget.semantic >= limits.semantic_attempts or budget.remaining_seconds <= 0
-                    or answer_deadline - clock() <= MIN_ANSWER_CALL_SECONDS):
-                raise _Bound("answer_validation_exhausted")
-            try:
-                final = ask("answer", ANSWER_PROMPT, packet, AnswerDecision,
-                            answer_deadline=answer_deadline)
-            except _Bound:
-                raise _Bound("answer_validation_exhausted") from None
-            except RunError as exc:
-                if (clock() >= answer_deadline or
-                        (exc.stage == "answer" and exc.code == "model_request_timed_out")):
-                    raise _Bound("answer_validation_exhausted") from None
-                raise
-            if clock() > answer_deadline:
-                raise _Bound("answer_validation_exhausted")
-            if final is None:
-                packet["output_correction"] = "Return a JSON object matching the schema."
-                continue
-            if final.posture == "supported" and final.missing_information is not None:
-                issue = "supported_with_missing_information"
-                emit("response_rejected", contract="answer", code=issue)
-                packet["output_correction"] = {
-                    "code": issue,
-                    "instruction": (
-                        "A supported conclusion cannot have a consequential missing_information need. "
-                        "Return a fresh complete AnswerDecision from the supplied material. "
-                        "If the need remains consequential, use an honest partial or unable posture; "
-                        "otherwise set missing_information to null. Do not rely on or reproduce "
-                        "any rejected answer text."
-                    ),
-                }
-                continue
-            basis_issue = None
-            if final.support_basis == "user_premises":
-                if refs:
-                    basis_issue = "basis_user_premises_has_evidence"
-                elif final.source_readings:
-                    basis_issue = "basis_user_premises_has_readings"
-                elif final.posture == "unable":
-                    basis_issue = "basis_user_premises_unable"
-            elif final.support_basis == "none":
-                if final.posture != "unable":
-                    basis_issue = "basis_none_requires_unable"
-            elif not refs:
-                basis_issue = "basis_evidence_missing_packet"
-            if basis_issue:
-                emit("response_rejected", contract="answer", code=basis_issue)
-                packet["output_correction"] = {
-                    "code": basis_issue,
-                    "instruction": (
-                        "Return a fresh complete AnswerDecision. Use evidence only when "
-                        "the supplied Evidence supports the answer; use user_premises "
-                        "only with empty Evidence and empty source_readings for a "
-                        "conclusion derived solely from explicit user-supplied premises; "
-                        "use none only with posture unable. Do not rely on or reproduce "
-                        "any rejected answer text."
-                    ),
-                }
-                continue
-            readings = []
-            seen_readings = set()
-            issue = rejected = None
-            rejected_detail = None
-            for reading_index, reading in enumerate(final.source_readings):
-                if reading.evidence_ref not in refs:
-                    issue = "unselected_reading_reference"
-                    safe_ref = (reading.evidence_ref if len(reading.evidence_ref) <= 80 and
-                                re.fullmatch(r"(?:E|D)[1-9][0-9]*(?:@[0-9]+:[0-9]+)?", reading.evidence_ref)
-                                else None)
-                    rejected = {"evidence_ref": safe_ref,
-                                "reading_index": reading_index, "passage_index": 0}
-                    known_source = library.materials.get(reading.evidence_ref)
-                    rejected_detail = {
-                        "evidence_ref": reading.evidence_ref,
-                        "source_id": known_source.source_id if known_source else None,
-                        "reading_index": reading_index, "passage_index": 0,
-                        "attempted_passage": reading.passages[0],
-                        "selected_content_sha256": None,
-                        "selected_content_characters": None,
-                    }
-                    break
-                source = library.materials[reading.evidence_ref]
-                for passage_index, passage in enumerate(reading.passages):
-                    # Whitespace differences do not alter quoted words. Reconstruct
-                    # the exact original substring; never repair words or punctuation.
-                    span = literal_passage_span(passage, source.content)
-                    if span is None:
-                        issue = "reading_passage_not_in_source"
-                        rejected = {"evidence_ref": source.id,
-                                    "reading_index": reading_index, "passage_index": passage_index}
-                        rejected_detail = {
-                            "evidence_ref": source.id, "source_id": source.source_id,
-                            "reading_index": reading_index, "passage_index": passage_index,
-                            "attempted_passage": passage,
-                            "selected_content_sha256": hashlib.sha256(
-                                source.content.encode()).hexdigest(),
-                            "selected_content_characters": len(source.content),
-                        }
-                        break
-                    start, end, text = span
-                    key = source.id, start, end
-                    if key not in seen_readings:
-                        seen_readings.add(key)
-                        readings.append({"evidence_ref": source.id, "start_char": start,
-                                         "end_char": end, "passage": text})
-                if issue:
-                    break
-            if issue:
-                emit("answer_reading_rejected", contract="answer", code=issue, **rejected)
-                emit("answer_reading_rejected_detail", source_body=True,
-                     contract="answer", code=issue, **rejected_detail)
-                emit("response_rejected", contract="answer", code=issue)
-                packet["output_correction"] = {
-                    "code": issue, **rejected,
-                    "instruction": (
-                        "Return a fresh complete AnswerDecision. At the indicated reading and "
-                        "passage, select separate literal contiguous passages only from the "
-                        "referenced supplied Evidence. Do not paraphrase, import another "
-                        "material/version, stitch excerpts with ellipses, or reproduce rejected answer text."
-                    ),
-                }
-                continue
-            requires_readings = final.support_basis == "evidence" and final.posture in {"supported", "partial"}
-            if requires_readings and not readings:
-                issue = "required_source_reading_missing"
-                emit("response_rejected", contract="answer", code=issue)
-                packet["output_correction"] = {
-                    "code": issue,
-                    "instruction": (
-                        "Return a fresh complete AnswerDecision with literal source_readings "
-                        "from the supplied Evidence for an evidence-backed supported or partial "
-                        "answer. Do not rely on or reproduce any rejected answer text."
-                    ),
-                }
-                continue
-            # The final citation resolver already owns alias syntax and custody.
-            # Probe it before accepting this Answer so a missing required alias
-            # can use the existing bounded Answer correction loop. Other citation
-            # errors still take their original finalization path below.
-            citations = ()
-            try:
-                _, citations, _ = resolve_citations(
-                    final.answer, [library.materials[ref] for ref in refs],
-                    list(library.acquisitions), [], documents=library.documents,
-                    require_citation=final.support_basis == "evidence" and final.posture != "unable",
-                )
-            except RunError as exc:
-                if refs and exc.stage == "citations" and exc.code == "missing_citation":
-                    emit("response_rejected", contract="answer", code="missing_citation")
-                    packet["output_correction"] = {
-                        "code": "missing_citation",
-                        "instruction": (
-                            "The previous response omitted required Evidence citation aliases. "
-                            "Return a fresh complete AnswerDecision from the supplied Evidence. "
-                            "Cite supported factual claims in answer using exact supplied aliases "
-                            "such as [E1], [E7@0:3200], or [D1@120:480]. Do not rely on or reproduce any "
-                            "rejected answer text."
-                        ),
-                    }
-                    continue
-            if requires_readings:
-                reading_groups = {library.materials[reading["evidence_ref"]].source_id
-                                  for reading in readings}
-                uncovered = sorted({citation.source_id for citation in citations} - reading_groups)
-                if uncovered:
-                    issue = "cited_source_without_reading"
-                    emit("response_rejected", contract="answer", code=issue,
-                         source_ids=uncovered)
-                    packet["output_correction"] = {
-                        "code": issue,
-                        "source_ids": uncovered,
-                        "instruction": (
-                            "Return a fresh complete AnswerDecision with a literal source_reading "
-                            "from selected material in every cited source group. You may revise "
-                            "the citations and answer. Do not rely on or reproduce any rejected "
-                            "answer text."
-                        ),
-                    }
-                    continue
-            emit("answer_reading", source_body=True, readings=readings)
-            emit("answer_decision", decision=final.model_dump(exclude={"source_readings", "answer"}),
-                 source_reading_refs=list(dict.fromkeys(reading.evidence_ref for reading in final.source_readings)))
             return final
         raise _Bound("answer_validation_exhausted")
 
@@ -1348,7 +999,7 @@ def _run_turn(
                 overlap_seconds=round(max(0.0, summed - span), 6),
             )
 
-        # Parallel transport, serial admission. Only a contiguous group of 2–3
+        # Parallel transport, serial admission. Only a contiguous group of 2â€“3
         # already-independent generic Searches overlaps. Deep/Auto is assigned
         # here, before dispatch. A group that cannot reserve every external
         # attempt falls through to the ordinary one-at-a-time executor.
@@ -1402,8 +1053,7 @@ def _run_turn(
             selected = complete_answer_refs(active)
         try:
             final = answer_from_sources(
-                selected, [{"code": bound, "pending_delivery": pending}],
-                allow_research_return=False)
+                selected, [{"code": bound, "pending_delivery": pending}])
         except _Bound as exc:
             if exc.code == "answer_validation_exhausted":
                 return finish_answer_validation_failure()
@@ -1412,7 +1062,7 @@ def _run_turn(
             return finish(final, selected, "research_bound")
     # No model-derived answer exists. A deterministic operational failure is an
     # honest unable result, never source synthesis from generated working notes.
-    final = AnswerDecision(source_readings=[], posture="unable", support_basis="none",
+    final = SemanticAnswerDecision(posture="unable", support_basis="none",
                            answer="Research stopped at its operating limit before a source-grounded answer could be completed.",
                            missing_information=None)
     return finish(final, [], "research_bound")

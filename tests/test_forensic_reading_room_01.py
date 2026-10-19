@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 from test_reading_room import submit
-from test_research_loop import Script, answer, decision, failed_localization, no_fetch, search
+from test_research_loop import Script, answer, decision, no_fetch, search
 
 from scryraven import reading_room
 from scryraven.forensic_log import ForensicLog
@@ -30,9 +30,7 @@ def test_forensic_events_capture_exposure_rejection_and_stay_out_of_product_reco
 ):
     rejected = "SYNTHETIC_REJECTED_PASSAGE_837_ONLY_FOR_FORENSICS"
     source_body = "The stated value is seven."
-    bad = answer(readings=[{"evidence_ref": "E1", "passages": [rejected]}])
-    model = Script(decision(), decision("answer", ["E1"]), answer(), failed_localization(), bad,
-                   answer(readings=[{"evidence_ref": "E1", "passages": [source_body]}]))
+    model = Script(decision(), decision("answer", ["E1"]), answer(rejected), answer())
     store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
     dogfood = tmp_path / "turns.jsonl"
     forensic = tmp_path / "observer.jsonl"
@@ -50,16 +48,13 @@ def test_forensic_events_capture_exposure_rejection_and_stay_out_of_product_reco
     assert response.status_code == 303
     records = _events(forensic)
     actions = [row["event"]["action"] for row in records]
-    assert {"started", "research_decision", "acquired_material", "answer_reading_rejected_detail",
-            "answer_reading", "answer_decision", "completed"} <= set(actions)
+    assert {"started", "research_decision", "acquired_material", "response_rejected", "answer_decision", "completed"} <= set(actions)
     exposures = [row["event"] for row in records if row["event"]["action"] == "exposure"]
     assert [event["contract"] for event in exposures] == [
-        "research", "research", "answer", "localize", "answer", "answer"]
+        "research", "research", "answer", "answer"]
     assert exposures[1]["evidence"][0]["content"] == source_body
     assert exposures[2]["evidence"][0]["content"] == source_body
-    detail = next(row["event"] for row in records
-                  if row["event"]["action"] == "answer_reading_rejected_detail")
-    assert detail["attempted_passage"] == rejected
+    assert any(row["event"].get("code") == "missing_citation" for row in records)
     assert [row["event_sequence"] for row in records] == list(range(1, len(records) + 1))
     session_id = store.list_sessions()[0].session_id
     assert all(row["session_id"] == session_id and row["attempted_turn"] == 1
@@ -68,7 +63,7 @@ def test_forensic_events_capture_exposure_rejection_and_stay_out_of_product_reco
     assert all(row["logged_at_utc"] for row in records)
     assert any(row["event"]["action"] == "model_returned" for row in records)
 
-    assert rejected in forensic.read_text(encoding="utf-8")
+    assert source_body in forensic.read_text(encoding="utf-8")
     assert rejected not in dogfood.read_text(encoding="utf-8")
     assert source_body not in dogfood.read_text(encoding="utf-8")
     assert rejected not in json.dumps(completed[0].trace)

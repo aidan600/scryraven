@@ -5,7 +5,7 @@ import json
 from copy import deepcopy
 
 from scryraven.model import OpenAIModel
-from scryraven.research import AnswerDecision
+from scryraven.research import SemanticAnswerDecision
 
 
 class Response:
@@ -48,7 +48,7 @@ def test_answer_evidence_identity_before_body_is_lossless_and_deterministic(monk
         packets.append(kwargs["json"]) or Response('{}')
     ))
 
-    model("answer", "instructions", material, AnswerDecision.model_json_schema())
+    model("answer", "instructions", material, SemanticAnswerDecision.model_json_schema())
     raw = _user_json(packets[0])
     parsed = json.loads(raw)
     legacy_parsed = json.loads(json.dumps(original, ensure_ascii=False, sort_keys=True))
@@ -78,9 +78,9 @@ def test_answer_evidence_identity_before_body_is_lossless_and_deterministic(monk
     reordered = dict(reversed(list(deepcopy(material).items())))
     reordered["evidence"] = [dict(reversed(list(item.items())))
                              for item in reordered["evidence"]]
-    model("answer", "instructions", reordered, AnswerDecision.model_json_schema())
+    model("answer", "instructions", reordered, SemanticAnswerDecision.model_json_schema())
     assert _user_json(packets[1]) == raw
-    assert packets[0]["text"]["format"]["schema"] == AnswerDecision.model_json_schema()
+    assert packets[0]["text"]["format"]["schema"] == SemanticAnswerDecision.model_json_schema()
 
 
 def test_answer_top_level_bytes_and_breakpoints_change_only_inside_evidence(monkeypatch):
@@ -97,7 +97,7 @@ def test_answer_top_level_bytes_and_breakpoints_change_only_inside_evidence(monk
     model = OpenAIModel(post=lambda _url, **kwargs: (
         packets.append(kwargs["json"]) or Response('{}')
     ))
-    model("answer", "instructions", material, AnswerDecision.model_json_schema())
+    model("answer", "instructions", material, SemanticAnswerDecision.model_json_schema())
     payload = packets[0]
     blocks = payload["input"][1]["content"]
     raw = _user_json(payload)
@@ -119,11 +119,10 @@ def test_answer_top_level_bytes_and_breakpoints_change_only_inside_evidence(monk
     assert "prompt_cache_breakpoint" not in blocks[1]
 
 
-def test_research_layout_unchanged_and_answer_validator_accepts_same_source_reading(monkeypatch):
+def test_research_layout_unchanged_and_answer_validator_accepts_same_semantic_answer(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "offline-test-value")
     body = "An acquired fact."
-    decision = {"source_readings": [{"evidence_ref": "E1", "passages": [body]}],
-                "posture": "supported", "support_basis": "evidence",
+    decision = {"posture": "supported", "support_basis": "evidence",
                 "answer": "An acquired fact. [E1]", "missing_information": None}
     packets = []
     model = OpenAIModel(post=lambda _url, **kwargs: (
@@ -143,7 +142,7 @@ def test_research_layout_unchanged_and_answer_validator_accepts_same_source_read
     answer_material = {"phase": "answer", "question": "Q",
                        "evidence": [{"content": body, "id": "E1"}]}
     raw_decision = model("answer", "instructions", answer_material,
-                         AnswerDecision.model_json_schema())
+                         SemanticAnswerDecision.model_json_schema())
     assert json.loads(_user_json(packets[1])) == answer_material
-    assert AnswerDecision.model_validate_json(raw_decision).model_dump() == decision
-    assert packets[1]["text"]["format"]["schema"] == AnswerDecision.model_json_schema()
+    assert SemanticAnswerDecision.model_validate_json(raw_decision).model_dump() == decision
+    assert packets[1]["text"]["format"]["schema"] == SemanticAnswerDecision.model_json_schema()
