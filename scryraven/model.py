@@ -323,12 +323,24 @@ class OpenAIModel:
         usage_observer: Callable[[ModelUsage], None] | None = None,
         cache_namespace: str = "scryraven",
         timeout_seconds: float = 120,
+        backend: str = "api",
+        plan_account: str = "personal",
+        plan_auth: Any = None,
     ) -> None:
+        if backend not in {"api", "chatgpt_plan"}:
+            raise ValueError("invalid_model_backend")
+        if backend == "api" and plan_auth is not None:
+            raise ValueError("plan_auth_requires_plan_backend")
         self.config = config if config is not None else default_model_config()
         self.post = post or requests.post
         self.usage_observer = usage_observer
         self.cache_namespace = cache_namespace
         self.timeout_seconds = timeout_seconds
+        self.backend = backend
+        self.plan_transport = None
+        if backend == "chatgpt_plan":
+            from .chatgpt_plan.transport import PlanResponses
+            self.plan_transport = PlanResponses(plan_account, auth=plan_auth)
 
     def __call__(
         self, stage: str, instructions: str, material: dict, schema: dict,
@@ -336,8 +348,8 @@ class OpenAIModel:
         on_calculation: Callable[[int, str, dict], None] | None = None,
         remaining_seconds: Callable[[], float] | None = None,
     ) -> str:
-        token = os.getenv("OPENAI_API_KEY", "").strip()
-        if not token:
+        token = os.getenv("OPENAI_API_KEY", "").strip() if self.backend == "api" else None
+        if self.backend == "api" and not token:
             raise ModelError("model_configuration_missing")
         role = self.config.answer if stage == "answer" else self.config.research
         use_calculator = stage == "answer" and calculator is not None
@@ -394,14 +406,24 @@ class OpenAIModel:
                     raise ModelError("model_request_timed_out")
             data = None
             try:
-                response = self.post(
-                    "https://api.openai.com/v1/responses",
-                    headers={"Authorization": f"Bearer {token}"},
-                    json=payload,
-                    timeout=timeout,
-                )
-                response.raise_for_status()
-                data = response.json()
+                if self.plan_transport is not None:
+                    data = self.plan_transport.request(payload, timeout=timeout)
+                else:
+                    response = self.post(
+                        "https://api.openai.com/v1/responses",
+                        headers={"Authorization": f"Bearer {token}"},
+                        json=payload,
+                        timeout=timeout,
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+            except ModelError as exc:
+                # Plan failures can retain only allowlisted usage counters.
+                # Missing counters remain unknown, never inferred as zero.
+                if self.plan_transport is not None:
+                    data = {"usage": getattr(exc, "usage", {})}
+                    raise
+                raise ModelError("model_transport_failed") from None
             except requests.Timeout:
                 raise ModelError("model_request_timed_out") from None
             except requests.HTTPError as exc:
@@ -418,13 +440,14 @@ class OpenAIModel:
                 observers = (self.usage_observer, _call_usage_observer.get())
                 if any(observer is not None for observer in observers):
                     usage = ModelUsage(
-                        safe_stage, safe_phase, cache_family, role.model, breakpoints,
+                        safe_stage, safe_phase, cache_family, role.model,
+                        () if self.plan_transport is not None else breakpoints,
                         _counter(data, "usage", "input_tokens"),
                         _counter(data, "usage", "input_tokens_details", "cached_tokens"),
                         _counter(data, "usage", "input_tokens_details", "cache_write_tokens"),
                         _counter(data, "usage", "output_tokens"),
                         _counter(data, "usage", "output_tokens_details", "reasoning_tokens"),
-                        role.service_tier,
+                        None if self.plan_transport is not None else role.service_tier,
                         (data.get("service_tier") if isinstance(data, dict)
                          and data.get("service_tier") in {"default", "fast", "priority"} else None),
                     )
