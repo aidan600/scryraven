@@ -21,7 +21,7 @@ def plan_payload(payload):
     """Preserve native text/schema/tools; adapt only documented transport fields.
 
     `additional_tools` is the documented alternative to namespaced tools. It
-    keeps the production calculator's exact unnamespaced name and strict schema.
+    keeps production tools' exact unnamespaced names and strict schemas.
     Its position remains before the first response item across continuations.
     """
     body = copy.deepcopy(payload)
@@ -215,7 +215,7 @@ class _Output:
                     self.invalid()
                 self.arguments[index] = self.arguments.get(index, "") + delta
 
-    def completed(self, response, model, *, calculate):
+    def completed(self, response, model, *, allowed_names):
         if (not isinstance(response, dict) or response.get("status") != "completed"
                 or response.get("model") != model or not isinstance(response.get("output"), list)
                 or response.get("error") is not None or response.get("incomplete_details") is not None):
@@ -246,7 +246,7 @@ class _Output:
                     item["content"] = content
                 item.setdefault("content", [])
             elif item.get("type") == "function_call":
-                if (not calculate or item.get("name") != "calculate"
+                if (item.get("name") not in allowed_names
                         or item.get("namespace") not in (None, "")):
                     raise PlanError("malformed_model_response", reason="undeclared_function_call")
                 if index in self.arguments:
@@ -295,7 +295,8 @@ class PlanResponses:
                     # as deltas and item snapshots, including empty-output stops.
                     stream.observe(event)
                     if kind == "response.completed":
-                        return stream.completed(last_body, body["model"], calculate=bool(payload.get("tools")))
+                        return stream.completed(last_body, body["model"], allowed_names={
+                            tool["name"] for tool in payload.get("tools", []) if tool.get("type") == "function"})
                     if kind == "response.incomplete":
                         if not isinstance(last_body, dict) or last_body.get("status") != "incomplete":
                             raise PlanError("malformed_model_response", reason="invalid_incomplete_response")

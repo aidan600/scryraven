@@ -1,4 +1,4 @@
-"""One stateless OpenAI Responses transport with Answer-only local calculation."""
+"""One stateless OpenAI Responses transport with allowlisted Answer-local tools."""
 
 from __future__ import annotations
 
@@ -123,6 +123,7 @@ class ModelUsage:
     reasoning_tokens: int | None
     requested_service_tier: str | None = None
     returned_service_tier: str | None = None
+    duration_seconds: float | None = None
 
     @property
     def ordinary_uncached_tokens(self) -> int | None:
@@ -346,6 +347,7 @@ class OpenAIModel:
         self, stage: str, instructions: str, material: dict, schema: dict,
         *, calculator: Callable[[str], dict] | None = None,
         on_calculation: Callable[[int, str, dict], None] | None = None,
+        answer_library=None,
         remaining_seconds: Callable[[], float] | None = None,
     ) -> str:
         token = os.getenv("OPENAI_API_KEY", "").strip() if self.backend == "api" else None
@@ -353,9 +355,15 @@ class OpenAIModel:
             raise ModelError("model_configuration_missing")
         role = self.config.answer if stage == "answer" else self.config.research
         use_calculator = stage == "answer" and calculator is not None
+        declared_tools = [_CALCULATOR_TOOL] if use_calculator else []
+        if stage == "answer" and answer_library is not None:
+            from scryraven.answer_library import LIBRARY_TOOLS
+            declared_tools += LIBRARY_TOOLS
+        allowed_names = {tool["name"] for tool in declared_tools}
+        use_tools = bool(declared_tools)
         instructions += ("\nWhen finished, return only JSON matching the response schema, "
                          "with no Markdown or commentary."
-                         if use_calculator else
+                         if use_tools else
                          "\nReturn only JSON matching the response schema, with no Markdown or commentary.")
         phase = material.get("phase", stage)
         # Only fixed transport labels reach telemetry, never arbitrary material.
@@ -363,8 +371,8 @@ class OpenAIModel:
         safe_phase = phase if phase in {"research", "answer"} else "other"
         family_parts = ["layout-v1", self.cache_namespace, role.model, role.reasoning,
                         stage, phase, instructions, schema]
-        if use_calculator:
-            family_parts.append(_CALCULATOR_TOOL)
+        if use_tools:
+            family_parts.append(declared_tools)
         family = sha256(_json(family_parts).encode("utf-8")).hexdigest()[:32]
         cache_family = f"sr-v1:{safe_stage}:{safe_phase}:{family}"
         inputs, breakpoints = _input_blocks(instructions, material, stage, phase)
@@ -386,18 +394,19 @@ class OpenAIModel:
             if role.service_tier not in {"default", "fast"}:
                 raise ValueError("invalid_service_tier")
             payload["service_tier"] = role.service_tier
-        if use_calculator:
-            payload["tools"] = [_CALCULATOR_TOOL]
+        if use_tools:
+            payload["tools"] = declared_tools
             payload["include"] = ["reasoning.encrypted_content"]
         # Runtime gives this call at most the remaining Answer-stage and whole-run
         # time. The configured transport timeout remains a per-request ceiling;
         # for direct calls without a runtime deadline, bound the entire attempt.
         deadline = (monotonic() + self.timeout_seconds
-                    if use_calculator and remaining_seconds is None else None)
+                    if use_tools and remaining_seconds is None else None)
         sequence = 0
+        call_ids = set()
         while True:
             timeout = self.timeout_seconds
-            if use_calculator:
+            if use_tools:
                 if deadline is not None:
                     timeout = min(timeout, deadline - monotonic())
                 if remaining_seconds is not None:
@@ -405,6 +414,7 @@ class OpenAIModel:
                 if timeout <= 0:
                     raise ModelError("model_request_timed_out")
             data = None
+            request_started = monotonic()
             try:
                 if self.plan_transport is not None:
                     data = self.plan_transport.request(payload, timeout=timeout)
@@ -450,6 +460,7 @@ class OpenAIModel:
                         None if self.plan_transport is not None else role.service_tier,
                         (data.get("service_tier") if isinstance(data, dict)
                          and data.get("service_tier") in {"default", "fast", "priority"} else None),
+                        round(max(0.0, monotonic() - request_started), 6),
                     )
                     for observer in observers:
                         if observer is not None:
@@ -472,11 +483,26 @@ class OpenAIModel:
                 if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
                     raise ModelError("malformed_model_response")
                 calls = [item for item in items if item.get("type") == "function_call"]
-                if calls and use_calculator:
+                if calls:
+                    for call in calls:
+                        if (call.get("name") not in allowed_names
+                                or call.get("namespace") not in (None, "")
+                                or not isinstance(call.get("call_id"), str) or not call["call_id"]
+                                or call["call_id"] in call_ids
+                                or not isinstance(call.get("arguments"), str)):
+                            raise ModelError("malformed_model_response")
+                        call_ids.add(call["call_id"])
                     # Replaying every output item also preserves encrypted reasoning
                     # for stateless reasoning-model continuation with store=False.
                     outputs = []
                     for call in calls:
+                        if remaining_seconds is not None and remaining_seconds() <= 0:
+                            raise ModelError("model_request_timed_out")
+                        if call["name"] != "calculate":
+                            result = answer_library(call["name"], call["arguments"])
+                            outputs.append({"type": "function_call_output", "call_id": call["call_id"],
+                                            "output": json.dumps(result, ensure_ascii=False, allow_nan=False)})
+                            continue
                         sequence += 1
                         outputs.append(_calculation_output(call, calculator, on_calculation, sequence))
                     payload = {**payload, "input": [*payload["input"], *items, *outputs]}

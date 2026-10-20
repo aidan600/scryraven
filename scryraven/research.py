@@ -220,6 +220,27 @@ document, keep the document's claim distinct from independent external
 verification. Images and scanned content are not supplied; do not describe them
 as if they were read. Operating date supplies temporal context.
 
+Initial Evidence is Research's useful starting selection, not the boundary of
+what you may read. The library catalog is navigation over all actual acquired
+material in this session, including earlier turns and attached documents. It is
+not Evidence. You may independently use library_find, library_read and
+library_browse during this Answer attempt to inspect original material where an
+important relationship, qualification or distinction remains unresolved. Find
+searches retained text and returns exact citable text; Read returns exact stored
+material or bounded views. No Research permission is needed for local inspection.
+Use the catalog's next_offset to browse further pages. A source_id groups versions;
+use the exact material id to read a particular version. Only initial Evidence and
+text actually returned by Find/Read may support citations; catalog entries alone
+cannot. These tools never access the web: a retained highlight contains only the
+acquired excerpt, not the whole page. If the needed text is not acquired, return
+the consequential external acquisition need through missing_information. A local
+lookup miss alone is not an external acquisition need; try suitable local terms
+or a known source where useful. Do not browse routinely when initial Evidence
+already supports the requested operation. Local operations share this Answer's
+deadline, allow up to 12 calls and return at most 32,000 characters each within
+the remaining source attention allowance. Preserve an honest useful partial
+answer if inspection cannot resolve the issue.
+
 Independently interpret the sources' applicable identity, role, version, conditions
 and chronology. Explain at the useful supported scope, preserving material
 exceptions, uncertainty and conflicts. Analytical synthesis is allowed when the
@@ -447,7 +468,7 @@ def _run_turn(
             except Exception:
                 pass
 
-    def ask(stage, prompt, packet, shape, *, answer_deadline=None):
+    def ask(stage, prompt, packet, shape, *, answer_deadline=None, answer_library=None):
         if answer_deadline is not None and answer_deadline - clock() <= MIN_ANSWER_CALL_SECONDS:
             raise _Bound("answer_validation_exhausted")
         budget.before_model()
@@ -478,6 +499,11 @@ def _run_turn(
 
         def received_usage(value: ModelUsage) -> None:
             usage_records.append(value)
+            emit("model_request_finished", contract=stage, attempt=budget.semantic,
+                 request=len(usage_records), model=value.model,
+                 duration_seconds=value.duration_seconds, input_tokens=value.input_tokens,
+                 output_tokens=value.output_tokens, cached_input_tokens=value.cached_input_tokens,
+                 reasoning_tokens=value.reasoning_tokens)
 
         def usage_fields() -> dict:
             # One Answer semantic attempt can contain several Responses requests.
@@ -514,6 +540,7 @@ def _run_turn(
                 "output_tokens": total("output_tokens"),
                 "reasoning_tokens": total("reasoning_tokens"),
                 "usage_incomplete": incomplete,
+                "physical_requests": len(usage_records) if usage_records else None,
                 "requested_service_tier": same("requested_service_tier"),
                 "returned_service_tier": same("returned_service_tier"),
                 "cache_family": same("cache_family"),
@@ -557,6 +584,7 @@ def _run_turn(
                     raw = model(
                         stage, prompt, packet, shape.model_json_schema(),
                         calculator=do_calculate, on_calculation=observed_calculation,
+                        answer_library=answer_library,
                         remaining_seconds=lambda: min(
                             budget.remaining_seconds,
                             max(0.0, answer_deadline - clock()),
@@ -646,7 +674,7 @@ def _run_turn(
     correction = None
     answer_need = None
     selected: list[str] = []
-    provisional_answer: tuple[SemanticAnswerDecision, tuple[str, ...]] | None = None
+    provisional_answer: tuple[SemanticAnswerDecision, tuple[str, ...], int] | None = None
     bound = None
     route_index = 0
 
@@ -700,19 +728,27 @@ def _run_turn(
         return completed
 
     def answer_from_sources(refs, limitations):
+        from scryraven.answer_library import AnswerLibrary
+        local_library = AnswerLibrary(library, refs, attention_characters=limits.attention_characters,
+                                      emit=emit, clock=clock)
         packet = {**common, "phase": "answer",
                   "evidence": [library.materials[ref].material() for ref in refs],
+                  "library": local_library.catalog(),
                   "acquisition_limitations": [{key: item[key] for key in
                       ("kind", "code", "pending_delivery") if key in item} for item in limitations],
                   "budget": budget.snapshot()}
         answer_deadline = clock() + ANSWER_STAGE_SECONDS
         for _ in range(2):
+            # A correction starts fresh but must retain every exact source the
+            # same Answer stage already inspected, without renewing tool limits.
+            packet["evidence"] = [library.materials[ref].material() for ref in refs]
+            packet["library"] = local_library.catalog()
             if (budget.semantic >= limits.semantic_attempts or budget.remaining_seconds <= 0
                     or answer_deadline - clock() <= MIN_ANSWER_CALL_SECONDS):
                 raise _Bound("answer_validation_exhausted")
             try:
                 final = ask("answer", ANSWER_PROMPT, packet, SemanticAnswerDecision,
-                            answer_deadline=answer_deadline)
+                            answer_deadline=answer_deadline, answer_library=local_library)
             except _Bound:
                 raise _Bound("answer_validation_exhausted") from None
             except RunError as exc:
@@ -848,12 +884,12 @@ def _run_turn(
             seed = list(dict.fromkeys(decision.answer_evidence_refs))
             selected = complete_answer_refs(seed)
             if provisional_answer is not None:
-                prior, prior_refs = provisional_answer
+                prior, prior_refs, prior_acquired = provisional_answer
                 # Research has reconsidered the Answer's stated need but selected
                 # no material beyond what the valid prior Answer already received.
                 # Another Answer call would have no new source basis; retain the
                 # honest existing result instead of renewing the same loop.
-                if set(selected).issubset(prior_refs):
+                if set(selected).issubset(prior_refs) and len(library.acquisitions) == prior_acquired:
                     emit("answer_committed_no_progress", posture=prior.posture,
                          missing_information=prior.missing_information,
                          prior_selected_refs=list(prior_refs), selected_refs=selected)
@@ -871,7 +907,7 @@ def _run_turn(
                 if budget.semantic < limits.semantic_attempts - 1 and budget.remaining_seconds > 0:
                     answer_need = final.missing_information
                     active = seed
-                    provisional_answer = (final, tuple(selected))
+                    provisional_answer = (final, tuple(selected), len(library.acquisitions))
                     # Deliberately do not feed the provisional answer back to Research.
                     emit("answer_returned_to_research")
                     continue
@@ -1041,8 +1077,10 @@ def _run_turn(
         selected = complete_answer_refs(selected)
     # A newly acquired pending item has not yet been supplied to Answer. Do not
     # discard it by treating the prior packet as unchanged at a hard bound.
-    if provisional_answer is not None and not pending and set(selected).issubset(provisional_answer[1]):
-        prior, prior_refs = provisional_answer
+    if (provisional_answer is not None and not pending
+            and set(selected).issubset(provisional_answer[1])
+            and len(library.acquisitions) == provisional_answer[2]):
+        prior, prior_refs, _ = provisional_answer
         emit("answer_committed_no_progress", posture=prior.posture,
              missing_information=prior.missing_information,
              prior_selected_refs=list(prior_refs), selected_refs=selected)

@@ -16,6 +16,7 @@ from test_research_loop import answer, decision, request
 
 from core.exa_transport import DiscoveryCandidate
 from core.transport import FetchedMaterial
+from scryraven.answer_library import LIBRARY_TOOLS
 from scryraven.errors import RunError
 from scryraven.model import _CALCULATOR_TOOL, ModelError, OpenAIModel, built_in_model_config
 from scryraven.research import ANSWER_PROMPT, RESEARCH_PROMPT, RunLimits, run
@@ -176,7 +177,7 @@ def test_plan_native_research_dependent_calculation_and_unknown_usage():
         extras = [(index, item) for index, item in enumerate(payload["input"])
                   if item.get("type") == "additional_tools"]
         assert len(extras) == 1 and extras[0][1] == {
-            "type": "additional_tools", "role": "developer", "tools": [_CALCULATOR_TOOL]}
+            "type": "additional_tools", "role": "developer", "tools": [_CALCULATOR_TOOL, *LIBRARY_TOOLS]}
         first_return = next((index for index, item in enumerate(payload["input"])
                              if item.get("type") in {"reasoning", "function_call", "function_call_output"}),
                             len(payload["input"]))
