@@ -237,8 +237,10 @@ the consequential external acquisition need through missing_information. A local
 lookup miss alone is not an external acquisition need; try suitable local terms
 or a known source where useful. Do not browse routinely when initial Evidence
 already supports the requested operation. Local operations share this Answer's
-deadline, allow up to 12 calls and return at most 32,000 characters each within
-the remaining source attention allowance. Preserve an honest useful partial
+deadline and allow up to 12 calls within the remaining source attention allowance.
+Each result normally contains at most 32,000 characters; a larger acquired
+highlight is returned whole, up to its 65,536-character acquisition limit, without
+inventing page offsets. Preserve an honest useful partial
 answer if inspection cannot resolve the issue.
 
 Independently interpret the sources' applicable identity, role, version, conditions
@@ -486,6 +488,10 @@ def _run_turn(
              reasoning_effort=getattr(role, "reasoning", None),
              requested_service_tier=getattr(role, "service_tier", None),
              exposed=[{"id": item["id"], "characters": len(item["content"]),
+                       "utf8_bytes": len(item["content"].encode("utf-8")),
+                       "source_id": item["source_id"], "parent_id": item["parent_id"],
+                       "start_char": item["start_char"], "end_char": item["end_char"],
+                       "acquisition": item["acquisition"],
                        "sha256": hashlib.sha256(item["content"].encode()).hexdigest()} for item in evidence],
              catalog_characters=(len(json.dumps(packet["catalog"], ensure_ascii=False, sort_keys=True))
                                  if stage == "research" else 0),

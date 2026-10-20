@@ -112,6 +112,17 @@ def test_large_body_exact_views_and_attention_are_bounded():
     assert call(local, "library_read", read_args("E1"))["error"] == "library_operation_limit"
 
 
+def test_large_admitted_highlight_is_read_whole_without_invented_coordinates():
+    item = Evidence("E1", "https://example.org/highlight", "Large highlight",
+                    "Exact acquired excerpt. " * 2200, "provider_highlights")
+    local = adapter([item], refs=[])
+    result = call(local, "library_read", read_args("E1"))
+    assert result["evidence"] == [item.material()]
+    assert result["text_characters_returned"] == len(item.content)
+    assert result["evidence"][0]["start_char"] is None
+    assert local.remaining == 128_000 - len(item.content)
+
+
 def test_session_documents_remain_local_and_unrelated_session_is_empty():
     doc = owned(text_pdf(["Document's qualifying condition is winter."]))
     lib = AcquisitionLibrary(documents=(doc,), search=forbidden, fetch=forbidden)

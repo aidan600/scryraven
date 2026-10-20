@@ -11,6 +11,7 @@ from time import monotonic
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from core.exa_transport import DISCOVERY_CONTEXT_SAFETY_LIMIT
 from scryraven.acquisition import AcquisitionError, AcquisitionLibrary
 
 MAX_OPERATIONS = 12
@@ -131,6 +132,14 @@ class AnswerLibrary:
         chosen, used = [], 0
         for ref in outcome["material_ids"]:
             item = self.library.materials[ref]
+            # Highlights have no full-page coordinates. Keep an admitted large
+            # excerpt whole instead of inventing a source-contiguous view or
+            # making legitimate acquired text permanently unreadable.
+            if (not chosen and item.acquisition == "provider_highlights"
+                    and PACKET_CHARACTERS < len(item.content) <= min(DISCOVERY_CONTEXT_SAFETY_LIMIT, self.remaining)):
+                chosen.append(item)
+                used = len(item.content)
+                break
             if used + len(item.content) <= min(PACKET_CHARACTERS, self.remaining):
                 chosen.append(item)
                 used += len(item.content)
