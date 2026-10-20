@@ -903,9 +903,9 @@ def _run_turn(
             if provisional_answer is not None:
                 prior, prior_refs, prior_acquired = provisional_answer
                 # Research has reconsidered the Answer's stated need but selected
-                # no material beyond what the valid prior Answer already received.
-                # Another Answer call would have no new source basis; retain the
-                # honest existing result instead of renewing the same loop.
+                # no material beyond what the valid prior Answer already received,
+                # nor acquired anything new for independent local inspection.
+                # Retain the honest result instead of renewing the same loop.
                 if set(selected).issubset(prior_refs) and len(library.acquisitions) == prior_acquired:
                     emit("answer_committed_no_progress", posture=prior.posture,
                          missing_information=prior.missing_information,
