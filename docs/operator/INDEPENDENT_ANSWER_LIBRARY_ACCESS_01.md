@@ -158,7 +158,7 @@ large bodies/highlights, pagination, document/session isolation, continuations,
 calculator coexistence, correction, citation membership, durable follow-ups,
 external reentry and preservation of partials. API checks use synthetic transport;
 official plan transport additionally has live evidence. Later changes are
-documentation and explanatory comments only.
+documentation, explanatory comments and the synthetic-clock assertion repair below.
 
 All six completed observations were reopened through a fresh production Reading
 Room HTTP client with model/provider I/O forbidden. Each returned HTTP 200, every
@@ -171,6 +171,15 @@ passed before publication. The large-highlight and failed-reentry edges have
 offline coverage; neither received a dedicated live probe. Native observations
 preceded the final reentry repair. The final frozen COVID confirmation covers the
 final runtime tool/prompt/continuation behavior.
+
+The first remote CI run exposed a pre-existing strict float comparison in the
+synthetic plan-auth fixture: `(clock + 120) - clock` can be
+`120.00000000000011` at a monotonic-clock exponent boundary. The fixture rejected
+that timeout before it reached the malformed stream under test. A deterministic
+clock reproduction produced the same failure. The fixture now permits one
+nanosecond of rounding tolerance; the same reproduction reaches and rejects the
+malformed stream and closes it. Production deadlines and transport code did not
+change for this repair.
 
 Sanitized local review artifacts are under
 `C:\tmp\sr-answer-library-access-01\review-bundle\`: exact code diff, source-only

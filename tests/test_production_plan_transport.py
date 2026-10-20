@@ -127,13 +127,15 @@ class FrozenAuth:
         self.http = self
 
     def access(self, account, *, timeout):
-        assert account == "personal" and 0 < timeout <= 120
+        # Deadline subtraction may exceed 120 by one floating-point ULP when
+        # the monotonic clock crosses an exponent boundary on a fresh CI host.
+        assert account == "personal" and 0 < timeout <= 120 + 1e-9
         return {"access_token": "synthetic-plan-token"}
 
     def request(self, method, url, **kwargs):
         assert method == "POST" and url == "https://api.openai.com/v1/responses"
         assert kwargs["headers"]["Authorization"] == "Bearer synthetic-plan-token"
-        assert kwargs["stream"] is True and 0 < kwargs["timeout"] <= 120
+        assert kwargs["stream"] is True and 0 < kwargs["timeout"] <= 120 + 1e-9
         payload = copy.deepcopy(kwargs["json"])
         self.calls.append(payload)
         response = next(self.replies).stream(payload)
