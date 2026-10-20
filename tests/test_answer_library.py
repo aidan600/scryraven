@@ -244,3 +244,49 @@ def test_new_acquisition_allows_reentry_even_with_unchanged_selection(monkeypatc
                                                      context_kind="provider_highlights")], fetch=forbidden)
     assert result.posture == "supported" and result.selected_evidence[0].id == "E3"
     assert result.trace[-1]["budget"]["external_attempts"] == 1
+
+
+@pytest.mark.parametrize("failure", ["research_transport", "answer_validation", "answer_deadline"])
+def test_reentry_failure_preserves_valid_independently_read_partial(monkeypatch, failure):
+    from core.exa_transport import DiscoveryCandidate
+    from scryraven.model import ModelError
+    monkeypatch.setenv("OPENAI_API_KEY", "synthetic")
+    steps = [
+        ("research", model_reply(decision("answer")), 0),
+        ("answer", function_reply("library_read", read_args("E2")), 0),
+        ("answer", model_reply(answer("Winter applies [E2].", "partial", missing="New trial results")), 0),
+    ]
+    if failure == "research_transport":
+        steps.append(("research", ModelError("model_transport_failed"), 0))
+    else:
+        steps.extend([
+            ("research", model_reply(decision(requests=[request("search", query="New trial results")])), 0),
+            ("research", model_reply(decision("answer")), 0),
+        ])
+        if failure == "answer_validation":
+            steps.extend([("answer", model_reply({"invalid": True}), 0)] * 2)
+        else:
+            steps.append(("answer", function_reply("library_read", read_args("E3")), 120.1))
+    now = [0.0]
+    transport = ScriptedResponses(*steps, now=now)
+    result = run("Conditions?", model=OpenAIModel(post=transport.post), retained_acquisitions=corpus(),
+                 search=lambda q: [DiscoveryCandidate("Trial", "https://example.org/new", "New trial results.",
+                                                     context_kind="provider_highlights")], fetch=forbidden,
+                 clock=lambda: now[0])
+    assert result.posture == "partial" and result.selected_evidence == (corpus()[1],)
+    assert any(e["action"] == "answer_prior_partial_preserved" for e in result.trace)
+
+
+def test_multiple_local_calls_and_calculator_in_one_response(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "synthetic")
+    batch = function_reply("library_read", read_args("E2"))
+    batch["output"].extend(tool_reply("7 * 2", "calc")["output"])
+    transport = ScriptedResponses(
+        ("research", model_reply(decision("answer")), 0), ("answer", batch, 0),
+        ("answer", model_reply(answer("Winter applies [E2].")), 0))
+    result = run("Conditions?", model=OpenAIModel(post=transport.post), retained_acquisitions=corpus(),
+                 search=forbidden, fetch=forbidden)
+    outputs = [i for i in transport.calls[-1]["json"]["input"] if i.get("type") == "function_call_output"]
+    assert [i["call_id"] for i in outputs] == ["lib1", "calc"]
+    assert json.loads(outputs[1]["output"]) == {"value": "14"}
+    assert result.selected_evidence == (corpus()[1],)

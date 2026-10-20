@@ -321,7 +321,7 @@ def test_individual_model_call_stays_capped_at_120_seconds():
     assert model.timeouts == [120, 100]
 
 
-def test_pending_new_material_at_deadline_does_not_commit_a_stale_partial_answer():
+def test_pending_new_material_at_deadline_preserves_partial_with_bound_disclosure():
     now = [0.0]
 
     def staged_search(query):
@@ -340,7 +340,11 @@ def test_pending_new_material_at_deadline_does_not_commit_a_stale_partial_answer
     result = run("Value?", model=model, search=staged_search, fetch=no_fetch,
                  clock=lambda: now[0])
     assert [call[0] for call in model.calls] == ["research", "research", "answer", "research"]
-    assert result.posture == "unable"
+    assert result.posture == "partial"
+    assert result.answer == "A provisional fragment. [1]"
+    assert result.stop_reason == "research_bound"
+    assert [item.id for item in result.selected_evidence] == ["E1"]
+    assert any(event["action"] == "answer_prior_partial_preserved" for event in result.trace)
     assert not any(event["action"] == "answer_committed_no_progress" for event in result.trace)
     assert {item.id for item in result.evidence} == {"E1", "E2"}
 

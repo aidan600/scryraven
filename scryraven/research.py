@@ -715,6 +715,8 @@ def _run_turn(
                                tuple(trace), result.selected_evidence, result.citations, result.citation_uses)
 
     def finish_answer_validation_failure():
+        if provisional_answer is not None and provisional_answer[0].posture == "partial":
+            return finish_prior_partial("answer_validation_exhausted")
         # The fixed inability is operational. It makes no judgment about what
         # the selected sources establish and retains no rejected Answer text.
         emit("answer_validation_exhausted", code="answer_validation_exhausted",
@@ -726,6 +728,11 @@ def _run_turn(
         # The existing persisted reason is used only for schema compatibility.
         # The precise operational reason stays in the safe current-turn trace.
         return finish(final, [], "not_established")
+
+    def finish_prior_partial(code, reason="not_established"):
+        prior, prior_refs, _ = provisional_answer
+        emit("answer_prior_partial_preserved", code=code, prior_selected_refs=list(prior_refs))
+        return finish(prior, list(prior_refs), reason)
 
     def complete_answer_refs(refs):
         completed, receipt = _complete_selected_sources(
@@ -856,6 +863,10 @@ def _run_turn(
         except _Bound as exc:
             bound = exc.code
             break
+        except RunError as exc:
+            if provisional_answer is not None and provisional_answer[0].posture == "partial":
+                return finish_prior_partial(exc.code)
+            raise
         if decision is None:
             correction = "Return one JSON object matching the schema. No rejected text is retained."
             continue
@@ -900,7 +911,6 @@ def _run_turn(
                          missing_information=prior.missing_information,
                          prior_selected_refs=list(prior_refs), selected_refs=selected)
                     return finish(prior, list(prior_refs), "not_established")
-                provisional_answer = None
             try:
                 final = answer_from_sources(selected, [
                     item for item in last_route if item.get("status") == "error"])
@@ -909,6 +919,10 @@ def _run_turn(
                     return finish_answer_validation_failure()
                 bound = exc.code
                 break
+            except RunError as exc:
+                if provisional_answer is not None and provisional_answer[0].posture == "partial":
+                    return finish_prior_partial(exc.code)
+                raise
             if final.missing_information:
                 if budget.semantic < limits.semantic_attempts - 1 and budget.remaining_seconds > 0:
                     answer_need = final.missing_information
@@ -1102,8 +1116,14 @@ def _run_turn(
             if exc.code == "answer_validation_exhausted":
                 return finish_answer_validation_failure()
             final = None
+        except RunError as exc:
+            if provisional_answer is not None and provisional_answer[0].posture == "partial":
+                return finish_prior_partial(exc.code, "research_bound")
+            raise
         if final is not None:
             return finish(final, selected, "research_bound")
+    if provisional_answer is not None and provisional_answer[0].posture == "partial":
+        return finish_prior_partial(bound, "research_bound")
     # No model-derived answer exists. A deterministic operational failure is an
     # honest unable result, never source synthesis from generated working notes.
     final = SemanticAnswerDecision(posture="unable", support_basis="none",
