@@ -11,9 +11,13 @@ no architecture selector, Analyst checkpoint, old Author handoff or fallback.
 
 Research owns interpretation, compact revisable understanding, consequential
 needs, acquisition direction, attention and stopping. Generated state is never
-Evidence. Answer independently assesses selected actual source material and
+Evidence. Answer independently assesses actual supplied source material and
 explicit user-supplied premises against the current/original request. Research
 may select no Evidence when the requested operation needs no external fact.
+Research's initial selection is a suggestion, not a library access boundary.
+Answer can independently Browse, Find and Read legitimate current-session
+acquisitions and user documents through bounded, entirely local tools in its
+existing semantic attempt. Only exact text actually supplied is citable.
 Answer may invoke a bounded deterministic local arithmetic calculator, including
 dependent calculations, while the same Answer role remains the sole semantic
 owner. Calculator results are derived computation, not Evidence or citation
@@ -22,6 +26,37 @@ and citation requirements; explicit user premises retain their conditional basis
 The calculator and its Responses continuation are verified offline and exercised
 by live Answer calls over frozen Evidence. This does not establish end-to-end
 research reliability or general calculator-use reliability.
+
+Independent Answer Library Access 01 demonstrated autonomous use of retained
+material omitted by Research selection. The unchanged historical COVID-OUT
+initial Evidence (E2/E14) omitted the acute primary endpoint result. Both bounded
+library-enabled frozen observations independently read the exact 2,181-character
+E7 and cited its nonsignificant acute result separately from long-COVID prevention
+and treatment of established illness. A matched no-library observation omitted
+that acute result. These are development cases, not held-out reliability estimates.
+
+Two ordinary `ResearchSession.ask()` submissions used the real acquisition path
+and durable sessions. COVID-OUT independently read and cited additional retained
+material; its newly acquired corpus did not contain the original acute-null
+finding, which the answer still omitted. IMO used no local library operations and
+preserved all entry-into-force denominator conditions. Frozen Data Act inspection
+read bounded views of a 323,490-character parent and retained the distinction
+between operative clauses and unverified implementing-publication history.
+MD-80 was not exercised because its exact dissertation/appendix packet did not
+survive in the inspected registered material.
+
+The campaign used four frozen observations and two native submissions: 25 physical
+plan requests (20 Answer, five Research), five external acquisition attempts,
+393,820 reported input and 17,331 output tokens. Effective existing user settings
+were Luna/high/Fast Research and GPT-6.1 Sol/high/Standard Answer; shipped defaults
+were not changed. All six completed answers reopened with exact cited material in
+the Reading Room. API behavior, session/document isolation, malformed calls,
+no-network local tools and bounded reentry repairs have offline verification.
+The final runtime revision passed 841 tests with four skips; the last partial-
+preservation repair and large-highlight edge have no dedicated live observation.
+Long-session behavior and general semantic reliability remain unproved. See
+`docs/operator/INDEPENDENT_ANSWER_LIBRARY_ACCESS_01.md` for exact revisions,
+resource accounting, provenance limits and promotion evidence.
 
 Ordinary non-lookup analytical answers now default to developed treatment: they
 orient the reader to the conclusion early, then substantially explain important
@@ -290,7 +325,7 @@ citation provenance derived from saved turns: answer-local citation numbers,
 canonical source IDs and exact material IDs are navigation, not Evidence or a
 claim that the prior answer was correct. A cited targeted view can be reconstructed
 locally from its retained full parent. Answer sees ordinary conversation without
-historical provenance aliases. Research chooses the source identities for Answer
+historical provenance aliases. Research suggests initial source identities for Answer
 through its ordinary exact Evidence selection. Immediately before explicit or
 forced terminal Answer handoff, mechanics append omitted exact material already
 exposed during the current turn from those same stored canonical source IDs.
@@ -299,10 +334,11 @@ start and web material follows acquisition/Evidence-ID order, within selected
 source order. Completion is all-or-nothing within the existing 128,000-character
 Evidence allowance: an over-limit proposal leaves the seed packet unchanged.
 No semantic ranking, version preference, summarization or new owner is involved.
-Provisional Answer no-progress compares the effective completed packet; Research
-reentry attention still uses its ordinary seed choice. Citation validation
-and saved source snapshots use the completed packet actually supplied
-to Answer. A body-free trace receipt records seed/appended refs, final content
+Provisional Answer no-progress compares all material actually supplied to Answer,
+including independent local reads, and requires an unchanged acquired corpus;
+Research reentry attention still uses its ordinary seed choice. Citation validation
+and saved source snapshots include exact text subsequently returned by Answer's
+local tools. A body-free trace receipt records seed/appended refs, final content
 characters and completion status; no durable session state is added.
 Unscoped Find ranks actual retained acquisition regions on
 a comparable corpus-wide lexical scale rather than interleaving by acquisition
@@ -319,30 +355,34 @@ user beliefs and narration are not automatically stipulated premises. Prior
 assistant answers are discourse context only; they cannot silently become
 premises. A user's explicit adoption of a prior assistant value can define a new
 scenario premise without verifying that value externally.
-Research chooses and acquires Evidence. Selected-source completion widens only
-within chosen source identities. Answer independently owns meaning, interpretation,
+Research chooses external acquisition. Initial selected-source completion widens
+within suggested source identities; Answer's local tools can inspect all legitimate
+retained session material independently. Answer owns meaning, interpretation,
 prose, completeness, supported/partial/unable posture, consequential missing needs
-and citations. The existing `SemanticAnswerDecision` schema and Evidence packet
-are unchanged. A completed valid primary Answer now publishes directly through
+and citations. The existing `SemanticAnswerDecision` schema is unchanged. A
+completed valid primary Answer publishes directly through
 the strict deterministic citation resolver. Mandatory model localization, its
 region/use mapping machinery, automatic legacy whole-answer regeneration,
 executable `source_readings` schema and literal-reading correction machinery are
 removed. No replacement model call, validator or semantic owner is introduced.
-The sole Answer prompt retains the former primary semantic instructions, removing
-only its obsolete announcement of a later localization step. Removing that
-sentence changes the instruction-derived Answer cache identity; cache breakpoints
-and the ordinary API transport remain unchanged.
+The sole Answer prompt retains its semantic responsibility and describes optional
+local inspection. Its instruction/tool-derived cache identity changes; there is
+no additional finalization stage or Research instruction change.
 
 Unknown citation aliases, unsupplied versions and invalid selected-material custody
 still reject publication. Missing required citations and invalid Answer shapes
 share the existing one-correction allowance and Answer-stage deadline. Exhaustion
 retains the fixed operational inability message and `answer_validation_exhausted`
-trace, with no rejected prose, citations or selected support. A supported verdict
+trace, with no rejected prose, citations or selected support, unless a valid prior
+partial can be preserved from reentry. A supported verdict
 with consequential `missing_information` remains an Answer-shape error. A valid
-need may return to Research under unchanged budget/no-progress rules. Empty-Evidence
+external need may return to Research under the existing budget, with no-progress
+accounting for independently supplied material and newly acquired corpus items.
+A failed later attempt preserves a valid prior partial and its original support;
+hard bounds retain the ordinary research-bound disclosure. Empty-Evidence
 explicit user-premise derivations remain distinct from external factual support;
 neither user premises nor previous assistant prose become Evidence. Calculator,
-Research semantics, acquisition, source selection and the API output cap are unchanged.
+Research semantics, acquisition policy and the API output cap are unchanged.
 
 New citations open the exact selected saved material through the existing generic
 Reader, with its original publication or retained PDF and selected-page identity.

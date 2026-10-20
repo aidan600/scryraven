@@ -95,7 +95,8 @@ def test_basic_user_premise_calculation_is_one_answer_attempt(monkeypatch):
     ]
     assert "tools" not in transport.calls[0]["json"]
     assert transport.calls[1]["json"]["store"] is False
-    assert len(transport.calls[1]["json"]["tools"]) == 1
+    assert {tool["name"] for tool in transport.calls[1]["json"]["tools"]} == {
+        "calculate", "library_browse", "library_find", "library_read"}
     assert json.loads(calculations_in(transport.calls[2]["json"])[0]["output"]) == {"value": "25"}
     receipts = [event for event in observed if event["action"] == "calculator_result"]
     assert [(item["sequence"], item["expression"], item["result"])

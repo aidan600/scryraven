@@ -38,8 +38,10 @@ a controlling Passport identity lead.
 The earlier ordinary-route Standard/Fast comparison did not isolate a Fast speed
 benefit; a later isolated fixed-packet screen showed a consistent latency benefit
 for GPT-6 Sol / medium / Fast and noisier evidence for Luna / high / Fast. The
-GPT-6.1 Sol Answer configuration has offline verification only; no new live
-quality or latency benefit is established. Fast may cost more per token, and
+shipped GPT-6.1 Sol / medium / Fast Answer configuration has offline verification;
+Independent Answer Library Access 01 exercised the effective user override
+GPT-6.1 Sol / high / Standard, without isolating a model or tier benefit.
+Fast may cost more per token, and
 there is no runtime cost estimator. Model choices are not
 read from environment variables; `.env.example` contains credential placeholders.
 No Sol interpretation/decomposition pass precedes Research. Such a pass may be
@@ -128,16 +130,17 @@ Executable route intent is expressed by structured Search/Read/Find requests and
 the compact working understanding, without a new semantic owner or memory.
 
 **Answer** receives the immutable current user turn, conversation context,
-current date, exact selected Evidence, mechanical acquisition limitations, and
-remaining budget. No `answer_cautions`, working understanding, generated factual
-warnings, answer draft, or Research verdict crosses this boundary. Controlling
-identity, scope, time, conflicts and qualifications travel in the actual selected
+current date, initial exact Evidence, a compact acquired-library catalog,
+mechanical acquisition limitations, and remaining budget. No `answer_cautions`,
+working understanding, generated factual warnings, answer draft, or Research
+verdict crosses this boundary. Controlling
+identity, scope, time, conflicts and qualifications travel in actual supplied
 material. Conversation resolves intent, discourse, corrections and follow-up
 meaning. Prior user questions may carry explicit task premises into a follow-up;
 user beliefs and narration are not automatically stipulated premises. Prior
 assistant answers are discourse context only and cannot silently become task
 premises. A user may explicitly adopt a prior assistant value as a new scenario
-premise without verifying that value externally. Answer determines what selected
+premise without verifying that value externally. Answer determines what supplied
 Evidence or user-supplied premises justify, with supported, partial, or unable
 posture.
 For non-lookup analytical questions, its composition instructions give the
@@ -155,9 +158,39 @@ distinction. These are instructions to the existing Answer owner, not an additio
 field, semantic actor or validation gate.
 One consequential missing information need from a validated Answer may return to
 Research within the same run allowance. Only that need returns; the provisional
-answer is not supplied as Research authority. Materially changed selected Evidence
-starts a fresh Answer-stage allowance; unchanged selection retains no-progress
-protection.
+answer is not supplied as Research authority. A changed initial selection or new
+acquisition can start a fresh Answer-stage allowance within the whole-run budget.
+No-progress compares the selection with all material the prior Answer actually
+received and also requires an unchanged acquired corpus.
+
+Research chooses outside acquisition and suggests initial Evidence; it does not
+control Answer's access to the current session's retained originals. Within the
+existing Answer attempt, `library_browse`, `library_find` and `library_read` adapt
+the same `AcquisitionLibrary`, SourceIndex and exact-view machinery. The initial
+catalog and subsequent pages contain at most 24 acquisitions/documents, including
+material from earlier turns. Material IDs distinguish versions; shared source
+IDs identify their relationship. Metadata is navigation only. Read/Find return
+exact acquired text, and only returned material becomes citation-eligible.
+Candidate-only links and unacquired portions of a highlight are inaccessible.
+No operation can dispatch an external provider, access another session or alter
+an original. Exact views may enter the in-memory material map.
+
+Answer chooses whether to inspect; there is no mandatory read stage. The adapter
+allows 12 local operations per Answer attempt across correction, with 128,000
+characters of source attention including initial Evidence. Results normally
+contain at most 32,000 characters; an already-admitted provider highlight up to
+65,536 characters can be returned whole without inventing page coordinates.
+Repeated returned text spends attention again. Large full parents use existing
+bounded exact views. Catalog browsing supplies no source text. Local inspection
+does not require Research reentry; a consequential unacquired external need does.
+
+These tools coexist with the calculator in the existing Responses continuation.
+Both API and plan transports accept only tools declared for that request, with
+strict arguments, call identities and opaque reasoning continuity. The existing
+120-second Answer-stage and whole-run deadlines include all continuations. Safe
+receipts record physical requests, usage, elapsed time, local operations, exact
+material/source/parent IDs, ranges, content hashes and UTF-8 byte counts. Public
+source-body observation remains a separate opt-in diagnostic projection.
 
 The Answer contract is `SemanticAnswerDecision`: posture, `support_basis`,
 answer, and `missing_information`. Sol, through the existing Answer model role,
@@ -173,12 +206,16 @@ primary response categories share that allowance and the Answer-stage deadline.
 Invalid aliases, unavailable selected versions and custody failures still reject
 publication through the unchanged citation resolver. Exhausted correction yields
 the fixed operational inability message, with no rejected prose, selected support
-or citations. Custody/membership is not a semantic entailment check.
+or citations, unless a valid earlier partial can be preserved from reentry.
+Custody/membership is not a semantic entailment check.
 
 A valid consequential `missing_information` need may return to Research under
 the existing budget and no-progress rules. The provisional answer is not Research
-authority. Unchanged selection preserves no-progress protection; materially changed
-selected Evidence receives a fresh Answer allowance.
+authority. No-progress accounts for independently read material and new corpus
+acquisitions. A failed or exhausted later attempt preserves an already-valid
+partial with its original exact support; reaching a hard bound retains the
+ordinary research-bound disclosure. Pending acquisitions do not become citations
+or an assertion that the partial has been reassessed against them.
 
 With empty Evidence, a supported or partial conditional derivation may use explicit
 user premises without citations. Mixed premise-and-Evidence answers use the
@@ -327,7 +364,7 @@ as explicit links in exposed material. These mechanics validate addressability
 and custody, not semantic relevance.
 
 A session may also hold user-provided text PDFs. They are durable source custody,
-not Evidence until Research selects exact extracted text. The catalog lists each
+not Evidence until a role receives exact extracted text. The catalog lists each
 document as metadata (`D1`, filename, media type, pages, characters,
 `user_document`, `visual_analysis=false`, and the count of pages with no
 extracted text). That metadata is navigation. It does not establish what the
@@ -335,7 +372,7 @@ document says, and it does not claim that omitted visual content says anything.
 Read with `target=D1` and Find with `scope=["D1"]` use the retained extraction
 locally. Unscoped Find may also inspect retained web material. Exact document
 refs use `D1@start:end` over the deterministic extracted text, with real PDF
-page indexes. Those refs are accepted as Evidence and as Answer source readings.
+page indexes. Those refs are accepted as Evidence when actually supplied to Answer.
 A document read spends no external attempt and does not consume the Exa Deep
 bootstrap. The first eligible generic web Search still uses Deep. Document text
 is authoritative for what the document states. It does not by itself verify an
@@ -427,7 +464,8 @@ stored extraction and must match it. No new acquisition or persistent memory is
 created. No other historical material
 is automatically exposed. Research may use, shelve or supplement this Evidence.
 Answer continues to receive ordinary conversation without historical provenance
-aliases and sees only Evidence freshly selected for the current answer. Prior user
+aliases, receives initial selected Evidence and may independently inspect any
+legitimate retained material in that session. Prior user
 questions may supply explicit premises as task context; prior assistant answers
 are never Evidence. Only successful completed results commit session state;
 failures leave the previous in-memory and durable snapshot unchanged. A partial
@@ -453,11 +491,11 @@ Analysis code is decode-only schema/reference validation in `scryraven.historica
 Historical judgments are excluded from new model packets. The stopped Investigator
 executable harness and its Author adapter are retired to their preserved Git lineage.
 
-Successful normal-path citation uses retain exact support coordinates and hashes
-in completed-turn JSON. Opening a session validates every region against its
-own citation snapshot; a corrupt material, range or hash cannot reopen as trusted
-support. Historical records missing the additive support field remain readable
-without payload rewriting. Legacy-fallback turns retain generic inspection.
+New completed turns retain exact cited material snapshots without passage
+localization. Historical citation uses with saved support coordinates and hashes
+remain validated against their own snapshots; a corrupt material, range or hash
+cannot reopen as trusted support. Historical records missing the additive support
+field remain readable without payload rewriting.
 
 Reading Room citation links identify their occurrence by the saved answer offset.
 The Reader renders exact retained Evidence: that use's support first, expandable

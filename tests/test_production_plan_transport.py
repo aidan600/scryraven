@@ -16,6 +16,7 @@ from test_research_loop import answer, decision, request
 
 from core.exa_transport import DiscoveryCandidate
 from core.transport import FetchedMaterial
+from scryraven.answer_library import LIBRARY_TOOLS
 from scryraven.errors import RunError
 from scryraven.model import _CALCULATOR_TOOL, ModelError, OpenAIModel, built_in_model_config
 from scryraven.research import ANSWER_PROMPT, RESEARCH_PROMPT, RunLimits, run
@@ -126,13 +127,15 @@ class FrozenAuth:
         self.http = self
 
     def access(self, account, *, timeout):
-        assert account == "personal" and 0 < timeout <= 120
+        # Deadline subtraction may exceed 120 by one floating-point ULP when
+        # the monotonic clock crosses an exponent boundary on a fresh CI host.
+        assert account == "personal" and 0 < timeout <= 120 + 1e-9
         return {"access_token": "synthetic-plan-token"}
 
     def request(self, method, url, **kwargs):
         assert method == "POST" and url == "https://api.openai.com/v1/responses"
         assert kwargs["headers"]["Authorization"] == "Bearer synthetic-plan-token"
-        assert kwargs["stream"] is True and 0 < kwargs["timeout"] <= 120
+        assert kwargs["stream"] is True and 0 < kwargs["timeout"] <= 120 + 1e-9
         payload = copy.deepcopy(kwargs["json"])
         self.calls.append(payload)
         response = next(self.replies).stream(payload)
@@ -176,7 +179,7 @@ def test_plan_native_research_dependent_calculation_and_unknown_usage():
         extras = [(index, item) for index, item in enumerate(payload["input"])
                   if item.get("type") == "additional_tools"]
         assert len(extras) == 1 and extras[0][1] == {
-            "type": "additional_tools", "role": "developer", "tools": [_CALCULATOR_TOOL]}
+            "type": "additional_tools", "role": "developer", "tools": [_CALCULATOR_TOOL, *LIBRARY_TOOLS]}
         first_return = next((index for index, item in enumerate(payload["input"])
                              if item.get("type") in {"reasoning", "function_call", "function_call_output"}),
                             len(payload["input"]))
