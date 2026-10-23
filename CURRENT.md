@@ -78,7 +78,7 @@ fault-injected native protocol confirmation), 383 physical model dispatches and
 adjudication check was inconclusive. Exact control usage was recovered from safe
 production events after an external observer mismatch; one timed-out Answer request
 retains unknown token amounts, and control cache-write fields remain unknown.
-Plan credits/provider bills are unknown. Five useful sanitized cases are preserved
+Plan credits/provider bills are unknown. Six useful sanitized cases are preserved
 as ignored development candidates, not holdout gold.
 
 See `docs/operator/RESEARCH_FIRST_RESUMABLE_ANSWER_01.md` and the full review bundle

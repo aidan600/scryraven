@@ -158,7 +158,7 @@ at an exact wall-clock instant.
 
 All packets, frozen judgments, measurements, capability matrices, repair receipts
 and the complete review bundle are under `C:\tmp\sr-research-first-resumable-answer-01`.
-Five useful cases are preserved in ignored `local-evals/` as development candidates;
+Six useful cases are preserved in ignored `local-evals/` as development candidates;
 existing corpus records remain. Plan credits and provider bills are unknown.
 The controlling agent inspected no credential values or unapproved private data.
 No cleanup, push, PR, merge, rebase, destructive reset, deletion or main alteration
