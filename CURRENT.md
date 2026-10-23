@@ -2,7 +2,11 @@
 
 ## Ordinary product architecture
 
-This local, unpromoted candidate implements Research-first with resumable Answer.
+Research-first with resumable Answer is the merged production architecture:
+initial Luna Research -> independent Sol Answer with optional resumable delegated
+Research. [PR #677](https://github.com/aidan600/scryraven/pull/677) merged reviewed
+head `6a0790b33c07afa60ca34ef88ff4fa146230d285` as
+`5333a09f5f7b7dc9950ca98637b5cc788f955a3d` on 2026-10-23.
 Initial Luna Research retains production whole-question interpretation, revisable
 understanding, Exa/Serper/LinkUp acquisition, local Read/Find and selection of
 originals for an independent Sol Answer. One fresh native Sol interaction begins
@@ -29,7 +33,7 @@ explicit rereads remain charged. A7 allows local inspection/exact selection afte
 external denial without renewing resources. Historical citations and physical PDF
 page identity remain durable. The retired terminal full-stage reentry is removed.
 
-The dependency-corrected branch passes 975 offline tests, with Ruff, compilation,
+The merged dependency correction passed 975 offline tests, with Ruff, compilation,
 pre-commit and diff checks. The campaign's earlier 971-test record remains
 historical. Injected API/plan tests cover initial Research ordering, native tool
 continuation, exact arithmetic, immutable intent, shared counters, post-denial
@@ -37,9 +41,10 @@ selection, isolation and honest deadline/failure behavior. Tiny financing/XZ and
 same-version FCC cases have preserved-original offline custody replays.
 
 Seven ordinary development turns and 24 registered comparison turns used hybrid
-runtime `c823c621` or normalized control `dec023f8` as registered. The final runtime
-is `91a7ad586b2d867f1f0fbaa9d5b5f64f4811fdd3`. F1 is an ordinary confirmation;
-F2 is an explicitly fault-injected native protocol confirmation. Post-comparison
+runtime `c823c621` or normalized control `dec023f8` as registered. The campaign's
+final tested runtime was `91a7ad586b2d867f1f0fbaa9d5b5f64f4811fdd3`.
+F1 is an ordinary confirmation; F2 is an explicitly fault-injected native protocol
+confirmation. Post-comparison
 mechanical repairs concern physical dispatch accounting and final-output correction
 continuity, not Research/Answer behavioral calibration. Existing mechanical final
 checks now offer one correction within the same native history; a second invalid
@@ -62,9 +67,9 @@ H uses 175 versus 158 physical requests, 119 versus 100 external attempts and
 4152.515 versus 3570.545 total wall seconds. Only A financing R1 opens a second
 Answer lifetime, charging 189,463 source characters versus H's cumulative 128,000
 ceiling. Unequal acquisition/exposure and reused development questions preclude
-statistical superiority or general causal/reliability claims. The review recommends
-retaining the complete candidate locally without promotion; human adoption remains
-a product/economic trade-off, with no automatic tuning phase.
+statistical superiority or general causal/reliability claims. The original pre-merge
+recommendation is preserved in the historical operator report. PR #677 adopted the
+reviewed architecture as production; no automatic tuning phase is commissioned.
 
 Actual saved sessions, PDF bytes/pages, historical citations and a control-format
 session reopened through the hybrid pass zero-inference Reading Room checks at
@@ -83,9 +88,10 @@ Plan credits/provider bills are unknown. Six useful sanitized cases are preserve
 as ignored development candidates, not holdout gold.
 
 See `docs/operator/RESEARCH_FIRST_RESUMABLE_ANSWER_01.md` and the full review bundle
-under `C:\tmp\sr-research-first-resumable-answer-01`. Main and the donor/control
-branches remain unchanged. The following independent-library campaign is historical
-production evidence, not a new hybrid observation.
+under `C:\tmp\sr-research-first-resumable-answer-01`. PR #677 is merged; the
+donor/control histories and phase evidence remain preserved. The following
+independent-library campaign is historical production evidence, not a new hybrid
+observation.
 
 Independent Answer Library Access 01 demonstrated autonomous use of retained
 material omitted by Research selection. The unchanged historical COVID-OUT
@@ -172,9 +178,9 @@ discovery for a needed source class. Serper
 candidates and snippets guide navigation only;
 they are not Evidence. LinkUp static Fetch supplies external known-URL Read when
 Research selects one. Exa Contents has no ordinary Read authority; there is no
-search or Read fallback or provider router. The candidate has one 900-second hard
-whole-turn ceiling, 40 physically dispatched model requests across both roles,
-16 external acquisition attempts and 128,000 cumulative Answer source characters.
+search or Read fallback or provider router. The production turn has one
+900-second hard whole-turn ceiling, 40 physically dispatched model requests across
+both roles, 16 external acquisition attempts and 128,000 cumulative Answer source characters.
 Individual model requests are capped at 300 seconds and remaining whole-turn time.
 There is no terminal time reserve or total Answer-stage clock. Research preserves
 one physical Answer completion opportunity where feasible. Native continuations,

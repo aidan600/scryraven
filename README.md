@@ -50,7 +50,7 @@ Search; Research can select Serper for lexical/community/current discovery;
 LinkUp Fetch supplies external known-URL
 Read. There is no architecture selector, Analyst checkpoint,
 separate old Author handoff or fallback engine.
-See [research architecture](docs/architecture/RESEARCH.md) for the current candidate
+See [research architecture](docs/architecture/RESEARCH.md) for the production
 contract.
 
 ## Reading Room
@@ -420,7 +420,7 @@ invented page numbers.
 Source labels use publication metadata, PDF filenames or hostnames without
 generating titles from evidence text.
 
-The local hybrid first runs whole-question Research, then one independent Answer
+The production path first runs whole-question Research, then one independent Answer
 interaction with local library tools, calculator and optional `research(need)`.
 Research returns exact originals to the same native Answer continuation. Final
 missing information is a delivered limitation and never restarts the stage.
