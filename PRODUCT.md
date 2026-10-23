@@ -82,9 +82,9 @@ honest, and the interface remains usable at narrow browser widths.
 
 ## Ordinary research architecture
 
-The Research-first resumable Answer candidate uses two semantic roles. Initial
-Research interprets the whole original question, revises its working understanding,
-directs Search/Read/Find and chooses when useful selected originals are ready for
+The production Research-first resumable Answer architecture uses two semantic
+roles. Initial Research interprets the whole original question, revises its working
+understanding, directs Search/Read/Find and chooses when useful selected originals are ready for
 an independent Answer. A fresh Answer interaction then interprets the question,
 relevant conversation, user premises and actual source text for itself.
 
@@ -96,7 +96,8 @@ same continuing Answer interaction. No provisional final answer or full Answer
 restart is required. Research's generated understanding and assessments remain
 fallible continuity, never Evidence or a binding conclusion. No additional
 semantic owner, mandatory coverage checker, selector or alternate path is added.
-Current model assignments and the candidate's review status are in `CURRENT.md`.
+Current model assignments, bounded demonstrations and remaining limits are in
+`CURRENT.md`.
 
 Actual Evidence remains immutable and locally rereadable. Generated understanding,
 past answers and candidate hypotheses are not Evidence. Currentness means applicable

@@ -2,6 +2,14 @@
 
 Status: complete local experiment; unpromoted candidate. No publication or merge.
 
+Subsequent-merge clarification (2026-10-23):
+[PR #677](https://github.com/aidan600/scryraven/pull/677) published this work and
+merged reviewed head `6a0790b33c07afa60ca34ef88ff4fa146230d285` as
+`5333a09f5f7b7dc9950ca98637b5cc788f955a3d`. Research-first with resumable Answer
+is now production. The original status, recommendation and no-publication closeout
+describe the experiment handoff; its outcomes and measurements remain
+historical.
+
 ## Outcome and responsibility
 
 Initial Luna Research retains production interpretation, revisable understanding,

@@ -1,7 +1,10 @@
 # Ordinary Research / Evidence-first Answer architecture
 
-The local candidate extends production Research-first with resumable Answer.
-This replaces Research -> Analyst -> Author. There is no production selector,
+The production architecture is initial Luna Research -> independent Sol Answer
+with optional resumable delegated Research, merged in
+[PR #677](https://github.com/aidan600/scryraven/pull/677) at
+`5333a09f5f7b7dc9950ca98637b5cc788f955a3d`.
+Research -> Analyst -> Author remains retired. There is no production selector,
 alternate engine or fallback. `CURRENT.md` distinguishes implementation from
 bounded demonstrations and remaining limitations.
 
