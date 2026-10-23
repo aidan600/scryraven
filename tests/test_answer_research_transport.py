@@ -59,7 +59,11 @@ def scripted_model(monkeypatch, backend, script, **options):
 
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         model = OpenAIModel(CONFIG, backend="chatgpt_plan", **options)
-        model.plan_transport = SimpleNamespace(request=lambda payload, timeout: dispatch(plan_payload(payload), timeout))
+        def plan_request(payload, *, timeout, before_dispatch):
+            body = plan_payload(payload)
+            return dispatch(body, min(timeout, before_dispatch()))
+
+        model.plan_transport = SimpleNamespace(request=plan_request)
     return model, calls
 
 

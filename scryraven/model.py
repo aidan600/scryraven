@@ -103,6 +103,13 @@ class ModelError(RuntimeError):
     """Only fixed, safe codes cross the transport boundary."""
 
 
+class _DispatchDenied(Exception):
+    """Carry a resource-gate exception through transport error normalization."""
+
+    def __init__(self, error):
+        self.error = error
+
+
 @dataclass(frozen=True)
 class ModelUsage:
     """Safe per-request counters. Missing/invalid counters remain unknown, not zero.
@@ -333,18 +340,21 @@ def _calculation_output(
     return {"type": "function_call_output", "call_id": call["call_id"], "output": output}
 
 
-def _api_response(post, payload, token, timeout):
+def _api_response(post, payload, token, timeout, *, before_dispatch=None):
     """Bound connection, headers and body under one physical request allowance."""
     from urllib3.util import Timeout
 
     from scryraven.chatgpt_plan.http import response_deadline
 
-    started = monotonic()
     response = None
     try:
+        headers = {"Authorization": f"Bearer {token}"}
+        if before_dispatch is not None:
+            timeout = min(timeout, before_dispatch())
+        started = monotonic()
         response = post(
             "https://api.openai.com/v1/responses",
-            headers={"Authorization": f"Bearer {token}"}, json=payload,
+            headers=headers, json=payload,
             timeout=Timeout(total=timeout, connect=timeout, read=timeout), stream=True,
         )
         with response_deadline(response, timeout - (monotonic() - started)):
@@ -465,8 +475,6 @@ class OpenAIModel:
                 timeout = min(timeout, remaining_seconds())
             if timeout <= 0:
                 raise ModelError("model_request_timed_out")
-            if before_request is not None:
-                before_request(stage)
             data = None
             if self.plan_transport is not None:
                 from scryraven.chatgpt_plan.transport import plan_payload
@@ -474,11 +482,32 @@ class OpenAIModel:
             else:
                 request_input_characters = len(_json(payload["input"]))
             request_started = monotonic()
+            dispatched = False
+
+            def before_dispatch():
+                nonlocal dispatched
+                try:
+                    left = timeout - (monotonic() - request_started)
+                    if remaining_seconds is not None:
+                        left = min(left, remaining_seconds())
+                    if left <= 0:
+                        raise ModelError("model_request_timed_out")
+                    if before_request is not None:
+                        before_request(stage)
+                except BaseException as exc:
+                    raise _DispatchDenied(exc) from None
+                dispatched = True
+                return left
+
             try:
                 if self.plan_transport is not None:
-                    data = self.plan_transport.request(payload, timeout=timeout)
+                    data = self.plan_transport.request(payload, timeout=timeout,
+                                                       before_dispatch=before_dispatch)
                 else:
-                    data = _api_response(self.post, payload, token, timeout)
+                    data = _api_response(self.post, payload, token, timeout,
+                                         before_dispatch=before_dispatch)
+            except _DispatchDenied as exc:
+                raise exc.error
             except ModelError as exc:
                 # Plan failures can retain only allowlisted usage counters.
                 # Missing counters remain unknown, never inferred as zero.
@@ -502,7 +531,7 @@ class OpenAIModel:
                 raise ModelError("model_transport_failed") from None
             finally:
                 observers = invocation_observers
-                if any(observer is not None for observer in observers):
+                if dispatched and any(observer is not None for observer in observers):
                     usage = ModelUsage(
                         safe_stage, safe_phase, cache_family, role.model,
                         () if self.plan_transport is not None else breakpoints,

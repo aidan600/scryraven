@@ -264,15 +264,20 @@ class PlanResponses:
         self.auth = auth if auth is not None else Auth()
         self.physical_requests = 0
 
-    def request(self, payload, *, timeout):
+    def request(self, payload, *, timeout, before_dispatch=None):
         body, deadline = plan_payload(payload), Deadline(timeout)
         response, last_body = None, None
         try:
             row = self.auth.access(self.account, timeout=deadline.left())
+            headers = {"Authorization": "Bearer " + row["access_token"], "Accept": "text/event-stream"}
+            request = self.auth.http.request
+            request_timeout = deadline.left()
+            if before_dispatch is not None:
+                request_timeout = min(request_timeout, before_dispatch())
             self.physical_requests += 1
-            response = self.auth.http.request(
-                "POST", RESPONSES, timeout=deadline.left(), stream=True,
-                headers={"Authorization": "Bearer " + row["access_token"], "Accept": "text/event-stream"},
+            response = request(
+                "POST", RESPONSES, timeout=request_timeout, stream=True,
+                headers=headers,
                 json=body,
             )
             with response_deadline(response, deadline.left()):

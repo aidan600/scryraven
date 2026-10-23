@@ -104,8 +104,11 @@ def scripted(monkeypatch, outputs, backend="api"):
 
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         model = OpenAIModel(CONFIG, backend="chatgpt_plan")
-        model.plan_transport = SimpleNamespace(
-            request=lambda payload, timeout: dispatch(plan_payload(payload), timeout))
+        def plan_request(payload, *, timeout, before_dispatch):
+            body = plan_payload(payload)
+            return dispatch(body, min(timeout, before_dispatch()))
+
+        model.plan_transport = SimpleNamespace(request=plan_request)
     return model, payloads, timeouts
 
 
@@ -315,6 +318,38 @@ def test_retained_followup_reopens_and_still_runs_initial_research_without_reacq
     assert result.trace[-1]["budget"]["external_attempts"] == 0
     assert result.trace[-1]["budget"]["research_episodes"] == 0
     assert ResearchSession.open(session.session_id, store=store).turns == reopened.turns
+
+
+def test_interruption_after_delegated_return_preserves_prior_durable_turn(monkeypatch, tmp_path):
+    def interrupted(_payload):
+        raise KeyboardInterrupt
+
+    model, payloads, _ = scripted(monkeypatch, [
+        reply(initial(requests=[request()])), reply(initial("answer", ["E1"])), reply(answer()),
+        reply(initial("answer", ["E1"])), tool("research", {"need": "Find the new qualification"}, "interrupt-r1"),
+        reply(delegated(requests=[request(query="new qualification")])),
+        reply(delegated("return", ["E2"])), interrupted,
+    ])
+    store = SQLiteSessionStore(tmp_path / "interrupted.sqlite3")
+    searches = []
+
+    def acquiring(query):
+        searches.append(query)
+        if query == "new qualification":
+            return [DiscoveryCandidate("Qualification", "https://example.org/qualification", "Winter applies.",
+                                       context_kind="provider_highlights")]
+        return search(query)
+
+    session = ResearchSession.create(store=store, model=model, search=acquiring, fetch=prohibited)
+    session.ask("What is the original value?")
+    before = store.load(session.session_id)
+    with pytest.raises(KeyboardInterrupt):
+        session.ask("What new qualification applies to that value?")
+    assert "new qualification" in searches
+    assert results(payloads[-1])["interrupt-r1"]["evidence"][0]["content"] == "Winter applies."
+    assert store.load(session.session_id) == before
+    assert session.turns == before.state.turns and session.acquisitions == before.state.acquisitions
+    assert session.metadata == before.metadata
 
 
 def test_final_missing_information_is_a_limitation_without_stage_restart(monkeypatch):
