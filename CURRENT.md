@@ -29,8 +29,9 @@ explicit rereads remain charged. A7 allows local inspection/exact selection afte
 external denial without renewing resources. Historical citations and physical PDF
 page identity remain durable. The retired terminal full-stage reentry is removed.
 
-The full offline suite passes 971 tests, with Ruff, compilation, pre-commit and
-diff checks. Injected API/plan tests cover initial Research ordering, native tool
+The dependency-corrected branch passes 975 offline tests, with Ruff, compilation,
+pre-commit and diff checks. The campaign's earlier 971-test record remains
+historical. Injected API/plan tests cover initial Research ordering, native tool
 continuation, exact arithmetic, immutable intent, shared counters, post-denial
 selection, isolation and honest deadline/failure behavior. Tiny financing/XZ and
 same-version FCC cases have preserved-original offline custody replays.
@@ -182,6 +183,13 @@ returns share one 12-operation Answer allowance and cumulative attention.
 These limits provide diagnostic and completion headroom, not an acceptable-latency
 target. No semantic
 verifier or additional semantic owner exists.
+
+The base installation declares `urllib3>=2.6,<3` for the response-body deadline
+watchdog shared by API and plan transports. JWT/cryptography authentication
+dependencies remain optional; ordinary API imports require no plan account or
+vault access. An isolated API-only install at urllib3 2.6.0 passes all eight
+dependency/deadline tests without JWT or cryptography; pip rejects 2.5.0 under the
+base constraint.
 
 The ordinary model transport remains API-default. Programmatic opt-in via
 `OpenAIModel(backend="chatgpt_plan", plan_account="personal")` uses the optional

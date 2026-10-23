@@ -25,8 +25,11 @@ Use Python 3.10 or later from the repository root:
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt -r requirements-dev.txt
+python -m pip install -r requirements.txt
 ```
+
+For development and offline tests, also install `requirements-dev.txt`. Its
+optional plan authentication dependencies are not required for ordinary API use.
 
 Model execution requires `OPENAI_API_KEY`, and ordinary web Search requires
 `EXA_API_KEY` in the process environment. `SERPER_API_KEY` is required only when

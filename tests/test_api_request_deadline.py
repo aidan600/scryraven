@@ -1,13 +1,59 @@
-"""API body reads share the physical-request ceiling; all transports are synthetic."""
+"""Offline API body deadlines and their ordinary installation dependencies."""
+import socket
+from pathlib import Path
 from threading import Event
 from types import SimpleNamespace
 
 import pytest
 import requests
+from packaging.requirements import Requirement
+from urllib3.connection import HTTPConnection
+from urllib3.response import HTTPResponse
 
 from scryraven import model as model_module
 from scryraven.chatgpt_plan import http
 from scryraven.model import ModelError, OpenAIModel, built_in_model_config
+
+
+@pytest.mark.parametrize("version,accepted", [
+    ("2.5.0", False), ("2.6.0", True), ("3.0.0", False),
+])
+def test_base_requirements_enforce_shared_watchdog_compatibility(version, accepted):
+    requirements = [
+        Requirement(line) for line in
+        (Path(__file__).resolve().parents[1] / "requirements.txt").read_text().splitlines()
+        if line.strip() and not line.startswith("#")
+    ]
+    dependency, = (item for item in requirements if item.name == "urllib3")
+    assert (version in dependency.specifier) is accepted
+
+
+def test_watchdog_uses_real_urllib3_response_shutdown(monkeypatch):
+    shutdowns = []
+    response = requests.Response()
+    response.raw = HTTPResponse(
+        connection=HTTPConnection("offline.invalid"), preload_content=False,
+        sock_shutdown=shutdowns.append,
+    )
+    assert callable(response.raw.shutdown)
+
+    class Timer:
+        def __init__(self, seconds, callback):
+            self.callback = callback
+        def start(self):
+            self.callback()
+        def cancel(self):
+            pass
+        def join(self):
+            pass
+
+    monkeypatch.setattr(http.threading, "Timer", Timer)
+    try:
+        with pytest.raises(ModelError, match="^model_request_timed_out$"):
+            with http.response_deadline(response, 1):
+                assert shutdowns == [socket.SHUT_RD]
+    finally:
+        response.close()
 
 
 class Response:

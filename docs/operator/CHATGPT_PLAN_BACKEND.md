@@ -24,6 +24,9 @@ Reading Room `create_app(session_options={"model": model})` injection can use th
 selected model. The sign-in/models commands below configure access; they do not
 select the backend for ordinary research launches.
 
+The base requirements provide urllib3 for both transports' response-body deadline
+watchdog. JWT and cryptography authentication dependencies remain optional here.
+
 Install optional dependencies and use the existing official sign-in flow:
 
 ```powershell
