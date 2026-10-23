@@ -5,41 +5,85 @@
 This local, unpromoted candidate implements Research-first with resumable Answer.
 Initial Luna Research retains production whole-question interpretation, revisable
 understanding, Exa/Serper/LinkUp acquisition, local Read/Find and selection of
-originals for an independent Sol Answer. One fresh Sol interaction begins after
-that handoff. It may Browse/Find/Read retained originals, calculate, invoke
-`research(need)` and continue with the same native tool history and source exposure.
-The specialist obtains evidence for that need and yields control to Sol. Final
-`missing_information` describes a limitation; it cannot restart Answer or Research.
-CLI, `ResearchSession.ask`, durable sessions and Reading Room share this path.
+originals for an independent Sol Answer. One fresh native Sol interaction begins
+after that handoff. It may Browse/Find/Read retained originals, calculate, invoke
+`research(need)` and continue with its user context, tool history and source exposure.
+The specialist obtains evidence and yields control to Sol. Final missing information
+describes a limitation and cannot restart Research or the Answer stage.
 
-There is one turn library, failed-read history, Deep eligibility, monotonic clock
-and physical/external allowance. Initial Research's generated understanding can
-travel to delegated Research as explicitly fallible continuity; it is not supplied
-as factual authority to Answer. Only original text actually supplied initially,
-returned by Research or read by Answer enters citation membership. No new semantic
-owner, coverage checker, provider stack, credential system or architectural toggle
-is added. Baseline delegated-worker behavior is unchanged; rejected B/C prompt
-paragraphs, fit/repacking loops and automatic unselected-source completion are absent.
+One turn shares library/history, Deep eligibility, 900 seconds, 40 physical model
+attempts, 16 external attempts, 128,000 cumulative Answer source characters and
+12 Answer local operations. There is no 180-second terminal reserve or 120-second
+Answer clock. Request arguments are at most 300 seconds and remaining turn time.
+Initial Research continuity is fallible worker context, not factual Answer authority.
+Only original text actually supplied/read enters citation membership. No third
+semantic owner, coverage checker, provider stack or credential system was added.
+The baseline delegated-worker prompt is unchanged; B/C calibration, fit/repacking
+loops and automatic unselected-source completion are absent.
 
-A5 admits exact independently valid source/version/range selections, including
-uniquely located literal or whitespace-only passages reconstructed from originals.
-Highlight coordinates address only the acquired excerpt. A6 reuses one already
-supplied containing item of the same immutable version and custody through its
-existing alias; skipped new aliases receive no citation authority. Explicit local
-rereads still spend attention. A7 permits ordinary local inspection and exact
-selection after external denial, without further external dispatch or renewed
-resources. Exact views and historical citations/PDF identity remain durable.
+A5 admits exact independently valid immutable source/version/range slices, preserving
+original whitespace and honest omissions. Highlight coordinates address only the
+acquired excerpt. A6 can reuse one already supplied containing item of the same
+version/custody through its existing alias; skipped aliases stay uncitable, and
+explicit rereads remain charged. A7 allows local inspection/exact selection after
+external denial without renewing resources. Historical citations and physical PDF
+page identity remain durable. The retired terminal full-stage reentry is removed.
 
-The full offline suite passes 921 tests. Injected API/plan tests demonstrate real
-initial Research, no-delegation completion, repeated native Research continuation,
-local inspection and dependent arithmetic, immutable user context, shared counters,
-Deep eligibility, post-denial exact selection and safe failure/deadline behavior.
-Actual preserved financing/XZ/FCC passages have separate offline custody replays.
-These are deterministic capability checks, not native semantic success or quality
-evidence. The bounded live development/comparison is pending at this checkpoint.
-All phase artifacts are under `C:\tmp\sr-research-first-resumable-answer-01`.
-Donor A7's full ordinary post-denial recovery remains unobserved; code import does
-not upgrade that claim. The following independent-library campaign is historical
+The full offline suite passes 971 tests, with Ruff, compilation, pre-commit and
+diff checks. Injected API/plan tests cover initial Research ordering, native tool
+continuation, exact arithmetic, immutable intent, shared counters, post-denial
+selection, isolation and honest deadline/failure behavior. Tiny financing/XZ and
+same-version FCC cases have preserved-original offline custody replays.
+
+Seven ordinary development turns and 24 registered comparison turns used hybrid
+runtime `c823c621` or normalized control `dec023f8` as registered. The final runtime
+is `91a7ad586b2d867f1f0fbaa9d5b5f64f4811fdd3`. F1 is an ordinary confirmation;
+F2 is an explicitly fault-injected native protocol confirmation. Post-comparison
+mechanical repairs concern physical dispatch accounting and final-output correction
+continuity, not Research/Answer behavioral calibration. Existing mechanical final
+checks now offer one correction within the same native history; a second invalid
+final yields the existing fixed inability. Exact bridges and the limits
+of native confirmation are preserved in the phase review bundle.
+
+The comparison demonstrates six autonomous Research calls across five of twelve H
+turns, all returning to one native Sol interaction. Both COVID-OUT observations
+recover the consequential acute-primary result; a genuine Klamath source-discovered
+ODFW dependency returns four exact bounded views, all cited. D7 separately has two
+native Research calls; its acute-primary result was recovered by local reading,
+not delegated acquisition. Native Serper and exact-ID reuse are demonstrated.
+Contained-new-view A6 mapping and full delegated A7 post-denial recovery remain
+native-unproved; an initial-Research post-denial local-selection witness is narrower.
+
+All twelve reader judgments were frozen before unblinding resources: five prefer
+H, three A, four no material preference. H improves COVID-OUT coverage and one
+Klamath observation; Data Act qualification and a financing repeat favor A.
+H uses 175 versus 158 physical requests, 119 versus 100 external attempts and
+4152.515 versus 3570.545 total wall seconds. Only A financing R1 opens a second
+Answer lifetime, charging 189,463 source characters versus H's cumulative 128,000
+ceiling. Unequal acquisition/exposure and reused development questions preclude
+statistical superiority or general causal/reliability claims. The review recommends
+retaining the complete candidate locally without promotion; human adoption remains
+a product/economic trade-off, with no automatic tuning phase.
+
+Actual saved sessions, PDF bytes/pages, historical citations and a control-format
+session reopened through the hybrid pass zero-inference Reading Room checks at
+1440/1920/390 pixels. CLI list/reopen and retained follow-up pass. Native new CLI/UI
+asks, live billed API, explicit UI/OS cancellation, adversarial provider trickle and
+general long-session reliability are not demonstrated. PDF analysis is extracted
+text; transport timeouts are not a universal wall-clock termination guarantee.
+
+The phase uses 33 personal-plan submissions (32 ordinary plus one explicitly
+fault-injected native protocol confirmation), 383 physical model dispatches and
+236 external attempts, within the licensed 36/1440/576 envelope. One public
+adjudication check was inconclusive. Exact control usage was recovered from safe
+production events after an external observer mismatch; one timed-out Answer request
+retains unknown token amounts, and control cache-write fields remain unknown.
+Plan credits/provider bills are unknown. Five useful sanitized cases are preserved
+as ignored development candidates, not holdout gold.
+
+See `docs/operator/RESEARCH_FIRST_RESUMABLE_ANSWER_01.md` and the full review bundle
+under `C:\tmp\sr-research-first-resumable-answer-01`. Main and the donor/control
+branches remain unchanged. The following independent-library campaign is historical
 production evidence, not a new hybrid observation.
 
 Independent Answer Library Access 01 demonstrated autonomous use of retained
@@ -66,7 +110,8 @@ plan requests (20 Answer, five Research), five external acquisition attempts,
 were Luna/high/Fast Research and GPT-6.1 Sol/high/Standard Answer; shipped defaults
 were not changed. All six completed answers reopened with exact cited material in
 the Reading Room. API behavior, session/document isolation, malformed calls,
-no-network local tools and bounded reentry repairs have offline verification.
+no-network local tools and the campaign's then-current bounded reentry repairs
+had offline verification; full-stage reentry is retired in this hybrid.
 The final runtime revision passed 841 tests with four skips; the last partial-
 preservation repair and large-highlight edge have no dedicated live observation.
 Long-session behavior and general semantic reliability remain unproved. See

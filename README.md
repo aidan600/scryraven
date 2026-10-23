@@ -1,10 +1,13 @@
 # ScryRaven
 
 ScryRaven researches public-web questions and writes cited answers from actual
-source material. One Research semantic loop owns interpretation, evolving needs,
-acquisition direction and stopping. Mechanical Search / Read / Find execute its
-choices. A fresh Evidence-first Answer independently determines what the selected
-sources justify. Generated Research state and prior answers are never Evidence.
+source material. Initial Research's semantic loop owns whole-question interpretation,
+evolving needs, acquisition direction and readiness for its initial handoff.
+Mechanical Search / Read / Find execute its choices. A fresh Evidence-first Answer
+independently determines what the selected sources justify. During that interaction,
+Answer decides consequential further-information needs and final completion;
+delegated Research directs acquisition for the requested need. Generated Research
+state and prior answers are never Evidence.
 The CLI, sessions and Reading Room use this same ordinary path.
 
 See `CURRENT.md` for implementation, demonstrations and limits. `PRODUCT.md` owns
@@ -44,7 +47,8 @@ Search; Research can select Serper for lexical/community/current discovery;
 LinkUp Fetch supplies external known-URL
 Read. There is no architecture selector, Analyst checkpoint,
 separate old Author handoff or fallback engine.
-See [research architecture](docs/architecture/RESEARCH.md) for the promoted contract.
+See [research architecture](docs/architecture/RESEARCH.md) for the current candidate
+contract.
 
 ## Reading Room
 
@@ -364,10 +368,10 @@ the product does not load `.env`. There is no automatic premium escalation or
 model fallback. One stateless OpenAI Responses transport uses structured output;
 no model has built-in web tools. The historical isolated fixed-packet GPT-6 Sol /
 medium / Fast screen showed a consistent latency benefit; Luna / high / Fast
-evidence was noisier. The GPT-6.1 Sol Answer configuration has offline verification
-only, with no new live quality or latency claim. Fast is a reversible default,
-not a universal speedup, and may cost more per token. There is no runtime cost
-estimator.
+evidence was noisier. The shipped GPT-6.1 Sol / medium / Fast Answer configuration
+has offline verification only, with no isolated live quality or latency claim.
+Fast is a reversible default, not a universal speedup, and may cost more per token.
+There is no runtime cost estimator.
 
 ## Acquisition and evidence
 
@@ -387,9 +391,10 @@ reports the exact text returned and whether a focused lexical lookup matched or
 fell back to dispersed windows. Unscoped Find ranks lexical matches across the
 retained library on a comparable corpus-wide scale; it remains navigation, not
 semantic evidence judgment. Local Read and Find need no provider I/O for retained text.
-All results return to Research
-for reassessment. Neither source count, failed search nor budget exhaustion proves
-support, completeness or nonexistence. The original/current request governs scope.
+Research's route results return to Research for reassessment; Answer's local tool
+results return directly to its continuing interaction. Neither source count,
+failed search nor budget exhaustion proves support, completeness or nonexistence.
+The original/current request governs scope.
 
 Actual acquisitions remain immutable and locally rereadable across follow-ups.
 Same-URL versions retain their canonical source identity. Large full sources can

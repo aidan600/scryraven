@@ -93,8 +93,8 @@ the run deadline has expired, uses the ordinary serial executor. Read, Find,
 lexical Search, and any request that breaks the contiguous generic-Search run
 stay serial. At most three generic Searches share one transport group. Body-free
 diagnostics may record that group's route indexes, transport sum, span, and
-overlap. This is transport overlap only. Research remains the only semantic
-owner, and the Research prompt is unchanged.
+overlap. Research still chooses acquisition routes. This transport overlap changes
+neither acquisition policy nor the Research prompt and adds no semantic decision-maker.
 
 Both modes request six results, `text=false` and Dynamic/high Highlights with
 the existing beta header. Only exact source-bound `results[].highlights[]` enter
@@ -384,11 +384,13 @@ Catalogs and indexes are transient navigation, not persisted product truth.
 
 ## Completion and resource limits
 
-Stopping belongs to Research's task and evidence judgment: answer at a useful honest
-scope when no consequential unresolved need justifies further obtainable material
-at its expected cost. The Answer contract independently determines the supported
-scope from selected Evidence or explicit user premises. Neither source counts nor
-budget consumption establishes sufficiency.
+Initial Research decides when its whole-question investigation is ready for handoff.
+Delegated Research decides when to return useful evidence or an honest limitation
+for the requested need, judging whether further obtainable material justifies its
+expected cost. The continuing Answer independently decides whether to seek more
+evidence or complete a supported, partial or unable response from actual Evidence
+or explicit user premises. Neither source counts nor budget consumption establishes
+sufficiency.
 
 Bounded Level-7 evaluation demonstrated useful aggregate and open-world synthesis
 when suitable heterogeneous Evidence reached Answer. It showed restraint against
