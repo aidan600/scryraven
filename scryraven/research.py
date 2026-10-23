@@ -718,7 +718,17 @@ def _run_turn(
             except Exception:
                 pass
 
-    def ask(stage, prompt, packet, shape, *, answer_library=None, research_tool=None):
+    def parse_response(stage, raw, shape):
+        try:
+            # A JSON fence is harmless presentation; invalid data is never traced.
+            wrapped = re.fullmatch(r"\s*```(?:json)?\s*\n(.*?)\n```\s*", raw, re.S | re.I)
+            return shape.model_validate_json(wrapped.group(1) if wrapped else raw)
+        except ValidationError:
+            emit("response_rejected", contract=stage, code="malformed_model_response")
+            return None
+
+    def ask(stage, prompt, packet, shape, *, answer_library=None, research_tool=None,
+            final_feedback=None):
         if budget.remaining_seconds <= 0:
             raise _Bound("deadline")
         if budget.physical >= limits.physical_model_requests - (stage == "research"):
@@ -843,6 +853,7 @@ def _run_turn(
                         research_tool=research_tool, before_request=before_request,
                         resource_snapshot=budget.snapshot,
                         remaining_seconds=lambda: budget.remaining_seconds,
+                        final_feedback=final_feedback,
                     )
                 else:
                     budget.before_model(stage)
@@ -869,13 +880,7 @@ def _run_turn(
              usage=usage_fields(), budget=budget.snapshot())
         if budget.remaining_seconds <= 0:
             raise _Bound("deadline")
-        try:
-            # A JSON fence is harmless presentation; invalid data is never traced.
-            wrapped = re.fullmatch(r"\s*```(?:json)?\s*\n(.*?)\n```\s*", raw, re.S | re.I)
-            return shape.model_validate_json(wrapped.group(1) if wrapped else raw)
-        except ValidationError:
-            emit("response_rejected", contract=stage, code="malformed_model_response")
-            return None
+        return raw if final_feedback is not None else parse_response(stage, raw, shape)
 
     conversation = (context or {}).get("conversation_context", [])
     research_conversation = (context or {}).get("research_conversation_context", conversation)
@@ -1313,19 +1318,15 @@ def _run_turn(
         packet = {**common, "phase": "answer", "evidence": [],
                   "acquisition_limitations": initial_limitations,
                   "library": owner_library.catalog(), "budget": budget.snapshot()}
-        for _ in range(2):
-            packet["evidence"] = [library.materials[ref].material() for ref in refs]
-            packet["library"] = owner_library.catalog()
-            packet["budget"] = budget.snapshot()
-            final = ask("answer", ANSWER_PROMPT, packet, SemanticAnswerDecision,
-                        answer_library=owner_library, research_tool=investigate)
+
+        def correction(final):
+            """Existing mechanical final checks, shared by native and offline callers."""
             if final is None:
-                packet["output_correction"] = "Return a JSON object matching the schema."
-                continue
+                return "Return a JSON object matching the schema."
             if final.posture == "supported" and final.missing_information is not None:
                 issue = "supported_with_missing_information"
                 emit("response_rejected", contract="answer", code=issue)
-                packet["output_correction"] = {
+                return {
                     "code": issue,
                     "instruction": (
                         "A supported conclusion cannot have a consequential missing_information need. "
@@ -1335,7 +1336,6 @@ def _run_turn(
                         "any rejected answer text."
                     ),
                 }
-                continue
             basis_issue = None
             if final.support_basis == "user_premises":
                 if final.posture == "unable":
@@ -1355,7 +1355,7 @@ def _run_turn(
                 except RunError as exc:
                     if refs and exc.stage == "citations" and exc.code == "missing_citation":
                         emit("response_rejected", contract="answer", code="missing_citation")
-                        packet["output_correction"] = {
+                        return {
                             "code": "missing_citation",
                             "instruction": (
                                 "The previous response omitted required Evidence citation aliases. "
@@ -1365,13 +1365,12 @@ def _run_turn(
                                 "rejected answer text."
                             ),
                         }
-                        continue
                     raise
                 if final.support_basis == "user_premises" and citations:
                     basis_issue = "basis_user_premises_has_citations"
             if basis_issue:
                 emit("response_rejected", contract="answer", code=basis_issue)
-                packet["output_correction"] = {
+                return {
                     "code": basis_issue,
                     "instruction": (
                         "Return a fresh complete answer. Use evidence when supported claims "
@@ -1382,9 +1381,51 @@ def _run_turn(
                         "Do not rely on or reproduce any rejected answer text."
                     ),
                 }
-                continue
-            emit("answer_decision", decision=final.model_dump(exclude={"answer"}))
-            return final
+            return None
+
+        if type(model).__call__ is model_transport.OpenAIModel.__call__:
+            validated = None
+            validation_error = None
+            final_count = 0
+
+            def final_feedback(raw):
+                nonlocal validated, validation_error, final_count
+                final_count += 1
+                final = parse_response("answer", raw, SemanticAnswerDecision)
+                try:
+                    feedback = correction(final)
+                except RunError as exc:
+                    # Preserve hard custody/citation failures, without presenting
+                    # them as transport failures or authorizing a new interaction.
+                    validation_error = exc
+                    return None
+                if feedback is None:
+                    validated = final
+                return feedback if final_count == 1 else None
+
+            packet["evidence"] = [library.materials[ref].material() for ref in refs]
+            ask("answer", ANSWER_PROMPT, packet, SemanticAnswerDecision,
+                answer_library=owner_library, research_tool=investigate,
+                final_feedback=final_feedback)
+            if validation_error is not None:
+                raise validation_error
+            if validated is not None:
+                emit("answer_decision", decision=validated.model_dump(exclude={"answer"}))
+                return validated
+        else:
+            # Four-argument injected models cannot carry a native continuation.
+            # This offline compatibility path makes no native-history claim.
+            for _ in range(2):
+                packet["evidence"] = [library.materials[ref].material() for ref in refs]
+                packet["library"] = owner_library.catalog()
+                packet["budget"] = budget.snapshot()
+                final = ask("answer", ANSWER_PROMPT, packet, SemanticAnswerDecision,
+                            answer_library=owner_library, research_tool=investigate)
+                feedback = correction(final)
+                if feedback is None:
+                    emit("answer_decision", decision=final.model_dump(exclude={"answer"}))
+                    return final
+                packet["output_correction"] = feedback
         emit("answer_validation_exhausted", code="answer_validation_exhausted", budget=budget.snapshot())
         return SemanticAnswerDecision(posture="unable", support_basis="none",
             answer=ANSWER_VALIDATION_FAILURE_MESSAGE, missing_information=None)

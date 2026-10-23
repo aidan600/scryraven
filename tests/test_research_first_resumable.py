@@ -241,6 +241,154 @@ def test_initial_and_delegated_research_share_first_deep_eligibility(monkeypatch
     assert result.trace[-1]["budget"]["external_attempts"] == 2
 
 
+@pytest.mark.parametrize("backend", ["api", "chatgpt_plan"])
+def test_invalid_final_after_research_corrects_inside_same_native_history(monkeypatch, backend):
+    rejected = [{"type": "reasoning", "id": "invalid-reason", "encrypted_content": "opaque-invalid"},
+                *reply(answer("REJECTED UNCITED PROSE"))]
+    model, payloads, _ = scripted(monkeypatch, [
+        reply(initial(requests=[request()])), reply(initial("answer", ["E1"])),
+        tool("library_browse", {"offset": 0}, "l1"),
+        tool("research", {"need": "Obtain the consequential original qualification."}, "r1"),
+        reply(delegated(requests=[request("read", query="", target="https://example.org/value")])),
+        reply(delegated("return", ["E2"])), rejected,
+        tool("library_browse", {"offset": 0}, "l2"), tool("calculate", {"expression": "7*2"}, "c1"),
+        reply(answer("Seven, doubled, is fourteen under the winter qualification. [E1][E2]"))], backend)
+    events = []
+    result = run(QUESTION, model=model, search=search, context={"conversation_context": [
+        {"question": "Use the winter case.", "answer": "Winter is an explicit premise."}]},
+        fetch=lambda url: FetchedMaterial(url, "The stated value is seven in winter."), observe=events.append)
+    owners = [p for p in payloads if p["text"]["format"]["name"] == "answer"]
+    assert len(owners) == 6
+    # Initial user/developer items and every prior native item remain byte-exact.
+    corrected = owners[3]
+    assert corrected["input"][:len(owners[2]["input"])] == owners[2]["input"]
+    assert any(item.get("encrypted_content") == "opaque-invalid" for item in corrected["input"])
+    assert "REJECTED UNCITED PROSE" not in json.dumps(corrected)
+    assert "missing_citation" in json.dumps(corrected["input"][-1])
+    resources = json.loads(corrected["input"][-2]["content"][0]["text"].split(": ", 1)[1])
+    assert resources["physical_requests"] == 7 and resources["physical_remaining"] == 33
+    assert list(results(corrected)) == ["l1", "r1"]
+    assert list(results(owners[-1])) == ["l1", "r1", "l2", "c1"]
+    assert results(owners[-1])["c1"]["value"] == "14"
+    assert packet(corrected) == packet(owners[0])
+    assert [item["id"] for item in packet(corrected)["evidence"]] == ["E1"]
+    assert results(corrected)["r1"]["evidence"][0]["id"] == "E2"
+    before = results(corrected)["r1"]["library"]
+    after = results(owners[-1])["l2"]
+    assert after["text_characters_remaining"] == before["text_characters_remaining"]
+    assert after["operations_remaining"] == before["operations_remaining"] - 1
+    assert len([e for e in events if e["action"] == "model_started" and e.get("contract") == "answer"]) == 1
+    requests = [e for e in events if e["action"] == "model_request_finished" and e.get("contract") == "answer"]
+    assert [e["continuation_index"] for e in requests] == list(range(6))
+    assert sum(e["input_tokens"] for e in requests) == 66
+    assert sum(e["output_tokens"] for e in requests) == 30
+    budget = result.trace[-1]["budget"]
+    assert budget["physical_requests"] == 10 and budget["external_attempts"] == 2
+    assert budget["role_physical_requests"] == {"answer": 6, "research": 4}
+    assert budget["research_episodes"] == 1 and budget["answer_continuations"] == 5
+    assert result.posture == "supported" and len(result.citations) == 1
+
+
+@pytest.mark.parametrize("backend", ["api", "chatgpt_plan"])
+@pytest.mark.parametrize("invalid,code", [
+    ({"not": "the schema"}, "malformed_model_response"),
+    (answer(missing="Missing original"), "supported_with_missing_information"),
+    (answer("No conclusion", posture="unable", basis="user_premises"), "basis_user_premises_unable"),
+    (answer("A conclusion", basis="none"), "basis_none_requires_unable"),
+    (answer("Premises [E1]", basis="user_premises"), "basis_user_premises_has_citations"),
+    (answer("Seven without required citation"), "missing_citation"),
+])
+def test_existing_mechanical_corrections_share_native_context(monkeypatch, backend, invalid, code):
+    model, payloads, _ = scripted(monkeypatch, [reply(initial(requests=[request()])),
+        reply(initial("answer", ["E1"])), reply(invalid), reply(answer())], backend)
+    result = run("What is the original value?", model=model, search=search)
+    owners = payloads[-2:]
+    # The plan projection inserts its tools before the first response item;
+    # without prior tool/opaque items that declaration can move past feedback.
+    previous = [item for item in owners[0]["input"] if item.get("type") != "additional_tools"]
+    current = [item for item in owners[1]["input"] if item.get("type") != "additional_tools"]
+    assert current[:len(previous)] == previous
+    assert "output_correction" not in packet(owners[1])
+    correction = next(item for item in current if "output_correction" in json.dumps(item))
+    expected = "Return a JSON object matching the schema." if code == "malformed_model_response" else code
+    assert expected in json.dumps(correction)
+    assert [e["code"] for e in result.trace if e["action"] == "response_rejected"] == [code]
+    assert result.posture == "supported"
+    assert len([e for e in result.trace if e["action"] == "model_started" and e.get("contract") == "answer"]) == 1
+
+
+@pytest.mark.parametrize("backend", ["api", "chatgpt_plan"])
+def test_second_invalid_final_after_research_has_no_third_attempt_or_prose_publication(monkeypatch, backend):
+    model, payloads, _ = scripted(monkeypatch, [reply(initial("answer")),
+        tool("research", {"need": "Find the original."}, "r1"),
+        reply(delegated(requests=[request()])), reply(delegated("return", ["E1"])),
+        reply(answer("FIRST REJECTED PROSE")), reply(answer("SECOND REJECTED PROSE"))], backend)
+    result = run("What is the original value?", model=model, search=search)
+    assert result.answer == research.ANSWER_VALIDATION_FAILURE_MESSAGE
+    assert result.posture == "unable" and not result.citations
+    assert len(payloads) == 6
+    assert "FIRST REJECTED PROSE" not in json.dumps(payloads[-1])
+    assert list(results(payloads[-1])) == ["r1"]
+    assert len([e for e in result.trace if e["action"] == "answer_validation_exhausted"]) == 1
+    assert result.trace[-1]["budget"]["physical_requests"] == 6
+
+
+@pytest.mark.parametrize("backend", ["api", "chatgpt_plan"])
+def test_non_json_final_and_empty_evidence_basis_use_only_one_native_correction(monkeypatch, backend):
+    malformed = [{"type": "message", "role": "assistant", "phase": "final_answer",
+                  "content": [{"type": "output_text", "text": "not-json-at-all"}]}]
+    model, payloads, _ = scripted(monkeypatch, [reply(initial("answer")), malformed,
+        reply(answer("A claim without supplied evidence"))], backend)
+    result = run("Find the missing original.", model=model, search=prohibited)
+    assert result.answer == research.ANSWER_VALIDATION_FAILURE_MESSAGE
+    assert [e["code"] for e in result.trace if e["action"] == "response_rejected"] == [
+        "malformed_model_response", "basis_evidence_missing_packet"]
+    assert len(payloads) == 3
+    assert "not-json-at-all" not in json.dumps(payloads[-1])
+
+
+@pytest.mark.parametrize("backend", ["api", "chatgpt_plan"])
+def test_duplicate_tool_id_still_rejected_after_final_correction(monkeypatch, backend):
+    model, payloads, _ = scripted(monkeypatch, [reply(initial("answer")),
+        tool("research", {"need": "Find the original."}, "same"),
+        reply(delegated(requests=[request()])), reply(delegated("return", ["E1"])),
+        reply(answer("Uncited rejected prose")),
+        tool("calculate", {"expression": "7*2"}, "same")], backend)
+    with pytest.raises(RunError, match="malformed_model_response"):
+        run("What is the original value?", model=model, search=search)
+    assert len(payloads) == 6 and list(results(payloads[-1])) == ["same"]
+
+
+@pytest.mark.parametrize("backend", ["api", "chatgpt_plan"])
+@pytest.mark.parametrize("bound", ["physical", "deadline"])
+def test_correction_cannot_renew_exhausted_time_or_physical_allowance(monkeypatch, backend, bound):
+    now = [0.0]
+
+    def invalid(_payload):
+        if bound == "deadline":
+            now[0] = 901
+        return reply(answer("Uncited rejected prose"))
+
+    model, payloads, _ = scripted(monkeypatch, [reply(initial(requests=[request()])),
+        reply(initial("answer", ["E1"])), invalid], backend)
+    result = run("What is the original value?", model=model, search=search,
+        limits=research.RunLimits(physical_model_requests=3 if bound == "physical" else 40),
+        clock=lambda: now[0])
+    assert len(payloads) == 3
+    assert result.posture == "unable" and not result.citations
+    assert result.stop_reason == "research_bound"
+    assert result.trace[-1]["budget"]["physical_requests"] == 3
+
+
+@pytest.mark.parametrize("backend", ["api", "chatgpt_plan"])
+def test_invalid_custody_alias_remains_hard_failure_without_correction(monkeypatch, backend):
+    model, payloads, _ = scripted(monkeypatch, [reply(initial(requests=[request()])),
+        reply(initial("answer", ["E1"])), reply(answer("Unseen material. [E2]"))], backend)
+    with pytest.raises(RunError, match="invalid_citation_reference"):
+        run("What is established?", model=model, search=search)
+    assert len(payloads) == 3
+
+
 def test_initial_research_follows_source_discovered_dependency_before_handoff(monkeypatch):
     fetched = []
     model, payloads, _ = scripted(monkeypatch, [

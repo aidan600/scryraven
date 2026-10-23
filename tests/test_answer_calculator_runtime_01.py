@@ -143,7 +143,7 @@ def test_chained_calculations_reuse_prior_result_and_aggregate_usage(monkeypatch
     ]
 
 
-def test_answer_correction_allows_calculations_in_both_attempts(monkeypatch):
+def test_answer_correction_keeps_calculations_in_same_interaction(monkeypatch):
     invalid = answer("A rejected provisional number.", support_basis="user_premises", missing="A consequential need")
     valid = answer("The stipulated result is 30.", support_basis="user_premises")
     transport = ScriptedResponses(
@@ -160,22 +160,24 @@ def test_answer_correction_allows_calculations_in_both_attempts(monkeypatch):
     )
 
     assert result.answer == valid["answer"]
-    assert result.trace[-1]["budget"]["semantic_attempts"] == 3
+    assert result.trace[-1]["budget"]["semantic_attempts"] == 2
     assert result.trace[-1]["budget"]["physical_requests"] == 6
     assert len([event for event in result.trace if event["action"] == "calculator_used"]) == 3
     assert [(event["action"], event.get("attempt")) for event in result.trace
             if event["action"] in {"model_started", "model_returned"}
             and event.get("contract") == "answer"] == [
         ("model_started", 2), ("model_returned", 2),
-        ("model_started", 3), ("model_returned", 3),
     ]
     assert [event["code"] for event in result.trace if event["action"] == "response_rejected"] == [
         "supported_with_missing_information",
     ]
-    second_attempt_input = transport.calls[4]["json"]["input"]
-    assert not calculations_in(transport.calls[4]["json"])
+    corrected_input = transport.calls[4]["json"]["input"]
+    assert [item["call_id"] for item in calculations_in(transport.calls[4]["json"])] == ["calc_a", "calc_b"]
+    assert [item["call_id"] for item in calculations_in(transport.calls[5]["json"])] == ["calc_a", "calc_b", "calc_c"]
+    assert [event["sequence"] for event in result.trace if event["action"] == "calculator_used"] == [1, 2, 3]
+    assert "A rejected provisional number." not in json.dumps(corrected_input)
     assert "output_correction" in "".join(
-        item.get("text", "") for block in second_attempt_input
+        item.get("text", "") for block in corrected_input
         for item in block.get("content", [])
     )
 

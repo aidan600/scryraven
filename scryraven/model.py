@@ -406,6 +406,7 @@ class OpenAIModel:
         before_request: Callable[[str], None] | None = None,
         resource_snapshot: Callable[[], dict] | None = None,
         remaining_seconds: Callable[[], float] | None = None,
+        final_feedback: Callable[[str], str | dict | None] | None = None,
     ) -> str:
         token = os.getenv("OPENAI_API_KEY", "").strip() if self.backend == "api" else None
         if self.backend == "api" and not token:
@@ -467,6 +468,7 @@ class OpenAIModel:
         sequence = 0
         continuation_index = 0
         call_ids = set()
+        corrected_final = False
         while True:
             timeout = request_ceiling
             if deadline is not None:
@@ -624,6 +626,23 @@ class OpenAIModel:
                 )
                 if not output.strip():
                     raise ModelError("model_response_empty")
+                feedback = final_feedback(output) if final_feedback is not None else None
+                if feedback is not None and not corrected_final:
+                    # Keep the native tool/opaque history, but never feed rejected
+                    # final prose back as evidence or as a draft to imitate.
+                    continuation = [*payload["input"],
+                                    *(item for item in items if item.get("type") != "message")]
+                    if resource_snapshot is not None:
+                        continuation.append({"role": "developer", "content": [{
+                            "type": "input_text", "text": "Shared remaining turn resources: " + _json(resource_snapshot()),
+                        }]})
+                    continuation.append({"role": "developer", "content": [{
+                        "type": "input_text", "text": _json({"output_correction": feedback}),
+                    }]})
+                    payload = {**payload, "input": continuation}
+                    corrected_final = True
+                    continuation_index += 1
+                    continue
                 return output
             except (KeyError, TypeError, AttributeError):
                 raise ModelError("malformed_model_response") from None
