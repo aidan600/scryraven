@@ -82,17 +82,21 @@ honest, and the interface remains usable at narrow browser widths.
 
 ## Ordinary research architecture
 
-The ordinary product promotes the demonstrated clean-room Research/Answer
-architecture, including questions with multiple interacting components and
-evidence-directed acquisition dependencies. The former Research -> Analyst ->
-Author semantic path is superseded, with no alternate path or fallback.
-One Research decision-maker interprets the original request and actual material,
-revises a compact working understanding, chooses acquisition, and proposes stopping.
-A mechanical executor performs Search, Read and local Find. A fresh Answer call
-independently determines what the supplied sources or explicit user premises
-justify. These are two semantic contracts; no verifier, Scout, specialist hierarchy
-or model router is part of this design. Current fixed model assignments are
-recorded in `CURRENT.md`; Exa supplies Search.
+The Research-first resumable Answer candidate uses two semantic roles. Initial
+Research interprets the whole original question, revises its working understanding,
+directs Search/Read/Find and chooses when useful selected originals are ready for
+an independent Answer. A fresh Answer interaction then interprets the question,
+relevant conversation, user premises and actual source text for itself.
+
+Answer may inspect the retained library, calculate, call `research(need)` for a
+consequential external information need, or complete a supported, partial or unable
+answer. Delegated Research investigates that need in the original question's
+context and returns exact originals, navigation and honest limitations to the
+same continuing Answer interaction. No provisional final answer or full Answer
+restart is required. Research's generated understanding and assessments remain
+fallible continuity, never Evidence or a binding conclusion. No additional
+semantic owner, mandatory coverage checker, selector or alternate path is added.
+Current model assignments and the candidate's review status are in `CURRENT.md`.
 
 Actual Evidence remains immutable and locally rereadable. Generated understanding,
 past answers and candidate hypotheses are not Evidence. Currentness means applicable

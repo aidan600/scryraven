@@ -1,6 +1,6 @@
 # Ordinary Research / Evidence-first Answer architecture
 
-The ordinary application promotes the accepted clean-room Level-1–5 lineage.
+The local candidate extends production Research-first with resumable Answer.
 This replaces Research -> Analyst -> Author. There is no production selector,
 alternate engine or fallback. `CURRENT.md` distinguishes implementation from
 bounded demonstrations and remaining limitations.
@@ -93,8 +93,8 @@ the run deadline has expired, uses the ordinary serial executor. Read, Find,
 lexical Search, and any request that breaks the contiguous generic-Search run
 stay serial. At most three generic Searches share one transport group. Body-free
 diagnostics may record that group's route indexes, transport sum, span, and
-overlap. This is transport overlap only. Research remains the only semantic
-owner, and the Research prompt is unchanged.
+overlap. Research still chooses acquisition routes. This transport overlap changes
+neither acquisition policy nor the Research prompt and adds no semantic decision-maker.
 
 Both modes request six results, `text=false` and Dynamic/high Highlights with
 the existing beta header. Only exact source-bound `results[].highlights[]` enter
@@ -156,12 +156,12 @@ partial answer explains what missing inputs would resolve and what incompatibili
 would remain. Developing one dimension must not displace another consequential
 distinction. These are instructions to the existing Answer owner, not an additional
 field, semantic actor or validation gate.
-One consequential missing information need from a validated Answer may return to
-Research within the same run allowance. Only that need returns; the provisional
-answer is not supplied as Research authority. A changed initial selection or new
-acquisition can start a fresh Answer-stage allowance within the whole-run budget.
-No-progress compares the selection with all material the prior Answer actually
-received and also requires an unchanged acquired corpus.
+After initial Research's normal handoff, Answer may invoke `research(need)` before
+final synthesis. The delegated investigator uses the original request, shared
+library, acquisition history and resources. It follows useful source dependencies
+and returns originals, limitations and fallible navigation to the same native Sol
+continuation. There is no provisional-final checkpoint, full Answer restart or
+mandatory tool invocation. Final `missing_information` has no orchestration effect.
 
 Research chooses outside acquisition and suggests initial Evidence; it does not
 control Answer's access to the current session's retained originals. Within the
@@ -176,18 +176,18 @@ No operation can dispatch an external provider, access another session or alter
 an original. Exact views may enter the in-memory material map.
 
 Answer chooses whether to inspect; there is no mandatory read stage. The adapter
-allows 12 local operations per Answer attempt across correction, with 128,000
+allows 12 local operations over the continuing Answer, across delegated returns and correction, with 128,000
 characters of source attention including initial Evidence. Results normally
 contain at most 32,000 characters; an already-admitted provider highlight up to
 65,536 characters can be returned whole without inventing page coordinates.
 Repeated returned text spends attention again. Large full parents use existing
 bounded exact views. Catalog browsing supplies no source text. Local inspection
-does not require Research reentry; a consequential unacquired external need does.
+does not require delegation; a consequential unacquired need may use the Research tool.
 
 These tools coexist with the calculator in the existing Responses continuation.
 Both API and plan transports accept only tools declared for that request, with
 strict arguments, call identities and opaque reasoning continuity. The existing
-120-second Answer-stage and whole-run deadlines include all continuations. Safe
+whole-turn deadline and physical allowance include all continuations. Safe
 receipts record physical requests, usage, elapsed time, local operations, exact
 material/source/parent IDs, ranges, content hashes and UTF-8 byte counts. Public
 source-body observation remains a separate opt-in diagnostic projection.
@@ -202,25 +202,15 @@ regenerates an otherwise valid whole answer for presentation.
 
 The existing schema, posture/need and support-basis checks remain. A missing
 required Evidence citation receives the existing single correction; all invalid
-primary response categories share that allowance and the Answer-stage deadline.
-Invalid aliases, unavailable selected versions and custody failures still reject
-publication through the unchanged citation resolver. Exhausted correction yields
-the fixed operational inability message, with no rejected prose, selected support
-or citations, unless a valid earlier partial can be preserved from reentry.
-Custody/membership is not a semantic entailment check.
-
-A valid consequential `missing_information` need may return to Research under
-the existing budget and no-progress rules. The provisional answer is not Research
-authority. No-progress accounts for independently read material and new corpus
-acquisitions. A failed or exhausted later attempt preserves an already-valid
-partial with its original exact support; reaching a hard bound retains the
-ordinary research-bound disclosure. Pending acquisitions do not become citations
-or an assertion that the partial has been reassessed against them.
-
-With empty Evidence, a supported or partial conditional derivation may use explicit
-user premises without citations. Mixed premise-and-Evidence answers use the
-`evidence` basis and cite external claims. The `none` basis requires unable
-posture. User premises and previous assistant prose do not become Evidence.
+primary response categories share that allowance and whole-turn limits.
+Invalid aliases, unavailable versions and custody failures reject publication.
+Exhausted validation yields operational inability with no rejected prose or support.
+There is no terminal partial/reentry checkpoint. A final supported, partial or
+unable response completes; unresolved missing information remains a limitation.
+Only completed valid source-backed work may publish. Explicit user-premise
+derivations can complete without citations even when unrelated originals exist;
+mixed factual claims use Evidence and cite their originals. Generated notes,
+conversation and prior assistant prose never become Evidence.
 
 New citation uses have no passage coordinates. They open the exact selected
 saved source material through the generic Reader, with original publication or
@@ -241,8 +231,7 @@ claims still cite the selected material establishing their inputs, and arithmeti
 cannot supply an absent contingent external premise. Research has no calculator
 tool. A calculator stop and its model continuation remain inside one Answer
 semantic attempt, without using the one validation correction. Each underlying
-Responses request still obeys its timeout and the remaining Answer-stage and
-whole-run deadlines. Reported per-request usage is aggregated for that semantic
+Responses request still obeys its timeout and the remaining whole-run deadline. Reported per-request usage is aggregated for that semantic
 attempt; a missing continuation counter leaves a marked partial aggregate.
 
 ## Acquisition, custody, and reversible attention
@@ -395,11 +384,13 @@ Catalogs and indexes are transient navigation, not persisted product truth.
 
 ## Completion and resource limits
 
-Stopping belongs to Research's task and evidence judgment: answer at a useful honest
-scope when no consequential unresolved need justifies further obtainable material
-at its expected cost. The Answer contract independently determines the supported
-scope from selected Evidence or explicit user premises. Neither source counts nor
-budget consumption establishes sufficiency.
+Initial Research decides when its whole-question investigation is ready for handoff.
+Delegated Research decides when to return useful evidence or an honest limitation
+for the requested need, judging whether further obtainable material justifies its
+expected cost. The continuing Answer independently decides whether to seek more
+evidence or complete a supported, partial or unable response from actual Evidence
+or explicit user premises. Neither source counts nor budget consumption establishes
+sufficiency.
 
 Bounded Level-7 evaluation demonstrated useful aggregate and open-world synthesis
 when suitable heterogeneous Evidence reached Answer. It showed restraint against
@@ -416,17 +407,27 @@ research across seven completed families, including selective revision and
 multi-turn scenario-premise handling. It did not establish arbitrary-length
 continuity or general reliability.
 
-`RunLimits` ordinarily allows 12 semantic attempts, 16 external acquisition attempts,
-a 300-second hard run ceiling, and 128,000 characters of current Evidence attention.
-After Evidence exists, the loop reserves 180 seconds for terminal Answer; each model
-call remains capped at 120 seconds. The longer run ceiling is diagnostic and
-completion headroom, not an acceptable product-latency target. Local inspection
-uses no external allowance, while malformed
-or corrected model attempts consume the same semantic allowance. Transport
-timeouts use the remaining run deadline. The loop reserves an answer attempt
-where time and allowance permit; if no supported answer can be completed,
-it returns an explicit operational unable result rather than synthesizing from
-generated notes. A limit is not evidence of support or nonexistence.
+`RunLimits` permits 40 physical requests across roles, 16 external acquisition
+attempts, a 900-second hard whole-turn ceiling and 128,000 cumulative Answer source
+characters. Each underlying model request is capped at 300 seconds and remaining
+turn time. No terminal reserve, separate Answer clock or renewed per-tool allowance
+exists. Research leaves one physical completion opportunity where feasible.
+Local inspection spends no external acquisition attempt. Denied external routes
+retain accurate receipts while local Research Read/Find and exact return selection
+can continue under remaining shared limits. No semantic return-only mode is added.
+Limits never supply support or establish nonexistence.
+
+A5 exact selected passages are reconstructed from one immutable Research-exposed
+range, with unique literal or whitespace-only location. Invalid entries yield safe
+limitations independently. A6 skips repeated contained views only when one actually
+supplied same-version item has exact custody and contains the whole view; it returns
+navigation to that old alias without granting a new citation alias. Different
+versions, partial overlaps and unions of views are not compacted. Explicit local
+rereads remain charged. Initial selection may use the full attention limit; later
+Research returns use normal 32,000-character packets or the existing whole-highlight
+safety exception. Highlight offsets belong to acquired excerpts, never invented
+page coordinates. Source/version/range provenance survives save and reopen.
+Automatic unselected-source completion and fit/repacking loops are removed.
 
 When Research reaches its operating bound, presentation discloses that fact even
 if the independent Answer supports its conclusion. The bound does not mechanically
@@ -520,7 +521,7 @@ For Research, the stable packet prefix remains `conversation_context`,
 `current_date`, `phase`, `question`, followed by the existing Research-context
 cache breakpoint. Present volatile fields serialize in this deliberate order:
 `working_understanding`, `catalog`, `last_route`, `failed_external_reads`, `evidence`,
-`answer_missing_information`, `pending_delivery`, `budget`, and
+`pending_delivery`, `budget`, and
 `output_correction` last. Any other material fields survive unchanged in
 deterministic order before a present correction. Placing previous generated
 understanding and navigation before the latest route and Evidence presents

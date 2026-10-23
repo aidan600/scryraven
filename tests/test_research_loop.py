@@ -3,11 +3,9 @@ import json
 
 import pytest
 
-from core.exa_transport import DiscoveryCandidate, FetchedMaterial
-from scryraven.model import ModelError, OpenAIModel
-from scryraven.presentation import RESEARCH_BOUND_DISCLOSURE, render_cli
+from core.exa_transport import DiscoveryCandidate
+from scryraven.model import ModelError
 from scryraven.research import (
-    TERMINAL_ANSWER_RESERVE_SECONDS,
     ResearchDecision,
     RunError,
     RunLimits,
@@ -137,21 +135,6 @@ def test_unexposed_retained_reference_is_rejected_then_local_read():
     assert result.trace[-1]["budget"]["external_attempts"] == 0
 
 
-def test_missing_need_returns_to_same_loop_without_draft_or_budget_reset():
-    model = Script(decision(), decision("answer", ["E1"]),
-                   answer("A provisional fragment. [E1]", "partial", "What conditions apply?"),
-                   decision(requests=[request("read", query="", target="E1", mode="full", focus="conditions")], refs=["E1"]),
-                   decision("answer", ["E2"]),
-                   answer("Seven under the stated condition. [E2]"))
-    result = run("What is the value?", model=model, search=search,
-                 fetch=lambda url: FetchedMaterial(url, "Seven under the stated condition."))
-    continuation = model.calls[3][2]
-    assert continuation["answer_missing_information"] == "What conditions apply?"
-    assert "provisional fragment" not in json.dumps(continuation)
-    assert continuation["evidence"][0]["id"] == "E1"
-    assert result.trace[-1]["budget"]["semantic_attempts"] == 6
-    assert result.trace[-1]["budget"]["external_attempts"] == 2
-    assert not any(event["action"] == "answer_committed_no_progress" for event in result.trace)
 
 
 def test_terminal_unable_answer_without_a_need_commits_immediately():
@@ -171,39 +154,13 @@ def test_terminal_partial_answer_without_a_need_commits_immediately():
     assert not any(event["action"] == "answer_returned_to_research" for event in result.trace)
 
 
-def test_partial_answer_with_no_new_selected_material_commits_without_a_second_answer():
-    model = Script(decision(), decision("answer", ["E1"]),
-                   answer("A supported fragment. [E1]", "partial", "What condition applies?"),
-                   decision("answer", ["E1"]))
-    result = run("What is the value?", model=model, search=search, fetch=no_fetch)
-    assert [call[0] for call in model.calls] == ["research", "research", "answer", "research"]
-    assert result.answer.startswith("A supported fragment.")
-    assert result.posture == "partial"
-    committed = [event for event in result.trace if event["action"] == "answer_committed_no_progress"]
-    assert committed == [
-        {"stage": "research", "action": "answer_committed_no_progress", "posture": "partial",
-         "missing_information": "What condition applies?", "prior_selected_refs": ["E1"],
-         "selected_refs": ["E1"]},
-    ]
 
 
-def test_partial_answer_at_a_semantic_bound_is_not_promoted_to_support():
-    model = Script(decision(), decision("answer", ["E1"]),
-                   answer("A supported fragment. [E1]", "partial", "What condition applies?"),
-                   decision(refs=["E1"]))
-    result = run("What is the value?", model=model, search=search, fetch=no_fetch,
-                 limits=RunLimits(semantic_attempts=5, external_attempts=1))
-    assert [call[0] for call in model.calls] == ["research", "research", "answer", "research"]
-    assert result.posture == "partial"
-    assert result.stop_reason == "research_bound"
-    assert any(event["action"] == "research_bound" for event in result.trace)
-    assert RESEARCH_BOUND_DISCLOSURE in render_cli(result)
-    assert result.trace[-1]["budget"]["semantic_attempts"] == 4
 
 
 def test_malformed_call_consumes_attempt_and_final_reserve_is_source_first():
     model = Script("invalid", decision(), answer())
-    result = run("Value?", model=model, search=search, fetch=no_fetch, limits=RunLimits(semantic_attempts=3))
+    result = run("Value?", model=model, search=search, fetch=no_fetch, limits=RunLimits(physical_model_requests=3))
     assert [call[0] for call in model.calls] == ["research", "research", "answer"]
     assert result.stop_reason == "research_bound"
     assert result.trace[-1]["budget"]["semantic_attempts"] == 3
@@ -237,9 +194,8 @@ def test_deadline_prevents_additional_io_and_produces_honest_operational_result(
 
 
 def test_run_headroom_defaults_and_model_trace_use_one_monotonic_clock():
-    assert RunLimits() == RunLimits(semantic_attempts=12, external_attempts=16,
-                                     seconds=300, attention_characters=128_000)
-    assert TERMINAL_ANSWER_RESERVE_SECONDS == 180
+    assert RunLimits() == RunLimits(physical_model_requests=40, external_attempts=16,
+                                     seconds=900, attention_characters=128_000)
     now = [10.0]
 
     def research_after_transport(_material):
@@ -256,10 +212,10 @@ def test_run_headroom_defaults_and_model_trace_use_one_monotonic_clock():
     assert [(event["action"], event["contract"], event["attempt"],
              event["budget"]["elapsed_seconds"], event["budget"]["seconds_remaining"])
             for event in events] == [
-                ("model_started", "research", 1, 0.0, 300.0),
-                ("model_returned", "research", 1, 1.25, 298.75),
-                ("model_started", "answer", 2, 1.25, 298.75),
-                ("model_returned", "answer", 2, 3.5, 296.5),
+                ("model_started", "research", 1, 0.0, 900.0),
+                ("model_returned", "research", 1, 1.25, 898.75),
+                ("model_started", "answer", 2, 1.25, 898.75),
+                ("model_returned", "answer", 2, 3.5, 896.5),
             ]
 
 
@@ -285,68 +241,10 @@ def test_model_failure_trace_has_later_time_and_only_safe_code():
                                "ended_elapsed_seconds", "duration_seconds", "usage"}
 
 
-def test_terminal_answer_reserve_preserves_a_source_first_answer_window():
-    now = [0.0]
-
-    def delayed(q):
-        now[0] = 120
-        return search(q)
-
-    model = Script(decision(), answer())
-    result = run("Value?", model=model, search=delayed, fetch=no_fetch, clock=lambda: now[0])
-    assert [call[0] for call in model.calls] == ["research", "answer"]
-    assert result.stop_reason == "research_bound"
-    assert any(event["action"] == "research_bound" and event["code"] == "answer_deadline_reserve"
-               for event in result.trace)
-    assert next(call[2] for call in model.calls if call[0] == "answer")["evidence"][0]["id"] == "E1"
 
 
-def test_individual_model_call_stays_capped_at_120_seconds():
-    now = [0.0]
-
-    class TimedModel(OpenAIModel):
-        def __init__(self):
-            super().__init__()
-            self.timeouts = []
-
-        def __call__(self, stage, prompt, material, schema):
-            self.timeouts.append(self.timeout_seconds)
-            if stage == "research":
-                now[0] = 200
-                return json.dumps(decision("answer"))
-            return json.dumps(answer("No source establishes this.", "unable"))
-
-    model = TimedModel()
-    run("Value?", model=model, search=search, fetch=no_fetch, clock=lambda: now[0])
-    assert model.timeouts == [120, 100]
 
 
-def test_pending_new_material_at_deadline_preserves_partial_with_bound_disclosure():
-    now = [0.0]
-
-    def staged_search(query):
-        if query == "new material":
-            now[0] = 301
-            return [DiscoveryCandidate("New fact", "https://example.org/new", "A new fact.",
-                                       context_kind="provider_highlights")]
-        return search(query)
-
-    model = Script(
-        decision(),
-        decision("answer", ["E1"]),
-        answer("A provisional fragment. [E1]", "partial", "What changed?"),
-        decision(requests=[request(query="new material")], refs=["E1"]),
-    )
-    result = run("Value?", model=model, search=staged_search, fetch=no_fetch,
-                 clock=lambda: now[0])
-    assert [call[0] for call in model.calls] == ["research", "research", "answer", "research"]
-    assert result.posture == "partial"
-    assert result.answer == "A provisional fragment. [1]"
-    assert result.stop_reason == "research_bound"
-    assert [item.id for item in result.selected_evidence] == ["E1"]
-    assert any(event["action"] == "answer_prior_partial_preserved" for event in result.trace)
-    assert not any(event["action"] == "answer_committed_no_progress" for event in result.trace)
-    assert {item.id for item in result.evidence} == {"E1", "E2"}
 
 
 def test_unknown_final_citation_fails_without_a_hidden_polisher():
@@ -380,3 +278,12 @@ def test_pending_requested_reading_precedes_new_external_work():
     assert [call[2]["evidence"][0]["id"] for call in model.calls[1:4]] == ["E1", "E2", "E3"]
     assert any(e["action"] == "reading_pending" for e in result.trace)
     assert result.trace[-1]["budget"]["external_attempts"] == 1
+
+
+def test_final_missing_information_is_a_limitation_without_stage_reentry():
+    model = Script(decision(), decision("answer", ["E1"]),
+                   answer("A supported fragment. [E1]", "partial", "What condition applies?"))
+    result = run("What is the value?", model=model, search=search, fetch=no_fetch)
+    assert [call[0] for call in model.calls] == ["research", "research", "answer"]
+    assert result.posture == "partial" and result.answer.endswith("[1]")
+    assert not any(event["action"] == "research_invoked" for event in result.trace)

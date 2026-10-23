@@ -75,7 +75,7 @@ def test_repeated_citation_omission_ends_with_operational_inability():
     )
 
     result = run(QUESTION, model=model, search=search, fetch=no_fetch,
-                 limits=RunLimits(semantic_attempts=4))
+                 limits=RunLimits(physical_model_requests=4))
 
     assert [call[0] for call in model.calls] == ["research", "research", "answer", "answer"]
     assert len(answer_calls(model)) == 2

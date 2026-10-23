@@ -1,4 +1,2 @@
-# Optional official Sign in with ChatGPT transport. API mode needs neither.
+# Optional Sign in with ChatGPT authentication; install alongside requirements.txt.
 PyJWT[crypto]>=2.10,<3
-# Public HTTPResponse.shutdown interrupts blocked streams at the deadline.
-urllib3>=2.6,<3

@@ -147,7 +147,6 @@ def test_research_packet_orders_volatile_fields_and_evidence_without_changing_ma
         "output_correction": {"code": "invalid_reference"},
         "budget": {"semantic_remaining": 8},
         "pending_delivery": ["E2", "E1"],
-        "answer_missing_information": "Verify the engine range",
         "evidence": [evidence, {"content": "Second exact body", "id": "E2"}],
         "last_route": {"kind": "search"},
         "failed_external_reads": [{"candidate_ref": "C1", "code": "linkup_timeout"}],
@@ -167,7 +166,7 @@ def test_research_packet_orders_volatile_fields_and_evidence_without_changing_ma
     assert list(parsed) == [
         "conversation_context", "current_date", "phase", "question",
         "working_understanding", "catalog", "last_route", "failed_external_reads", "evidence",
-        "answer_missing_information", "pending_delivery", "budget",
+        "pending_delivery", "budget",
         "a_unknown", "z_unknown", "output_correction",
     ]
     assert list(parsed["evidence"][0]) == [
@@ -190,7 +189,7 @@ def test_research_packet_orders_volatile_fields_and_evidence_without_changing_ma
     assert blocks[2]["text"].startswith(', "working_understanding": ')
     assert list(json.loads("{" + blocks[2]["text"][2:])) == [
         "working_understanding", "catalog", "last_route", "failed_external_reads", "evidence",
-        "answer_missing_information", "pending_delivery", "budget",
+        "pending_delivery", "budget",
         "a_unknown", "z_unknown", "output_correction",
     ]
     reordered = dict(reversed(list(deepcopy(material).items())))

@@ -39,6 +39,9 @@ class Evidence:
     page_end: int | None = None
     visual_analysis: bool | None = None
     textless_page_count: int | None = None
+    # Highlight ranges address the immutable acquired excerpt, which may join
+    # separated provider selections. They never claim full-page coordinates.
+    range_basis: Literal["acquired_highlight"] | None = None
 
     def __post_init__(self) -> None:
         if not self.source_id:
@@ -50,6 +53,10 @@ class Evidence:
                 raise ValueError("invalid_source_range")
         elif any(value is not None for value in (self.parent_id, self.start_char, self.end_char)):
             raise ValueError("non_view_has_source_offsets")
+        if (self.range_basis is not None
+                and (self.range_basis != "acquired_highlight" or self.acquisition != "targeted_view"
+                     or self.source_kind != "web")):
+            raise ValueError("invalid_range_basis")
         document_fields = (self.document_id, self.filename, self.page_start, self.page_end,
                            self.visual_analysis, self.textless_page_count)
         if self.source_kind == "web":
@@ -82,6 +89,8 @@ class Evidence:
             row.update(source_kind=self.source_kind, document_id=self.document_id,
                        filename=self.filename, page_start=self.page_start, page_end=self.page_end,
                        visual_analysis=self.visual_analysis, textless_page_count=self.textless_page_count)
+        if self.range_basis is not None:
+            row["range_basis"] = self.range_basis
         return row
 
 
@@ -110,13 +119,16 @@ def support_text(region: SupportRegion, material: Evidence) -> str:
 
 
 def exact_view(parent: Evidence, start: int, end: int) -> Evidence:
-    if parent.acquisition != "fetched_source" or not 0 <= start < end <= len(parent.content):
+    if (parent.acquisition not in {"fetched_source", "provider_highlights"}
+            or type(start) is not int or type(end) is not int
+            or not 0 <= start < end <= len(parent.content)):
         raise ValueError("invalid_source_range")
     return Evidence(
         f"{parent.id}@{start}:{end}", parent.url, parent.title, parent.content[start:end],
         "targeted_view", parent.source_id, parent.id, start, end, parent.source_kind,
         parent.document_id, parent.filename, None, None, parent.visual_analysis,
         parent.textless_page_count,
+        "acquired_highlight" if parent.acquisition == "provider_highlights" else None,
     )
 
 

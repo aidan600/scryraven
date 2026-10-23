@@ -11,8 +11,7 @@ model = OpenAIModel(backend="chatgpt_plan", plan_account="personal")
 result = run("Your research question", model=model)
 ```
 
-Model-role settings, Research/Answer instructions, strict schemas, selected-source
-completion, deterministic Calculate and publication remain the
+Model-role settings, Research/Answer instructions, strict schemas, exact source custody, deterministic Calculate and native Research continuation and publication remain the
 ordinary production implementation. There is no API-key fallback; plan mode
 does not read `OPENAI_API_KEY`. `plan_auth=...` permits injection of the same
 approved Auth implementation for brokered operation and offline tests. Production
@@ -24,6 +23,9 @@ field. Unmodified launches remain API-default. Existing ResearchSession and
 Reading Room `create_app(session_options={"model": model})` injection can use the
 selected model. The sign-in/models commands below configure access; they do not
 select the backend for ordinary research launches.
+
+The base requirements provide urllib3 for both transports' response-body deadline
+watchdog. JWT and cryptography authentication dependencies remain optional here.
 
 Install optional dependencies and use the existing official sign-in flow:
 

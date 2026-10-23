@@ -1,4 +1,4 @@
-"""One stateless OpenAI Responses transport with allowlisted Answer-local tools."""
+"""One stateless Responses transport with invocation-local tool continuation."""
 
 from __future__ import annotations
 
@@ -103,6 +103,13 @@ class ModelError(RuntimeError):
     """Only fixed, safe codes cross the transport boundary."""
 
 
+class _DispatchDenied(Exception):
+    """Carry a resource-gate exception through transport error normalization."""
+
+    def __init__(self, error):
+        self.error = error
+
+
 @dataclass(frozen=True)
 class ModelUsage:
     """Safe per-request counters. Missing/invalid counters remain unknown, not zero.
@@ -124,6 +131,8 @@ class ModelUsage:
     requested_service_tier: str | None = None
     returned_service_tier: str | None = None
     duration_seconds: float | None = None
+    input_characters: int | None = None
+    continuation_index: int | None = None
 
     @property
     def ordinary_uncached_tokens(self) -> int | None:
@@ -178,7 +187,7 @@ def _catalog_tables(catalog: dict) -> dict:
 
 _RESEARCH_VOLATILE_ORDER = (
     "working_understanding", "catalog", "last_route", "failed_external_reads", "evidence",
-    "answer_missing_information", "pending_delivery", "budget",
+    "pending_delivery", "budget",
 )
 _EVIDENCE_METADATA_ORDER = (
     "id", "source_id", "acquisition", "title", "url", "parent_id",
@@ -194,6 +203,22 @@ _CALCULATOR_TOOL = {
         "type": "object",
         "properties": {"expression": {"type": "string"}},
         "required": ["expression"],
+        "additionalProperties": False,
+    },
+}
+_RESEARCH_TOOL = {
+    "type": "function",
+    "name": "research",
+    "description": (
+        "Investigate a substantive information need using external acquisition and "
+        "the shared session library. Related needs may be bundled. Returns original "
+        "source text and navigation, with fallible research assessments."
+    ),
+    "strict": True,
+    "parameters": {
+        "type": "object",
+        "properties": {"need": {"type": "string", "minLength": 1, "maxLength": 8000}},
+        "required": ["need"],
         "additionalProperties": False,
     },
 }
@@ -315,6 +340,35 @@ def _calculation_output(
     return {"type": "function_call_output", "call_id": call["call_id"], "output": output}
 
 
+def _api_response(post, payload, token, timeout, *, before_dispatch=None):
+    """Bound connection, headers and body under one physical request allowance."""
+    from urllib3.util import Timeout
+
+    from scryraven.chatgpt_plan.http import response_deadline
+
+    response = None
+    try:
+        headers = {"Authorization": f"Bearer {token}"}
+        if before_dispatch is not None:
+            timeout = min(timeout, before_dispatch())
+        started = monotonic()
+        response = post(
+            "https://api.openai.com/v1/responses",
+            headers=headers, json=payload,
+            timeout=Timeout(total=timeout, connect=timeout, read=timeout), stream=True,
+        )
+        with response_deadline(response, timeout - (monotonic() - started)):
+            response.raise_for_status()
+            return response.json()
+    finally:
+        close = getattr(response, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass
+
+
 class OpenAIModel:
     def __init__(
         self,
@@ -323,7 +377,7 @@ class OpenAIModel:
         post: Callable[..., Any] | None = None,
         usage_observer: Callable[[ModelUsage], None] | None = None,
         cache_namespace: str = "scryraven",
-        timeout_seconds: float = 120,
+        timeout_seconds: float = 300,
         backend: str = "api",
         plan_account: str = "personal",
         plan_auth: Any = None,
@@ -348,7 +402,11 @@ class OpenAIModel:
         *, calculator: Callable[[str], dict] | None = None,
         on_calculation: Callable[[int, str, dict], None] | None = None,
         answer_library=None,
+        research_tool: Callable[[str], dict] | None = None,
+        before_request: Callable[[str], None] | None = None,
+        resource_snapshot: Callable[[], dict] | None = None,
         remaining_seconds: Callable[[], float] | None = None,
+        final_feedback: Callable[[str], str | dict | None] | None = None,
     ) -> str:
         token = os.getenv("OPENAI_API_KEY", "").strip() if self.backend == "api" else None
         if self.backend == "api" and not token:
@@ -359,6 +417,8 @@ class OpenAIModel:
         if stage == "answer" and answer_library is not None:
             from scryraven.answer_library import LIBRARY_TOOLS
             declared_tools += LIBRARY_TOOLS
+        if stage == "answer" and research_tool is not None:
+            declared_tools.append(_RESEARCH_TOOL)
         allowed_names = {tool["name"] for tool in declared_tools}
         use_tools = bool(declared_tools)
         instructions += ("\nWhen finished, return only JSON matching the response schema, "
@@ -397,42 +457,67 @@ class OpenAIModel:
         if use_tools:
             payload["tools"] = declared_tools
             payload["include"] = ["reasoning.encrypted_content"]
-        # Runtime gives this call at most the remaining Answer-stage and whole-run
-        # time. The configured transport timeout remains a per-request ceiling;
-        # for direct calls without a runtime deadline, bound the entire attempt.
-        deadline = (monotonic() + self.timeout_seconds
+        # Every invocation owns its payload, continuation, timeout and observers.
+        # A nested Research call on this model cannot change the suspended owner.
+        request_ceiling = min(300, self.timeout_seconds)
+        invocation_observers = (self.usage_observer, _call_usage_observer.get())
+        # Runtime supplies one whole-turn clock. Direct tool callers still get a
+        # bounded interaction rather than renewing their allowance per result.
+        deadline = (monotonic() + request_ceiling
                     if use_tools and remaining_seconds is None else None)
         sequence = 0
+        continuation_index = 0
         call_ids = set()
+        corrected_final = False
         while True:
-            timeout = self.timeout_seconds
-            if use_tools:
-                if deadline is not None:
-                    timeout = min(timeout, deadline - monotonic())
-                if remaining_seconds is not None:
-                    timeout = min(timeout, remaining_seconds())
-                if timeout <= 0:
-                    raise ModelError("model_request_timed_out")
+            timeout = request_ceiling
+            if deadline is not None:
+                timeout = min(timeout, deadline - monotonic())
+            if remaining_seconds is not None:
+                timeout = min(timeout, remaining_seconds())
+            if timeout <= 0:
+                raise ModelError("model_request_timed_out")
             data = None
+            if self.plan_transport is not None:
+                from scryraven.chatgpt_plan.transport import plan_payload
+                request_input_characters = len(_json(plan_payload(payload)["input"]))
+            else:
+                request_input_characters = len(_json(payload["input"]))
             request_started = monotonic()
+            dispatched = False
+
+            def before_dispatch():
+                nonlocal dispatched
+                try:
+                    left = timeout - (monotonic() - request_started)
+                    if remaining_seconds is not None:
+                        left = min(left, remaining_seconds())
+                    if left <= 0:
+                        raise ModelError("model_request_timed_out")
+                    if before_request is not None:
+                        before_request(stage)
+                except BaseException as exc:
+                    raise _DispatchDenied(exc) from None
+                dispatched = True
+                return left
+
             try:
                 if self.plan_transport is not None:
-                    data = self.plan_transport.request(payload, timeout=timeout)
+                    data = self.plan_transport.request(payload, timeout=timeout,
+                                                       before_dispatch=before_dispatch)
                 else:
-                    response = self.post(
-                        "https://api.openai.com/v1/responses",
-                        headers={"Authorization": f"Bearer {token}"},
-                        json=payload,
-                        timeout=timeout,
-                    )
-                    response.raise_for_status()
-                    data = response.json()
+                    data = _api_response(self.post, payload, token, timeout,
+                                         before_dispatch=before_dispatch)
+            except _DispatchDenied as exc:
+                raise exc.error
             except ModelError as exc:
                 # Plan failures can retain only allowlisted usage counters.
                 # Missing counters remain unknown, never inferred as zero.
                 if self.plan_transport is not None:
                     data = {"usage": getattr(exc, "usage", {})}
                     raise
+                if str(exc) == "model_request_timed_out":
+                    raise ModelError("model_request_timed_out") from None
                 raise ModelError("model_transport_failed") from None
             except requests.Timeout:
                 raise ModelError("model_request_timed_out") from None
@@ -447,8 +532,8 @@ class OpenAIModel:
             except Exception:
                 raise ModelError("model_transport_failed") from None
             finally:
-                observers = (self.usage_observer, _call_usage_observer.get())
-                if any(observer is not None for observer in observers):
+                observers = invocation_observers
+                if dispatched and any(observer is not None for observer in observers):
                     usage = ModelUsage(
                         safe_stage, safe_phase, cache_family, role.model,
                         () if self.plan_transport is not None else breakpoints,
@@ -461,6 +546,7 @@ class OpenAIModel:
                         (data.get("service_tier") if isinstance(data, dict)
                          and data.get("service_tier") in {"default", "fast", "priority"} else None),
                         round(max(0.0, monotonic() - request_started), 6),
+                        request_input_characters, continuation_index,
                     )
                     for observer in observers:
                         if observer is not None:
@@ -499,13 +585,32 @@ class OpenAIModel:
                         if remaining_seconds is not None and remaining_seconds() <= 0:
                             raise ModelError("model_request_timed_out")
                         if call["name"] != "calculate":
-                            result = answer_library(call["name"], call["arguments"])
+                            if call["name"] == "research":
+                                try:
+                                    arguments = json.loads(call["arguments"], object_pairs_hook=_unique_role_keys)
+                                except (TypeError, ValueError):
+                                    arguments = None
+                                if (not isinstance(arguments, dict) or set(arguments) != {"need"}
+                                        or not isinstance(arguments["need"], str)
+                                        or not 1 <= len(arguments["need"]) <= 8000
+                                        or not arguments["need"].strip()):
+                                    result = {"error": "invalid_tool_arguments"}
+                                else:
+                                    result = research_tool(call["arguments"])
+                            else:
+                                result = answer_library(call["name"], call["arguments"])
                             outputs.append({"type": "function_call_output", "call_id": call["call_id"],
                                             "output": json.dumps(result, ensure_ascii=False, allow_nan=False)})
                             continue
                         sequence += 1
                         outputs.append(_calculation_output(call, calculator, on_calculation, sequence))
-                    payload = {**payload, "input": [*payload["input"], *items, *outputs]}
+                    continuation = [*payload["input"], *items, *outputs]
+                    if resource_snapshot is not None:
+                        continuation.append({"role": "developer", "content": [{
+                            "type": "input_text", "text": "Shared remaining turn resources: " + _json(resource_snapshot()),
+                        }]})
+                    payload = {**payload, "input": continuation}
+                    continuation_index += 1
                     continue
                 # Intermediate assistant updates are not part of a structured final
                 # response. Never concatenate commentary with the final JSON object.
@@ -521,6 +626,23 @@ class OpenAIModel:
                 )
                 if not output.strip():
                     raise ModelError("model_response_empty")
+                feedback = final_feedback(output) if final_feedback is not None else None
+                if feedback is not None and not corrected_final:
+                    # Keep the native tool/opaque history, but never feed rejected
+                    # final prose back as evidence or as a draft to imitate.
+                    continuation = [*payload["input"],
+                                    *(item for item in items if item.get("type") != "message")]
+                    if resource_snapshot is not None:
+                        continuation.append({"role": "developer", "content": [{
+                            "type": "input_text", "text": "Shared remaining turn resources: " + _json(resource_snapshot()),
+                        }]})
+                    continuation.append({"role": "developer", "content": [{
+                        "type": "input_text", "text": _json({"output_correction": feedback}),
+                    }]})
+                    payload = {**payload, "input": continuation}
+                    corrected_final = True
+                    continuation_index += 1
+                    continue
                 return output
             except (KeyError, TypeError, AttributeError):
                 raise ModelError("malformed_model_response") from None

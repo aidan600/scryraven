@@ -44,7 +44,7 @@ _CODES = {
     "missing_citation", "deadline",
     "citation_use_without_support",
     "invalid_support_coordinates",
-    "semantic_attempts", "external_attempts", "answer_deadline_reserve",
+    "physical_model_requests", "external_attempts", "answer_validation_exhausted",
     "empty_question", "invalid_selected_material", "duplicate_selected_material",
     "empty_answer", "invalid_citation_reference", "malformed_citation_reference",
     "unknown_or_unselected_alias", "unresolved_answer_link", "answer_link_or_image",
@@ -164,8 +164,12 @@ class TurnDiagnostics:
         self.corrections: dict[str, Counter[str]] = {
             "research": Counter(), "answer": Counter(),
         }
-        self.answer_returns = 0
-        self.no_progress_commits = 0
+        self.physical_requests = None
+        self.role_physical_requests = {"answer": None, "research": None}
+        self.physical_calls = []
+        self.research_episodes = 0
+        self.answer_continuations = None
+        self.research_tool_seconds = 0.0
         self.calculator_calls = 0
         self.calculator_failures = 0
         self.calculator_seconds = 0.0
@@ -182,6 +186,12 @@ class TurnDiagnostics:
                 self.semantic_attempts = semantic
             if external is not None:
                 self.external_attempts = external
+            self.physical_requests = _nonnegative_int(budget.get("physical_requests"))
+            roles = budget.get("role_physical_requests", {})
+            if isinstance(roles, dict):
+                self.role_physical_requests = {role: _nonnegative_int(roles.get(role))
+                                               for role in _CONTRACTS}
+            self.answer_continuations = _nonnegative_int(budget.get("answer_continuations"))
 
     def observe(self, event: dict) -> None:
         """Ignore unknown and source-bearing events, including their nested data."""
@@ -302,10 +312,23 @@ class TurnDiagnostics:
                             if action == "response_rejected" else "research")
                 if contract is not None:
                     self.corrections.setdefault(contract, Counter())[code] += 1
-        elif action == "answer_returned_to_research":
-            self.answer_returns += 1
-        elif action == "answer_committed_no_progress":
-            self.no_progress_commits += 1
+        elif action == "model_request_finished":
+            contract = _one_of(event.get("contract"), _CONTRACTS)
+            if contract is not None:
+                self.physical_calls.append({
+                    "contract": contract,
+                    "model": _model_name(event.get("model")),
+                    "duration_seconds": _seconds(event.get("duration_seconds")),
+                    "input_tokens": _nonnegative_int(event.get("input_tokens")),
+                    "output_tokens": _nonnegative_int(event.get("output_tokens")),
+                    "cached_input_tokens": _nonnegative_int(event.get("cached_input_tokens")),
+                    "input_characters": _nonnegative_int(event.get("input_characters")),
+                    "continuation_index": _nonnegative_int(event.get("continuation_index")),
+                })
+        elif action == "research_invoked":
+            self.research_episodes += 1
+        elif action == "research_returned":
+            self.research_tool_seconds += _seconds(event.get("duration_seconds")) or 0.0
         elif action == "calculator_used":
             if event.get("contract") == "answer" and type(event.get("success")) is bool:
                 self.calculator_calls += 1
@@ -316,7 +339,7 @@ class TurnDiagnostics:
                     self.calculator_seconds += duration
         elif action == "research_bound":
             code = _one_of(event.get("code"), {
-                "deadline", "semantic_attempts", "external_attempts", "answer_deadline_reserve",
+                "deadline", "physical_model_requests", "external_attempts",
             })
             if code is not None:
                 self.research_bounds[code] += 1
@@ -363,8 +386,12 @@ class TurnDiagnostics:
             "acquisitions": self.acquisitions,
             "search_concurrency_groups": self.search_concurrency_groups,
             "corrections": {contract: dict(counts) for contract, counts in self.corrections.items()},
-            "answer_to_research_returns": self.answer_returns,
-            "no_progress_commits": self.no_progress_commits,
+            "physical_requests": self.physical_requests,
+            "role_physical_requests": self.role_physical_requests,
+            "physical_model_calls": self.physical_calls,
+            "research_episodes": self.research_episodes,
+            "answer_continuations": self.answer_continuations,
+            "research_tool_seconds": _seconds(self.research_tool_seconds),
             "calculator": {
                 "calls": self.calculator_calls,
                 "failures": self.calculator_failures,

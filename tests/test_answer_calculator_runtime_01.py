@@ -9,6 +9,7 @@ from test_research_loop import answer, decision, no_fetch
 
 from core.exa_transport import DiscoveryCandidate
 from scryraven.dogfood_diagnostics import TurnDiagnostics
+from scryraven.errors import RunError
 from scryraven.forensic_log import ForensicLog
 from scryraven.model import OpenAIModel
 from scryraven.research import ANSWER_PROMPT, RunLimits, run
@@ -84,19 +85,20 @@ def test_basic_user_premise_calculation_is_one_answer_attempt(monkeypatch):
     observed = []
     result, _ = run_offline(
         monkeypatch, transport, "If the amount is 100 units, what is 25%?",
-        limits=RunLimits(semantic_attempts=2), observe=observed.append,
+        limits=RunLimits(physical_model_requests=3), observe=observed.append,
     )
 
     assert result.posture == "supported" and result.answer == valid["answer"]
     assert result.evidence == result.selected_evidence == result.citations == ()
     assert result.trace[-1]["budget"]["semantic_attempts"] == 2
+    assert result.trace[-1]["budget"]["physical_requests"] == 3
     assert [event["contract"] for event in result.trace if event["action"] == "model_started"] == [
         "research", "answer",
     ]
     assert "tools" not in transport.calls[0]["json"]
     assert transport.calls[1]["json"]["store"] is False
     assert {tool["name"] for tool in transport.calls[1]["json"]["tools"]} == {
-        "calculate", "library_browse", "library_find", "library_read"}
+        "calculate", "library_browse", "library_find", "library_read", "research"}
     assert json.loads(calculations_in(transport.calls[2]["json"])[0]["output"]) == {"value": "25"}
     receipts = [event for event in observed if event["action"] == "calculator_result"]
     assert [(item["sequence"], item["expression"], item["result"])
@@ -119,10 +121,11 @@ def test_chained_calculations_reuse_prior_result_and_aggregate_usage(monkeypatch
     model = OpenAIModel(post=transport.post, usage_observer=usage.append)
     result = run("Given 100 units, raise it by 20%, divide by 4, and add 5.", model=model,
                  search=lambda _q: pytest.fail("Unexpected search"), fetch=no_fetch,
-                 limits=RunLimits(semantic_attempts=2))
+                 limits=RunLimits(physical_model_requests=5))
 
     assert result.posture == "supported" and result.answer == valid["answer"]
     assert result.trace[-1]["budget"]["semantic_attempts"] == 2
+    assert result.trace[-1]["budget"]["physical_requests"] == 5
     assert len([event for event in result.trace if event["action"] == "calculator_used"]) == 3
     assert [json.loads(item["output"]) for item in calculations_in(transport.calls[4]["json"])] == [
         {"value": "120"}, {"value": "30"}, {"value": "35"},
@@ -140,7 +143,7 @@ def test_chained_calculations_reuse_prior_result_and_aggregate_usage(monkeypatch
     ]
 
 
-def test_answer_correction_allows_calculations_in_both_attempts(monkeypatch):
+def test_answer_correction_keeps_calculations_in_same_interaction(monkeypatch):
     invalid = answer("A rejected provisional number.", support_basis="user_premises", missing="A consequential need")
     valid = answer("The stipulated result is 30.", support_basis="user_premises")
     transport = ScriptedResponses(
@@ -153,31 +156,34 @@ def test_answer_correction_allows_calculations_in_both_attempts(monkeypatch):
     )
     result, _ = run_offline(
         monkeypatch, transport, "Given 100 units, increase by 20%, divide by 4.",
-        limits=RunLimits(semantic_attempts=3),
+        limits=RunLimits(physical_model_requests=6),
     )
 
     assert result.answer == valid["answer"]
-    assert result.trace[-1]["budget"]["semantic_attempts"] == 3
+    assert result.trace[-1]["budget"]["semantic_attempts"] == 2
+    assert result.trace[-1]["budget"]["physical_requests"] == 6
     assert len([event for event in result.trace if event["action"] == "calculator_used"]) == 3
     assert [(event["action"], event.get("attempt")) for event in result.trace
             if event["action"] in {"model_started", "model_returned"}
             and event.get("contract") == "answer"] == [
         ("model_started", 2), ("model_returned", 2),
-        ("model_started", 3), ("model_returned", 3),
     ]
     assert [event["code"] for event in result.trace if event["action"] == "response_rejected"] == [
         "supported_with_missing_information",
     ]
-    second_attempt_input = transport.calls[4]["json"]["input"]
-    assert not calculations_in(transport.calls[4]["json"])
+    corrected_input = transport.calls[4]["json"]["input"]
+    assert [item["call_id"] for item in calculations_in(transport.calls[4]["json"])] == ["calc_a", "calc_b"]
+    assert [item["call_id"] for item in calculations_in(transport.calls[5]["json"])] == ["calc_a", "calc_b", "calc_c"]
+    assert [event["sequence"] for event in result.trace if event["action"] == "calculator_used"] == [1, 2, 3]
+    assert "A rejected provisional number." not in json.dumps(corrected_input)
     assert "output_correction" in "".join(
-        item.get("text", "") for block in second_attempt_input
+        item.get("text", "") for block in corrected_input
         for item in block.get("content", [])
     )
 
 
-@pytest.mark.parametrize("run_seconds,advance", [(300, 120.1), (5, 5.1)])
-def test_tool_continuation_obeys_answer_and_whole_run_deadlines(
+@pytest.mark.parametrize("run_seconds,advance", [(300, 300.1), (5, 5.1)])
+def test_tool_continuation_obeys_whole_turn_deadline(
     monkeypatch, run_seconds, advance,
 ):
     now = [0.0]
@@ -188,12 +194,33 @@ def test_tool_continuation_obeys_answer_and_whole_run_deadlines(
     )
     result, _ = run_offline(
         monkeypatch, transport, "Given 100, divide by 4.",
-        limits=RunLimits(semantic_attempts=2, seconds=run_seconds), clock=lambda: now[0],
+        limits=RunLimits(physical_model_requests=3, seconds=run_seconds), clock=lambda: now[0],
     )
     assert len(transport.calls) == 2
     assert result.posture == "unable"
-    assert result.answer == "I couldn't complete a source-validated answer for this request."
+    assert result.citations == () and result.selected_evidence == ()
+    assert not any(event["action"] == "calculator_used" for event in result.trace)
     assert result.trace[-1]["budget"]["semantic_attempts"] == 2
+    assert result.trace[-1]["budget"]["physical_requests"] == 2
+
+
+
+def test_answer_continuation_uses_available_whole_turn_after_120_seconds(monkeypatch):
+    now = [0.0]
+    valid = answer("25 units from the stipulated 100.", support_basis="user_premises")
+    transport = ScriptedResponses(
+        ("research", model_reply(decision("answer")), 0),
+        ("answer", tool_reply("100 / 4", "calc_a"), 120.1),
+        ("answer", model_reply(valid), 0),
+        now=now,
+    )
+    result, _ = run_offline(
+        monkeypatch, transport, "Given 100 units, divide by four.",
+        limits=RunLimits(physical_model_requests=3, seconds=300), clock=lambda: now[0],
+    )
+    assert result.answer == valid["answer"] and result.posture == "supported"
+    assert result.trace[-1]["budget"]["physical_requests"] == 3
+    assert len(transport.calls) == 3
 
 
 def test_evidence_derived_result_cites_inputs_not_calculator(monkeypatch):
@@ -252,22 +279,20 @@ def test_failed_continuation_preserves_known_usage_as_incomplete(monkeypatch):
         ("answer", requests.Timeout("private transport detail"), 0),
     )
     diagnostics = TurnDiagnostics(started_at=0, clock=lambda: 0)
-    result, _ = run_offline(
-        monkeypatch, transport, "Given 100, divide by 4.",
-        observe=diagnostics.observe,
-    )
-    failed = next(event for event in result.trace if event["action"] == "model_failed")
+    with pytest.raises(RunError) as caught:
+        run_offline(monkeypatch, transport, "Given 100, divide by 4.", observe=diagnostics.observe)
+    failed = next(event for event in caught.value.trace if event["action"] == "model_failed")
     assert failed["usage"]["input_tokens"] == 10
     assert failed["usage"]["output_tokens"] == 5
     assert failed["usage"]["usage_incomplete"] is True
     assert failed["code"] == "model_request_timed_out"
     record = diagnostics.record(session_id=None, revision_before=0, revision_after=1,
-                                result=result)
+                                error=caught.value)
     answer_call = next(row for row in record["model_calls"] if row["contract"] == "answer")
     assert answer_call["input_tokens"] == 10
     assert answer_call["output_tokens"] == 5
     assert answer_call["usage_incomplete"] is True
-    assert "private transport detail" not in json.dumps(result.trace)
+    assert "private transport detail" not in json.dumps(caught.value.trace)
 
 
 def test_real_tool_round_trip_reaches_forensic_log_without_safe_body_leak(

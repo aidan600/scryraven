@@ -3,7 +3,6 @@
 import json
 from copy import deepcopy
 
-import pytest
 from test_research_loop import (
     answer,
     decision,
@@ -57,30 +56,12 @@ def test_inconsistent_supported_answer_at_bound_is_not_downgraded_into_a_result(
     model = RecordingModel(decision(), decision("answer", ["E1"]), rejected)
 
     result = run("What is the value?", model=model, search=search, fetch=no_fetch,
-                 limits=RunLimits(semantic_attempts=3))
+                 limits=RunLimits(physical_model_requests=3))
 
     assert [call[0] for call in model.calls] == ["research", "research", "answer"]
-    assert result.posture == "unable" and result.stop_reason == "not_established"
-    assert result.answer == "I couldn't complete a source-validated answer for this request."
+    assert result.posture == "unable" and result.stop_reason == "research_bound"
+    assert "operating limit" in result.answer
     assert result.citations == ()
     assert not any(event["action"] == "answer_decision" for event in result.trace)
     assert any(event.get("code") == "supported_with_missing_information"
                for event in result.trace)
-
-
-@pytest.mark.parametrize("posture", ["partial", "unable"])
-def test_valid_missing_need_still_returns_from_answer_to_research(posture):
-    provisional = answer("The material leaves a consequential gap. [E1]" if posture == "partial"
-                         else "The material leaves a consequential gap.",
-                         posture, "What condition applies?")
-    model = RecordingModel(decision(), decision("answer", ["E1"]), provisional,
-                           decision("answer", ["E1"]))
-
-    result = run("What is the value?", model=model, search=search, fetch=no_fetch)
-
-    assert [call[0] for call in model.calls] == ["research", "research", "answer", "research"]
-    assert len(answer_calls(model)) == 1
-    assert model.calls[-1][2]["answer_missing_information"] == "What condition applies?"
-    assert result.posture == posture
-    assert any(event["action"] == "answer_returned_to_research" for event in result.trace)
-    assert any(event["action"] == "answer_committed_no_progress" for event in result.trace)

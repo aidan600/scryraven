@@ -1,6 +1,5 @@
 """Concurrent generic Exa Search transports; admission stays in request order."""
 
-import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier, Event, Lock
@@ -14,7 +13,7 @@ from core.exa_transport import DiscoveryCandidate, ExaTransportError
 from core.transport import FetchedMaterial
 from scryraven.acquisition import AcquisitionLibrary
 from scryraven.dogfood_diagnostics import TurnDiagnostics
-from scryraven.research import RESEARCH_PROMPT, RunLimits, run
+from scryraven.research import RunLimits, run
 from scryraven.sources import Evidence
 
 ALPHA = "Alpha fact is seven."
@@ -53,10 +52,6 @@ def serial_library(batches, queries):
     return library, results
 
 
-def test_prompt_and_decision_contracts_stay_byte_stable():
-    assert hashlib.sha256(RESEARCH_PROMPT.encode()).hexdigest() == (
-        "f038acc358829f11e2345d918a2a1d07cbe42d2b441981b58cac5d16bbf726fc"  # pragma: allowlist secret
-    )
 
 
 

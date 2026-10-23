@@ -1,10 +1,13 @@
 # ScryRaven
 
 ScryRaven researches public-web questions and writes cited answers from actual
-source material. One Research semantic loop owns interpretation, evolving needs,
-acquisition direction and stopping. Mechanical Search / Read / Find execute its
-choices. A fresh Evidence-first Answer independently determines what the selected
-sources justify. Generated Research state and prior answers are never Evidence.
+source material. Initial Research's semantic loop owns whole-question interpretation,
+evolving needs, acquisition direction and readiness for its initial handoff.
+Mechanical Search / Read / Find execute its choices. A fresh Evidence-first Answer
+independently determines what the selected sources justify. During that interaction,
+Answer decides consequential further-information needs and final completion;
+delegated Research directs acquisition for the requested need. Generated Research
+state and prior answers are never Evidence.
 The CLI, sessions and Reading Room use this same ordinary path.
 
 See `CURRENT.md` for implementation, demonstrations and limits. `PRODUCT.md` owns
@@ -22,8 +25,11 @@ Use Python 3.10 or later from the repository root:
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt -r requirements-dev.txt
+python -m pip install -r requirements.txt
 ```
+
+For development and offline tests, also install `requirements-dev.txt`. Its
+optional plan authentication dependencies are not required for ordinary API use.
 
 Model execution requires `OPENAI_API_KEY`, and ordinary web Search requires
 `EXA_API_KEY` in the process environment. `SERPER_API_KEY` is required only when
@@ -44,7 +50,8 @@ Search; Research can select Serper for lexical/community/current discovery;
 LinkUp Fetch supplies external known-URL
 Read. There is no architecture selector, Analyst checkpoint,
 separate old Author handoff or fallback engine.
-See [research architecture](docs/architecture/RESEARCH.md) for the promoted contract.
+See [research architecture](docs/architecture/RESEARCH.md) for the current candidate
+contract.
 
 ## Reading Room
 
@@ -364,10 +371,10 @@ the product does not load `.env`. There is no automatic premium escalation or
 model fallback. One stateless OpenAI Responses transport uses structured output;
 no model has built-in web tools. The historical isolated fixed-packet GPT-6 Sol /
 medium / Fast screen showed a consistent latency benefit; Luna / high / Fast
-evidence was noisier. The GPT-6.1 Sol Answer configuration has offline verification
-only, with no new live quality or latency claim. Fast is a reversible default,
-not a universal speedup, and may cost more per token. There is no runtime cost
-estimator.
+evidence was noisier. The shipped GPT-6.1 Sol / medium / Fast Answer configuration
+has offline verification only, with no isolated live quality or latency claim.
+Fast is a reversible default, not a universal speedup, and may cost more per token.
+There is no runtime cost estimator.
 
 ## Acquisition and evidence
 
@@ -387,9 +394,10 @@ reports the exact text returned and whether a focused lexical lookup matched or
 fell back to dispersed windows. Unscoped Find ranks lexical matches across the
 retained library on a comparable corpus-wide scale; it remains navigation, not
 semantic evidence judgment. Local Read and Find need no provider I/O for retained text.
-All results return to Research
-for reassessment. Neither source count, failed search nor budget exhaustion proves
-support, completeness or nonexistence. The original/current request governs scope.
+Research's route results return to Research for reassessment; Answer's local tool
+results return directly to its continuing interaction. Neither source count,
+failed search nor budget exhaustion proves support, completeness or nonexistence.
+The original/current request governs scope.
 
 Actual acquisitions remain immutable and locally rereadable across follow-ups.
 Same-URL versions retain their canonical source identity. Large full sources can
@@ -412,22 +420,21 @@ invented page numbers.
 Source labels use publication metadata, PDF filenames or hostnames without
 generating titles from evidence text.
 
-The established operating limits are 12 semantic attempts, 16 external acquisition
-attempts, a 300-second hard run ceiling and 128,000 characters of current Evidence
-attention. Local
-Read/Find use no external allowance. Corrected model outputs use the same finite
-semantic allowance. The loop reserves 180 seconds for terminal Answer once Evidence
-exists; each model call remains capped at 120 seconds. An unchanged selected
-Answer Evidence packet receives one initial attempt and at most one shared
-correction within a total 120-second Answer-stage allowance. Each real OpenAI
-Answer request timeout is bounded by the remaining stage time. A validated
-missing-information Answer may lead to a fresh allowance only after Research
-selects materially changed Evidence. An invalid correction or exhausted allowance
-ends with a fixed operational inability message, no citations or rejected prose,
-and no Research retry on that unchanged packet. The longer ceiling gives
-operational diagnostic headroom and is not a product-latency target. The loop
-returns an honest operational unable result when it cannot complete a source-grounded answer.
-Supported, partial and unable results remain distinct.
+The local hybrid first runs whole-question Research, then one independent Answer
+interaction with local library tools, calculator and optional `research(need)`.
+Research returns exact originals to the same native Answer continuation. Final
+missing information is a delivered limitation and never restarts the stage.
+
+One turn allows 40 physical model requests, 16 external acquisitions, a 900-second
+hard ceiling and 128,000 cumulative Answer source characters. Per-request timeouts
+are at most 300 seconds and the remaining turn time. There is no terminal reserve
+or separate Answer-stage clock. Local inspection and all delegated returns share
+the same attention and 12 local operations. A5 exact passage returns, A6 safe
+same-version reuse and A7 local selection after external denial preserve actual
+source/version/range identity. Highlight ranges address only retained excerpt
+text. No automatic unselected-source completion remains. A useful supported,
+partial or unable response retains its independent semantic posture; operating
+limits never establish support or nonexistence.
 
 SQLite keeps the existing revision-checked atomic snapshot boundary. Native turns
 store `analysis: null`; old saved Analysis remains a historical record only.
