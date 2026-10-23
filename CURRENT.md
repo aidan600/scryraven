@@ -2,30 +2,45 @@
 
 ## Ordinary product architecture
 
-The ordinary product supersedes Research -> Analyst -> Author with the
-accepted clean-room Research semantic loop -> mechanical Search / lexical Search /
-Read / Find ->
-Research reassessment -> fresh Evidence-first Answer. `scryraven.research.run`,
-`ResearchSession.ask`, the CLI and Reading Room share this single path. There is
-no architecture selector, Analyst checkpoint, old Author handoff or fallback.
+This local, unpromoted candidate implements Research-first with resumable Answer.
+Initial Luna Research retains production whole-question interpretation, revisable
+understanding, Exa/Serper/LinkUp acquisition, local Read/Find and selection of
+originals for an independent Sol Answer. One fresh Sol interaction begins after
+that handoff. It may Browse/Find/Read retained originals, calculate, invoke
+`research(need)` and continue with the same native tool history and source exposure.
+The specialist obtains evidence for that need and yields control to Sol. Final
+`missing_information` describes a limitation; it cannot restart Answer or Research.
+CLI, `ResearchSession.ask`, durable sessions and Reading Room share this path.
 
-Research owns interpretation, compact revisable understanding, consequential
-needs, acquisition direction, attention and stopping. Generated state is never
-Evidence. Answer independently assesses actual supplied source material and
-explicit user-supplied premises against the current/original request. Research
-may select no Evidence when the requested operation needs no external fact.
-Research's initial selection is a suggestion, not a library access boundary.
-Answer can independently Browse, Find and Read legitimate current-session
-acquisitions and user documents through bounded, entirely local tools in its
-existing semantic attempt. Only exact text actually supplied is citable.
-Answer may invoke a bounded deterministic local arithmetic calculator, including
-dependent calculations, while the same Answer role remains the sole semantic
-owner. Calculator results are derived computation, not Evidence or citation
-aliases. Externally factual numeric inputs retain the ordinary selected-Evidence
-and citation requirements; explicit user premises retain their conditional basis.
-The calculator and its Responses continuation are verified offline and exercised
-by live Answer calls over frozen Evidence. This does not establish end-to-end
-research reliability or general calculator-use reliability.
+There is one turn library, failed-read history, Deep eligibility, monotonic clock
+and physical/external allowance. Initial Research's generated understanding can
+travel to delegated Research as explicitly fallible continuity; it is not supplied
+as factual authority to Answer. Only original text actually supplied initially,
+returned by Research or read by Answer enters citation membership. No new semantic
+owner, coverage checker, provider stack, credential system or architectural toggle
+is added. Baseline delegated-worker behavior is unchanged; rejected B/C prompt
+paragraphs, fit/repacking loops and automatic unselected-source completion are absent.
+
+A5 admits exact independently valid source/version/range selections, including
+uniquely located literal or whitespace-only passages reconstructed from originals.
+Highlight coordinates address only the acquired excerpt. A6 reuses one already
+supplied containing item of the same immutable version and custody through its
+existing alias; skipped new aliases receive no citation authority. Explicit local
+rereads still spend attention. A7 permits ordinary local inspection and exact
+selection after external denial, without further external dispatch or renewed
+resources. Exact views and historical citations/PDF identity remain durable.
+
+The full offline suite passes 921 tests. Injected API/plan tests demonstrate real
+initial Research, no-delegation completion, repeated native Research continuation,
+local inspection and dependent arithmetic, immutable user context, shared counters,
+Deep eligibility, post-denial exact selection and safe failure/deadline behavior.
+Actual preserved financing/XZ/FCC passages have separate offline custody replays.
+These are deterministic capability checks, not native semantic success or quality
+evidence. The bounded live development/comparison is pending at this checkpoint.
+All phase artifacts are under `C:\tmp\sr-research-first-resumable-answer-01`.
+Donor A7's full ordinary post-denial recovery remains unobserved; code import does
+not upgrade that claim. The following independent-library campaign is historical
+production evidence, not a new hybrid observation.
 
 Independent Answer Library Access 01 demonstrated autonomous use of retained
 material omitted by Research selection. The unchanged historical COVID-OUT
@@ -111,15 +126,14 @@ discovery for a needed source class. Serper
 candidates and snippets guide navigation only;
 they are not Evidence. LinkUp static Fetch supplies external known-URL Read when
 Research selects one. Exa Contents has no ordinary Read authority; there is no
-search or Read fallback or provider router. Limits remain 12 semantic attempts,
-16 external attempts and 128,000 characters of current attention. The ordinary
-hard run ceiling is 300 seconds, with 180 seconds reserved for terminal Answer
-once Evidence exists. Each underlying model request remains capped at 120
-seconds, and one unchanged Answer Evidence packet has a 120-second total
-Answer-stage allowance.
-Calculator tool stops and their model continuations consume no additional semantic
-attempts or Answer validation corrections. They remain subject to the whole-run,
-Answer-stage and per-request time bounds.
+search or Read fallback or provider router. The candidate has one 900-second hard
+whole-turn ceiling, 40 physically dispatched model requests across both roles,
+16 external acquisition attempts and 128,000 cumulative Answer source characters.
+Individual model requests are capped at 300 seconds and remaining whole-turn time.
+There is no terminal time reserve or total Answer-stage clock. Research preserves
+one physical Answer completion opportunity where feasible. Native continuations,
+corrections and failures consume physical requests; local tools and all delegated
+returns share one 12-operation Answer allowance and cumulative attention.
 These limits provide diagnostic and completion headroom, not an acceptable-latency
 target. No semantic
 verifier or additional semantic owner exists.
@@ -144,7 +158,7 @@ Research packet presentation now keeps the stable `conversation_context`,
 `current_date`, `phase`, `question` prefix and its Research-context cache
 breakpoint. Present volatile fields follow the deliberate order
 `working_understanding`, `catalog`, `last_route`, `failed_external_reads`, `evidence`,
-`answer_missing_information`, `pending_delivery`, `budget`, then
+`pending_delivery`, `budget`, then
 `output_correction` last. Unknown fields remain lossless in deterministic order.
 Generated understanding and navigation precede the latest route and exact
 Evidence, placing current source material near the decision edge. Both Research
@@ -326,20 +340,11 @@ canonical source IDs and exact material IDs are navigation, not Evidence or a
 claim that the prior answer was correct. A cited targeted view can be reconstructed
 locally from its retained full parent. Answer sees ordinary conversation without
 historical provenance aliases. Research suggests initial source identities for Answer
-through its ordinary exact Evidence selection. Immediately before explicit or
-forced terminal Answer handoff, mechanics append omitted exact material already
-exposed during the current turn from those same stored canonical source IDs.
-Seed refs retain their order; appended document views follow source character
-start and web material follows acquisition/Evidence-ID order, within selected
-source order. Completion is all-or-nothing within the existing 128,000-character
-Evidence allowance: an over-limit proposal leaves the seed packet unchanged.
-No semantic ranking, version preference, summarization or new owner is involved.
-Provisional Answer no-progress compares all material actually supplied to Answer,
-including independent local reads, and requires an unchanged acquired corpus;
-Research reentry attention still uses its ordinary seed choice. Citation validation
-and saved source snapshots include exact text subsequently returned by Answer's
-local tools. A body-free trace receipt records seed/appended refs, final content
-characters and completion status; no durable session state is added.
+through its ordinary exact Evidence selection. No omitted same-source material is
+automatically appended. Answer's own local tools can expose useful unselected
+material; only received originals become citable. The single AnswerLibrary charges
+the actual initial packet once and retains its remaining attention/operations
+through every delegated return and any validation correction.
 Unscoped Find ranks actual retained acquisition regions on
 a comparable corpus-wide lexical scale rather than interleaving by acquisition
 order;
@@ -355,8 +360,7 @@ user beliefs and narration are not automatically stipulated premises. Prior
 assistant answers are discourse context only; they cannot silently become
 premises. A user's explicit adoption of a prior assistant value can define a new
 scenario premise without verifying that value externally.
-Research chooses external acquisition. Initial selected-source completion widens
-within suggested source identities; Answer's local tools can inspect all legitimate
+Research chooses external acquisition. Answer's local tools can inspect all legitimate
 retained session material independently. Answer owns meaning, interpretation,
 prose, completeness, supported/partial/unable posture, consequential missing needs
 and citations. The existing `SemanticAnswerDecision` schema is unchanged. A
@@ -367,22 +371,18 @@ executable `source_readings` schema and literal-reading correction machinery are
 removed. No replacement model call, validator or semantic owner is introduced.
 The sole Answer prompt retains its semantic responsibility and describes optional
 local inspection. Its instruction/tool-derived cache identity changes; there is
-no additional finalization stage or Research instruction change.
+no additional finalization stage. Initial Research instructions only supersede the retired terminal-reentry sentence.
 
 Unknown citation aliases, unsupplied versions and invalid selected-material custody
 still reject publication. Missing required citations and invalid Answer shapes
-share the existing one-correction allowance and Answer-stage deadline. Exhaustion
-retains the fixed operational inability message and `answer_validation_exhausted`
-trace, with no rejected prose, citations or selected support, unless a valid prior
-partial can be preserved from reentry. A supported verdict
-with consequential `missing_information` remains an Answer-shape error. A valid
-external need may return to Research under the existing budget, with no-progress
-accounting for independently supplied material and newly acquired corpus items.
-A failed later attempt preserves a valid prior partial and its original support;
-hard bounds retain the ordinary research-bound disclosure. Empty-Evidence
-explicit user-premise derivations remain distinct from external factual support;
-neither user premises nor previous assistant prose become Evidence. Calculator,
-Research semantics, acquisition policy and the API output cap are unchanged.
+share one correction allowance and the unchanged whole-turn resources. Exhaustion
+retains a fixed operational inability without rejected prose, citations or selected
+support. A supported verdict with consequential `missing_information` remains an
+Answer-shape error. A valid final partial completes with its exact support; it does
+not launch another investigation. When resources expire before valid completion,
+incomplete streams and Research notes cannot become a published answer. Premise-only
+derivations need no Evidence citation even when unrelated originals are available;
+actual mixed factual claims retain Evidence citation requirements.
 
 New citations open the exact selected saved material through the existing generic
 Reader, with its original publication or retained PDF and selected-page identity.
@@ -516,7 +516,8 @@ settings from effective user configuration or shipped defaults. Explicit injecte
 
 ## Bounded evidence and limits
 
-Selected-Source Completion Product 01 met its bounded mechanical gate at runtime
+The following Selected-Source Completion Product 01 observations describe historical
+removed automatic completion, not current hybrid behavior. That work met its bounded mechanical gate at runtime
 revision `4c0c447216895115b0aaa7dbf59653ebe2b61db9`. Two ordinary durable-session
 observations used five Research calls, two Answer calls and four external attempts.
 The PDF run completed the selected `D1` packet with its exposed page-5 table of

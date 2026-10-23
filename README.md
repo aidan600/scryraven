@@ -412,22 +412,21 @@ invented page numbers.
 Source labels use publication metadata, PDF filenames or hostnames without
 generating titles from evidence text.
 
-The established operating limits are 12 semantic attempts, 16 external acquisition
-attempts, a 300-second hard run ceiling and 128,000 characters of current Evidence
-attention. Local
-Read/Find use no external allowance. Corrected model outputs use the same finite
-semantic allowance. The loop reserves 180 seconds for terminal Answer once Evidence
-exists; each model call remains capped at 120 seconds. An unchanged selected
-Answer Evidence packet receives one initial attempt and at most one shared
-correction within a total 120-second Answer-stage allowance. Each real OpenAI
-Answer request timeout is bounded by the remaining stage time. A validated
-missing-information Answer may lead to a fresh allowance only after Research
-selects materially changed Evidence. An invalid correction or exhausted allowance
-ends with a fixed operational inability message, no citations or rejected prose,
-and no Research retry on that unchanged packet. The longer ceiling gives
-operational diagnostic headroom and is not a product-latency target. The loop
-returns an honest operational unable result when it cannot complete a source-grounded answer.
-Supported, partial and unable results remain distinct.
+The local hybrid first runs whole-question Research, then one independent Answer
+interaction with local library tools, calculator and optional `research(need)`.
+Research returns exact originals to the same native Answer continuation. Final
+missing information is a delivered limitation and never restarts the stage.
+
+One turn allows 40 physical model requests, 16 external acquisitions, a 900-second
+hard ceiling and 128,000 cumulative Answer source characters. Per-request timeouts
+are at most 300 seconds and the remaining turn time. There is no terminal reserve
+or separate Answer-stage clock. Local inspection and all delegated returns share
+the same attention and 12 local operations. A5 exact passage returns, A6 safe
+same-version reuse and A7 local selection after external denial preserve actual
+source/version/range identity. Highlight ranges address only retained excerpt
+text. No automatic unselected-source completion remains. A useful supported,
+partial or unable response retains its independent semantic posture; operating
+limits never establish support or nonexistence.
 
 SQLite keeps the existing revision-checked atomic snapshot boundary. Native turns
 store `analysis: null`; old saved Analysis remains a historical record only.

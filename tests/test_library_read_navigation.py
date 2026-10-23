@@ -119,12 +119,13 @@ def test_invalid_direct_view_ids_fail_without_fetch_or_material_creation(target,
     assert list(library.materials) == ["E1"]
 
 
-def test_direct_view_id_cannot_use_a_highlight_as_full_parent():
+def test_direct_view_id_addresses_only_the_acquired_highlight():
     highlight = Evidence("E1", URL, "Title", "Extracted text", "provider_highlights")
     library = AcquisitionLibrary((highlight,), fetch=no_external)
     result = read(library, "E1@0:4", mode="local")
-    assert result["code"] == "invalid_exact_range"
-    assert list(library.materials) == ["E1"]
+    assert result["status"] == "ok"
+    view = library.materials["E1@0:4"]
+    assert view.content == "Extr" and view.range_basis == "acquired_highlight"
 
 
 def test_oversized_synthetic_view_id_fails_safely_and_explicit_range_still_splits():

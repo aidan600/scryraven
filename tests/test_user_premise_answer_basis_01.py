@@ -115,8 +115,8 @@ def test_evidence_basis_omission_retains_same_contract_correction():
     assert result.trace[-1]["budget"]["semantic_attempts"] == 4
 
 
-def test_user_premises_basis_with_evidence_is_rejected_under_same_answer_contract():
-    rejected = answer("REJECTED PROSE claims the source agrees.", support_basis="user_premises")
+def test_user_premises_basis_with_citations_is_rejected_under_same_answer_contract():
+    rejected = answer("REJECTED PROSE claims the source agrees. [E1]", support_basis="user_premises")
     model = RecordingModel(
         decision(), decision("answer", ["E1"]), rejected,
         answer("The publication states seven. [E1]", support_basis="evidence"),
@@ -129,7 +129,7 @@ def test_user_premises_basis_with_evidence_is_rejected_under_same_answer_contrac
     assert first[1] == second[1] and first[3] == second[3]
     assert first[2]["question"] == second[2]["question"]
     assert first[2]["evidence"] == second[2]["evidence"]
-    assert second[2]["output_correction"]["code"] == "basis_user_premises_has_evidence"
+    assert second[2]["output_correction"]["code"] == "basis_user_premises_has_citations"
     assert "REJECTED PROSE" not in json.dumps(second[2])
     assert result.answer == "The publication states seven. [1]"
     assert result.trace[-1]["budget"]["semantic_attempts"] == 4
@@ -191,7 +191,7 @@ def test_basis_correction_stays_within_existing_semantic_limit():
 
     result = run("What is an external fact?", model=model,
                  search=no_acquisition, fetch=no_acquisition,
-                 limits=RunLimits(semantic_attempts=3))
+                 limits=RunLimits(physical_model_requests=3))
 
     assert len(answers(model)) == 2
     assert result.posture == "unable" and result.stop_reason == "not_established"
@@ -212,11 +212,11 @@ def test_terminal_bound_does_not_promote_inconsistent_supported_answer():
 
     result = run("Assume 60 million Btu useful heat, 90% AFUE, and $1.20/therm.",
                  model=model, search=lambda query: [], fetch=no_acquisition,
-                 limits=RunLimits(semantic_attempts=2))
+                 limits=RunLimits(physical_model_requests=2))
 
     assert [call[0] for call in model.calls] == ["research", "answer"]
-    assert result.posture == "unable" and result.stop_reason == "not_established"
-    assert result.answer == "I couldn't complete a source-validated answer for this request."
+    assert result.posture == "unable" and result.stop_reason == "research_bound"
+    assert "operating limit" in result.answer
     assert result.selected_evidence == result.citations == ()
     assert any(event.get("code") == "supported_with_missing_information"
                for event in result.trace)

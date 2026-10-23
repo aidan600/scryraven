@@ -51,7 +51,7 @@ def test_bound_before_provider_io_is_not_counted_as_external_execution():
     model = Script(decision(), answer("Research could not complete.", "unable"))
     result = run("What can be established?", model=model,
                  search=lambda _: (_ for _ in ()).throw(AssertionError("provider called")),
-                 fetch=no_fetch, limits=RunLimits(semantic_attempts=2, external_attempts=0))
+                 fetch=no_fetch, limits=RunLimits(physical_model_requests=2, external_attempts=0))
 
     assert not any(event["action"] == "acquisition_timing" for event in result.trace)
     assert result.trace[-1]["budget"]["external_attempts"] == 0

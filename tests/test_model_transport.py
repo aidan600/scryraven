@@ -281,7 +281,7 @@ def test_answer_continuation_obeys_remaining_time_before_next_request(monkeypatc
     seconds = [4.0]
 
     def post(_url, **kwargs):
-        calls.append(kwargs["timeout"])
+        calls.append(kwargs["timeout"].total)
         seconds[0] = 0.0
         return Response({"status": "completed", "output": [
             {"type": "function_call", "call_id": "first", "name": "calculate",
@@ -302,9 +302,9 @@ def test_runtime_deadline_keeps_configured_timeout_per_request(monkeypatch):
     timeouts = []
 
     def post(_url, **kwargs):
-        timeouts.append(kwargs["timeout"])
+        timeouts.append(kwargs["timeout"].total)
         if len(timeouts) == 1:
-            now[0] = 18.0
+            now[0] = 16.0
             return Response({"status": "completed", "output": [
                 {"type": "function_call", "call_id": "first", "name": "calculate",
                  "arguments": '{"expression":"1 + 1"}'},
@@ -313,9 +313,13 @@ def test_runtime_deadline_keeps_configured_timeout_per_request(monkeypatch):
             {"type": "message", "content": [{"type": "output_text", "text": "{}"}]},
         ]})
 
+    def calculate(_):
+        now[0] = 18.0
+        return {"value": "2"}
+
     model = OpenAIModel(post=post, timeout_seconds=17)
     assert model("answer", "prompt", {}, {},
-                 calculator=lambda _: {"value": "2"},
+                 calculator=calculate,
                  remaining_seconds=lambda: 50 - now[0]) == "{}"
     assert timeouts == [17, 17]
 

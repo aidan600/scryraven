@@ -135,6 +135,7 @@ class _EvidenceRecord(_Record):
     page_end: int | None = None
     visual_analysis: bool | None = None
     textless_page_count: int | None = None
+    range_basis: Literal["acquired_highlight"] | None = None
 
 
 class _CitationRecord(_Record):

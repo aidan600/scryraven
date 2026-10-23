@@ -18,7 +18,7 @@ from core.exa_transport import DiscoveryCandidate
 from core.transport import FetchedMaterial
 from scryraven.answer_library import LIBRARY_TOOLS
 from scryraven.errors import RunError
-from scryraven.model import _CALCULATOR_TOOL, ModelError, OpenAIModel, built_in_model_config
+from scryraven.model import _CALCULATOR_TOOL, _RESEARCH_TOOL, ModelError, OpenAIModel, built_in_model_config
 from scryraven.research import ANSWER_PROMPT, RESEARCH_PROMPT, RunLimits, run
 from scryraven.session import ResearchSession
 from scryraven.session_store import SQLiteSessionStore
@@ -127,15 +127,15 @@ class FrozenAuth:
         self.http = self
 
     def access(self, account, *, timeout):
-        # Deadline subtraction may exceed 120 by one floating-point ULP when
+        # Deadline subtraction may exceed 300 by one floating-point ULP when
         # the monotonic clock crosses an exponent boundary on a fresh CI host.
-        assert account == "personal" and 0 < timeout <= 120 + 1e-9
+        assert account == "personal" and 0 < timeout <= 300 + 1e-9
         return {"access_token": "synthetic-plan-token"}
 
     def request(self, method, url, **kwargs):
         assert method == "POST" and url == "https://api.openai.com/v1/responses"
         assert kwargs["headers"]["Authorization"] == "Bearer synthetic-plan-token"
-        assert kwargs["stream"] is True and 0 < kwargs["timeout"] <= 120 + 1e-9
+        assert kwargs["stream"] is True and 0 < kwargs["timeout"] <= 300 + 1e-9
         payload = copy.deepcopy(kwargs["json"])
         self.calls.append(payload)
         response = next(self.replies).stream(payload)
@@ -165,7 +165,7 @@ def test_plan_native_research_dependent_calculation_and_unknown_usage():
     model.usage_observer = reported.append
     result = run("If the amount is 100 units, increase it 20 percent and divide by four.",
                  model=model, search=forbidden, fetch=forbidden, lexical_search=forbidden,
-                 limits=RunLimits(semantic_attempts=2))
+                 limits=RunLimits(physical_model_requests=4))
     assert result.answer == final["answer"] and result.posture == "supported"
     assert result.evidence == result.citations == ()
     assert len(auth.calls) == 4 and all(stream.closed for stream in auth.streams)
@@ -179,7 +179,7 @@ def test_plan_native_research_dependent_calculation_and_unknown_usage():
         extras = [(index, item) for index, item in enumerate(payload["input"])
                   if item.get("type") == "additional_tools"]
         assert len(extras) == 1 and extras[0][1] == {
-            "type": "additional_tools", "role": "developer", "tools": [_CALCULATOR_TOOL, *LIBRARY_TOOLS]}
+            "type": "additional_tools", "role": "developer", "tools": [_CALCULATOR_TOOL, *LIBRARY_TOOLS, _RESEARCH_TOOL]}
         first_return = next((index for index, item in enumerate(payload["input"])
                              if item.get("type") in {"reasoning", "function_call", "function_call_output"}),
                             len(payload["input"]))
@@ -197,9 +197,10 @@ def test_plan_native_research_dependent_calculation_and_unknown_usage():
     assert ENCRYPTED not in json.dumps([asdict(item) for item in reported])
     assert reported[-1].input_tokens is None and reported[-1].output_tokens is None
     assert result.trace[-1]["budget"]["semantic_attempts"] == 2
+    assert result.trace[-1]["budget"]["physical_requests"] == 4
 
 
-def test_plan_selected_source_completion_citations_session_reopen_without_localization(tmp_path):
+def test_plan_explicit_selected_source_citations_session_reopen_without_localization(tmp_path):
     model, auth = plan_model(
         Reply("research", decision()),
         Reply("research", decision(requests=[request("read", query="", target="E1", mode="full")])),
@@ -213,10 +214,10 @@ def test_plan_selected_source_completion_citations_session_reopen_without_locali
                                      lexical_search=forbidden)
     result = session.ask("What quantity does the standard specify and under which condition?")
     assert result.answer == "Seven units under sheltered conditions. [1]"
-    assert [item.id for item in result.selected_evidence] == ["E2", "E1"]
+    assert [item.id for item in result.selected_evidence] == ["E2"]
     answer_packet = packet(auth.calls[3])
-    assert [item["id"] for item in answer_packet["evidence"]] == ["E2", "E1"]
-    assert [item["content"] for item in answer_packet["evidence"]] == [FULL_TEXT, HIGHLIGHT]
+    assert [item["id"] for item in answer_packet["evidence"]] == ["E2"]
+    assert [item["content"] for item in answer_packet["evidence"]] == [FULL_TEXT]
     assert len(result.citation_uses) == 1 and not result.citation_uses[0].support
     assert result.citations[0].materials == result.selected_evidence
     reopened = ResearchSession.open(session.session_id, store=store, model=model,

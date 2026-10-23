@@ -43,7 +43,7 @@ ARGUMENTS = {"library_browse": Browse, "library_find": Find, "library_read": Rea
 _DESCRIPTIONS = {
     "library_browse": "Browse a page of acquired session material metadata. Navigation only, not citable text. Use next_offset for more.",
     "library_find": "Find exact text in retained session material, including sources absent from initial Evidence. Lexical search; use scope=[] for all material or source/material/document IDs. Returns citable original text, never web search.",
-    "library_read": "Read retained original material by material/source/document ID. Use focus for a bounded exact view of a large body, or paired start_char/end_char offsets. Null offsets use normal local reading. Only acquired text is available; highlights do not grant the full page. Never fetches externally.",
+    "library_read": "Read retained original material by material/source/document ID. Use focus for a bounded exact view of a large body, or paired start_char/end_char offsets in the exact acquired parent text. Highlight ranges address the retained excerpt, never the original page. Null offsets use normal local reading. Only acquired text is available; highlights do not grant the full page. Never fetches externally.",
 }
 LIBRARY_TOOLS = [
     {"type": "function", "name": name, "description": _DESCRIPTIONS[name],
@@ -56,8 +56,35 @@ def material_receipt(item):
     data = item.content.encode("utf-8")
     return {"id": item.id, "source_id": item.source_id, "parent_id": item.parent_id,
             "start_char": item.start_char, "end_char": item.end_char,
-            "acquisition": item.acquisition, "characters": len(item.content),
+            "acquisition": item.acquisition, "range_basis": item.range_basis,
+            "characters": len(item.content),
             "utf8_bytes": len(data), "sha256": sha256(data).hexdigest()}
+
+
+def _available_exact_view(item, available):
+    """Find one already supplied item containing this same-version exact view."""
+    if item.acquisition != "targeted_view":
+        return None
+    for known in available:
+        if any(getattr(item, field) != getattr(known, field) for field in (
+                "source_id", "source_kind", "url", "document_id", "filename",
+                "visual_analysis", "textless_page_count")):
+            continue
+        if known.acquisition == "targeted_view":
+            if (item.parent_id != known.parent_id or item.range_basis != known.range_basis
+                    or (item.source_kind == "user_document"
+                        and (item.page_start, item.page_end) != (known.page_start, known.page_end))):
+                continue
+            start, end = known.start_char, known.end_char
+        else:
+            basis = "acquired_highlight" if known.acquisition == "provider_highlights" else None
+            if item.parent_id != known.id or item.range_basis != basis:
+                continue
+            start, end = 0, len(known.content)
+        if (start <= item.start_char < item.end_char <= end
+                and known.content[item.start_char - start:item.end_char - start] == item.content):
+            return known.id
+    return None
 
 
 class AnswerLibrary:
@@ -67,6 +94,7 @@ class AnswerLibrary:
         self.remaining = attention_characters - sum(len(library.materials[r].content) for r in refs)
         self.operations = 0
         self.emit, self.clock = emit, clock
+        self.library.expose(refs)
 
     def catalog(self, offset=0):
         # Stable acquisition order, not Research's attention order or selections.
@@ -83,6 +111,66 @@ class AnswerLibrary:
                 "next_offset": offset + CATALOG_PAGE if offset + CATALOG_PAGE < len(rows) else None,
                 "operations_remaining": max(0, MAX_OPERATIONS - self.operations),
                 "text_characters_remaining": max(0, self.remaining)}
+
+    def delivery_plan(self, refs):
+        """Preview existing admission limits without exposing or spending text."""
+        chosen, used = [], 0
+        available = set(self.refs)
+        # Only evidence supplied before this call can replace a new selection.
+        available_items = tuple(self.library.materials[ref] for ref in dict.fromkeys(self.refs))
+        known_ids, covered, omitted = [], [], []
+        for ref in dict.fromkeys(refs):
+            if ref in available:
+                known_ids.append(ref)
+                continue
+            item = self.library.materials[ref]
+            known = _available_exact_view(item, available_items)
+            if known is not None:
+                known_ids.append(known)
+                covered.append({"selected_material_id": ref, "available_material_id": known})
+                continue
+            ceiling = min(PACKET_CHARACTERS, self.remaining)
+            if not chosen and item.acquisition == "provider_highlights":
+                ceiling = min(DISCOVERY_CONTEXT_SAFETY_LIMIT, self.remaining)
+            if used + len(item.content) <= ceiling:
+                chosen.append(item)
+                used += len(item.content)
+            else:
+                omitted.append(ref)
+        result = {"deliverable_ids": [item.id for item in chosen],
+                  "already_available_material_ids": list(dict.fromkeys(known_ids)),
+                  "omitted_material_ids": omitted,
+                  "text_characters_returned": used}
+        if covered:
+            result["already_available_selections"] = covered
+        return result
+
+    def deliver(self, refs):
+        """Expose a bounded Research selection to the continuing Answer owner.
+
+        This spends the same attention as local inspection. A Research read alone
+        never adds a citation alias to ``self.refs``.
+        """
+        plan = self.delivery_plan(refs)
+        chosen = [self.library.materials[ref] for ref in plan.pop("deliverable_ids")]
+        used = plan["text_characters_returned"]
+        self.remaining -= used
+        self.refs.extend(item.id for item in chosen if item.id not in self.refs)
+        self.library.expose(item.id for item in chosen)
+        result = {"evidence": [item.material() for item in chosen],
+                  **plan,
+                  "text_characters_remaining": self.remaining}
+        if self.emit is not None:
+            self.emit("answer_research_exposure", contract="answer",
+                      exposed=[material_receipt(item) for item in chosen],
+                      text_characters_remaining=self.remaining)
+        return result
+
+    def delivery_capacity(self):
+        return {"text_characters_remaining": max(0, self.remaining),
+                "packet_characters": PACKET_CHARACTERS,
+                "whole_highlight_characters": DISCOVERY_CONTEXT_SAFETY_LIMIT,
+                "already_available_material_ids": list(self.refs)}
 
     @staticmethod
     def _no_external():
@@ -145,6 +233,7 @@ class AnswerLibrary:
                 used += len(item.content)
         self.remaining -= used  # Repeated returned text consumes attention too.
         self.refs.extend(item.id for item in chosen if item.id not in self.refs)
+        self.library.expose(item.id for item in chosen)
         return {"evidence": [item.material() for item in chosen],
                 "omitted_material_ids": [r for r in outcome["material_ids"] if r not in {i.id for i in chosen}],
                 "matching_region_count": outcome.get("matching_region_count"),

@@ -257,7 +257,8 @@ class AcquisitionLibrary:
             if (isinstance(start, bool) or isinstance(end, bool)
                     or not isinstance(start, int) or not isinstance(end, int)):
                 raise AcquisitionError("invalid_exact_range")
-            if parent.acquisition != "fetched_source" or not 0 <= start < end <= len(parent.content):
+            if (parent.acquisition not in {"fetched_source", "provider_highlights"}
+                    or not 0 <= start < end <= len(parent.content)):
                 raise AcquisitionError("invalid_exact_range")
             # Preserve the complete requested range in source order, with each
             # item small enough for the caller to deliver through bounded attention.
@@ -281,6 +282,9 @@ class AcquisitionLibrary:
                    "returned_characters": sum(len(view.content) for view in items),
                    "ranges": [{"id": view.id, "start_char": view.start_char, "end_char": view.end_char}
                               for view in items if view.acquisition == "targeted_view"]}
+        if parent.acquisition == "provider_highlights" and any(view.range_basis for view in items):
+            receipt.update(parent_id=parent.id, parent_characters=len(parent.content),
+                           range_basis="acquired_highlight")
         if parent.acquisition == "fetched_source":
             if items == [parent]:
                 receipt["ranges"] = [{"id": parent.id, "start_char": 0, "end_char": len(parent.content)}]
@@ -343,7 +347,8 @@ class AcquisitionLibrary:
                 raise AcquisitionError("invalid_exact_range") from None
             # Ordinary targeted views are bounded; larger requests use the
             # explicit parent range path, which splits them for delivery.
-            if (parent.acquisition != "fetched_source" or not 0 <= start < end <= len(parent.content)
+            if (parent.acquisition not in {"fetched_source", "provider_highlights"}
+                    or not 0 <= start < end <= len(parent.content)
                     or end - start > TARGETED_SOURCE_CHARACTERS):
                 raise AcquisitionError("invalid_exact_range")
             item = exact_view(parent, start, end)

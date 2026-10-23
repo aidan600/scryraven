@@ -108,8 +108,8 @@ def upload(client, location, pdf, filename="report.pdf", headers=None):
 def test_operating_bounds_and_prompt_limits_stay_in_place():
     limits = RunLimits()
     assert DEFAULT_DISCOVERY_RESULT_COUNT == 6
-    assert (limits.semantic_attempts, limits.external_attempts, limits.seconds, limits.attention_characters) == (
-        12, 16, 300, 128_000)
+    assert (limits.physical_model_requests, limits.external_attempts, limits.seconds, limits.attention_characters) == (
+        40, 16, 900, 128_000)
     assert (TARGETED_SOURCE_CHARACTERS, PACKET_CHARACTERS, EXPANSION_CHARACTERS) == (32_000, 32_000, 48_000)
     assert (MAX_PDF_BYTES, MAX_PDF_PAGES, MAX_EXTRACTED_CHARACTERS) == (20 * 1024 * 1024, 500, 2_000_000)
     from scryraven.research import ANSWER_PROMPT, RESEARCH_PROMPT

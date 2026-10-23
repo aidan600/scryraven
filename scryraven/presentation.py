@@ -274,6 +274,11 @@ def source_body_html(citation: Citation, *, collapse_long: bool = False, origina
             else:
                 label, qualification = ("Extracted document text",
                                         f"Exact text from pages {item.page_start}\u2013{item.page_end}.")
+        elif item.range_basis == "acquired_highlight":
+            label, qualification = (
+                "Selected acquired excerpt",
+                "Offsets refer only to the retained provider excerpt; omitted context and original-page positions are unknown.",
+            )
         else:
             label, qualification = _ACQUISITION_LABELS[item.acquisition]
         content = f'<pre class="material-text"><code>{escape(item.content)}</code></pre>'
