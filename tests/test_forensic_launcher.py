@@ -23,14 +23,15 @@ FORENSIC_ROOT = Path("C:/tmp/scryraven-forensic")
 def _powershell() -> str:
     if os.name != "nt":
         pytest.skip("The forensic launcher is Windows-specific")
-    shell = shutil.which("pwsh") or shutil.which("powershell")
+    shell = shutil.which("powershell.exe") or shutil.which("pwsh")
     if shell is None:
         pytest.skip("PowerShell is unavailable")
     return shell
 
 
 def _prepare(*, port: int | None = None) -> tuple[Path, dict[str, object], str]:
-    command = [_powershell(), "-NoProfile", "-File", str(LAUNCHER), "-PrepareOnly"]
+    command = [_powershell(), "-NoProfile", "-ExecutionPolicy", "Bypass",
+               "-File", str(LAUNCHER), "-PrepareOnly"]
     if port is not None:
         command.extend(["-Port", str(port)])
     result = subprocess.run(
@@ -59,20 +60,55 @@ def _cleanup(run_directory: str, clipboard_path: Path) -> subprocess.CompletedPr
         "& $env:SR_CLEANUP_SCRIPT -RunDirectory $env:SR_RUN_DIRECTORY"
     )
     return subprocess.run(
-        [_powershell(), "-NoProfile", "-Command", wrapper],
+        [_powershell(), "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", wrapper],
         cwd=REPOSITORY, env=environment, capture_output=True, text=True,
         encoding="utf-8", check=False,
     )
 
 
-def test_launcher_has_exact_reading_room_command_and_no_credential_loader() -> None:
+def test_launcher_uses_doorman_and_explicit_forensic_child_without_credential_loader() -> None:
     script = LAUNCHER.read_text(encoding="utf-8")
-    for flag in ("--database", "--dogfood-log", "--forensic-log", "--port"):
+    for flag in ("--env-file", "--stdout", "--stderr", "--status", "--run-directory"):
         assert f"'{flag}'" in script
-    assert "& $pythonExecutable @readingRoomArgs" in script
-    assert "'scryraven.reading_room'" in script
+    assert "run_brokered_command_once.py" in script
+    assert "'scripts.forensic_reading_room'" in script
     assert "Get-Content .env" not in script
     assert "ReadAllText" not in script
+
+
+@pytest.mark.parametrize("argument_suffix,entrypoint,stopped", [
+    ("", "scripts.forensic_reading_room", True),
+    ("-different-run", "scripts.forensic_reading_room", False),
+    ("", "unrelated_server", False),
+])
+def test_stop_verifies_exact_run_and_entrypoint_before_stopping(
+    tmp_path, argument_suffix, entrypoint, stopped,
+):
+    run = tmp_path / "run"
+    run.mkdir()
+    (run / "manifest.json").write_text(json.dumps({"server_pid": 31415}), encoding="utf-8")
+    marker = tmp_path / "stopped.txt"
+    environment = os.environ.copy()
+    environment.update({
+        "SR_STOP_SCRIPT": str(REPOSITORY / "scripts" / "stop-forensic-reading-room.ps1"),
+        "SR_STOP_RUN": str(run), "SR_STOP_MARKER": str(marker),
+        "SR_FAKE_COMMAND_LINE": f'python -m {entrypoint} --run-directory "{run}{argument_suffix}"',
+    })
+    wrapper = (
+        "function Get-CimInstance { [pscustomobject]@{ CommandLine=$env:SR_FAKE_COMMAND_LINE } }; "
+        "function Stop-Process { param([int]$Id) "
+        "[System.IO.File]::WriteAllText($env:SR_STOP_MARKER, [string]$Id) }; "
+        "& $env:SR_STOP_SCRIPT -RunDirectory $env:SR_STOP_RUN"
+    )
+    result = subprocess.run(
+        [_powershell(), "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", wrapper],
+        cwd=REPOSITORY, env=environment, capture_output=True, text=True,
+        encoding="utf-8", check=False,
+    )
+    assert (result.returncode == 0) is stopped, result.stdout + result.stderr
+    assert marker.exists() is stopped
+    if stopped:
+        assert marker.read_text(encoding="utf-8") == "31415"
 
 
 def test_prepare_unique_run_manifest_port_and_exact_command(tmp_path: Path) -> None:
@@ -90,9 +126,6 @@ def test_prepare_unique_run_manifest_port_and_exact_command(tmp_path: Path) -> N
         assert manifest_a["port"] == 7332
         assert manifest_b["port"] == 7442
         assert manifest_a["model_profile"] == asdict(ModelConfig())
-        python_executable = REPOSITORY / ".venv" / "Scripts" / "python.exe"
-        if python_executable.exists():
-            assert f'Command: & "{python_executable}" -m scryraven.reading_room' in output_a
         for run, manifest, output, port in (
             (run_a, manifest_a, output_a, 7332),
             (run_b, manifest_b, output_b, 7442),
@@ -104,13 +137,18 @@ def test_prepare_unique_run_manifest_port_and_exact_command(tmp_path: Path) -> N
             assert manifest["dogfood_log_path"] == str(dogfood)
             assert manifest["forensic_observer_log_path"] == str(forensic)
             assert manifest["launch_timestamp_utc"]
+            assert manifest["inference_backend"] == "chatgpt_plan"
+            assert manifest["plan_account"] == "personal"
+            assert manifest["api_inference_fallback"] is False
+            assert manifest["acquisition_configuration"] is None
+            assert manifest["launch_status"] == "prepared"
+            assert manifest["server_pid"] is None
             assert "FORENSIC DOGFOOD MODE" in output
             assert "Source text and diagnostic observer events are being saved locally." in output
-            assert f"Reading Room URL: http://127.0.0.1:{port}" in output
-            assert f'--database "{database}"' in output
-            assert f'--dogfood-log "{dogfood}"' in output
-            assert f'--forensic-log "{forensic}"' in output
-            assert f"--port {port}" in output
+            assert f"Requested Reading Room URL: http://127.0.0.1:{port}" in output
+            assert 'Command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File ' in output
+            assert f"-Port {port} 2>&1" in output
+            assert "API inference fallback: disabled" in output
             assert "Prepared only; Reading Room was not started." in output
     finally:
         for run in (run_a, run_b):
@@ -129,7 +167,7 @@ def test_prepare_records_detached_head_without_a_branch_name(tmp_path: Path) -> 
         "& git.exe @args }; & $env:SR_LAUNCHER_SCRIPT -PrepareOnly"
     )
     result = subprocess.run(
-        [_powershell(), "-NoProfile", "-Command", wrapper],
+        [_powershell(), "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", wrapper],
         cwd=REPOSITORY, env=environment, capture_output=True, text=True,
         encoding="utf-8", check=False,
     )
@@ -206,7 +244,7 @@ def test_cleanup_refuses_a_run_containing_a_directory_link(tmp_path: Path) -> No
             environment.update({"SR_LINK": str(link), "SR_TARGET": str(outside)})
             junction = subprocess.run(
                 [
-                    _powershell(), "-NoProfile", "-Command",
+                    _powershell(), "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
                     "New-Item -ItemType Junction -Path $env:SR_LINK -Target $env:SR_TARGET "
                     "-ErrorAction Stop | Out-Null",
                 ],

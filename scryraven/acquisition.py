@@ -32,6 +32,11 @@ SEARCH_NOVELTY_COUNTS = (
     "returned_material_count", "new_material_count", "new_candidate_material_count",
     "refreshed_known_candidate_material_count", "exact_reused_material_count",
 )
+PROVIDER_CONFIGURATION_CODES = {
+    "exa": "exa_configuration_missing",
+    "serper": "serper_configuration_missing",
+    "linkup": "linkup_configuration_missing",
+}
 
 
 def _public_url(url: str) -> bool:
@@ -127,6 +132,10 @@ class AcquisitionLibrary:
         self._indexes: dict[str, SourceIndex] = {}
         self._documents: dict[str, SessionDocument] = {}
         self._index_parents: dict[str, Evidence] = {}
+        # A library belongs to one production turn. Definitive configuration
+        # failures cannot change through another query, but never persist into
+        # the next turn's fresh library.
+        self.unavailable_providers: dict[str, str] = {}
         for document in documents:
             if (not isinstance(document, SessionDocument) or document.document_id in self._documents
                     or not DOCUMENT_ID.fullmatch(document.document_id)):
@@ -432,9 +441,17 @@ class AcquisitionLibrary:
             normalized = self._request(request)
         except AcquisitionError:
             return None
-        if normalized["kind"] != "search":
+        if normalized["kind"] != "search" or "exa" in self.unavailable_providers:
             return None
         return normalized
+
+    def _before_provider(self, provider: str, result: dict, before_external: Callable[[], None]) -> None:
+        result["provider"] = provider
+        if provider in self.unavailable_providers:
+            result.update(local=False, suppressed=True)
+            raise AcquisitionError(self.unavailable_providers[provider])
+        before_external()
+        result.update(external=True, local=False)
 
     def admit_transported_search(
         self, normalized: dict, outcome: dict, *,
@@ -469,17 +486,28 @@ class AcquisitionLibrary:
         result["new_acquisition_ids"] = [item.id for item in self.acquisitions[before:]]
         result["material_ids"] = list(dict.fromkeys(result["material_ids"]))
         duration = max(0.0, ended_at - started_at)
+        provider = result.get("provider") or (
+            {"search": "exa", "search_lexical": "serper", "read": "linkup"}.get(result["kind"])
+            if result["external"] else "local")
+        if provider in PROVIDER_CONFIGURATION_CODES and result.get("code") == PROVIDER_CONFIGURATION_CODES[provider]:
+            self.unavailable_providers.setdefault(provider, result["code"])
+        result["provider"] = provider
+        result["suppressed"] = result.get("suppressed", False)
+        # These fixed configuration failures happen before HTTP dispatch. An
+        # attempted external operation and an actual provider request differ.
+        result["provider_dispatched"] = bool(
+            result["external"] and result.get("code") != PROVIDER_CONFIGURATION_CODES.get(provider))
         if "failed_external_read" in result:
             result["failed_external_read"]["duration_seconds"] = round(duration, 6)
         if observe_operation is not None:
             kind = result["kind"]
-            provider = ({"search": "exa", "search_lexical": "serper", "read": "linkup"}.get(kind)
-                        if result["external"] else "local")
             event = {
                 "kind": kind,
                 "mode": result.get("request", {}).get("mode") if kind == "read" else None,
                 "provider": provider,
                 "external": result["external"],
+                "provider_dispatched": result["provider_dispatched"],
+                "suppressed": result["suppressed"],
                 "started_at": started_at,
                 "ended_at": ended_at,
                 "duration_seconds": duration,
@@ -507,9 +535,8 @@ class AcquisitionLibrary:
         return result
 
     def _search(self, request: dict, result: dict, before_external: Callable[[], None]) -> None:
-        before_external()
-        result.update(external=True, local=False)
         lexical = request["kind"] == "search_lexical"
+        self._before_provider("serper" if lexical else "exa", result, before_external)
         try:
             leads = (self.lexical_search if lexical else self.search)(request["query"])
         except Exception as exc:
@@ -638,8 +665,7 @@ class AcquisitionLibrary:
         elif mode in {"auto", "full"} and full is not None:
             item = full
         else:
-            before_external()
-            result.update(external=True, local=False)
+            self._before_provider("linkup", result, before_external)
             try:
                 fetched = self.fetch(url)
             except Exception as exc:

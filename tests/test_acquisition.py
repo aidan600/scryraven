@@ -453,6 +453,7 @@ def test_operation_observer_failure_cannot_change_acquisition_and_error_code_is_
     assert failed["status"] == "error" and failed["code"] == "exa_configuration_missing"
     assert events == [{
         "kind": "search", "mode": None, "provider": "exa", "external": True,
+        "provider_dispatched": False, "suppressed": False,
         "started_at": 4.0, "ended_at": 6.0, "duration_seconds": 2.0,
         "status": "error", "code": "exa_configuration_missing",
         "returned_material_count": 0, "new_acquisition_count": 0,

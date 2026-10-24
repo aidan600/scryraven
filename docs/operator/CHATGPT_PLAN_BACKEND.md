@@ -24,6 +24,49 @@ Reading Room `create_app(session_options={"model": model})` injection can use th
 selected model. The sign-in/models commands below configure access; they do not
 select the backend for ordinary research launches.
 
+For isolated local dogfooding, the development launcher explicitly injects
+`OpenAIModel(backend="chatgpt_plan", plan_account="personal")` through the ordinary
+Reading Room's `session_options`. In Windows PowerShell, from the repository:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\forensic-reading-room.ps1 -PrepareOnly 2>&1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\forensic-reading-room.ps1 -Port 7332 2>&1
+```
+
+`-PrepareOnly` makes a fresh manifest without opening credentials or starting a
+server. A real launch uses the existing credential doorman and the approved
+external `credentials.env` source. The child removes `OPENAI_API_KEY`, requires
+nonblank Exa configuration before constructing the model or web server, and
+reports optional Serper/LinkUp configuration only as booleans. Missing Exa or an
+unavailable plan implementation fails closed with a fixed safe diagnostic.
+Startup never authenticates, sends inference or calls an acquisition provider;
+the first user question exercises account/model access. The selected plan is the
+ChatGPT-plan allowance, with no guaranteed Codex-only credit bucket or reported
+billing amount.
+
+Each unique run under `C:\tmp\scryraven-forensic` retains `sessions.sqlite3`,
+body-free `turns.jsonl`, source-bearing `observer.jsonl` and `manifest.json`.
+The child records its actual checkout revision, effective role configuration,
+backend, account label, API-fallback-disabled identity, credential-presence
+booleans and server PID. The manifest becomes `ready` only after that child's
+server binds. The launcher verifies a localhost HTTP GET before printing ready.
+It does not stop another server on a conflicting port; choose another `-Port`.
+
+The launcher waits for the broker, whose default timeout is 86,400 seconds
+(`-TimeoutSeconds` can set another finite duration). Broker stdout/stderr are
+sanitized and saved at process exit. Startup failure also prints the fixed broker
+status when available. A 30-second failed readiness check terminates only the
+process tree created by that launch. To stop a successful run, use its printed
+command, substituting its exact run directory:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\stop-forensic-reading-room.ps1 -RunDirectory 'C:\tmp\scryraven-forensic\EXACT-RUN-NAME' 2>&1
+```
+
+The stop script verifies the recorded PID's entrypoint and exact run argument
+before stopping it. It preserves all run files. Ordinary non-forensic launches
+retain their existing API default and observability behavior.
+
 The base requirements provide urllib3 for both transports' response-body deadline
 watchdog. JWT and cryptography authentication dependencies remain optional here.
 

@@ -25,6 +25,21 @@ semantic owner, coverage checker, provider stack or credential system was added.
 The baseline delegated-worker prompt is unchanged; B/C calibration, fit/repacking
 loops and automatic unselected-source completion are absent.
 
+Definite `exa_configuration_missing`, `serper_configuration_missing` and
+`linkup_configuration_missing` failures now mark only that provider unavailable
+for the current turn, shared by initial and delegated Research. Further requests
+to it are denied locally without spending another external attempt. The original
+fixed code and provider reach Research and Answer as operational limitations.
+An entirely unavailable requested route yields control rather than another
+Research model call; both discovery providers unavailable with no retained
+material, documents or usable known-URL path can hand off immediately. Other providers, local Read/Find,
+PDFs, retained originals and premise-only answers remain available. A later turn
+starts with no unavailable-provider state. Empty results, transient transport,
+access and rate-limit failures do not mark configuration unavailable. Safe
+acquisition diagnostics distinguish provider dispatch from local suppression.
+This is an operational correction with scripted offline evidence; no live
+research question was submitted for this repair.
+
 A5 admits exact independently valid immutable source/version/range slices, preserving
 original whitespace and honest omissions. Highlight coordinates address only the
 acquired excerpt. A6 can reuse one already supplied containing item of the same
@@ -213,6 +228,20 @@ assembly/failures, custody and session commit/reopen. No live inference was run
 for this integration. See `docs/operator/CHATGPT_PLAN_BACKEND.md` for setup and
 operational differences.
 
+The forensic development launcher explicitly injects the plan backend for
+`personal` through Reading Room's existing `session_options` seam. It delegates
+credential loading to the existing command doorman using the approved external
+credential file, removes the API key only in its own child, and requires nonblank
+Exa configuration before creating the app or server. Optional Serper/LinkUp
+configuration is reported only as booleans. A child manifest records the actual
+revision, resolved role profile, selected backend and zero startup model
+dispatches; readiness requires the child's successful bind and a localhost GET.
+Plan authentication and inference are deferred to the user's first question,
+so startup does not prove account/model access or exact allowance consumption.
+`powershell.exe` supports `-PrepareOnly` and a separate exact-run stop command;
+the unique session database, body-free log and forensic log remain distinct.
+Ordinary non-forensic launch selection and storage are unchanged.
+
 Research packet presentation now keeps the stable `conversation_context`,
 `current_date`, `phase`, `question` prefix and its Research-context cache
 breakpoint. Present volatile fields follow the deliberate order
@@ -247,8 +276,9 @@ requested mode, fixed safe failure code and measured elapsed seconds. This histo
 survives intervening routes and is navigation state, not Evidence. It resets for
 each user turn, is absent from Answer packets and is not durable session state.
 Successful acquisition remains represented by retained materials/catalog. Changing
-only Read focus does not change the `static_fetch` strategy. There is no automatic
-retry suppression or new provider strategy. The small Research prompt explanation
+only Read focus does not change the `static_fetch` strategy. Only definite missing
+configuration suppresses repeated provider requests as described above; no new
+provider strategy is added. The small Research prompt explanation
 changes its instruction-derived cache-family hash; Answer's cache family, the
 stable packet prefix and breakpoint mechanics remain unchanged. Offline tests
 establish receipt mechanics and privacy, not improved stopping, retry choices,

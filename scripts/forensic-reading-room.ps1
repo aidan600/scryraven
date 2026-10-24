@@ -3,7 +3,10 @@ param(
     [int]$Port = 7332,
 
     # Offline launcher verification only; do not start the Reading Room.
-    [switch]$PrepareOnly
+    [switch]$PrepareOnly,
+
+    [ValidateRange(60, 604800)]
+    [int]$TimeoutSeconds = 86400
 )
 
 $ErrorActionPreference = 'Stop'
@@ -85,6 +88,13 @@ $manifest = [ordered]@{
     port = $Port
     launch_timestamp_utc = (Get-Date).ToUniversalTime().ToString('o')
     model_profile = $modelProfile
+    inference_backend = 'chatgpt_plan'
+    plan_account = 'personal'
+    api_inference_fallback = $false
+    acquisition_configuration = $null
+    launch_status = 'prepared'
+    server_pid = $null
+    safe_error_code = $null
 }
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllText(
@@ -93,38 +103,88 @@ $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     $utf8NoBom
 )
 
-$readingRoomArgs = @(
-    '-m', 'scryraven.reading_room',
-    '--database', $sessionDatabase,
-    '--dogfood-log', $dogfoodLog,
-    '--forensic-log', $forensicLog,
-    '--port', [string]$Port
+$credentialFile = 'C:\Users\aidan\AppData\Local\ScryRaven\credentials.env'
+$brokerStdout = Join-Path $runDirectory 'broker.stdout.txt'
+$brokerStderr = Join-Path $runDirectory 'broker.stderr.txt'
+$brokerStatus = Join-Path $runDirectory 'broker.status.json'
+$brokerArgs = @(
+    (Join-Path $repository 'scripts\run_brokered_command_once.py'),
+    '--repo-root', $repository,
+    '--env-file', $credentialFile,
+    '--stdout', $brokerStdout,
+    '--stderr', $brokerStderr,
+    '--status', $brokerStatus,
+    '--timeout-seconds', [string]$TimeoutSeconds,
+    '--target-current-python', '--',
+    '-m', 'scripts.forensic_reading_room', '--run-directory', $runDirectory
 )
 
 Write-Output 'FORENSIC DOGFOOD MODE'
 Write-Output 'Source text and diagnostic observer events are being saved locally.'
-Write-Output "Reading Room URL: http://127.0.0.1:$Port"
+Write-Output "Requested Reading Room URL: http://127.0.0.1:$Port"
 Write-Output "Run directory: $runDirectory"
 Write-Output "Sessions DB: $sessionDatabase"
 Write-Output "Body-free dogfood log: $dogfoodLog"
 Write-Output "Forensic observer log: $forensicLog"
 Write-Output "Manifest: $manifestPath"
-Write-Output ('Command: & "{0}" -m scryraven.reading_room --database "{1}" --dogfood-log "{2}" --forensic-log "{3}" --port {4}' -f
-    $pythonExecutable, $sessionDatabase, $dogfoodLog, $forensicLog, $Port)
+Write-Output 'Inference backend: chatgpt_plan'
+Write-Output 'Account label: personal'
+Write-Output 'API inference fallback: disabled'
+Write-Output ('Effective Research/Answer profile: {0}' -f ($modelProfile | ConvertTo-Json -Compress -Depth 3))
+Write-Output ('Command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File "{0}" -Port {1} 2>&1' -f
+    (Join-Path $repository 'scripts\forensic-reading-room.ps1'), $Port)
 
 if ($PrepareOnly) {
     Write-Output 'Prepared only; Reading Room was not started.'
     return
 }
 
-Push-Location $repository
-try {
-    & $pythonExecutable @readingRoomArgs
-    $readingRoomExitCode = $LASTEXITCODE
+# Start only the existing doorman. The public launcher never opens the private
+# credential file; the child publishes fixed diagnostics and boolean readiness.
+$quotedBrokerArgs = @($brokerArgs | ForEach-Object { '"{0}"' -f $_ })
+$brokerProcess = Start-Process -FilePath $pythonExecutable -ArgumentList $quotedBrokerArgs `
+    -WorkingDirectory $repository -WindowStyle Hidden -PassThru
+$deadline = (Get-Date).AddSeconds(30)
+$ready = $false
+while ((Get-Date) -lt $deadline) {
+    $brokerProcess.Refresh()
+    $childManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    if ($childManifest.launch_status -eq 'ready') {
+        try {
+            $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$Port/" -TimeoutSec 2
+            $ready = $response.StatusCode -eq 200
+        }
+        catch { $ready = $false }
+        if ($ready) { break }
+    }
+    if ($brokerProcess.HasExited -or $childManifest.launch_status -eq 'failed') { break }
+    Start-Sleep -Milliseconds 100
 }
-finally {
-    Pop-Location
+if (-not $ready) {
+    if (-not $brokerProcess.HasExited) {
+        # This exact process tree was created above for this run. Do not leave
+        # a delayed or failed startup alive after reporting launch failure.
+        $termination = @(& taskkill.exe /PID $brokerProcess.Id /T /F 2>&1)
+        $brokerProcess.WaitForExit(5000) | Out-Null
+    }
+    Write-Output "Reading Room not ready. Safe launch status: $($childManifest.launch_status)"
+    Write-Output "Safe child error: $($childManifest.safe_error_code)"
+    Write-Output "Sanitized broker status: $brokerStatus"
+    Write-Output "Sanitized broker stdout/stderr: $brokerStdout ; $brokerStderr"
+    if (Test-Path -LiteralPath $brokerStatus -PathType Leaf) {
+        Write-Output (Get-Content -LiteralPath $brokerStatus -Raw)
+    }
+    exit 1
 }
-if ($readingRoomExitCode -ne 0) {
-    exit $readingRoomExitCode
+Write-Output "Reading Room ready: http://127.0.0.1:$Port"
+Write-Output ('Acquisition configuration: {0}' -f ($childManifest.acquisition_configuration | ConvertTo-Json -Compress))
+Write-Output ('Verified Research/Answer profile: {0}' -f ($childManifest.model_profile | ConvertTo-Json -Compress -Depth 3))
+Write-Output "Server PID: $($childManifest.server_pid)"
+Write-Output 'Plan account access and inference are deferred until the first user question.'
+Write-Output ('Stop only this run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File "{0}" -RunDirectory "{1}" 2>&1' -f
+    (Join-Path $repository 'scripts\stop-forensic-reading-room.ps1'), $runDirectory)
+$brokerProcess.WaitForExit()
+if ($brokerProcess.ExitCode -ne 0) {
+    Write-Output "Broker exited with code $($brokerProcess.ExitCode). See $brokerStatus"
+    exit $brokerProcess.ExitCode
 }

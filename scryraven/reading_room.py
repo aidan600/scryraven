@@ -445,12 +445,14 @@ class _QuietHandler(WSGIRequestHandler):
         pass
 
 
-def serve(app: Flask, *, port: int = _PORT) -> None:
+def serve(app: Flask, *, port: int = _PORT, on_ready=None) -> None:
     """One local threaded HTTP server; each ask finishes in its HTTP request."""
     server = make_server(_HOST, port, app, threaded=True, request_handler=_QuietHandler)
-    print(f"ScryRaven Reading Room: http://{_HOST}:{server.server_port}", flush=True)
-    print("Open this address in your browser. Press Ctrl+C to stop.", flush=True)
     try:
+        if on_ready is not None:
+            on_ready(server.server_port)
+        print(f"ScryRaven Reading Room: http://{_HOST}:{server.server_port}", flush=True)
+        print("Open this address in your browser. Press Ctrl+C to stop.", flush=True)
         server.serve_forever()
     finally:
         server.server_close()

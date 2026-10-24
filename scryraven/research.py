@@ -935,6 +935,23 @@ def _run_turn(
     operating_bound = False
     route_index = 0
 
+    def unavailable_providers():
+        return [{"provider": provider, "code": code}
+                for provider, code in library.unavailable_providers.items()]
+
+    def no_available_acquisition():
+        discovery_unavailable = {"exa", "serper"} <= library.unavailable_providers.keys()
+        known_url_available = bool(library.candidates) and "linkup" not in library.unavailable_providers
+        return bool(discovery_unavailable and not known_url_available
+                    and not library.materials and not library.documents)
+
+    def configuration_handoff():
+        # No intellectual sufficiency decision: these operations cannot dispatch.
+        # Give Research one opportunity to choose any remaining usable path, then
+        # return control if it requests only providers already known unavailable.
+        return no_available_acquisition() or bool(
+            last_route and all(item.get("suppressed") for item in last_route))
+
     def reading_packet(*, include_sizes=False):
         nonlocal pending, active
         refs = list(dict.fromkeys([*pending, *active]))
@@ -979,6 +996,7 @@ def _run_turn(
                 duration_seconds=round(operation["duration_seconds"], 6),
                 kind=operation["kind"], mode=operation["mode"], provider=operation["provider"],
                 external=operation["external"], status=operation["status"], code=operation["code"],
+                provider_dispatched=operation["provider_dispatched"], suppressed=operation["suppressed"],
                 returned_material_count=operation["returned_material_count"],
                 new_acquisition_count=operation["new_acquisition_count"],
                 returned_material_characters=operation["returned_material_characters"],
@@ -1135,6 +1153,8 @@ def _run_turn(
                       "evidence": reading_packet(), "catalog": library.catalog(),
                       "pending_delivery": list(pending), "last_route": last_route,
                       "failed_external_reads": list(failed_external_reads),
+                      **({"unavailable_providers": unavailable_providers()}
+                         if library.unavailable_providers else {}),
                       "budget": budget.snapshot(), "output_correction": correction}
             try:
                 decision = ask("research", RESEARCH_PROMPT, packet, ResearchDecision)
@@ -1174,6 +1194,9 @@ def _run_turn(
             if decision.action == "answer":
                 return list(dict.fromkeys(decision.answer_evidence_refs))
             execute_route(decision.requests)
+            if configuration_handoff():
+                bound = "provider_configuration_missing"
+                break
             if bound == "external_attempts":
                 operating_bound = True
                 bound = None
@@ -1190,8 +1213,11 @@ def _run_turn(
 
     initial_refs = initial_research()
     initial_understanding = deepcopy(understanding)
-    initial_limitations = [{key: item[key] for key in ("kind", "code", "pending_delivery") if key in item}
+    initial_limitations = [{key: item[key] for key in ("kind", "provider", "code", "pending_delivery") if key in item}
                            for item in last_route if item.get("status") == "error"]
+    initial_limitations.extend(item for item in unavailable_providers()
+                               if not any(row.get("provider") == item["provider"]
+                                          and row.get("code") == item["code"] for row in initial_limitations))
     if bound:
         initial_limitations.append({"code": bound, "pending_delivery": list(pending)})
     emit("initial_research_handoff", selected_refs=initial_refs, budget=budget.snapshot())
@@ -1226,6 +1252,9 @@ def _run_turn(
         emit("research_invoked", episode=episode, budget=budget.snapshot())
         emit("research_need", source_body=True, episode=episode, need=args["need"])
         while True:
+            if no_available_acquisition():
+                error = "provider_configuration_missing"
+                break
             packet = {**common, "conversation_context": research_conversation,
                       "phase": "research", "delegated_need": args["need"],
                       "prior_research_understanding": {"fallible_navigation_only": True,
@@ -1233,6 +1262,8 @@ def _run_turn(
                       "working_understanding": understanding, "evidence": reading_packet(include_sizes=True),
                       "catalog": library.catalog(), "pending_delivery": list(pending),
                       "last_route": last_route, "failed_external_reads": list(failed_external_reads),
+                      **({"unavailable_providers": unavailable_providers()}
+                         if library.unavailable_providers else {}),
                       "prior_acquisition_history": deepcopy(acquisition_history),
                       "answer_delivery": owner_library.delivery_capacity(),
                       "budget": budget.snapshot(), "output_correction": correction}
@@ -1280,6 +1311,11 @@ def _run_turn(
                 break
             emit("research_decision", decision={**decision.model_dump(), "evidence_refs": []})
             execute_route(decision.requests)
+            if configuration_handoff():
+                error = "provider_configuration_missing"
+                reading_packet()
+                selected = list(active)
+                break
             if bound == "external_attempts":
                 # An unavailable acquisition does not exhaust local inspection
                 # or selection of already acquired originals for the owner.
@@ -1306,6 +1342,7 @@ def _run_turn(
                   "operations": {"routes": route_index - route_start,
                                  "last_route": list(last_route),
                                  "failed_external_reads": list(failed_external_reads)},
+                  "unavailable_providers": unavailable_providers(),
                   "error": error, "library": owner_library.catalog(), "budget": budget.snapshot()}
         emit("research_returned", episode=episode, code=error,
              duration_seconds=round(max(0.0, clock() - episode_started), 6),
