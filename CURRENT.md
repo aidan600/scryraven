@@ -1,5 +1,26 @@
 # ScryRaven Current Truth
 
+## Research–Answer Convergence 01
+
+The local convergence campaign is active on `codex/research-answer-convergence-01`,
+starting clean at `c2cd186531c52e1a9238056c973d50104ea8be14` from the briefing
+branch. The human authorized at most 12 ordinary submissions including retries,
+using the existing personal ChatGPT-plan backend and credential doorman, with
+Luna/high Research and GPT-6.1 Sol/medium Answer. Existing 900-second, 40-physical-
+request and 16-external-attempt turn ceilings remain. Up to six separately
+recorded public adjudication checks are licensed. Publication is prohibited.
+
+Campaign artifacts, frozen batch inputs, submission ledger, exact public answers,
+source support and checkpoints live outside the repository at
+`C:\tmp\scryraven-research-answer-convergence-01`. No live submission has yet
+been made. Batch boundaries provide an opportunity for human feedback.
+
+Before observation, the existing source-bearing exposure event now records the
+actual briefing supplied to each model call. This closes an audit gap where
+pending-delivery continuity could update a briefing without a decision event.
+It changes diagnostics only; briefings remain outside ordinary body-free logs
+and durable session records. Focused forensic tests cover receipt and isolation.
+
 ## Ordinary product architecture
 
 The local Research–Answer briefing revision is an unpromoted experiment on
@@ -33,8 +54,8 @@ Tested runtime `a30950ba7e2b2435e6a3fae54f38a94c57aefa8c` passed
 1024 offline tests with four filesystem-link environment
 skips, plus Ruff, compilation and pre-commit checks. Injected API/plan models and
 source fixtures exercised the real ordinary path, including briefing receipt,
-delegated revision, malformed-output bounds, calculation and durable follow-up. No live ScryRaven/model/acquisition calls or comparative
-campaign is authorized. Offline checks do not establish improved answer quality,
+delegated revision, malformed-output bounds, calculation and durable follow-up. The preceding briefing phase made no live ScryRaven/model/acquisition calls.
+The subsequent convergence authorization is described above. Offline checks do not establish improved answer quality,
 stopping, latency, cost, weaker-model compatibility or general semantic reliability.
 See `docs/operator/RESEARCH_ANSWER_BRIEFING_01.md` for the before/after graph,
 field accounting, implementation brief and final technical review.

@@ -518,7 +518,8 @@ def _run_turn(
              conversation_packet_characters=len(json.dumps(
                  packet.get("conversation_context", []), ensure_ascii=False, sort_keys=True)),
              budget=budget.snapshot())
-        emit("exposure", source_body=True, contract=stage, attempt=attempt, evidence=evidence)
+        emit("exposure", source_body=True, contract=stage, attempt=attempt,
+             research_briefing=packet.get("research_briefing"), evidence=evidence)
         usage_records: list[ModelUsage] = []
 
         def received_usage(value: ModelUsage) -> None:
