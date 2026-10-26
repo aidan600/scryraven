@@ -197,7 +197,10 @@ _EVIDENCE_METADATA_ORDER = (
 _CALCULATOR_TOOL = {
     "type": "function",
     "name": "calculate",
-    "description": "Evaluate a bounded arithmetic expression using established numeric inputs.",
+    "description": (
+        "Evaluate one scalar arithmetic expression using established numeric inputs. "
+        "Use separate calls for multiple results; tuples and lists are unsupported."
+    ),
     "strict": True,
     "parameters": {
         "type": "object",

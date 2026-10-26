@@ -10,16 +10,51 @@ Luna/high Research and GPT-6.1 Sol/medium Answer. Existing 900-second, 40-physic
 request and 16-external-attempt turn ceilings remain. Up to six separately
 recorded public adjudication checks are licensed. Publication is prohibited.
 
-Campaign artifacts, frozen batch inputs, submission ledger, exact public answers,
-source support and checkpoints live outside the repository at
-`C:\tmp\scryraven-research-answer-convergence-01`. No live submission has yet
-been made. Batch boundaries provide an opportunity for human feedback.
+Batch 1 completed three ordinary submissions at
+`aa28de720631e5236428d6dff8ae92af09928b2f`: exact historical BIPM prefix lookup,
+fresh Great Basin National Park state/date lookup, and an explicit-premise
+workshop bill calculation. All three produced useful correct answers and reopened
+with unchanged saved support. Two narrow lookups each used two Research requests,
+one Answer request and one Exa Search, with no Answer local inspection or
+additional Research. Their elapsed times were 26.687 and 15.938 seconds. The
+source-free calculation used one Research and three Answer requests, zero
+acquisition, and 29.954 seconds. Its final amounts and fixed-fee explanation were
+correct; one Answer continuation recovered from an unsupported tuple expression.
 
-Before observation, the existing source-bearing exposure event now records the
-actual briefing supplied to each model call. This closes an audit gap where
-pending-delivery continuity could update a briefing without a decision event.
-It changes diagnostics only; briefings remain outside ordinary body-free logs
-and durable session records. Focused forensic tests cover receipt and isolation.
+The campaign has used 3 of 12 submissions, 10 physical model requests (5 Research,
+5 Answer), 2 external attempts and 72.579 product seconds; zero of six independent
+public-source checks were needed. Reported input/output tokens total 25,355/1,401.
+Plan credit use and third-party charges are unknown. These are development
+observations, not matched causal or general reliability estimates. The BIPM
+trajectory matches a previously observed economical path; no speedup is claimed.
+
+Actual briefing receipt with supporting originals is demonstrated in live plan
+execution. The BIPM briefing retained a stale request for source support after
+acquisition; Answer used the originals and completed without more research. This
+benign case does not justify mandatory briefing rewrites. The final calculation
+shows a minor execution-interface problem: calculate accepts scalar arithmetic,
+while the model first supplied a tuple. Its tool description now explicitly
+states the scalar contract and separate calls for multiple results. This focused
+clarification passed 1024 offline tests with four filesystem-link environment
+skips, plus lint/compilation/pre-commit checks. It has not yet been live-retested;
+no improved call count or reliability is claimed.
+
+Before observation, the existing source-bearing exposure event was extended to
+record the actual briefing supplied to each model call, including pending-delivery
+continuity. It changes diagnostics only; briefings stay outside ordinary body-free
+logs and durable session records. Focused receipt/isolation coverage passed.
+
+Campaign artifacts, immutable batch registration, submission ledger, complete
+answers and exact public support, independent quality reviews and the Batch 1
+checkpoint live at `C:\tmp\scryraven-research-answer-convergence-01`.
+Useful sanitized development candidates for all three witnesses are preserved in
+ignored `local-evals/candidates/research-answer-convergence-01-b1*-20261026`.
+No cases, historical gold or experiment branches were overwritten.
+
+The campaign is at its Batch 1 feedback boundary. Batch 2 and 3 have not started.
+Substantive relationships, autonomous delegated revision, sparse/community access
+and genuine retained follow-ups remain to be observed in this campaign. No
+production recommendation or successor campaign is authorized by these results.
 
 ## Ordinary product architecture
 
