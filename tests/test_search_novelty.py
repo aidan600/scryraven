@@ -82,8 +82,8 @@ def test_diagnostic_accounting_does_not_change_model_packets_or_session_state(tm
             decision(requests=[request("search_lexical", query="PRIVATE lexical query")]),
             decision(requests=[request("find", query="seven")]),
             decision(requests=[request(query="PRIVATE repeated query")]),
-            decision("answer", ["E1"]), answer(),
-            decision("answer", ["E1"]), answer(),
+            decision("return", ["E1"]), answer(),
+            decision("return", ["E1"]), answer(),
         )
         diagnostics = TurnDiagnostics()
         events = []
@@ -112,9 +112,9 @@ def test_diagnostic_accounting_does_not_change_model_packets_or_session_state(tm
         assert not any(field in serialized for field in SEARCH_NOVELTY_COUNTS)
         if stage == "research":
             assert set(packet) == {
-                "question", "current_date", "conversation_context", "phase", "working_understanding",
-                "evidence", "catalog", "pending_delivery", "last_route", "failed_external_reads",
-                "budget", "output_correction",
+                "question", "current_date", "conversation_context", "phase", "research_briefing",
+                "evidence", "catalog", "pending_delivery", "acquisition_history",
+                "budget", "output_correction", "selection_limitations",
             }
         else:
             assert "PRIVATE" not in serialized

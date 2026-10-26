@@ -172,7 +172,7 @@ def test_failure_preserves_all_prior_durable_state_and_keeps_question_for_edit(t
 @pytest.mark.parametrize("partial", [False, True])
 def test_partial_and_unable_are_completed_answers(tmp_path, partial):
     store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
-    outputs = early_local_turn("Some parts remain unresolved. [E1]") if partial else (decision("answer"), answer("An answer was not established.", "unable"))
+    outputs = early_local_turn("Some parts remain unresolved. [E1]") if partial else (decision("return"), answer("An answer was not established.", "unable"))
     if partial:
         outputs[-1]["posture"] = "partial"
     model = Script(*outputs)
@@ -549,7 +549,7 @@ def test_replaced_log_hardlink_cannot_corrupt_session_database(tmp_path, capsys)
     saved = store.create("Existing")
     log = tmp_path / "turns.jsonl"
     client = app_for(store, dogfood_log=log,
-                     model=Script(decision("answer"), answer("No answer was established.", "unable"))).test_client()
+                     model=Script(decision("return"), answer("No answer was established.", "unable"))).test_client()
     log.unlink()
     try:
         log.hardlink_to(store.path)

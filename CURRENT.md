@@ -2,28 +2,51 @@
 
 ## Ordinary product architecture
 
-Research-first with resumable Answer is the merged production architecture:
-initial Luna Research -> independent Sol Answer with optional resumable delegated
-Research. [PR #677](https://github.com/aidan600/scryraven/pull/677) merged reviewed
-head `6a0790b33c07afa60ca34ef88ff4fa146230d285` as
-`5333a09f5f7b7dc9950ca98637b5cc788f955a3d` on 2026-10-23.
-Initial Luna Research retains production whole-question interpretation, revisable
-understanding, Exa/Serper/LinkUp acquisition, local Read/Find and selection of
-originals for an independent Sol Answer. One fresh native Sol interaction begins
-after that handoff. It may Browse/Find/Read retained originals, calculate, invoke
-`research(need)` and continue with its user context, tool history and source exposure.
-The specialist obtains evidence and yields control to Sol. Final missing information
-describes a limitation and cannot restart Research or the Answer stage.
+The local Research–Answer briefing revision is an unpromoted experiment on
+`codex/research-answer-briefing-01`, based on operational-repair checkpoint
+`c21d4274f8995ea601a91fb9bc5dbd0e7dbd368e`. Merged `main` remains
+`7afc75df4f28e9c3bb12dacfe729d7678c45a6ac`; the rejected one-pass experiment is
+not included. The Research-first/resumable Answer topology from PRs #677/#678
+survives: initial Luna Research -> Sol Answer -> optional delegated Luna Research
+returning to the same Answer interaction. Shipped model and provider choices
+are unchanged.
+
+Initial and delegated Research now share one decision and episode loop. A compact
+provisional `briefing` replaces the structured Understanding ledger and separate
+delegated assessment. A null update preserves the latest account; it is revised
+when new findings warrant it. The account reaches Answer as `research_briefing`
+alongside exact mechanically selected originals. Answer owns final judgment and
+may adopt, revise or reject Research's interpretation without compulsory
+reconstruction of its discovery. Briefing text is never Evidence or citation
+authority. Search, Read and Find use operation-specific request shapes, removing
+unused output fields. One compact acquisition history replaces overlapping worker
+receipt packets. Briefings are turn-local and are not durable session state.
+
+Initial and delegated selection use the same exact-range/optional-locator
+mechanics. Independently valid selections survive invalid neighbors; errors and
+omissions are reported rather than triggering a repacking loop. Invalid retain
+references cannot expose sources. Schema/action failures have one Research
+correction per episode before an honest handoff of valid prior work. Citation
+validation retains its separate existing one-correction allowance.
+
+This revision passed 1024 offline tests with four filesystem-link environment
+skips, plus Ruff, compilation and pre-commit checks. Injected API/plan models and
+source fixtures exercised the real ordinary path, including briefing receipt,
+delegated revision, malformed-output bounds, calculation and durable follow-up. No live ScryRaven/model/acquisition calls or comparative
+campaign is authorized. Offline checks do not establish improved answer quality,
+stopping, latency, cost, weaker-model compatibility or general semantic reliability.
+See `docs/operator/RESEARCH_ANSWER_BRIEFING_01.md` for the before/after graph,
+field accounting, implementation brief and final technical review.
 
 One turn shares library/history, Deep eligibility, 900 seconds, 40 physical model
 attempts, 16 external attempts, 128,000 cumulative Answer source characters and
 12 Answer local operations. There is no 180-second terminal reserve or 120-second
 Answer clock. Request arguments are at most 300 seconds and remaining turn time.
-Initial Research continuity is fallible worker context, not factual Answer authority.
+Research briefings are fallible working analysis for both roles, not factual authority.
 Only original text actually supplied/read enters citation membership. No third
 semantic owner, coverage checker, provider stack or credential system was added.
-The baseline delegated-worker prompt is unchanged; B/C calibration, fit/repacking
-loops and automatic unselected-source completion are absent.
+Research and Answer prompts are reconstructed around the briefing relationship;
+fit/repacking loops and automatic unselected-source completion remain absent.
 
 Definite `exa_configuration_missing`, `serper_configuration_missing` and
 `linkup_configuration_missing` failures now mark only that provider unavailable
@@ -148,8 +171,8 @@ roughly two-page editorial ceiling rather than a length rule or fixed outline.
 Simple lookups remain direct and compact. Quantitative answers explain how inputs
 determine the result; comparisons retain what each supplied quantity represents,
 including observed versus modeled status. Partial answers explain which gaps a
-missing input would resolve and which incompatibilities would remain. Answer's fresh
-reading supports the complete synthesis. No coverage schema or additional actor
+missing input would resolve and which incompatibilities would remain. Answer's judgment of the briefing and actual
+source support governs the complete synthesis. No coverage schema or additional actor
 is introduced. The default promotes a preference that yielded two developed
 answers in a frozen direct-Answer probe. Exa Evidence-Objective Search 01 later
 exercised it in three completed ordinary answers and one separately recovered
@@ -242,21 +265,13 @@ so startup does not prove account/model access or exact allowance consumption.
 the unique session database, body-free log and forensic log remain distinct.
 Ordinary non-forensic launch selection and storage are unchanged.
 
-Research packet presentation now keeps the stable `conversation_context`,
+Research packet presentation keeps the stable `conversation_context`,
 `current_date`, `phase`, `question` prefix and its Research-context cache
-breakpoint. Present volatile fields follow the deliberate order
-`working_understanding`, `catalog`, `last_route`, `failed_external_reads`, `evidence`,
-`pending_delivery`, `budget`, then
-`output_correction` last. Unknown fields remain lossless in deterministic order.
-Generated understanding and navigation precede the latest route and exact
-Evidence, placing current source material near the decision edge. Both Research
-and Answer serialize identifying metadata before each Evidence item's unchanged
-exact content. Evidence membership, array order, logical fields and body bytes
-are unchanged; Answer's top-level packet order remains unchanged. This layout
-promotion has no demonstrated quality or latency effect. `ResearchDecision`
-no longer contains `purpose`: executable route intent remains in structured
-requests and compact working state. This adds no semantic owner or memory and
-does not change the separate Research/Answer cache families.
+breakpoint. Volatile fields are `research_briefing`, `catalog`,
+`acquisition_history`, `evidence`, `pending_delivery`, `budget`, with other fields
+losslessly ordered before `output_correction`. Both roles receive exact source
+content after identifying metadata. Changed prompts/schemas naturally change
+cache identities; no compatibility cache or semantic memory is introduced.
 
 Research now presents the logical acquisition catalog to the model as lossless
 compact column-labeled tables. Material tables keep full field names, every
@@ -270,19 +285,14 @@ The stable cache breakpoint remains unchanged. This efficiency evidence does not
 establish better Research judgment, stopping, retention or general reliability.
 See `docs/operator/CATALOG_TABLE_INTEGRATION_01.md`.
 
-Research receives an ordered, turn-scoped mechanical history of failed external
-Reads, including existing candidate identity, provider, effective fetch strategy,
-requested mode, fixed safe failure code and measured elapsed seconds. This history
-survives intervening routes and is navigation state, not Evidence. It resets for
-each user turn, is absent from Answer packets and is not durable session state.
-Successful acquisition remains represented by retained materials/catalog. Changing
-only Read focus does not change the `static_fetch` strategy. Only definite missing
-configuration suppresses repeated provider requests as described above; no new
-provider strategy is added. The small Research prompt explanation
-changes its instruction-derived cache-family hash; Answer's cache family, the
-stable packet prefix and breakpoint mechanics remain unchanged. Offline tests
-establish receipt mechanics and privacy, not improved stopping, retry choices,
-latency or LinkUp reliability; no live validation was performed for this change.
+Research receives compact turn-scoped acquisition receipts, including failed
+external Reads with candidate identity, provider, effective strategy, requested
+mode, fixed safe code and elapsed seconds. The single `acquisition_history`
+survives intervening routes and delegated episodes, replacing separate failed-Read
+and latest-route model fields. Answer receives actionable limitations instead of
+the entire operation log. The history is navigation, not Evidence or durable
+state. Changing only Read focus does not change `static_fetch`; provider
+configuration suppression remains the existing operational correction.
 
 Search novelty is mechanically measured for safe acquisition diagnostics and
 forensic analysis only. Each successful Exa or lexical/Serper Search reports
@@ -291,15 +301,14 @@ returned/new material, new-candidate material, refreshed-known-candidate materia
 and exact reused material. Identity, admission, duplicate handling and Serper's
 navigation-only role are unchanged. Body-free diagnostics contain no query,
 URL, title, highlights or source body. The diagnostic receipt is excluded from
-Research's `last_route`; no cumulative Search history or replacement novelty
-field enters Research or Answer, and session persistence is unchanged.
+model-facing acquisition history; novelty counts do not enter either role and
+session persistence is unchanged.
 
 Both model-facing experiments were **MIXED / INCONCLUSIVE** and were not promoted.
 Their history, including the second campaign's lost-draw limitation, remains in
-`docs/operator/SEARCH_NOVELTY_RECEIPTS_01.md`. The model-facing history, helper,
-accumulation and expected-yield prompt paragraph are removed. Research's prompt,
-packet ordering and cache family are restored to merged-main PR #660 behavior;
-`failed_external_reads` is unchanged. The final diagnostic-only disposition used
+`docs/operator/SEARCH_NOVELTY_RECEIPTS_01.md`. The experimental model-facing novelty
+history, helper, accumulation and expected-yield paragraph remain removed. The
+new operation receipts describe actual attempts without novelty or utility scores. The final diagnostic-only disposition used
 zero live calls; no third campaign ran. Telemetry describes acquisition movement,
 not relevance, usefulness or sufficiency. No stopping, answer-quality, latency or
 cost improvement is established.
@@ -460,7 +469,8 @@ executable `source_readings` schema and literal-reading correction machinery are
 removed. No replacement model call, validator or semantic owner is introduced.
 The sole Answer prompt retains its semantic responsibility and describes optional
 local inspection. Its instruction/tool-derived cache identity changes; there is
-no additional finalization stage. Initial Research instructions only supersede the retired terminal-reentry sentence.
+no additional finalization stage. Both role prompts now use the briefing relationship
+described above.
 
 Unknown citation aliases, unsupplied versions and invalid selected-material custody
 still reject publication. Missing required citations and invalid Answer shapes

@@ -59,7 +59,7 @@ def answers(model):
     ),
 ])
 def test_empty_evidence_user_premises_answer_keeps_inputs_non_evidentiary(question, posture, prose):
-    model = RecordingModel(decision("answer"),
+    model = RecordingModel(decision("return"),
                            answer(prose, posture, support_basis="user_premises"))
 
     result = run(question, model=model, search=no_acquisition, fetch=no_acquisition)
@@ -81,7 +81,7 @@ def test_answer_decision_requires_explicit_basis():
 
 def test_evidence_basis_with_citation_keeps_ordinary_selection_and_no_extra_call():
     model = RecordingModel(
-        decision(), decision("answer", ["E1"]),
+        decision(), decision("return", ["E1"]),
         answer("The publication states seven. [E1]", support_basis="evidence"),
     )
 
@@ -96,7 +96,7 @@ def test_evidence_basis_with_citation_keeps_ordinary_selection_and_no_extra_call
 
 def test_evidence_basis_omission_retains_same_contract_correction():
     model = RecordingModel(
-        decision(), decision("answer", ["E1"]),
+        decision(), decision("return", ["E1"]),
         answer("REJECTED PROSE with no citation.", support_basis="evidence"),
         answer("The publication states seven. [E1]", support_basis="evidence"),
     )
@@ -118,7 +118,7 @@ def test_evidence_basis_omission_retains_same_contract_correction():
 def test_user_premises_basis_with_citations_is_rejected_under_same_answer_contract():
     rejected = answer("REJECTED PROSE claims the source agrees. [E1]", support_basis="user_premises")
     model = RecordingModel(
-        decision(), decision("answer", ["E1"]), rejected,
+        decision(), decision("return", ["E1"]), rejected,
         answer("The publication states seven. [E1]", support_basis="evidence"),
     )
 
@@ -137,7 +137,7 @@ def test_user_premises_basis_with_citations_is_rejected_under_same_answer_contra
 
 def test_user_premises_basis_cannot_emit_a_fabricated_evidence_alias():
     model = RecordingModel(
-        decision("answer"),
+        decision("return"),
         answer("Scenario calculation. [E1]", support_basis="user_premises"),
     )
 
@@ -152,7 +152,7 @@ def test_user_premises_basis_cannot_emit_a_fabricated_evidence_alias():
 def test_none_basis_rejects_supported_memory_answer_then_allows_unable():
     question = "What is the maximum allowed weight of a ten-pin bowling ball?"
     model = RecordingModel(
-        decision("answer"),
+        decision("return"),
         answer("An unsupported factual claim from memory.", support_basis="none"),
         answer("I need an applicable rules source to establish that limit.",
                "unable", support_basis="none"),
@@ -169,7 +169,7 @@ def test_none_basis_rejects_supported_memory_answer_then_allows_unable():
 
 
 def test_evidence_basis_without_packet_cannot_finalize_external_fact():
-    model = RecordingModel(decision("answer"),
+    model = RecordingModel(decision("return"),
                            answer("A purported factual answer.", support_basis="evidence"),
                            answer("I need an applicable source to establish this.",
                                   "unable", support_basis="none"))
@@ -184,7 +184,7 @@ def test_evidence_basis_without_packet_cannot_finalize_external_fact():
 
 def test_basis_correction_stays_within_existing_semantic_limit():
     model = RecordingModel(
-        decision("answer"),
+        decision("return"),
         answer("Unsupported.", support_basis="none"),
         answer("Still unsupported.", support_basis="none"),
     )
@@ -243,7 +243,7 @@ def _exercise_premise_followup_reopen(directory):
     )
     store = SQLiteSessionStore(directory / "sessions.sqlite3")
     first_model = RecordingModel(
-        decision("answer"), answer(first_answer, support_basis="user_premises"),
+        decision("return"), answer(first_answer, support_basis="user_premises"),
     )
     session = ResearchSession.create(store=store, model=first_model,
                                      search=no_acquisition, fetch=no_acquisition)
@@ -253,7 +253,7 @@ def _exercise_premise_followup_reopen(directory):
     del session
 
     second_model = RecordingModel(
-        decision("answer"), answer(second_answer, support_basis="user_premises"),
+        decision("return"), answer(second_answer, support_basis="user_premises"),
     )
     reopened = ResearchSession.open(session_id, store=SQLiteSessionStore(store.path),
                                     model=second_model,
@@ -270,8 +270,7 @@ def _exercise_premise_followup_reopen(directory):
                                    "stop_reason": first.stop_reason, "citations": []}
         assert packet["conversation_context"] == [prior]
         assert packet["question"] == followup_question and packet["evidence"] == []
-        assert "working_understanding" not in packet or call[0] == "research"
-    assert "prior assistant" in answers(second_model)[0][1].lower()
+        assert packet["research_briefing"] == (None if call[0] == "research" else "Find the requested fact")
     restored = ResearchSession.open(session_id, store=SQLiteSessionStore(store.path))
     assert restored.metadata.revision == 2
     assert [turn.question for turn in restored.turns] == [first_question, followup_question]
@@ -283,7 +282,7 @@ def test_mixed_user_assumptions_and_external_fact_keep_evidence_basis_and_citati
     question = "Assume ten units of demand. What follows given the documented seven-unit supply?"
     source_text = "The documented supply is seven units."
     model = RecordingModel(
-        decision(), decision("answer", ["E1"]),
+        decision(), decision("return", ["E1"]),
         answer("Under your ten-unit demand assumption, the documented seven-unit "
                "supply leaves a three-unit shortfall. [E1]", support_basis="evidence"),
     )
@@ -322,8 +321,8 @@ def test_narrative_battery_followup_selectively_changes_current_user_load():
         "remains a scenario, not an actual-product result."
     )
     model = RecordingModel(
-        decision("answer"), answer(first_answer, support_basis="user_premises"),
-        decision("answer"), answer(second_answer, support_basis="user_premises"),
+        decision("return"), answer(first_answer, support_basis="user_premises"),
+        decision("return"), answer(second_answer, support_basis="user_premises"),
     )
     session = ResearchSession(model=model, search=no_acquisition, fetch=no_acquisition)
 
@@ -343,9 +342,8 @@ def test_narrative_battery_followup_selectively_changes_current_user_load():
                                    "stop_reason": first.stop_reason, "citations": []}
         assert packet["conversation_context"] == [prior]
         assert packet["evidence"] == []
-        assert "assistant" in prompt.lower() and "factual authority" in prompt.lower()
         if stage == "research":
-            assert packet["working_understanding"] is None
+            assert packet["research_briefing"] is None
     assert [turn.question for turn in session.turns] == [BATTERY_QUESTION, BATTERY_FOLLOWUP]
 
 
@@ -359,8 +357,7 @@ def test_user_assertion_about_aircraft_cost_routes_to_acquisition_under_research
         "Comparing passenger-mile costs requires a consistent operating-cost basis, "
         "seat configuration, passenger load factor, and route distance."
     )
-    route = request(query="MD-80 777 passenger-mile operating costs matched comparison")
-    route["focus"] = "Find a comparable cost basis and configuration."
+    route = request(query="MD-80 777 passenger-mile operating costs with comparable cost basis and configuration")
     final = answer(
         "The acquired excerpt says passenger-mile comparisons depend on cost basis, "
         "seating, load factor and route distance [E1]. It does not itself establish "
@@ -368,7 +365,7 @@ def test_user_assertion_about_aircraft_cost_routes_to_acquisition_under_research
         "partial", support_basis="evidence",
     )
     model = RecordingModel(
-        decision(requests=[route]), decision("answer", ["E1"]), final,
+        decision(requests=[route]), decision("return", ["E1"]), final,
     )
     searches = []
 
@@ -383,7 +380,7 @@ def test_user_assertion_about_aircraft_cost_routes_to_acquisition_under_research
     assert [call[0] for call in model.calls] == ["research", "research", "answer"]
     assert model.calls[0][2]["question"] == question
     assert model.calls[0][2]["evidence"] == []
-    assert model.calls[0][2]["working_understanding"] is None
+    assert model.calls[0][2]["research_briefing"] is None
     assert result.posture == "partial" and len(result.citations) == 1
     assert result.selected_evidence == result.citations[0].materials
     assert answers(model)[0][2]["evidence"][0]["content"] == source_text
@@ -395,8 +392,8 @@ def test_prior_assistant_scenario_answer_does_not_verify_actual_product_capacity
     second_question = "Does an actual product have 13.5 kWh available to loads?"
     route = request(query="actual product available battery capacity specification")
     model = RecordingModel(
-        decision("answer"), answer(first_answer, support_basis="user_premises"),
-        decision(requests=[route]), decision("answer"),
+        decision("return"), answer(first_answer, support_basis="user_premises"),
+        decision(requests=[route]), decision("return"),
         answer("The scenario and empty search result do not verify an actual product's "
                "available capacity.", "unable", support_basis="none"),
     )

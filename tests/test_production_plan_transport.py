@@ -156,7 +156,7 @@ def search(_query, **_kwargs):
 def test_plan_native_research_dependent_calculation_and_unknown_usage():
     final = answer("30 units from the stipulated amount.", support_basis="user_premises")
     model, auth = plan_model(
-        Reply("research", decision("answer"), headerless=True, empty_terminal=True),
+        Reply("research", decision("return"), headerless=True, empty_terminal=True),
         Reply("answer", tool="100 * 1.2", call_id="calc_a", empty_terminal=True),
         Reply("answer", tool="120 / 4", call_id="calc_b"),
         Reply("answer", final, headerless=True, empty_terminal=True, counters=False),
@@ -184,7 +184,7 @@ def test_plan_native_research_dependent_calculation_and_unknown_usage():
                              if item.get("type") in {"reasoning", "function_call", "function_call_output"}),
                             len(payload["input"]))
         assert extras[0][0] < first_return
-    assert auth.calls[0]["text"]["format"]["schema"]["properties"]["action"]["enum"] == ["research", "answer"]
+    assert auth.calls[0]["text"]["format"]["schema"]["properties"]["action"]["enum"] == ["research", "return"]
     first_instructions = auth.calls[0]["input"][0]["content"][0]["text"]
     assert first_instructions == RESEARCH_PROMPT + "\nReturn only JSON matching the response schema, with no Markdown or commentary."
     answer_instructions = auth.calls[1]["input"][0]["content"][0]["text"]
@@ -204,7 +204,7 @@ def test_plan_explicit_selected_source_citations_session_reopen_without_localiza
     model, auth = plan_model(
         Reply("research", decision()),
         Reply("research", decision(requests=[request("read", query="", target="E1", mode="full")])),
-        Reply("research", decision("answer", ["E2"])),
+        Reply("research", decision("return", ["E2"])),
         Reply("answer", answer("Seven units under sheltered conditions. [E2]"), empty_terminal=True),
 
     )
@@ -231,7 +231,7 @@ def test_plan_explicit_selected_source_citations_session_reopen_without_localiza
 @pytest.mark.parametrize("reply", [Reply("answer", answer(), interrupted=True),
                                    Reply("answer", answer(), status="incomplete")])
 def test_plan_uncompleted_answer_cannot_commit_session(tmp_path, reply):
-    model, _ = plan_model(Reply("research", decision()), Reply("research", decision("answer", ["E1"])), reply)
+    model, _ = plan_model(Reply("research", decision()), Reply("research", decision("return", ["E1"])), reply)
     store = SQLiteSessionStore(tmp_path / "failed-session.sqlite3")
     session = ResearchSession.create(store=store, model=model, search=search,
                                      fetch=forbidden, lexical_search=forbidden)

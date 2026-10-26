@@ -41,7 +41,7 @@ def answer_calls(model):
 def test_citationless_answer_is_corrected_with_same_contract_and_exact_inputs(posture):
     rejected_prose = "REJECTED PRIVATE PROSE: the publication states seven."
     model = RecordingModel(
-        decision(), decision("answer", ["E1"]),
+        decision(), decision("return", ["E1"]),
         answer(rejected_prose, posture),
         answer("The publication states seven. [E1]", posture),
     )
@@ -69,7 +69,7 @@ def test_citationless_answer_is_corrected_with_same_contract_and_exact_inputs(po
 
 def test_repeated_citation_omission_ends_with_operational_inability():
     model = RecordingModel(
-        decision(), decision("answer", ["E1"]),
+        decision(), decision("return", ["E1"]),
         answer("Citation omitted on first attempt."),
         answer("Citation omitted on second attempt."),
     )
@@ -89,7 +89,7 @@ def test_repeated_citation_omission_ends_with_operational_inability():
 
 
 def test_unable_answer_without_citation_needs_no_correction():
-    model = RecordingModel(decision("answer"), answer("The available material does not establish it.", "unable"))
+    model = RecordingModel(decision("return"), answer("The available material does not establish it.", "unable"))
 
     result = run(QUESTION, model=model, search=search, fetch=no_fetch)
 
@@ -101,7 +101,7 @@ def test_unable_answer_without_citation_needs_no_correction():
 
 @pytest.mark.parametrize("posture", ["supported", "partial"])
 def test_already_cited_answer_needs_no_additional_model_call(posture):
-    model = RecordingModel(decision(), decision("answer", ["E1"]),
+    model = RecordingModel(decision(), decision("return", ["E1"]),
                            answer("The publication states seven. [E1]", posture))
 
     result = run(QUESTION, model=model, search=search, fetch=no_fetch)
@@ -117,7 +117,7 @@ def test_already_cited_answer_needs_no_additional_model_call(posture):
     ("A malformed alias. [E1", "malformed_citation_reference"),
 ])
 def test_other_invalid_citation_syntax_keeps_existing_failure(bad_answer, code):
-    model = RecordingModel(decision(), decision("answer", ["E1"]), answer(bad_answer))
+    model = RecordingModel(decision(), decision("return", ["E1"]), answer(bad_answer))
 
     with pytest.raises(RunError) as caught:
         run(QUESTION, model=model, search=search, fetch=no_fetch)
@@ -130,9 +130,9 @@ def test_other_invalid_citation_syntax_keeps_existing_failure(bad_answer, code):
 
 def test_followup_over_retained_evidence_can_use_citation_correction():
     model = RecordingModel(
-        decision(), decision("answer", ["E1"]), answer("Seven. [E1]"),
+        decision(), decision("return", ["E1"]), answer("Seven. [E1]"),
         decision(requests=[request("read", query="", target="E1", mode="local")]),
-        decision("answer", ["E1"]),
+        decision("return", ["E1"]),
         answer("The retained publication still states seven."),
         answer("The retained publication still states seven. [E1]"),
     )

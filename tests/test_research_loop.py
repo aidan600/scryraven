@@ -15,16 +15,18 @@ from scryraven.sources import Evidence
 
 
 def request(kind="search", query="public fact", target="", mode="auto", focus=""):
-    return dict(kind=kind, query=query, target=target, mode=mode, focus=focus,
-                scope=[], start_char=None, end_char=None)
+    if kind in {"search", "search_lexical"}:
+        return {"kind": kind, "query": query}
+    if kind == "find":
+        return {"kind": kind, "query": query, "scope": []}
+    return dict(kind=kind, target=target, mode=mode, focus=focus,
+                start_char=None, end_char=None)
 
 
-def decision(action="research", refs=(), requests=None, interpretation="Find the requested fact"):
-    return dict(understanding=dict(interpretation=interpretation, established=[],
-                                  still_needed=[] if action == "answer" else ["What is the fact?"],
-                                  last_route_result=""), action=action,
+def decision(action="research", refs=(), requests=None, briefing="Find the requested fact"):
+    return dict(briefing=briefing, action=action,
                 requests=([request()] if requests is None and action == "research" else requests or []),
-                retain=list(refs), answer_evidence_refs=list(refs) if action == "answer" else [])
+                retain=list(refs), evidence_refs=list(refs) if action == "return" else [])
 
 
 def test_research_decision_schema_has_no_purpose_and_rejects_legacy_output():
@@ -38,8 +40,8 @@ def test_research_decision_schema_has_no_purpose_and_rejects_legacy_output():
 
 
 def test_legacy_purpose_output_uses_bounded_malformed_response_correction():
-    legacy = {**decision("answer"), "purpose": "Legacy route prose"}
-    model = Script(legacy, decision("answer"),
+    legacy = {**decision("return"), "purpose": "Legacy route prose"}
+    model = Script(legacy, decision("return"),
                    answer("No source establishes this.", "unable"))
     result = run("Value?", model=model, search=search, fetch=no_fetch)
     assert [call[0] for call in model.calls] == ["research", "research", "answer"]
@@ -80,7 +82,7 @@ class Script:
         self.calls.append((stage, prompt, material, schema))
         value = next_scripted(self.outputs, stage, material)
         if isinstance(value, dict):
-            assert stage == ("research" if "understanding" in value else "answer")
+            assert stage == ("research" if "briefing" in value else "answer")
         return value if isinstance(value, str) else json.dumps(value)
 
 
@@ -103,12 +105,13 @@ def no_fetch(url):
 
 
 def test_fresh_source_first_answer_and_exact_exposure():
-    model = Script(decision(), decision("answer", ["E1"]), answer())
+    model = Script(decision(), decision("return", ["E1"]), answer())
     observations = []
     result = run("What is the value?", model=model, search=search, fetch=no_fetch, observe=observations.append)
     assert [call[0] for call in model.calls] == ["research", "research", "answer"]
     packet = next(call[2] for call in model.calls if call[0] == "answer")
-    assert not {"working_understanding", "analysis", "draft", "verdict", "research_cautions"} & packet.keys()
+    assert packet["research_briefing"] == "Find the requested fact"
+    assert not {"analysis", "draft", "verdict", "research_cautions"} & packet.keys()
     assert packet["evidence"][0]["content"] == "The stated value is seven."
     assert result.answer.endswith("[1]")
     assert result.selected_evidence == result.citations[0].materials
@@ -120,25 +123,40 @@ def test_fresh_source_first_answer_and_exact_exposure():
     assert any(e["action"] == "exposure" and e["evidence"] for e in observations)
 
 
-def test_unexposed_retained_reference_is_rejected_then_local_read():
+def test_unexposed_retained_reference_does_not_gain_citation_authority_or_trigger_repair():
     retained = Evidence("E1", "https://example.org/fact", "Fact", "The stated value is seven.")
-    model = Script(decision("answer", ["E1"]),
-                   decision(requests=[request("read", query="", target="E1", mode="local")]),
-                   decision("answer", ["E1"]), answer())
+    model = Script(decision("return", ["E1"]), answer("The retained original has not been inspected.", "unable"))
     result = run("What is the value?", model=model, search=lambda q: pytest.fail("Unexpected search"),
                  fetch=no_fetch, retained_acquisitions=(retained,))
-    assert any(e["action"] == "decision_rejected" for e in result.trace)
-    correction = model.calls[1][2]["output_correction"]
-    assert correction["issues"]["unexposed_answer_refs"] == ["E1"]
-    assert correction["exposed_refs"] == []
+    assert [call[0] for call in model.calls] == ["research", "answer"]
+    packet = model.calls[-1][2]
+    assert packet["evidence"] == []
+    assert any(item["reference"] == "E1" for item in packet["selection_limitations"])
+    assert result.citations == ()
     assert result.evidence == (retained,)
     assert result.trace[-1]["budget"]["external_attempts"] == 0
+
+
+def test_invalid_retention_is_reported_without_discarding_valid_original_or_repairing():
+    def finish(packet):
+        issues = packet["selection_limitations"]
+        assert len(issues) == 2 and all(row["field"] == "retain" for row in issues)
+        assert {row["reference"] for row in issues} == {None, "E99"}
+        assert any(row["id"] == "E1" for row in packet["evidence"])
+        return decision("return", ["E1"])
+
+    model = Script(decision(), decision(refs=["E1", "C1", "E99"],
+                                       requests=[request("find", query="seven")]), finish, answer())
+    result = run("What is the value?", model=model, search=search, fetch=no_fetch)
+    assert [call[0] for call in model.calls] == ["research", "research", "research", "answer"]
+    assert result.posture == "supported" and result.selected_evidence[0].id == "E1"
+    assert not any(event["action"] in {"decision_rejected", "response_rejected"} for event in result.trace)
 
 
 
 
 def test_terminal_unable_answer_without_a_need_commits_immediately():
-    model = Script(decision("answer"), answer("The material does not establish this.", "unable"))
+    model = Script(decision("return"), answer("The material does not establish this.", "unable"))
     result = run("What is the value?", model=model, search=search, fetch=no_fetch)
     assert [call[0] for call in model.calls] == ["research", "answer"]
     assert result.posture == "unable"
@@ -146,7 +164,7 @@ def test_terminal_unable_answer_without_a_need_commits_immediately():
 
 
 def test_terminal_partial_answer_without_a_need_commits_immediately():
-    model = Script(decision(), decision("answer", ["E1"]),
+    model = Script(decision(), decision("return", ["E1"]),
                    answer("The material establishes only this fragment. [E1]", "partial"))
     result = run("What is the value?", model=model, search=search, fetch=no_fetch)
     assert [call[0] for call in model.calls] == ["research", "research", "answer"]
@@ -169,12 +187,12 @@ def test_malformed_call_consumes_attempt_and_final_reserve_is_source_first():
 
 def test_external_budget_blocks_second_independent_request_without_hiding_first_material():
     model = Script(decision(requests=[request(query="one"), request(query="two")]),
-                   decision("answer", ["E1"]), answer())
+                   decision("return", ["E1"]), answer())
     calls = []
     result = run("Value?", model=model, search=lambda q: calls.append(q) or search(q), fetch=no_fetch,
                  limits=RunLimits(external_attempts=1))
     assert calls == ["one"]
-    assert model.calls[1][2]["last_route"][1]["code"] == "external_attempts"
+    assert model.calls[1][2]["acquisition_history"][1]["code"] == "external_attempts"
     assert result.trace[-1]["budget"]["external_attempts"] == 1
 
 
@@ -200,7 +218,7 @@ def test_run_headroom_defaults_and_model_trace_use_one_monotonic_clock():
 
     def research_after_transport(_material):
         now[0] = 11.25
-        return decision("answer")
+        return decision("return")
 
     def answer_after_transport(_material):
         now[0] = 13.5
@@ -248,14 +266,14 @@ def test_model_failure_trace_has_later_time_and_only_safe_code():
 
 
 def test_unknown_final_citation_fails_without_a_hidden_polisher():
-    model = Script(decision(), decision("answer", ["E1"]), answer("Seven. [E99]"))
+    model = Script(decision(), decision("return", ["E1"]), answer("Seven. [E99]"))
     with pytest.raises(RunError):
         run("Value?", model=model, search=search, fetch=no_fetch)
     assert len(model.calls) == 3
 
 
 def test_followup_does_not_inherit_semantic_history_or_generated_support():
-    model = Script(decision("answer"), answer("The retained material does not establish this.", "unable"))
+    model = Script(decision("return"), answer("The retained material does not establish this.", "unable"))
     result = run("What about that?", model=model, search=search, fetch=no_fetch,
                  context={"conversation_context": [{"question": "Earlier?", "answer": "A referent"}],
                           "semantic_history": [{"analysis": "FAKE FACT"}]})
@@ -270,7 +288,7 @@ def test_pending_requested_reading_precedes_new_external_work():
     def large_search(q):
         return [DiscoveryCandidate(str(i), f"https://example.org/{i}", str(i) * 40000,
                                    context_kind="provider_highlights") for i in range(3)]
-    model = Script(decision(), decision(), decision(), decision("answer", ["E3"]),
+    model = Script(decision(), decision(), decision(), decision("return", ["E3"]),
                    answer("A selected observation. [E3]"))
     result = run("Inspect", model=model, search=large_search, fetch=no_fetch,
                  limits=RunLimits(attention_characters=65536))
@@ -281,7 +299,7 @@ def test_pending_requested_reading_precedes_new_external_work():
 
 
 def test_final_missing_information_is_a_limitation_without_stage_reentry():
-    model = Script(decision(), decision("answer", ["E1"]),
+    model = Script(decision(), decision("return", ["E1"]),
                    answer("A supported fragment. [E1]", "partial", "What condition applies?"))
     result = run("What is the value?", model=model, search=search, fetch=no_fetch)
     assert [call[0] for call in model.calls] == ["research", "research", "answer"]

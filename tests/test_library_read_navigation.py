@@ -32,12 +32,12 @@ def test_persisted_historical_citation_reopens_exact_view_locally():
     first_read.update(start_char=start, end_char=end)
     first_model = Script(
         decision(requests=[first_read]),
-        decision("answer", [ref]),
+        decision("return", [ref]),
         answer(f"The value is 17. [{ref}]"),
     )
     second_model = Script(
         decision(requests=[request("read", query="", target=ref, mode="local")]),
-        decision("answer", [ref]),
+        decision("return", [ref]),
         answer(f"The retained value remains 17. [{ref}]"),
     )
     fetches = []
@@ -68,7 +68,7 @@ def test_persisted_historical_citation_reopens_exact_view_locally():
         assert second_model.calls[0][2]["catalog"]["materials"][0]["id"] == "E1"
         assert second_model.calls[1][2]["evidence"][0]["id"] == ref
         assert second_model.calls[1][2]["evidence"][0]["content"] == body[start:end]
-        receipt = second_model.calls[1][2]["last_route"][0]["read_receipt"]
+        receipt = second_model.calls[1][2]["acquisition_history"][0]["read_receipt"]
         assert receipt["selection_mode"] == "targeted_view"
         assert receipt["ranges"] == [{"id": ref, "start_char": start, "end_char": end}]
         assert not receipt["full_body_in_packet"]

@@ -59,7 +59,7 @@ class RepeatingResearch:
                                      "unable", missing="Search configuration is missing."))
         number = sum(call[0] == "research" for call in self.calls)
         if number > len(self.kinds):
-            return json.dumps(decision("answer"))
+            return json.dumps(decision("return"))
         return json.dumps(decision(requests=[request(self.kinds[number - 1],
                                                      query=f"synthetic fact wording {number}")]))
 
@@ -108,7 +108,7 @@ def test_exa_then_serper_configuration_failure_hands_off_without_another_luna_ca
 def test_missing_serper_does_not_block_working_exa():
     serper = Missing("serper")
     model = Script(decision(requests=[request("search_lexical")]), decision(),
-                   decision("answer", ["E1"]), answer(VALUE + " [E1]"))
+                   decision("return", ["E1"]), answer(VALUE + " [E1]"))
     result = run("Find the value.", model=model, search=highlights,
                  lexical_search=serper, fetch=prohibited)
     assert len(serper.calls) == 1 and result.posture == "supported"
@@ -119,7 +119,7 @@ def test_missing_serper_does_not_block_working_exa():
 def test_missing_exa_keeps_configured_known_url_read_available():
     exa, fetched = Missing("exa"), []
     model = Script(decision(), decision(requests=[request("read", query="", target="C1")]),
-                   decision("answer", ["E1"]), answer(VALUE + " [E1]"))
+                   decision("return", ["E1"]), answer(VALUE + " [E1]"))
 
     def fetch(url):
         fetched.append(url)
@@ -135,7 +135,7 @@ def test_both_search_lanes_missing_still_allow_known_url_read():
     exa, serper = Missing("exa"), Missing("serper")
     model = Script(decision(), decision(requests=[request("search_lexical")]),
                    decision(requests=[request("read", query="", target="C1")]),
-                   decision("answer", ["E1"]), answer(VALUE + " [E1]"))
+                   decision("return", ["E1"]), answer(VALUE + " [E1]"))
     result = run(f"Find the value in {URL}", model=model, search=exa, lexical_search=serper,
                  fetch=lambda url: FetchedMaterial(url, VALUE))
     assert result.posture == "supported" and result.evidence[0].content == VALUE
@@ -153,7 +153,7 @@ def test_missing_linkup_keeps_retained_local_find_and_read_usable(source):
         decision(requests=[request("read", query="", target="C1", mode="refresh")]),
         decision(requests=[request("find", query="seven", scope=[local_target]),
                            request("read", query="", target=local_target, mode="local")]),
-        decision("answer", [ref]), answer(VALUE + f" [{ref}]"),
+        decision("return", [ref]), answer(VALUE + f" [{ref}]"),
     )
     result = run(f"Read {URL}", model=model, search=prohibited, fetch=linkup,
                  retained_acquisitions=(original,) if source == "retained" else (),
@@ -181,7 +181,7 @@ def test_working_configured_paths_keep_normal_behavior():
 
     model = Script(decision(), decision(requests=[request("search_lexical")]),
                    decision(requests=[request("read", query="", target="C2")]),
-                   decision("answer", ["E2"]),
+                   decision("return", ["E2"]),
                    answer("The independently acquired qualification applies. [E2]"))
     result = run("Find the qualification.", model=model, search=search,
                  lexical_search=serper, fetch=fetch)
@@ -200,8 +200,8 @@ def test_next_turn_in_same_session_retries_provider_after_configuration_is_corre
             raise ExaTransportError("exa_configuration_missing")
         return highlights(query)
 
-    model = Script(decision(), decision("answer"), answer("Search is unavailable.", "unable"),
-                   decision(), decision("answer", ["E1"]), answer(VALUE + " [E1]"))
+    model = Script(decision(), decision("return"), answer("Search is unavailable.", "unable"),
+                   decision(), decision("return", ["E1"]), answer(VALUE + " [E1]"))
     session = ResearchSession(model=model, search=search, fetch=prohibited)
     first = session.ask("Find the value.")
     second = session.ask("Try the corrected configuration.")
@@ -216,7 +216,7 @@ def test_next_turn_in_same_session_retries_provider_after_configuration_is_corre
 def test_explicit_user_premise_answer_needs_no_provider_configuration(monkeypatch):
     for name in ("EXA_API_KEY", "SERPER_API_KEY", "LINKUP_API_KEY"):
         monkeypatch.delenv(name, raising=False)
-    model = Script(decision("answer"), answer("Under your premise, the value is seven.",
+    model = Script(decision("return"), answer("Under your premise, the value is seven.",
                                                support_basis="user_premises"))
     result = run("Assume the value is seven. What is the assumed value?", model=model,
                  search=prohibited, lexical_search=prohibited, fetch=prohibited)
@@ -234,7 +234,7 @@ def test_empty_and_nonconfiguration_search_failures_do_not_disable_provider(fail
             raise ExaTransportError(failure)
         return []
 
-    model = Script(decision(), decision(), decision("answer"), answer("Not established.", "unable"))
+    model = Script(decision(), decision(), decision("return"), answer("Not established.", "unable"))
     result = run("Find the value.", model=model, search=search, fetch=prohibited)
     assert len(calls) == 2 and budget(result)["external_attempts"] == 2
     assert not model.calls[2][2].get("unavailable_providers")
@@ -252,10 +252,10 @@ def test_ordinary_read_failures_do_not_disable_or_reclassify_provider(failure):
 
     model = Script(decision(requests=[request("read", query="", target="C1")]),
                    decision(requests=[request("read", query="", target="C1", focus="new scope")]),
-                   decision("answer"), answer("Not established.", "unable"))
+                   decision("return"), answer("Not established.", "unable"))
     result = run(f"Read {URL}", model=model, search=prohibited, fetch=fetch)
     assert len(calls) == 2 and budget(result)["external_attempts"] == 2
-    assert [row["code"] for row in model.calls[2][2]["failed_external_reads"]] == [failure, failure]
+    assert [row["code"] for row in model.calls[2][2]["acquisition_history"]] == [failure, failure]
     assert not model.calls[2][2].get("unavailable_providers")
 
 
@@ -287,7 +287,7 @@ def test_body_free_and_forensic_receipts_distinguish_dispatch_and_local_suppress
     assert [row["suppressed"] for row in timings] == [False, True]
 
     working = TurnDiagnostics()
-    good = Script(decision(), decision("answer", ["E1"]), answer(VALUE + " [E1]"))
+    good = Script(decision(), decision("return", ["E1"]), answer(VALUE + " [E1]"))
     run("Find the value.", model=good, search=highlights, observe=working.observe)
     assert working.acquisitions[0]["provider_dispatched"] is True
     assert working.acquisitions[0]["suppressed"] is False
@@ -303,7 +303,7 @@ def test_known_unavailable_exa_is_suppressed_before_concurrent_group_reservation
     model = Script(decision(),
                    decision(requests=[request(query="different one"), request(query="different two"),
                                       request("search_lexical")]),
-                   decision("answer"), answer("Not established.", "unable"))
+                   decision("return"), answer("Not established.", "unable"))
     result = run("Find a synthetic fact.", model=model, search=exa, lexical_search=lexical)
     assert len(exa.calls) == len(serper) == 1
     assert budget(result)["external_attempts"] == 2
@@ -315,21 +315,21 @@ def test_suppressed_search_in_mixed_route_does_not_skip_usable_retained_read():
     model = Script(decision(),
                    decision(requests=[request(query="reworded impossible route"),
                                       request("read", query="", target="E1", mode="local")]),
-                   decision("answer", ["E1"]), answer(VALUE + " [E1]"))
+                   decision("return", ["E1"]), answer(VALUE + " [E1]"))
     result = run("Find the value.", model=model, search=exa, fetch=prohibited,
                  retained_acquisitions=(original,))
     assert len(exa.calls) == 1 and budget(result)["external_attempts"] == 1
     assert result.posture == "supported"
     assert result.citations[0].materials == (original,)
-    assert model.calls[2][2]["last_route"][0]["suppressed"] is True
-    assert model.calls[2][2]["last_route"][1]["status"] == "ok"
+    assert model.calls[2][2]["acquisition_history"][-2]["suppressed"] is True
+    assert model.calls[2][2]["acquisition_history"][-1]["status"] == "ok"
 
 
 @pytest.mark.parametrize("backend", ["api", "chatgpt_plan"])
 def test_initial_unavailable_state_is_shared_with_delegated_research(monkeypatch, backend):
     exa = Missing("exa")
     model, payloads, _ = scripted(monkeypatch, [
-        reply(initial(requests=[request()])), reply(initial("answer")),
+        reply(initial(requests=[request()])), reply(initial("return")),
         tool("research", {"need": "Find the still missing fact."}, "r1"),
         reply(delegated(requests=[request(query="reworded delegated attempt")])),
         reply(answer("Search configuration is missing; the external fact is not established.", "unable")),
@@ -339,9 +339,8 @@ def test_initial_unavailable_state_is_shared_with_delegated_research(monkeypatch
     assert stages(payloads) == ["research", "research", "answer", "research", "answer"]
     returned = results(payloads[-1])["r1"]
     assert not returned["evidence"]
-    route = returned["operations"]["last_route"][0]
+    route = next(row for row in returned["acquisition_limitations"] if row.get("provider") == "exa")
     assert route["provider"] == "exa" and route["code"] == "exa_configuration_missing"
-    assert route["suppressed"] is True
     assert budget(result)["external_attempts"] == 1
     assert result.posture == "unable" and not result.citations
 
@@ -349,7 +348,7 @@ def test_initial_unavailable_state_is_shared_with_delegated_research(monkeypatch
 def test_delegated_research_hands_back_both_missing_discovery_codes(monkeypatch):
     exa, serper = Missing("exa"), Missing("serper")
     model, payloads, _ = scripted(monkeypatch, [
-        reply(initial("answer")), tool("research", {"need": "Find an external fact."}, "r1"),
+        reply(initial("return")), tool("research", {"need": "Find an external fact."}, "r1"),
         reply(delegated(requests=[request()])),
         reply(delegated(requests=[request("search_lexical")])),
         reply(answer("Search is not configured, so the fact is not established.", "unable")),
@@ -360,7 +359,7 @@ def test_delegated_research_hands_back_both_missing_discovery_codes(monkeypatch)
     assert stages(payloads) == ["research", "answer", "research", "research", "answer"]
     returned = results(payloads[-1])["r1"]
     assert not returned["evidence"] and budget(result)["external_attempts"] == 2
-    assert {row["code"] for row in returned["unavailable_providers"]} == {
+    assert {row["code"] for row in returned["acquisition_limitations"] if row.get("provider")} == {
         "exa_configuration_missing", "serper_configuration_missing"}
 
 
@@ -380,7 +379,7 @@ def test_repeated_delegation_after_established_impossibility_spends_no_more_luna
     assert stages(payloads) == ["research", "research", "answer", "answer", "answer"]
     for returned in results(payloads[-1]).values():
         assert not returned["evidence"]
-        assert {row["code"] for row in returned["unavailable_providers"]} == {
+        assert {row["code"] for row in returned["acquisition_limitations"] if row.get("provider")} == {
             "exa_configuration_missing", "serper_configuration_missing"}
     assert budget(result)["external_attempts"] == 2
     assert result.posture == "unable" and not result.citations
@@ -389,7 +388,7 @@ def test_repeated_delegation_after_established_impossibility_spends_no_more_luna
 def test_delegated_missing_serper_allows_working_exa_and_exact_return(monkeypatch):
     serper = Missing("serper")
     model, payloads, _ = scripted(monkeypatch, [
-        reply(initial("answer")), tool("research", {"need": "Find the exact original value."}, "r1"),
+        reply(initial("return")), tool("research", {"need": "Find the exact original value."}, "r1"),
         reply(delegated(requests=[request("search_lexical")])),
         reply(delegated(requests=[request()])), reply(delegated("return", ["E1"])),
         reply(answer(VALUE + " [E1]")),
@@ -406,7 +405,7 @@ def test_delegated_missing_linkup_retains_local_read_and_find(monkeypatch):
     original = Evidence("E1", URL, "Retained original", VALUE)
     linkup = Missing("linkup")
     model, payloads, _ = scripted(monkeypatch, [
-        reply(initial("answer")), tool("research", {"need": "Inspect the retained original."}, "r1"),
+        reply(initial("return")), tool("research", {"need": "Inspect the retained original."}, "r1"),
         reply(delegated(requests=[request("read", query="", target="C1", mode="refresh")])),
         reply(delegated(requests=[request("find", query="seven", scope=["E1"]),
                                   request("read", query="", target="E1", mode="local")])),

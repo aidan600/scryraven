@@ -32,7 +32,7 @@ def test_supported_answer_with_missing_need_gets_fresh_answer_correction():
     rejected_prose = "REJECTED_PRIVATE_ANSWER_MARKER"
     rejected = answer(rejected_prose + " [E1]", missing="What else is needed?")
     corrected = answer("The publication states seven. [E1]")
-    model = RecordingModel(decision(), decision("answer", ["E1"]), rejected, corrected)
+    model = RecordingModel(decision(), decision("return", ["E1"]), rejected, corrected)
 
     result = run("What is the value?", model=model, search=search, fetch=no_fetch)
 
@@ -53,7 +53,7 @@ def test_supported_answer_with_missing_need_gets_fresh_answer_correction():
 def test_inconsistent_supported_answer_at_bound_is_not_downgraded_into_a_result():
     rejected = answer("REJECTED_PRIVATE_ANSWER_MARKER [E1]",
                       missing="A consequential missing need")
-    model = RecordingModel(decision(), decision("answer", ["E1"]), rejected)
+    model = RecordingModel(decision(), decision("return", ["E1"]), rejected)
 
     result = run("What is the value?", model=model, search=search, fetch=no_fetch,
                  limits=RunLimits(physical_model_requests=3))

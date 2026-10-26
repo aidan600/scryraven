@@ -42,7 +42,7 @@ def test_saved_citations_project_exact_research_navigation_without_answer_leakag
 
     model = Script(
         decision(requests=[request("read", query="", target="E1", mode="local")]),
-        decision("answer"),
+        decision("return"),
         answer("The current task remains unresolved.", "unable"),
     )
     session = ResearchSession.open(saved.metadata.session_id, store=store, model=model,

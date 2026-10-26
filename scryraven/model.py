@@ -186,7 +186,7 @@ def _catalog_tables(catalog: dict) -> dict:
 
 
 _RESEARCH_VOLATILE_ORDER = (
-    "working_understanding", "catalog", "last_route", "failed_external_reads", "evidence",
+    "research_briefing", "catalog", "acquisition_history", "evidence",
     "pending_delivery", "budget",
 )
 _EVIDENCE_METADATA_ORDER = (
@@ -212,7 +212,7 @@ _RESEARCH_TOOL = {
     "description": (
         "Investigate a substantive information need using external acquisition and "
         "the shared session library. Related needs may be bundled. Returns original "
-        "source text and navigation, with fallible research assessments."
+        "source text and a provisional research briefing for your judgment."
     ),
     "strict": True,
     "parameters": {

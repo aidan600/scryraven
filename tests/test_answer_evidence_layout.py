@@ -130,13 +130,13 @@ def test_research_layout_unchanged_and_answer_validator_accepts_same_semantic_an
     ))
     research_material = {"phase": "research", "question": "Q",
                          "evidence": [{"content": body, "id": "E1"}],
-                         "working_understanding": None}
+                         "research_briefing": None}
     model("research", "instructions", research_material, {})
     research_blocks = packets[0]["input"][1]["content"]
     assert research_blocks == [
         {"type": "input_text", "text": '{"phase": "research", "question": "Q"',
          "prompt_cache_breakpoint": {"mode": "explicit"}},
-        {"type": "input_text", "text": ', "working_understanding": null, '
+        {"type": "input_text", "text": ', "research_briefing": null, '
          '"evidence": [{"id": "E1", "content": "An acquired fact."}]}'},
     ]
     answer_material = {"phase": "answer", "question": "Q",

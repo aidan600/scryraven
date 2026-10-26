@@ -9,6 +9,7 @@ import pytest
 
 from core.exa_transport import DiscoveryCandidate, FetchedMaterial
 from scryraven import research
+from scryraven.dogfood_diagnostics import TurnDiagnostics
 from scryraven.model import ModelConfig, ModelRole, OpenAIModel
 from scryraven.research import RunError, run
 from scryraven.session import ResearchSession
@@ -20,25 +21,24 @@ QUESTION = "Explain the original value, twice it, and its consequential qualific
 VALUE = "The stated value is seven."
 
 
-def understanding():
-    return {"interpretation": "Investigate the immutable whole question", "established": [],
-            "still_needed": [], "last_route_result": ""}
-
-
 def request(kind="search", query="requested original value", target="", **changes):
-    return {"kind": kind, "query": query, "target": target, "mode": "auto", "focus": "",
-            "scope": [], "start_char": None, "end_char": None, **changes}
+    if kind in {"search", "search_lexical"}:
+        return {"kind": kind, "query": query, **changes}
+    if kind == "find":
+        return {"kind": kind, "query": query, "scope": [], **changes}
+    return {"kind": kind, "target": target, "mode": "auto", "focus": "",
+            "start_char": None, "end_char": None, **changes}
 
 
-def initial(action="research", refs=(), requests=()):
-    return {"understanding": understanding(), "action": action, "requests": list(requests),
-            "retain": list(refs), "answer_evidence_refs": list(refs) if action == "answer" else []}
+def initial(action="research", refs=(), requests=(), briefing="Investigate the whole question"):
+    return {"briefing": briefing, "action": action, "requests": list(requests),
+            "retain": list(refs), "evidence_refs": list(refs) if action == "return" else []}
 
 
-def delegated(action="research", refs=(), requests=(), selections=None):
-    return {"understanding": understanding(), "action": action, "requests": list(requests),
-            "retain": list(refs), "evidence_refs": list(refs) if selections is None else selections,
-            "assessment": "Fallible navigation; interpret the originals independently."}
+def delegated(action="research", refs=(), requests=(), selections=None,
+              briefing="Provisional findings; verify material qualifications against the originals."):
+    return {"briefing": briefing, "action": action, "requests": list(requests),
+            "retain": list(refs), "evidence_refs": list(refs) if selections is None else selections}
 
 
 def answer(text="Seven. [E1]", posture="supported", basis="evidence", missing=None):
@@ -128,12 +128,12 @@ def stages(payloads):
 @pytest.mark.parametrize("backend", ["api", "chatgpt_plan"])
 def test_initial_production_research_precedes_independent_answer_without_delegation(monkeypatch, backend):
     model, payloads, _ = scripted(monkeypatch, [
-        reply(initial(requests=[request()])), reply(initial("answer", ["E1"])), reply(answer())], backend)
+        reply(initial(requests=[request()])), reply(initial("return", ["E1"])), reply(answer())], backend)
     result = run("What is the original value?", model=model, search=search, fetch=prohibited)
     assert stages(payloads) == ["research", "research", "answer"]
     first = packet(payloads[0])
     assert "delegated_need" not in first and "answer_delivery" not in first
-    assert "sole Research decision-maker" in payloads[0]["input"][0]["content"][0]["text"]
+    assert packet(payloads[2])["research_briefing"] == "Investigate the whole question"
     assert packet(payloads[2])["evidence"][0]["content"] == VALUE
     handoff, = [event for event in result.trace if event["action"] == "initial_research_handoff"]
     assert handoff["selected_refs"] == ["E1"]
@@ -146,7 +146,7 @@ def test_initial_production_research_precedes_independent_answer_without_delegat
 def test_initial_handoff_retains_normal_large_selected_packet(monkeypatch):
     original = Evidence("E1", "https://example.org/large", "Original", "The controlling fact. ".ljust(60_000, "x"),
                         "provider_highlights")
-    model, payloads, _ = scripted(monkeypatch, [reply(initial("answer", ["E1"])), reply(answer())])
+    model, payloads, _ = scripted(monkeypatch, [reply(initial("return", ["E1"])), reply(answer())])
     result = run("What is established?", model=model, initial_evidence=(original,),
                  retained_acquisitions=(original,), search=prohibited, fetch=prohibited)
     supplied, = packet(payloads[1])["evidence"]
@@ -157,7 +157,7 @@ def test_initial_handoff_retains_normal_large_selected_packet(monkeypatch):
 
 def test_premise_control_keeps_initial_research_and_dependent_calculator(monkeypatch):
     model, payloads, _ = scripted(monkeypatch, [
-        reply(initial("answer")), tool("calculate", {"expression": "12*7"}, "c1"),
+        reply(initial("return")), tool("calculate", {"expression": "12*7"}, "c1"),
         tool("calculate", {"expression": "84/2"}, "c2"),
         reply(answer("Under your premises, half the total is 42.", basis="user_premises"))])
     result = run("Assume twelve lots of seven; what is half the total?", model=model, search=prohibited)
@@ -173,7 +173,7 @@ def test_multiple_research_calls_resume_one_answer_with_local_and_arithmetic_his
     context = {"conversation_context": [{"question": "Use the winter scenario.",
                                          "answer": "Acknowledged, as task context."}]}
     model, payloads, _ = scripted(monkeypatch, [
-        reply(initial(requests=[request()])), reply(initial("answer", ["E1"])),
+        reply(initial(requests=[request()])), reply(initial("return", ["E1"])),
         tool("library_read", {"target": "E1", "focus": "", "start_char": None, "end_char": None}, "l1"),
         tool("calculate", {"expression": "7*2"}, "c1"),
         tool("research", {"need": "Fetch the original's newly consequential winter qualification."}, "r1"),
@@ -211,8 +211,8 @@ def test_multiple_research_calls_resume_one_answer_with_local_and_arithmetic_his
         assert packet(value)["question"] == QUESTION
         assert packet(value)["conversation_context"] == context["conversation_context"]
     for index in (5, 6, 9, 10):
-        assert "bounded investigator called by Answer" in payloads[index]["input"][0]["content"][0]["text"]
-        assert packet(payloads[index])["prior_research_understanding"]["fallible_navigation_only"]
+        assert packet(payloads[index])["delegated_need"]
+        assert packet(payloads[index])["research_briefing"]
         assert "opaque-l1" not in json.dumps(payloads[index])
     budget = result.trace[-1]["budget"]
     assert budget["physical_requests"] == 13 and budget["research_episodes"] == 2
@@ -232,7 +232,7 @@ def test_initial_and_delegated_research_share_first_deep_eligibility(monkeypatch
 
     monkeypatch.setattr(research, "search_exa", exa)
     model, _, _ = scripted(monkeypatch, [
-        reply(initial(requests=[request()])), reply(initial("answer", ["E1"])),
+        reply(initial(requests=[request()])), reply(initial("return", ["E1"])),
         tool("research", {"need": "Find an independently acquired qualification."}, "r1"),
         reply(delegated(requests=[request(query="qualification")])), reply(delegated("return", ["E2"])),
         reply(answer("Both originals state seven. [E1][E2]"))])
@@ -246,7 +246,7 @@ def test_invalid_final_after_research_corrects_inside_same_native_history(monkey
     rejected = [{"type": "reasoning", "id": "invalid-reason", "encrypted_content": "opaque-invalid"},
                 *reply(answer("REJECTED UNCITED PROSE"))]
     model, payloads, _ = scripted(monkeypatch, [
-        reply(initial(requests=[request()])), reply(initial("answer", ["E1"])),
+        reply(initial(requests=[request()])), reply(initial("return", ["E1"])),
         tool("library_browse", {"offset": 0}, "l1"),
         tool("research", {"need": "Obtain the consequential original qualification."}, "r1"),
         reply(delegated(requests=[request("read", query="", target="https://example.org/value")])),
@@ -300,7 +300,7 @@ def test_invalid_final_after_research_corrects_inside_same_native_history(monkey
 ])
 def test_existing_mechanical_corrections_share_native_context(monkeypatch, backend, invalid, code):
     model, payloads, _ = scripted(monkeypatch, [reply(initial(requests=[request()])),
-        reply(initial("answer", ["E1"])), reply(invalid), reply(answer())], backend)
+        reply(initial("return", ["E1"])), reply(invalid), reply(answer())], backend)
     result = run("What is the original value?", model=model, search=search)
     owners = payloads[-2:]
     # The plan projection inserts its tools before the first response item;
@@ -318,8 +318,51 @@ def test_existing_mechanical_corrections_share_native_context(monkeypatch, backe
 
 
 @pytest.mark.parametrize("backend", ["api", "chatgpt_plan"])
+@pytest.mark.parametrize("is_delegated", [False, True])
+@pytest.mark.parametrize("malformed", [False, True])
+def test_research_validation_exhaustion_preserves_last_briefing_and_originals(
+    monkeypatch, backend, is_delegated, malformed,
+):
+    briefing = "The original states seven [E1]; a further qualification remains unresolved."
+    invalid = ({"unexpected": "REJECTED GENERATED CLAIM"} if malformed else
+               initial("return", ["E1"], requests=[request()], briefing="REJECTED GENERATED CLAIM"))
+    outputs = ([reply(initial("return", briefing=None)),
+                tool("research", {"need": "Find the value and its qualification."}, "bounded")]
+               if is_delegated else [])
+    outputs += [reply(initial(requests=[request()])),
+                reply(initial(refs=["E1"], requests=[request("find", query="seven")], briefing=briefing)),
+                reply(invalid), reply(invalid)]
+
+    def finish(payload):
+        state = results(payload)["bounded"] if is_delegated else packet(payload)
+        assert state["research_briefing"] == briefing
+        assert any(row["content"] == VALUE for row in state["evidence"])
+        assert any(row["code"] == "research_validation_exhausted"
+                   for row in state["acquisition_limitations"])
+        return reply(answer("The original states seven. [E1] The qualification remains unresolved.",
+                            posture="partial", missing="Further qualification"))
+
+    outputs.append(finish)
+    model, payloads, _ = scripted(monkeypatch, outputs, backend)
+    diagnostics = TurnDiagnostics()
+    result = run("What is the value and its qualification?", model=model, search=search,
+                 fetch=prohibited, lexical_search=prohibited, observe=diagnostics.observe)
+    assert result.posture == "partial" and result.stop_reason == "research_bound"
+    assert result.citations[0].materials[0].content == VALUE
+    assert len(payloads) == (7 if is_delegated else 5)
+    expected = "malformed_model_response" if malformed else "invalid_action_shape"
+    rejections = [event for event in result.trace if event["action"] in {"decision_rejected", "response_rejected"}]
+    assert [event["code"] for event in rejections] == [expected, expected]
+    record = diagnostics.record(session_id=None, revision_before=0, revision_after=1, result=result)
+    assert record["research_bounds"] == {"research_validation_exhausted": 1}
+    assert diagnostics.corrections["research"][expected] == 2
+    assert briefing not in json.dumps(record)
+    assert "REJECTED GENERATED CLAIM" not in json.dumps(record)
+
+
+@pytest.mark.parametrize("backend", ["api", "chatgpt_plan"])
 def test_second_invalid_final_after_research_has_no_third_attempt_or_prose_publication(monkeypatch, backend):
-    model, payloads, _ = scripted(monkeypatch, [reply(initial("answer")),
+    model, payloads, _ = scripted(monkeypatch, [reply(initial("return")),
         tool("research", {"need": "Find the original."}, "r1"),
         reply(delegated(requests=[request()])), reply(delegated("return", ["E1"])),
         reply(answer("FIRST REJECTED PROSE")), reply(answer("SECOND REJECTED PROSE"))], backend)
@@ -337,7 +380,7 @@ def test_second_invalid_final_after_research_has_no_third_attempt_or_prose_publi
 def test_non_json_final_and_empty_evidence_basis_use_only_one_native_correction(monkeypatch, backend):
     malformed = [{"type": "message", "role": "assistant", "phase": "final_answer",
                   "content": [{"type": "output_text", "text": "not-json-at-all"}]}]
-    model, payloads, _ = scripted(monkeypatch, [reply(initial("answer")), malformed,
+    model, payloads, _ = scripted(monkeypatch, [reply(initial("return")), malformed,
         reply(answer("A claim without supplied evidence"))], backend)
     result = run("Find the missing original.", model=model, search=prohibited)
     assert result.answer == research.ANSWER_VALIDATION_FAILURE_MESSAGE
@@ -349,7 +392,7 @@ def test_non_json_final_and_empty_evidence_basis_use_only_one_native_correction(
 
 @pytest.mark.parametrize("backend", ["api", "chatgpt_plan"])
 def test_duplicate_tool_id_still_rejected_after_final_correction(monkeypatch, backend):
-    model, payloads, _ = scripted(monkeypatch, [reply(initial("answer")),
+    model, payloads, _ = scripted(monkeypatch, [reply(initial("return")),
         tool("research", {"need": "Find the original."}, "same"),
         reply(delegated(requests=[request()])), reply(delegated("return", ["E1"])),
         reply(answer("Uncited rejected prose")),
@@ -370,7 +413,7 @@ def test_correction_cannot_renew_exhausted_time_or_physical_allowance(monkeypatc
         return reply(answer("Uncited rejected prose"))
 
     model, payloads, _ = scripted(monkeypatch, [reply(initial(requests=[request()])),
-        reply(initial("answer", ["E1"])), invalid], backend)
+        reply(initial("return", ["E1"])), invalid], backend)
     result = run("What is the original value?", model=model, search=search,
         limits=research.RunLimits(physical_model_requests=3 if bound == "physical" else 40),
         clock=lambda: now[0])
@@ -383,7 +426,7 @@ def test_correction_cannot_renew_exhausted_time_or_physical_allowance(monkeypatc
 @pytest.mark.parametrize("backend", ["api", "chatgpt_plan"])
 def test_invalid_custody_alias_remains_hard_failure_without_correction(monkeypatch, backend):
     model, payloads, _ = scripted(monkeypatch, [reply(initial(requests=[request()])),
-        reply(initial("answer", ["E1"])), reply(answer("Unseen material. [E2]"))], backend)
+        reply(initial("return", ["E1"])), reply(answer("Unseen material. [E2]"))], backend)
     with pytest.raises(RunError, match="invalid_citation_reference"):
         run("What is established?", model=model, search=search)
     assert len(payloads) == 3
@@ -394,7 +437,7 @@ def test_initial_research_follows_source_discovered_dependency_before_handoff(mo
     model, payloads, _ = scripted(monkeypatch, [
         reply(initial(requests=[request()])),
         reply(initial(refs=["E1"], requests=[request("read", query="", target="https://example.org/controlling")])),
-        reply(initial("answer", ["E1", "E2"])), reply(answer("The original identifies seven under the controlling rule. [E1][E2]"))])
+        reply(initial("return", ["E1", "E2"])), reply(answer("The original identifies seven under the controlling rule. [E1][E2]"))])
 
     def fetch(url):
         fetched.append(url)
@@ -423,13 +466,13 @@ def test_denied_seventeenth_attempt_returns_exact_local_passage_into_same_answer
     def return_after_denial(payload):
         state = packet(payload)
         assert state["budget"]["external_attempts"] == 16 and state["budget"]["external_remaining"] == 0
-        assert state["last_route"][0]["code"] == "external_attempts"
+        assert state["acquisition_history"][-1]["code"] == "external_attempts"
         assert state["answer_delivery"]["text_characters_remaining"] == 224
         assert "Local Read/Find" in state["output_correction"]
         assert next(item for item in state["evidence"] if item["id"] == "E3")["content"] == body
         return reply(delegated("return", ["E3"], selections=[{"ref": "E3", "text": passage}]))
 
-    sequence = [reply(initial("answer", ["E1", "E2"])),
+    sequence = [reply(initial("return", ["E1", "E2"])),
                 tool("research", {"need": "Obtain the exact original revenue/loss benchmark."}, "r1")]
     sequence += [reply(delegated(refs=[] if index == 0 else ["E3"], requests=[request(query=f"report {index}")]))
                  for index in range(16)]
@@ -453,8 +496,8 @@ def test_denied_seventeenth_attempt_returns_exact_local_passage_into_same_answer
 
 def test_retained_followup_reopens_and_still_runs_initial_research_without_reacquisition(monkeypatch, tmp_path):
     model, payloads, _ = scripted(monkeypatch, [
-        reply(initial(requests=[request()])), reply(initial("answer", ["E1"])), reply(answer()),
-        reply(initial("answer", ["E1"])), reply(answer("The retained original says seven. [E1]"))])
+        reply(initial(requests=[request()])), reply(initial("return", ["E1"])), reply(answer()),
+        reply(initial("return", ["E1"])), reply(answer("The retained original says seven. [E1]"))])
     store = SQLiteSessionStore(tmp_path / "hybrid.sqlite3")
     session = ResearchSession.create(store=store, model=model, search=search, fetch=prohibited)
     session.ask("What is the original value?")
@@ -473,8 +516,8 @@ def test_interruption_after_delegated_return_preserves_prior_durable_turn(monkey
         raise KeyboardInterrupt
 
     model, payloads, _ = scripted(monkeypatch, [
-        reply(initial(requests=[request()])), reply(initial("answer", ["E1"])), reply(answer()),
-        reply(initial("answer", ["E1"])), tool("research", {"need": "Find the new qualification"}, "interrupt-r1"),
+        reply(initial(requests=[request()])), reply(initial("return", ["E1"])), reply(answer()),
+        reply(initial("return", ["E1"])), tool("research", {"need": "Find the new qualification"}, "interrupt-r1"),
         reply(delegated(requests=[request(query="new qualification")])),
         reply(delegated("return", ["E2"])), interrupted,
     ])
@@ -501,7 +544,7 @@ def test_interruption_after_delegated_return_preserves_prior_durable_turn(monkey
 
 
 def test_final_missing_information_is_a_limitation_without_stage_restart(monkeypatch):
-    model, payloads, _ = scripted(monkeypatch, [reply(initial("answer")),
+    model, payloads, _ = scripted(monkeypatch, [reply(initial("return")),
         reply(answer("The requested evidence was not obtained.", "unable", "none", "Obtain the missing original"))])
     result = run("What does the absent original establish?", model=model, search=prohibited)
     assert stages(payloads) == ["research", "answer"] and result.posture == "unable"
@@ -510,7 +553,7 @@ def test_final_missing_information_is_a_limitation_without_stage_restart(monkeyp
 
 
 def test_unreturned_worker_original_cannot_be_cited_by_answer(monkeypatch):
-    model, _, _ = scripted(monkeypatch, [reply(initial("answer")),
+    model, _, _ = scripted(monkeypatch, [reply(initial("return")),
         tool("research", {"need": "Find actual originals."}, "r1"),
         reply(delegated(requests=[request()])), reply(delegated("return", ["E1"])),
         reply(answer("The unseen second source says two. [E2]"))])
@@ -521,7 +564,7 @@ def test_unreturned_worker_original_cannot_be_cited_by_answer(monkeypatch):
 
 
 def test_invalid_research_arguments_continue_without_dispatching_worker(monkeypatch):
-    model, payloads, _ = scripted(monkeypatch, [reply(initial("answer")),
+    model, payloads, _ = scripted(monkeypatch, [reply(initial("return")),
         tool("research", {"need": " "}, "bad"),
         reply(answer("No source was acquired.", "unable", "none", "Actual original missing"))])
     result = run("Find the original.", model=model, search=prohibited)
@@ -531,7 +574,7 @@ def test_invalid_research_arguments_continue_without_dispatching_worker(monkeypa
 
 
 def test_repeated_tool_identity_is_rejected_after_initial_research(monkeypatch):
-    model, payloads, _ = scripted(monkeypatch, [reply(initial("answer")),
+    model, payloads, _ = scripted(monkeypatch, [reply(initial("return")),
         tool("calculate", {"expression": "7*2"}, "same"), tool("calculate", {"expression": "14+1"}, "same")])
     with pytest.raises(RunError, match="malformed_model_response"):
         run("Assume seven; double it and add one.", model=model, search=prohibited)
@@ -543,7 +586,7 @@ def test_expired_initial_research_never_dispatches_unbudgeted_answer(monkeypatch
 
     def expire(_payload):
         now[0] = 901
-        return reply(initial("answer"))
+        return reply(initial("return"))
 
     model, payloads, _ = scripted(monkeypatch, [expire])
     result = run("Find the original.", model=model, search=prohibited, clock=lambda: now[0])
@@ -559,7 +602,7 @@ def test_tool_research_uses_whole_turn_time_past_retired_stage_clocks(monkeypatc
         now[0] = delay
         return tool("research", {"need": "Establish the missing original value."}, "r1")
 
-    model, payloads, timeouts = scripted(monkeypatch, [reply(initial("answer")), delayed,
+    model, payloads, timeouts = scripted(monkeypatch, [reply(initial("return")), delayed,
         reply(delegated(requests=[request()])), reply(delegated("return", ["E1"])), reply(answer())])
     result = run("What is the value?", model=model, search=search, clock=lambda: now[0])
     assert result.posture == "supported" and stages(payloads) == ["research", "answer", "research", "research", "answer"]
@@ -603,7 +646,7 @@ def test_serial_and_concurrent_provider_timeouts_obey_300_and_remaining_turn(mon
     model, _, _ = scripted(monkeypatch, [
         reply(initial(requests=[request(query="first"), request(query="second")])),
         lexical_later, fetch_later, serial_later,
-        reply(initial("answer", ["E3", "E4"])), reply(answer("Both originals establish seven. [E3][E4]"))])
+        reply(initial("return", ["E3", "E4"])), reply(answer("Both originals establish seven. [E3][E4]"))])
     result = run("What do these originals establish?", model=model, search=exa,
                  lexical_search=lexical, fetch=fetch, clock=lambda: now[0])
     first_group = {query: (mode, timeout) for provider, query, mode, timeout in external[:2] if provider == "exa"}
@@ -624,8 +667,8 @@ def test_delegated_worker_receives_earlier_failed_route_after_intervening_succes
 
     def inspect_history(payload):
         state = packet(payload)
-        assert state["last_route"][0]["status"] == "ok"
-        history = state["prior_acquisition_history"]
+        history = state["acquisition_history"]
+        assert history[-1]["status"] == "ok"
         assert len(history) == 2
         assert history[0]["kind"] == "search" and history[0]["status"] == "error"
         assert history[0]["code"] == "search_failed" and history[0]["material_ids"] == []
@@ -636,7 +679,7 @@ def test_delegated_worker_receives_earlier_failed_route_after_intervening_succes
     model, payloads, _ = scripted(monkeypatch, [
         reply(initial(requests=[request(query="first unsuccessful route")])),
         reply(initial(requests=[request(query="changed reason succeeds")])),
-        reply(initial("answer", ["E1"])),
+        reply(initial("return", ["E1"])),
         tool("research", {"need": "Assess the retained original with its acquisition limitations."}, "r1"),
         inspect_history, reply(answer())])
     result = run("Establish the actual original value.", model=model, search=discover, fetch=prohibited)

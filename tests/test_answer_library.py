@@ -139,7 +139,7 @@ def test_session_documents_remain_local_and_unrelated_session_is_empty():
 def test_api_multiple_tools_correction_and_durable_reopen(monkeypatch, tmp_path):
     monkeypatch.setenv("OPENAI_API_KEY", "synthetic")
     transport = ScriptedResponses(
-        ("research", model_reply(decision("answer")), 0),
+        ("research", model_reply(decision("return")), 0),
         ("answer", function_reply("library_find", {"query": "winter", "scope": []}), 0),
         ("answer", tool_reply("7 * 2", "calc"), 0),
         ("answer", function_reply("library_read", read_args("E1"), "lib2"), 0),
@@ -171,7 +171,7 @@ def test_api_multiple_tools_correction_and_durable_reopen(monkeypatch, tmp_path)
 def test_catalog_only_citation_is_rejected(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "synthetic")
     transport = ScriptedResponses(
-        ("research", model_reply(decision("answer")), 0),
+        ("research", model_reply(decision("return")), 0),
         ("answer", model_reply(answer("Winter applies [E2].")), 0))
     with pytest.raises(RunError):
         run("Conditions?", model=OpenAIModel(post=transport.post), retained_acquisitions=corpus(),
@@ -191,7 +191,7 @@ class LocalReply:
 
 
 def test_plan_declared_library_tools_and_opaque_continuation():
-    auth = FrozenAuth(Reply("research", decision("answer")),
+    auth = FrozenAuth(Reply("research", decision("return")),
                       LocalReply("library_read", read_args("E2")),
                       Reply("answer", answer("Winter applies [E2].")))
     model = OpenAIModel(built_in_model_config(), backend="chatgpt_plan", plan_auth=auth)
@@ -205,11 +205,11 @@ def test_plan_declared_library_tools_and_opaque_continuation():
 def test_undeclared_function_rejected_in_both_transports(monkeypatch, backend):
     monkeypatch.setenv("OPENAI_API_KEY", "synthetic")
     if backend == "api":
-        transport = ScriptedResponses(("research", model_reply(decision("answer")), 0),
+        transport = ScriptedResponses(("research", model_reply(decision("return")), 0),
                                       ("answer", function_reply("fetch_web", {}), 0))
         model = OpenAIModel(post=transport.post)
     else:
-        auth = FrozenAuth(Reply("research", decision("answer")), LocalReply("fetch_web", {}))
+        auth = FrozenAuth(Reply("research", decision("return")), LocalReply("fetch_web", {}))
         model = OpenAIModel(backend=backend, plan_auth=auth)
     with pytest.raises(RunError, match="malformed_model_response"):
         run("Conditions?", model=model, retained_acquisitions=corpus(), search=forbidden, fetch=forbidden)
@@ -226,7 +226,7 @@ def test_multiple_local_calls_and_calculator_in_one_response(monkeypatch):
     batch = function_reply("library_read", read_args("E2"))
     batch["output"].extend(tool_reply("7 * 2", "calc")["output"])
     transport = ScriptedResponses(
-        ("research", model_reply(decision("answer")), 0), ("answer", batch, 0),
+        ("research", model_reply(decision("return")), 0), ("answer", batch, 0),
         ("answer", model_reply(answer("Winter applies [E2].")), 0))
     result = run("Conditions?", model=OpenAIModel(post=transport.post), retained_acquisitions=corpus(),
                  search=forbidden, fetch=forbidden)

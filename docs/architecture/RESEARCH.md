@@ -1,9 +1,10 @@
 # Ordinary Research / Evidence-first Answer architecture
 
-The production architecture is initial Luna Research -> independent Sol Answer
-with optional resumable delegated Research, merged in
-[PR #677](https://github.com/aidan600/scryraven/pull/677) at
-`5333a09f5f7b7dc9950ca98637b5cc788f955a3d`.
+The ordinary topology is initial Luna Research -> Sol Answer with optional
+resumable delegated Research. The local briefing revision preserves the topology
+merged in [PR #677](https://github.com/aidan600/scryraven/pull/677) and passes
+Research interpretation alongside originals. It is experimental and unpromoted;
+see `docs/operator/RESEARCH_ANSWER_BRIEFING_01.md` for design and verification.
 Research -> Analyst -> Author remains retired. There is no production selector,
 alternate engine or fallback. `CURRENT.md` distinguishes implementation from
 bounded demonstrations and remaining limitations.
@@ -107,64 +108,50 @@ reasoning are excluded. Body-free acquisition timing and optional dogfood
 diagnostics report the requested `provider_search_type`, not inferred internal
 provider routing. They add no query, payload or authentication material.
 
-**Research** owns interpretation of the current user turn, non-evidentiary
-conversation context, explicit user task premises and supplied actual Evidence,
-a compact revisable understanding, route selection, and a proposal to answer.
-Its understanding contains the current interpretation, a small set of scoped
-findings with material references, neutral unresolved questions, and the last
-route's result. This generated state is
-continuity, never Evidence. It is replaced as a whole and is not stored as a
-claim database or hypothesis lifecycle.
+**Research** owns investigation and provisional interpretation. It returns one
+shared `ResearchDecision` in both initial and delegated episodes: `briefing`,
+`action` (`research` or `return`), `requests`, `retain`, and `evidence_refs`.
+The briefing is a compact account of useful conclusions, source references,
+qualifications and consequential unresolved needs. It is proportional freeform
+analysis, not a fixed finding ledger or polished user answer. A null update keeps
+the latest briefing; new evidence may revise or replace it. No extra model call
+prepares the handoff. Search, Read and Find have operation-specific request
+shapes; acquisition fills mechanical defaults rather than making the model emit
+irrelevant fields. Routes may contain independent requests; dependent follow-ons
+wait for the returned material.
 
-Research returns either a route of Search/lexical Search/Read/Find requests or a proposal for a
-fresh answer with exact material references. The reference list may be empty when
-the operation is fully derivable from explicit user premises and needs no external
-factual support. User premises may inform task interpretation but do not become
-Evidence-backed `established` findings. Its current compact understanding
-shape is `interpretation`, bounded `established` findings with exact Evidence
-references, `still_needed`, and `last_route_result`; it does not declare an
-inference class or requested-versus-narrowed answer scope. The prompt
-guides roughly one to three independent requests per route. Results return to the
-same Research owner before semantically dependent follow-on requests are chosen.
-The executor performs selected requests and reports mechanical outcomes; it makes
-no truth, applicability, contradiction, sufficiency, or research-policy decisions.
-`ResearchDecision` has no `purpose` field or route-purpose prose requirement.
-Executable route intent is expressed by structured Search/Read/Find requests and
-the compact working understanding, without a new semantic owner or memory.
+`retain` chooses exact originals to repeat in the next Research packet. Shelved
+material stays in the catalog and can be selected for Answer or read locally.
+`evidence_refs` selects actual exposed material, exact ranges or optional unique
+text locators. The runtime reconstructs original text; copied locator text never
+becomes Evidence. Initial and delegated returns use the same independently valid
+selection admission. Bad selections are reported without discarding good ones
+or forcing a repair call. Invalid retain IDs are filtered. Structural/schema
+errors receive at most one correction per Research episode, then an honest
+operating limitation with available valid work. Limits do not establish support.
 
-**Answer** receives the immutable current user turn, conversation context,
-current date, initial exact Evidence, a compact acquired-library catalog,
-mechanical acquisition limitations, and remaining budget. No `answer_cautions`,
-working understanding, generated factual warnings, answer draft, or Research
-verdict crosses this boundary. Controlling
-identity, scope, time, conflicts and qualifications travel in actual supplied
-material. Conversation resolves intent, discourse, corrections and follow-up
-meaning. Prior user questions may carry explicit task premises into a follow-up;
-user beliefs and narration are not automatically stipulated premises. Prior
-assistant answers are discourse context only and cannot silently become task
-premises. A user may explicitly adopt a prior assistant value as a new scenario
-premise without verifying that value externally. Answer determines what supplied
-Evidence or user-supplied premises justify, with supported, partial, or unable
-posture.
-For non-lookup analytical questions, its composition instructions give the
-conclusion or controlling distinction early, then substantially develop the
-important supported relationships, representative evidence, calculations and
-consequential qualifications needed to understand the result. Development is
-substantial but non-exhaustive, with a soft roughly two-page editorial ceiling,
-not a length rule or required outline. Markdown structure is available when it
-clarifies the reasoning. Simple lookups stay direct and compact. A quantitative
-relationship states how its inputs determine the result; a comparison keeps the
-meaning and observed or modeled character of each supplied quantity visible. A
-partial answer explains what missing inputs would resolve and what incompatibilities
-would remain. Developing one dimension must not displace another consequential
-distinction. These are instructions to the existing Answer owner, not an additional
-field, semantic actor or validation gate.
-After initial Research's normal handoff, Answer may invoke `research(need)` before
-final synthesis. The delegated investigator uses the original request, shared
-library, acquisition history and resources. It follows useful source dependencies
-and returns originals, limitations and fallible navigation to the same native Sol
-continuation. There is no provisional-final checkpoint, full Answer restart or
-mandatory tool invocation. Final `missing_information` has no orchestration effect.
+**Answer** receives the immutable current question, conversation, operating date,
+`research_briefing`, selected exact originals, acquisition/selection limitations,
+library navigation and resources. The briefing is fallible analysis, not Evidence
+or binding authority. Answer may adopt well-supported findings without repeating
+the investigation, scrutinize originals when scope, chronology, applicability,
+comparison or contradiction warrants it, and revise or reject Research's account.
+Generated references never add citation membership. External factual claims must
+remain supportable by actually supplied source material.
+
+Answer writes the conversational response and owns its supported, partial or
+unable posture. It develops useful relationships, representative support,
+calculations and qualifications for analytical questions; simple lookups stay
+compact. User stipulations can support conditional reasoning but beliefs,
+assistant history and model recollection do not become external facts. Documents
+establish what their supplied text states, not independent outside verification.
+
+Answer may invoke `research(need)` for a consequential gap. The same Research
+loop uses the original question, latest briefing, shared library, acquisition
+receipts and remaining resources. It returns a revised briefing, exact originals
+and honest limitations to the same native Answer interaction. No provisional
+final checkpoint, Answer restart, continuing investigator or mandatory tool call
+is added. Final `missing_information` describes a limitation only.
 
 Research chooses outside acquisition and suggests initial Evidence; it does not
 control Answer's access to the current session's retained originals. Within the
@@ -197,8 +184,8 @@ source-body observation remains a separate opt-in diagnostic projection.
 
 The Answer contract is `SemanticAnswerDecision`: posture, `support_basis`,
 answer, and `missing_information`. Sol, through the existing Answer model role,
-owns meaning, prose, adequacy and citations. It reads the supplied Evidence before
-composing and cites exact supplied aliases beside supported factual claims.
+owns meaning, prose, adequacy and citations. It evaluates the briefing against supplied Evidence and cites exact supplied
+aliases beside supported factual claims.
 A completed valid Answer proceeds directly to deterministic citation resolution
 and publication. No model localizes passages, copies `source_readings`, or
 regenerates an otherwise valid whole answer for presentation.
@@ -271,26 +258,16 @@ text, bodies, headers and credentials do not cross these diagnostic boundaries.
 A single provider failure does not force a turn-wide fail-fast decision;
 Research judges the acquisition result.
 
-Every Research packet includes `failed_external_reads` after `last_route` and
-before `evidence`. This ordered list records each failed external materialization:
-`candidate_ref`, `provider`, `strategy`, `requested_mode`, `code`, and
-`duration_seconds` (monotonic operation elapsed time rounded to six decimals).
-The existing candidate identity joins URL, candidate and material references to
-the catalog. The effective strategy is currently `linkup` / `static_fetch`,
-independent of focus and requested Read mode. A future materially different fetch
-configuration would need a distinct strategy value; none is implemented here.
-The history survives intervening routes, including successful Search, Read and
-Find. Local failures, budget denials before an attempt, and successful fetches
-are not failed external materialization receipts. Success remains in retained
-materials/catalog. The existing external-attempt budget bounds this list.
-
-This is navigation history for the existing Research owner, not Evidence or a
-retry gate. It is local to one user turn, never persisted in session state, and
-never supplied to Answer. Existing forensic acquisition-result events carry the
-safe receipt; body-free dogfood retains fixed codes and numeric timing without
-URLs, request text or bodies. The explanatory Research prompt changes the
-instruction-derived Research cache-family hash. The stable prefix, breakpoint
-mechanics, Evidence bytes and Answer packet/cache family remain unchanged.
+Research receives one turn-scoped `acquisition_history` of compact operation
+receipts. It records attempted requests, resulting material/candidate IDs, safe
+errors and failed external Read details without repeating full originals. This
+replaces separate latest-route, failed-Read and delegated prior-history packets.
+It helps the investigator avoid repeating unchanged routes; it does not decide
+retry policy or establish absence. LinkUp's effective external strategy remains
+`static_fetch`; changing only the Read focus does not change that strategy.
+The history is not persistent semantic memory. Answer receives actionable
+acquisition limitations rather than the full worker operation log. Existing
+forensic and body-free diagnostics keep their respective privacy boundaries.
 
 Successful Search and lexical Search produce `search_novelty_receipt` solely for
 safe acquisition diagnostics and forensic analysis. Its shape contains `provider`
@@ -314,15 +291,9 @@ remains navigation-only with zero material counts.
 Body-free acquisition timing and dogfood diagnostics retain only these counts and
 fixed provider/kind values, never queries, URLs, titles, highlights or bodies.
 Existing forensic acquisition-result events retain the diagnostic receipt under
-the existing privacy boundary. Research excludes it from model-facing
-`last_route`; no cumulative Search history, query-history field, novelty
-replacement or expected-yield prompt addition is supplied to the model. That
-novelty receipt does not change Answer or durable session records. Research and
-Answer instruction text includes the compact user-document clarification, so
-those instruction-derived cache families differ from the previous prompt.
-Packet ordering, the stable prefix, breakpoints and the `failed_external_reads`
-history remain intact. The telemetry has no stopping or
-semantic authority and establishes no stopping or answer-quality improvement.
+the existing privacy boundary. Search novelty counts remain excluded from model
+packets, including the compact acquisition history. They are not a stopping rule,
+utility score or evidence of relevance. Durable session records are unchanged.
 
 Read's target and mode have explicit mechanical meaning:
 
@@ -455,7 +426,7 @@ the exact selected material, including versions and views. Identity validation i
 not semantic entailment checking.
 
 `ResearchSession` receives this native result from the ordinary Research loop.
-Every `ask` starts fresh Research understanding and attention over the retained
+Every `ask` starts fresh Research briefing and attention over the retained
 acquisition library. Research receives the full prior question and answer text
 plus citation provenance derived from immutable saved turns. The provenance
 identifies the exact source and material each earlier answer cited, including
@@ -480,7 +451,7 @@ legacy Analyst-bearing turns retain their actual saved Analysis. No fake
 Analysis is manufactured. Completed-turn commits remain revision-checked, with
 neutral-turn validation alongside legacy validation. User documents live in an
 additive SQLite schema-2 table and are not copied into the turn payload.
-Run traces, working understanding, indexes, observer records and provider state
+Run traces, briefings, indexes, observer records and provider state
 are not session persistence fields. Reopening preserves actual Evidence and
 historical answer provenance without making past generated text evidentiary.
 All prior questions and answers are replayed verbatim for every Research call and
@@ -521,24 +492,12 @@ remain outside those stable boundaries. Transport, Exa policy and the credential
 broker remain mechanical infrastructure, with no semantic decision authority.
 
 For Research, the stable packet prefix remains `conversation_context`,
-`current_date`, `phase`, `question`, followed by the existing Research-context
-cache breakpoint. Present volatile fields serialize in this deliberate order:
-`working_understanding`, `catalog`, `last_route`, `failed_external_reads`, `evidence`,
-`pending_delivery`, `budget`, and
-`output_correction` last. Any other material fields survive unchanged in
-deterministic order before a present correction. Placing previous generated
-understanding and navigation before the latest route and Evidence presents
-current source material near the decision edge. Both Research and Answer place
-known identifying metadata, then deterministic unknown metadata, before exact
-`content` inside each Evidence item. The parsed object, exact text, IDs,
-Evidence membership and array ordering remain unchanged. Answer's top-level
-packet order and cache boundaries remain unchanged. This is presentation order,
-not an attention, retention, acquisition or Answer-policy change. No quality or
-latency benefit has been established. Removing
-`purpose` changes the Research schema and can change its cache-family identity;
-no compatibility family or persistent generated state is added. The growing
-conversation boundary, stable Research-context breakpoint and separate Answer
-family remain intact.
+`current_date`, `phase`, `question`, followed by its context cache breakpoint.
+Volatile fields are `research_briefing`, `catalog`, `acquisition_history`,
+`evidence`, `pending_delivery`, `budget`; other fields remain lossless in
+stable order and `output_correction` comes last. Exact original content follows
+identifying metadata. Prompt/schema changes naturally change cache identities;
+there is no compatibility family or cache-derived semantic authority.
 
 ## Safe development observations
 

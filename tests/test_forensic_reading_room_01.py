@@ -30,7 +30,7 @@ def test_forensic_events_capture_exposure_rejection_and_stay_out_of_product_reco
 ):
     rejected = "SYNTHETIC_REJECTED_PASSAGE_837_ONLY_FOR_FORENSICS"
     source_body = "The stated value is seven."
-    model = Script(decision(), decision("answer", ["E1"]), answer(rejected), answer())
+    model = Script(decision(), decision("return", ["E1"]), answer(rejected), answer())
     store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
     dogfood = tmp_path / "turns.jsonl"
     forensic = tmp_path / "observer.jsonl"
@@ -77,7 +77,7 @@ def test_forensic_events_capture_exposure_rejection_and_stay_out_of_product_reco
 def test_without_forensic_log_ordinary_turn_has_no_sensitive_observer_file(tmp_path):
     store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
     dogfood = tmp_path / "turns.jsonl"
-    client = _client(store, model=Script(decision(), decision("answer", ["E1"]), answer()),
+    client = _client(store, model=Script(decision(), decision("return", ["E1"]), answer()),
                      dogfood_log=dogfood)
     assert submit(client).status_code == 303
     assert store.list_sessions()[0].revision == 1
@@ -107,8 +107,8 @@ def test_forensic_write_failure_disables_sink_and_preserves_subsequent_turns(
     store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
     forensic = tmp_path / "observer.jsonl"
     unable = answer("No source establishes this.", posture="unable")
-    client = _client(store, model=Script(decision("answer"), unable,
-                                         decision("answer"), unable),
+    client = _client(store, model=Script(decision("return"), unable,
+                                         decision("return"), unable),
                      forensic_log=forensic, search_provider=lambda _: pytest.fail("Unexpected search"))
     original_open = Path.open
     attempts = []

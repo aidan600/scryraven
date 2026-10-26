@@ -240,7 +240,7 @@ def test_ordinary_surfaces_resolve_the_same_effective_roles(
     monkeypatch.setenv("OPENAI_API_KEY", "offline-test-value")
     calls = []
     text = "No source establishes this conclusion."
-    outputs = iter([decision("answer"), answer(text, "unable")])
+    outputs = iter([decision("return"), answer(text, "unable")])
 
     def post(url, **kwargs):
         assert url == "https://api.openai.com/v1/responses"
@@ -282,7 +282,7 @@ def test_user_amendment_is_used_by_the_next_ordinary_turn(monkeypatch, tmp_path,
     monkeypatch.setenv("OPENAI_API_KEY", "offline-test-value")
     calls = []
     text = "No source establishes this conclusion."
-    outputs = iter([decision("answer"), answer(text, "unable")] * 2)
+    outputs = iter([decision("return"), answer(text, "unable")] * 2)
 
     def post(url, **kwargs):
         assert url == "https://api.openai.com/v1/responses"
@@ -345,7 +345,7 @@ def test_amended_answer_cache_and_telemetry_use_resolved_settings(monkeypatch, f
         assert url == "https://api.openai.com/v1/responses"
         calls.append(kwargs["json"])
         stage = kwargs["json"]["text"]["format"]["name"]
-        output = decision("answer") if stage == "research" else answer("No source establishes this.", "unable")
+        output = decision("return") if stage == "research" else answer("No source establishes this.", "unable")
         return Response({"status": "completed", "output": [{
             "type": "message", "content": [{"type": "output_text", "text": json.dumps(output)}],
         }]})

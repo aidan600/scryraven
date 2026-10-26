@@ -15,14 +15,13 @@ def test_identity_evidence_can_redirect_research_without_becoming_answer_authori
     redirect = decision(
         refs=["E1"],
         requests=[request(query="GE Passport takeoff-thrust range")],
-        interpretation="The modified base engine is Passport, not the aircraft engine.",
+        briefing="The modified base engine is Passport, not the aircraft engine.",
     )
-    redirect["understanding"]["established"] = [
-        {"statement": "The modified base engine is GE Passport.", "evidence_refs": ["E1"]},
-    ]
-    redirect["understanding"]["still_needed"] = ["What range does GE give for Passport?"]
-    redirect["understanding"]["last_route_result"] = "E1 identifies Passport."
-    finish = decision("answer", ["E1", "E3"], interpretation="The range is established by E3.")
+    redirect["briefing"] = (
+        "E1 identifies Passport as the modified base engine, distinct from the aircraft's CT7. "
+        "Still needed: the Passport thrust range."
+    )
+    finish = decision("return", ["E1", "E3"], briefing="The range is established by E3.")
     model = Script(
         first,
         redirect,
@@ -62,10 +61,10 @@ def test_identity_evidence_can_redirect_research_without_becoming_answer_authori
     assert queries == ["hybrid demonstration base engine", "GE Passport takeoff-thrust range"]
     assert [call[0] for call in model.calls] == ["research", "research", "research", "answer"]
     assert {item["id"] for item in model.calls[1][2]["evidence"]} == {"E1", "E2"}
-    assert model.calls[2][2]["working_understanding"] == redirect["understanding"]
+    assert model.calls[2][2]["research_briefing"] == redirect["briefing"]
     answer_packet = next(call[2] for call in model.calls if call[0] == "answer")
     assert [item["id"] for item in answer_packet["evidence"]] == ["E1", "E3"]
-    assert not {"working_understanding", "established", "still_needed"} & answer_packet.keys()
+    assert answer_packet["research_briefing"] == finish["briefing"]
     assert "CT7" in answer_packet["conversation_context"][0]["answer"]
     assert all("CT7" not in item["content"] for item in answer_packet["evidence"])
     assert [item.id for item in result.selected_evidence] == ["E1", "E3"]

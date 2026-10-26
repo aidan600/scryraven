@@ -35,7 +35,7 @@ _BREAKPOINTS = {"instructions", "history", "research_context"}
 _REASONING_EFFORTS = {"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"}
 _SERVICE_TIERS = {"default", "fast", "priority"}
 _CODES = {
-    "malformed_model_response", "unexposed_reference_or_action_shape",
+    "malformed_model_response", "invalid_action_shape", "research_validation_exhausted",
     "attention_packet_too_large", "supported_with_missing_information",
     "basis_user_premises_has_evidence", "basis_user_premises_has_readings",
     "basis_user_premises_unable", "basis_none_requires_unable",
@@ -346,7 +346,7 @@ class TurnDiagnostics:
         elif action == "research_bound":
             code = _one_of(event.get("code"), {
                 "deadline", "physical_model_requests", "external_attempts",
-                "provider_configuration_missing",
+                "provider_configuration_missing", "research_validation_exhausted",
             })
             if code is not None:
                 self.research_bounds[code] += 1
