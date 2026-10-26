@@ -29,7 +29,8 @@ references cannot expose sources. Schema/action failures have one Research
 correction per episode before an honest handoff of valid prior work. Citation
 validation retains its separate existing one-correction allowance.
 
-This revision passed 1024 offline tests with four filesystem-link environment
+Tested runtime `a30950ba7e2b2435e6a3fae54f38a94c57aefa8c` passed
+1024 offline tests with four filesystem-link environment
 skips, plus Ruff, compilation and pre-commit checks. Injected API/plan models and
 source fixtures exercised the real ordinary path, including briefing receipt,
 delegated revision, malformed-output bounds, calculation and durable follow-up. No live ScryRaven/model/acquisition calls or comparative

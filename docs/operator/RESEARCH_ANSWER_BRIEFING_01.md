@@ -215,8 +215,8 @@ The final full offline run passed **1024 tests, with 4 environment skips**, in
 forensic Reading Room and Reading Room tests; that environment-specific coverage
 is not claimed. The six new briefing integrations and focused recovery/contract
 checks also passed. Ruff, Python compilation over core/scryraven/scripts/tests,
-Git diff whitespace checks and configured pre-commit hooks passed. Final staged
-pre-commit confirmation is recorded with the delivery receipt.
+Git diff whitespace checks and all six configured pre-commit hooks passed,
+including a final run after the two new files were staged.
 
 Verification used the repository `.venv` interpreter and unique temporary roots.
 An external temporary `sitecustomize` guard denied external sockets/DNS during
@@ -259,9 +259,10 @@ automatically authorized.
 
 ### Local handoff
 
-Branch: `codex/research-answer-briefing-01`. Implementation is a local checkpoint
-above `c21d4274f8995ea601a91fb9bc5dbd0e7dbd368e`; the exact tested runtime commit
-and final head are recorded in the final delivery receipt. No material runtime
+Branch: `codex/research-answer-briefing-01`. Tested implementation commit:
+`a30950ba7e2b2435e6a3fae54f38a94c57aefa8c`, directly above
+`c21d4274f8995ea601a91fb9bc5dbd0e7dbd368e`. The final delivery receipt records
+the subsequent documentation-only head. No material runtime
 change followed the successful final regression. Subsequent report edits only
 record verification and commit identity. `main` remains
 `7afc75df4f28e9c3bb12dacfe729d7678c45a6ac`; rejected one-pass branch remains
