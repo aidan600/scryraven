@@ -37,11 +37,28 @@ opens secondary inline exact saved material with highlight/fetched-text labels;
 original PDFs and historical support coordinates remain available. The large
 inspector, dock/sheet layouts and overview/back navigation are removed.
 
-Verification and ordinary-product observations are in progress. The frozen
-questions, phase ceiling and eventual evidence are recorded in
-`docs/operator/CITATION_PREVIEWS_EDITORIAL_01.md`. No new semantic owner, model,
-retrieval policy, historical regeneration path or mandatory model interaction was
-introduced. No push, PR, merge or successor phase is authorized.
+Implementation revision `65a230a1c14e2b4696f525fb42c57f3dac3fb903` passed the full
+offline suite (1,071 passed, including real-browser checks), Ruff, compilation,
+whitespace and all six configured hooks. Desktop, 390px and 320px mobile fixtures
+were visually reviewed without overflow. Three ordinary browser submissions used
+17 physical model requests and 16 external attempts, with zero independent source
+checks. The Nobel lookup was direct with one faithful preview; the Waymo comparison
+had seven faithful previews and used native delegated Research. All eight generated
+descriptions, original links and exact excerpts survived durable reopening on
+desktop and mobile. The Zografos question could not identify an official statement
+and completed honestly unable without citations.
+
+Editorial restraint remains mixed: the comparison retains useful populations and
+denominators but also gratuitous caveats, repeated transit qualifications and an
+adjacent duplicate reference. Its physical Answer requests took 59.579 seconds;
+the compact lookup took 5.390 seconds. These unpaired observations do not establish
+causal editorial improvement or isolate preview latency. Exact outputs, screenshots,
+limits and the frozen questions are in
+`docs/operator/CITATION_PREVIEWS_EDITORIAL_01.md`; useful public cases are preserved
+as ignored local evaluation candidates. No runtime change followed that tested
+revision. No new semantic owner, model, retrieval policy, historical regeneration
+path or mandatory model interaction was introduced. Nothing was pushed or
+published; no PR, merge or successor phase is authorized.
 
 ## Research–Answer Convergence 01 — completed development evidence
 
@@ -53,7 +70,8 @@ using the existing personal ChatGPT-plan backend and credential doorman, with
 Luna/high Research and GPT-6.1 Sol/medium Answer. Existing 900-second, 40-physical-
 request and 16-external-attempt turn ceilings remain. Up to six separately
 recorded public adjudication checks were licensed. That campaign prohibited publication;
-the separate promotion authorization above supersedes its publication boundary.
+its subsequent promotion was separately reviewed and merged. Neither campaign
+renews publication authority or product runway for this local feature branch.
 
 Batch 1 completed three ordinary submissions at
 `aa28de720631e5236428d6dff8ae92af09928b2f`: exact historical BIPM prefix lookup,
@@ -200,7 +218,7 @@ quality, reliability or economy claim.
 
 ## Ordinary product architecture
 
-The approved Research–Answer briefing promotion candidate is pending merge, based
+The merged Research–Answer briefing implementation is based
 on the convergence source above and inherited operational-repair checkpoint
 `c21d4274f8995ea601a91fb9bc5dbd0e7dbd368e`. The Research-first/resumable Answer topology from PRs #677/#678
 survives: initial Luna Research -> Sol Answer -> optional delegated Luna Research
@@ -658,7 +676,8 @@ scenario premise without verifying that value externally.
 Research chooses external acquisition. Answer's local tools can inspect all legitimate
 retained session material independently. Answer owns meaning, interpretation,
 prose, completeness, supported/partial/unable posture, consequential missing needs
-and citations. The existing `SemanticAnswerDecision` schema is unchanged. A
+and citations. The primary `SemanticAnswerDecision` fields remain strict; optional
+generated citation descriptions are discarded locally when malformed. A
 completed valid primary Answer publishes directly through
 the strict deterministic citation resolver. Mandatory model localization, its
 region/use mapping machinery, automatic legacy whole-answer regeneration,
@@ -680,13 +699,14 @@ incomplete streams and Research notes cannot become a published answer. Premise-
 derivations need no Evidence citation even when unrelated originals are available;
 actual mixed factual claims retain Evidence citation requirements.
 
-New citations open the exact selected saved material through the existing generic
-Reader, with its original publication or retained PDF and selected-page identity.
+New Reading Room citations offer compact previews and direct publication access;
+the secondary saved excerpt uses the existing exact-material Reader, with its
+original publication or retained PDF and selected-page identity.
 They have no passage coordinates or highlighted-support claim. Historical citation
 records, occurrence-specific support coordinates and material/passage hashes remain
 readable and validated on reopen, without model/provider I/O or payload rewriting.
 Historical localized turns still show their saved support and surrounding context.
-The Reader's existing desktop/mobile layout and source overview are unchanged.
+Saved material now expands inline instead of opening the removed large inspector.
 Earlier public-web/PDF localization observations remain historical evidence in
 `docs/operator/CITATION_READER_DURABLE_SUPPORT_PRODUCT_01.md`.
 
