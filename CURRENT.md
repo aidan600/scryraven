@@ -21,10 +21,10 @@ source-free calculation used one Research and three Answer requests, zero
 acquisition, and 29.954 seconds. Its final amounts and fixed-fee explanation were
 correct; one Answer continuation recovered from an unsupported tuple expression.
 
-After two batches the campaign has used 6 of 12 submissions, 26 physical model
-requests (16 Research, 10 Answer), 21 external attempts and 368.986 product seconds.
+After three batches the campaign has used 9 of 12 submissions, 37 physical model
+requests (23 Research, 14 Answer), 29 external attempts and 475.986 product seconds.
 One of six independent public-source checks was used. Reported input/output tokens
-total 212,747/9,656. Plan credits and third-party charges are unknown. These are
+total 293,001/12,071. Plan credits and third-party charges are unknown. These are
 unmatched development observations, not causal efficiency or reliability estimates.
 
 Actual briefing receipt with supporting originals is demonstrated in live plan
@@ -101,13 +101,56 @@ Efficient adoption by Answer is a positive result even without novel findings;
 compact lookups leave direct Research answers as a future architectural option
 only. Answer bypass and dynamic model/effort selection remain unimplemented.
 
-The campaign is at the Batch 2 human-feedback boundary; Batch 3 has not started.
-Temporal completeness and the cost/length of developed answers remain concerns.
-Sparse/community access and genuine retained follow-ups remain to be observed in
-this campaign. Useful exact/sanitized cases from both batches are preserved in
-ignored local-evals. Complete batch checkpoints, marginal Answer-cost audits,
-source adjudication and the ledger remain under the external campaign root.
-There is no production recommendation or new publication authority.
+Batch 3 completed at `1b0838a46179c1a0effb197621ae1736c5d50577`, with no prompt,
+runtime, model or provider change after the accepted Batch 2 checkpoint:
+
+- Heidi Thorstensen: a concise honest partial. The acquired professional profile
+  establishes the relevant landscape/municipal career but no coffee employer or
+  role. Unrelated coffee-business owners were not conflated with her; lack of
+  evidence was not upgraded into proof of no coffee work. Three pairs of searches
+  mainly added unrelated or repeated material after identity was established.
+  Answer read a second retained view of the same profile without changing the
+  conclusion. Total 53.859 seconds, 6 physical requests (4 Research, 2 Answer),
+  6 external attempts; Answer's own requests used 13.578 seconds.
+- Path of Exile: a useful qualified overview of visible enthusiasm, preparation
+  pressure and interest in Allflame carrying forward, separating these from
+  unrevealed mechanics and population-wide preferences. Research warned against
+  conflicting/stale secondary claims; Answer adopted the adequate briefing in one
+  request with no extra inspection or research. Total 38.204 seconds, 3 requests
+  (2 Research, 1 Answer), 2 external attempts; Answer used 19.079 seconds. Usable
+  forum replies and reported community quotations arrived through Exa Search.
+  No Read failed, so this observation does not establish recovery or sensible
+  stopping after a materialization failure, nor general Reddit accessibility.
+- Genuine Waymo follow-up: the same completed B2C session and all 25 acquired
+  originals were reopened through the ordinary path. Research selected retained
+  crash-study, mileage and substitution material; Answer gave a short response
+  distinguishing human-driving benchmarks from the unproved citywide effect of
+  replacing Muni trips, without claiming the shift must be harmful. Total 14.937
+  seconds, 2 requests (1 per role), zero external acquisition and zero Answer
+  local inspection. Answer used 8.813 seconds. No new material was acquired; the
+  prior turn, source identities and historical support remain unchanged, and the
+  original B2C store's hash is unchanged.
+
+Batch 3 total: 107.000 seconds, 11 physical requests (7 Research, 4 Answer),
+8 external attempts, 80,254 reported input and 2,415 output tokens. All three
+answers reopened with unchanged exact support and passed capture/runtime audits;
+no schema/citation correction loop occurred. No repair or discretionary retest
+was made. The standalone Heidi question is not a replay of its missing historical
+follow-up state. PoE reuses the exact saved question in a fresh session on the
+current client date; differing source returns prevent causal historical claims.
+
+The campaign is at the Batch 3 human-feedback boundary, before a final promotion
+recommendation. Useful briefing adoption, targeted Klamath delegation, Waymo
+comparison and retained-source continuity are positive observations. Klamath's
+October 2025 construction milestone remains an unacquired-source coverage failure;
+no chronological checker or case-specific tuning was introduced. Temporal
+completeness, sparse-query marginal value, duplicated source views and developed
+Answer cost/length remain concerns. Correction of a consequential erroneous
+Research interpretation and behavior after failed community materialization are
+not newly demonstrated by this batch. Useful exact/sanitized cases from all three
+batches are preserved in ignored local-evals. Complete checkpoints, marginal
+Answer-cost audits, source adjudication and the ledger remain under the external
+campaign root. There is no production recommendation or new publication authority.
 
 ## Ordinary product architecture
 
