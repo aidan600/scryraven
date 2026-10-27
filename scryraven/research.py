@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Callable, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from core.exa_transport import search_exa
 from core.linkup_transport import fetch_linkup
@@ -73,6 +73,13 @@ class ResearchDecision(_Contract):
     evidence_refs: list[str | ExactPassage]
 
 
+class CitationDescription(_Contract):
+    """Optional generated presentation text, never acquired Evidence."""
+
+    source_ref: str = Field(min_length=1, max_length=2048)
+    description: str = Field(min_length=1, max_length=1200)
+
+
 class SemanticAnswerDecision(_Contract):
     """Primary Answer decision. It has no literal-reading field."""
 
@@ -80,6 +87,26 @@ class SemanticAnswerDecision(_Contract):
     support_basis: Literal["evidence", "user_premises", "none"]
     answer: str
     missing_information: str | None
+    citation_descriptions: list[CitationDescription] | None
+
+    @model_validator(mode="before")
+    @classmethod
+    def optional_descriptions(cls, value):
+        # Keep the primary decision strict. Optional display metadata is the
+        # only field repaired locally; it never spends Answer's correction.
+        if not isinstance(value, dict):
+            return value
+        descriptions = []
+        raw = value.get("citation_descriptions")
+        for row in raw if isinstance(raw, list) else ():
+            try:
+                item = CitationDescription.model_validate(row)
+            except ValidationError:
+                continue
+            text = " ".join(item.description.split())
+            if text:
+                descriptions.append({"source_ref": item.source_ref, "description": text})
+        return {**value, "citation_descriptions": descriptions or None}
 
 
 RESEARCH_PROMPT = """Investigate the user's whole question in its conversational
@@ -196,16 +223,20 @@ same interaction. Reconsider earlier findings when new material warrants it.
 Do not request more research merely to repeat a well-supported investigation.
 Delivery omissions are limitations, not evidence that the missing text agrees.
 
-Write a useful conversational answer. Give the conclusion or controlling
-distinction early. Keep simple lookups direct and compact. For analytical tasks,
-develop the important relationships, representative support, calculations and
-consequential qualifications rather than only a headline. Be substantial without
-repetition or tangents; roughly two pages is a soft editorial ceiling, not a target
-or a reason to discard important reasoning. Use a format suited to the question.
-Preserve relevant exceptions, conflicts and uncertainty. In comparisons, keep
-units, scope and observed-versus-modeled status visible. Explain how quantitative
-inputs determine the result. When an input is missing, explain what supplying it
-would resolve and which independent obstacles would remain.
+Answer the user's question directly and fully at the scope the evidence supports.
+State findings accurately without routinely explaining obvious limitations or
+enumerating what the sources do not establish. Include qualifications when they
+materially change the conclusion, resolve a genuine ambiguity, or identify a
+consequential unanswered part of the request. Assume the reader can understand
+ordinary provenance and context. Recognizing a limitation does not automatically
+create an obligation to narrate it. Prefer an appropriately scoped claim over an
+overbroad claim followed by defensive explanations.
+
+Give the conclusion or controlling distinction early and use a format suited to
+the question. Develop the reasoning, important relationships and representative
+support needed for a useful answer. Preserve consequential competing evidence.
+In comparisons, keep units, populations, scope and observed-versus-modeled status
+clear. Explain how quantitative inputs determine the result.
 
 The calculate tool performs deterministic arithmetic. Use numeric inputs from
 supplied sources, explicit user premises or prior calculation results. Its output
@@ -227,6 +258,16 @@ solely from explicit user premises, even if unrelated originals are available;
 make the conditional basis clear. Set support_basis=none with posture=unable
 when no supported conclusion is available. An external fact without sources or
 stipulated premises cannot become a user-premise answer.
+
+In citation_descriptions, provide one short description per distinct source you
+actually cite, normally one or two sentences explaining its contribution to this
+specific answer. Use a supplied source or material alias as source_ref; repeated
+citations reuse one description. Stay faithful to the original material supplied
+to you. A partial highlight does not mean you inspected the full publication.
+The title and publisher identify the source already: explain what it contributes,
+without duplicating the answer or adding a routine limitation sentence. These are
+optional generated presentation metadata, not Evidence or citation authority.
+The answer takes priority; use null when no descriptions are useful.
 
 All tools share the remaining turn resources. When further investigation cannot
 resolve the issue, give an honest useful partial or unable answer. No mandatory
@@ -724,6 +765,8 @@ def _run_turn(
         answer, citations, uses = resolve_citations(
             decision.answer, items, list(library.acquisitions), trace, documents=library.documents,
             require_citation=decision.support_basis == "evidence" and decision.posture != "unable",
+            descriptions=([item.model_dump() for item in decision.citation_descriptions]
+                          if decision.citation_descriptions else None),
         )
         # Store only exact material actually cited; unused answer context remains
         # acquired, and exposure receipts retain what the answer call received.
@@ -1174,7 +1217,7 @@ def _run_turn(
             if validation_error is not None:
                 raise validation_error
             if validated is not None:
-                emit("answer_decision", decision=validated.model_dump(exclude={"answer"}))
+                emit("answer_decision", decision=validated.model_dump(exclude={"answer", "citation_descriptions"}))
                 return validated
         else:
             # Four-argument injected models cannot carry a native continuation.
@@ -1187,7 +1230,7 @@ def _run_turn(
                             answer_library=owner_library, research_tool=investigate)
                 feedback = correction(final)
                 if feedback is None:
-                    emit("answer_decision", decision=final.model_dump(exclude={"answer"}))
+                    emit("answer_decision", decision=final.model_dump(exclude={"answer", "citation_descriptions"}))
                     return final
                 packet["output_correction"] = feedback
         emit("answer_validation_exhausted", code="answer_validation_exhausted", budget=budget.snapshot())

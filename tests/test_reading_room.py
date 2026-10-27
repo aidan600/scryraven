@@ -106,8 +106,10 @@ def test_exact_historical_citations_multiple_materials_and_all_acquisitions(tmp_
     ids = [a["id"] for tag, a in page.tags if "id" in a]
     assert len(ids) == len(set(ids))
     assert {"turn-1-source-1", "turn-2-source-1", "turn-3-source-1"} <= set(ids)
-    links = [a["href"] for tag, a in page.tags if a.get("class") == "citation"]
-    assert {"#turn-1-source-1", "#turn-2-source-1", "#turn-3-source-1"} <= set(links)
+    links = [a for tag, a in page.tags if a.get("class") == "citation"]
+    assert {"turn-1-source-1", "turn-2-source-1", "turn-3-source-1"} <= {a["data-source-id"] for a in links}
+    assert {a["href"] for a in links} == {c.url for turn in session.turns for c in turn.citations}
+    assert all(a["target"] == "_blank" and a["rel"] == "noopener noreferrer" for a in links)
     old = html.split('id="turn-1-source-1"', 1)[1].split('</details>', 1)[0]
     old_text = "".join(Page(old).text)
     assert EARLY in old_text and LATER[:100] not in old_text

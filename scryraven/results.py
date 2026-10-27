@@ -30,6 +30,7 @@ def resolve_citations(
     acquisitions: list[Evidence] | tuple[Evidence, ...], trace: list[dict], *,
     documents: tuple[SessionDocument, ...] = (),
     require_citation: bool = True,
+    descriptions: object = None,
 ) -> tuple[str, tuple[Citation, ...], tuple[CitationUse, ...]]:
     """Resolve only aliases for actual supplied material, grouping by source.
 
@@ -128,6 +129,19 @@ def resolve_citations(
         raise RunError("answer", "empty_answer", trace)
     if require_citation and not used:
         reject("missing_citation", "no_alias")
+    # Generated descriptions cannot establish membership. Match only through
+    # already-validated aliases to sources actually cited in the final prose.
+    previews: dict[str, str] = {}
+    for row in descriptions if isinstance(descriptions, list) else ():
+        if not isinstance(row, dict):
+            continue
+        ref, text = row.get("source_ref"), row.get("description")
+        if not isinstance(ref, str) or not isinstance(text, str) or not 1 <= len(text) <= 1200:
+            continue
+        source_id = aliases.get(ref)
+        text = " ".join(text.split())
+        if source_id in used and text:
+            previews.setdefault(source_id, text)
     citations = []
     for number, source_id in enumerate(used, 1):
         group = tuple(materials[source_id])
@@ -136,9 +150,11 @@ def resolve_citations(
             citations.append(Citation(
                 number, source_id, document.filename, "", group, "user_document", document.document_id,
                 document.filename, min(item.page_start for item in group), max(item.page_end for item in group),
+                description=previews.get(source_id),
             ))
         else:
-            citations.append(Citation(number, source_id, acquired[source_id].title, acquired[source_id].url, group))
+            citations.append(Citation(number, source_id, acquired[source_id].title, acquired[source_id].url, group,
+                                      description=previews.get(source_id)))
     citations = tuple(citations)
     trace.append({"stage": "citations", "action": "resolved", "source_ids": used,
                   "material_ids": [item.id for citation in citations for item in citation.materials]})

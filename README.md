@@ -55,8 +55,8 @@ Search; Research can select Serper for lexical/community/current discovery;
 LinkUp Fetch supplies external known-URL
 Read. There is no architecture selector, Analyst checkpoint,
 separate old Author handoff or fallback engine.
-See [research architecture](docs/architecture/RESEARCH.md) for the proposed
-contract pending merge.
+See [research architecture](docs/architecture/RESEARCH.md) for the shared
+Research–Answer contract.
 
 ## Reading Room
 
@@ -176,11 +176,14 @@ An answer completed after Research reaches its operating limit says so without
 changing its supported, partial or unable status. Source-free conditional answers
 are labeled as derived from your assumptions without external sources.
 
-Click **[1]** to inspect the exact material saved with that historical answer, or
-**Sources** for its publication overview. Evidence opens beside the answer on a
-wide screen, as an overlay on a laptop, and as a full sheet on a narrow screen.
-Long material can be expanded in full. **Open original publication** opens a new
-tab; the saved selections remain available when the original site changes.
+Hover or keyboard-focus **[1]** for a compact preview explaining what its source
+contributes. Click a web citation to open the original publication in a new tab;
+on touch screens, tap for the preview and its original-publication action. Tab,
+Arrow Down or Space enters preview actions; Escape dismisses it. **View saved
+excerpt** expands the exact saved material inline. **Sources** also exposes each
+publication and saved excerpt. Long saved material can be expanded in full, and
+saved selections remain available when the original site changes. Historical
+answers without descriptions still expose their source identity and both actions.
 
 Each session's **…** menu offers **Rename** and **Delete**. Rename preserves all
 research and requires no model call. Delete requires confirmation and permanently
@@ -191,8 +194,8 @@ reload the page before submitting it again.
 
 Flask supplies routing, escaping templates and the local HTTP server. All assets
 are local; no frontend framework or build step is needed. This is a local,
-single-user application, not a hosted service. JavaScript enhances the evidence
-sheet, working state and keyboard interactions; ordinary history, reading and
+single-user application, not a hosted service. JavaScript enhances citation
+previews, working state and keyboard interactions; ordinary history, reading and
 forms also work without it, with expandable source disclosures.
 
 ## Single-answer views and follow-ups
@@ -288,7 +291,8 @@ otherwise the first committed question supplies it without a model call.
 
 Each saved `SessionTurn` exposes question, answer, posture, stop reason,
 `selected_evidence`, `citations` and `citation_uses`. Citation records preserve
-answer-local numbers, canonical source IDs, titles, URLs and exact selected material;
+answer-local numbers, canonical source IDs, titles, URLs, exact selected material
+and optional generated descriptions;
 CitationUse records preserve the numeric markers' character spans. Historical
 packets are saved exactly, including targeted-view IDs, parents, bounds and content.
 They are not regenerated for display or automatically reused as current support.
@@ -418,8 +422,12 @@ citation can receive the existing single bounded Answer correction. Mechanical
 checks establish source custody, not semantic entailment. Citations receive
 compact source numbers in first-use order and save their exact selected material
 and citation-use spans, so later acquisitions cannot change historical inspection.
-New citations use generic saved-material inspection, with no invented passage
-highlights. Historical occurrence-specific passage support remains readable.
+The same final Answer interaction supplies optional short citation descriptions.
+Invalid metadata is discarded without invalidating the primary answer or making
+another model call. Descriptions match only validated cited sources and remain
+presentation metadata, never Evidence. New citations retain generic saved-material
+inspection, with no invented passage highlights. Historical occurrence-specific
+passage support remains readable.
 Views carry exact parent bounds; highlights never receive guessed offsets or
 invented page numbers.
 Source labels use publication metadata, PDF filenames or hostnames without

@@ -27,7 +27,13 @@ from scryraven.documents import (
 )
 from scryraven.dogfood_diagnostics import DogfoodLog, TurnDiagnostics
 from scryraven.forensic_log import ForensicLog
-from scryraven.presentation import answer_html, source_body_html, source_free_supported, source_label
+from scryraven.presentation import (
+    answer_html,
+    citation_preview_html,
+    source_body_html,
+    source_free_supported,
+    source_label,
+)
 from scryraven.session import ResearchSession
 from scryraven.session_store import (
     SessionConflictError,
@@ -179,8 +185,13 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                 "number": number, "question": turn.question, "posture": turn.posture,
                 "operating_bound": turn.stop_reason == "research_bound",
                 "source_free": source_free_supported(turn),
-                "answer": Markup(answer_html(turn, source_prefix=prefix)),
+                "answer": Markup(answer_html(turn, source_prefix=prefix, citation_previews=True)),
                 "sources": [{"number": c.number, "id": prefix + str(c.number), "title": source_label(c),
+                             "preview": Markup(citation_preview_html(
+                                 c, original_href=(url_for("original_pdf", session_id=metadata.session_id,
+                                                          document_id=c.document_id)
+                                                   if c.source_kind == "user_document" and c.document_id else None),
+                             )),
                              "body": Markup(source_body_html(
                                  c, collapse_long=True, uses=turn.citation_uses,
                                  original_href=(url_for("original_pdf", session_id=metadata.session_id,

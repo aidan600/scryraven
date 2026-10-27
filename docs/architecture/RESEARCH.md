@@ -473,13 +473,22 @@ remain validated against their own snapshots; a corrupt material, range or hash
 cannot reopen as trusted support. Historical records missing the additive support
 field remain readable without payload rewriting.
 
-Reading Room citation links identify their occurrence by the saved answer offset.
-The Reader renders exact retained Evidence: that use's support first, expandable
-surrounding context second, then the full saved material. The original source
-or PDF action remains prominent. Source-overview inspection remains generic.
-Reopening and inspection do not invoke models, fetch current publication text,
-or generate support coordinates. New answers use the generic saved-material Reader;
-historical localized turns retain their original occurrence-specific support.
+The existing final Answer response may supply short source-specific descriptions.
+The primary decision remains strict; missing or malformed optional descriptions
+are discarded locally without a correction call. Descriptions map through the
+validated selected-material aliases only to sources actually cited in the final
+answer. One optional description on each Citation snapshot survives durable
+storage; it never enters Evidence or future Research context. Historical records
+without descriptions reopen unchanged.
+
+Reading Room citation links identify their source and occurrence by the saved
+answer offset. Hover or keyboard focus opens a compact source preview, and web
+links open the exact original publication in a separate tab. Touch exposes the
+same preview and original action. View saved excerpt expands the inline exact
+retained Evidence, with acquisition labels and historical saved support/context
+where available. Original PDFs remain accessible. The large source inspector and
+its navigation are removed. Reopening and inspection do not invoke models, fetch
+current publication text, generate support coordinates or reconstruct text.
 
 The Reading Room and CLI disclose that no external sources were used for
 completed source-free supported/partial answers. Presentation derives this from

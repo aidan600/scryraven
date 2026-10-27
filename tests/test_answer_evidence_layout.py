@@ -144,5 +144,5 @@ def test_research_layout_unchanged_and_answer_validator_accepts_same_semantic_an
     raw_decision = model("answer", "instructions", answer_material,
                          SemanticAnswerDecision.model_json_schema())
     assert json.loads(_user_json(packets[1])) == answer_material
-    assert SemanticAnswerDecision.model_validate_json(raw_decision).model_dump() == decision
+    assert SemanticAnswerDecision.model_validate_json(raw_decision).model_dump(exclude={"citation_descriptions"}) == decision
     assert packets[1]["text"]["format"]["schema"] == SemanticAnswerDecision.model_json_schema()

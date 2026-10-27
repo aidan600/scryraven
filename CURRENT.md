@@ -1,40 +1,47 @@
 # ScryRaven Current Truth
 
-## Research–Answer Briefing Promotion 01 — pending merge
+## Production baseline and local feature branch
 
-The human and product architect approved the Research–Answer briefing design for
-promotion, subject to independent implementation review and offline verification.
-The promotion candidate is `codex/research-answer-briefing-promotion-01`, created
-directly from clean convergence source
-`980c7db06a23d0f6f0ed7a95cee6df020fe7f0a5`. The verified remote `main` and merge
-base are `7afc75df4f28e9c3bb12dacfe729d7678c45a6ac`. The proposed architecture below
-describes the state this branch would deliver after merge; it is not deployed on
-`main`. Publication is authorized after review and checks; merge is not authorized.
+Research–Answer Briefing Promotion 01 merged in PR #679 at
+`33511b268d9b07ab10bc0725d488132fb5e3f324`. A refreshed `origin/main` verified that
+commit before this phase. `codex/citation-previews-editorial-01` starts directly
+from it; unmerged aftercare documentation and rejected experiments were not
+incorporated. Production retains Luna/high Research, Sol/medium Answer and the
+shared Research-first resumable Answer path. The promotion report retains its
+offline verification and bounded semantic-evidence qualifications.
 
-Independent read-only architecture, mechanical-integrity and operational reviews
-found no consequential implementation defect or scope violation. No runtime,
-prompt, schema, model or provider change was needed for promotion. The cumulative
-diff includes the inherited operational repair `c21d427`; rejected one-pass,
-mixed-provider batching and parallel semantic-lane experiments are excluded.
-See `docs/operator/RESEARCH_ANSWER_BRIEFING_PROMOTION_01.md` for the review bundle,
-verification and existing product-evidence boundaries. This phase authorizes no
-live product/provider validation and does not renew the earlier campaign runway.
+## Citation previews and editorial restraint — local experimental implementation
 
-The promotion reran the complete offline suite with external sockets/DNS denied:
-1028 passed and four existing Windows link/junction environment skips. Ruff,
-compilation, Git whitespace checks and all six configured pre-commit hooks passed.
-Current verification details and the publication gate are in
-the promotion report; final commit/publication identities belong to the PR and
-delivery receipt. The first sandbox run encountered temporary-directory access
-errors; directing TEMP/TMP and pytest storage to the authorized C:\tmp root
-resolved them without a code change.
+The human authorized this coordinated presentation change, implementation and
+bounded ordinary-product observation. It is not deployed or published. Answer's
+editorial principle is to answer directly and fully within supported scope,
+including qualifications when they change the conclusion, resolve real ambiguity
+or identify a consequential unanswered request. Recognizing a limitation does not
+automatically require narrating it. Research's prompt and responsibilities,
+source grounding, critical judgment, chronology, comparison and calculation
+obligations remain unchanged.
 
-The preserved four-case Luna/high Answer screen at the same convergence source
-does not justify replacing Sol/medium. Compact Passport and retained follow-up
-were comparable; Waymo was acceptable but materially weaker; Klamath failed the
-reporting-cutoff judgment. It is reconstructed-packet fixed-evidence screening,
-not four new ordinary product cases. No model assignment changes are promoted.
-Its exact artifacts remain at `C:\tmp\scryraven-luna-answer-screen-01`.
+The existing final Answer response supplies optional source descriptions, normally
+one or two sentences. Missing or malformed metadata is discarded locally without
+invalidating an otherwise valid Answer or using a correction call. Descriptions
+match selected-material aliases only after citation validation and only for
+actually cited source identities. Each Citation snapshot stores one optional
+description separately from immutable Evidence. Multiple versions/excerpts and
+repeated references retain their original custody and numbering. Historical
+sessions reopen without descriptions, migrations or backfill model calls.
+
+Reading Room web citations link directly to the original publication in a new
+tab. Hover/focus opens a compact title/domain/description preview; touch exposes
+the same actions. Keyboard actions and Escape are supported. View saved excerpt
+opens secondary inline exact saved material with highlight/fetched-text labels;
+original PDFs and historical support coordinates remain available. The large
+inspector, dock/sheet layouts and overview/back navigation are removed.
+
+Verification and ordinary-product observations are in progress. The frozen
+questions, phase ceiling and eventual evidence are recorded in
+`docs/operator/CITATION_PREVIEWS_EDITORIAL_01.md`. No new semantic owner, model,
+retrieval policy, historical regeneration path or mandatory model interaction was
+introduced. No push, PR, merge or successor phase is authorized.
 
 ## Research–Answer Convergence 01 — completed development evidence
 

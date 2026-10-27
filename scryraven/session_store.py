@@ -149,6 +149,7 @@ class _CitationRecord(_Record):
     filename: str | None = None
     page_start: int | None = None
     page_end: int | None = None
+    description: str | None = None
 
 
 class _SupportRecord(_Record):
@@ -257,6 +258,7 @@ def _decode(payload: str, revision: int, documents: tuple[SessionDocument, ...] 
         citations = tuple(Citation(
             c.number, c.source_id, c.title, c.url, tuple(materials[ref] for ref in c.material_ids),
             c.source_kind, c.document_id, c.filename, c.page_start, c.page_end,
+            description=c.description,
         ) for c in saved.citations)
         _require(len({c.source_id for c in citations}) == len(citations))
         for number, citation in enumerate(citations, 1):
@@ -305,6 +307,8 @@ def _citation_record(citation: Citation) -> dict:
     if citation.source_kind != "web":
         row.update(source_kind=citation.source_kind, document_id=citation.document_id,
                    filename=citation.filename, page_start=citation.page_start, page_end=citation.page_end)
+    if citation.description is not None:
+        row["description"] = citation.description
     return row
 
 
