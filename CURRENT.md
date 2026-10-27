@@ -31,7 +31,15 @@ trajectory matches a previously observed economical path; no speedup is claimed.
 Actual briefing receipt with supporting originals is demonstrated in live plan
 execution. The BIPM briefing retained a stale request for source support after
 acquisition; Answer used the originals and completed without more research. This
-benign case does not justify mandatory briefing rewrites. The final calculation
+case led to a focused human-authorized prompt correction: when newly acquired
+material resolves a stated need or materially changes the interpretation, Research
+updates the account and removes obsolete needs while preserving unresolved ones.
+Null remains valid for genuinely unchanged understanding; no semantic checker,
+mandatory rewrite stage or new correction loop was added. Four injected native
+API/plan tests cover resolved and still-unresolved needs; the full offline suite
+passed 1028 tests with four filesystem-link environment skips, plus lint,
+compilation and pre-commit checks. These verify the handoff, not live prompt
+compliance. The final calculation
 shows a minor execution-interface problem: calculate accepts scalar arithmetic,
 while the model first supplied a tuple. Its tool description now explicitly
 states the scalar contract and separate calls for multiple results. This focused
@@ -51,7 +59,8 @@ Useful sanitized development candidates for all three witnesses are preserved in
 ignored `local-evals/candidates/research-answer-convergence-01-b1*-20261026`.
 No cases, historical gold or experiment branches were overwritten.
 
-The campaign is at its Batch 1 feedback boundary. Batch 2 and 3 have not started.
+Batch 1 feedback has been received. Batch 2 is being prepared after the focused
+briefing correction; Batch 2 and 3 have not yet started.
 Substantive relationships, autonomous delegated revision, sparse/community access
 and genuine retained follow-ups remain to be observed in this campaign. No
 production recommendation or successor campaign is authorized by these results.

@@ -94,6 +94,66 @@ def test_source_discovered_relationship_reaches_answer_with_originals(monkeypatc
 
 
 @pytest.mark.parametrize("backend", ["api", "chatgpt_plan"])
+@pytest.mark.parametrize("need_resolved", [True, False], ids=["resolved", "still-unresolved"])
+def test_new_evidence_preserves_or_resolves_stated_need_in_answer_briefing(monkeypatch, backend, need_resolved):
+    """Scripted judgments prove replacement/null plumbing, not live prompt compliance."""
+    revenue = ("The 2025 report states revenue of 12 units. "
+               "Separate profit statement: https://example.org/profit .")
+    profit = ("The final 2025 statement reports profit of 3 units." if need_resolved else
+              "The 2025 profit statement is not yet published; this notice supplies no profit figure.")
+    provisional = "Revenue is 12 units [E1]. The 2025 profit figure remains unresolved."
+    updated = "Revenue is 12 units [E1]; the final 2025 statement establishes profit of 3 units [E2]."
+    expected_briefing = updated if need_resolved else provisional
+
+    def investigate_stated_need(payload):
+        state = packet(payload)
+        assert state["evidence"][0]["content"] == revenue
+        return reply(decision(briefing=provisional, retain=["E1"], requests=[
+            request("read", target="https://example.org/profit")]))
+
+    def handoff_after_acquisition(payload):
+        state = packet(payload)
+        assert state["research_briefing"] == provisional
+        assert {row["id"]: row["content"] for row in state["evidence"]} == {
+            "E1": revenue, "E2": profit}
+        # Resolved work replaces the old need; a genuinely unchanged open need
+        # remains available without rewriting the same account.
+        return reply(decision(briefing=updated if need_resolved else None,
+                              action="return", refs=["E1", "E2"]))
+
+    def finish(payload):
+        state = packet(payload)
+        assert state["research_briefing"] == expected_briefing
+        assert {row["id"]: row["content"] for row in state["evidence"]} == {
+            "E1": revenue, "E2": profit}
+        if need_resolved:
+            assert "remains unresolved" not in state["research_briefing"]
+            return reply(answer("Revenue was 12 units [E1] and profit was 3 units. [E2]"))
+        assert "profit figure remains unresolved" in state["research_briefing"]
+        return reply(answer("Revenue was 12 units. [E1] The available notice supplies no profit figure. [E2]",
+                            "partial", missing="The 2025 profit figure"))
+
+    model, payloads, _ = scripted(monkeypatch, [
+        reply(decision(requests=[request(query="2025 report revenue and profit")])),
+        investigate_stated_need, handoff_after_acquisition, finish], backend)
+    observed = []
+    session = ResearchSession(
+        model=model, search=lambda _: [candidate("https://example.org/revenue", revenue)],
+        fetch=lambda url: FetchedMaterial(url, profit), lexical_search=forbidden, observe=observed.append)
+    result = session.ask("What were the 2025 revenue and profit?")
+
+    assert stages(payloads) == ["research", "research", "research", "answer"]
+    assert result.posture == ("supported" if need_resolved else "partial")
+    assert [citation.materials[0].content for citation in result.citations] == [revenue, profit]
+    exposure, = [event for event in observed
+                 if event["action"] == "exposure" and event["contract"] == "answer"]
+    assert exposure["research_briefing"] == expected_briefing
+    final, = [event for event in result.trace if event["action"] == "answer_decision"]
+    assert final["decision"]["missing_information"] == (None if need_resolved else "The 2025 profit figure")
+    assert not any(event["action"] == "response_rejected" for event in result.trace)
+
+
+@pytest.mark.parametrize("backend", ["api", "chatgpt_plan"])
 def test_delegated_revision_survives_native_continuation_and_durable_followup(monkeypatch, tmp_path, backend):
     question = "What is twice the winter limit currently in force?"
     url = "https://example.org/winter-limit"
