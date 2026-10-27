@@ -1,6 +1,6 @@
 # Citation Previews and Editorial Restraint 01
 
-Status: local implementation and verification complete; editorial observations mixed; not deployed.
+Status: local implementation and offline editorial correction complete; prior live editorial observations mixed; corrected prompt not live-tested; not deployed.
 
 Production base: `33511b268d9b07ab10bc0725d488132fb5e3f324`.
 Branch: `codex/citation-previews-editorial-01`.
@@ -62,10 +62,69 @@ consequential distinctions but still contains unnecessary caution and repetition
 Consistently restrained prose and a causal improvement over merged behavior are
 not established by these unpaired draws.
 
-Offline and ordinary-product tested implementation:
-`65a230a1c14e2b4696f525fb42c57f3dac3fb903`. Only documentation and evidence receipts
-change after that implementation checkpoint. No runtime change is excluded from
-the reported verification. The final delivery identifies the documentation head.
+Full-offline and ordinary-product tested implementation:
+`65a230a1c14e2b4696f525fb42c57f3dac3fb903`. The current branch additionally contains
+the focused editorial prompt correction below, verified only offline. All complete
+product outputs, screenshots and latency observations in this report predate that
+correction. The final delivery identifies the current local head.
+
+## Focused editorial correction
+
+The human authorized one prompt correction on the clean existing branch at
+`6f329713ac88e4a685b45132ce13c3e82b98a0a4`, with no further live calls or experiment.
+The concrete failure is the current 65a230a Waymo response reproduced below:
+it repeats the transit nonconclusion in the opening, section heading/lead and
+conclusion, and appends zero-risk, independent-replication and broad extrapolation
+cautions after establishing the findings' relevant scope. Vehicle/passenger-mile,
+crash/claim and substitution distinctions remain substantive analysis to preserve.
+
+Inspection covered the actual entire Answer prompt, including its source,
+highlight, PDF and delivery limits. Those grounding constraints remain intact.
+The follow-on writing paragraph's unconditional comparison checklist lacked a
+clear distinction between applying such constraints to claims and narrating them.
+It also lacked guidance against repeating a controlling limitation throughout.
+
+One paragraph now directs appropriately scoped findings and analysis of material
+consequences, omits generic or obvious qualifications that do not change the
+answer, and revisits an overarching limitation only for a consequential new
+distinction or revised conclusion. The original governing principle, analytical
+depth, source grounding, chronology, critical judgment, competing evidence,
+supported calculations and honest partial/unable answers remain. The patch does
+not change Research or any citation-preview generation contract, matching,
+validation, persistence or browser interaction. No length target, word prohibition,
+detector, style test framework or additional model stage was introduced.
+
+Exact prompt diff against `6f32971`:
+
+```diff
+@@
+ Give the conclusion or controlling distinction early and use a format suited to
+ the question. Develop the reasoning, important relationships and representative
+-support needed for a useful answer. Preserve consequential competing evidence.
+-In comparisons, keep units, populations, scope and observed-versus-modeled status
+-clear. Explain how quantitative inputs determine the result.
++support needed for a useful answer. Apply grounding, provenance and acquisition
++limits when scoping claims; they are not a checklist of disclosures. Explain
++material distinctions through their consequences for the question. Do not append
++general disclaimers, obvious logical qualifications or statements about what a
++source cannot prove when they do not change the answer. Once an overarching
++limitation is established, continue the analysis without repeating it across the
++introduction, individual sections and conclusion; revisit it only to add a
++consequential distinction or revise the conclusion. Preserve consequential
++competing evidence and honest partial answers. In comparisons, integrate the
++units, populations, scope and observed-versus-modeled basis needed to interpret
++the result into the analysis. Explain how quantitative inputs determine the result.
+```
+
+The correction passed 241 applicable existing offline tests, Ruff, Python
+compilation, whitespace checks and all six configured hooks. Tests exercise native
+delegation, briefing, grounding/posture contracts, citation correction, previews,
+premise-only answers, calculation, model transports/cache layout, retained sources
+and durable sessions through scripted I/O. No exact-prose test was added.
+An independent read-only review found the change confined to that editorial
+paragraph and preserving the surviving obligations. These checks establish
+mechanical compatibility, not editorial improvement. The corrected prompt has no
+new live evidence. Earlier outputs and evaluation gold were not rewritten.
 
 ## Implementation and removal
 

@@ -48,15 +48,25 @@ descriptions, original links and exact excerpts survived durable reopening on
 desktop and mobile. The Zografos question could not identify an official statement
 and completed honestly unable without citations.
 
-Editorial restraint remains mixed: the comparison retains useful populations and
-denominators but also gratuitous caveats, repeated transit qualifications and an
-adjacent duplicate reference. Its physical Answer requests took 59.579 seconds;
-the compact lookup took 5.390 seconds. These unpaired observations do not establish
-causal editorial improvement or isolate preview latency. Exact outputs, screenshots,
-limits and the frozen questions are in
+The live editorial evidence at `65a230a` remains mixed: the comparison retains
+useful populations and denominators but also gratuitous caveats, repeated transit
+qualifications and an adjacent duplicate reference. Its physical Answer requests
+took 59.579 seconds; the compact lookup took 5.390 seconds. The current Answer
+prompt now applies provenance/acquisition limits through claim scope, explains
+material distinctions through their consequences, and avoids generic caveats or
+repeating an established limitation without a new consequential distinction or
+revised conclusion. This focused correction changes one editorial paragraph;
+grounding, analytical depth, competing evidence and honest partials remain.
+It passed 241 applicable offline tests, Ruff, compilation, whitespace and all six
+hooks. No new live calls or experiment were authorized or performed. Its editorial
+effect is unobserved; offline checks do not demonstrate improved prose. The earlier
+unpaired observations do not establish causal improvement or isolate preview
+latency. Exact outputs, screenshots, the prompt diff, limits and frozen questions are in
 `docs/operator/CITATION_PREVIEWS_EDITORIAL_01.md`; useful public cases are preserved
-as ignored local evaluation candidates. No runtime change followed that tested
-revision. No new semantic owner, model, retrieval policy, historical regeneration
+as ignored local evaluation candidates. Only that editorial paragraph changed in
+runtime after the live-tested revision; citation previews, schema, matching,
+persistence and browser interaction are unchanged. No new semantic owner, model,
+retrieval policy, historical regeneration
 path or mandatory model interaction was introduced. Nothing was pushed or
 published; no PR, merge or successor phase is authorized.
 
