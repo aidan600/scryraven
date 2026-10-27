@@ -21,12 +21,11 @@ source-free calculation used one Research and three Answer requests, zero
 acquisition, and 29.954 seconds. Its final amounts and fixed-fee explanation were
 correct; one Answer continuation recovered from an unsupported tuple expression.
 
-The campaign has used 3 of 12 submissions, 10 physical model requests (5 Research,
-5 Answer), 2 external attempts and 72.579 product seconds; zero of six independent
-public-source checks were needed. Reported input/output tokens total 25,355/1,401.
-Plan credit use and third-party charges are unknown. These are development
-observations, not matched causal or general reliability estimates. The BIPM
-trajectory matches a previously observed economical path; no speedup is claimed.
+After two batches the campaign has used 6 of 12 submissions, 26 physical model
+requests (16 Research, 10 Answer), 21 external attempts and 368.986 product seconds.
+One of six independent public-source checks was used. Reported input/output tokens
+total 212,747/9,656. Plan credits and third-party charges are unknown. These are
+unmatched development observations, not causal efficiency or reliability estimates.
 
 Actual briefing receipt with supporting originals is demonstrated in live plan
 execution. The BIPM briefing retained a stale request for source support after
@@ -59,11 +58,56 @@ Useful sanitized development candidates for all three witnesses are preserved in
 ignored `local-evals/candidates/research-answer-convergence-01-b1*-20261026`.
 No cases, historical gold or experiment branches were overwritten.
 
-Batch 1 feedback has been received. Batch 2 is being prepared after the focused
-briefing correction; Batch 2 and 3 have not yet started.
-Substantive relationships, autonomous delegated revision, sparse/community access
-and genuine retained follow-ups remain to be observed in this campaign. No
-production recommendation or successor campaign is authorized by these results.
+Batch 2 completed three submissions at
+`a92a43899341c8a0a46a9bece25d690c4c313db7`, with the briefing correction and
+unchanged Luna/high Research, Sol/medium Answer and provider behavior:
+
+- Passport: useful compact supported answer, preserving two different published
+  GE thrust ranges. Research replaced its missing-thrust need with the acquired
+  result and discrepancy. Total 37.500 seconds, 4 physical requests and 4 external
+  attempts; Answer used one request, 9.500 seconds and no local inspection.
+- Klamath: useful developed answer with a material end-2025 coverage gap. Answer
+  requested contemporary restoration progress and original ODFW reporting rather
+  than repeating established engineering/CDFW work or using a January 2026 report
+  as if known by 2025. The delegated return added useful originals and qualifications.
+  Nevertheless, the final restoration section remained at midyear construction-
+  underway accounts, missing an October 2025 completion milestone on four priority
+  tributaries. Independent primary-source check P01 confirmed it; that report was
+  absent from the run's acquired corpus. A smaller acquired-source omission concerns
+  CDFW's attributed spawning geography upstream of Klamath Lake. Total 132.391
+  seconds, 7 requests and 9 external attempts; Answer's own requests used 66.297
+  seconds, with 19.031 seconds of nested delegated Research counted separately.
+- Waymo: strong qualified public-benefit comparison, preserving measured-versus-
+  conditional and per-mile-versus-systemwide distinctions. Answer productively
+  recovered a retained disability-access source; two other local reads largely
+  overlapped existing context. The response could be compressed without losing its
+  useful counterfactual reasoning. Total 126.516 seconds, 5 requests and 6 external
+  attempts; Answer used 78.328 seconds across two requests, including a 72.031-second
+  final response request. This is observed cost, not proof of redundant private
+  reasoning or a measured benefit from deleting the overlapping reads.
+
+Batch 2 total: 296.407 seconds, 16 physical requests (11 Research, 5 Answer),
+19 external attempts, 187,392 reported input and 8,255 output tokens. All three
+answers reopened with unchanged exact support; no schema/citation correction loop
+occurred. Passport and the complex-case transitions show the intended briefing
+update behavior in these draws; there was no separate wording-confirmation run.
+No further prompt change or discretionary retest was made after the batch.
+
+The earlier economical BIPM path remains historical context; no speedup is claimed.
+Klamath's source draws differ from prior control/one-pass campaigns, and the known
+completion omission prevents treating lower observed cost as equal-quality gain.
+The fresh Waymo comparison is not a replay of unavailable original organic context.
+Efficient adoption by Answer is a positive result even without novel findings;
+compact lookups leave direct Research answers as a future architectural option
+only. Answer bypass and dynamic model/effort selection remain unimplemented.
+
+The campaign is at the Batch 2 human-feedback boundary; Batch 3 has not started.
+Temporal completeness and the cost/length of developed answers remain concerns.
+Sparse/community access and genuine retained follow-ups remain to be observed in
+this campaign. Useful exact/sanitized cases from both batches are preserved in
+ignored local-evals. Complete batch checkpoints, marginal Answer-cost audits,
+source adjudication and the ledger remain under the external campaign root.
+There is no production recommendation or new publication authority.
 
 ## Ordinary product architecture
 
