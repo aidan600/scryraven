@@ -1,10 +1,11 @@
 # Ordinary Research / Evidence-first Answer architecture
 
 The ordinary topology is initial Luna Research -> Sol Answer with optional
-resumable delegated Research. The local briefing revision preserves the topology
+resumable delegated Research. The approved briefing promotion preserves the topology
 merged in [PR #677](https://github.com/aidan600/scryraven/pull/677) and passes
-Research interpretation alongside originals. It is experimental and unpromoted;
-see `docs/operator/RESEARCH_ANSWER_BRIEFING_01.md` for design and verification.
+Research interpretation alongside originals. This candidate is pending merge;
+see `docs/operator/RESEARCH_ANSWER_BRIEFING_PROMOTION_01.md` for current review and
+verification, and `docs/operator/RESEARCH_ANSWER_BRIEFING_01.md` for the historical design report.
 Research -> Analyst -> Author remains retired. There is no production selector,
 alternate engine or fallback. `CURRENT.md` distinguishes implementation from
 bounded demonstrations and remaining limitations.

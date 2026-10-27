@@ -1,7 +1,11 @@
 # Research–Answer briefing simplification 01
 
-Status: authorized local experimental implementation; offline verification only.
-No publication, promotion, live provider use or performance campaign is authorized.
+Status: historical local technical experiment and its original authorization.
+That phase authorized offline verification only, with no publication, promotion,
+live provider use or performance campaign. Its report and counts below are preserved.
+The subsequent approved promotion is pending merge; see
+[Research–Answer Briefing Promotion 01](RESEARCH_ANSWER_BRIEFING_PROMOTION_01.md)
+for current authority, review, verification and existing live evidence.
 
 ## Architecture determination
 

@@ -1,5 +1,9 @@
 # ScryRaven
 
+The approved Research–Answer briefing revision described here is pending merge.
+See the [promotion review](docs/operator/RESEARCH_ANSWER_BRIEFING_PROMOTION_01.md)
+for scope, verification and existing product evidence.
+
 ScryRaven researches public-web questions and writes cited answers from actual
 source material. Initial Research's semantic loop owns whole-question interpretation,
 evolving needs, acquisition direction and readiness for its initial handoff.
@@ -51,8 +55,8 @@ Search; Research can select Serper for lexical/community/current discovery;
 LinkUp Fetch supplies external known-URL
 Read. There is no architecture selector, Analyst checkpoint,
 separate old Author handoff or fallback engine.
-See [research architecture](docs/architecture/RESEARCH.md) for the production
-contract.
+See [research architecture](docs/architecture/RESEARCH.md) for the proposed
+contract pending merge.
 
 ## Reading Room
 

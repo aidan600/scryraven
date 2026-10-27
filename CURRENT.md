@@ -1,14 +1,52 @@
 # ScryRaven Current Truth
 
-## Research–Answer Convergence 01
+## Research–Answer Briefing Promotion 01 — pending merge
 
-The local convergence campaign is active on `codex/research-answer-convergence-01`,
-starting clean at `c2cd186531c52e1a9238056c973d50104ea8be14` from the briefing
-branch. The human authorized at most 12 ordinary submissions including retries,
+The human and product architect approved the Research–Answer briefing design for
+promotion, subject to independent implementation review and offline verification.
+The promotion candidate is `codex/research-answer-briefing-promotion-01`, created
+directly from clean convergence source
+`980c7db06a23d0f6f0ed7a95cee6df020fe7f0a5`. The verified remote `main` and merge
+base are `7afc75df4f28e9c3bb12dacfe729d7678c45a6ac`. The proposed architecture below
+describes the state this branch would deliver after merge; it is not deployed on
+`main`. Publication is authorized after review and checks; merge is not authorized.
+
+Independent read-only architecture, mechanical-integrity and operational reviews
+found no consequential implementation defect or scope violation. No runtime,
+prompt, schema, model or provider change was needed for promotion. The cumulative
+diff includes the inherited operational repair `c21d427`; rejected one-pass,
+mixed-provider batching and parallel semantic-lane experiments are excluded.
+See `docs/operator/RESEARCH_ANSWER_BRIEFING_PROMOTION_01.md` for the review bundle,
+verification and existing product-evidence boundaries. This phase authorizes no
+live product/provider validation and does not renew the earlier campaign runway.
+
+The promotion reran the complete offline suite with external sockets/DNS denied:
+1028 passed and four existing Windows link/junction environment skips. Ruff,
+compilation, Git whitespace checks and all six configured pre-commit hooks passed.
+Current verification details and the publication gate are in
+the promotion report; final commit/publication identities belong to the PR and
+delivery receipt. The first sandbox run encountered temporary-directory access
+errors; directing TEMP/TMP and pytest storage to the authorized C:\tmp root
+resolved them without a code change.
+
+The preserved four-case Luna/high Answer screen at the same convergence source
+does not justify replacing Sol/medium. Compact Passport and retained follow-up
+were comparable; Waymo was acceptable but materially weaker; Klamath failed the
+reporting-cutoff judgment. It is reconstructed-packet fixed-evidence screening,
+not four new ordinary product cases. No model assignment changes are promoted.
+Its exact artifacts remain at `C:\tmp\scryraven-luna-answer-screen-01`.
+
+## Research–Answer Convergence 01 — completed development evidence
+
+The local convergence campaign completed nine ordinary submissions on
+`codex/research-answer-convergence-01`, starting clean at
+`c2cd186531c52e1a9238056c973d50104ea8be14` from the briefing branch. Its original
+authorization allowed at most 12 ordinary submissions including retries,
 using the existing personal ChatGPT-plan backend and credential doorman, with
 Luna/high Research and GPT-6.1 Sol/medium Answer. Existing 900-second, 40-physical-
 request and 16-external-attempt turn ceilings remain. Up to six separately
-recorded public adjudication checks are licensed. Publication is prohibited.
+recorded public adjudication checks were licensed. That campaign prohibited publication;
+the separate promotion authorization above supersedes its publication boundary.
 
 Batch 1 completed three ordinary submissions at
 `aa28de720631e5236428d6dff8ae92af09928b2f`: exact historical BIPM prefix lookup,
@@ -139,8 +177,8 @@ was made. The standalone Heidi question is not a replay of its missing historica
 follow-up state. PoE reuses the exact saved question in a fresh session on the
 current client date; differing source returns prevent causal historical claims.
 
-The campaign is at the Batch 3 human-feedback boundary, before a final promotion
-recommendation. Useful briefing adoption, targeted Klamath delegation, Waymo
+The completed campaign informed the favorable human promotion decision above.
+Useful briefing adoption, targeted Klamath delegation, Waymo
 comparison and retained-source continuity are positive observations. Klamath's
 October 2025 construction milestone remains an unacquired-source coverage failure;
 no chronological checker or case-specific tuning was introduced. Temporal
@@ -150,15 +188,14 @@ Research interpretation and behavior after failed community materialization are
 not newly demonstrated by this batch. Useful exact/sanitized cases from all three
 batches are preserved in ignored local-evals. Complete checkpoints, marginal
 Answer-cost audits, source adjudication and the ledger remain under the external
-campaign root. There is no production recommendation or new publication authority.
+campaign root. These are bounded development observations, not a general
+quality, reliability or economy claim.
 
 ## Ordinary product architecture
 
-The local Research–Answer briefing revision is an unpromoted experiment on
-`codex/research-answer-briefing-01`, based on operational-repair checkpoint
-`c21d4274f8995ea601a91fb9bc5dbd0e7dbd368e`. Merged `main` remains
-`7afc75df4f28e9c3bb12dacfe729d7678c45a6ac`; the rejected one-pass experiment is
-not included. The Research-first/resumable Answer topology from PRs #677/#678
+The approved Research–Answer briefing promotion candidate is pending merge, based
+on the convergence source above and inherited operational-repair checkpoint
+`c21d4274f8995ea601a91fb9bc5dbd0e7dbd368e`. The Research-first/resumable Answer topology from PRs #677/#678
 survives: initial Luna Research -> Sol Answer -> optional delegated Luna Research
 returning to the same Answer interaction. Shipped model and provider choices
 are unchanged.
