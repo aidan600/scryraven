@@ -1,40 +1,76 @@
 # ScryRaven Current Truth
 
-## Research–Answer Briefing Promotion 01 — pending merge
+## Current implementation and lineage
 
-The human and product architect approved the Research–Answer briefing design for
-promotion, subject to independent implementation review and offline verification.
-The promotion candidate is `codex/research-answer-briefing-promotion-01`, created
-directly from clean convergence source
-`980c7db06a23d0f6f0ed7a95cee6df020fe7f0a5`. The verified remote `main` and merge
-base are `7afc75df4f28e9c3bb12dacfe729d7678c45a6ac`. The proposed architecture below
-describes the state this branch would deliver after merge; it is not deployed on
-`main`. Publication is authorized after review and checks; merge is not authorized.
+Research–Answer Briefing Promotion 01 merged in PR #679 at
+`33511b268d9b07ab10bc0725d488132fb5e3f324`. Citation Previews and Editorial
+Restraint 01 extends that implementation with the final editorial correction
+from `647a7268381e14336ec3c62980d78c2c118161c5` and an offline-verified keyboard
+focus repair. Unmerged aftercare documentation and rejected experiments are not
+part of this implementation. Luna/high Research, Sol/medium Answer and the shared
+Research-first resumable Answer path remain unchanged.
 
-Independent read-only architecture, mechanical-integrity and operational reviews
-found no consequential implementation defect or scope violation. No runtime,
-prompt, schema, model or provider change was needed for promotion. The cumulative
-diff includes the inherited operational repair `c21d427`; rejected one-pass,
-mixed-provider batching and parallel semantic-lane experiments are excluded.
-See `docs/operator/RESEARCH_ANSWER_BRIEFING_PROMOTION_01.md` for the review bundle,
-verification and existing product-evidence boundaries. This phase authorizes no
-live product/provider validation and does not renew the earlier campaign runway.
+## Citation previews and editorial restraint
 
-The promotion reran the complete offline suite with external sockets/DNS denied:
-1028 passed and four existing Windows link/junction environment skips. Ruff,
-compilation, Git whitespace checks and all six configured pre-commit hooks passed.
-Current verification details and the publication gate are in
-the promotion report; final commit/publication identities belong to the PR and
-delivery receipt. The first sandbox run encountered temporary-directory access
-errors; directing TEMP/TMP and pytest storage to the authorized C:\tmp root
-resolved them without a code change.
+The ordinary Reading Room includes compact citation previews and secondary exact
+saved excerpts. Answer's editorial principle is to answer directly and fully
+within supported scope,
+including qualifications when they change the conclusion, resolve real ambiguity
+or identify a consequential unanswered request. Recognizing a limitation does not
+automatically require narrating it. Research's prompt and responsibilities,
+source grounding, critical judgment, chronology, comparison and calculation
+obligations remain unchanged.
 
-The preserved four-case Luna/high Answer screen at the same convergence source
-does not justify replacing Sol/medium. Compact Passport and retained follow-up
-were comparable; Waymo was acceptable but materially weaker; Klamath failed the
-reporting-cutoff judgment. It is reconstructed-packet fixed-evidence screening,
-not four new ordinary product cases. No model assignment changes are promoted.
-Its exact artifacts remain at `C:\tmp\scryraven-luna-answer-screen-01`.
+The existing final Answer response supplies optional source descriptions, normally
+one or two sentences. Missing or malformed metadata is discarded locally without
+invalidating an otherwise valid Answer or using a correction call. Descriptions
+match selected-material aliases only after citation validation and only for
+actually cited source identities. Each Citation snapshot stores one optional
+description separately from immutable Evidence. Multiple versions/excerpts and
+repeated references retain their original custody and numbering. Historical
+sessions reopen without descriptions, migrations or backfill model calls.
+
+Reading Room web citations link directly to the original publication in a new
+tab. Hover/focus opens a compact title/domain/description preview; touch exposes
+the same actions. Keyboard actions and Escape are supported. View saved excerpt
+opens secondary inline exact saved material with highlight/fetched-text labels;
+original PDFs and historical support coordinates remain available. The large
+inspector, dock/sheet layouts and overview/back navigation are removed.
+
+The complete candidate, including the final editorial correction and keyboard
+repair, passed the full offline suite (1,072 passed, including four real-browser
+checks), Ruff, compilation, whitespace and all six configured hooks. The repair
+keeps a focused citation's preview visible during browser focus scrolling and
+allows Tab navigation to reveal later citations; ordinary scroll dismissal remains.
+Earlier desktop, 390px and 320px mobile fixtures were visually reviewed without
+overflow at `65a230a1c14e2b4696f525fb42c57f3dac3fb903`. Three ordinary browser
+submissions used
+17 physical model requests and 16 external attempts, with zero independent source
+checks. The Nobel lookup was direct with one faithful preview; the Waymo comparison
+had seven faithful previews and used native delegated Research. All eight generated
+descriptions, original links and exact excerpts survived durable reopening on
+desktop and mobile. The Zografos question could not identify an official statement
+and completed honestly unable without citations.
+
+The live editorial evidence at `65a230a` remains mixed: the comparison retains
+useful populations and denominators but also gratuitous caveats, repeated transit
+qualifications and an adjacent duplicate reference. Its physical Answer requests
+took 59.579 seconds; the compact lookup took 5.390 seconds. The current Answer
+prompt now applies provenance/acquisition limits through claim scope, explains
+material distinctions through their consequences, and avoids generic caveats or
+repeating an established limitation without a new consequential distinction or
+revised conclusion. This focused correction changes one editorial paragraph;
+grounding, analytical depth, competing evidence and honest partials remain.
+No new live calls or experiment were performed for correction or promotion.
+The corrected prompt's editorial effect is unobserved; offline checks do not
+demonstrate improved prose. The earlier
+unpaired observations do not establish causal improvement or isolate preview
+latency. Exact outputs, screenshots, the prompt diff, limits and frozen questions are in
+`docs/operator/CITATION_PREVIEWS_EDITORIAL_01.md`; useful public cases are preserved
+as ignored local evaluation candidates. Changes after the live-tested revision
+are the editorial paragraph and focused keyboard repair; source matching,
+validation and persistence are unchanged. No new semantic owner, model, retrieval
+policy, historical regeneration path or mandatory model interaction was introduced.
 
 ## Research–Answer Convergence 01 — completed development evidence
 
@@ -46,7 +82,8 @@ using the existing personal ChatGPT-plan backend and credential doorman, with
 Luna/high Research and GPT-6.1 Sol/medium Answer. Existing 900-second, 40-physical-
 request and 16-external-attempt turn ceilings remain. Up to six separately
 recorded public adjudication checks were licensed. That campaign prohibited publication;
-the separate promotion authorization above supersedes its publication boundary.
+its subsequent promotion was separately reviewed and merged. Neither campaign
+renews its historical live-product runway.
 
 Batch 1 completed three ordinary submissions at
 `aa28de720631e5236428d6dff8ae92af09928b2f`: exact historical BIPM prefix lookup,
@@ -193,7 +230,7 @@ quality, reliability or economy claim.
 
 ## Ordinary product architecture
 
-The approved Research–Answer briefing promotion candidate is pending merge, based
+The merged Research–Answer briefing implementation is based
 on the convergence source above and inherited operational-repair checkpoint
 `c21d4274f8995ea601a91fb9bc5dbd0e7dbd368e`. The Research-first/resumable Answer topology from PRs #677/#678
 survives: initial Luna Research -> Sol Answer -> optional delegated Luna Research
@@ -651,7 +688,8 @@ scenario premise without verifying that value externally.
 Research chooses external acquisition. Answer's local tools can inspect all legitimate
 retained session material independently. Answer owns meaning, interpretation,
 prose, completeness, supported/partial/unable posture, consequential missing needs
-and citations. The existing `SemanticAnswerDecision` schema is unchanged. A
+and citations. The primary `SemanticAnswerDecision` fields remain strict; optional
+generated citation descriptions are discarded locally when malformed. A
 completed valid primary Answer publishes directly through
 the strict deterministic citation resolver. Mandatory model localization, its
 region/use mapping machinery, automatic legacy whole-answer regeneration,
@@ -673,13 +711,14 @@ incomplete streams and Research notes cannot become a published answer. Premise-
 derivations need no Evidence citation even when unrelated originals are available;
 actual mixed factual claims retain Evidence citation requirements.
 
-New citations open the exact selected saved material through the existing generic
-Reader, with its original publication or retained PDF and selected-page identity.
+New Reading Room citations offer compact previews and direct publication access;
+the secondary saved excerpt uses the existing exact-material Reader, with its
+original publication or retained PDF and selected-page identity.
 They have no passage coordinates or highlighted-support claim. Historical citation
 records, occurrence-specific support coordinates and material/passage hashes remain
 readable and validated on reopen, without model/provider I/O or payload rewriting.
 Historical localized turns still show their saved support and surrounding context.
-The Reader's existing desktop/mobile layout and source overview are unchanged.
+Saved material now expands inline instead of opening the removed large inspector.
 Earlier public-web/PDF localization observations remain historical evidence in
 `docs/operator/CITATION_READER_DURABLE_SUPPORT_PRODUCT_01.md`.
 

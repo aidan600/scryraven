@@ -31,6 +31,7 @@ class Citation:
     filename: str | None = None
     page_start: int | None = None
     page_end: int | None = None
+    description: str | None = None
 
 
 @dataclass(frozen=True)
@@ -118,7 +119,8 @@ def render_cli(result: Result | SessionTurn) -> str:
     return result.answer + "\n\n" + "\n".join(status) + ("\n\nSources\n" + sources if sources else "")
 
 
-def answer_html(result: Result | SessionTurn, *, source_prefix: str = "source-") -> str:
+def answer_html(result: Result | SessionTurn, *, source_prefix: str = "source-",
+                citation_previews: bool = False) -> str:
     # Only spans emitted by validation become links. Ordinary numeric brackets
     # in prose are not citations. Insert trusted fragment destinations before
     # Markdown parsing; raw HTML, images and autolinks remain disabled.
@@ -126,6 +128,7 @@ def answer_html(result: Result | SessionTurn, *, source_prefix: str = "source-")
     # It never survives rendering and contains no user-controlled HTML/URL syntax.
     marker = "sr-" + hashlib.sha256(result.answer.encode()).hexdigest() + "-"
     destinations = {f"#{marker}{use.number}-{use.start}": use for use in result.citation_uses}
+    citations = {citation.number: citation for citation in result.citations}
     parts = []
     previous = 0
     for use in result.citation_uses:
@@ -152,6 +155,17 @@ def answer_html(result: Result | SessionTurn, *, source_prefix: str = "source-")
                 token.attrSet("class", "citation")
                 token.attrSet("data-citation-start", str(use.start))
                 token.attrSet("aria-label", f"Inspect source {number}")
+                if citation_previews:
+                    citation = citations[number]
+                    token.attrSet("data-source-id", f"{source_prefix}{number}")
+                    token.attrSet("aria-controls", "citation-preview")
+                    token.attrSet("aria-haspopup", "dialog")
+                    token.attrSet("aria-expanded", "false")
+                    token.attrSet("aria-label", f"Source {number}: {source_label(citation)}")
+                    if citation.source_kind == "web" and safe_publication_url(citation.url):
+                        token.attrSet("href", citation.url)
+                        token.attrSet("target", "_blank")
+                        token.attrSet("rel", "noopener noreferrer")
             elif safe_publication_url(destination):
                 token.attrSet("target", "_blank")
                 token.attrSet("rel", "noopener noreferrer")
@@ -204,6 +218,24 @@ def _document_identity(citation: Citation, original_href: str | None) -> str:
     return ('<div class="source-identity"><p class="publisher-domain">User-provided document</p>'
             f'<p class="source-url">{escape(detail)}</p>{link}'
             f'<p class="scope">{escape(TEXT_ONLY_WARNING)}</p></div>')
+
+
+def citation_preview_html(citation: Citation, *, original_href: str | None = None) -> str:
+    """Generated presentation metadata beside an unchanged original-source action."""
+    if citation.source_kind == "user_document":
+        publisher = document_page_label(citation)
+        href = original_href if original_href and safe_original_href(original_href) else None
+        action = "Open original PDF"
+    else:
+        href = citation.url if safe_publication_url(citation.url) else None
+        publisher = urlsplit(href).hostname if href else "Web source"
+        action = "Open original publication"
+    description = (f'<p class="citation-description">{escape(citation.description)}</p>'
+                   if isinstance(citation.description, str) and citation.description.strip() else "")
+    link = (f'<a href="{escape(href, quote=True)}" target="_blank" rel="noopener noreferrer">'
+            f'{action} <span aria-hidden="true">↗</span></a>' if href else "Original source URL unavailable.")
+    return (f'<p class="publisher-domain">{escape(publisher)}</p>' + description
+            + f'<p class="source-url">{link}</p>')
 
 
 def _support_excerpts(material: Evidence, regions: list[SupportRegion], radius: int,

@@ -1,9 +1,5 @@
 # ScryRaven
 
-The approved Research–Answer briefing revision described here is pending merge.
-See the [promotion review](docs/operator/RESEARCH_ANSWER_BRIEFING_PROMOTION_01.md)
-for scope, verification and existing product evidence.
-
 ScryRaven researches public-web questions and writes cited answers from actual
 source material. Initial Research's semantic loop owns whole-question interpretation,
 evolving needs, acquisition direction and readiness for its initial handoff.
@@ -55,8 +51,8 @@ Search; Research can select Serper for lexical/community/current discovery;
 LinkUp Fetch supplies external known-URL
 Read. There is no architecture selector, Analyst checkpoint,
 separate old Author handoff or fallback engine.
-See [research architecture](docs/architecture/RESEARCH.md) for the proposed
-contract pending merge.
+See [research architecture](docs/architecture/RESEARCH.md) for the shared
+Research–Answer contract.
 
 ## Reading Room
 
@@ -74,7 +70,7 @@ Open [http://127.0.0.1:7331](http://127.0.0.1:7331) in your browser. Keep the te
 running; Ctrl+C stops the server. It binds only to `127.0.0.1`. If the port is busy,
 choose another with `--port 7339`. There is no remote bind option.
 
-**Launch with the private repository `.env`:** use the existing doorman, which
+**Launch with private credentials:** use the existing doorman, which
 supplies the child process environment without printing or exposing secret values.
 From the repository root in PowerShell:
 
@@ -83,7 +79,8 @@ $roomLogs = Join-Path $env:TEMP ('scryraven-room-' + [guid]::NewGuid().ToString(
 New-Item -ItemType Directory -Path $roomLogs | Out-Null
 $roomProcess = Start-Process .\.venv\Scripts\python.exe -WindowStyle Hidden -PassThru -WorkingDirectory (Get-Location).Path -ArgumentList @(
     'scripts/run_brokered_command_once.py', '--repo-root', ('"{0}"' -f (Get-Location).Path),
-    '--repo-env', '--stdout', ('"{0}\stdout.txt"' -f $roomLogs),
+    '--env-file', 'C:\Users\aidan\AppData\Local\ScryRaven\credentials.env',
+    '--stdout', ('"{0}\stdout.txt"' -f $roomLogs),
     '--stderr', ('"{0}\stderr.txt"' -f $roomLogs), '--status', ('"{0}\status.json"' -f $roomLogs),
     '--timeout-seconds', '28800', '--target-current-python', '--', '-m', 'scryraven.reading_room'
 )
@@ -137,8 +134,7 @@ still the durable product record, with questions, answers, retained Evidence and
 historical citations. For a doorman launch, append
 `'--dogfood-log', '"C:\tmp\scryraven-latency-01\turns.jsonl"'` to the target arguments above.
 
-**Forensic development dogfooding:** from a PowerShell session with the ordinary
-product credentials already available in its process environment, launch:
+**Forensic development dogfooding:** use the existing doorman-backed launcher:
 
 ```powershell
 pwsh -NoProfile -File .\scripts\forensic-reading-room.ps1
@@ -148,7 +144,10 @@ The launcher prints a sensitivity notice and opens the ordinary Reading Room on
 `http://127.0.0.1:7332` (`-Port 7442` overrides it). Each launch creates a unique
 child of `C:\tmp\scryraven-forensic` with `sessions.sqlite3`, a body-free
 `turns.jsonl`, a source-bearing `observer.jsonl`, and a safe `manifest.json`.
-It uses the existing process environment and does not load or copy `.env`.
+Its private doorman child loads the approved external credential file; the launcher
+never reads or copies credentials. The child explicitly selects the personal
+ChatGPT-plan backend with no API inference fallback. Ordinary launches keep their
+existing API default. See [plan backend details](docs/operator/CHATGPT_PLAN_BACKEND.md).
 The equivalent Reading Room option is `--forensic-log PATH`; it is never enabled
 by default. The ordinary dogfood log remains body-free, and the normal session
 database is not used by this launcher.
@@ -173,14 +172,17 @@ Completed answers, including limited results, are saved. A failed attempt keeps
 the question available to edit and leaves completed conversation intact.
 
 An answer completed after Research reaches its operating limit says so without
-changing its supported, partial or unable status. Source-free conditional answers
-are labeled as derived from your assumptions without external sources.
+changing its supported, partial or unable status. Completed source-free supported
+or partial answers state that no external sources were used.
 
-Click **[1]** to inspect the exact material saved with that historical answer, or
-**Sources** for its publication overview. Evidence opens beside the answer on a
-wide screen, as an overlay on a laptop, and as a full sheet on a narrow screen.
-Long material can be expanded in full. **Open original publication** opens a new
-tab; the saved selections remain available when the original site changes.
+Hover or keyboard-focus **[1]** for a compact preview explaining what its source
+contributes. Click a web citation to open the original publication in a new tab;
+on touch screens, tap for the preview and its original-publication action. Tab,
+Arrow Down or Space enters preview actions; Escape dismisses it. **View saved
+excerpt** expands the exact saved material inline. **Sources** also exposes each
+publication and saved excerpt. Long saved material can be expanded in full, and
+saved selections remain available when the original site changes. Historical
+answers without descriptions still expose their source identity and both actions.
 
 Each session's **…** menu offers **Rename** and **Delete**. Rename preserves all
 research and requires no model call. Delete requires confirmation and permanently
@@ -191,8 +193,8 @@ reload the page before submitting it again.
 
 Flask supplies routing, escaping templates and the local HTTP server. All assets
 are local; no frontend framework or build step is needed. This is a local,
-single-user application, not a hosted service. JavaScript enhances the evidence
-sheet, working state and keyboard interactions; ordinary history, reading and
+single-user application, not a hosted service. JavaScript enhances citation
+previews, working state and keyboard interactions; ordinary history, reading and
 forms also work without it, with expandable source disclosures.
 
 ## Single-answer views and follow-ups
@@ -288,7 +290,8 @@ otherwise the first committed question supplies it without a model call.
 
 Each saved `SessionTurn` exposes question, answer, posture, stop reason,
 `selected_evidence`, `citations` and `citation_uses`. Citation records preserve
-answer-local numbers, canonical source IDs, titles, URLs and exact selected material;
+answer-local numbers, canonical source IDs, titles, URLs, exact selected material
+and optional generated descriptions;
 CitationUse records preserve the numeric markers' character spans. Historical
 packets are saved exactly, including targeted-view IDs, parents, bounds and content.
 They are not regenerated for display or automatically reused as current support.
@@ -418,8 +421,12 @@ citation can receive the existing single bounded Answer correction. Mechanical
 checks establish source custody, not semantic entailment. Citations receive
 compact source numbers in first-use order and save their exact selected material
 and citation-use spans, so later acquisitions cannot change historical inspection.
-New citations use generic saved-material inspection, with no invented passage
-highlights. Historical occurrence-specific passage support remains readable.
+The same final Answer interaction supplies optional short citation descriptions.
+Invalid metadata is discarded without invalidating the primary answer or making
+another model call. Descriptions match only validated cited sources and remain
+presentation metadata, never Evidence. New citations retain generic saved-material
+inspection, with no invented passage highlights. Historical occurrence-specific
+passage support remains readable.
 Views carry exact parent bounds; highlights never receive guessed offsets or
 invented page numbers.
 Source labels use publication metadata, PDF filenames or hostnames without
@@ -480,7 +487,7 @@ authorized observation use fresh external output filenames:
 
 ```powershell
 New-Item -ItemType Directory -Force C:\tmp\scryraven-observation | Out-Null
-python scripts/run_brokered_command_once.py --repo-root C:\Users\aidan\ScryRaven --repo-env --stdout C:\tmp\scryraven-observation\answer.txt --stderr C:\tmp\scryraven-observation\trace.txt --status C:\tmp\scryraven-observation\status.json --timeout-seconds 1200 --target-current-python -- -m scryraven "What is the maximum allowed weight of a ten-pin bowling ball?" --trace
+python scripts/run_brokered_command_once.py --repo-root C:\Users\aidan\ScryRaven --env-file C:\Users\aidan\AppData\Local\ScryRaven\credentials.env --stdout C:\tmp\scryraven-observation\answer.txt --stderr C:\tmp\scryraven-observation\trace.txt --status C:\tmp\scryraven-observation\status.json --timeout-seconds 1200 --target-current-python -- -m scryraven "What is the maximum allowed weight of a ten-pin bowling ball?" --trace
 ```
 
 The doorman owns only secret custody and process plumbing; the product does not
@@ -504,6 +511,7 @@ pre-commit run --all-files
 
 Offline tests inject external transports into the ordinary application and do not
 prove model judgment. CI runs offline without provider credentials/calls.
-Scheduling, generalized routing/recovery, vector databases, uploads, desktop
-wrappers, semantic compression and calculation remain absent. Old providers are not
+Scheduling, generalized routing/recovery, vector databases, desktop wrappers and
+semantic compression remain absent. PDF uploads and bounded deterministic
+calculation are supported as described above. Old providers are not
 dormant fallbacks.

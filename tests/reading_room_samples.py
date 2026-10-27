@@ -70,12 +70,18 @@ def with_readings(final, *readings):
 
 
 def first_script(draft=DRAFT, *, reading=EARLY):
+    final = answer(draft)
+    final["citation_descriptions"] = [{
+        "source_ref": "E1",
+        "description": "Explains how tree shade reduces sunlight reaching the pavement and how leaves release water vapour.",
+    }]
     return (decision(), decision("return", ["E1"]),
-            with_readings(answer(draft), ("E1", reading)))
+            with_readings(final, ("E1", reading)))
 
 
 def early_local_turn(draft):
     *research_decisions, final = local_turn(draft)
+    final["citation_descriptions"] = [{"source_ref": "E1", "description": "Describes the cooling effects of shade and water released by leaves."}]
     return *research_decisions, with_readings(final, ("E1", EARLY))
 
 

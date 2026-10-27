@@ -14,6 +14,8 @@ from scryraven.presentation import (
     _SCRIPT,
     RESEARCH_BOUND_DISCLOSURE,
     SOURCE_FREE_DISCLOSURE,
+    answer_html,
+    citation_preview_html,
     render_cli,
     render_html,
     source_body_html,
@@ -113,6 +115,36 @@ def test_source_identity_uses_historical_domain_and_keeps_the_exact_original_lin
     link, = [a for tag, a in page.tags if tag == "a"]
     assert link["href"] == url and link["target"] == "_blank" and link["rel"] == "noopener noreferrer"
     assert not any(tag in {"img", "script", "iframe"} for tag, a in page.tags)
+
+
+def test_preview_escapes_generated_text_and_retains_exact_publication_action():
+    citation = replace(answer().citations[0], description='The source says <script>unsafe()</script> & "quoted".',
+                       url='https://example.test/old?edition=1&name="quoted"')
+    html = citation_preview_html(citation)
+    page = Page(html)
+    assert citation.description in "".join(page.text)
+    assert not any(tag in {"script", "img", "iframe"} for tag, _ in page.tags)
+    link, = [attrs for tag, attrs in page.tags if tag == "a"]
+    assert link["href"] == citation.url and link["target"] == "_blank"
+    assert "example.test" in page.text
+
+
+def test_historical_preview_uses_identity_and_link_without_inventing_description():
+    citation = answer().citations[0]
+    html = citation_preview_html(citation)
+    assert 'citation-description' not in html
+    assert citation.url in html and 'Open original publication' in html
+    assert 'Material ScryRaven used' not in html
+
+
+def test_reading_room_preview_links_only_validated_occurrences_and_keeps_identity_separate():
+    result = answer("A finding. [E1] Again. [E1] An ordinary [1].")
+    page = Page(answer_html(result, source_prefix="turn-2-source-", citation_previews=True))
+    links = [attrs for tag, attrs in page.tags if tag == "a"]
+    assert len(links) == 2
+    assert all(attrs["href"] == URL and attrs["data-source-id"] == "turn-2-source-1" for attrs in links)
+    assert all(attrs["aria-controls"] == "citation-preview" and attrs["aria-expanded"] == "false" for attrs in links)
+    assert "An ordinary [1]." in "".join(page.text)
 
 
 def test_first_validated_use_orders_sources_and_reuses_numbers_without_inline_titles():

@@ -1,101 +1,152 @@
 // Progressive enhancement only. Answers, history and forms are server rendered.
 (() => {
   const reader = document.querySelector('.reading-scroll');
-  const inspector = document.querySelector('#evidence-inspector');
-  const inspectorContent = inspector.querySelector('.inspector-content');
-  const inspectorTitle = inspector.querySelector('#inspector-title');
-  const inspectorNumber = inspector.querySelector('.inspector-number');
-  const inspectorScroll = inspector.querySelector('.inspector-scroll');
-  const companion = matchMedia('(min-width: 1024px)');
+  const preview = document.querySelector('#citation-preview');
   const narrow = matchMedia('(max-width: 760px)');
   let origin = null;
-  let sourceGroup = null;
-  let readingPosition = 0;
+  let dismissTimer = null;
+  let touchCitation = null;
+  let suppressedFocus = null;
 
-  function showInspector() {
-    if (!inspector.open) {
-      readingPosition = reader.scrollTop;
-      document.body.classList.add('evidence-open');
-      if (companion.matches) inspector.show();
-      else inspector.showModal();
-      reader.scrollTop = readingPosition;
+  function closePreview(restoreFocus = false) {
+    clearTimeout(dismissTimer);
+    const previous = origin;
+    preview.hidden = true;
+    previous?.setAttribute('aria-expanded', 'false');
+    previous?.classList.remove('is-previewed');
+    origin = null;
+    if (restoreFocus && previous) {
+      suppressedFocus = previous;
+      previous.focus({preventScroll: true});
     }
-    inspectorScroll.scrollTop = 0;
-    inspector.querySelector('.inspector-close').focus({preventScroll: true});
   }
 
-  function showSource(source, citationStart = null) {
-    sourceGroup = source.closest('.sources-overview');
-    inspectorTitle.textContent = source.querySelector('.source-title').textContent;
-    inspectorNumber.textContent = 'Source ' + source.querySelector('.source-number').textContent;
-    inspectorContent.replaceChildren(...source.querySelector('.source-body').cloneNode(true).childNodes);
-    inspectorContent.querySelectorAll('.citation-support').forEach(support => {
-      if (citationStart !== null && support.dataset.citationStart === citationStart) {
-        support.open = true;
-        support.classList.add('selected-support');
-      } else support.remove();
+  function positionPreview() {
+    if (!origin || preview.hidden) return;
+    const anchor = origin.getBoundingClientRect();
+    const card = preview.getBoundingClientRect();
+    const margin = 12;
+    const left = Math.min(Math.max(margin, anchor.left - 16), innerWidth - card.width - margin);
+    const below = anchor.bottom + 8;
+    const top = below + card.height <= innerHeight - margin ? below : Math.max(margin, anchor.top - card.height - 8);
+    preview.style.left = left + 'px';
+    preview.style.top = top + 'px';
+  }
+
+  function showPreview(citation) {
+    const source = document.getElementById(citation.dataset.sourceId);
+    if (!source) return;
+    clearTimeout(dismissTimer);
+    if (origin !== citation) closePreview();
+    origin = citation;
+    citation.setAttribute('aria-expanded', 'true');
+    citation.classList.add('is-previewed');
+    preview.querySelector('#citation-preview-title').textContent = source.querySelector('.source-title').textContent;
+    preview.querySelector('.citation-preview-number').textContent = 'Source ' + source.querySelector('.source-number').textContent;
+    preview.querySelector('.citation-preview-content').replaceChildren(...source.querySelector('.source-preview').cloneNode(true).childNodes);
+    preview.querySelector('.saved-excerpt-link').href = '#' + source.id + '-excerpt';
+    preview.hidden = false;
+    positionPreview();
+  }
+
+  function scheduleDismiss() {
+    clearTimeout(dismissTimer);
+    dismissTimer = setTimeout(() => {
+      if (!preview.matches(':hover') && !origin?.matches(':hover') &&
+          !preview.contains(document.activeElement) && document.activeElement !== origin) closePreview();
+    }, 180);
+  }
+
+  document.querySelectorAll('a.citation[data-source-id]').forEach(citation => {
+    citation.addEventListener('pointerenter', event => {
+      if (event.pointerType === 'touch') return;
+      suppressedFocus = null;
+      showPreview(citation);
     });
-    inspector.classList.add('showing-source');
-    showInspector();
-  }
-
-  function showOverview(group) {
-    sourceGroup = group;
-    inspectorTitle.textContent = 'Sources for this answer';
-    inspectorNumber.textContent = 'Saved with this answer';
-    inspectorContent.replaceChildren();
-    group.querySelectorAll('.source').forEach(source => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'overview-source';
-      button.append(source.querySelector('.source-number').cloneNode(true));
-      const title = document.createElement('span');
-      title.textContent = source.querySelector('.source-title').textContent;
-      button.append(title);
-      button.addEventListener('click', () => showSource(source));
-      inspectorContent.append(button);
+    citation.addEventListener('pointerleave', scheduleDismiss);
+    citation.addEventListener('focus', () => {
+      if (suppressedFocus !== citation) showPreview(citation);
     });
-    inspector.classList.remove('showing-source');
-    showInspector();
-  }
-
+    citation.addEventListener('blur', () => { suppressedFocus = null; scheduleDismiss(); });
+    citation.addEventListener('pointerdown', event => { touchCitation = event.pointerType === 'touch' ? citation : null; });
+    citation.addEventListener('click', event => {
+      if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+      // A touch tap exposes the same actions without depending on hover. Mouse
+      // clicks and keyboard Enter retain the direct original-publication link.
+      if (touchCitation === citation || !citation.hasAttribute('target')) {
+        event.preventDefault();
+        showPreview(citation);
+        if (event.detail === 0) preview.querySelector('.source-url a, .saved-excerpt-link').focus();
+      }
+      touchCitation = null;
+    });
+    citation.addEventListener('keydown', event => {
+      if ((event.key === 'Tab' && !event.shiftKey && !preview.hidden && origin === citation) ||
+          event.key === 'ArrowDown' || event.key === ' ') {
+        event.preventDefault();
+        showPreview(citation);
+        preview.querySelector('.source-url a, .saved-excerpt-link').focus();
+      }
+    });
+  });
+  preview.addEventListener('pointerenter', () => clearTimeout(dismissTimer));
+  preview.addEventListener('pointerleave', scheduleDismiss);
+  preview.addEventListener('focusout', scheduleDismiss);
+  preview.querySelector('.preview-close').addEventListener('click', () => closePreview(true));
+  preview.querySelector('.saved-excerpt-link').addEventListener('click', event => {
+    event.preventDefault();
+    const excerpt = document.getElementById(event.currentTarget.hash.slice(1));
+    const source = excerpt.closest('.source');
+    const citationStart = origin?.dataset.citationStart;
+    source.closest('.sources-overview').open = true;
+    source.open = true;
+    excerpt.open = true;
+    excerpt.querySelectorAll('.citation-support').forEach(support => {
+      support.open = support.dataset.citationStart === citationStart;
+    });
+    closePreview();
+    excerpt.querySelector('summary').focus({preventScroll: true});
+    excerpt.scrollIntoView({block: 'start', behavior: 'instant'});
+  });
+  preview.addEventListener('keydown', event => {
+    if (event.key !== 'Tab') return;
+    const controls = [...preview.querySelectorAll('a, button')];
+    if (event.shiftKey && document.activeElement === controls[0]) {
+      event.preventDefault();
+      suppressedFocus = origin;
+      origin.focus({preventScroll: true});
+    } else if (!event.shiftKey && document.activeElement === controls.at(-1)) {
+      event.preventDefault();
+      const all = [...document.querySelectorAll('a[href], button, summary, textarea, input:not([type=hidden])')]
+        .filter(el => !preview.contains(el) && el.getClientRects().length && !el.disabled);
+      const next = all[all.indexOf(origin) + 1];
+      closePreview();
+      next?.focus();
+    }
+  });
+  document.addEventListener('pointerdown', event => {
+    if (!preview.hidden && !preview.contains(event.target) && !origin?.contains(event.target)) closePreview();
+  });
+  document.addEventListener('focusin', event => {
+    if (!preview.hidden && !preview.contains(event.target) && event.target !== origin) closePreview();
+  });
+  reader.addEventListener('scroll', () => {
+    if (origin && document.activeElement === origin) {
+      const anchor = origin.getBoundingClientRect();
+      const viewport = reader.getBoundingClientRect();
+      if (anchor.bottom > viewport.top && anchor.top < viewport.bottom &&
+          anchor.right > viewport.left && anchor.left < viewport.right) {
+        positionPreview();
+        return;
+      }
+    }
+    closePreview();
+  }, {passive: true});
+  window.addEventListener('resize', () => closePreview());
   document.addEventListener('click', event => {
-    const citation = event.target.closest('a.citation');
-    if (citation) {
-      const source = document.getElementById(citation.hash.slice(1));
-      if (!source || !source.matches('.source')) return;
-      event.preventDefault();
-      origin?.classList.remove('is-inspected');
-      origin = citation;
-      origin.classList.add('is-inspected');
-      showSource(source, citation.dataset.citationStart);
-    }
-    const overview = event.target.closest('.sources-control');
-    if (overview) {
-      event.preventDefault();
-      origin?.classList.remove('is-inspected');
-      origin = overview;
-      showOverview(overview.closest('.sources-overview'));
-    }
     document.querySelectorAll('.session-actions[open]').forEach(menu => {
       if (!menu.contains(event.target)) menu.open = false;
     });
-  });
-  inspector.querySelector('.inspector-back').addEventListener('click', () => showOverview(sourceGroup));
-  inspector.querySelector('.inspector-close').addEventListener('click', () => inspector.close());
-  inspector.addEventListener('close', () => {
-    document.body.classList.remove('evidence-open');
-    reader.scrollTop = readingPosition;
-    origin?.classList.remove('is-inspected');
-    origin?.focus({preventScroll: true});
-  });
-  reader.addEventListener('scroll', () => {
-    if (inspector.open) readingPosition = reader.scrollTop;
-  }, {passive: true});
-  // Close when changing between dock and sheet so modal/focus state stays sound.
-  companion.addEventListener('change', () => {
-    if (!inspector.open) return;
-    inspector.close();
   });
 
   const askForm = document.querySelector('.ask-form');
@@ -184,7 +235,7 @@
   }
   document.addEventListener('keydown', event => {
     if (event.key !== 'Escape') return;
-    if (inspector.open) { inspector.close(); return; }
+    if (!preview.hidden) { event.preventDefault(); closePreview(true); return; }
     if (sidebar.classList.contains('is-open')) { closeHistory(); return; }
     if (rename) { location.href = rename.querySelector('.rename-cancel').href; return; }
     document.querySelectorAll('.session-actions[open]').forEach(menu => {

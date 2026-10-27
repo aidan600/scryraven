@@ -2,7 +2,11 @@
 
 Historical observation record. New-answer localization and fallback are superseded
 by [Answer Finalization Simplification 01](ANSWER_FINALIZATION_SIMPLIFICATION_01.md).
-Saved historical support and the Reader remain supported.
+Saved historical support and exact-source custody remain supported. The large
+Reader presentation described below is replaced by compact citation previews and
+secondary inline saved excerpts; see
+[Citation Previews and Editorial Restraint 01](CITATION_PREVIEWS_EDITORIAL_01.md).
+The observations below retain their original revisions and evidence boundaries.
 
 OUTCOME: Met over the authorized bounded implementation and PRODUCT observations.
 

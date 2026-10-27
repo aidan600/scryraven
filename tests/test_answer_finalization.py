@@ -43,7 +43,7 @@ def test_retired_reading_output_is_not_a_second_answer_contract():
     with pytest.raises(ValueError):
         SemanticAnswerDecision.model_validate({**answer(), "source_readings": []})
     assert set(SemanticAnswerDecision.model_fields) == {
-        "posture", "support_basis", "answer", "missing_information"}
+        "posture", "support_basis", "answer", "missing_information", "citation_descriptions"}
 
 
 @pytest.mark.parametrize("draft", ["Fact [E2]", "Fact [E1@0:5]"])
