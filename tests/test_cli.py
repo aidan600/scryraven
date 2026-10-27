@@ -13,7 +13,7 @@ from scryraven import model
 def test_cli_ordinary_run_invokes_research_and_answer_over_real_exa_adapter(monkeypatch, capsys, tmp_path):
     monkeypatch.setenv("OPENAI_API_KEY", "offline-test-value")
     monkeypatch.setenv("EXA_API_KEY", "offline-test-value")
-    outputs = iter([decision(), decision("answer", ["E1"]),
+    outputs = iter([decision(), decision("return", ["E1"]),
                     answer("The exact value is seven. [E1]")])
     stages, providers = [], []
 
@@ -28,7 +28,7 @@ def test_cli_ordinary_run_invokes_research_and_answer_over_real_exa_adapter(monk
             assert 'analysis' not in material and 'semantic_history' not in material
             if stages[-1] == 'answer':
                 assert material['evidence'][0]['content'] == 'The exact value is seven.'
-                assert 'working_understanding' not in material
+                assert material['research_briefing'] == 'Find the requested fact'
             output = next(outputs)
             text = json.dumps(output)
             return Response({'status': 'completed', 'output': [{'type': 'message', 'phase': 'final_answer',
@@ -58,10 +58,10 @@ def test_cli_ordinary_search_then_read_uses_linkup_not_exa_contents(monkeypatch,
     outputs = iter([
         decision(),
         decision(requests=[{
-            "kind": "read", "query": "", "target": "C1", "mode": "auto", "focus": "exact value",
-            "scope": [], "start_char": None, "end_char": None,
+            "kind": "read", "target": "C1", "mode": "auto", "focus": "exact value",
+            "start_char": None, "end_char": None,
         }]),
-        decision("answer", ["E1"]),
+        decision("return", ["E1"]),
         answer("The exact value is seven. [E1]"),
     ])
     providers = []

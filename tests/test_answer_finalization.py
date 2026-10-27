@@ -17,7 +17,7 @@ from scryraven.sources import Evidence, exact_view
 @pytest.mark.parametrize("posture", ["supported", "partial"])
 def test_valid_primary_answer_is_final_and_reader_opens_saved_material(tmp_path, posture):
     primary = answer("The stated value is seven. [E1]", posture)
-    model = Script(decision(), decision("answer", ["E1"]), primary)
+    model = Script(decision(), decision("return", ["E1"]), primary)
     store = SQLiteSessionStore(tmp_path / "answers.sqlite3")
     session = ResearchSession.create(store=store, model=model, search=search, fetch=no_fetch)
     result = session.ask("What value is stated?")
@@ -63,7 +63,7 @@ def test_unknown_alias_or_unsupplied_version_still_fails_custody(draft):
     (json.dumps(answer("No citation.")), {**answer(), "posture": "invalid"}),
 ])
 def test_shape_and_citation_errors_share_the_existing_single_correction(first, second):
-    model = Script(decision(), decision("answer", ["E1"]), first, second)
+    model = Script(decision(), decision("return", ["E1"]), first, second)
     result = run("What value is stated?", model=model, search=search, fetch=no_fetch)
     assert [call[0] for call in model.calls] == ["research", "research", "answer", "answer"]
     assert result.posture == "unable" and result.citations == result.selected_evidence == ()

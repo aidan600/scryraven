@@ -74,7 +74,7 @@ def test_one_shot_across_same_and_later_routes_with_safe_mode_telemetry(monkeypa
         diagnostics.observe(event)
 
     model = Script(decision(requests=[request(query="first"), request(query="second")]),
-                   decision(requests=[request(query="third")]), decision("answer", ["E1"]), answer())
+                   decision(requests=[request(query="third")]), decision("return", ["E1"]), answer())
     result = run("Value?", model=model, observe=observe)
     assert sorted((call["json"]["query"], call["json"]["type"]) for call in calls[:2]) == [
         ("first", "deep"), ("second", "auto"),
@@ -94,7 +94,7 @@ def test_one_shot_across_same_and_later_routes_with_safe_mode_telemetry(monkeypa
 def test_followup_or_retained_entry_uses_auto(monkeypatch, turn, retained):
     calls = []
     production_post(monkeypatch, calls)
-    model = Script(decision(), decision("answer"), answer("No established result.", "unable"))
+    model = Script(decision(), decision("return"), answer("No established result.", "unable"))
     run("Value?", model=model, session_turn=turn, retained_acquisitions=retained)
     assert [call["json"]["type"] for call in calls] == ["auto"]
 
@@ -113,7 +113,7 @@ def test_other_operations_do_not_consume_bootstrap(monkeypatch):
 
     model = Script(decision(requests=[request("search_lexical", "lexical"),
                                      request("read", target="C1"), request("find", "source")]),
-                   decision(), decision("answer"), answer("Not established.", "unable"))
+                   decision(), decision("return"), answer("Not established.", "unable"))
     result = run("Value?", model=model, lexical_search=lexical_search, fetch=fetch)
     assert lexical == ["lexical"] and reads == ["https://example.test/page"]
     assert [call["json"]["type"] for call in calls] == ["deep"]
@@ -125,7 +125,7 @@ def test_other_operations_do_not_consume_bootstrap(monkeypatch):
 def test_no_generic_search_means_no_deep_request(monkeypatch):
     calls = []
     production_post(monkeypatch, calls)
-    model = Script(decision("answer"), answer("Not established.", "unable"))
+    model = Script(decision("return"), answer("Not established.", "unable"))
     run("Value?", model=model)
     assert not calls
 
@@ -133,7 +133,7 @@ def test_no_generic_search_means_no_deep_request(monkeypatch):
 def test_executed_failure_consumes_bootstrap(monkeypatch):
     calls = []
     production_post(monkeypatch, calls, fail_first=True)
-    model = Script(decision(), decision(), decision("answer", ["E1"]), answer())
+    model = Script(decision(), decision(), decision("return", ["E1"]), answer())
     result = run("Value?", model=model)
     assert [call["json"]["type"] for call in calls] == ["deep", "auto"]
     assert result.posture == "supported"
@@ -143,7 +143,7 @@ def test_new_run_gets_its_own_bootstrap(monkeypatch):
     calls = []
     production_post(monkeypatch, calls)
     for _ in range(2):
-        run("Value?", model=Script(decision(), decision("answer", ["E1"]), answer()))
+        run("Value?", model=Script(decision(), decision("return", ["E1"]), answer()))
     assert [call["json"]["type"] for call in calls] == ["deep", "deep"]
 
 

@@ -73,7 +73,7 @@ def test_two_search_workers_enter_transport_together_and_out_of_order_completion
 
     model = Script(
         decision(requests=[request(query="one"), request(query="two")]),
-        decision("answer", ["E1"]),
+        decision("return", ["E1"]),
         answer(f"{ALPHA} [E1]"),
     )
     result = run("What is the alpha fact?", model=model, search=search, fetch=no_fetch)
@@ -82,7 +82,7 @@ def test_two_search_workers_enter_transport_together_and_out_of_order_completion
     assert result.evidence[0].content == ALPHA
     assert result.evidence[1].content == BETA
     assert result.citations[0].materials[0].id == "E1"
-    route = model.calls[1][2]["last_route"]
+    route = model.calls[1][2]["acquisition_history"]
     assert [item["material_ids"] for item in route] == [item["material_ids"] for item in serial]
     assert [item["candidate_refs"] for item in route] == [item["candidate_refs"] for item in serial]
     assert [item["id"] for item in model.calls[1][2]["evidence"]] == ["E1", "E2"]
@@ -154,9 +154,9 @@ def test_failure_keeps_its_position_and_does_not_cancel_the_other_search():
         return [lead("Beta", URL_B, BETA)]
 
     model = Script(decision(requests=[request(query="one"), request(query="two")]),
-                   decision("answer"), unable())
+                   decision("return"), unable())
     result = run("Value?", model=model, search=search, fetch=no_fetch)
-    route = model.calls[1][2]["last_route"]
+    route = model.calls[1][2]["acquisition_history"]
     assert [item["status"] for item in route] == ["error", "ok"]
     assert route[0]["code"] == "search_failed"
     assert route[1]["material_ids"] == ["E1"]
@@ -176,9 +176,9 @@ def test_configuration_missing_stays_a_fixed_code_beside_a_success(monkeypatch):
         return [lead("Beta", URL_B, BETA)]
 
     model = Script(decision(requests=[request(query="one"), request(query="two")]),
-                   decision("answer"), unable())
+                   decision("return"), unable())
     result = run("Value?", model=model, search=search, fetch=no_fetch)
-    route = model.calls[1][2]["last_route"]
+    route = model.calls[1][2]["acquisition_history"]
     assert [item.get("code") for item in route] == ["exa_configuration_missing", None]
     assert result.evidence[0].id == "E1"
 
@@ -205,7 +205,7 @@ def test_deep_is_preassigned_before_dispatch_even_when_auto_finishes_first(monke
 
     monkeypatch.setattr(exa.requests, "post", post)
     model = Script(decision(requests=[request(query="first"), request(query="second")]),
-                   decision("answer"), unable())
+                   decision("return"), unable())
     result = run("Value?", model=model)
     assert sorted(payloads) == [("first", "deep"), ("second", "auto")]
     assert [item.url for item in result.evidence] == [
@@ -241,12 +241,12 @@ def test_failed_deep_still_consumes_bootstrap_when_auto_finishes_first(monkeypat
     monkeypatch.setattr(exa.requests, "post", post)
     model = Script(decision(requests=[request(query="first"), request(query="second")]),
                    decision(requests=[request(query="later")]),
-                   decision("answer"), unable())
+                   decision("return"), unable())
     result = run("Value?", model=model)
     assert ("first", "deep") in payloads
     assert ("second", "auto") in payloads
     assert ("later", "auto") in payloads
-    first_route = model.calls[1][2]["last_route"]
+    first_route = model.calls[1][2]["acquisition_history"]
     assert [item["status"] for item in first_route] == ["error", "ok"]
     assert first_route[0]["code"] == "search_failed"
     assert "SECRET" not in json.dumps(result.trace)
@@ -268,7 +268,7 @@ def test_consumed_bootstrap_assigns_auto_to_the_whole_group(monkeypatch):
 
     monkeypatch.setattr(exa.requests, "post", post)
     model = Script(decision(requests=[request(query="one"), request(query="two")]),
-                   decision("answer"), unable())
+                   decision("return"), unable())
     run("Value?", model=model, session_turn=2)
     assert types == ["auto", "auto"] or sorted(types) == ["auto", "auto"]
 
@@ -296,14 +296,14 @@ def test_group_reservation_does_not_overspend_external_attempts(
 
     monkeypatch.setattr("scryraven.research.ThreadPoolExecutor", fail_pool)
     model = Script(decision(requests=[request(query=query) for query in queries]),
-                   decision("answer"), unable())
+                   decision("return"), unable())
     result = run("Value?", model=model, search=search, fetch=no_fetch,
                  limits=RunLimits(external_attempts=attempts))
     assert set(calls) == set(expected_calls)
     assert len(calls) == len(expected_calls)
     assert result.trace[-1]["budget"]["external_attempts"] == expected_external
     if attempts == 1:
-        assert [item["code"] for item in model.calls[1][2]["last_route"][1:]] == [
+        assert [item["code"] for item in model.calls[1][2]["acquisition_history"][1:]] == [
             "external_attempts", "external_attempts",
         ]
 
@@ -372,7 +372,7 @@ def test_mixed_operations_do_not_use_the_concurrent_executor(monkeypatch):
     ]
     for requests, kinds in routes:
         state["max"] = 0
-        model = Script(decision(requests=requests), decision("answer"), unable())
+        model = Script(decision(requests=requests), decision("return"), unable())
         result = run(f"Read {URL_A} and {URL_B}", model=model, search=search,
                      lexical_search=lexical, fetch=fetch)
         assert state["max"] <= 1
@@ -389,7 +389,7 @@ def test_find_then_search_pair_overlaps_only_the_searches():
 
     model = Script(
         decision(requests=[request("find", query="missing"), request(query="one"), request(query="two")]),
-        decision("answer"), unable(),
+        decision("return"), unable(),
     )
     result = run("Value?", model=model, search=search, fetch=no_fetch)
     timings = [event for event in result.trace if event["action"] == "acquisition_timing"]
@@ -433,7 +433,7 @@ def test_group_larger_than_three_never_submits_more_than_three_workers(monkeypat
         return [lead(query, f"https://example.org/{query}", f"The {query} value.")]
 
     requests = [request(query=f"q{index}") for index in range(1, 5)]
-    model = Script(decision(requests=requests), decision("answer"), unable())
+    model = Script(decision(requests=requests), decision("return"), unable())
     result = run("Value?", model=model, search=search, fetch=no_fetch)
     assert calls[:3] and set(calls) == {"q1", "q2", "q3", "q4"}
     assert [(pool.max_workers, pool.submits) for pool in pools] == [(3, 3)]
@@ -469,7 +469,7 @@ def test_five_searches_form_a_bounded_second_group(monkeypatch):
         return [lead(query, f"https://example.org/{query}", f"The {query} value.")]
 
     model = Script(decision(requests=[request(query=f"q{index}") for index in range(1, 6)]),
-                   decision("answer"), unable())
+                   decision("return"), unable())
     result = run("Value?", model=model, search=search, fetch=no_fetch)
     assert [(pool.max_workers, pool.submits) for pool in pools] == [(3, 3), (2, 2)]
     assert [item.id for item in result.evidence] == [f"E{index}" for index in range(1, 6)]
@@ -486,7 +486,7 @@ def test_observer_failure_does_not_change_evidence_or_the_answer():
 
     def script():
         return Script(decision(requests=[request(query="one"), request(query="two")]),
-                      decision("answer", ["E1"]),
+                      decision("return", ["E1"]),
                       answer(f"{ALPHA} [E1]"))
 
     control = run("What is the alpha fact?", model=script(), search=search, fetch=no_fetch)
@@ -538,6 +538,6 @@ def test_concurrent_exa_calls_share_the_timeout_snapshotted_at_dispatch(monkeypa
 
     monkeypatch.setattr(exa.requests, "post", post)
     model = Script(decision(requests=[request(query="first"), request(query="second")]),
-                   decision("answer"), unable())
+                   decision("return"), unable())
     run("Value?", model=model, clock=lambda: now["t"], limits=RunLimits(seconds=300))
     assert timeouts == [300.0, 300.0]

@@ -27,7 +27,7 @@ def test_same_route_request_indexes_and_durations_use_the_injected_clock():
 
     model = Script(
         decision(requests=[request(query="first"), request(query="second")]),
-        decision("answer"),
+        decision("return"),
         answer("The available material does not establish the requested conclusion.", "unable"),
     )
     result = run("What can be established?", model=model, search=search, fetch=no_fetch, clock=clock)
@@ -72,7 +72,7 @@ def test_existing_model_usage_boundary_populates_safe_call_record(monkeypatch):
 
     def post(_url, **kwargs):
         stage = kwargs["json"]["text"]["format"]["name"]
-        output = decision("answer") if stage == "research" else answer(
+        output = decision("return") if stage == "research" else answer(
             "No source establishes the conclusion.", "unable")
         usage = ({"input_tokens": 100, "input_tokens_details": {
             "cached_tokens": 20, "cache_write_tokens": 10,

@@ -35,7 +35,7 @@ def test_reopened_session_exposes_exact_prior_view_in_first_research_call(tmp_pa
                       SessionState((saved_cited_turn(view),), (parent,)))
 
     cited_answer = answer(f"The finding is 17 units. [{view.id}]")
-    model = Script(decision("answer", [view.id]), cited_answer)
+    model = Script(decision("return", [view.id]), cited_answer)
     session = ResearchSession.open(seed.metadata.session_id, store=SQLiteSessionStore(seed_store.path),
                                    model=model, search=no_external, fetch=no_external)
     result = session.ask("What was that exact finding?")
@@ -59,7 +59,7 @@ def test_only_immediately_prior_citations_are_preexposed_and_answer_is_not_selec
     store.commit(saved.metadata.session_id, 0, SessionState((first,), (older,)))
     store.commit(saved.metadata.session_id, 1,
                  SessionState((first, latest), (older, latest_material)))
-    model = Script(decision("answer"), answer("Still unresolved.", "unable"))
+    model = Script(decision("return"), answer("Still unresolved.", "unable"))
     session = ResearchSession.open(saved.metadata.session_id, store=store, model=model,
                                    search=no_external, fetch=no_external)
     session.ask("And now?")
@@ -76,7 +76,7 @@ def test_uncited_immediate_turn_does_not_reach_back_to_older_citations(tmp_path)
                            "unable", "not_established")
     store.commit(saved.metadata.session_id, 0, SessionState((first,), (older,)))
     store.commit(saved.metadata.session_id, 1, SessionState((first, uncited), (older,)))
-    model = Script(decision("answer"), answer("Still unresolved.", "unable"))
+    model = Script(decision("return"), answer("Still unresolved.", "unable"))
     session = ResearchSession.open(saved.metadata.session_id, store=store, model=model,
                                    search=no_external, fetch=no_external)
     session.ask("And now?")
@@ -99,7 +99,7 @@ def test_prior_cited_exposure_is_all_or_none_at_attention_bound(tmp_path):
     )
     store.commit(saved.metadata.session_id, 0,
                  SessionState((prior,), (first, second)))
-    model = Script(decision("answer"), answer("Still unresolved.", "unable"))
+    model = Script(decision("return"), answer("Still unresolved.", "unable"))
     session = ResearchSession.open(
         saved.metadata.session_id, store=store, model=model,
         search=no_external, fetch=no_external,

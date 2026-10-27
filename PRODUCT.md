@@ -82,19 +82,25 @@ honest, and the interface remains usable at narrow browser widths.
 
 ## Ordinary research architecture
 
-The production Research-first resumable Answer architecture uses two semantic
-roles. Initial Research interprets the whole original question, revises its working
-understanding, directs Search/Read/Find and chooses when useful selected originals are ready for
-an independent Answer. A fresh Answer interaction then interprets the question,
-relevant conversation, user premises and actual source text for itself.
+The Research-first resumable Answer architecture uses two semantic roles.
+Initial Research interprets the whole original question, investigates through
+Search/Read/Find, and develops a compact provisional briefing. Its findings,
+relationships, qualifications and consequential uncertainties reach Answer
+alongside selected original material. Research updates its account when useful;
+it need not repeatedly rewrite unchanged understanding.
+
+Answer owns final judgment and communication. It can adopt well-supported
+Research findings without reconstructing their discovery, inspect originals
+where scope, chronology, comparison or uncertainty warrants scrutiny, and revise
+or reject the briefing. A briefing is fallible working analysis, never external
+Evidence or an instruction that binds Answer.
 
 Answer may inspect the retained library, calculate, call `research(need)` for a
 consequential external information need, or complete a supported, partial or unable
 answer. Delegated Research investigates that need in the original question's
-context and returns exact originals, navigation and honest limitations to the
+context and returns the same kind of briefing, exact originals and honest limitations to the
 same continuing Answer interaction. No provisional final answer or full Answer
-restart is required. Research's generated understanding and assessments remain
-fallible continuity, never Evidence or a binding conclusion. No additional
+restart is required. No additional
 semantic owner, mandatory coverage checker, selector or alternate path is added.
 Current model assignments, bounded demonstrations and remaining limits are in
 `CURRENT.md`.
@@ -108,10 +114,11 @@ neither support nor nonexistence. A useful honest partial or unable answer is va
 The CLI, durable sessions and Reading Room share this ordinary architecture.
 Historical Analyst judgments remain inspectable semantic records only; new turns
 must not fabricate Analyst objects or use historical judgments as factual authority.
-Research chooses when the Evidence packet is ready, including when an operation
-needs no external factual support; Answer independently decides what the
-original/current request, explicit user premises and actual selected sources
-justify. Research's generated verdict, notes or draft must not bind Answer.
+Research chooses when it has a useful supported position or further acquisition
+is not worth its likely benefit, including when an operation needs no external
+factual support. Answer decides what the original/current request, explicit user
+premises and actual selected sources justify. Neither role may fill an external
+factual gap from unsupported model recollection.
 
 Bounded capability demonstrations are development evidence, not a universal
 reliability claim. Level 6 revision/recovery under superseding Evidence is not

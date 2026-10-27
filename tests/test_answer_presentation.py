@@ -27,7 +27,7 @@ URL = "https://example.test/rules"
 def answer(draft="The limit is **16 pounds**. [E1]", *, title="Official rules", content="Maximum: 16 pounds."):
     final = final_answer(draft)
     model = Script(decision(), decision(requests=[request("read", query="", target="C1")]),
-                   decision("answer", ["E1"]), final)
+                   decision("return", ["E1"]), final)
     return research.run(QUESTION, model=model,
                         search=lambda q: [DiscoveryCandidate(title, URL, "navigation")],
                         fetch=lambda url: FetchedMaterial(url, content))
@@ -38,7 +38,7 @@ def source_free_answer(posture="supported"):
     prose = ("The available information did not establish a result." if posture == "unable"
              else "Given your stated assumptions, the result is eight.")
     final = final_answer(prose, posture, support_basis=basis)
-    return research.run(QUESTION, model=Script(decision("answer"), final),
+    return research.run(QUESTION, model=Script(decision("return"), final),
                         search=lambda q: pytest.fail("Unexpected search"),
                         fetch=lambda url: pytest.fail("Unexpected read"))
 
@@ -118,7 +118,7 @@ def test_source_identity_uses_historical_domain_and_keeps_the_exact_original_lin
 def test_first_validated_use_orders_sources_and_reuses_numbers_without_inline_titles():
     sources = [DiscoveryCandidate(f"Long publication title {i}", URL + str(i), "navigation") for i in range(1, 4)]
     model = Script(decision(), decision(requests=[request("read", query="", target=f"C{i}") for i in range(1, 4)]),
-                   decision("answer", ["E1", "E2", "E3"]),
+                   decision("return", ["E1", "E2", "E3"]),
                    final_answer("First. [E2] Next. [[E1, E2]] Again. [[E1]] An ordinary [1] in prose."))
     result = research.run(QUESTION, model=model, search=lambda q: sources,
                           fetch=lambda url: FetchedMaterial(url, "Maximum: 16 pounds."))
@@ -180,7 +180,7 @@ def test_markdown_table_alignment_uses_csp_compatible_classes():
 
 
 def test_unable_empty_evidence_has_no_invented_sources_or_citations():
-    model = Script(decision("answer"), final_answer("The available evidence did not establish the weight limit.", "unable"))
+    model = Script(decision("return"), final_answer("The available evidence did not establish the weight limit.", "unable"))
     result = research.run(QUESTION, model=model, search=lambda q: [], fetch=lambda url: None)
     assert result.posture == "unable"
     assert result.citations == result.citation_uses == result.selected_evidence == ()

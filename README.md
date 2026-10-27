@@ -1,10 +1,15 @@
 # ScryRaven
 
+The approved Research–Answer briefing revision described here is pending merge.
+See the [promotion review](docs/operator/RESEARCH_ANSWER_BRIEFING_PROMOTION_01.md)
+for scope, verification and existing product evidence.
+
 ScryRaven researches public-web questions and writes cited answers from actual
 source material. Initial Research's semantic loop owns whole-question interpretation,
 evolving needs, acquisition direction and readiness for its initial handoff.
-Mechanical Search / Read / Find execute its choices. A fresh Evidence-first Answer
-independently determines what the selected sources justify. During that interaction,
+Mechanical Search / Read / Find execute its choices. Research hands Answer a
+compact provisional briefing with selected originals. Answer evaluates that work,
+can adopt or revise its findings, and owns the final response. During that interaction,
 Answer decides consequential further-information needs and final completion;
 delegated Research directs acquisition for the requested need. Generated Research
 state and prior answers are never Evidence.
@@ -50,8 +55,8 @@ Search; Research can select Serper for lexical/community/current discovery;
 LinkUp Fetch supplies external known-URL
 Read. There is no architecture selector, Analyst checkpoint,
 separate old Author handoff or fallback engine.
-See [research architecture](docs/architecture/RESEARCH.md) for the production
-contract.
+See [research architecture](docs/architecture/RESEARCH.md) for the proposed
+contract pending merge.
 
 ## Reading Room
 
@@ -420,9 +425,9 @@ invented page numbers.
 Source labels use publication metadata, PDF filenames or hostnames without
 generating titles from evidence text.
 
-The production path first runs whole-question Research, then one independent Answer
+The ordinary path first runs whole-question Research, then one Answer
 interaction with local library tools, calculator and optional `research(need)`.
-Research returns exact originals to the same native Answer continuation. Final
+Research returns its provisional findings and exact originals to the same native Answer continuation. Final
 missing information is a delivered limitation and never restarts the stage.
 
 One turn allows 40 physical model requests, 16 external acquisitions, a 900-second

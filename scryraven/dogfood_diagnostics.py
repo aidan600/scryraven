@@ -35,7 +35,7 @@ _BREAKPOINTS = {"instructions", "history", "research_context"}
 _REASONING_EFFORTS = {"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"}
 _SERVICE_TIERS = {"default", "fast", "priority"}
 _CODES = {
-    "malformed_model_response", "unexposed_reference_or_action_shape",
+    "malformed_model_response", "invalid_action_shape", "research_validation_exhausted",
     "attention_packet_too_large", "supported_with_missing_information",
     "basis_user_premises_has_evidence", "basis_user_premises_has_readings",
     "basis_user_premises_unable", "basis_none_requires_unable",
@@ -49,6 +49,7 @@ _CODES = {
     "empty_answer", "invalid_citation_reference", "malformed_citation_reference",
     "unknown_or_unselected_alias", "unresolved_answer_link", "answer_link_or_image",
     "exa_configuration_missing", "serper_configuration_missing",
+    "provider_configuration_missing",
     *LINKUP_FAILURE_CODES,
     "invalid_request", "invalid_request_kind", "invalid_request_field",
     "invalid_read_mode", "invalid_find_scope", "invalid_exact_range",
@@ -261,6 +262,11 @@ class TurnDiagnostics:
                 "read_mode": _one_of(event.get("mode"), _READ_MODES),
                 "provider": _one_of(event.get("provider"), _PROVIDERS),
                 "external": event.get("external") if type(event.get("external")) is bool else None,
+                "provider_dispatched": (
+                    event.get("provider_dispatched")
+                    if type(event.get("provider_dispatched")) is bool else None
+                ),
+                "suppressed": event.get("suppressed") if type(event.get("suppressed")) is bool else None,
                 "start_elapsed_seconds": _seconds(event.get("started_elapsed_seconds")),
                 "end_elapsed_seconds": _seconds(event.get("ended_elapsed_seconds")),
                 "duration_seconds": _seconds(event.get("duration_seconds")),
@@ -340,6 +346,7 @@ class TurnDiagnostics:
         elif action == "research_bound":
             code = _one_of(event.get("code"), {
                 "deadline", "physical_model_requests", "external_attempts",
+                "provider_configuration_missing", "research_validation_exhausted",
             })
             if code is not None:
                 self.research_bounds[code] += 1

@@ -70,7 +70,7 @@ def with_readings(final, *readings):
 
 
 def first_script(draft=DRAFT, *, reading=EARLY):
-    return (decision(), decision("answer", ["E1"]),
+    return (decision(), decision("return", ["E1"]),
             with_readings(answer(draft), ("E1", reading)))
 
 
@@ -91,13 +91,13 @@ def prepared_session(store):
     session = ResearchSession.open(session.session_id, store=store, search=no_io,
         fetch=lambda url: FetchedMaterial(url, LATER), model=Script(
             decision(requests=[request("read", query="", target="E1", mode="local"), request("read", query="", target="E1", mode="full")]),
-            decision("answer", ["E1", "E2"]),
+            decision("return", ["E1", "E2"]),
             with_readings(answer("Humidity can reduce evaporative cooling. **Shade remains useful.** [E1, E2]\n\n"
                                  "The full material adds a qualification to the earlier field note: local conditions matter. [E2]"),
                           ("E1", EARLY), ("E2", LATER[:120]))))
     session.ask(FOLLOWUP)
     def select_packet(material):
-        return decision("answer", [item["id"] for item in material["evidence"]])
+        return decision("return", [item["id"] for item in material["evidence"]])
     def cite_packet(material):
         selected = material["evidence"][0]
         return with_readings(
@@ -121,13 +121,13 @@ class AcceptanceModel:
         self.current = local()
 
     def __call__(self, stage, prompt, material, schema):
-        if stage == "research" and material["working_understanding"] is None and material["output_correction"] is None:
+        if stage == "research" and material["research_briefing"] is None and material["output_correction"] is None:
             question = material["question"]
             sleep(3)  # A visible, deterministic request-in-progress interval.
             if "failure" in question.lower():
                 raise RuntimeError("SYNTHETIC_PRIVATE_EXCEPTION_PATH_AND_PAYLOAD")
             if "unable" in question.lower():
-                replies = (decision("answer"), answer("The available material did not establish an answer to this question.", "unable"))
+                replies = (decision("return"), answer("The available material did not establish an answer to this question.", "unable"))
             else:
                 replies = early_local_turn(DRAFT) if material["conversation_context"] else first_script()
                 if "partial" in question.lower():
@@ -147,7 +147,7 @@ if __name__ == "__main__":
     if not store.list_sessions():
         prepared_session(store)
         empty = ResearchSession.create(store=store, title="A long research title that should fit quietly in the sidebar without widening it",
-            model=Script(decision("answer"), answer("The available material did not establish this answer.", "unable")), search=no_io, fetch=no_io)
+            model=Script(decision("return"), answer("The available material did not establish this answer.", "unable")), search=no_io, fetch=no_io)
         empty.ask("Unresolved question")
     print("Synthetic acceptance data only. All model and provider I/O is replaced.", flush=True)
     serve(create_app(store=store, session_options={"model": AcceptanceModel(), "search": source_search, "fetch": no_io}),

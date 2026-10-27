@@ -23,6 +23,13 @@ Use the doorman when a human has approved a credentialed command and its
 complete argv. The target command remains responsible for its own behavior.
 The doorman does not add retries, routing, budgets, or application policy.
 
+For the isolated forensic Reading Room, use
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\forensic-reading-room.ps1 -Port 7332 2>&1`.
+That development launcher supplies the same approved external credential-file
+path to this doorman; it never opens or parses the file. Its target explicitly
+selects ChatGPT-plan inference and checks acquisition-credential presence inside
+the private child. See [ChatGPT-plan launch details](CHATGPT_PLAN_BACKEND.md).
+
 ## Standard invocation
 
 From the repository root, prepare output paths outside the repository:

@@ -62,7 +62,7 @@ def rich_material():
         "current_date": "2026-09-20", "phase": "research", "question": Q2,
         "conversation_context": [{"question": Q1, "answer": ANSWER_A}],
         "evidence": [{"id": "E1", "content": BODY}],
-        "working_understanding": {"interpretation": "Resolve the follow-up"},
+        "research_briefing": "Resolve the follow-up",
         "catalog": {"materials": [{"id": "E1"}]}, "budget": {"semantic_remaining": 8},
         "output_correction": {"code": "invalid_reference"},
         "unrecognized_future_field": {"qualification": "only while idle", "order": [3, 1, 2]},
@@ -113,7 +113,7 @@ def test_navigation_prefix_stable_and_volatile_material_after_last_breakpoint(tr
     model, calls, _ = transport
     original = rich_material()
     changed = deepcopy(original)
-    for field in ("evidence", "working_understanding", "catalog", "failed_external_reads", "budget", "output_correction"):
+    for field in ("evidence", "research_briefing", "catalog", "acquisition_history", "budget", "output_correction"):
         changed[field] = {"changed": "volatile"}
     changed["catalog"] = {"materials": [{"id": "E2"}]}
     for material in (original, changed):
@@ -148,10 +148,9 @@ def test_research_packet_orders_volatile_fields_and_evidence_without_changing_ma
         "budget": {"semantic_remaining": 8},
         "pending_delivery": ["E2", "E1"],
         "evidence": [evidence, {"content": "Second exact body", "id": "E2"}],
-        "last_route": {"kind": "search"},
-        "failed_external_reads": [{"candidate_ref": "C1", "code": "linkup_timeout"}],
+        "acquisition_history": [{"candidate_ref": "C1", "code": "linkup_timeout"}],
         "catalog": {"materials": [{"id": "E2"}, {"id": "E1"}]},
-        "working_understanding": {"interpretation": "Passport is the base engine"},
+        "research_briefing": "Passport is the base engine",
         "a_unknown": ["keep", "this", "order"],
         "question": Q2, "phase": "research", "current_date": "2026-09-20",
         "conversation_context": [history],
@@ -165,7 +164,7 @@ def test_research_packet_orders_volatile_fields_and_evidence_without_changing_ma
     assert {**parsed, "catalog": material["catalog"]} == material == original
     assert list(parsed) == [
         "conversation_context", "current_date", "phase", "question",
-        "working_understanding", "catalog", "last_route", "failed_external_reads", "evidence",
+        "research_briefing", "catalog", "acquisition_history", "evidence",
         "pending_delivery", "budget",
         "a_unknown", "z_unknown", "output_correction",
     ]
@@ -186,9 +185,9 @@ def test_research_packet_orders_volatile_fields_and_evidence_without_changing_ma
     )
     assert blocks[1]["prompt_cache_breakpoint"] == {"mode": "explicit"}
     assert "prompt_cache_breakpoint" not in blocks[2]
-    assert blocks[2]["text"].startswith(', "working_understanding": ')
+    assert blocks[2]["text"].startswith(', "research_briefing": ')
     assert list(json.loads("{" + blocks[2]["text"][2:])) == [
-        "working_understanding", "catalog", "last_route", "failed_external_reads", "evidence",
+        "research_briefing", "catalog", "acquisition_history", "evidence",
         "pending_delivery", "budget",
         "a_unknown", "z_unknown", "output_correction",
     ]
@@ -315,10 +314,10 @@ def test_real_model_transport_through_ordinary_run_and_session_with_fake_respons
     model, calls, records = transport
     outputs = list(first_turn(highlights=True))
     if session_mode:
-        outputs += list(local_turn()) + [decision(), decision("answer", ["E2"]),
+        outputs += list(local_turn()) + [decision(), decision("return", ["E2"]),
                                          answer(FACT_C + " [E2]")]
-    replies = [("research" if "understanding" in output else "answer", output) for output in outputs]
-    replies.insert(0, ("research", '{"understanding":'))
+    replies = [("research" if "briefing" in output else "answer", output) for output in outputs]
+    replies.insert(0, ("research", '{"briefing":'))
 
     def post(url, **kwargs):
         calls.append(kwargs["json"])
@@ -342,7 +341,8 @@ def test_real_model_transport_through_ordinary_run_and_session_with_fake_respons
         later_answer = [material_of(call) for call in calls if call["text"]["format"]["name"] == "answer"][1]
         assert later_answer["conversation_context"] == [{"question": Q1, "answer": first.answer}]
         assert later_answer["evidence"][0]["content"] == BODY
-        assert "analysis" not in later_answer and "working_understanding" not in later_answer
+        assert "analysis" not in later_answer
+        assert later_answer["research_briefing"] == "Find the requested fact"
     else:
         first = research.run(Q1, model=model, search=provider.search, fetch=provider.fetch)
         assert len(provider.searches) == 1

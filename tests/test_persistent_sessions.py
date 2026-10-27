@@ -73,7 +73,7 @@ def test_historical_reopen_keeps_records_and_fresh_followup_never_sees_analyst(t
     assert session.turns[0] == old and session.turns[1].analysis is None
     assert current.answer == FACT_B + " [1]" and current.trace[-1]["budget"]["external_attempts"] == 0
     assert all("semantic_history" not in m and "analysis" not in m for _, _, m, _ in model.calls)
-    assert model.calls[0][2]["working_understanding"] is None
+    assert model.calls[0][2]["research_briefing"] is None
     assert [call[2] for call in model.calls if call[0] == "answer"][-1]["evidence"][0]["content"] == BODY
     restored = reopen(path, session.session_id)
     assert restored.turns[0] == old and render_html(Q1, restored.turns[0]) == html
@@ -108,7 +108,7 @@ def test_new_exact_view_after_reopen_preserves_historical_selected_text(tmp_path
         req = request("read", query="", target="C1")
         req.update(start_char=start, end_char=end)
         ref = f"E1@{start}:{end}"
-        return (decision(requests=[req]), decision("answer", [ref]),
+        return (decision(requests=[req]), decision("return", [ref]),
                 answer("Selected [" + ref + "]"))
     provider = Provider([candidate()], bodies={"https://example.test/pressure-standard": body})
     session = ResearchSession.create(store=store, model=Script(decision(), *read_range(0, 16)), search=provider.search, fetch=provider.fetch)
@@ -124,7 +124,7 @@ def test_new_exact_view_after_reopen_preserves_historical_selected_text(tmp_path
 
 def test_cli_create_list_reopen_and_native_followup(tmp_path, monkeypatch, capsys):
     path = tmp_path / "sessions.sqlite3"
-    install_model(monkeypatch, Script(decision("answer"), answer("Evidence unavailable.", "unable")))
+    install_model(monkeypatch, Script(decision("return"), answer("Evidence unavailable.", "unable")))
     monkeypatch.setattr("builtins.input", lambda _: "")
     assert cli.main([Q1, "--create-session", "--database", str(path)]) == 0
     session_id = SQLiteSessionStore(path).list_sessions()[0].session_id
@@ -134,7 +134,7 @@ def test_cli_create_list_reopen_and_native_followup(tmp_path, monkeypatch, capsy
     assert session_id in capsys.readouterr().out
     assert cli.main(["--resume", session_id, "--database", str(path)]) == 0
     assert Q1 in capsys.readouterr().out
-    install_model(monkeypatch, Script(decision("answer"), answer("Still unavailable.", "unable")))
+    install_model(monkeypatch, Script(decision("return"), answer("Still unavailable.", "unable")))
     assert cli.main([Q2, "--resume", session_id, "--database", str(path)]) == 0
     assert reopen(path, session_id).metadata.revision == 2
 
@@ -143,7 +143,7 @@ def test_cli_store_errors_do_not_print_unsaved_answers(tmp_path, monkeypatch, ca
     path = tmp_path / "sessions.sqlite3"
     assert cli.main(["--resume", "missing", "--database", str(path)]) == 1
     assert capsys.readouterr().err == "ScryRaven session error: session_not_found\n"
-    install_model(monkeypatch, Script(decision("answer"), answer("UNSAVED_ANSWER", "unable")))
+    install_model(monkeypatch, Script(decision("return"), answer("UNSAVED_ANSWER", "unable")))
     def failed(*args):
         raise SessionStoreError()
     monkeypatch.setattr(SQLiteSessionStore, "commit", failed)

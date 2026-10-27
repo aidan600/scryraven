@@ -14,7 +14,7 @@ from test_research_loop import (
 )
 
 from scryraven.model import OpenAIModel
-from scryraven.research import ANSWER_PROMPT, run
+from scryraven.research import run
 from scryraven.session import ResearchSession
 from scryraven.session_store import SQLiteSessionStore
 
@@ -67,27 +67,11 @@ def assert_operational_inability(result):
 
 
 
-def test_answer_prompt_distinguishes_developed_analysis_from_compact_lookup():
-    prompt = " ".join(ANSWER_PROMPT.lower().split())
-    assert "for non-lookup questions" in prompt
-    assert "substantially develop" in prompt
-    assert "lookups direct and compact" in prompt
-    assert "soft editorial ceiling" in prompt
-
-
-
-
-
-
-
-
-
-
 def test_explicit_smaller_model_timeout_is_preserved_across_turns():
     now = [0.0]
     unable = answer("The requested fact remains unestablished.", "unable")
-    model = TimedModel(now, (0, decision("answer")), (0, unable),
-                       (0, decision("answer")), (0, unable), timeout_seconds=17)
+    model = TimedModel(now, (0, decision("return")), (0, unable),
+                       (0, decision("return")), (0, unable), timeout_seconds=17)
 
     first = run("First question?", model=model, search=search, fetch=no_fetch,
                 clock=lambda: now[0])
@@ -103,7 +87,7 @@ def test_explicit_smaller_model_timeout_is_preserved_across_turns():
 
 def test_operational_inability_round_trips_through_existing_session_schema(tmp_path):
     rejected = "SURROGATE_FAILED_SESSION_PASSAGE"
-    model = RecordingModel(decision(), decision("answer", ["E1"]),
+    model = RecordingModel(decision(), decision("return", ["E1"]),
                            answer(rejected), answer(rejected))
     store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
     session = ResearchSession.create(store=store, model=model, search=search, fetch=no_fetch)

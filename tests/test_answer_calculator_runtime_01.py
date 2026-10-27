@@ -12,7 +12,7 @@ from scryraven.dogfood_diagnostics import TurnDiagnostics
 from scryraven.errors import RunError
 from scryraven.forensic_log import ForensicLog
 from scryraven.model import OpenAIModel
-from scryraven.research import ANSWER_PROMPT, RunLimits, run
+from scryraven.research import RunLimits, run
 
 
 class Response:
@@ -78,7 +78,7 @@ def calculations_in(payload):
 def test_basic_user_premise_calculation_is_one_answer_attempt(monkeypatch):
     valid = answer("25 units from the stipulated 100 units.", support_basis="user_premises")
     transport = ScriptedResponses(
-        ("research", model_reply(decision("answer")), 0),
+        ("research", model_reply(decision("return")), 0),
         ("answer", tool_reply("100 * 0.25", "calc_1"), 0),
         ("answer", model_reply(valid), 0),
     )
@@ -110,7 +110,7 @@ def test_basic_user_premise_calculation_is_one_answer_attempt(monkeypatch):
 def test_chained_calculations_reuse_prior_result_and_aggregate_usage(monkeypatch):
     valid = answer("The stipulated result is 35.", support_basis="user_premises")
     transport = ScriptedResponses(
-        ("research", model_reply(decision("answer")), 0),
+        ("research", model_reply(decision("return")), 0),
         ("answer", tool_reply("100 * 1.2", "calc_a"), 0),
         ("answer", tool_reply("120 / 4", "calc_b"), 0),
         ("answer", tool_reply("30 + 5", "calc_c"), 0),
@@ -147,7 +147,7 @@ def test_answer_correction_keeps_calculations_in_same_interaction(monkeypatch):
     invalid = answer("A rejected provisional number.", support_basis="user_premises", missing="A consequential need")
     valid = answer("The stipulated result is 30.", support_basis="user_premises")
     transport = ScriptedResponses(
-        ("research", model_reply(decision("answer")), 0),
+        ("research", model_reply(decision("return")), 0),
         ("answer", tool_reply("100 * 1.2", "calc_a"), 0),
         ("answer", tool_reply("120 / 4", "calc_b"), 0),
         ("answer", model_reply(invalid), 0),
@@ -188,7 +188,7 @@ def test_tool_continuation_obeys_whole_turn_deadline(
 ):
     now = [0.0]
     transport = ScriptedResponses(
-        ("research", model_reply(decision("answer")), 0),
+        ("research", model_reply(decision("return")), 0),
         ("answer", tool_reply("100 / 4", "calc_a"), advance),
         now=now,
     )
@@ -209,7 +209,7 @@ def test_answer_continuation_uses_available_whole_turn_after_120_seconds(monkeyp
     now = [0.0]
     valid = answer("25 units from the stipulated 100.", support_basis="user_premises")
     transport = ScriptedResponses(
-        ("research", model_reply(decision("answer")), 0),
+        ("research", model_reply(decision("return")), 0),
         ("answer", tool_reply("100 / 4", "calc_a"), 120.1),
         ("answer", model_reply(valid), 0),
         now=now,
@@ -228,7 +228,7 @@ def test_evidence_derived_result_cites_inputs_not_calculator(monkeypatch):
     valid = answer("The derived energy is 1200 Wh. [E1]")
     transport = ScriptedResponses(
         ("research", model_reply(decision()), 0),
-        ("research", model_reply(decision("answer", ["E1"])), 0),
+        ("research", model_reply(decision("return", ["E1"])), 0),
         ("answer", tool_reply("100 * 12", "calc_a"), 0),
         ("answer", model_reply(valid), 0),
 
@@ -254,7 +254,7 @@ def test_missing_external_premise_remains_unestablished(monkeypatch):
     partial = answer("The source gives 100 Ah [E1], but no voltage needed for Wh.", posture="partial")
     transport = ScriptedResponses(
         ("research", model_reply(decision()), 0),
-        ("research", model_reply(decision("answer", ["E1"])), 0),
+        ("research", model_reply(decision("return", ["E1"])), 0),
         ("answer", model_reply(partial), 0),
 
     )
@@ -268,13 +268,11 @@ def test_missing_external_premise_remains_unestablished(monkeypatch):
     assert result.posture == "partial" and result.answer.endswith("Wh.")
     assert len(result.citations) == 1
     assert not any(event["action"] == "calculator_used" for event in result.trace)
-    assert "do not invent" in ANSWER_PROMPT.lower()
-    assert "missing contingent external input" in ANSWER_PROMPT.lower()
 
 
 def test_failed_continuation_preserves_known_usage_as_incomplete(monkeypatch):
     transport = ScriptedResponses(
-        ("research", model_reply(decision("answer")), 0),
+        ("research", model_reply(decision("return")), 0),
         ("answer", tool_reply("100 / 4", "calc_a"), 0),
         ("answer", requests.Timeout("private transport detail"), 0),
     )
@@ -300,7 +298,7 @@ def test_real_tool_round_trip_reaches_forensic_log_without_safe_body_leak(
 ):
     valid = answer("The stipulated 25% is 25 units.", support_basis="user_premises")
     transport = ScriptedResponses(
-        ("research", model_reply(decision("answer")), 0),
+        ("research", model_reply(decision("return")), 0),
         ("answer", tool_reply("100 * 0.25", "calc_a"), 0),
         ("answer", tool_reply("PRIVATE_SOURCE_MARKER + 2", "calc_b"), 0),
         ("answer", model_reply(valid), 0),
@@ -338,7 +336,7 @@ def test_invalid_tool_arguments_do_not_reuse_previous_calculation_timing(monkeyp
     malformed = tool_reply("unused", "calc_b")
     malformed["output"][0]["arguments"] = "not-json"
     transport = ScriptedResponses(
-        ("research", model_reply(decision("answer")), 0),
+        ("research", model_reply(decision("return")), 0),
         ("answer", tool_reply("1 + 1", "calc_a"), 0),
         ("answer", malformed, 0),
         ("answer", model_reply(answer("Two units.", support_basis="user_premises")), 0),

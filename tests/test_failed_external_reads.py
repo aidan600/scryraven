@@ -21,6 +21,11 @@ from scryraven.session_store import SQLiteSessionStore
 URL = "https://example.test/failed"
 
 
+def failed_reads(packet):
+    return [item["failed_external_read"] for item in packet["acquisition_history"]
+            if "failed_external_read" in item]
+
+
 def test_receipts_survive_routes_and_focus_changes_without_suppressing_retries():
     now, fetches = [0.0], []
 
@@ -39,7 +44,7 @@ def test_receipts_survive_routes_and_focus_changes_without_suppressing_retries()
         decision(requests=[request("read", target="E1", mode="full", focus="different focus"),
                            request("read", target="C3", mode="full")]),
         decision(requests=[request("find", query="recovered")]),
-        decision("answer", ["E2"]),
+        decision("return", ["E2"]),
         answer("The recovered fact. [E2]"),
     )
     result = run(
@@ -49,11 +54,11 @@ def test_receipts_survive_routes_and_focus_changes_without_suppressing_retries()
         fetch=fetch, clock=lambda: now[0],
     )
     packets = [packet for stage, _, packet, _ in model.calls if stage == "research"]
-    assert [len(p["failed_external_reads"]) for p in packets] == [0, 2, 2, 3, 3]
-    assert packets[2]["last_route"][0]["kind"] == "search"
-    assert packets[2]["last_route"][0]["status"] == "ok"
-    assert packets[4]["last_route"][0]["kind"] == "find"
-    receipts = packets[-1]["failed_external_reads"]
+    assert [len(failed_reads(p)) for p in packets] == [0, 2, 2, 3, 3]
+    assert packets[2]["acquisition_history"][-1]["kind"] == "search"
+    assert packets[2]["acquisition_history"][-1]["status"] == "ok"
+    assert packets[4]["acquisition_history"][-1]["kind"] == "find"
+    receipts = failed_reads(packets[-1])
     assert [r["candidate_ref"] for r in receipts] == ["C1", "C2", "C1"]
     assert receipts[0] == receipts[2] == {
         "candidate_ref": "C1", "provider": "linkup", "strategy": "static_fetch",
@@ -62,9 +67,9 @@ def test_receipts_survive_routes_and_focus_changes_without_suppressing_retries()
     assert all(type(r["duration_seconds"]) is float and math.isfinite(r["duration_seconds"])
                for r in receipts)
     assert fetches == [URL, URL + "/second", URL, URL + "/success"]
-    assert packets[1]["last_route"][2]["code"] == "local_material_unavailable"
-    assert "failed_external_read" not in packets[1]["last_route"][2]
-    assert "failed_external_read" not in packets[3]["last_route"][1]
+    assert packets[1]["acquisition_history"][2]["code"] == "local_material_unavailable"
+    assert "failed_external_read" not in packets[1]["acquisition_history"][2]
+    assert "failed_external_read" not in packets[3]["acquisition_history"][-1]
     assert result.evidence[-1].content == "The recovered fact."
     answer_packet = model.calls[-1][2]
     assert "failed_external_read" not in json.dumps(answer_packet)
@@ -79,12 +84,12 @@ def test_failed_read_history_resets_next_session_turn_and_is_not_persisted(tmp_p
         raise LinkupTransportError("linkup_connection_failed")
 
     model = Script(decision(requests=[request("read", target="C1", mode="full")]),
-                   decision("answer"), answer("Not established.", "unable"),
-                   decision("answer"), answer("Still unknown.", "unable"))
+                   decision("return"), answer("Not established.", "unable"),
+                   decision("return"), answer("Still unknown.", "unable"))
     store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
     session = ResearchSession.create(store=store, model=model, fetch=failed)
     session.ask(f"Read {URL}")
-    assert model.calls[1][2]["failed_external_reads"][0]["code"] == "linkup_connection_failed"
+    assert failed_reads(model.calls[1][2])[0]["code"] == "linkup_connection_failed"
     # The final failed route's receipt is filtered out even when Answer receives
     # the existing mechanical acquisition_limitations projection.
     assert "failed_external_read" not in json.dumps(model.calls[2][2])
@@ -94,19 +99,19 @@ def test_failed_read_history_resets_next_session_turn_and_is_not_persisted(tmp_p
     if reopen:
         session = ResearchSession.open(session.metadata.session_id, store=store, model=model, fetch=failed)
     session.ask("What about the follow-up?")
-    assert model.calls[3][2]["failed_external_reads"] == []
+    assert failed_reads(model.calls[3][2]) == []
     assert session.metadata.revision == 2
 
 
 def test_budget_denial_is_not_a_failed_external_read_receipt():
     fetches = []
     model = Script(decision(requests=[request("read", target="C1", mode="full")]),
-                   decision("answer"), answer("Unavailable.", "unable"))
+                   decision("return"), answer("Unavailable.", "unable"))
     result = run(f"Read {URL}", model=model, limits=RunLimits(external_attempts=0),
                  fetch=lambda url: fetches.append(url))
     assert not fetches
-    assert model.calls[1][2]["last_route"][0]["code"] == "external_attempts"
-    assert model.calls[1][2]["failed_external_reads"] == []
+    assert model.calls[1][2]["acquisition_history"][0]["code"] == "external_attempts"
+    assert failed_reads(model.calls[1][2]) == []
     assert result.trace[-1]["budget"]["external_attempts"] == 0
 
 
@@ -147,7 +152,7 @@ def test_transport_to_forensics_keeps_fixed_code_and_body_free_projection(tmp_pa
         forensic.append(event, session_id=None, revision_before=0)
 
     model = Script(decision(requests=[request("read", target=URL, mode="full")]),
-                   decision("answer"), answer("No material recovered.", "unable"))
+                   decision("return"), answer("No material recovered.", "unable"))
     result = run(f"PRIVATE QUESTION {URL}", model=model, observe=observe,
                  fetch=partial(fetch_linkup, api_key="offline", post=post))  # pragma: allowlist secret
     forensic_text = forensic.path.read_text(encoding="utf-8")

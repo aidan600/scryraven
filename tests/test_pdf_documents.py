@@ -105,18 +105,13 @@ def upload(client, location, pdf, filename="report.pdf", headers=None):
     }, headers=headers)
 
 
-def test_operating_bounds_and_prompt_limits_stay_in_place():
+def test_operating_bounds_stay_in_place():
     limits = RunLimits()
     assert DEFAULT_DISCOVERY_RESULT_COUNT == 6
     assert (limits.physical_model_requests, limits.external_attempts, limits.seconds, limits.attention_characters) == (
         40, 16, 900, 128_000)
     assert (TARGETED_SOURCE_CHARACTERS, PACKET_CHARACTERS, EXPANSION_CHARACTERS) == (32_000, 32_000, 48_000)
     assert (MAX_PDF_BYTES, MAX_PDF_PAGES, MAX_EXTRACTED_CHARACTERS) == (20 * 1024 * 1024, 500, 2_000_000)
-    from scryraven.research import ANSWER_PROMPT, RESEARCH_PROMPT
-    assert "Read target=D#" in RESEARCH_PROMPT
-    assert "not Evidence" in RESEARCH_PROMPT
-    assert "true outside the" in ANSWER_PROMPT and "document's claim distinct" in ANSWER_PROMPT
-    assert "Images and scanned content are not supplied" in ANSWER_PROMPT
 
 
 def test_ingestion_accepts_text_pages_and_rejects_unusable_pdfs(monkeypatch):
@@ -263,7 +258,7 @@ def test_attachment_is_not_a_turn_and_stays_inside_one_session(tmp_path):
 def test_attach_after_turns_does_not_rewrite_them(tmp_path):
     store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
     session = ResearchSession.create(
-        store=store, model=Script(decision("answer"), answer("An answer was not established.", "unable")),
+        store=store, model=Script(decision("return"), answer("An answer was not established.", "unable")),
         search=no_provider, fetch=no_provider, lexical_search=no_provider)
     session.ask("What remains unsettled?")
     before = store.load(session.session_id)
@@ -311,7 +306,7 @@ def test_local_read_and_find_stay_bounded_and_off_provider_budget():
         assert document.extracted_text not in json.dumps(material)
         assert all(len(entry["content"]) <= TARGETED_SOURCE_CHARACTERS for entry in material["evidence"])
         assert all("PAGEONEENDPAGETWOSTART" not in entry["content"] for entry in material["evidence"])
-        return decision("answer", [item["id"]])
+        return decision("return", [item["id"]])
 
     def respond(material):
         item = material["evidence"][0]
@@ -353,7 +348,7 @@ def test_find_keeps_document_and_web_identities_distinct():
         item = next(entry for entry in material["evidence"] if QUALIFICATION in entry["content"])
         assert item["page_start"] == 3 and item["document_id"] == "D1" and item["url"] == ""
         assert document.extracted_text not in json.dumps(material)
-        return decision("answer", [item["id"]])
+        return decision("return", [item["id"]])
 
     def respond(material):
         item = material["evidence"][0]
@@ -378,7 +373,7 @@ def test_find_keeps_document_and_web_identities_distinct():
         assert {item["source_id"] for item in web_items} == {"E1"}
         assert {item["source_id"] for item in document_items} == {"D1"}
         assert all(HARBOR not in item["content"] or BERTH not in item["content"] for item in material["evidence"])
-        return decision("answer", [document_items[0]["id"]])
+        return decision("return", [document_items[0]["id"]])
 
     def respond_berth(material):
         item = material["evidence"][0]
@@ -401,7 +396,7 @@ def test_followup_reopens_the_same_document_without_reupload(tmp_path):
 
     def select(material):
         item = next(entry for entry in material["evidence"] if CRANE in entry["content"])
-        return decision("answer", [item["id"]])
+        return decision("return", [item["id"]])
 
     def respond(material):
         item = material["evidence"][0]
@@ -431,7 +426,7 @@ def test_followup_reopens_the_same_document_without_reupload(tmp_path):
     def select_spare(material):
         item = next(entry for entry in material["evidence"] if SPARE in entry["content"])
         assert item["page_start"] == 2
-        return decision("answer", [item["id"]])
+        return decision("return", [item["id"]])
 
     def respond_spare(material):
         item = material["evidence"][0]
@@ -499,7 +494,7 @@ def test_discontiguous_document_pages_stay_exact_after_reopen(tmp_path):
     def select(material):
         chosen = [entry for entry in material["evidence"] if early in entry["content"] or late in entry["content"]]
         assert [entry["page_start"] for entry in chosen] == [1, 7]
-        return decision("answer", [entry["id"] for entry in chosen])
+        return decision("return", [entry["id"] for entry in chosen])
 
     def respond(material):
         chosen = [entry for entry in material["evidence"] if early in entry["content"] or late in entry["content"]]
@@ -563,7 +558,7 @@ def test_document_and_web_citations_resolve_without_a_fake_url():
     def choose(material):
         document_item = next(entry for entry in material["evidence"] if BERTH in entry["content"])
         web_item = next(entry for entry in material["evidence"] if HARBOR in entry["content"])
-        return decision("answer", [document_item["id"], web_item["id"]])
+        return decision("return", [document_item["id"], web_item["id"]])
 
     def respond(material):
         document_item = next(entry for entry in material["evidence"] if BERTH in entry["content"])
@@ -596,7 +591,7 @@ def test_documents_do_not_consume_deep_or_disable_web_search(monkeypatch):
     document = owned(text_pdf([PAGE_FACT]))
     model = Script(
         decision(requests=[request("read", query="", target="D1", mode="local")]),
-        decision(), decision("answer", ["E1"]), answer(),
+        decision(), decision("return", ["E1"]), answer(),
     )
     result = run("What does the document say, and what is the public value?", model=model, documents=(document,))
     assert [call["json"]["type"] for call in calls] == ["deep"]
@@ -612,7 +607,7 @@ def test_documents_do_not_consume_deep_or_disable_web_search(monkeypatch):
         "What revenue does the document state?",
         model=Script(
             decision(requests=[request("read", query="", target="D1", mode="local")]),
-            lambda material: decision("answer", [material["evidence"][0]["id"]]),
+            lambda material: decision("return", [material["evidence"][0]["id"]]),
             lambda material: answer(
                 f"The document says revenue was 184 million dollars. [{material['evidence'][0]['id']}]",
             ),

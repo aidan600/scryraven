@@ -30,7 +30,8 @@ def test_forensic_events_capture_exposure_rejection_and_stay_out_of_product_reco
 ):
     rejected = "SYNTHETIC_REJECTED_PASSAGE_837_ONLY_FOR_FORENSICS"
     source_body = "The stated value is seven."
-    model = Script(decision(), decision("answer", ["E1"]), answer(rejected), answer())
+    briefing = "SYNTHETIC_PROVISIONAL_BRIEFING_481: E1 establishes the requested seven-unit value."
+    model = Script(decision(), decision("return", ["E1"], briefing=briefing), answer(rejected), answer())
     store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
     dogfood = tmp_path / "turns.jsonl"
     forensic = tmp_path / "observer.jsonl"
@@ -54,6 +55,8 @@ def test_forensic_events_capture_exposure_rejection_and_stay_out_of_product_reco
         "research", "research", "answer", "answer"]
     assert exposures[1]["evidence"][0]["content"] == source_body
     assert exposures[2]["evidence"][0]["content"] == source_body
+    assert exposures[0]["research_briefing"] is None
+    assert exposures[2]["research_briefing"] == exposures[3]["research_briefing"] == briefing
     assert any(row["event"].get("code") == "missing_citation" for row in records)
     assert [row["event_sequence"] for row in records] == list(range(1, len(records) + 1))
     session_id = store.list_sessions()[0].session_id
@@ -64,10 +67,13 @@ def test_forensic_events_capture_exposure_rejection_and_stay_out_of_product_reco
     assert any(row["event"]["action"] == "model_returned" for row in records)
 
     assert source_body in forensic.read_text(encoding="utf-8")
+    assert briefing in forensic.read_text(encoding="utf-8")
     assert rejected not in dogfood.read_text(encoding="utf-8")
     assert source_body not in dogfood.read_text(encoding="utf-8")
+    assert briefing not in dogfood.read_text(encoding="utf-8")
     assert rejected not in json.dumps(completed[0].trace)
     assert rejected not in repr(store.load(session_id).state)
+    assert briefing not in repr(store.load(session_id).state)
     assert rejected not in client.get(response.location).get_data(as_text=True)
     assert rejected not in render_cli(completed[0])
     assert store.load(session_id).metadata.revision == 1
@@ -77,7 +83,7 @@ def test_forensic_events_capture_exposure_rejection_and_stay_out_of_product_reco
 def test_without_forensic_log_ordinary_turn_has_no_sensitive_observer_file(tmp_path):
     store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
     dogfood = tmp_path / "turns.jsonl"
-    client = _client(store, model=Script(decision(), decision("answer", ["E1"]), answer()),
+    client = _client(store, model=Script(decision(), decision("return", ["E1"]), answer()),
                      dogfood_log=dogfood)
     assert submit(client).status_code == 303
     assert store.list_sessions()[0].revision == 1
@@ -107,8 +113,8 @@ def test_forensic_write_failure_disables_sink_and_preserves_subsequent_turns(
     store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
     forensic = tmp_path / "observer.jsonl"
     unable = answer("No source establishes this.", posture="unable")
-    client = _client(store, model=Script(decision("answer"), unable,
-                                         decision("answer"), unable),
+    client = _client(store, model=Script(decision("return"), unable,
+                                         decision("return"), unable),
                      forensic_log=forensic, search_provider=lambda _: pytest.fail("Unexpected search"))
     original_open = Path.open
     attempts = []

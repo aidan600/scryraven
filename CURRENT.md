@@ -1,29 +1,257 @@
 # ScryRaven Current Truth
 
+## Research–Answer Briefing Promotion 01 — pending merge
+
+The human and product architect approved the Research–Answer briefing design for
+promotion, subject to independent implementation review and offline verification.
+The promotion candidate is `codex/research-answer-briefing-promotion-01`, created
+directly from clean convergence source
+`980c7db06a23d0f6f0ed7a95cee6df020fe7f0a5`. The verified remote `main` and merge
+base are `7afc75df4f28e9c3bb12dacfe729d7678c45a6ac`. The proposed architecture below
+describes the state this branch would deliver after merge; it is not deployed on
+`main`. Publication is authorized after review and checks; merge is not authorized.
+
+Independent read-only architecture, mechanical-integrity and operational reviews
+found no consequential implementation defect or scope violation. No runtime,
+prompt, schema, model or provider change was needed for promotion. The cumulative
+diff includes the inherited operational repair `c21d427`; rejected one-pass,
+mixed-provider batching and parallel semantic-lane experiments are excluded.
+See `docs/operator/RESEARCH_ANSWER_BRIEFING_PROMOTION_01.md` for the review bundle,
+verification and existing product-evidence boundaries. This phase authorizes no
+live product/provider validation and does not renew the earlier campaign runway.
+
+The promotion reran the complete offline suite with external sockets/DNS denied:
+1028 passed and four existing Windows link/junction environment skips. Ruff,
+compilation, Git whitespace checks and all six configured pre-commit hooks passed.
+Current verification details and the publication gate are in
+the promotion report; final commit/publication identities belong to the PR and
+delivery receipt. The first sandbox run encountered temporary-directory access
+errors; directing TEMP/TMP and pytest storage to the authorized C:\tmp root
+resolved them without a code change.
+
+The preserved four-case Luna/high Answer screen at the same convergence source
+does not justify replacing Sol/medium. Compact Passport and retained follow-up
+were comparable; Waymo was acceptable but materially weaker; Klamath failed the
+reporting-cutoff judgment. It is reconstructed-packet fixed-evidence screening,
+not four new ordinary product cases. No model assignment changes are promoted.
+Its exact artifacts remain at `C:\tmp\scryraven-luna-answer-screen-01`.
+
+## Research–Answer Convergence 01 — completed development evidence
+
+The local convergence campaign completed nine ordinary submissions on
+`codex/research-answer-convergence-01`, starting clean at
+`c2cd186531c52e1a9238056c973d50104ea8be14` from the briefing branch. Its original
+authorization allowed at most 12 ordinary submissions including retries,
+using the existing personal ChatGPT-plan backend and credential doorman, with
+Luna/high Research and GPT-6.1 Sol/medium Answer. Existing 900-second, 40-physical-
+request and 16-external-attempt turn ceilings remain. Up to six separately
+recorded public adjudication checks were licensed. That campaign prohibited publication;
+the separate promotion authorization above supersedes its publication boundary.
+
+Batch 1 completed three ordinary submissions at
+`aa28de720631e5236428d6dff8ae92af09928b2f`: exact historical BIPM prefix lookup,
+fresh Great Basin National Park state/date lookup, and an explicit-premise
+workshop bill calculation. All three produced useful correct answers and reopened
+with unchanged saved support. Two narrow lookups each used two Research requests,
+one Answer request and one Exa Search, with no Answer local inspection or
+additional Research. Their elapsed times were 26.687 and 15.938 seconds. The
+source-free calculation used one Research and three Answer requests, zero
+acquisition, and 29.954 seconds. Its final amounts and fixed-fee explanation were
+correct; one Answer continuation recovered from an unsupported tuple expression.
+
+After three batches the campaign has used 9 of 12 submissions, 37 physical model
+requests (23 Research, 14 Answer), 29 external attempts and 475.986 product seconds.
+One of six independent public-source checks was used. Reported input/output tokens
+total 293,001/12,071. Plan credits and third-party charges are unknown. These are
+unmatched development observations, not causal efficiency or reliability estimates.
+
+Actual briefing receipt with supporting originals is demonstrated in live plan
+execution. The BIPM briefing retained a stale request for source support after
+acquisition; Answer used the originals and completed without more research. This
+case led to a focused human-authorized prompt correction: when newly acquired
+material resolves a stated need or materially changes the interpretation, Research
+updates the account and removes obsolete needs while preserving unresolved ones.
+Null remains valid for genuinely unchanged understanding; no semantic checker,
+mandatory rewrite stage or new correction loop was added. Four injected native
+API/plan tests cover resolved and still-unresolved needs; the full offline suite
+passed 1028 tests with four filesystem-link environment skips, plus lint,
+compilation and pre-commit checks. These verify the handoff, not live prompt
+compliance. The final calculation
+shows a minor execution-interface problem: calculate accepts scalar arithmetic,
+while the model first supplied a tuple. Its tool description now explicitly
+states the scalar contract and separate calls for multiple results. This focused
+clarification passed 1024 offline tests with four filesystem-link environment
+skips, plus lint/compilation/pre-commit checks. It has not yet been live-retested;
+no improved call count or reliability is claimed.
+
+Before observation, the existing source-bearing exposure event was extended to
+record the actual briefing supplied to each model call, including pending-delivery
+continuity. It changes diagnostics only; briefings stay outside ordinary body-free
+logs and durable session records. Focused receipt/isolation coverage passed.
+
+Campaign artifacts, immutable batch registration, submission ledger, complete
+answers and exact public support, independent quality reviews and the Batch 1
+checkpoint live at `C:\tmp\scryraven-research-answer-convergence-01`.
+Useful sanitized development candidates for all three witnesses are preserved in
+ignored `local-evals/candidates/research-answer-convergence-01-b1*-20261026`.
+No cases, historical gold or experiment branches were overwritten.
+
+Batch 2 completed three submissions at
+`a92a43899341c8a0a46a9bece25d690c4c313db7`, with the briefing correction and
+unchanged Luna/high Research, Sol/medium Answer and provider behavior:
+
+- Passport: useful compact supported answer, preserving two different published
+  GE thrust ranges. Research replaced its missing-thrust need with the acquired
+  result and discrepancy. Total 37.500 seconds, 4 physical requests and 4 external
+  attempts; Answer used one request, 9.500 seconds and no local inspection.
+- Klamath: useful developed answer with a material end-2025 coverage gap. Answer
+  requested contemporary restoration progress and original ODFW reporting rather
+  than repeating established engineering/CDFW work or using a January 2026 report
+  as if known by 2025. The delegated return added useful originals and qualifications.
+  Nevertheless, the final restoration section remained at midyear construction-
+  underway accounts, missing an October 2025 completion milestone on four priority
+  tributaries. Independent primary-source check P01 confirmed it; that report was
+  absent from the run's acquired corpus. A smaller acquired-source omission concerns
+  CDFW's attributed spawning geography upstream of Klamath Lake. Total 132.391
+  seconds, 7 requests and 9 external attempts; Answer's own requests used 66.297
+  seconds, with 19.031 seconds of nested delegated Research counted separately.
+- Waymo: strong qualified public-benefit comparison, preserving measured-versus-
+  conditional and per-mile-versus-systemwide distinctions. Answer productively
+  recovered a retained disability-access source; two other local reads largely
+  overlapped existing context. The response could be compressed without losing its
+  useful counterfactual reasoning. Total 126.516 seconds, 5 requests and 6 external
+  attempts; Answer used 78.328 seconds across two requests, including a 72.031-second
+  final response request. This is observed cost, not proof of redundant private
+  reasoning or a measured benefit from deleting the overlapping reads.
+
+Batch 2 total: 296.407 seconds, 16 physical requests (11 Research, 5 Answer),
+19 external attempts, 187,392 reported input and 8,255 output tokens. All three
+answers reopened with unchanged exact support; no schema/citation correction loop
+occurred. Passport and the complex-case transitions show the intended briefing
+update behavior in these draws; there was no separate wording-confirmation run.
+No further prompt change or discretionary retest was made after the batch.
+
+The earlier economical BIPM path remains historical context; no speedup is claimed.
+Klamath's source draws differ from prior control/one-pass campaigns, and the known
+completion omission prevents treating lower observed cost as equal-quality gain.
+The fresh Waymo comparison is not a replay of unavailable original organic context.
+Efficient adoption by Answer is a positive result even without novel findings;
+compact lookups leave direct Research answers as a future architectural option
+only. Answer bypass and dynamic model/effort selection remain unimplemented.
+
+Batch 3 completed at `1b0838a46179c1a0effb197621ae1736c5d50577`, with no prompt,
+runtime, model or provider change after the accepted Batch 2 checkpoint:
+
+- Heidi Thorstensen: a concise honest partial. The acquired professional profile
+  establishes the relevant landscape/municipal career but no coffee employer or
+  role. Unrelated coffee-business owners were not conflated with her; lack of
+  evidence was not upgraded into proof of no coffee work. Three pairs of searches
+  mainly added unrelated or repeated material after identity was established.
+  Answer read a second retained view of the same profile without changing the
+  conclusion. Total 53.859 seconds, 6 physical requests (4 Research, 2 Answer),
+  6 external attempts; Answer's own requests used 13.578 seconds.
+- Path of Exile: a useful qualified overview of visible enthusiasm, preparation
+  pressure and interest in Allflame carrying forward, separating these from
+  unrevealed mechanics and population-wide preferences. Research warned against
+  conflicting/stale secondary claims; Answer adopted the adequate briefing in one
+  request with no extra inspection or research. Total 38.204 seconds, 3 requests
+  (2 Research, 1 Answer), 2 external attempts; Answer used 19.079 seconds. Usable
+  forum replies and reported community quotations arrived through Exa Search.
+  No Read failed, so this observation does not establish recovery or sensible
+  stopping after a materialization failure, nor general Reddit accessibility.
+- Genuine Waymo follow-up: the same completed B2C session and all 25 acquired
+  originals were reopened through the ordinary path. Research selected retained
+  crash-study, mileage and substitution material; Answer gave a short response
+  distinguishing human-driving benchmarks from the unproved citywide effect of
+  replacing Muni trips, without claiming the shift must be harmful. Total 14.937
+  seconds, 2 requests (1 per role), zero external acquisition and zero Answer
+  local inspection. Answer used 8.813 seconds. No new material was acquired; the
+  prior turn, source identities and historical support remain unchanged, and the
+  original B2C store's hash is unchanged.
+
+Batch 3 total: 107.000 seconds, 11 physical requests (7 Research, 4 Answer),
+8 external attempts, 80,254 reported input and 2,415 output tokens. All three
+answers reopened with unchanged exact support and passed capture/runtime audits;
+no schema/citation correction loop occurred. No repair or discretionary retest
+was made. The standalone Heidi question is not a replay of its missing historical
+follow-up state. PoE reuses the exact saved question in a fresh session on the
+current client date; differing source returns prevent causal historical claims.
+
+The completed campaign informed the favorable human promotion decision above.
+Useful briefing adoption, targeted Klamath delegation, Waymo
+comparison and retained-source continuity are positive observations. Klamath's
+October 2025 construction milestone remains an unacquired-source coverage failure;
+no chronological checker or case-specific tuning was introduced. Temporal
+completeness, sparse-query marginal value, duplicated source views and developed
+Answer cost/length remain concerns. Correction of a consequential erroneous
+Research interpretation and behavior after failed community materialization are
+not newly demonstrated by this batch. Useful exact/sanitized cases from all three
+batches are preserved in ignored local-evals. Complete checkpoints, marginal
+Answer-cost audits, source adjudication and the ledger remain under the external
+campaign root. These are bounded development observations, not a general
+quality, reliability or economy claim.
+
 ## Ordinary product architecture
 
-Research-first with resumable Answer is the merged production architecture:
-initial Luna Research -> independent Sol Answer with optional resumable delegated
-Research. [PR #677](https://github.com/aidan600/scryraven/pull/677) merged reviewed
-head `6a0790b33c07afa60ca34ef88ff4fa146230d285` as
-`5333a09f5f7b7dc9950ca98637b5cc788f955a3d` on 2026-10-23.
-Initial Luna Research retains production whole-question interpretation, revisable
-understanding, Exa/Serper/LinkUp acquisition, local Read/Find and selection of
-originals for an independent Sol Answer. One fresh native Sol interaction begins
-after that handoff. It may Browse/Find/Read retained originals, calculate, invoke
-`research(need)` and continue with its user context, tool history and source exposure.
-The specialist obtains evidence and yields control to Sol. Final missing information
-describes a limitation and cannot restart Research or the Answer stage.
+The approved Research–Answer briefing promotion candidate is pending merge, based
+on the convergence source above and inherited operational-repair checkpoint
+`c21d4274f8995ea601a91fb9bc5dbd0e7dbd368e`. The Research-first/resumable Answer topology from PRs #677/#678
+survives: initial Luna Research -> Sol Answer -> optional delegated Luna Research
+returning to the same Answer interaction. Shipped model and provider choices
+are unchanged.
+
+Initial and delegated Research now share one decision and episode loop. A compact
+provisional `briefing` replaces the structured Understanding ledger and separate
+delegated assessment. A null update preserves the latest account; it is revised
+when new findings warrant it. The account reaches Answer as `research_briefing`
+alongside exact mechanically selected originals. Answer owns final judgment and
+may adopt, revise or reject Research's interpretation without compulsory
+reconstruction of its discovery. Briefing text is never Evidence or citation
+authority. Search, Read and Find use operation-specific request shapes, removing
+unused output fields. One compact acquisition history replaces overlapping worker
+receipt packets. Briefings are turn-local and are not durable session state.
+
+Initial and delegated selection use the same exact-range/optional-locator
+mechanics. Independently valid selections survive invalid neighbors; errors and
+omissions are reported rather than triggering a repacking loop. Invalid retain
+references cannot expose sources. Schema/action failures have one Research
+correction per episode before an honest handoff of valid prior work. Citation
+validation retains its separate existing one-correction allowance.
+
+Tested runtime `a30950ba7e2b2435e6a3fae54f38a94c57aefa8c` passed
+1024 offline tests with four filesystem-link environment
+skips, plus Ruff, compilation and pre-commit checks. Injected API/plan models and
+source fixtures exercised the real ordinary path, including briefing receipt,
+delegated revision, malformed-output bounds, calculation and durable follow-up. The preceding briefing phase made no live ScryRaven/model/acquisition calls.
+The subsequent convergence authorization is described above. Offline checks do not establish improved answer quality,
+stopping, latency, cost, weaker-model compatibility or general semantic reliability.
+See `docs/operator/RESEARCH_ANSWER_BRIEFING_01.md` for the before/after graph,
+field accounting, implementation brief and final technical review.
 
 One turn shares library/history, Deep eligibility, 900 seconds, 40 physical model
 attempts, 16 external attempts, 128,000 cumulative Answer source characters and
 12 Answer local operations. There is no 180-second terminal reserve or 120-second
 Answer clock. Request arguments are at most 300 seconds and remaining turn time.
-Initial Research continuity is fallible worker context, not factual Answer authority.
+Research briefings are fallible working analysis for both roles, not factual authority.
 Only original text actually supplied/read enters citation membership. No third
 semantic owner, coverage checker, provider stack or credential system was added.
-The baseline delegated-worker prompt is unchanged; B/C calibration, fit/repacking
-loops and automatic unselected-source completion are absent.
+Research and Answer prompts are reconstructed around the briefing relationship;
+fit/repacking loops and automatic unselected-source completion remain absent.
+
+Definite `exa_configuration_missing`, `serper_configuration_missing` and
+`linkup_configuration_missing` failures now mark only that provider unavailable
+for the current turn, shared by initial and delegated Research. Further requests
+to it are denied locally without spending another external attempt. The original
+fixed code and provider reach Research and Answer as operational limitations.
+An entirely unavailable requested route yields control rather than another
+Research model call; both discovery providers unavailable with no retained
+material, documents or usable known-URL path can hand off immediately. Other providers, local Read/Find,
+PDFs, retained originals and premise-only answers remain available. A later turn
+starts with no unavailable-provider state. Empty results, transient transport,
+access and rate-limit failures do not mark configuration unavailable. Safe
+acquisition diagnostics distinguish provider dispatch from local suppression.
+This is an operational correction with scripted offline evidence; no live
+research question was submitted for this repair.
 
 A5 admits exact independently valid immutable source/version/range slices, preserving
 original whitespace and honest omissions. Highlight coordinates address only the
@@ -133,8 +361,8 @@ roughly two-page editorial ceiling rather than a length rule or fixed outline.
 Simple lookups remain direct and compact. Quantitative answers explain how inputs
 determine the result; comparisons retain what each supplied quantity represents,
 including observed versus modeled status. Partial answers explain which gaps a
-missing input would resolve and which incompatibilities would remain. Answer's fresh
-reading supports the complete synthesis. No coverage schema or additional actor
+missing input would resolve and which incompatibilities would remain. Answer's judgment of the briefing and actual
+source support governs the complete synthesis. No coverage schema or additional actor
 is introduced. The default promotes a preference that yielded two developed
 answers in a frozen direct-Answer probe. Exa Evidence-Objective Search 01 later
 exercised it in three completed ordinary answers and one separately recovered
@@ -213,21 +441,27 @@ assembly/failures, custody and session commit/reopen. No live inference was run
 for this integration. See `docs/operator/CHATGPT_PLAN_BACKEND.md` for setup and
 operational differences.
 
-Research packet presentation now keeps the stable `conversation_context`,
+The forensic development launcher explicitly injects the plan backend for
+`personal` through Reading Room's existing `session_options` seam. It delegates
+credential loading to the existing command doorman using the approved external
+credential file, removes the API key only in its own child, and requires nonblank
+Exa configuration before creating the app or server. Optional Serper/LinkUp
+configuration is reported only as booleans. A child manifest records the actual
+revision, resolved role profile, selected backend and zero startup model
+dispatches; readiness requires the child's successful bind and a localhost GET.
+Plan authentication and inference are deferred to the user's first question,
+so startup does not prove account/model access or exact allowance consumption.
+`powershell.exe` supports `-PrepareOnly` and a separate exact-run stop command;
+the unique session database, body-free log and forensic log remain distinct.
+Ordinary non-forensic launch selection and storage are unchanged.
+
+Research packet presentation keeps the stable `conversation_context`,
 `current_date`, `phase`, `question` prefix and its Research-context cache
-breakpoint. Present volatile fields follow the deliberate order
-`working_understanding`, `catalog`, `last_route`, `failed_external_reads`, `evidence`,
-`pending_delivery`, `budget`, then
-`output_correction` last. Unknown fields remain lossless in deterministic order.
-Generated understanding and navigation precede the latest route and exact
-Evidence, placing current source material near the decision edge. Both Research
-and Answer serialize identifying metadata before each Evidence item's unchanged
-exact content. Evidence membership, array order, logical fields and body bytes
-are unchanged; Answer's top-level packet order remains unchanged. This layout
-promotion has no demonstrated quality or latency effect. `ResearchDecision`
-no longer contains `purpose`: executable route intent remains in structured
-requests and compact working state. This adds no semantic owner or memory and
-does not change the separate Research/Answer cache families.
+breakpoint. Volatile fields are `research_briefing`, `catalog`,
+`acquisition_history`, `evidence`, `pending_delivery`, `budget`, with other fields
+losslessly ordered before `output_correction`. Both roles receive exact source
+content after identifying metadata. Changed prompts/schemas naturally change
+cache identities; no compatibility cache or semantic memory is introduced.
 
 Research now presents the logical acquisition catalog to the model as lossless
 compact column-labeled tables. Material tables keep full field names, every
@@ -241,18 +475,14 @@ The stable cache breakpoint remains unchanged. This efficiency evidence does not
 establish better Research judgment, stopping, retention or general reliability.
 See `docs/operator/CATALOG_TABLE_INTEGRATION_01.md`.
 
-Research receives an ordered, turn-scoped mechanical history of failed external
-Reads, including existing candidate identity, provider, effective fetch strategy,
-requested mode, fixed safe failure code and measured elapsed seconds. This history
-survives intervening routes and is navigation state, not Evidence. It resets for
-each user turn, is absent from Answer packets and is not durable session state.
-Successful acquisition remains represented by retained materials/catalog. Changing
-only Read focus does not change the `static_fetch` strategy. There is no automatic
-retry suppression or new provider strategy. The small Research prompt explanation
-changes its instruction-derived cache-family hash; Answer's cache family, the
-stable packet prefix and breakpoint mechanics remain unchanged. Offline tests
-establish receipt mechanics and privacy, not improved stopping, retry choices,
-latency or LinkUp reliability; no live validation was performed for this change.
+Research receives compact turn-scoped acquisition receipts, including failed
+external Reads with candidate identity, provider, effective strategy, requested
+mode, fixed safe code and elapsed seconds. The single `acquisition_history`
+survives intervening routes and delegated episodes, replacing separate failed-Read
+and latest-route model fields. Answer receives actionable limitations instead of
+the entire operation log. The history is navigation, not Evidence or durable
+state. Changing only Read focus does not change `static_fetch`; provider
+configuration suppression remains the existing operational correction.
 
 Search novelty is mechanically measured for safe acquisition diagnostics and
 forensic analysis only. Each successful Exa or lexical/Serper Search reports
@@ -261,15 +491,14 @@ returned/new material, new-candidate material, refreshed-known-candidate materia
 and exact reused material. Identity, admission, duplicate handling and Serper's
 navigation-only role are unchanged. Body-free diagnostics contain no query,
 URL, title, highlights or source body. The diagnostic receipt is excluded from
-Research's `last_route`; no cumulative Search history or replacement novelty
-field enters Research or Answer, and session persistence is unchanged.
+model-facing acquisition history; novelty counts do not enter either role and
+session persistence is unchanged.
 
 Both model-facing experiments were **MIXED / INCONCLUSIVE** and were not promoted.
 Their history, including the second campaign's lost-draw limitation, remains in
-`docs/operator/SEARCH_NOVELTY_RECEIPTS_01.md`. The model-facing history, helper,
-accumulation and expected-yield prompt paragraph are removed. Research's prompt,
-packet ordering and cache family are restored to merged-main PR #660 behavior;
-`failed_external_reads` is unchanged. The final diagnostic-only disposition used
+`docs/operator/SEARCH_NOVELTY_RECEIPTS_01.md`. The experimental model-facing novelty
+history, helper, accumulation and expected-yield paragraph remain removed. The
+new operation receipts describe actual attempts without novelty or utility scores. The final diagnostic-only disposition used
 zero live calls; no third campaign ran. Telemetry describes acquisition movement,
 not relevance, usefulness or sufficiency. No stopping, answer-quality, latency or
 cost improvement is established.
@@ -430,7 +659,8 @@ executable `source_readings` schema and literal-reading correction machinery are
 removed. No replacement model call, validator or semantic owner is introduced.
 The sole Answer prompt retains its semantic responsibility and describes optional
 local inspection. Its instruction/tool-derived cache identity changes; there is
-no additional finalization stage. Initial Research instructions only supersede the retired terminal-reentry sentence.
+no additional finalization stage. Both role prompts now use the briefing relationship
+described above.
 
 Unknown citation aliases, unsupplied versions and invalid selected-material custody
 still reject publication. Missing required citations and invalid Answer shapes

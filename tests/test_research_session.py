@@ -43,12 +43,12 @@ def candidate(url=URL_A, context="", *, highlights=False):
 
 def local_turn(text=FACT_B + " [E1]", refs=("E1",)):
     return (decision(requests=[request("read", query="", target=ref, mode="local") for ref in refs]),
-            decision("answer", refs), answer(text))
+            decision("return", refs), answer(text))
 
 
 def first_turn(*, highlights=False):
     reading = () if highlights else (decision(requests=[request("read", query="", target="C1")]),)
-    return (decision(), *reading, decision("answer", ["E1"]),
+    return (decision(), *reading, decision("return", ["E1"]),
             answer(ANSWER_A + " [E1]"))
 
 
@@ -68,7 +68,7 @@ def test_followup_reads_retained_fact_with_fresh_research_and_answer(highlights)
     assert session.source_ids == ("E1",)
     assert all(turn.analysis is None for turn in session.turns)
     calls = [m for _, _, m, _ in model.calls if m["question"] == Q2]
-    assert calls[0]["working_understanding"] is None
+    assert calls[0]["research_briefing"] is None
     assert calls[0]["evidence"] == [first.selected_evidence[0].material()]
     assert calls[-1]["conversation_context"] == [{"question": Q1, "answer": first.answer}]
     answer_packet = [m for stage, _, m, _ in model.calls if stage == "answer" and m["question"] == Q2][-1]
@@ -82,7 +82,7 @@ def test_followup_reads_retained_fact_with_fresh_research_and_answer(highlights)
 
 def test_new_source_and_comparison_keep_canonical_identity_and_per_answer_numbers():
     provider = Provider([candidate(context=BODY, highlights=True)], [candidate(URL_B, FACT_C, highlights=True)])
-    model = Script(*first_turn(highlights=True), decision(), decision("answer", ["E2"]),
+    model = Script(*first_turn(highlights=True), decision(), decision("return", ["E2"]),
                    answer(FACT_C + " [E2]"),
                    *local_turn(FACT_C + " [E2] " + FACT_A + " [E1]", ["E1", "E2"]))
     session = ResearchSession(model=model, search=provider.search, fetch=no_io)
@@ -97,7 +97,7 @@ def test_new_source_and_comparison_keep_canonical_identity_and_per_answer_number
                                       answer("Invalid [E99]")])
 def test_failed_turn_leaves_in_memory_evidence_and_history_unchanged(failure):
     provider = Provider([candidate(context=BODY, highlights=True)], [candidate(URL_B, FACT_C, highlights=True)])
-    model = Script(*first_turn(highlights=True), decision(), decision("answer", ["E2"]), failure)
+    model = Script(*first_turn(highlights=True), decision(), decision("return", ["E2"]), failure)
     session = ResearchSession(model=model, search=provider.search, fetch=no_io)
     session.ask(Q1)
     before = session.turns, session.acquisitions

@@ -11,7 +11,7 @@ from core.transport import FetchedMaterial
 from scryraven import __main__ as cli
 from scryraven import model, reading_room
 from scryraven.acquisition import AcquisitionLibrary
-from scryraven.research import Request, run
+from scryraven.research import SearchRequest, run
 from scryraven.session import ResearchSession
 from scryraven.session_store import SQLiteSessionStore
 
@@ -90,7 +90,7 @@ def test_exa_serper_duplicate_url_keeps_candidate_and_source_identity():
 
 
 def test_research_and_session_can_choose_lexical_then_read():
-    assert Request.model_validate(request("search_lexical", query="public post"))
+    assert SearchRequest.model_validate(request("search_lexical", query="public post"))
     for kind, kwargs in (("search", {"query": "general"}),
                          ("read", {"query": "", "target": "C1"}),
                          ("find", {"query": "phrase"})):
@@ -98,7 +98,7 @@ def test_research_and_session_can_choose_lexical_then_read():
     model = Script(
         decision(requests=[request("search_lexical", query="public post")]),
         decision(requests=[request("read", query="", target="C1")]),
-        decision("answer", ["E1"]),
+        decision("return", ["E1"]),
         answer("The source says seven. [E1]"),
     )
     calls = []
@@ -119,7 +119,7 @@ def test_research_and_session_can_choose_lexical_then_read():
     model = Script(
         decision(requests=[request("search_lexical", query="public post")]),
         decision(requests=[request("read", query="", target="C1")]),
-        decision("answer", ["E1"]), answer("The source says seven. [E1]"),
+        decision("return", ["E1"]), answer("The source says seven. [E1]"),
     )
     session = ResearchSession(**{**kwargs, "model": model})
     assert session.ask("What does this public post say?").posture == "supported"
@@ -133,7 +133,7 @@ def test_cli_uses_serper_then_linkup_through_ordinary_run(monkeypatch, capsys):
     outputs = iter([
         decision(requests=[request("search_lexical", query="public post")]),
         decision(requests=[request("read", query="", target="C1")]),
-        decision("answer", ["E1"]), answer("The source says seven. [E1]"),
+        decision("return", ["E1"]), answer("The source says seven. [E1]"),
     ])
     providers = []
 
@@ -167,7 +167,7 @@ def test_reading_room_uses_same_lexical_capability(tmp_path):
     model_script = Script(
         decision(requests=[request("search_lexical", query="public post")]),
         decision(requests=[request("read", query="", target="C1")]),
-        decision("answer", ["E1"]), answer("The source says seven. [E1]"),
+        decision("return", ["E1"]), answer("The source says seven. [E1]"),
     )
     calls = []
     app = reading_room.create_app(

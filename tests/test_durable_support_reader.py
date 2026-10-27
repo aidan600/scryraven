@@ -114,7 +114,7 @@ def test_document_views_keep_exact_coordinates_and_original_pdf_action(tmp_path)
 
     store = SQLiteSessionStore(tmp_path / "document.sqlite3")
     model = Script(decision(requests=[request("read", query="", target="D1", mode="local")]),
-                   lambda packet: decision("answer", [item["id"] for item in packet["evidence"]]),
+                   lambda packet: decision("return", [item["id"] for item in packet["evidence"]]),
                    answer("Alpha is seven. [D1] Omega is nine. [D1]"))
     session = ResearchSession.create(store=store, model=model, fetch=no_fetch)
     store.attach_document(session.session_id, 0, "public-fixture.pdf", "application/pdf",
