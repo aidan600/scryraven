@@ -1,8 +1,10 @@
 # Citation Previews and Editorial Restraint 01
 
-Status: local implementation and offline editorial correction complete; prior live editorial observations mixed; corrected prompt not live-tested; not deployed.
+Status: completed feature, editorial correction and final promotion review record.
+The final editorial correction has offline verification only; earlier live
+observations and their limitations are preserved below.
 
-Production base: `33511b268d9b07ab10bc0725d488132fb5e3f324`.
+Verified implementation base: `33511b268d9b07ab10bc0725d488132fb5e3f324`.
 Branch: `codex/citation-previews-editorial-01`.
 
 ## Frozen ordinary-product observations
@@ -56,17 +58,61 @@ measurement is planned. Historical pre-promotion prose is not a baseline.
 ## Outcome and tested revision
 
 Citation previews are implemented and demonstrated through the ordinary product.
-The approved Answer editorial principle is implemented; its qualitative result is
-mixed. The compact lookup is direct and economical. The comparison preserves
-consequential distinctions but still contains unnecessary caution and repetition.
-Consistently restrained prose and a causal improvement over merged behavior are
-not established by these unpaired draws.
+The original editorial observations at `65a230a` are mixed: the compact lookup is
+direct and economical, while the comparison preserves consequential distinctions
+but still contains unnecessary caution and repetition. The final editorial
+paragraph at `647a726` addresses that failure with offline verification only.
+Consistently restrained prose and causal improvement are not established by these
+unpaired draws.
 
 Full-offline and ordinary-product tested implementation:
 `65a230a1c14e2b4696f525fb42c57f3dac3fb903`. The current branch additionally contains
-the focused editorial prompt correction below, verified only offline. All complete
+the focused editorial prompt correction and keyboard-focus repair below, verified
+only offline. All complete
 product outputs, screenshots and latency observations in this report predate that
-correction. The final delivery identifies the current local head.
+correction. The final delivery identifies the exact published head.
+
+## Final promotion review
+
+Promotion began from clean source `647a7268381e14336ec3c62980d78c2c118161c5` on
+the existing phase branch. Refreshed remote `main` and the exact merge base were
+`33511b268d9b07ab10bc0725d488132fb5e3f324`; no unrelated aftercare or experimental
+content was incorporated. The cumulative implementation received independent
+backend, browser/accessibility and documentation reviews.
+
+One consequential browser defect was repaired: focusing an offscreen citation
+opened its preview, then automatic focus scrolling dismissed it. The scroll
+handler now repositions a focused, visible citation's preview, while other scrolls
+retain dismissal. Tab traversal permits normal scrolling to later controls.
+A regression covers offscreen focus, Escape and Tab traversal through later
+citations. This repair does not change preview metadata, citation authority,
+matching, persistence or the final editorial paragraph.
+
+The complete repaired candidate passed **1,072 offline tests**, including all four
+real-Edge browser tests, plus Ruff, Python compilation, whitespace checks and all
+six configured hooks. No new live model, provider, Search, Read or product
+submission occurred. The three original observations remain the product evidence;
+neither the final prompt's prose nor the keyboard repair has a new live-provider
+demonstration. The keyboard behavior is verified through the real browser with
+synthetic local content.
+
+Active `CURRENT.md`, `PRODUCT.md`, README and architecture documentation describe
+the implementation delivered by this feature. Short clarifications in the older
+briefing-promotion, citation-Reader, PDF and Answer-finalization reports distinguish
+their historical observations from current presentation. These documentation
+corrections are included with the feature, with no follow-on documentation change
+required for merge. No future merge SHA or PR number is assumed.
+
+The sole CI workflow runs dependency installation, configured hooks and pytest
+with plugin autoload disabled. It supplies no provider credentials and invokes
+no live product/backend command. Transport and browser tests use injected or
+synthetic I/O; publication navigation is fulfilled locally. CI may skip the four
+optional browser tests when Playwright is absent; the local complete run includes
+them. Dependency and hook installation is tooling traffic, not product acquisition.
+
+Review disposition: approved for one non-draft PR into `main`, subject to the
+human's independent review and merge decision. No merge or further experiment
+was performed as part of promotion.
 
 ## Focused editorial correction
 
@@ -324,12 +370,14 @@ not silently edited examples or evidence of general prompt success.
 
 ## Browser verification and screenshots
 
-The real application was reviewed at 1440×1000 desktop, 390×844 touch/mobile and
+At the original implementation checkpoint, the real application was reviewed at
+1440×1000 desktop, 390×844 touch/mobile and
 320×720 narrow mobile using synthetic public fixtures. No JavaScript errors or
 horizontal overflow were observed. The preview measured 360×255.6px desktop,
-360×276.1px at 390px and 296×319.3px at 320px. Three browser regression tests cover
+360×276.1px at 390px and 296×319.3px at 320px. Four browser regression tests cover
 hover persistence, direct publication navigation, keyboard focus/actions/Escape,
-touch tap, saved excerpt expansion and narrow-width layout.
+touch tap, saved excerpt expansion, narrow-width layout and offscreen keyboard
+focus/Tab traversal. The fourth regression was added for the promotion repair.
 
 After actual product completion, all eight generated descriptions, original URLs
 and exact saved material were checked again on both desktop and mobile after
@@ -349,8 +397,10 @@ Screenshots, all real UI with public or synthetic fixture content:
 
 ## Offline verification
 
-The applicable complete suite passed: **1,071 passed**, including the three
-optional real-Edge browser tests. Ruff, Python compilation, Git whitespace checks
+The final promotion candidate passed the applicable complete suite: **1,072
+passed**, including the four optional real-Edge browser tests. The original
+implementation had 1,071 passing tests before the new offscreen-focus regression.
+Ruff, Python compilation, Git whitespace checks
 and all six configured hooks passed. Focused tests cover validated identity
 matching, combined/repeated citations, multiple versions and excerpts, invalid or
 uncited aliases, missing/malformed metadata, strict primary validation, native API
@@ -383,7 +433,11 @@ CURRENT.md
 PRODUCT.md
 README.md
 docs/architecture/RESEARCH.md
+docs/operator/ANSWER_FINALIZATION_SIMPLIFICATION_01.md
 docs/operator/CITATION_PREVIEWS_EDITORIAL_01.md
+docs/operator/CITATION_READER_DURABLE_SUPPORT_PRODUCT_01.md
+docs/operator/PDF_DOCUMENTS_01.md
+docs/operator/RESEARCH_ANSWER_BRIEFING_PROMOTION_01.md
 scryraven/presentation.py
 scryraven/reading_room.py
 scryraven/research.py
@@ -401,9 +455,11 @@ tests/test_citation_preview_browser.py
 tests/test_reading_room.py
 ```
 
-`CURRENT.md` describes the local experiment and actual evidence; it does not
-declare deployment. Local `main` and `origin/main` remain at the verified production
-commit. No push, PR creation, merge, rebase, branch deletion, destructive reset or
-unrelated cleanup was performed. Review the local feature and especially whether
-the remaining comparison prose meets the intended editorial standard. This is a
-recommendation for review; no publication or successor phase is implied.
+`CURRENT.md` and the active product/browser documentation describe the final
+implementation, with implemented versus demonstrated behavior kept distinct.
+The feature, final editorial correction, keyboard repair and documentation are
+delivered together on the phase branch for independent review into `main`.
+The user retains merge authority. Promotion performs no merge, rebase, branch
+deletion, destructive reset, unrelated cleanup or successor phase. After merge,
+any separately authorized aftercare is local; it requires no documentation-only
+PR, housekeeping commit or new review cycle for this feature.

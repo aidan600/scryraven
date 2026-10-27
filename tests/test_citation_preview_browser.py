@@ -99,6 +99,37 @@ def test_keyboard_focus_actions_escape_and_exact_saved_excerpt(browser, citation
         assert preview.is_hidden()
 
 
+def test_keyboard_reaches_offscreen_citations_and_keeps_preview_after_focus_scroll(browser, citation_page):
+    with page_at(browser, citation_page) as page:
+        citations = page.locator('a.citation')
+        preview = page.locator('#citation-preview')
+        last = citations.last
+        assert last.bounding_box()["y"] > page.viewport_size["height"]
+        # Browser focus scroll must preserve the newly focused citation's preview.
+        last.focus()
+        page.wait_for_timeout(250)
+        assert last.evaluate('(el) => el === document.activeElement')
+        assert preview.is_visible()
+        assert last.evaluate('(el) => el.getBoundingClientRect().top < innerHeight')
+        page.keyboard.press('Escape')
+        assert preview.is_hidden()
+        # Tabbing through preview actions must also reveal each next citation,
+        # including later answers that begin below the reading viewport.
+        page.locator('.reading-scroll').evaluate('(el) => { el.scrollTop = 0; }')
+        citations.first.focus()
+        for index in range(citations.count() - 1):
+            page.keyboard.press('Tab')  # Original-publication action.
+            page.keyboard.press('Tab')  # Saved-excerpt action.
+            page.keyboard.press('Tab')  # Next citation in normal reading order.
+            if page.locator('.sources-control').evaluate_all('(els) => els.includes(document.activeElement)'):
+                page.keyboard.press('Tab')  # Continue past the closed source list.
+            page.wait_for_timeout(100)
+            assert citations.nth(index + 1).evaluate('(el) => el === document.activeElement')
+            assert preview.is_visible()
+        assert last.evaluate('(el) => el.getBoundingClientRect().top < innerHeight')
+        assert page.locator('.reading-scroll').evaluate('(el) => el.scrollTop') > 0
+
+
 def test_mobile_tap_exposes_preview_original_and_saved_material_without_overflow(browser, citation_page):
     with page_at(browser, citation_page, mobile=True) as page:
         preview = page.locator('#citation-preview')

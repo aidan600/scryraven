@@ -1,5 +1,11 @@
 # PDF Documents 01
 
+PDF custody and usage guidance with historical phase verification below. Current
+citation presentation uses compact previews and secondary inline saved excerpts,
+with original PDFs retained; see
+[Citation Previews and Editorial Restraint 01](CITATION_PREVIEWS_EDITORIAL_01.md).
+Model assignments, operating limits and current verification are in `CURRENT.md`.
+
 A research session can hold user-provided text PDFs. Research reads bounded
 exact extracted text from those documents and can combine it with ordinary web
 evidence. The document is evidence of what it states. Its provenance does not

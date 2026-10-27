@@ -1,11 +1,13 @@
 # Ordinary Research / Evidence-first Answer architecture
 
 The ordinary topology is initial Luna Research -> Sol Answer with optional
-resumable delegated Research. The approved briefing promotion preserves the topology
-merged in [PR #677](https://github.com/aidan600/scryraven/pull/677) and passes
-Research interpretation alongside originals. This candidate is pending merge;
-see `docs/operator/RESEARCH_ANSWER_BRIEFING_PROMOTION_01.md` for current review and
-verification, and `docs/operator/RESEARCH_ANSWER_BRIEFING_01.md` for the historical design report.
+resumable delegated Research. The briefing implementation merged in
+[PR #679](https://github.com/aidan600/scryraven/pull/679) preserves the topology
+from PR #677 and passes Research interpretation alongside originals. Citation
+previews and the final editorial guidance extend Answer presentation within that
+same path. See `docs/operator/CITATION_PREVIEWS_EDITORIAL_01.md` for feature
+verification and evidence limits, and `docs/operator/RESEARCH_ANSWER_BRIEFING_01.md`
+for the historical design report.
 Research -> Analyst -> Author remains retired. There is no production selector,
 alternate engine or fallback. `CURRENT.md` distinguishes implementation from
 bounded demonstrations and remaining limitations.
@@ -184,14 +186,16 @@ material/source/parent IDs, ranges, content hashes and UTF-8 byte counts. Public
 source-body observation remains a separate opt-in diagnostic projection.
 
 The Answer contract is `SemanticAnswerDecision`: posture, `support_basis`,
-answer, and `missing_information`. Sol, through the existing Answer model role,
+answer, and `missing_information`, plus optional generated `citation_descriptions`
+for presentation. Sol, through the existing Answer model role,
 owns meaning, prose, adequacy and citations. It evaluates the briefing against supplied Evidence and cites exact supplied
 aliases beside supported factual claims.
 A completed valid Answer proceeds directly to deterministic citation resolution
 and publication. No model localizes passages, copies `source_readings`, or
 regenerates an otherwise valid whole answer for presentation.
 
-The existing schema, posture/need and support-basis checks remain. A missing
+The primary schema, posture/need and support-basis checks remain strict. Invalid
+optional citation descriptions are discarded without invalidating the Answer. A missing
 required Evidence citation receives the existing single correction; all invalid
 primary response categories share that allowance and whole-turn limits.
 Invalid aliases, unavailable versions and custody failures reject publication.
@@ -203,9 +207,10 @@ derivations can complete without citations even when unrelated originals exist;
 mixed factual claims use Evidence and cite their originals. Generated notes,
 conversation and prior assistant prose never become Evidence.
 
-New citation uses have no passage coordinates. They open the exact selected
-saved source material through the generic Reader, with original publication or
-retained PDF/page actions. They make no exact highlighted-support claim.
+New citation uses have no passage coordinates. Inline Reading Room citations
+offer a compact preview and direct original-publication access. The secondary
+saved excerpt exposes exact selected material with retained PDF/page actions.
+They make no exact highlighted-support claim.
 Historical support coordinates, source snapshots and hash validation remain
 readable and render their saved occurrence-specific support without inference.
 

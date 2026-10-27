@@ -1,20 +1,20 @@
 # ScryRaven Current Truth
 
-## Production baseline and local feature branch
+## Current implementation and lineage
 
 Research–Answer Briefing Promotion 01 merged in PR #679 at
-`33511b268d9b07ab10bc0725d488132fb5e3f324`. A refreshed `origin/main` verified that
-commit before this phase. `codex/citation-previews-editorial-01` starts directly
-from it; unmerged aftercare documentation and rejected experiments were not
-incorporated. Production retains Luna/high Research, Sol/medium Answer and the
-shared Research-first resumable Answer path. The promotion report retains its
-offline verification and bounded semantic-evidence qualifications.
+`33511b268d9b07ab10bc0725d488132fb5e3f324`. Citation Previews and Editorial
+Restraint 01 extends that implementation with the final editorial correction
+from `647a7268381e14336ec3c62980d78c2c118161c5` and an offline-verified keyboard
+focus repair. Unmerged aftercare documentation and rejected experiments are not
+part of this implementation. Luna/high Research, Sol/medium Answer and the shared
+Research-first resumable Answer path remain unchanged.
 
-## Citation previews and editorial restraint — local experimental implementation
+## Citation previews and editorial restraint
 
-The human authorized this coordinated presentation change, implementation and
-bounded ordinary-product observation. It is not deployed or published. Answer's
-editorial principle is to answer directly and fully within supported scope,
+The ordinary Reading Room includes compact citation previews and secondary exact
+saved excerpts. Answer's editorial principle is to answer directly and fully
+within supported scope,
 including qualifications when they change the conclusion, resolve real ambiguity
 or identify a consequential unanswered request. Recognizing a limitation does not
 automatically require narrating it. Research's prompt and responsibilities,
@@ -37,10 +37,14 @@ opens secondary inline exact saved material with highlight/fetched-text labels;
 original PDFs and historical support coordinates remain available. The large
 inspector, dock/sheet layouts and overview/back navigation are removed.
 
-Implementation revision `65a230a1c14e2b4696f525fb42c57f3dac3fb903` passed the full
-offline suite (1,071 passed, including real-browser checks), Ruff, compilation,
-whitespace and all six configured hooks. Desktop, 390px and 320px mobile fixtures
-were visually reviewed without overflow. Three ordinary browser submissions used
+The complete candidate, including the final editorial correction and keyboard
+repair, passed the full offline suite (1,072 passed, including four real-browser
+checks), Ruff, compilation, whitespace and all six configured hooks. The repair
+keeps a focused citation's preview visible during browser focus scrolling and
+allows Tab navigation to reveal later citations; ordinary scroll dismissal remains.
+Earlier desktop, 390px and 320px mobile fixtures were visually reviewed without
+overflow at `65a230a1c14e2b4696f525fb42c57f3dac3fb903`. Three ordinary browser
+submissions used
 17 physical model requests and 16 external attempts, with zero independent source
 checks. The Nobel lookup was direct with one faithful preview; the Waymo comparison
 had seven faithful previews and used native delegated Research. All eight generated
@@ -57,18 +61,16 @@ material distinctions through their consequences, and avoids generic caveats or
 repeating an established limitation without a new consequential distinction or
 revised conclusion. This focused correction changes one editorial paragraph;
 grounding, analytical depth, competing evidence and honest partials remain.
-It passed 241 applicable offline tests, Ruff, compilation, whitespace and all six
-hooks. No new live calls or experiment were authorized or performed. Its editorial
-effect is unobserved; offline checks do not demonstrate improved prose. The earlier
+No new live calls or experiment were performed for correction or promotion.
+The corrected prompt's editorial effect is unobserved; offline checks do not
+demonstrate improved prose. The earlier
 unpaired observations do not establish causal improvement or isolate preview
 latency. Exact outputs, screenshots, the prompt diff, limits and frozen questions are in
 `docs/operator/CITATION_PREVIEWS_EDITORIAL_01.md`; useful public cases are preserved
-as ignored local evaluation candidates. Only that editorial paragraph changed in
-runtime after the live-tested revision; citation previews, schema, matching,
-persistence and browser interaction are unchanged. No new semantic owner, model,
-retrieval policy, historical regeneration
-path or mandatory model interaction was introduced. Nothing was pushed or
-published; no PR, merge or successor phase is authorized.
+as ignored local evaluation candidates. Changes after the live-tested revision
+are the editorial paragraph and focused keyboard repair; source matching,
+validation and persistence are unchanged. No new semantic owner, model, retrieval
+policy, historical regeneration path or mandatory model interaction was introduced.
 
 ## Research–Answer Convergence 01 — completed development evidence
 
@@ -81,7 +83,7 @@ Luna/high Research and GPT-6.1 Sol/medium Answer. Existing 900-second, 40-physic
 request and 16-external-attempt turn ceilings remain. Up to six separately
 recorded public adjudication checks were licensed. That campaign prohibited publication;
 its subsequent promotion was separately reviewed and merged. Neither campaign
-renews publication authority or product runway for this local feature branch.
+renews its historical live-product runway.
 
 Batch 1 completed three ordinary submissions at
 `aa28de720631e5236428d6dff8ae92af09928b2f`: exact historical BIPM prefix lookup,

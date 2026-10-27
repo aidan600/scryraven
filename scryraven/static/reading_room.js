@@ -121,7 +121,7 @@
         .filter(el => !preview.contains(el) && el.getClientRects().length && !el.disabled);
       const next = all[all.indexOf(origin) + 1];
       closePreview();
-      next?.focus({preventScroll: true});
+      next?.focus();
     }
   });
   document.addEventListener('pointerdown', event => {
@@ -130,7 +130,18 @@
   document.addEventListener('focusin', event => {
     if (!preview.hidden && !preview.contains(event.target) && event.target !== origin) closePreview();
   });
-  reader.addEventListener('scroll', () => closePreview(), {passive: true});
+  reader.addEventListener('scroll', () => {
+    if (origin && document.activeElement === origin) {
+      const anchor = origin.getBoundingClientRect();
+      const viewport = reader.getBoundingClientRect();
+      if (anchor.bottom > viewport.top && anchor.top < viewport.bottom &&
+          anchor.right > viewport.left && anchor.left < viewport.right) {
+        positionPreview();
+        return;
+      }
+    }
+    closePreview();
+  }, {passive: true});
   window.addEventListener('resize', () => closePreview());
   document.addEventListener('click', event => {
     document.querySelectorAll('.session-actions[open]').forEach(menu => {

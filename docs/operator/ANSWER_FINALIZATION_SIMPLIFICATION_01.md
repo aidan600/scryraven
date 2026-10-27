@@ -1,5 +1,12 @@
 # Production Answer Finalization Simplification 01
 
+Historical implementation and observation record. Its direct-primary-Answer
+contract remains; current citation previews and secondary inline saved excerpts
+replace the earlier Reader presentation. See
+[Citation Previews and Editorial Restraint 01](CITATION_PREVIEWS_EDITORIAL_01.md)
+for current presentation and evidence limits. Results below describe the original
+tested revisions.
+
 OUTCOME: **Met for the bounded publication and source-access outcome.** A valid
 completed primary Answer publishes without model localization or legacy rewriting.
 Offline preservation covers all six authentic campaign packets. One of two native

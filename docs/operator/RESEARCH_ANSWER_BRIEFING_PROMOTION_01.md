@@ -1,8 +1,11 @@
 # Research–Answer Briefing Promotion 01
 
-Status: approved promotion candidate, pending merge into `main`.
-Review disposition: **A — approve for PR publication**. Required offline checks
-passed. This is not approval to merge.
+Historical promotion record: merged in [PR #679](https://github.com/aidan600/scryraven/pull/679)
+at `33511b268d9b07ab10bc0725d488132fb5e3f324`. The original review disposition
+was **A — approve for PR publication**, with required offline checks passed and
+merge authority retained by the human. Candidate and publication references below
+describe that original review, not a pending promotion. Current implementation is
+in `CURRENT.md` and `docs/architecture/RESEARCH.md`.
 
 ## Outcome and exact scope
 
