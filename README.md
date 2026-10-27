@@ -1,6 +1,8 @@
 # ScryRaven
 
-The approved Research–Answer briefing revision described here is pending merge.
+The Research–Answer briefing revision described here is production, merged in
+[PR #679](https://github.com/aidan600/scryraven/pull/679) at
+`33511b268d9b07ab10bc0725d488132fb5e3f324`.
 See the [promotion review](docs/operator/RESEARCH_ANSWER_BRIEFING_PROMOTION_01.md)
 for scope, verification and existing product evidence.
 
@@ -55,8 +57,8 @@ Search; Research can select Serper for lexical/community/current discovery;
 LinkUp Fetch supplies external known-URL
 Read. There is no architecture selector, Analyst checkpoint,
 separate old Author handoff or fallback engine.
-See [research architecture](docs/architecture/RESEARCH.md) for the proposed
-contract pending merge.
+See [research architecture](docs/architecture/RESEARCH.md) for the current
+production contract.
 
 ## Reading Room
 

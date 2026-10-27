@@ -1,6 +1,14 @@
 # Research–Answer Briefing Promotion 01
 
 Status: approved promotion candidate, pending merge into `main`.
+
+Post-merge addendum (2026-10-27): [PR #679](https://github.com/aidan600/scryraven/pull/679)
+merged at `33511b268d9b07ab10bc0725d488132fb5e3f324`. The report below preserves
+its original pre-merge review and authorization. Current production truth is in
+`CURRENT.md`. Subsequent aftercare removed the disposable run/log directories
+referenced below; selected exact development candidates and their limitations
+are identified in `docs/operator/RESEARCH_ANSWER_POST_MERGE_AFTERCARE_01.md`.
+
 Review disposition: **A — approve for PR publication**. Required offline checks
 passed. This is not approval to merge.
 
