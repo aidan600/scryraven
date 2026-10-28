@@ -43,8 +43,8 @@ def search_exa(
     query = _required_text(query, "query")
     if isinstance(result_count, bool) or not isinstance(result_count, int) or not 1 <= result_count <= 100:
         raise ValueError("result_count must be an integer between 1 and 100")
-    if not isinstance(search_type, str) or search_type not in {"auto", "deep"}:
-        raise ValueError("search_type must be auto or deep")
+    if not isinstance(search_type, str) or search_type not in {"auto", "deep", "lite"}:
+        raise ValueError("search_type must be auto, deep or lite")
     data = _post_json(EXA_SEARCH_URL, {
         "query": query, "type": search_type, "numResults": result_count,
         "contents": {"text": False, "highlights": {

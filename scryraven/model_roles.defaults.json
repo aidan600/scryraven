@@ -1,7 +1,7 @@
 {
   "research": {
-    "model": "gpt-6-luna",
-    "reasoning": "high",
+    "model": "gpt-6.1-terra",
+    "reasoning": "medium",
     "service_tier": "fast"
   },
   "answer": {

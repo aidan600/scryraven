@@ -93,8 +93,8 @@ def test_lossless_layout_unchanged_instructions_schema_defaults_and_stateless_co
         "prompt_cache_breakpoint": {"mode": "explicit"},
     }]}
     assert payload["input"][1]["role"] == "user"
-    assert payload["model"] == ("gpt-6-luna" if stage == "research" else "gpt-6.1-sol")
-    assert payload["reasoning"] == {"effort": "high" if stage == "research" else "medium"}
+    assert payload["model"] == ("gpt-6.1-terra" if stage == "research" else "gpt-6.1-sol")
+    assert payload["reasoning"] == {"effort": "medium"}
     assert payload["text"] == {"format": {"type": "json_schema", "name": stage, "strict": True, "schema": schema}}
     assert payload["store"] is False and payload["max_output_tokens"] == 12000
     assert not {"previous_response_id", "conversation", "prompt_cache_retention", "tools"} & payload.keys()
@@ -254,7 +254,7 @@ def test_family_separates_contracts_and_namespace_but_not_questions_or_correctio
 def test_configured_answer_upgrade_changes_only_answer_cache_identity(transport):
     model, calls, records = transport
     previous = OpenAIModel(ModelConfig(
-        ModelRole("gpt-6-luna", "high", "fast"),
+        model.config.research,
         ModelRole("gpt-6-sol", "medium", "fast"),
     ), post=model.post, usage_observer=records.append)
     for stage, phase, prompt, _, shape in FAMILIES:
@@ -349,7 +349,7 @@ def test_real_model_transport_through_ordinary_run_and_session_with_fake_respons
     assert first.answer == ANSWER_A + " [1]" and first.citations[0].url == URL_A
     assert not replies and not provider.fetches
     assert [(call["model"], call["reasoning"]["effort"]) for call in calls] == [
-        ("gpt-6-luna", "high") if call["text"]["format"]["name"] in {"research"}
+        ("gpt-6.1-terra", "medium") if call["text"]["format"]["name"] in {"research"}
         else ("gpt-6.1-sol", "medium") for call in calls
     ]
     assert len({call["prompt_cache_key"] for call in calls if call["text"]["format"]["name"] == "research"}) == 1

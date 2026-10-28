@@ -1,6 +1,6 @@
 # Ordinary Research / Evidence-first Answer architecture
 
-The ordinary topology is initial Luna Research -> Sol Answer with optional
+The ordinary topology is initial Terra Research -> Sol Answer with optional
 resumable delegated Research. The briefing implementation merged in
 [PR #679](https://github.com/aidan600/scryraven/pull/679) preserves the topology
 from PR #677 and passes Research interpretation alongside originals. Citation
@@ -16,8 +16,8 @@ bounded demonstrations and remaining limitations.
 
 `scryraven.research` has two semantic model contracts: Research and Answer.
 Ordinary runtime selects `ModelConfig.research` or `ModelConfig.answer`; the
-package ships tracked defaults in `scryraven/model_roles.defaults.json`: GPT-6 Luna /
-high / Fast for Research and GPT-6.1 Sol / medium / Fast for Answer. An optional
+package ships tracked defaults in `scryraven/model_roles.defaults.json`: GPT-6.1 Terra /
+medium / Fast for Research and GPT-6.1 Sol / medium / Fast for Answer. An optional
 complete user/operator `model_roles.json` outside the repository overrides all
 three execution settings. Explicit injected `ModelConfig` takes precedence over
 the user file, which takes precedence over shipped defaults. `built_in_model_config()`
@@ -40,8 +40,14 @@ and writes nothing. The external file is the current settings boundary; no UI,
 settings endpoint, write API, database settings, watcher or merging layer exists.
 These values are reversible product configuration, not architectural requirements
 or a model router. Compatible injected configurations may vary in quality and
-validation coverage. A bounded latency comparison kept high after medium missed
-a controlling Passport identity lead.
+validation coverage. The Terra/medium choice and Lite-first acquisition are
+reversible product defaults supported by bounded development observations, not
+general superiority claims. See
+`docs/operator/RESEARCH_DEFAULTS_CONSOLIDATION_01.md` for the experiments,
+competing hypotheses and surviving DOE/Klamath competence failures. Initial and
+delegated Research use the same role; no hybrid allocation or new semantic owner
+is introduced. An earlier Luna effort comparison kept high after medium missed
+a controlling Passport identity lead; that is historical evidence.
 The earlier ordinary-route Standard/Fast comparison did not isolate a Fast speed
 benefit; a later isolated fixed-packet screen showed a consistent latency benefit
 for GPT-6 Sol / medium / Fast and noisier evidence for Luna / high / Fast. The
@@ -51,14 +57,10 @@ GPT-6.1 Sol / high / Standard, without isolating a model or tier benefit.
 Fast may cost more per token, and
 there is no runtime cost estimator. Model choices are not
 read from environment variables; `.env.example` contains credential placeholders.
-No Sol interpretation/decomposition pass precedes Research. Such a pass may be
-compared in a separate bounded experiment only if Level-8 or later dogfooding
-shows repeated, exact cases of materially recoverable requests with sufficient
-conversation context and working acquisition, yet Luna/high misidentifies the
-task, loses a user correction, or decomposes the wrong problem. The exact cases
-must be preserved. The comparison would test direct Luna Research against one
-Sol interpretation/decomposition pass followed by Luna Research; it is not a
-production route to prebuild. No tested current case has earned that experiment.
+No separate interpretation/decomposition pass precedes Research. The newer
+interpretation-recovery and shared-evidence observations leave specialized
+interpretation, discovery of controlling criteria and consequential omission
+unresolved; they do not establish an additional reviewer or Analyst's benefit.
 
 Exa supplies ordinary general Search. Research formulates generic Exa queries as
 concise natural-language evidence objectives describing what source material should
@@ -75,24 +77,25 @@ premium escalation, Scout, specialist hierarchy, verifier, or prose polisher.
 
 For a fresh first session turn (`session_turn == 1`) with no retained acquisitions
 entering the turn, a private run-local transport wrapper sends the first executed
-generic Exa Search with `type=deep`. It consumes the bootstrap on execution,
+generic Exa Search with `type=lite`. It consumes the bootstrap on execution,
 including a failed request, and sends subsequent generic Searches with
 `type=auto`. Other turns and retained-entry turns use Auto throughout. Earlier
 lexical Search, Read or Find does not consume it; an Answer without generic Search
-makes no Deep request. Direct `search_exa()` callers default to Auto and its
-accepted types are bounded to Auto and Deep. Research selects the ordinary route
+makes no Lite request. Direct `search_exa()` callers default to Auto and its
+accepted types are Auto, Deep and Lite. Deep remains an accepted transport type,
+without an automatic fallback. Research selects the ordinary route
 and writes the evidence objective; it has no provider-depth field or decision.
 There is no fresh-problem classifier, persistent token, feature flag or new
 semantic owner. Later unrelated questions and follow-up eligibility are not
 classified beyond the existing turn/retained-entry boundary.
 
 A contiguous run of two or three ordinary generic Exa Search requests inside one
-Research route may send those Exa calls concurrently. The executor assigns Deep
+Research route may send those Exa calls concurrently. The executor assigns Lite
 or Auto before dispatch, in original request order, and admits each result
 serially in that same order after every transport in the group has settled.
 Finish order does not allocate candidate, Evidence, or source identity and does
 not change novelty, which is calculated against library state that already
-contains earlier requests from the group. A failed Deep still consumes the
+contains earlier requests from the group. A failed Lite still consumes the
 bootstrap. One Search failure does not cancel a sibling that was already
 dispatched, and there is no automatic serial retry. A group that cannot be
 reserved under the existing external-attempt allowance, or that is reached after
@@ -103,7 +106,7 @@ diagnostics may record that group's route indexes, transport sum, span, and
 overlap. Research still chooses acquisition routes. This transport overlap changes
 neither acquisition policy nor the Research prompt and adds no semantic decision-maker.
 
-Both modes request six results, `text=false` and Dynamic/high Highlights with
+All three modes request six results, `text=false` and Dynamic/high Highlights with
 the existing beta header. Only exact source-bound `results[].highlights[]` enter
 the unchanged Highlight custody path, including separate-selection markers and
 the size guard. Generated synthesis, summaries, grounding, confidence and provider
@@ -342,8 +345,8 @@ Read with `target=D1` and Find with `scope=["D1"]` use the retained extraction
 locally. Unscoped Find may also inspect retained web material. Exact document
 refs use `D1@start:end` over the deterministic extracted text, with real PDF
 page indexes. Those refs are accepted as Evidence when actually supplied to Answer.
-A document read spends no external attempt and does not consume the Exa Deep
-bootstrap. The first eligible generic web Search still uses Deep. Document text
+A document read spends no external attempt and does not consume the Exa Lite
+bootstrap. The first eligible generic web Search still uses Lite. Document text
 is authoritative for what the document states. It does not by itself verify an
 outside-world claim. Web Search and known-URL Read remain available on the same
 turn. No OCR, vision model, embedding, or semantic reranker is used.
