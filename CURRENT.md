@@ -33,6 +33,22 @@ remain uncertain. Klamath investigations still omitted the October 2025 tributar
 completion milestone and Spencer Creek's distinct scope. Acquiring, selecting,
 delivering and using consequential evidence remain separate failure layers.
 
+At runtime `daefb1ef69de5cf1ebe99e81c6d77ddc5487ca38`, one ordinary personal-plan
+BIPM canary used shipped settings through explicit ordinary model injection:
+two Terra/medium Research requests, one Sol/medium Answer request and one
+dispatched Lite Search. It returned supported quetta (Q), 10^30 with a BIPM
+citation in 12.547 seconds and reopened identically. All three returned the
+`default` service tier; no Fast benefit or general Research quality is established.
+The full offline suite passed 1,077 tests; Ruff, compilation and configured hooks
+passed. Later consolidation edits change documentation only.
+
+The inspected personal `%LOCALAPPDATA%\ScryRaven\model_roles.json` remains
+unchanged: Luna/high/Fast Research and Sol/medium/default Answer override shipped
+settings. To activate the new Research assignment after merge, set its Research
+`model` to `gpt-6.1-terra` and `reasoning` to `medium`, retaining its service tier.
+The Answer override already retains Sol/medium; it continues requesting its
+existing default tier. Package Fast settings and transport behavior are unchanged.
+
 ## Citation previews and editorial restraint
 
 The ordinary Reading Room includes compact citation previews and secondary exact
@@ -574,9 +590,10 @@ allocation with `dynamic=true`, `verbosity=high` and the
 `Exa-Beta: dynamic-highlights-2026-08-28` header; no fixed `maxCharacters` is
 requested. Actual returned source selections retain `provider_highlights` custody,
 explicit separation and the existing size guard. Serper discovery and LinkUp
-known-URL Read are unchanged. The initial integration received offline
-verification; Exa Evidence-Objective Search 01 subsequently exercised the same
-request mechanics in four ordinary product runs. No universal answer-quality,
+known-URL Read are unchanged. The earlier integration received offline
+verification; Exa Evidence-Objective Search 01 exercised the retained Highlight
+mechanics with the historical Deep/Auto default in four ordinary product runs.
+The Lite-first confirmation is recorded above. No universal answer-quality,
 latency or cost improvement is established.
 
 A contiguous group of two or three ordinary generic Exa Searches inside one
