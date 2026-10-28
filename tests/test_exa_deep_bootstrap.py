@@ -11,10 +11,13 @@ from core import exa_transport as exa
 from core.exa_transport import DiscoveryCandidate, FetchedMaterial
 from scryraven.dogfood_diagnostics import TurnDiagnostics
 from scryraven.research import run
+from scryraven.session import ResearchSession
+from scryraven.session_store import SQLiteSessionStore
 from scryraven.sources import Evidence
 
 
-def test_deep_request_keeps_exact_highlights_and_excludes_generated_fields():
+@pytest.mark.parametrize("search_type", ["auto", "deep", "lite"])
+def test_request_keeps_exact_highlights_and_excludes_generated_fields(search_type):
     calls = []
     passages = ["  First source selection.\n", "Second source selection."]
 
@@ -28,9 +31,9 @@ def test_deep_request_keeps_exact_highlights_and_excludes_generated_fields():
             "answer": "GENERATED", "summary": "GENERATED",
         })
 
-    candidate = exa.search_exa("Evidence objective", search_type="deep", api_key="offline", post=post)[0]
+    candidate = exa.search_exa("Evidence objective", search_type=search_type, api_key="offline", post=post)[0]
     assert calls[0]["json"] == {
-        "query": "Evidence objective", "type": "deep", "numResults": 6,
+        "query": "Evidence objective", "type": search_type, "numResults": 6,
         "contents": {"text": False, "highlights": {
             "query": "Evidence objective", "dynamic": True, "verbosity": "high"}},
     }
@@ -42,8 +45,8 @@ def test_deep_request_keeps_exact_highlights_and_excludes_generated_fields():
 
 
 @pytest.mark.parametrize("search_type", ["deep-reasoning", "deep-max", "Auto", "", None, [], True])
-def test_only_auto_and_deep_are_accepted_before_io(search_type):
-    with pytest.raises(ValueError, match="search_type must be auto or deep"):
+def test_only_supported_search_types_are_accepted_before_io(search_type):
+    with pytest.raises(ValueError, match="search_type must be auto, deep or lite"):
         exa.search_exa("Objective", search_type=search_type, post=lambda *a, **k: pytest.fail("I/O"))
 
 
@@ -77,12 +80,12 @@ def test_one_shot_across_same_and_later_routes_with_safe_mode_telemetry(monkeypa
                    decision(requests=[request(query="third")]), decision("return", ["E1"]), answer())
     result = run("Value?", model=model, observe=observe)
     assert sorted((call["json"]["query"], call["json"]["type"]) for call in calls[:2]) == [
-        ("first", "deep"), ("second", "auto"),
+        ("first", "lite"), ("second", "auto"),
     ]
     assert (calls[2]["json"]["query"], calls[2]["json"]["type"]) == ("third", "auto")
     timings = [event for event in observed if event["action"] == "acquisition_timing"]
-    assert [event["provider_search_type"] for event in timings] == ["deep", "auto", "auto"]
-    assert [row["provider_search_type"] for row in diagnostics.acquisitions] == ["deep", "auto", "auto"]
+    assert [event["provider_search_type"] for event in timings] == ["lite", "auto", "auto"]
+    assert [row["provider_search_type"] for row in diagnostics.acquisitions] == ["lite", "auto", "auto"]
     assert all("query" not in event and "url" not in event for event in timings)
     assert result.selected_evidence[0].content == "The stated value is seven."
     assert all("provider_search_type" not in json.dumps(packet) for _, _, packet, _ in model.calls)
@@ -116,13 +119,13 @@ def test_other_operations_do_not_consume_bootstrap(monkeypatch):
                    decision(), decision("return"), answer("Not established.", "unable"))
     result = run("Value?", model=model, lexical_search=lexical_search, fetch=fetch)
     assert lexical == ["lexical"] and reads == ["https://example.test/page"]
-    assert [call["json"]["type"] for call in calls] == ["deep"]
+    assert [call["json"]["type"] for call in calls] == ["lite"]
     operations = [e for e in result.trace if e["action"] == "acquisition_timing"]
     assert [e["provider"] for e in operations] == ["serper", "linkup", "local", "exa"]
     assert all("provider_search_type" not in e for e in operations[:3])
 
 
-def test_no_generic_search_means_no_deep_request(monkeypatch):
+def test_no_generic_search_means_no_lite_request(monkeypatch):
     calls = []
     production_post(monkeypatch, calls)
     model = Script(decision("return"), answer("Not established.", "unable"))
@@ -135,7 +138,7 @@ def test_executed_failure_consumes_bootstrap(monkeypatch):
     production_post(monkeypatch, calls, fail_first=True)
     model = Script(decision(), decision(), decision("return", ["E1"]), answer())
     result = run("Value?", model=model)
-    assert [call["json"]["type"] for call in calls] == ["deep", "auto"]
+    assert [call["json"]["type"] for call in calls] == ["lite", "auto"]
     assert result.posture == "supported"
 
 
@@ -144,7 +147,27 @@ def test_new_run_gets_its_own_bootstrap(monkeypatch):
     production_post(monkeypatch, calls)
     for _ in range(2):
         run("Value?", model=Script(decision(), decision("return", ["E1"]), answer()))
-    assert [call["json"]["type"] for call in calls] == ["deep", "deep"]
+    assert [call["json"]["type"] for call in calls] == ["lite", "lite"]
+
+
+@pytest.mark.parametrize("reopen", [False, True])
+def test_retained_session_followup_keeps_auto_and_historical_citations(monkeypatch, tmp_path, reopen):
+    calls = []
+    production_post(monkeypatch, calls)
+    first_model = Script(*[decision(), decision("return", ["E1"]), answer()] * 2)
+    store = SQLiteSessionStore(tmp_path / "session.sqlite3")
+    session = ResearchSession.create(store=store, model=first_model)
+    first = session.ask("Value?")
+    assert first.citations[0].materials[0].content == "The stated value is seven."
+    historical = session.turns[0]
+    if reopen:
+        followup_model = Script(decision(), decision("return", ["E1"]), answer())
+        session = ResearchSession.open(session.session_id, store=store, model=followup_model)
+    followup = session.ask("Verify that value again.")
+    assert [call["json"]["type"] for call in calls] == ["lite", "auto"]
+    assert followup.posture == "supported"
+    assert session.turns[0] == historical
+    assert followup.citations[0].materials[0].content == first.citations[0].materials[0].content
 
 
 def test_diagnostics_drops_unrecognized_provider_mode():

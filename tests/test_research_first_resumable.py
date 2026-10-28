@@ -66,7 +66,7 @@ def results(payload):
             if item.get("type") == "function_call_output"}
 
 
-def scripted(monkeypatch, outputs, backend="api"):
+def scripted(monkeypatch, outputs, backend="api", *, config=CONFIG):
     """Use production OpenAIModel and the actual plan-payload projection, never auth/I/O."""
     payloads, timeouts = [], []
     remaining = iter(outputs)
@@ -98,12 +98,12 @@ def scripted(monkeypatch, outputs, backend="api"):
         def post(_url, **kwargs):
             return Response(dispatch(kwargs["json"], kwargs["timeout"].total))
 
-        model = OpenAIModel(CONFIG, post=post)
+        model = OpenAIModel(config, post=post)
     else:
         from scryraven.chatgpt_plan.transport import plan_payload
 
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        model = OpenAIModel(CONFIG, backend="chatgpt_plan")
+        model = OpenAIModel(config, backend="chatgpt_plan")
         def plan_request(payload, *, timeout, before_dispatch):
             body = plan_payload(payload)
             return dispatch(body, min(timeout, before_dispatch()))
@@ -222,7 +222,8 @@ def test_multiple_research_calls_resume_one_answer_with_local_and_arithmetic_his
     assert result.posture == "supported" and len(result.citations) == 2
 
 
-def test_initial_and_delegated_research_share_first_deep_eligibility(monkeypatch):
+@pytest.mark.parametrize("backend", ["api", "chatgpt_plan"])
+def test_shipped_roles_and_initial_delegated_research_share_first_lite_eligibility(monkeypatch, backend):
     modes = []
 
     def exa(query, *, search_type, timeout_seconds):
@@ -231,13 +232,24 @@ def test_initial_and_delegated_research_share_first_deep_eligibility(monkeypatch
                                    context_kind="provider_highlights")]
 
     monkeypatch.setattr(research, "search_exa", exa)
-    model, _, _ = scripted(monkeypatch, [
+    model, payloads, _ = scripted(monkeypatch, [
         reply(initial(requests=[request()])), reply(initial("return", ["E1"])),
         tool("research", {"need": "Find an independently acquired qualification."}, "r1"),
         reply(delegated(requests=[request(query="qualification")])), reply(delegated("return", ["E2"])),
-        reply(answer("Both originals state seven. [E1][E2]"))])
+        reply(answer("Both originals state seven. [E1][E2]"))], backend, config=None)
     result = run("Establish the value and qualification.", model=model, search=exa)
-    assert [mode for mode, _ in modes] == ["deep", "auto"]
+    assert [mode for mode, _ in modes] == ["lite", "auto"]
+    assert stages(payloads) == ["research", "research", "answer", "research", "research", "answer"]
+    assert [payload["model"] for payload in payloads] == [
+        "gpt-6.1-terra", "gpt-6.1-terra", "gpt-6.1-sol",
+        "gpt-6.1-terra", "gpt-6.1-terra", "gpt-6.1-sol",
+    ]
+    assert all(payload["reasoning"] == {"effort": "medium"} for payload in payloads)
+    if backend == "api":
+        assert all(payload["service_tier"] == "fast" for payload in payloads)
+    else:
+        assert all("service_tier" not in payload for payload in payloads)
+    assert result.posture == "supported" and len(result.citations) == 2
     assert result.trace[-1]["budget"]["external_attempts"] == 2
 
 
@@ -650,7 +662,7 @@ def test_serial_and_concurrent_provider_timeouts_obey_300_and_remaining_turn(mon
     result = run("What do these originals establish?", model=model, search=exa,
                  lexical_search=lexical, fetch=fetch, clock=lambda: now[0])
     first_group = {query: (mode, timeout) for provider, query, mode, timeout in external[:2] if provider == "exa"}
-    assert first_group == {"first": ("deep", 300), "second": ("auto", 300)}
+    assert first_group == {"first": ("lite", 300), "second": ("auto", 300)}
     assert [(provider, timeout) for provider, _query, _mode, timeout in external[2:]] == [
         ("serper", 175), ("linkup", 120), ("exa", 50)]
     assert result.posture == "supported" and result.trace[-1]["budget"]["external_attempts"] == 5

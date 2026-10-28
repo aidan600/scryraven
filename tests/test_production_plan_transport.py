@@ -169,8 +169,8 @@ def test_plan_native_research_dependent_calculation_and_unknown_usage():
     assert result.answer == final["answer"] and result.posture == "supported"
     assert result.evidence == result.citations == ()
     assert len(auth.calls) == 4 and all(stream.closed for stream in auth.streams)
-    assert [p["model"] for p in auth.calls] == ["gpt-6-luna", *["gpt-6.1-sol"] * 3]
-    assert [p["reasoning"]["effort"] for p in auth.calls] == ["high", "medium", "medium", "medium"]
+    assert [p["model"] for p in auth.calls] == ["gpt-6.1-terra", *["gpt-6.1-sol"] * 3]
+    assert [p["reasoning"]["effort"] for p in auth.calls] == ["medium"] * 4
     assert all(p["store"] is False and p["stream"] is True for p in auth.calls)
     assert all("max_output_tokens" not in p and "service_tier" not in p for p in auth.calls)
     assert not any(item.get("type") == "additional_tools" for item in auth.calls[0]["input"])

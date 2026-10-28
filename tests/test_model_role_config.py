@@ -146,7 +146,7 @@ def test_user_settings_completely_override_defaults_and_builtin_loader_stays_ind
     model_module.user_model_config_path().write_text(json.dumps(data), encoding="utf-8")
     assert asdict(default_model_config()) == data
     assert built_in_model_config() == ModelConfig(
-        ModelRole("gpt-6-luna", "high", "fast"), ModelRole("gpt-6.1-sol", "medium", "fast"),
+        ModelRole("gpt-6.1-terra", "medium", "fast"), ModelRole("gpt-6.1-sol", "medium", "fast"),
     )
 
 

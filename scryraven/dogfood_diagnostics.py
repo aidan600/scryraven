@@ -281,7 +281,7 @@ class TurnDiagnostics:
                 ),
             }
             if row["kind"] == "search" and row["provider"] == "exa":
-                search_type = _one_of(event.get("provider_search_type"), {"auto", "deep"})
+                search_type = _one_of(event.get("provider_search_type"), {"auto", "deep", "lite"})
                 if search_type is not None:
                     row["provider_search_type"] = search_type
             receipt = event.get("search_novelty_receipt")

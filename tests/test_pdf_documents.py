@@ -585,7 +585,7 @@ def test_document_and_web_citations_resolve_without_a_fake_url():
     assert "file://" not in shown
 
 
-def test_documents_do_not_consume_deep_or_disable_web_search(monkeypatch):
+def test_documents_do_not_consume_lite_or_disable_web_search(monkeypatch):
     calls = []
     production_post(monkeypatch, calls)
     document = owned(text_pdf([PAGE_FACT]))
@@ -594,11 +594,11 @@ def test_documents_do_not_consume_deep_or_disable_web_search(monkeypatch):
         decision(), decision("return", ["E1"]), answer(),
     )
     result = run("What does the document say, and what is the public value?", model=model, documents=(document,))
-    assert [call["json"]["type"] for call in calls] == ["deep"]
+    assert [call["json"]["type"] for call in calls] == ["lite"]
     assert calls[0]["json"]["numResults"] == 6
     timings = [event for event in result.trace if event["action"] == "acquisition_timing"]
     assert [event["kind"] for event in timings] == ["read", "search"]
-    assert timings[0]["external"] is False and timings[1]["provider_search_type"] == "deep"
+    assert timings[0]["external"] is False and timings[1]["provider_search_type"] == "lite"
     assert result.posture == "supported"
 
     quiet = []

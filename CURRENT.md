@@ -7,8 +7,31 @@ Research–Answer Briefing Promotion 01 merged in PR #679 at
 Restraint 01 extends that implementation with the final editorial correction
 from `647a7268381e14336ec3c62980d78c2c118161c5` and an offline-verified keyboard
 focus repair. Unmerged aftercare documentation and rejected experiments are not
-part of this implementation. Luna/high Research, Sol/medium Answer and the shared
-Research-first resumable Answer path remain unchanged.
+part of this implementation. Research Defaults Consolidation 01 changes shipped
+Research to GPT-6.1 Terra/medium and fresh-session generic discovery to Lite,
+then Auto. Sol/medium Answer and the shared Research-first resumable Answer path
+remain unchanged. The verified baseline is PR #681 at
+`be297fbebdf2cd8e0a35e73a13fb62a14a423e52`.
+
+## Research defaults and surviving competence limits
+
+The promoted defaults are a reversible practical choice from bounded development
+observations, not established general model or retrieval superiority. No hybrid
+allocation, mandatory direction, Analyst, reviewer, Deep fallback or persistent
+briefing is introduced. The existing nullable, revisable turn-local briefing and
+Research/Answer ownership remain unchanged. The experimental methods, negative
+results, custody limits and decision are preserved in
+`docs/operator/RESEARCH_DEFAULTS_CONSOLIDATION_01.md`.
+
+The DOE Skill-of-the-Worker failure remains unresolved: Research answered worker
+competence/authorization instead of activity eligibility, failed to correct after
+the DOE follow-up, and did not obtain controlling Appendix A criteria. Its first
+turn used Lite/Auto and its failed follow-up Auto/Auto; this is not evidence that
+Lite caused that failure. Technical terms of art, revising a mistaken direction,
+following truncated passages to controlling criteria and preserving exclusions
+remain uncertain. Klamath investigations still omitted the October 2025 tributary
+completion milestone and Spencer Creek's distinct scope. Acquiring, selecting,
+delivering and using consequential evidence remain separate failure layers.
 
 ## Citation previews and editorial restraint
 
@@ -233,9 +256,9 @@ quality, reliability or economy claim.
 The merged Research–Answer briefing implementation is based
 on the convergence source above and inherited operational-repair checkpoint
 `c21d4274f8995ea601a91fb9bc5dbd0e7dbd368e`. The Research-first/resumable Answer topology from PRs #677/#678
-survives: initial Luna Research -> Sol Answer -> optional delegated Luna Research
-returning to the same Answer interaction. Shipped model and provider choices
-are unchanged.
+survives: initial Terra Research -> Sol Answer -> optional delegated Terra Research
+returning to the same Answer interaction. Research Defaults Consolidation 01
+changes the Research assignment and first eligible Exa transport type only.
 
 Initial and delegated Research now share one decision and episode loop. A compact
 provisional `briefing` replaces the structured Understanding ledger and separate
@@ -265,7 +288,7 @@ stopping, latency, cost, weaker-model compatibility or general semantic reliabil
 See `docs/operator/RESEARCH_ANSWER_BRIEFING_01.md` for the before/after graph,
 field accounting, implementation brief and final technical review.
 
-One turn shares library/history, Deep eligibility, 900 seconds, 40 physical model
+One turn shares library/history, Lite bootstrap eligibility, 900 seconds, 40 physical model
 attempts, 16 external attempts, 128,000 cumulative Answer source characters and
 12 Answer local operations. There is no 180-second terminal reserve or 120-second
 Answer clock. Request arguments are at most 300 seconds and remaining turn time.
@@ -407,7 +430,7 @@ frozen-packet Answer; this bounded evidence does not establish general reliabili
 
 Ordinary runtime selects semantic Research and Answer roles through
 `ModelConfig.research` and `ModelConfig.answer`. Tracked package-owned shipped
-defaults in `scryraven/model_roles.defaults.json` are GPT-6 Luna / high / Fast for
+defaults in `scryraven/model_roles.defaults.json` are GPT-6.1 Terra / medium / Fast for
 Research and GPT-6.1 Sol / medium / Fast for Answer. An optional complete per-user
 `model_roles.json` outside the checkout controls active ordinary model IDs,
 reasoning and service tiers. The precedence is explicit injected `ModelConfig`,
@@ -431,8 +454,8 @@ settings boundary, with no settings UI, write API or watcher.
 
 Offline mocked transport checks cover those ordinary surfaces and between-turn
 amendments, actual resolved-model telemetry and model/effort-sensitive cache
-identity. The unchanged shipped Research role retains its baseline cache family;
-the shipped Answer model change produces a distinct family. This cleanup used
+identity. Role model/effort changes produce distinct cache families;
+there is no compatibility cache. The original settings cleanup used
 zero live calls and establishes no GPT-6.1 Sol quality or latency result.
 These are reversible configuration values, not architectural requirements or a
 semantic router. Compatible injected configurations may vary in quality and
@@ -542,7 +565,7 @@ cost improvement is established.
 
 Ordinary generic Exa Search uses six results and `contents.text=false`.
 On `session_turn == 1` with no retained acquisitions entering the turn, the first
-executed generic Exa Search uses `type=deep`; every later generic Search uses
+executed generic Exa Search uses `type=lite`; every later generic Search uses
 `type=auto`. Other turns and retained-entry turns use Auto throughout. Read,
 Find, lexical Search or Answer may come first; only execution of generic Search
 consumes this run-local bootstrap, including a failed executed attempt. Direct
@@ -557,9 +580,9 @@ request mechanics in four ordinary product runs. No universal answer-quality,
 latency or cost improvement is established.
 
 A contiguous group of two or three ordinary generic Exa Searches inside one
-Research route may send those Exa requests concurrently. Deep or Auto is assigned
+Research route may send those Exa requests concurrently. Lite or Auto is assigned
 before dispatch in original request order, including inside that group, and a
-failed Deep still consumes the bootstrap. After transport settles, admission,
+failed Lite still consumes the bootstrap. After transport settles, admission,
 identity, catalog order, and novelty run serially in that same request order.
 One Search failure does not cancel another already-dispatched Search. A run of
 more than three generic Searches is divided into groups of at most three. If the
@@ -604,11 +627,11 @@ by its campaign wrapper, and its separate recovery is only a frozen-packet
 quality reference. No general Research-call, context-cost or reliability gain is
 established. See `docs/operator/EXA_DEEP_BOOTSTRAP_01.md`.
 
-Deep retains only the existing source-bound Highlight custody. Generated provider
+All Exa search types retain only the existing source-bound Highlight custody. Generated provider
 answers, summaries, output/grounding, confidence and reasoning are excluded.
 Body-free acquisition timing and dogfood diagnostics report the requested
-`provider_search_type` (`auto` or `deep`), without query or payload additions.
-Request, ResearchDecision, AnswerDecision and budgets are unchanged by Deep.
+`provider_search_type` (`auto`, `deep` or `lite`), without query or payload additions.
+Request, ResearchDecision, AnswerDecision and budgets are unchanged by Lite-first.
 There is no depth decision field, semantic router, feature flag or persistent
 bootstrap state. User-document custody does not consume or disable that bootstrap.
 
@@ -776,7 +799,7 @@ no extracted text are counted, not described as images. Encrypted, malformed,
 empty, and over-limit PDFs are rejected with fixed messages. Research sees
 document metadata in the catalog, not the PDF bytes or the whole extraction.
 Local Read and Find use the retained text, spend no external attempt, and do not
-consume the Exa Deep bootstrap. A large document uses the existing bounded
+consume the Exa Lite bootstrap. A large document uses the existing bounded
 packet and exact-view limits. Document text is Evidence of what that document
 states. Web Search, Serper, and LinkUp remain available on the same turn.
 Body-free diagnostics may count documents, pages, characters, local Read size,
@@ -1051,10 +1074,10 @@ call without aging or trimming; very long-session performance remains unproved
 and no context-compaction lifecycle is implemented. Catalog scaling and caching
 remain unproved. General
 reliability remains unproved. Level 6 revision/recovery under superseding Evidence
-is **not established**. No Sol interpretation/decomposition pass is part of the
-ordinary product path or currently earned. Only repeated consequential exact
-cases of recoverable Luna/high task-interpretation failures with sufficient
-context and working acquisition would justify a bounded comparison.
+is **not established**. No separate interpretation/decomposition pass is part of
+the ordinary product path. The newer DOE diagnostics and model-allocation
+campaigns establish concrete unresolved interpretation and acquisition failures;
+they do not demonstrate that another semantic owner would solve them.
 
 The synthetic capability ladder has produced bounded evidence through open-world
 synthesis and dynamic multi-component research. The project is suitable for

@@ -488,17 +488,17 @@ def _run_turn(
     model = model or OpenAIModel(cache_namespace="scryraven")
     # All real transport requests obey the remaining run deadline. Injected offline
     # transports retain their ordinary signatures and never require credentials.
-    deep_available = session_turn == 1 and not retained_acquisitions
+    bootstrap_available = session_turn == 1 and not retained_acquisitions
     provider_search_type = None
 
     def search_call(query):
-        nonlocal deep_available, provider_search_type
+        nonlocal bootstrap_available, provider_search_type
         if search is not search_exa:
             return search(query)
-        provider_search_type = "deep" if deep_available else "auto"
+        provider_search_type = "lite" if bootstrap_available else "auto"
         # Acquisition has already admitted this external attempt. Even a failed
         # executed request consumes the bootstrap; later searches use Auto.
-        deep_available = False
+        bootstrap_available = False
         return search(query, search_type=provider_search_type, timeout_seconds=min(300, budget.remaining_seconds))
 
     lexical_call = (lambda query: lexical_search(query, timeout_seconds=min(300, budget.remaining_seconds))) if lexical_search is search_serper else lexical_search
@@ -851,7 +851,7 @@ def _run_turn(
             return bound == "deadline"
 
         def transport_generic_search(query, search_type, timeout_seconds):
-            """External Search only. No library, ID, budget or Deep/Auto mutation."""
+            """External Search only. No library, ID, budget or Lite/Auto mutation."""
             started_at = clock()
             code = None
             leads = None
@@ -873,12 +873,12 @@ def _run_turn(
             return {"code": code, "leads": leads, "started_at": started_at, "ended_at": ended_at}
 
         def run_concurrent(group, timeout_seconds):
-            nonlocal deep_available
+            nonlocal bootstrap_available
             modes = []
             for _request_index, _request, _plan in group:
                 if search is search_exa:
-                    mode = "deep" if deep_available else "auto"
-                    deep_available = False
+                    mode = "lite" if bootstrap_available else "auto"
+                    bootstrap_available = False
                 else:
                     mode = None
                 modes.append(mode)

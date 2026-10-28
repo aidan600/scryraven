@@ -183,10 +183,10 @@ def test_configuration_missing_stays_a_fixed_code_beside_a_success(monkeypatch):
     assert result.evidence[0].id == "E1"
 
 
-def test_deep_is_preassigned_before_dispatch_even_when_auto_finishes_first(monkeypatch):
+def test_lite_is_preassigned_before_dispatch_even_when_auto_finishes_first(monkeypatch):
     monkeypatch.setenv(exa.EXA_API_KEY_ENV, "offline-test-value")
     entered = Barrier(2, timeout=2)
-    release_deep = Event()
+    release_lite = Event()
     payloads = []
     gate = Lock()
 
@@ -196,9 +196,9 @@ def test_deep_is_preassigned_before_dispatch_even_when_auto_finishes_first(monke
             payloads.append((query, kwargs["json"]["type"]))
         entered.wait()
         if query == "second":
-            release_deep.set()
+            release_lite.set()
         else:
-            assert release_deep.wait(timeout=2)
+            assert release_lite.wait(timeout=2)
         slug = "first" if query == "first" else "second"
         return Response({"results": [{"url": f"https://example.test/{slug}", "title": slug,
                                       "highlights": [f"The {slug} stated value."]}]})
@@ -207,19 +207,19 @@ def test_deep_is_preassigned_before_dispatch_even_when_auto_finishes_first(monke
     model = Script(decision(requests=[request(query="first"), request(query="second")]),
                    decision("return"), unable())
     result = run("Value?", model=model)
-    assert sorted(payloads) == [("first", "deep"), ("second", "auto")]
+    assert sorted(payloads) == [("first", "lite"), ("second", "auto")]
     assert [item.url for item in result.evidence] == [
         "https://example.test/first", "https://example.test/second",
     ]
     timings = [event for event in result.trace if event["action"] == "acquisition_timing"]
-    assert [event["provider_search_type"] for event in timings] == ["deep", "auto"]
+    assert [event["provider_search_type"] for event in timings] == ["lite", "auto"]
     assert [event["request_index"] for event in timings] == [1, 2]
 
 
-def test_failed_deep_still_consumes_bootstrap_when_auto_finishes_first(monkeypatch):
+def test_failed_lite_still_consumes_bootstrap_when_auto_finishes_first(monkeypatch):
     monkeypatch.setenv(exa.EXA_API_KEY_ENV, "offline-test-value")
     entered = Barrier(2, timeout=2)
-    release_deep = Event()
+    release_lite = Event()
     payloads = []
     gate = Lock()
 
@@ -232,18 +232,18 @@ def test_failed_deep_still_consumes_bootstrap_when_auto_finishes_first(monkeypat
                                           "highlights": ["Later value."]}]})
         entered.wait()
         if query == "second":
-            release_deep.set()
+            release_lite.set()
             return Response({"results": [{"url": "https://example.test/second",
                                           "highlights": ["Second value."]}]})
-        assert release_deep.wait(timeout=2)
-        raise OSError("SECRET deep failure")
+        assert release_lite.wait(timeout=2)
+        raise OSError("SECRET lite failure")
 
     monkeypatch.setattr(exa.requests, "post", post)
     model = Script(decision(requests=[request(query="first"), request(query="second")]),
                    decision(requests=[request(query="later")]),
                    decision("return"), unable())
     result = run("Value?", model=model)
-    assert ("first", "deep") in payloads
+    assert ("first", "lite") in payloads
     assert ("second", "auto") in payloads
     assert ("later", "auto") in payloads
     first_route = model.calls[1][2]["acquisition_history"]

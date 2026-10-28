@@ -24,7 +24,7 @@ class Response:
 
 def test_model_config_loads_research_and_answer_fast_defaults():
     assert default_model_config() == ModelConfig() == ModelConfig(
-        research=ModelRole("gpt-6-luna", "high", "fast"),
+        research=ModelRole("gpt-6.1-terra", "medium", "fast"),
         answer=ModelRole("gpt-6.1-sol", "medium", "fast"),
     )
 
@@ -82,7 +82,7 @@ def test_default_transport_uses_recommended_stages_not_obsolete_environment(monk
     model("answer", "prompt", {}, {})
     assert [(call["model"], call["reasoning"]["effort"], call["service_tier"])
             for call in calls] == [
-        ("gpt-6-luna", "high", "fast"), ("gpt-6.1-sol", "medium", "fast"),
+        ("gpt-6.1-terra", "medium", "fast"), ("gpt-6.1-sol", "medium", "fast"),
     ]
 
 

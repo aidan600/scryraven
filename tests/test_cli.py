@@ -21,7 +21,7 @@ def test_cli_ordinary_run_invokes_research_and_answer_over_real_exa_adapter(monk
         if url.endswith('/v1/responses'):
             stages.append(kwargs["json"]["text"]["format"]["name"])
             assert (kwargs["json"]["model"], kwargs["json"]["reasoning"]) == (
-                ("gpt-6-luna", {"effort": "high"}) if stages[-1] in {"research"}
+                ("gpt-6.1-terra", {"effort": "medium"}) if stages[-1] in {"research"}
                 else ("gpt-6.1-sol", {"effort": "medium"})
             )
             material = json.loads(''.join(b['text'] for b in kwargs['json']['input'][1]['content']))
@@ -88,7 +88,7 @@ def test_cli_ordinary_search_then_read_uses_linkup_not_exa_contents(monkeypatch,
     captured = capsys.readouterr()
     assert providers == [
         (exa_transport.EXA_SEARCH_URL, {
-            "query": "public fact", "type": "deep", "numResults": 6,
+            "query": "public fact", "type": "lite", "numResults": 6,
             "contents": {"text": False, "highlights": {
                 "query": "public fact", "dynamic": True, "verbosity": "high",
             }},
