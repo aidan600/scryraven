@@ -198,8 +198,11 @@ _CALCULATOR_TOOL = {
     "type": "function",
     "name": "calculate",
     "description": (
-        "Evaluate one scalar arithmetic expression using established numeric inputs. "
-        "Use separate calls for multiple results; tuples and lists are unsupported."
+        "Evaluate one scalar arithmetic expression with decimal numbers and +, -, *, / "
+        "and parentheses. Example: (120*0.85+20)/(120+20). Scientific notation such as "
+        "1e-6, exponent operators, functions, units, tuples and lists are unsupported; "
+        "write 0.000001 rather than 1e-6. Use separate calls for separate expressions. "
+        "Inputs must come from supplied sources, explicit user premises or prior calculation results."
     ),
     "strict": True,
     "parameters": {

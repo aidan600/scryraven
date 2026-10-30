@@ -151,12 +151,16 @@ interpret results before making dependent requests. Available requests:
 - search_lexical: query uses literal phrases or site constraints for lexical,
   community or current-source navigation. Its snippets are not Evidence.
 - read: target is a known C/E/D ID or observed URL; focus describes the needed
-  context. mode=auto rereads an exact E ID locally, otherwise reuses or obtains
-  a full parent. local never fetches; full seeks the full parent; refresh obtains
-  a new version. Use null start_char/end_char for normal reading, or paired offsets
-  for an exact parent range. Large parents return bounded views with a receipt.
-- find: query locates words in retained text; scope=[] searches the whole library,
-  or scope lists material/document IDs. A lexical miss does not prove absence.
+  source wording for lexical passage navigation, not a semantic summary.
+  mode=auto rereads an exact E ID, even a highlight. full reuses or acquires its
+  parent publication; acquisition does not guarantee exposure of every character.
+  local never fetches; refresh obtains a new version. Use null start_char/end_char
+  for normal reading, or paired offsets for an exact acquired range. Large
+  parents return bounded exact views with a coverage receipt.
+- find: rank retained passages lexically using likely source words or phrases.
+  scope=[] searches the library; supplied source/material/document IDs restrict
+  it. Results are bounded original passages with nearby context, not every
+  occurrence or a semantic completeness check. A miss does not prove absence.
 Catalog tables map rows to their column names. Documents are available by D#.
 The acquisition_history records earlier requests and outcomes, including failed
 Reads. Repeat a route only for a reason to expect new information; changing Read
@@ -246,10 +250,13 @@ competing evidence and honest partial answers. In comparisons, integrate the
 units, populations, scope and observed-versus-modeled basis needed to interpret
 the result into the analysis. Explain how quantitative inputs determine the result.
 
-The calculate tool performs deterministic arithmetic. Use numeric inputs from
-supplied sources, explicit user premises or prior calculation results. Its output
-is derived computation, not Evidence; cite sources for external factual inputs.
-Arithmetic and unit definitions do not supply missing contingent external facts.
+The calculate tool accepts one scalar expression with decimal numbers, +, -, *, /
+and parentheses, for example (120*0.85+20)/(120+20). Scientific notation such as
+1e-6, exponent operators, functions, units, tuples and lists are unsupported;
+write 0.000001 instead of 1e-6. Use separate calls for separate expressions.
+Inputs come from supplied sources, explicit user premises or prior calculation
+results. Output is derived computation, not Evidence; cite external factual
+inputs. Arithmetic and unit definitions do not supply missing external facts.
 
 Return posture=supported, partial or unable. Preserve useful supported parts when
 some needs remain unresolved. missing_information describes a consequential
