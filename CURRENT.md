@@ -10,8 +10,66 @@ focus repair. Unmerged aftercare documentation and rejected experiments are not
 part of this implementation. Research Defaults Consolidation 01 changes shipped
 Research to GPT-6.1 Terra/medium and fresh-session generic discovery to Lite,
 then Auto. Sol/medium Answer and the shared Research-first resumable Answer path
-remain unchanged. The verified baseline is PR #681 at
-`be297fbebdf2cd8e0a35e73a13fb62a14a423e52`.
+remain unchanged. Prompt Contract Reset 01 builds from verified PR #682 at
+`e8cb6007e0e19cad15f1b4d4d51fe57c4eb782db` and replaces only the two instruction
+literals and inaccurate native tool descriptions.
+
+## Research / Answer prompt contracts and bounded evidence
+
+Research and Answer use outcome-centered contracts separating their task,
+evidence judgment, operations and response protocol. Research investigates the
+current request, interprets source consequences, selects originals for the
+question and follows a concrete source lead to still-missing requested criteria.
+Answer owns final conclusions, warranted inference, useful partials and concise
+material qualifications. Briefings remain fallible analysis, never Evidence.
+Find is described as bounded ranked lexical retrieval; Read distinguishes parent
+acquisition from bounded exposure; Calculate documents decimal-only syntax.
+Schemas, models, providers, tools, budgets, session state, citation custody and
+Reading Room are unchanged. No new semantic owner or lifecycle is introduced.
+
+Frozen runtime `3a31d17dffcf8b6cf2b57f479edfb4fa5f425642` was evaluated with
+explicit personal-plan Terra/medium Research and Sol/medium Answer; personal
+settings were not changed. Eighteen initial fixed-evidence draws and eight draws
+after one general source-lead refinement preserved successful inference/lookup
+controls. All four lean DOE Answer draws used the permit exclusion, so an
+isolated Answer-prompt rescue is not demonstrated. Refined Research pursued the
+actual referenced criteria where the original returned a general account, and
+stopped appropriately on a low-yield sparse packet. These were local decisions,
+not completed acquisitions. The historical Klamath acquired-but-unused ordinary
+Answer packet did not survive and was not reconstructed.
+
+Seven matched ordinary `ResearchSession.ask()` pairs alternated arm order; all
+14 completed turns reopened with identical answers, citations and exact support.
+The revised DOE run corrected worker-grade anchoring, acquired Appendix A and
+used its eligibility criteria and exclusions. Its handbook applicability text
+was acquired but exposed to neither role; specific nuclear-facility scope and
+broader-use qualification remain a minor precision limit, despite a correct
+general recommendations-versus-site-procedures distinction. Both fresh V30 and
+DisplayHDR comparisons and the inference/lookup controls were sound. Both
+Klamath runs still missed consequential late-2025 restoration-construction
+completion evidence. Both sparse runs exhausted 16 external attempts; the revised
+answer additionally repeated an uncited possible employer lead that originated
+in lexical navigation, passed through its briefing, and was not established by
+acquired text. It did not assert verified employment, but this is a minor
+grounding defect. General stopping, chronology and evidence-use reliability are
+not established; the fixed stopping gain did not become a product economy gain.
+
+Ordinary original/revised totals were 34/37 physical requests, 31/31 external
+attempts, 377,693/466,189 input tokens and 369.390/340.937 wall seconds. The lower
+aggregate elapsed time includes the incomplete Klamath result and is not a
+quality-adjusted or causal efficiency gain. The campaign used 101 physical
+requests including diagnostics, 62 provider attempts, six independent public
+verification operations and a conservative $3.10 acquisition allowance. Actual
+plan charges remain unknown; no API-model fallback or Perplexity calls occurred.
+The frozen code passed all 1,077 offline tests, Ruff, compilation, whitespace
+checks and all six configured hooks. Other model assignments and general
+reliability remain unproved.
+
+The complete actual comparisons, negative results, exact prompt/tool patches,
+source-exposure attribution, resource ledger and promotion recommendation are in
+`docs/operator/PROMPT_CONTRACT_RESET_01.md` and the preserved local experiment.
+Useful sanitized DOE, Klamath and sparse cases are ignored development candidates;
+their labels are provisional, not new human-adjudicated gold.
 
 ## Research defaults and surviving competence limits
 
@@ -23,13 +81,13 @@ Research/Answer ownership remain unchanged. The experimental methods, negative
 results, custody limits and decision are preserved in
 `docs/operator/RESEARCH_DEFAULTS_CONSOLIDATION_01.md`.
 
-The DOE Skill-of-the-Worker failure remains unresolved: Research answered worker
+In the earlier DOE Skill-of-the-Worker failure, Research answered worker
 competence/authorization instead of activity eligibility, failed to correct after
 the DOE follow-up, and did not obtain controlling Appendix A criteria. Its first
 turn used Lite/Auto and its failed follow-up Auto/Auto; this is not evidence that
-Lite caused that failure. Technical terms of art, revising a mistaken direction,
-following truncated passages to controlling criteria and preserving exclusions
-remain uncertain. Klamath investigations still omitted the October 2025 tributary
+Lite caused that failure. The bounded prompt-reset result above improves that
+family without establishing general term-of-art or eligibility reliability.
+Klamath investigations still omitted the October 2025 tributary
 completion milestone and Spencer Creek's distinct scope. Acquiring, selecting,
 delivering and using consequential evidence remain separate failure layers.
 
@@ -56,9 +114,10 @@ saved excerpts. Answer's editorial principle is to answer directly and fully
 within supported scope,
 including qualifications when they change the conclusion, resolve real ambiguity
 or identify a consequential unanswered request. Recognizing a limitation does not
-automatically require narrating it. Research's prompt and responsibilities,
-source grounding, critical judgment, chronology, comparison and calculation
-obligations remain unchanged.
+automatically require narrating it. The citation-preview implementation preserved
+Research's responsibilities, source grounding, chronology, comparison and
+calculation obligations. The newer prompt contracts revise the instruction
+literals while retaining those responsibilities.
 
 The existing final Answer response supplies optional source descriptions, normally
 one or two sentences. Missing or malformed metadata is discarded locally without
@@ -429,20 +488,17 @@ Long-session behavior and general semantic reliability remain unproved. See
 `docs/operator/INDEPENDENT_ANSWER_LIBRARY_ACCESS_01.md` for exact revisions,
 resource accounting, provenance limits and promotion evidence.
 
-Ordinary non-lookup analytical answers now default to developed treatment: they
-orient the reader to the conclusion early, then substantially explain important
-supported relationships, representative evidence, calculations and consequential
-qualifications. Development is substantial but non-exhaustive, with a soft
-roughly two-page editorial ceiling rather than a length rule or fixed outline.
-Simple lookups remain direct and compact. Quantitative answers explain how inputs
-determine the result; comparisons retain what each supplied quantity represents,
-including observed versus modeled status. Partial answers explain which gaps a
-missing input would resolve and which incompatibilities would remain. Answer's judgment of the briefing and actual
-source support governs the complete synthesis. No coverage schema or additional actor
-is introduced. The default promotes a preference that yielded two developed
-answers in a frozen direct-Answer probe. Exa Evidence-Objective Search 01 later
-exercised it in three completed ordinary answers and one separately recovered
-frozen-packet Answer; this bounded evidence does not establish general reliability.
+Ordinary analytical answers lead with the conclusion and develop supported
+relationships, representative evidence, calculations and consequential
+qualifications to the requested depth. Format follows the question without a
+fixed report outline or page ceiling. Simple lookups remain direct and compact.
+Comparisons retain units, populations, periods, scope and observed-versus-modeled
+bases; quantitative answers explain how inputs determine the result. Useful
+partials identify consequential remaining gaps without substituting a neighboring
+topic. Answer judges the briefing and actual sources; no coverage schema or
+additional actor is introduced. Earlier developed-answer probes and Exa
+Evidence-Objective Search observations remain bounded historical evidence, not a
+general reliability claim for the new contracts.
 
 Ordinary runtime selects semantic Research and Answer roles through
 `ModelConfig.research` and `ModelConfig.answer`. Tracked package-owned shipped

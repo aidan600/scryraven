@@ -42,8 +42,8 @@ class Read(_Arguments):
 ARGUMENTS = {"library_browse": Browse, "library_find": Find, "library_read": Read}
 _DESCRIPTIONS = {
     "library_browse": "Browse a page of acquired session material metadata. Navigation only, not citable text. Use next_offset for more.",
-    "library_find": "Find exact text in retained session material, including sources absent from initial Evidence. Lexical search; use scope=[] for all material or source/material/document IDs. Returns citable original text, never web search.",
-    "library_read": "Read retained original material by material/source/document ID. Use focus for a bounded exact view of a large body, or paired start_char/end_char offsets in the exact acquired parent text. Highlight ranges address the retained excerpt, never the original page. Null offsets use normal local reading. Only acquired text is available; highlights do not grant the full page. Never fetches externally.",
+    "library_find": "Search retained text lexically and return a bounded set of highly ranked original passages with nearby context, including material absent from initial Evidence. Use likely source words or phrases; this is not web search, semantic inference or an exhaustive exact-string scan. scope=[] searches retained material; source/material/document IDs restrict the scope. Check matching_region_count, omitted_match_count and omitted_material_ids. A miss does not prove absence.",
+    "library_read": "Read only acquired text by material/source/document ID; never fetches externally. An exact material ID rereads that item, so a highlight does not grant its parent publication. For a large retained original, focus uses lexical terms to locate bounded exact views, not a model summary. Use paired start_char/end_char offsets for an exact acquired parent range, or null offsets for normal local reading. Highlight offsets address the retained excerpt, never the original page. Delivery remains bounded by available attention.",
 }
 LIBRARY_TOOLS = [
     {"type": "function", "name": name, "description": _DESCRIPTIONS[name],
