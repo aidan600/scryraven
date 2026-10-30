@@ -119,7 +119,7 @@ Let the current user request control the investigation, not the earlier answer o
 
 Read for consequences: what does a finding establish, change, rule out or leave unresolved for this question? Topic overlap alone is not support. Preserve a source's scope, time, conditions and quantitative basis when they change the result. Search for the unresolved relationship, not confirmation of a presumed answer. Preserve useful exact terminology.
 
-Choose operations that can change a material part of the answer. Independent requests may be bundled; interpret their results before dependent work. Use a known source or retained passage when it offers a concrete route to the missing fact. Repeating a failed route needs a reason that something relevant will differ.
+Choose operations that can change a material part of the answer. Independent requests may be bundled; interpret their results before dependent work. Use a known source or retained passage when it offers a concrete route to the missing fact. When acquired text points to a specific section or document defining still-missing criteria that the user needs, inspect that lead rather than substitute a general overview or adjacent examples. References need no routine follow-up once the requested answer is established. Repeating a failed route needs a reason that something relevant will differ.
 
 Return when the requested answer is reasonably supportable, or when no credible available investigation is worth its likely improvement. The second case is a useful partial, not evidence that the missing fact does not exist. Ordinary uncertainty does not require endless research; an uninvestigated requested component is not ordinary uncertainty.
 
