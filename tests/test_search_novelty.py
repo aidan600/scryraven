@@ -114,7 +114,7 @@ def test_diagnostic_accounting_does_not_change_model_packets_or_session_state(tm
             assert set(packet) == {
                 "question", "current_date", "conversation_context", "phase", "research_briefing",
                 "evidence", "catalog", "pending_delivery", "acquisition_history",
-                "budget", "output_correction", "selection_limitations",
+                "budget", "output_correction", "selection_limitations", "citation_description_language",
             }
         else:
             assert "PRIVATE" not in serialized

@@ -108,14 +108,19 @@ python -m scryraven.reading_room --database "D:\My Research\sessions.sqlite3"
 ```
 
 Missing parent directories are created. Use the same path when restarting or when
-opening these sessions from the CLI. The database holds your conversation, saved
-source material and any PDFs attached to a session; browser storage holds none of
-it. New research and an open session can attach one text PDF at a time. ScryRaven
-analyzes extracted PDF text only; images and scanned content are not analyzed.
-The bounds are 20 MiB, 500 pages and 2,000,000 extracted characters. Research
-reads bounded exact text from the attached document and can still search the web.
-See [PDF documents](docs/operator/PDF_DOCUMENTS_01.md). For a doorman launch, append
-`'--database', '"D:\My Research\sessions.sqlite3"'` to the target arguments above.
+opening these sessions from the CLI. The database holds durable conversations,
+saved source material and accepted PDF/image attachments. Browser session storage
+may retain unsent draft text. The compact composer supports file selection,
+drag/drop and image paste, with removable chips. It sends the question and all
+validated files together. Attach up to four files totaling 24 MiB: text PDFs
+(20 MiB, 500 pages, two million extracted characters) and PNG/JPEG/WebP still
+images (8 MiB each, 4096 pixels per side, 16 megapixels). PDFs use extracted text;
+embedded images and scanned PDF content are not analyzed. Supported selected
+models receive actual image input; unsupported models fail explicitly without a
+backend/model/billing fallback. Originals and safe image previews reopen with the
+conversation. See [Reading Room product UX](docs/operator/READING_ROOM_PRODUCT_UX_01.md)
+and [text PDF custody](docs/operator/PDF_DOCUMENTS_01.md). For a doorman launch,
+append `'--database', '"D:\My Research\sessions.sqlite3"'` to the target arguments above.
 
 For local latency dogfooding, explicitly choose a separate JSONL file:
 
@@ -166,10 +171,19 @@ The cleanup command accepts only one exact direct child of the fixed forensic
 root. It prints and copies a deletion summary to the Windows clipboard.
 
 Choose **New research**, ask a question, and use the composer for follow-ups. Submit
-with the arrow or Ctrl+Enter / Command+Enter; plain Enter adds a line. Research runs
-in the HTTP request, with an indeterminate working state and no token streaming.
-Completed answers, including limited results, are saved. A failed attempt keeps
-the question available to edit and leaves completed conversation intact.
+with the arrow or Ctrl+Enter / Command+Enter; plain Enter adds a line. Research
+continues on the local server while you navigate, refresh or close the browser
+tab. Two conversations can research at once, with a bounded waiting queue and one
+active question per conversation. The sidebar reports actual run states. The
+language control defaults source explanations to English; an accepted question
+saves the conversation preference for subsequent answers. Original titles and
+historical answers remain unchanged.
+
+Completed answers, including limited results, are saved. Failed/interrupted runs
+retain the exact question and attachments with an explicit Retry action. Restart
+does not automatically repeat model/search calls. Research does not continue
+past local server exit. One Reading Room server owns a database at a time;
+active research blocks deletion, while renaming remains available.
 
 An answer completed after Research reaches its operating limit says so without
 changing its supported, partial or unable status. Completed source-free supported

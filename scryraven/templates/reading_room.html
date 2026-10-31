@@ -6,6 +6,8 @@
 {% elif name == 'close' %}<path d="m6 6 12 12M6 18 18 6"/>
 {% elif name == 'menu' %}<path d="M4 6h16M4 12h16M4 18h16"/>
 {% elif name == 'more' %}<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>
+{% elif name == 'attach' %}<path d="m8 12 7-7a4 4 0 0 1 6 6L11 21a6 6 0 0 1-8-8L13 3"/><path d="m7 14 8-8a2 2 0 0 1 3 3l-8 8a2 2 0 0 1-3-3Z"/>
+{% elif name == 'settings' %}<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c-5 5-5 13 0 18 5-5 5-13 0-18Z"/>
 {% endif %}</svg>
 {%- endmacro %}
 
@@ -19,15 +21,6 @@
 </details>
 {%- endmacro %}
 
-{% macro attach_form(is_new=false) -%}
-<form class="attach-form" method="post" enctype="multipart/form-data" action="{{ url_for('attach_new_document') if is_new else url_for('attach_session_document', session_id=saved.metadata.session_id) }}">
-  <input type="hidden" name="form_token" value="{{ form_token('attach') }}">
-  <label class="attach-label">Attach PDF <input type="file" name="pdf" accept="application/pdf,.pdf" required></label>
-  <button class="small-button" type="submit">Attach</button>
-  <p class="attach-note">{{ text_only_warning }}</p>
-</form>
-{%- endmacro %}
-
 {% macro document_list() -%}
 {% if documents %}
 <section class="session-documents" aria-label="Documents">
@@ -37,25 +30,44 @@
     {% if document.textless %}<span class="document-warning">Text-only analysis · {{ document.textless }}</span>{% else %}<span class="document-warning">Text-only analysis</span>{% endif %}
   </p>
   {% endfor %}
-  <p class="attach-note">{{ text_only_warning }}</p>
+  <details class="document-help"><summary>About PDF analysis</summary><p>{{ text_only_warning }}</p></details>
 </section>
 {% endif %}
 {%- endmacro %}
 
 {% macro composer(is_new=false) -%}
 <div class="composer-wrap{% if is_new %} welcome-composer{% endif %}">
-  <form class="ask-form" method="post" action="{{ url_for('ask', session_id=saved.metadata.session_id) if saved else url_for('ask') }}">
+  <form class="ask-form" method="post" enctype="multipart/form-data" action="{{ url_for('ask', session_id=saved.metadata.session_id) if saved else url_for('ask') }}" data-draft-key="{{ saved.metadata.session_id if saved else 'new' }}">
     <input type="hidden" name="form_token" value="{{ form_token('ask') }}">
-    <label class="{{ 'composer-label' if saved else 'sr-only' }}" for="question">{{ 'Ask a follow-up' if saved else 'Your research question' }}</label>
+    <input type="hidden" name="idempotency_key" value="{{ idempotency_key|default('') }}">
+    <label class="sr-only" for="question">{{ 'Ask a follow-up' if saved else 'Your research question' }}</label>
     <div class="composer">
-      <textarea id="question" name="question" rows="2" required placeholder="{{ 'Ask a follow-up…' if saved else 'Ask a research question…' }}">{{ question or '' }}</textarea>
+      <div class="attachment-chips" role="list" aria-label="Files to send" hidden></div>
+      <div class="composer-row">
+      <label class="icon-button attachment-picker" for="attachment-files" title="Attach PDF or image">{{ icon('attach') }}<span class="sr-only">Attach PDF or image</span></label>
+      <input id="attachment-files" class="file-input" type="file" name="files" accept="application/pdf,image/png,image/jpeg,image/webp,.pdf,.png,.jpg,.jpeg,.webp" multiple>
+      <textarea id="question" name="question" rows="1" required aria-describedby="composer-error" placeholder="{{ 'Ask a follow-up…' if saved else 'Ask a research question…' }}">{{ question or '' }}</textarea>
+      <details class="composer-preferences">
+        <summary class="icon-button" title="Citation explanation language" aria-label="Citation explanation language">{{ icon('settings') }}</summary>
+        <div class="preferences-menu">
+          <label for="citation-language">Source explanation language</label>
+          <select id="citation-language" name="citation_language">
+          {% set chosen_language = citation_language|default(saved.metadata.citation_language|default('en') if saved else 'en') %}
+          {% for value, label in [('en', 'English'), ('match', 'Match answer language'), ('es', 'Español'), ('fr', 'Français'), ('de', 'Deutsch'), ('pl', 'Polski'), ('pt', 'Português'), ('ja', '日本語'), ('zh', '中文'), ('ar', 'العربية')] %}
+            <option value="{{ value }}"{% if chosen_language == value %} selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+          </select>
+          <p>Applies to your next answer. Original titles and saved answers stay unchanged.</p>
+        </div>
+      </details>
       <button class="submit-question" type="submit" aria-label="{{ 'Ask follow-up' if saved else 'Start research' }}">{{ icon('arrow') }}</button>
+      </div>
+      <div class="drop-hint" aria-hidden="true">Drop PDF or image files here</div>
     </div>
-    <div class="composer-caption"><span>{{ 'Research a related question.' if saved else 'Enter a question to begin.' }}</span><span class="keyboard-hint">Ctrl / ⌘ + Enter</span></div>
-    <div class="working-state" role="status" aria-live="polite" hidden>
-      <span class="working-indicator" aria-hidden="true"></span>
-      <div><strong>Researching…</strong><p>ScryRaven is gathering and evaluating source material.</p></div>
-    </div>
+    <p class="composer-error" id="composer-error" role="alert" hidden></p>
+    <div class="submission-recovery" hidden></div>
+    <p class="composer-status sr-only" role="status" aria-live="polite"></p>
+    <noscript><p class="attach-note">Choose files with the attachment button. PDF, PNG, JPEG and WebP are supported; submit sends your question and files together.</p></noscript>
   </form>
 </div>
 {%- endmacro %}
@@ -72,7 +84,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='reading_room.css') }}">
   <script src="{{ url_for('static', filename='reading_room.js') }}" defer></script>
 </head>
-<body>
+<body data-session-id="{{ saved.metadata.session_id if saved else '' }}" data-revision="{{ saved.metadata.revision if saved else 0 }}" data-job-id="{{ job.job_id if job else '' }}" data-job-state="{{ job.state if job else '' }}">
 <a class="skip-link" href="#reading">Skip to reading</a>
 <aside class="sidebar" id="history" aria-label="Research history">
   <div class="sidebar-top">
@@ -83,8 +95,9 @@
   <nav class="history-list" aria-label="Saved sessions">
     <div class="eyebrow history-label">Your research</div>
     {% for item in history %}
-    <div class="session-row{% if saved and item.session_id == saved.metadata.session_id %} selected{% endif %}">
-      <a class="session-link" href="{{ url_for('open_session', session_id=item.session_id) }}" title="{{ item.title or 'Untitled research' }}"{% if saved and item.session_id == saved.metadata.session_id %} aria-current="page"{% endif %}>{{ item.title or 'Untitled research' }}</a>
+    {% set item_job = (history_jobs|default({})).get(item.session_id) %}
+    <div class="session-row{% if saved and item.session_id == saved.metadata.session_id %} selected{% endif %}" data-session-id="{{ item.session_id }}">
+      <a class="session-link" href="{{ url_for('open_session', session_id=item.session_id) }}" title="{{ item.title or 'Untitled research' }}"{% if saved and item.session_id == saved.metadata.session_id %} aria-current="page"{% endif %}><span class="session-link-title">{{ item.title or 'Untitled research' }}</span><span class="session-job-state" data-state="{{ item_job.state if item_job else '' }}"{% if not item_job %} hidden{% endif %}>{{ {'queued':'Queued', 'researching':'Researching', 'completed':'Completed', 'failed':'Failed', 'interrupted':'Interrupted'}.get(item_job.state, '') if item_job else '' }}</span></a>
       {{ actions(item) }}
     </div>
     {% else %}
@@ -126,7 +139,6 @@
         <h1 id="welcome-title">What do you want<br>to understand?</h1>
         <p class="welcome-description">ScryRaven researches public sources and writes an answer with citations you can inspect.</p>
         {{ composer(true) }}
-        {{ attach_form(true) }}
         <p class="welcome-note">Preview a citation or open its original publication.</p>
       </section>
       {% endif %}
@@ -134,7 +146,9 @@
       {{ document_list() }}
       {% for turn in turns %}
       <section class="turn" id="turn-{{ turn.number }}" aria-labelledby="question-{{ turn.number }}">
-        <div class="question-block"><span class="eyebrow">{{ 'Your question' if loop.first else 'Your follow-up' }}</span><h2 id="question-{{ turn.number }}">{{ turn.question }}</h2></div>
+        <div class="question-block"><span class="eyebrow">{{ 'Your question' if loop.first else 'Your follow-up' }}</span><h2 id="question-{{ turn.number }}" tabindex="-1">{{ turn.question }}</h2></div>
+        {% if loop.last and job and job.state == 'completed' %}<p class="completion-status" role="status">Research completed.</p>{% endif %}
+        {% if turn.attachments %}<ul class="turn-attachments" aria-label="Attachments to this question">{% for attachment in turn.attachments %}<li><a href="{{ attachment.href }}" target="_blank" rel="noopener noreferrer">{% if attachment.preview_href %}<img src="{{ attachment.preview_href }}" alt="Attached image: {{ attachment.filename }}" loading="lazy">{% endif %}<span>{{ attachment.filename }}</span></a></li>{% endfor %}</ul>{% endif %}
         <article class="answer" aria-label="Answer to {{ turn.question }}">{{ turn.answer }}</article>
         {% if turn.source_free %}
         <aside class="source-free-note">No external sources were used for this answer.</aside>
@@ -164,18 +178,29 @@
         {% endif %}
       </section>
       {% endfor %}
-      {% if saved and not turns %}<p class="empty-session">This research hasn’t saved an answer yet. Ask a question below.</p>{% endif %}
+      {% if job and job.state in ['queued', 'researching', 'failed', 'interrupted'] %}
+      <section class="research-job" id="research-status" data-job-id="{{ job.job_id }}" aria-labelledby="job-question" tabindex="-1">
+        <div class="question-block"><span class="eyebrow">Your question</span><h2 id="job-question">{{ job.question }}</h2></div>
+        {% if job.attachments %}<ul class="turn-attachments" aria-label="Attachments to this question">{% for attachment in job.attachments %}<li><a href="{{ attachment.href }}" target="_blank" rel="noopener noreferrer">{% if attachment.preview_href %}<img src="{{ attachment.preview_href }}" alt="Attached image: {{ attachment.filename }}" loading="lazy">{% endif %}<span>{{ attachment.filename }}</span></a></li>{% endfor %}</ul>{% endif %}
+        <div class="job-message" role="status" aria-live="polite">
+          {% if job.state in ['queued', 'researching'] %}<span class="working-indicator" aria-hidden="true"></span><div><strong>{{ 'Queued' if job.state == 'queued' else 'Researching' }}</strong><p>{{ 'Waiting for a research slot.' if job.state == 'queued' else 'ScryRaven is working on your question.' }} You can open another conversation while this continues.</p><noscript><a href="{{ url_for('open_session', session_id=saved.metadata.session_id) }}">Refresh status</a></noscript></div>
+          {% else %}<div><strong>{{ 'Research interrupted' if job.state == 'interrupted' else 'Research failed' }}</strong><p>{{ job.error|default('Your question and attachments are saved. Retry when you are ready.', true) }}</p><form method="post" action="{{ url_for('open_session', session_id=saved.metadata.session_id) }}/jobs/{{ job.job_id }}/retry"><input type="hidden" name="form_token" value="{{ form_token('retry') }}"><button class="small-button" type="submit">Retry this question</button></form></div>{% endif %}
+        </div>
+      </section>
+      {% elif saved and not turns %}<p class="empty-session">This research hasn’t saved an answer yet. Ask a question below.</p>{% endif %}
     </div>
   </div>
-  {% if saved and not unavailable %}<footer class="composer-footer">{{ composer() }}{{ attach_form() }}</footer>{% endif %}
+  {% if saved and not unavailable %}<footer class="composer-footer">{{ composer() }}</footer>{% endif %}
 </main>
 
 <aside class="citation-preview" id="citation-preview" role="dialog" aria-labelledby="citation-preview-title" hidden>
   <div class="citation-preview-top"><span class="eyebrow citation-preview-number"></span><button class="icon-button preview-close" type="button" aria-label="Close citation preview">{{ icon('close') }}</button></div>
   <h2 id="citation-preview-title"></h2>
+  <p class="citation-original-title" hidden></p>
   <div class="citation-preview-content"></div>
   <a class="saved-excerpt-link" href="#">View saved excerpt</a>
 </aside>
+<div class="research-notifications" role="status" aria-live="polite" aria-atomic="true"></div>
 
 {% if confirmation and saved %}
 <dialog class="delete-dialog" id="delete-confirmation" open aria-labelledby="delete-title" aria-describedby="delete-description">

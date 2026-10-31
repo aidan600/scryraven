@@ -6,6 +6,7 @@ from contextlib import closing
 from dataclasses import replace
 from html.parser import HTMLParser
 from threading import Event
+from weakref import WeakValueDictionary
 
 import pytest
 from reading_room_samples import (
@@ -67,15 +68,29 @@ def token(page, action):
     return Form(page.get_data(as_text=True), action).fields
 
 
+_test_apps = WeakValueDictionary()
+
+
 def app_for(store, *, dogfood_log=None, **options):
-    return reading_room.create_app(store=store, dogfood_log=dogfood_log,
-                                   session_options={"model": no_io, "search": no_io, "fetch": no_io} | options)
+    previous = _test_apps.get(store.path)
+    if previous is not None and previous.extensions.get("research_jobs") is not None:
+        manager = previous.extensions["research_jobs"]
+        assert manager.wait_idle(10)
+        manager.shutdown()  # Explicitly simulate a stopped server before reopening.
+    app = reading_room.create_app(store=store, dogfood_log=dogfood_log,
+        session_options={"model": no_io, "search": no_io, "fetch": no_io} | options)
+    _test_apps[store.path] = app
+    return app
 
 
 def submit(client, location="/", question=QUESTION):
     page = client.get(location)
     action = "/ask" if location == "/" else location + "/ask"
-    return client.post(action, data=token(page, action) | {"question": question})
+    response = client.post(action, data=token(page, action) | {"question": question})
+    manager = client.application.extensions.get("research_jobs")
+    if manager is not None:
+        assert manager.wait_idle(10)
+    return response
 
 
 def test_new_state_does_not_create_session_and_history_opens_without_io(tmp_path):
@@ -132,7 +147,7 @@ def test_followup_has_a_visible_label_and_the_native_session_form(tmp_path):
     html = app_for(store).test_client().get(f"/sessions/{session.session_id}").get_data(as_text=True)
     page = Page(html)
     label, = [a for tag, a in page.tags if tag == "label" and a.get("for") == "question"]
-    assert label["class"] == "composer-label" and "Ask a follow-up" in page.text
+    assert label["class"] == "sr-only" and "Ask a follow-up" in page.text
     form, = [a for tag, a in page.tags if tag == "form" and a.get("class") == "ask-form"]
     assert form["method"] == "post" and form["action"] == f"/sessions/{session.session_id}/ask"
     assert Form(html, form["action"]).fields["form_token"]
@@ -165,10 +180,12 @@ def test_failure_preserves_all_prior_durable_state_and_keeps_question_for_edit(t
         raise RuntimeError("PRIVATE_EXCEPTION_DETAILS_C:/secret/path")
     client = app_for(store, model=failing).test_client()
     response = submit(client, f"/sessions/{session.session_id}" if session else "/", "Keep this question")
-    html = response.get_data(as_text=True)
-    assert response.status_code == 503 and "Research didn’t complete" in html
-    assert "Keep this question</textarea>" in html and "PRIVATE_EXCEPTION" not in html
-    assert store.load(session.session_id) == before if session else store.list_sessions() == ()
+    html = client.get(response.location).get_data(as_text=True)
+    assert response.status_code == 303 and "Research failed" in html
+    assert "Keep this question" in html and "PRIVATE_EXCEPTION" not in html
+    saved = store.load(session.session_id if session else store.list_sessions()[0].session_id)
+    assert saved.state == before.state if before else saved.state.turns == ()
+    assert client.application.extensions["research_jobs"].list()[0].state == "failed"
 
 
 @pytest.mark.parametrize("partial", [False, True])
@@ -315,12 +332,13 @@ def test_duplicate_inflight_new_submission_is_claimed_once(tmp_path):
         pending = executor.submit(lambda: app.test_client().post("/ask", data=data))
         try:
             assert entered.wait(5)
-            assert app.test_client().post("/ask", data=data).status_code == 409
+            assert app.test_client().post("/ask", data=data).status_code == 303
         finally:
             release.set()
         assert pending.result().status_code == 303
+    assert app.extensions["research_jobs"].wait_idle(10)
     assert len(store.list_sessions()) == 1 and store.list_sessions()[0].revision == 1
-    assert app.test_client().post("/ask", data=data).status_code == 409
+    assert app.test_client().post("/ask", data=data).status_code == 303
 
 
 @pytest.mark.parametrize("headers", [
@@ -379,6 +397,7 @@ def test_launch_path_and_loopback_binding(monkeypatch, tmp_path, capsys):
     def fake_serve(app, *, port):
         captured["port"] = port
         assert app.test_client().get("/").status_code == 200
+        app.extensions["research_jobs"].shutdown()
     monkeypatch.setattr(reading_room, "serve", fake_serve)
     path = tmp_path / "chosen" / "sessions.sqlite3"
     assert reading_room.main(["--database", str(path), "--port", "7339"]) == 0
@@ -408,13 +427,15 @@ def test_unavailable_database_and_post_commit_conflict_are_bounded(tmp_path):
     session = prepared_session(store)
     before = store.load(session.session_id)
     class ConflictedStore(SQLiteSessionStore):
-        def commit(self, *args):
+        def commit_job(self, *args):
             raise SessionConflictError()
     client = app_for(ConflictedStore(store.path), model=Script(
         *early_local_turn("Unsaved. [E1]"))).test_client()
     response = submit(client, f"/sessions/{session.session_id}", FOLLOWUP)
-    assert response.status_code == 409 and "Unsaved." not in response.get_data(as_text=True)
-    assert store.load(session.session_id) == before
+    assert response.status_code == 303
+    assert "Unsaved." not in client.get(response.location).get_data(as_text=True)
+    assert client.application.extensions["research_jobs"].list()[0].state == "failed"
+    assert store.load(session.session_id).state == before.state
 
 
 def test_native_same_origin_post_and_external_links_preserve_privacy(tmp_path):
@@ -425,6 +446,7 @@ def test_native_same_origin_post_and_external_links_preserve_privacy(tmp_path):
                            headers={"Origin": "http://127.0.0.1:7331", "Sec-Fetch-Site": "same-origin"},
                            data=form | {"question": QUESTION})
     assert response.status_code == 303
+    assert client.application.extensions["research_jobs"].wait_idle(10)
     html = client.get(response.location).get_data(as_text=True)
     assert '<meta name="referrer" content="same-origin">' in html
     assert all(a.get("rel") == "noopener noreferrer" and a.get("target") == "_blank"
@@ -494,14 +516,15 @@ def test_failed_dogfood_attempt_preserves_session_and_uses_fixed_failure_code(tm
     client = app_for(store, dogfood_log=log, model=failing).test_client()
     response = submit(client, f"/sessions/{saved.metadata.session_id}", "PRIVATE_QUESTION_123")
     record = json.loads(log.read_text(encoding="utf-8"))
-    assert response.status_code == 503
+    assert response.status_code == 303
+    assert client.application.extensions["research_jobs"].list()[0].state == "failed"
     assert record["outcome"] == "failed" and record["failure"] == {
         "stage": "reading_room", "code": "unexpected_failure",
     }
     assert record["session_id"] == saved.metadata.session_id
     assert record["attempted_turn"] == 1 and record["revision_after"] is None
     assert record["model_calls"][0]["status"] == "failed"
-    assert store.load(saved.metadata.session_id) == before
+    assert store.load(saved.metadata.session_id).state == before.state
     assert "PRIVATE_" not in log.read_text(encoding="utf-8")
 
 

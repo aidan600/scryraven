@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sqlite3
@@ -17,12 +18,14 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from scryraven.documents import (
     DOCUMENT_ID,
+    PreparedDocument,
     SessionDocument,
     document_text_view,
     prepare_pdf,
 )
 from scryraven.errors import RunError
 from scryraven.historical import Analysis, validate_historical_analysis
+from scryraven.images import MAX_ATTACHMENT_REQUEST_BYTES, MAX_ATTACHMENTS_PER_QUESTION, PreparedImage, SessionImage
 from scryraven.presentation import Citation, CitationUse
 from scryraven.sources import Evidence, SupportRegion, exact_view, support_text
 
@@ -41,6 +44,7 @@ class SessionTurn:
     selected_evidence: tuple[Evidence, ...] = ()
     citations: tuple[Citation, ...] = ()
     citation_uses: tuple[CitationUse, ...] = ()
+    image_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -56,6 +60,7 @@ class SessionMetadata:
     updated_at: str
     title: str
     revision: int
+    citation_language: str = "en"
 
 
 @dataclass(frozen=True)
@@ -63,6 +68,7 @@ class StoredSession:
     metadata: SessionMetadata
     state: SessionState
     documents: tuple[SessionDocument, ...] = ()
+    images: tuple[SessionImage, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -176,6 +182,7 @@ class _TurnRecord(_Record):
     selected_evidence: list[_EvidenceRecord]
     citations: list[_CitationRecord]
     citation_uses: list[_UseRecord]
+    image_ids: list[str] = Field(default_factory=list)
 
 
 class _StateRecord(_Record):
@@ -189,6 +196,7 @@ class _MetadataRecord(_Record):
     updated_at: str
     title: str
     revision: int
+    citation_language: str = "en"
 
 
 def _require(condition: bool) -> None:
@@ -202,6 +210,7 @@ def _metadata(row: sqlite3.Row) -> SessionMetadata:
     created, updated = datetime.fromisoformat(record.created_at), datetime.fromisoformat(record.updated_at)
     _require(created.tzinfo is not None and updated.tzinfo is not None and updated >= created)
     _require(record.revision >= 0)
+    _require(record.citation_language in CITATION_LANGUAGES)
     return SessionMetadata(**record.model_dump())
 
 
@@ -213,7 +222,8 @@ def _evidence(record: _EvidenceRecord) -> Evidence:
     return Evidence(**record.model_dump())
 
 
-def _decode(payload: str, revision: int, documents: tuple[SessionDocument, ...] = ()) -> SessionState:
+def _decode(payload: str, revision: int, documents: tuple[SessionDocument, ...] = (),
+            images: tuple[SessionImage, ...] = ()) -> SessionState:
     record = _StateRecord.model_validate_json(payload)
     _require(len(record.turns) == revision)
     acquisitions = tuple(_evidence(item) for item in record.acquisitions)
@@ -229,6 +239,8 @@ def _decode(payload: str, revision: int, documents: tuple[SessionDocument, ...] 
     _require(bool(record.turns) or not acquisitions)
     turns = []
     for saved in record.turns:
+        _require(len(set(saved.image_ids)) == len(saved.image_ids)
+                 and set(saved.image_ids) <= {image.image_id for image in images})
         _require(bool(saved.question.strip() and saved.answer.strip()))
         selected = tuple(_evidence(item) for item in saved.selected_evidence)
         materials = {item.id: item for item in selected}
@@ -297,7 +309,7 @@ def _decode(payload: str, revision: int, documents: tuple[SessionDocument, ...] 
             # material nor citations. Answer validates their semantic basis.
             _require(bool(citations) == bool(selected))
         turns.append(SessionTurn(saved.question, saved.answer, analysis, saved.posture, saved.stop_reason,
-                                 selected, citations, uses))
+                                 selected, citations, uses, tuple(saved.image_ids)))
     return SessionState(tuple(turns), acquisitions)
 
 
@@ -312,7 +324,8 @@ def _citation_record(citation: Citation) -> dict:
     return row
 
 
-def _encode(state: SessionState, documents: tuple[SessionDocument, ...] = ()) -> str:
+def _encode(state: SessionState, documents: tuple[SessionDocument, ...] = (),
+            images: tuple[SessionImage, ...] = ()) -> str:
     # Citation material references resolve only against this turn's saved packet.
     # Web evidence keeps the schema-1 key set. Document bytes stay out of this payload.
     turns = []
@@ -326,17 +339,66 @@ def _encode(state: SessionState, documents: tuple[SessionDocument, ...] = ()) ->
             "citation_uses": [{"number": use.number, "start": use.start, "end": use.end,
                                **({"support": [asdict(region) for region in use.support]} if use.support else {})}
                               for use in turn.citation_uses],
+            **({"image_ids": list(turn.image_ids)} if turn.image_ids else {}),
         })
     payload = json.dumps({"turns": turns, "acquisitions": [item.material() for item in state.acquisitions]},
                          ensure_ascii=True, separators=(",", ":"), allow_nan=False)
-    _require(_decode(payload, len(state.turns), documents) == state)
+    _require(_decode(payload, len(state.turns), documents, images) == state)
     return payload
 
 
 _SESSIONS_SQL = """CREATE TABLE sessions (
     session_id TEXT PRIMARY KEY, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-    title TEXT NOT NULL, revision INTEGER NOT NULL CHECK (revision >= 0), payload TEXT NOT NULL
+    title TEXT NOT NULL, revision INTEGER NOT NULL CHECK (revision >= 0), payload TEXT NOT NULL,
+    citation_language TEXT NOT NULL DEFAULT 'en'
 )"""
+
+CITATION_LANGUAGES = ("en", "match", "es", "fr", "de", "pl", "ja", "zh", "ar", "pt")
+
+_IMAGES_SQL = """CREATE TABLE IF NOT EXISTS session_images (
+    session_id TEXT NOT NULL, image_id TEXT NOT NULL, filename TEXT NOT NULL,
+    media_type TEXT NOT NULL, byte_length INTEGER NOT NULL, sha256 TEXT NOT NULL,
+    created_at TEXT NOT NULL, width INTEGER NOT NULL, height INTEGER NOT NULL, original_image BLOB NOT NULL,
+    PRIMARY KEY (session_id, image_id), UNIQUE (session_id, sha256)
+)"""
+
+_JOBS_SQL = """CREATE TABLE IF NOT EXISTS research_jobs (
+    job_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, idempotency_key TEXT NOT NULL UNIQUE,
+    fingerprint TEXT NOT NULL, question TEXT NOT NULL, revision INTEGER NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('queued','researching','completed','failed','interrupted')),
+    document_ids TEXT NOT NULL, image_ids TEXT NOT NULL, citation_language TEXT NOT NULL,
+    created_at TEXT NOT NULL, started_at TEXT, finished_at TEXT, error_code TEXT
+)"""
+
+
+@dataclass(frozen=True)
+class ResearchJob:
+    job_id: str
+    session_id: str
+    question: str
+    revision: int
+    state: str
+    document_ids: tuple[str, ...]
+    image_ids: tuple[str, ...]
+    citation_language: str
+    created_at: str
+    started_at: str | None = None
+    finished_at: str | None = None
+    error_code: str | None = None
+
+
+def _job(row: sqlite3.Row) -> ResearchJob:
+    return ResearchJob(**{name: (tuple(json.loads(row[name])) if name in {"image_ids", "document_ids"}
+                                else row[name]) for name in ResearchJob.__dataclass_fields__})
+
+
+def _load_images(connection: sqlite3.Connection, session_id: str) -> tuple[SessionImage, ...]:
+    rows = connection.execute("SELECT image_id, filename, media_type, byte_length, sha256, created_at, "
+                              "width, height, original_image FROM session_images WHERE session_id = ? "
+                              "ORDER BY length(image_id), image_id", (session_id,)).fetchall()
+    images = tuple(SessionImage(**dict(row)) for row in rows)
+    _require([image.image_id for image in images] == [f"I{index}" for index in range(1, len(images) + 1)])
+    return images
 
 _DOCUMENTS_SQL = """CREATE TABLE IF NOT EXISTS session_documents (
     session_id TEXT NOT NULL, document_id TEXT NOT NULL, filename TEXT NOT NULL,
@@ -379,7 +441,7 @@ class SQLiteSessionStore:
     from research are stored. This is local plaintext data, not cloud account state.
     """
 
-    SCHEMA_VERSION = 2
+    SCHEMA_VERSION = 3
 
     def __init__(self, path: str | Path | None = None) -> None:
         try:
@@ -401,10 +463,19 @@ class SQLiteSessionStore:
                     raise SessionStoreError("incompatible_session_store")
                 connection.execute(_SESSIONS_SQL)
                 connection.execute(_DOCUMENTS_SQL)
+                connection.execute(_IMAGES_SQL)
+                connection.execute(_JOBS_SQL)
+                connection.execute("CREATE UNIQUE INDEX one_active_research_job ON research_jobs(session_id) "
+                                   "WHERE state IN ('queued', 'researching')")
                 connection.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
-            elif version == 1:
+            elif version in {1, 2}:
                 # Additive only. Existing session payloads are not rewritten.
                 connection.execute(_DOCUMENTS_SQL)
+                connection.execute("ALTER TABLE sessions ADD COLUMN citation_language TEXT NOT NULL DEFAULT 'en'")
+                connection.execute(_IMAGES_SQL)
+                connection.execute(_JOBS_SQL)
+                connection.execute("CREATE UNIQUE INDEX one_active_research_job ON research_jobs(session_id) "
+                                   "WHERE state IN ('queued', 'researching')")
                 connection.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
             elif version != self.SCHEMA_VERSION:
                 raise SessionStoreError("incompatible_session_store")
@@ -430,8 +501,9 @@ class SQLiteSessionStore:
             now = datetime.now(timezone.utc).isoformat()
             metadata = SessionMetadata(uuid4().hex, now, now, title, 0)
             state = SessionState()
-            connection.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?)",
-                               (*asdict(metadata).values(), _encode(state)))
+            connection.execute("INSERT INTO sessions (session_id,created_at,updated_at,title,revision,payload) "
+                               "VALUES (?, ?, ?, ?, ?, ?)",
+                               (metadata.session_id, now, now, title, 0, _encode(state)))
         return StoredSession(metadata, state, ())
 
     @staticmethod
@@ -441,7 +513,8 @@ class SQLiteSessionStore:
             raise SessionStoreError("session_not_found")
         metadata = _metadata(row)
         documents = _load_documents(connection, session_id)
-        return StoredSession(metadata, _decode(row["payload"], metadata.revision, documents), documents)
+        images = _load_images(connection, session_id)
+        return StoredSession(metadata, _decode(row["payload"], metadata.revision, documents, images), documents, images)
 
     def load(self, session_id: str) -> StoredSession:
         with self._transaction() as connection:
@@ -450,31 +523,37 @@ class SQLiteSessionStore:
 
     def list_sessions(self) -> tuple[SessionMetadata, ...]:
         with self._transaction() as connection:
-            rows = connection.execute("SELECT session_id, created_at, updated_at, title, revision "
+            rows = connection.execute("SELECT session_id, created_at, updated_at, title, revision, citation_language "
                                       "FROM sessions ORDER BY updated_at DESC, session_id").fetchall()
             metadata = tuple(_metadata(row) for row in rows)
         return metadata
 
     def commit(self, session_id: str, revision: int, state: SessionState) -> SessionMetadata:
         with self._transaction() as connection:
-            current = self._load(connection, session_id)
-            if current.metadata.revision != revision:
-                raise SessionConflictError()
-            _require(len(state.turns) == revision + 1 and state.turns[:-1] == current.state.turns)
-            _require(state.acquisitions[:len(current.state.acquisitions)] == current.state.acquisitions)
-            documents = _load_documents(connection, session_id)
-            payload = _encode(state, documents)
-            # A clock adjustment must not invalidate otherwise valid saved metadata.
-            now = max(current.metadata.updated_at, datetime.now(timezone.utc).isoformat())
-            title = current.metadata.title or " ".join(state.turns[0].question.split())[:100]
-            metadata = SessionMetadata(session_id, current.metadata.created_at, now, title, revision + 1)
-            updated = connection.execute(
-                "UPDATE sessions SET updated_at = ?, title = ?, revision = ?, payload = ? "
-                "WHERE session_id = ? AND revision = ?",
-                (now, title, revision + 1, payload, session_id, revision),
-            )
-            if updated.rowcount != 1:
-                raise SessionConflictError()
+            metadata = self._commit(connection, session_id, revision, state)
+        return metadata
+
+    def _commit(self, connection: sqlite3.Connection, session_id: str, revision: int,
+                state: SessionState) -> SessionMetadata:
+        current = self._load(connection, session_id)
+        if current.metadata.revision != revision:
+            raise SessionConflictError()
+        _require(len(state.turns) == revision + 1 and state.turns[:-1] == current.state.turns)
+        _require(state.acquisitions[:len(current.state.acquisitions)] == current.state.acquisitions)
+        documents = _load_documents(connection, session_id)
+        payload = _encode(state, documents, current.images)
+        # A clock adjustment must not invalidate otherwise valid saved metadata.
+        now = max(current.metadata.updated_at, datetime.now(timezone.utc).isoformat())
+        title = current.metadata.title or " ".join(state.turns[0].question.split())[:100]
+        metadata = SessionMetadata(session_id, current.metadata.created_at, now, title, revision + 1,
+                                   current.metadata.citation_language)
+        updated = connection.execute(
+            "UPDATE sessions SET updated_at = ?, title = ?, revision = ?, payload = ? "
+            "WHERE session_id = ? AND revision = ?",
+            (now, title, revision + 1, payload, session_id, revision),
+        )
+        if updated.rowcount != 1:
+            raise SessionConflictError()
         return metadata
 
     def rename(self, session_id: str, title: str) -> SessionMetadata:
@@ -487,16 +566,20 @@ class SQLiteSessionStore:
             title = title.strip()
             connection.execute("UPDATE sessions SET title = ?, updated_at = ? WHERE session_id = ?",
                                (title, now, session_id))
-            metadata = SessionMetadata(session_id, current.created_at, now, title, current.revision)
+            metadata = SessionMetadata(session_id, current.created_at, now, title, current.revision,
+                                       current.citation_language)
         return metadata
 
     def delete(self, session_id: str, *, revision: int | None = None) -> None:
         """Permanently remove one session; optionally guard a displayed turn count."""
         with self._transaction() as connection:
             current = self._load(connection, session_id)
+            self._require_idle(connection, session_id)
             if revision is not None and current.metadata.revision != revision:
                 raise SessionConflictError()
             connection.execute("DELETE FROM session_documents WHERE session_id = ?", (session_id,))
+            connection.execute("DELETE FROM session_images WHERE session_id = ?", (session_id,))
+            connection.execute("DELETE FROM research_jobs WHERE session_id = ?", (session_id,))
             connection.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
 
     def attach_document(self, session_id: str, revision: int, filename: str,
@@ -505,6 +588,7 @@ class SQLiteSessionStore:
         prepared = prepare_pdf(filename, media_type, data)
         with self._transaction() as connection:
             current = self._load(connection, session_id)
+            self._require_idle(connection, session_id)
             if current.metadata.revision != revision:
                 raise SessionConflictError()
             existing = connection.execute(
@@ -540,3 +624,167 @@ class SQLiteSessionStore:
             if updated.rowcount != 1:
                 raise SessionConflictError()
         return AttachedDocument(document, True)
+
+    @staticmethod
+    def _require_idle(connection: sqlite3.Connection, session_id: str) -> None:
+        if connection.execute("SELECT 1 FROM research_jobs WHERE session_id = ? "
+                              "AND state IN ('queued','researching')", (session_id,)).fetchone():
+            raise SessionStoreError("session_busy")
+
+    def set_citation_language(self, session_id: str, language: str) -> SessionMetadata:
+        if language not in CITATION_LANGUAGES:
+            raise SessionStoreError("invalid_citation_language")
+        with self._transaction() as connection:
+            self._load(connection, session_id)
+            connection.execute("UPDATE sessions SET citation_language = ? WHERE session_id = ?",
+                               (language, session_id))
+            return self._load(connection, session_id).metadata
+
+    @staticmethod
+    def _insert_document(connection: sqlite3.Connection, session_id: str,
+                         prepared: PreparedDocument) -> str:
+        existing = connection.execute("SELECT document_id FROM session_documents WHERE session_id=? AND sha256=?",
+                                      (session_id, prepared.sha256)).fetchone()
+        if existing:
+            return existing["document_id"]
+        count = connection.execute("SELECT count(*) FROM session_documents WHERE session_id=?", (session_id,)).fetchone()[0]
+        document_id = f"D{count + 1}"
+        connection.execute("INSERT INTO session_documents VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                           (session_id, document_id, prepared.filename, prepared.media_type, prepared.byte_length,
+                            prepared.sha256, datetime.now(timezone.utc).isoformat(), prepared.page_count,
+                            prepared.text_character_count, prepared.textless_page_count, prepared.original_pdf,
+                            json.dumps(list(prepared.pages), ensure_ascii=False, separators=(",", ":"))))
+        return document_id
+
+    @staticmethod
+    def _insert_image(connection: sqlite3.Connection, session_id: str, prepared: PreparedImage) -> str:
+        existing = connection.execute("SELECT image_id FROM session_images WHERE session_id=? AND sha256=?",
+                                      (session_id, prepared.sha256)).fetchone()
+        if existing:
+            return existing["image_id"]
+        count = connection.execute("SELECT count(*) FROM session_images WHERE session_id=?", (session_id,)).fetchone()[0]
+        image_id = f"I{count + 1}"
+        connection.execute("INSERT INTO session_images VALUES (?,?,?,?,?,?,?,?,?,?)",
+                           (session_id, image_id, prepared.filename, prepared.media_type, prepared.byte_length,
+                            prepared.sha256, datetime.now(timezone.utc).isoformat(), prepared.width, prepared.height,
+                            prepared.original_image))
+        return image_id
+
+    def accept_job(self, question: str, *, idempotency_key: str, session_id: str | None = None,
+                   revision: int = 0, documents: tuple[PreparedDocument, ...] = (),
+                   images: tuple[PreparedImage, ...] = (), retained_image_ids: tuple[str, ...] = (),
+                   citation_language: str | None = None, capacity: int = 10) -> ResearchJob:
+        """Atomically accept a question, its validated files, and its durable identity.
+
+        Validation/decode happens before this short transaction. Invalid admission
+        rolls back even a newly allocated session and every inserted attachment.
+        """
+        if not isinstance(question, str) or not question.strip() or len(question) > 20000:
+            raise SessionStoreError("invalid_question")
+        if not isinstance(idempotency_key, str) or not 16 <= len(idempotency_key) <= 256:
+            raise SessionStoreError("invalid_submission_key")
+        if citation_language is not None and citation_language not in CITATION_LANGUAGES:
+            raise SessionStoreError("invalid_citation_language")
+        if len(documents) + len(images) + len(retained_image_ids) > MAX_ATTACHMENTS_PER_QUESTION:
+            raise SessionStoreError("attachment_count_exceeded")
+        if sum(item.byte_length for item in (*documents, *images)) > MAX_ATTACHMENT_REQUEST_BYTES:
+            raise SessionStoreError("attachment_request_too_large")
+        question = question.strip()
+        fingerprint = hashlib.sha256(json.dumps(
+            [session_id, revision, question, [d.sha256 for d in documents], [i.sha256 for i in images],
+             list(retained_image_ids), citation_language], separators=(",", ":")).encode()).hexdigest()
+        with self._transaction() as connection:
+            old = connection.execute("SELECT * FROM research_jobs WHERE idempotency_key=?", (idempotency_key,)).fetchone()
+            if old:
+                if old["fingerprint"] != fingerprint:
+                    raise SessionStoreError("submission_conflict")
+                return _job(old)
+            active = connection.execute("SELECT count(*) FROM research_jobs WHERE state IN ('queued','researching')").fetchone()[0]
+            if active >= capacity:
+                raise SessionStoreError("research_queue_full")
+            now = datetime.now(timezone.utc).isoformat()
+            if session_id is None:
+                if revision != 0:
+                    raise SessionConflictError()
+                session_id = uuid4().hex
+                title = " ".join(question.split())[:100]
+                connection.execute("INSERT INTO sessions VALUES (?,?,?,?,?,?,?)",
+                                   (session_id, now, now, title, 0, _encode(SessionState()), citation_language or "en"))
+            saved = self._load(connection, session_id)
+            if saved.metadata.revision != revision:
+                raise SessionConflictError()
+            self._require_idle(connection, session_id)
+            if (len(set(retained_image_ids)) != len(retained_image_ids)
+                    or not set(retained_image_ids) <= {i.image_id for i in saved.images}):
+                raise SessionStoreError("invalid_image_selection")
+            retained_bytes = sum(image.byte_length for image in saved.images if image.image_id in retained_image_ids)
+            if retained_bytes + sum(item.byte_length for item in (*documents, *images)) > MAX_ATTACHMENT_REQUEST_BYTES:
+                raise SessionStoreError("attachment_request_too_large")
+            document_ids = tuple(dict.fromkeys(self._insert_document(connection, session_id, d) for d in documents))
+            image_ids = tuple(dict.fromkeys((*retained_image_ids,
+                                            *(self._insert_image(connection, session_id, i) for i in images))))
+            # Reconstruct and validate custody before acceptance becomes durable.
+            self._load(connection, session_id)
+            language = citation_language or saved.metadata.citation_language
+            connection.execute("UPDATE sessions SET citation_language=?, updated_at=? WHERE session_id=?",
+                               (language, max(now, saved.metadata.updated_at), session_id))
+            job_id = uuid4().hex
+            connection.execute("INSERT INTO research_jobs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                               (job_id, session_id, idempotency_key, fingerprint, question, revision, "queued",
+                                json.dumps(document_ids), json.dumps(image_ids), language, now, None, None, None))
+            return _job(connection.execute("SELECT * FROM research_jobs WHERE job_id=?", (job_id,)).fetchone())
+
+    def get_job(self, job_id: str) -> ResearchJob:
+        with self._transaction() as connection:
+            row = connection.execute("SELECT * FROM research_jobs WHERE job_id=?", (job_id,)).fetchone()
+            if row is None:
+                raise SessionStoreError("job_not_found")
+            return _job(row)
+
+    def find_submission(self, idempotency_key: str) -> ResearchJob | None:
+        """Resolve an explicitly replayed form to its accepted local run."""
+        with self._transaction() as connection:
+            row = connection.execute("SELECT * FROM research_jobs WHERE idempotency_key=?",
+                                     (idempotency_key,)).fetchone()
+            return _job(row) if row else None
+
+    def list_jobs(self, session_id: str | None = None) -> tuple[ResearchJob, ...]:
+        with self._transaction() as connection:
+            rows = connection.execute("SELECT * FROM research_jobs " + ("WHERE session_id=? " if session_id else "")
+                                      + "ORDER BY created_at DESC, job_id DESC", (session_id,) if session_id else ()).fetchall()
+            return tuple(_job(row) for row in rows)
+
+    def claim_next_job(self) -> ResearchJob | None:
+        with self._transaction() as connection:
+            row = connection.execute("SELECT * FROM research_jobs WHERE state='queued' ORDER BY created_at, job_id LIMIT 1").fetchone()
+            if row is None:
+                return None
+            connection.execute("UPDATE research_jobs SET state='researching',started_at=? WHERE job_id=? AND state='queued'",
+                               (datetime.now(timezone.utc).isoformat(), row["job_id"]))
+            return _job(connection.execute("SELECT * FROM research_jobs WHERE job_id=?", (row["job_id"],)).fetchone())
+
+    def commit_job(self, job_id: str, session_id: str, revision: int, state: SessionState) -> SessionMetadata:
+        with self._transaction() as connection:
+            row = connection.execute("SELECT * FROM research_jobs WHERE job_id=?", (job_id,)).fetchone()
+            if row is None or row["state"] != "researching" or (row["session_id"], row["revision"]) != (session_id, revision):
+                raise SessionConflictError()
+            _require(state.turns[-1].question == row["question"])
+            _require(set(json.loads(row["image_ids"])) <= set(state.turns[-1].image_ids))
+            metadata = self._commit(connection, session_id, revision, state)
+            connection.execute("UPDATE research_jobs SET state='completed',finished_at=? WHERE job_id=?",
+                               (datetime.now(timezone.utc).isoformat(), job_id))
+            return metadata
+
+    def fail_job(self, job_id: str, code: str = "research_failed") -> None:
+        allowed = {"research_failed", "session_conflict", "model_image_input_unsupported"}
+        with self._transaction() as connection:
+            connection.execute("UPDATE research_jobs SET state='failed',finished_at=?,error_code=? "
+                               "WHERE job_id=? AND state IN ('queued','researching')",
+                               (datetime.now(timezone.utc).isoformat(), code if code in allowed else "research_failed", job_id))
+
+    def interrupt_jobs(self, code: str = "server_interrupted") -> None:
+        """Startup/shutdown recovery never dispatches a persisted paid operation."""
+        code = code if code in {"server_interrupted", "storage_interrupted"} else "server_interrupted"
+        with self._transaction() as connection:
+            connection.execute("UPDATE research_jobs SET state='interrupted',finished_at=?,error_code=? "
+                               "WHERE state IN ('queued','researching')", (datetime.now(timezone.utc).isoformat(), code))

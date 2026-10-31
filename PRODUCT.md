@@ -45,18 +45,38 @@ over actual acquired Evidence.
 A research session may contain user-provided text documents. Research may use
 exact material from those documents and combine it with ordinary web evidence.
 Document provenance does not itself independently verify outside-world claims.
+A session may also retain user-provided PNG, JPEG or WebP images. Research and
+Answer may inspect their actual visual content. Visual observations describe
+that user input; they do not independently verify external facts, become textual
+Evidence, or acquire fabricated source quotations or page coordinates. Relevant
+retained images can be inspected in a follow-up without automatically sending
+every historical image.
 
 ## Local Reading Room
 
 The local browser product operates the same research-session application and
 durable store as the CLI. It offers a continuous, readable research conversation,
 persistent history, follow-up questions, session rename and confirmed permanent
-deletion. Compact citations offer a short generated description of the source's
+deletion. A compact expanding composer sends a question and its validated PDF or
+image attachments together, with file selection, drag/drop and image paste.
+Accepted questions have a durable run identity and continue across browser
+navigation while the local server runs. Independent conversations can research
+concurrently within bounded local admission; one question is active per
+conversation. Queued, researching, completed, failed and interrupted states stay
+visible. Failed or interrupted work retains the submitted question and files;
+retry is explicit. Server exit does not promise continued research, and restart
+does not automatically repeat model or acquisition calls. Active research blocks
+session deletion; renaming remains available. Compact citations offer a short generated description of the source's
 contribution to the answer, publication identity and direct original-publication
 access. Descriptions are presentation metadata, never Evidence. A secondary saved
 excerpt action opens the exact selected material saved with that historical
 answer, clearly distinguishing partial highlights from fetched source text.
-Historical answers remain usable without generated descriptions.
+New source explanations default to English. A session preference can instead
+match the answer language or select an offered language; it is saved with an
+accepted question and affects later generation. Original publication titles and
+URLs remain unchanged. Historical answers remain usable without generated
+descriptions and are never translated retroactively. Missing or invalid metadata
+cannot invalidate an otherwise valid answer or require a retry.
 A user-provided document citation shows the filename and page locator instead
 of a publication URL, and can open the original PDF attached to that session.
 Citation numbering belongs to each answer. Later acquisitions must not change

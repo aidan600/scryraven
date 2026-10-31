@@ -11,6 +11,7 @@ from core.linkup_transport import fetch_linkup
 from core.serper_transport import search_serper
 from core.transport import FetchedMaterial
 from scryraven.documents import SessionDocument
+from scryraven.images import SessionImage
 from scryraven.research import RunLimits, _run_turn
 from scryraven.results import CompletedAnswer
 from scryraven.session_store import (
@@ -28,6 +29,7 @@ class _Snapshot:
     state: SessionState
     metadata: SessionMetadata | None = None
     documents: tuple[SessionDocument, ...] = ()
+    images: tuple[SessionImage, ...] = ()
 
 
 def _research_conversation_entry(turn: SessionTurn) -> dict:
@@ -47,6 +49,7 @@ def _research_conversation_entry(turn: SessionTurn) -> dict:
                 }
                 for citation in turn.citations
             ],
+            **({"image_ids": list(turn.image_ids)} if turn.image_ids else {}),
         },
     }
 
@@ -83,7 +86,7 @@ class ResearchSession:
         session = cls(**kwargs)
         session._store = store if store is not None else SQLiteSessionStore()
         saved = session._store.create(title)
-        session._snapshot = _Snapshot(saved.state, saved.metadata, saved.documents)
+        session._snapshot = _Snapshot(saved.state, saved.metadata, saved.documents, saved.images)
         return session
 
     @classmethod
@@ -92,7 +95,7 @@ class ResearchSession:
         session = cls(**kwargs)
         session._store = store if store is not None else SQLiteSessionStore()
         saved = session._store.load(session_id)
-        session._snapshot = _Snapshot(saved.state, saved.metadata, saved.documents)
+        session._snapshot = _Snapshot(saved.state, saved.metadata, saved.documents, saved.images)
         return session
 
     @property
@@ -119,7 +122,12 @@ class ResearchSession:
     def documents(self) -> tuple[SessionDocument, ...]:
         return self._snapshot.documents
 
-    def ask(self, question: str) -> CompletedAnswer:
+    @property
+    def images(self) -> tuple[SessionImage, ...]:
+        return self._snapshot.images
+
+    def ask(self, question: str, *, image_ids: tuple[str, ...] = (),
+            citation_language: str | None = None) -> CompletedAnswer:
         snapshot = self._snapshot
         state = snapshot.state
         # Conversation is task context, never Evidence. Prior user questions can
@@ -130,12 +138,19 @@ class ResearchSession:
             "conversation_context": [{"question": turn.question, "answer": turn.answer} for turn in state.turns],
             "research_conversation_context": [_research_conversation_entry(turn) for turn in state.turns],
         }
+        if citation_language is not None or snapshot.metadata is not None:
+            context["citation_description_language"] = (
+                citation_language or getattr(snapshot.metadata, "citation_language", "en"))
+        if any(image_id not in {image.image_id for image in snapshot.images} for image_id in image_ids):
+            raise ValueError("invalid_session_image_reference")
         # The immediately prior completed answer's cited material is available
         # to the first Research decision. Citation snapshots hold exact actual
         # material, including views of retained full parents.
         prior_cited = (tuple(item for citation in state.turns[-1].citations for item in citation.materials)
                        if state.turns else ())
         initial_options = {"initial_evidence": prior_cited} if prior_cited else {}
+        if snapshot.images:
+            initial_options.update(images=snapshot.images, image_ids=image_ids)
         result = (self._engine or _run_turn)(
             question, model=self._model, search=self._search, lexical_search=self._lexical_search,
             fetch=self._fetch, limits=self._limits,
@@ -144,11 +159,12 @@ class ResearchSession:
         )
         turn = SessionTurn(question, result.answer, None,
                            result.posture, result.stop_reason, result.selected_evidence,
-                           result.citations, result.citation_uses)
+                           result.citations, result.citation_uses,
+                           tuple(dict.fromkeys((*image_ids, *result.image_ids))))
         staged = SessionState((*state.turns, turn), result.evidence)
         metadata = snapshot.metadata
         if self._store is not None:
             metadata = self._store.commit(metadata.session_id, metadata.revision, staged)
         # Nothing is exposed as completed until all validation and durable I/O succeed.
-        self._snapshot = _Snapshot(staged, metadata, snapshot.documents)
+        self._snapshot = _Snapshot(staged, metadata, snapshot.documents, snapshot.images)
         return result

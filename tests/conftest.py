@@ -20,3 +20,22 @@ def isolated_user_model_configuration(tmp_path, monkeypatch):
     monkeypatch.setattr(model, "user_model_config_path", lambda: tmp_path / "user-model_roles.json")
     # The Windows forensic launcher starts a separate Python process.
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "user-data"))
+
+
+@pytest.fixture(autouse=True)
+def close_local_research_workers(tmp_path, monkeypatch):
+    """Release local server ownership before temporary databases are removed."""
+    from scryraven.research_jobs import ResearchJobManager
+
+    managers = []
+    original = ResearchJobManager.__init__
+
+    def remember(self, *args, **kwargs):
+        original(self, *args, **kwargs)
+        managers.append(self)
+
+    monkeypatch.setattr(ResearchJobManager, "__init__", remember)
+    yield
+    for manager in reversed(managers):
+        manager.shutdown()
+        assert manager.wait_idle(10)

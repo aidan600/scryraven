@@ -1,5 +1,63 @@
 # ScryRaven Current Truth
 
+## Reading Room product UX
+
+Reading Room Product UX 01 extends merged baseline
+`0229128b1a8d7a0b78a042327b971fa01a411967` with a compact expanding composer,
+English-default session citation explanations, coherent PDF/image attachments,
+and durable server-owned local research jobs. The merged Research/Answer roles,
+ordinary ask path, model defaults, providers, budgets and external citation
+validation remain. The only semantic additions are actual user-image input and
+its non-Evidence visual support basis, retained-image local inspection, and the
+chosen language for optional generated citation descriptions.
+
+The composer accepts picker/drop/image paste, removable chips and provisional
+thumbnails. Actual decoded file validation precedes atomic question/file/job
+acceptance. PNG/JPEG/WebP originals belong to the session; safe preview PNGs strip
+metadata. New images reach both roles as actual Responses input_image content.
+Retained images remain catalog metadata until a role requests a relevant I#;
+unrelated turns do not automatically resend historical images. Visual-only
+answers have no fabricated Evidence/citations. Unsupported configured models
+fail explicitly without changing backend, model, service tier or billing path.
+Text PDF extraction and exact saved excerpts retain their existing custody.
+
+Two local workers and eight waiting slots use ordinary ResearchSession.ask().
+A session permits one active run; idempotency and revision checks protect
+admission and final commits. The final session commit and completed-job state
+share a short transaction. No SQLite transaction spans model/acquisition I/O.
+Browser navigation, refresh and tab closure do not own execution. The database
+has one local Reading Room server owner; a second startup cannot interrupt it.
+Deletion is blocked while active, rename survives completion, and failed or
+interrupted questions/files remain available for explicit retry. Shutdown blocks
+late commits; restart never automatically repeats paid work. Process exit ends
+workers and releases ownership. This is not a distributed or resumable-inference
+system.
+
+English is the default session source-explanation language. The composer offers
+answer-language matching and explicit common-language choices, saved atomically
+with an accepted question. Existing titles, URLs, exact excerpts and historical
+answer descriptions are not rewritten. Invalid/missing descriptions remain a
+local optional-metadata fallback with no mandatory retry.
+
+The implementation passed 1,136 offline tests including 14 real-browser checks,
+Ruff, compilation, JavaScript syntax and all six configured hooks. At frozen
+runtime `a136d3db80550a7aabc28e91a1c254c005fea1fa`, two ordinary personal-plan
+Terra/medium Research and Sol/medium Answer submissions identified the attached
+red circle/blue square without fabricated Evidence and returned BIPM-supported
+quetta (Q) after browser navigation. Both reopened identically through the actual
+browser; the exact original image also reopened. They used five physical model
+requests and one Exa Lite acquisition, zero independent verification searches,
+and 7.094/12.328 engine seconds. The conservative acquisition reservation was
+$0.025 of $0.15; actual third-party and plan charges are unknown. No API fallback
+or extra live retry occurred. A subsequent HTTP correction enforces the existing
+256 KiB URL-encoded body limit independently of Werkzeug's form-memory behavior,
+including bounded overflow detection without Content-Length. Only multipart
+questions receive the larger attachment envelope; exact-limit text forms and
+larger valid multipart PDFs retain admission. This correction has deterministic
+offline coverage and uses no additional live-model runway. Detailed evidence and limits are recorded in
+`docs/operator/READING_ROOM_PRODUCT_UX_01.md`. General model vision reliability,
+very long histories, and survival beyond local server exit are not promised.
+
 ## Current implementation and lineage
 
 Research–Answer Briefing Promotion 01 merged in PR #679 at
@@ -847,9 +905,9 @@ validated only on serialization/reopen; it never controls new research or become
 Evidence. Historical turns and citations are not rewritten on reopening.
 The synthetic pre-supersession fixture exercises mixed historical/native sessions.
 
-The session store is schema 2. A version-1 database gains the additive
-`session_documents` table and advances `PRAGMA user_version` to 2 without
-rewriting existing session payloads. Opening a current database does not rewrite
+The session store is schema 3. Version-1/2 databases gain additive image/job
+custody and the session citation-language preference (plus documents for version
+1), without rewriting existing session payloads. Opening a current database does not rewrite
 those payloads. An unknown newer schema still fails as `incompatible_session_store`
 without being rewritten. Each text PDF belongs to one session as `D1`, `D2`, and
 so on. The row stores the original PDF blob, filename, SHA-256, page count, and
@@ -865,9 +923,9 @@ run, and unselected pages between them are not included. Stored `page_start`
 and `page_end` remain the coarse bounds of the citation group.
 
 Extraction uses `pypdf>=6.19,<7` (this verification used 6.19.0). The bounds are
-20 MiB, 500 pages, and 2,000,000 extracted characters. There is no OCR, image
-analysis, or vision-model path. The product states that it analyzes extracted
-PDF text only and that images and scanned content are not analyzed. Pages with
+20 MiB, 500 pages, and 2,000,000 extracted characters. Text PDFs have no OCR or embedded-image analysis; standalone image attachments use
+the separate user-image path described above. The PDF disclosure states that only extracted PDF text is analyzed; embedded
+images and scanned PDF content are not analyzed. Pages with
 no extracted text are counted, not described as images. Encrypted, malformed,
 empty, and over-limit PDFs are rejected with fixed messages. Research sees
 document metadata in the catalog, not the PDF bytes or the whole extraction.
