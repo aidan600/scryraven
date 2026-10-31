@@ -62,10 +62,11 @@ image attachments together, with file selection, drag/drop and image paste.
 Accepted questions have a durable run identity and continue across browser
 navigation while the local server runs. Independent conversations can research
 concurrently within bounded local admission; one question is active per
-conversation. Queued, researching, completed, failed and interrupted states stay
-visible. Failed or interrupted work retains the submitted question and files;
-retry is explicit. Server exit does not promise continued research, and restart
-does not automatically repeat model or acquisition calls. Active research blocks
+conversation. Queued and researching states stay visible; a new completion is
+indicated until viewed. Failed and interrupted states remain visible, retaining
+the submitted question and files; retry is explicit. Server exit does not promise
+continued research, and restart does not automatically repeat model or acquisition
+calls. Active research blocks
 session deletion; renaming remains available. Compact citations offer a short generated description of the source's
 contribution to the answer, publication identity and direct original-publication
 access. Descriptions are presentation metadata, never Evidence. A secondary saved

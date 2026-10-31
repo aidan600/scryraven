@@ -140,7 +140,7 @@
     if (!preview.hidden && !preview.contains(event.target) && event.target !== origin) closePreview();
   });
   reader.addEventListener('scroll', () => {
-    if (origin && document.activeElement === origin) {
+    if (origin && (document.activeElement === origin || preview.contains(document.activeElement))) {
       const anchor = origin.getBoundingClientRect();
       const viewport = reader.getBoundingClientRect();
       if (anchor.bottom > viewport.top && anchor.top < viewport.bottom &&
@@ -404,12 +404,53 @@
     });
   }
 
-  const stateLabels = {queued: 'Queued', researching: 'Researching', completed: 'Completed', failed: 'Failed', interrupted: 'Interrupted'};
+  const stateLabels = {queued: 'Queued', researching: 'Researching', completed: 'New answer', failed: 'Failed', interrupted: 'Interrupted'};
   const knownJobs = new Map();
+  const viewedCompletionPrefix = 'scryraven-viewed-completion:';
+  const viewedCompletions = new Set();
   document.querySelectorAll('.session-row[data-session-id]').forEach(row => {
     knownJobs.set(row.dataset.sessionId, row.querySelector('.session-job-state')?.dataset.state || '');
   });
   const notifications = document.querySelector('.research-notifications');
+  function completionViewed(jobId) {
+    if (!jobId) return false;
+    if (viewedCompletions.has(jobId)) return true;
+    try {
+      return localStorage.getItem(viewedCompletionPrefix + jobId) === '1';
+    } catch (_) {
+      return false;
+    }
+  }
+  function refreshJobBadges() {
+    document.querySelectorAll('.session-row[data-session-id]').forEach(row => {
+      const badge = row.querySelector('.session-job-state');
+      if (!badge) return;
+      const state = badge.dataset.state;
+      badge.textContent = stateLabels[state] || '';
+      badge.hidden = !stateLabels[state] || (state === 'completed' && completionViewed(badge.dataset.jobId));
+    });
+    if (notifications.dataset.state === 'completed' &&
+        completionViewed(notifications.dataset.jobId)) {
+      notifications.replaceChildren();
+    }
+  }
+  function acknowledgeCurrentCompletion() {
+    const {sessionId, jobId, jobState} = document.body.dataset;
+    // A background tab or an old answer must not acknowledge a newer result.
+    if (!document.hidden && jobState === 'completed' && sessionId && jobId) {
+      viewedCompletions.add(jobId);
+      try { localStorage.setItem(viewedCompletionPrefix + jobId, '1'); } catch (_) {
+        // The visible result still counts as viewed when browser storage is unavailable.
+      }
+    }
+    refreshJobBadges();
+  }
+  acknowledgeCurrentCompletion();
+  document.addEventListener('visibilitychange', acknowledgeCurrentCompletion);
+  window.addEventListener('pageshow', acknowledgeCurrentCompletion);
+  window.addEventListener('storage', event => {
+    if (event.key === null || event.key.startsWith(viewedCompletionPrefix)) refreshJobBadges();
+  });
   if (location.hash === '#research-status') {
     const pending = document.querySelector('#research-status');
     if (pending) {
@@ -425,7 +466,10 @@
     completed?.scrollIntoView({block: 'start'});
   }
   function notifyJob(job) {
+    if (job.state === 'completed' && completionViewed(job.job_id)) return;
     notifications.replaceChildren();
+    notifications.dataset.state = job.state;
+    notifications.dataset.jobId = job.job_id;
     const message = document.createElement('span');
     message.textContent = job.state === 'completed' ? 'Research completed. ' : 'Research ' + stateLabels[job.state].toLowerCase() + '. ';
     const link = document.createElement('a');
@@ -443,7 +487,12 @@
           knownJobs.set(job.session_id, job.state);
           const row = [...document.querySelectorAll('.session-row[data-session-id]')].find(item => item.dataset.sessionId === job.session_id);
           const badge = row?.querySelector('.session-job-state');
-          if (badge) { badge.textContent = stateLabels[job.state] || ''; badge.dataset.state = job.state; badge.hidden = !stateLabels[job.state]; }
+          if (badge) {
+            badge.dataset.state = job.state;
+            badge.dataset.jobId = job.job_id;
+            badge.textContent = stateLabels[job.state] || '';
+            badge.hidden = !stateLabels[job.state] || (job.state === 'completed' && completionViewed(job.job_id));
+          }
           const isCurrent = job.session_id === document.body.dataset.sessionId && job.job_id === document.body.dataset.jobId;
           if (isCurrent && ['queued', 'researching'].includes(document.body.dataset.jobState)) {
             if (['completed', 'failed', 'interrupted'].includes(job.state)) {

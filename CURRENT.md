@@ -2,6 +2,28 @@
 
 ## Reading Room product UX
 
+The Reading Room polish pass simplifies the empty-state copy, question/answer
+hierarchy, source controls and attachment cards, with a lighter composer and
+shared footer layout that keeps the sidebar seam aligned as input expands.
+Session PDFs remain available in a collapsed collection, including the existing
+text-only analysis disclosure. Citation previews, original links and exact saved
+excerpts keep their existing paths. A focus/scroll race is repaired so a queued
+scroll event does not dismiss a preview while its visible citation or a preview
+action has keyboard focus; an offscreen citation still dismisses it.
+
+Completed jobs show a browser-local “New answer” notification until their matching
+answer is opened in a visible document. Viewed markers survive navigation and
+refresh and synchronize between tabs at the same origin; hidden tabs and stale
+answers do not acknowledge newer results. Storage-disabled browsers acknowledge
+the visible result only in the current document. Queued, researching, failed and
+interrupted states retain their existing behavior. Durable jobs and session
+storage are unchanged. The full offline suite passed 1,138 tests, including 16
+Edge browser checks covering citations, attachments, navigation, completion
+notifications, expanding footer alignment, narrow layouts and actual 200% zoom.
+Ruff, compilation, JavaScript syntax and whitespace checks passed. Synthetic
+desktop and 390/320px browser screenshots were reviewed; no new live model or
+provider calls were made for this presentation pass.
+
 Reading Room Product UX 01 extends merged baseline
 `0229128b1a8d7a0b78a042327b971fa01a411967` with a compact expanding composer,
 English-default session citation explanations, coherent PDF/image attachments,
