@@ -37,11 +37,24 @@ def test_compact_composer_grows_without_covering_answer_and_keeps_draft(browser,
         initial = footer.bounding_box()["height"]
         assert 65 <= initial <= 80
         assert footer.bounding_box()["y"] + initial <= page.viewport_size["height"]
+        if not mobile:
+            assert abs(page.locator('.sidebar-foot').bounding_box()['y'] - footer.bounding_box()['y']) <= 1
         assert textarea.get_attribute("rows") == "1"
         assert page.locator(".reading-scroll").bounding_box()["height"] > page.viewport_size["height"] * .7
         textarea.fill("First line\nSecond line\nThird line\nFourth line\nFifth line")
         assert footer.bounding_box()["height"] > initial + 40
         assert footer.bounding_box()["height"] < page.viewport_size["height"] * .4
+        page.locator('#attachment-files').set_input_files({"name": "notes.pdf", "mimeType": "application/pdf", "buffer": b"provisional preview"})
+        assert page.locator('.attachment-chip').is_visible()
+        assert footer.evaluate("el => el.getBoundingClientRect().bottom <= innerHeight + 1")
+        if not mobile:
+            assert abs(page.locator('.sidebar-foot').bounding_box()['y'] - footer.bounding_box()['y']) <= 1
+        original_viewport = page.viewport_size
+        page.set_viewport_size({"width": 320, "height": original_viewport["height"]})
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        assert footer.evaluate("el => el.getBoundingClientRect().right <= innerWidth + 1 && el.getBoundingClientRect().bottom <= innerHeight + 1")
+        assert page.locator('.submit-question').evaluate("el => el.getBoundingClientRect().right <= innerWidth + 1")
+        page.set_viewport_size(original_viewport)
         page.goto(citation_page.rsplit("/sessions/", 1)[0])
         page.goto(citation_page)
         assert textarea.input_value() == "First line\nSecond line\nThird line\nFourth line\nFifth line"
@@ -222,8 +235,12 @@ def test_browser_research_survives_navigation_with_atomic_attachments_and_indepe
             notification = page.locator(".research-notifications")
             notification.get_by_role("link", name="Open conversation").wait_for(state="visible")
             assert "Research completed" in notification.inner_text()
+            a_badge = page.locator(f'.session-row[data-session-id="{a_id}"] .session-job-state')
+            assert a_badge.inner_text() == "New answer"
+            assert a_badge.is_visible()
             notification.get_by_role("link", name="Open conversation").click()
             page.wait_for_url(f"{base}/sessions/{a_id}")
+            assert a_badge.is_hidden()
             assert page.locator(".turn").count() == 4
             assert "one red circle" in page.locator("#turn-4 .answer").inner_text()
             assert page.locator("#turn-4 .turn-attachments li").count() == 2
@@ -234,12 +251,16 @@ def test_browser_research_survives_navigation_with_atomic_attachments_and_indepe
             assert store.load(a_id).state.turns[:3] == old_turns
             assert store.load(a_id).metadata.revision == 4
             page.reload()
+            assert a_badge.is_hidden()
             assert page.locator("#turn-4 .turn-attachments img").is_visible()
             assert page.locator("#citation-language").input_value() == "pl"
+            page.goto(f"{base}/sessions/{b_id}")
+            assert page.locator('.research-job').is_visible()
             release["B"].set()
             assert manager.wait_idle(10)
-            page.goto(f"{base}/sessions/{b_id}")
+            page.locator('.answer').wait_for(state='visible')
             assert "three marbles" in page.locator(".answer").inner_text()
+            assert page.locator(f'.session-row[data-session-id="{b_id}"] .session-job-state').is_hidden()
             assert store.load(b_id).metadata.revision == 1
             assert [entry[:2] for entry in calls].count(("A", "research")) == 1
             assert [entry[:2] for entry in calls].count(("B", "research")) == 1
@@ -247,6 +268,103 @@ def test_browser_research_survives_navigation_with_atomic_attachments_and_indepe
         for event in release.values():
             event.set()
         manager.wait_idle(10)
+        manager.shutdown()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_completion_badges_require_a_visible_current_answer_and_sync_between_tabs(browser, tmp_path):
+    store = SQLiteSessionStore(tmp_path / "completion-notifications.sqlite3")
+    saved = store.create("Completion notification")
+    session_id = saved.metadata.session_id
+
+    def model(stage, prompt, material, schema):
+        if stage == "research":
+            return json.dumps(decision("return"))
+        return json.dumps(answer("Given your premises, the box holds three marbles.", support_basis="user_premises"))
+
+    app = create_app(store=store, session_options={"model": model, "search": no_io, "fetch": no_io})
+    manager = app.extensions["research_jobs"]
+    first = manager.submit("Suppose two marbles become three.", session_id=session_id,
+        idempotency_key="first-completed-notification")
+    assert manager.wait_idle(10)
+    assert manager.get(first.job_id).state == "completed"
+    server = make_server("127.0.0.1", 0, app, threaded=True, request_handler=_QuietHandler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    try:
+        with citation_browser.page_at(browser, base) as page:
+            badge = page.locator(f'.session-row[data-session-id="{session_id}"] .session-job-state')
+            assert badge.inner_text() == "New answer"
+            assert badge.is_visible()
+            page.reload()
+            assert badge.is_visible()  # Merely seeing a history row is not viewing the answer.
+            page.add_init_script("""window.testDocumentHidden = true;
+                Object.defineProperty(document, 'hidden', {get: () => window.testDocumentHidden});""")
+            page.goto(f"{base}/sessions/{session_id}")
+            assert badge.is_visible()  # A background-loaded result remains unread.
+            assert page.evaluate("localStorage.getItem('scryraven-viewed-completion:' + document.body.dataset.jobId)") is None
+            page.evaluate("window.testDocumentHidden = false; document.dispatchEvent(new Event('visibilitychange'))")
+            assert badge.is_hidden()
+
+            second = manager.submit("Suppose three marbles become four.", session_id=session_id, revision=1,
+                idempotency_key="second-completed-notification")
+            assert manager.wait_idle(10)
+            assert manager.get(second.job_id).state == "completed"
+            page.wait_for_function("""jobId => document.querySelector('.session-job-state').dataset.jobId === jobId""", arg=second.job_id)
+            assert badge.is_visible()
+            page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+            assert badge.is_visible()  # An older rendered answer cannot acknowledge this new job.
+
+            other = page.context.new_page()
+            other.goto(f"{base}/sessions/{session_id}")
+            assert other.locator('.session-job-state').is_hidden()
+            badge.wait_for(state="hidden")  # Viewing it in another tab updates this tab too.
+            page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+            page.reload()
+            assert badge.is_hidden()  # Revisiting the old document did not erase the newer acknowledgement.
+            page.goto(base)
+            assert badge.is_hidden()
+            assert store.load(session_id).metadata.revision == 2
+            other.close()
+    finally:
+        manager.shutdown()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_visible_completion_stays_quiet_when_browser_storage_is_unavailable(browser, tmp_path):
+    store = SQLiteSessionStore(tmp_path / "completion-no-storage.sqlite3")
+
+    def model(stage, prompt, material, schema):
+        if stage == "research":
+            return json.dumps(decision("return"))
+        return json.dumps(answer("Given your premises, this result is conditional.", support_basis="user_premises"))
+
+    app = create_app(store=store, session_options={"model": model, "search": no_io, "fetch": no_io})
+    manager = app.extensions["research_jobs"]
+    job = manager.submit("Suppose the premise is true.", idempotency_key="storage-unavailable-completion")
+    assert manager.wait_idle(10)
+    assert manager.get(job.job_id).state == "completed"
+    server = make_server("127.0.0.1", 0, app, threaded=True, request_handler=_QuietHandler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with browser.new_context(viewport={"width": 1440, "height": 1000}) as context:
+            context.add_init_script("""Object.defineProperty(window, 'localStorage', {value: {
+                getItem() { return null; }, setItem() { throw new DOMException('Unavailable', 'QuotaExceededError'); }
+            }});""")
+            page = context.new_page()
+            page.goto(f"http://127.0.0.1:{server.server_port}/sessions/{job.session_id}")
+            assert page.locator('.session-job-state').is_hidden()
+            with page.expect_response("**/jobs/status"):
+                page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+            assert page.locator('.session-job-state').is_hidden()
+            assert page.locator('.answer').is_visible()
+    finally:
         manager.shutdown()
         server.shutdown()
         server.server_close()

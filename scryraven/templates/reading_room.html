@@ -23,15 +23,15 @@
 
 {% macro document_list() -%}
 {% if documents %}
-<section class="session-documents" aria-label="Documents">
-  <h2>Documents</h2>
+<details class="session-documents">
+  <summary>Session PDFs <span>· {{ documents|length }}</span></summary>
   {% for document in documents %}
   <p class="document-chip"><a href="{{ document.href }}">[PDF] {{ document.filename }}</a> · {{ document.pages }} {{ 'page' if document.pages == 1 else 'pages' }}
     {% if document.textless %}<span class="document-warning">Text-only analysis · {{ document.textless }}</span>{% else %}<span class="document-warning">Text-only analysis</span>{% endif %}
   </p>
   {% endfor %}
   <details class="document-help"><summary>About PDF analysis</summary><p>{{ text_only_warning }}</p></details>
-</section>
+</details>
 {% endif %}
 {%- endmacro %}
 
@@ -46,7 +46,7 @@
       <div class="composer-row">
       <label class="icon-button attachment-picker" for="attachment-files" title="Attach PDF or image">{{ icon('attach') }}<span class="sr-only">Attach PDF or image</span></label>
       <input id="attachment-files" class="file-input" type="file" name="files" accept="application/pdf,image/png,image/jpeg,image/webp,.pdf,.png,.jpg,.jpeg,.webp" multiple>
-      <textarea id="question" name="question" rows="1" required aria-describedby="composer-error" placeholder="{{ 'Ask a follow-up…' if saved else 'Ask a research question…' }}">{{ question or '' }}</textarea>
+      <textarea id="question" name="question" rows="1" required aria-describedby="composer-error" placeholder="{{ 'Ask a follow-up…' if saved else 'Ask a question…' }}">{{ question or '' }}</textarea>
       <details class="composer-preferences">
         <summary class="icon-button" title="Citation explanation language" aria-label="Citation explanation language">{{ icon('settings') }}</summary>
         <div class="preferences-menu">
@@ -87,6 +87,7 @@
 <body data-session-id="{{ saved.metadata.session_id if saved else '' }}" data-revision="{{ saved.metadata.revision if saved else 0 }}" data-job-id="{{ job.job_id if job else '' }}" data-job-state="{{ job.state if job else '' }}">
 <a class="skip-link" href="#reading">Skip to reading</a>
 <aside class="sidebar" id="history" aria-label="Research history">
+  <div class="sidebar-main">
   <div class="sidebar-top">
     <a class="wordmark" href="{{ url_for('new_research') }}"><span class="brand-mark">{{ icon('book') }}</span>ScryRaven</a>
     <a class="icon-button close-history" href="#" aria-label="Close history">{{ icon('close') }}</a>
@@ -97,17 +98,19 @@
     {% for item in history %}
     {% set item_job = (history_jobs|default({})).get(item.session_id) %}
     <div class="session-row{% if saved and item.session_id == saved.metadata.session_id %} selected{% endif %}" data-session-id="{{ item.session_id }}">
-      <a class="session-link" href="{{ url_for('open_session', session_id=item.session_id) }}" title="{{ item.title or 'Untitled research' }}"{% if saved and item.session_id == saved.metadata.session_id %} aria-current="page"{% endif %}><span class="session-link-title">{{ item.title or 'Untitled research' }}</span><span class="session-job-state" data-state="{{ item_job.state if item_job else '' }}"{% if not item_job %} hidden{% endif %}>{{ {'queued':'Queued', 'researching':'Researching', 'completed':'Completed', 'failed':'Failed', 'interrupted':'Interrupted'}.get(item_job.state, '') if item_job else '' }}</span></a>
+      <a class="session-link" href="{{ url_for('open_session', session_id=item.session_id) }}" title="{{ item.title or 'Untitled research' }}"{% if saved and item.session_id == saved.metadata.session_id %} aria-current="page"{% endif %}><span class="session-link-title">{{ item.title or 'Untitled research' }}</span><span class="session-job-state" data-job-id="{{ item_job.job_id if item_job else '' }}" data-state="{{ item_job.state if item_job else '' }}"{% if not item_job %} hidden{% endif %}>{{ {'queued':'Queued', 'researching':'Researching', 'completed':'New answer', 'failed':'Failed', 'interrupted':'Interrupted'}.get(item_job.state, '') if item_job else '' }}</span></a>
       {{ actions(item) }}
     </div>
     {% else %}
     <p class="empty-history">Your saved research will appear here.</p>
     {% endfor %}
   </nav>
+  </div>
   <div class="sidebar-foot"><span class="local-dot" aria-hidden="true"></span>Saved on this device</div>
 </aside>
 
 <main class="workspace{% if not saved %} new-state{% endif %}" id="reading" tabindex="-1">
+  <div class="workspace-main">
   <header class="room-header">
     <a class="icon-button open-history" href="#history" aria-label="Open history">{{ icon('menu') }}</a>
     <div class="room-name">Reading Room</div>
@@ -125,7 +128,7 @@
     <h1 class="session-title">{{ saved.metadata.title or 'Untitled research' }}</h1>
     {{ actions(saved.metadata) }}
     {% endif %}
-    {% else %}<span class="header-note">Research with sources.</span>{% endif %}
+    {% endif %}
   </header>
 
   <div class="reading-scroll">
@@ -134,21 +137,18 @@
       {% if error %}<div class="error-notice" role="alert"><p>{{ error }}</p>{% if unavailable %}<a href="{{ url_for('new_research') }}">Reopen Reading Room</a>{% endif %}</div>{% endif %}
       {% if not saved and not unavailable %}
       <section class="welcome" aria-labelledby="welcome-title">
-        <div class="welcome-rule" aria-hidden="true"></div>
-        <p class="eyebrow">New research</p>
-        <h1 id="welcome-title">What do you want<br>to understand?</h1>
-        <p class="welcome-description">ScryRaven researches public sources and writes an answer with citations you can inspect.</p>
+        <h1 id="welcome-title">What would you like to understand?</h1>
+        <p class="welcome-description">Answers grounded in public sources, with citations to explore.</p>
         {{ composer(true) }}
-        <p class="welcome-note">Preview a citation or open its original publication.</p>
+        <p class="welcome-note">Add a PDF or image for context.</p>
       </section>
       {% endif %}
 
       {{ document_list() }}
       {% for turn in turns %}
       <section class="turn" id="turn-{{ turn.number }}" aria-labelledby="question-{{ turn.number }}">
-        <div class="question-block"><span class="eyebrow">{{ 'Your question' if loop.first else 'Your follow-up' }}</span><h2 id="question-{{ turn.number }}" tabindex="-1">{{ turn.question }}</h2></div>
-        {% if loop.last and job and job.state == 'completed' %}<p class="completion-status" role="status">Research completed.</p>{% endif %}
-        {% if turn.attachments %}<ul class="turn-attachments" aria-label="Attachments to this question">{% for attachment in turn.attachments %}<li><a href="{{ attachment.href }}" target="_blank" rel="noopener noreferrer">{% if attachment.preview_href %}<img src="{{ attachment.preview_href }}" alt="Attached image: {{ attachment.filename }}" loading="lazy">{% endif %}<span>{{ attachment.filename }}</span></a></li>{% endfor %}</ul>{% endif %}
+        <div class="question-block"><h2 id="question-{{ turn.number }}" tabindex="-1">{{ turn.question }}</h2></div>
+        {% if turn.attachments %}<ul class="turn-attachments" aria-label="Attachments to this question">{% for attachment in turn.attachments %}<li><a href="{{ attachment.href }}" title="{{ attachment.filename }}" target="_blank" rel="noopener noreferrer">{% if attachment.preview_href %}<img src="{{ attachment.preview_href }}" alt="Attached image: {{ attachment.filename }}" loading="lazy">{% else %}<span class="attachment-kind">PDF</span>{% endif %}<span>{{ attachment.filename }}</span></a></li>{% endfor %}</ul>{% endif %}
         <article class="answer" aria-label="Answer to {{ turn.question }}">{{ turn.answer }}</article>
         {% if turn.source_free %}
         <aside class="source-free-note">No external sources were used for this answer.</aside>
@@ -180,8 +180,8 @@
       {% endfor %}
       {% if job and job.state in ['queued', 'researching', 'failed', 'interrupted'] %}
       <section class="research-job" id="research-status" data-job-id="{{ job.job_id }}" aria-labelledby="job-question" tabindex="-1">
-        <div class="question-block"><span class="eyebrow">Your question</span><h2 id="job-question">{{ job.question }}</h2></div>
-        {% if job.attachments %}<ul class="turn-attachments" aria-label="Attachments to this question">{% for attachment in job.attachments %}<li><a href="{{ attachment.href }}" target="_blank" rel="noopener noreferrer">{% if attachment.preview_href %}<img src="{{ attachment.preview_href }}" alt="Attached image: {{ attachment.filename }}" loading="lazy">{% endif %}<span>{{ attachment.filename }}</span></a></li>{% endfor %}</ul>{% endif %}
+        <div class="question-block"><h2 id="job-question">{{ job.question }}</h2></div>
+        {% if job.attachments %}<ul class="turn-attachments" aria-label="Attachments to this question">{% for attachment in job.attachments %}<li><a href="{{ attachment.href }}" title="{{ attachment.filename }}" target="_blank" rel="noopener noreferrer">{% if attachment.preview_href %}<img src="{{ attachment.preview_href }}" alt="Attached image: {{ attachment.filename }}" loading="lazy">{% else %}<span class="attachment-kind">PDF</span>{% endif %}<span>{{ attachment.filename }}</span></a></li>{% endfor %}</ul>{% endif %}
         <div class="job-message" role="status" aria-live="polite">
           {% if job.state in ['queued', 'researching'] %}<span class="working-indicator" aria-hidden="true"></span><div><strong>{{ 'Queued' if job.state == 'queued' else 'Researching' }}</strong><p>{{ 'Waiting for a research slot.' if job.state == 'queued' else 'ScryRaven is working on your question.' }} You can open another conversation while this continues.</p><noscript><a href="{{ url_for('open_session', session_id=saved.metadata.session_id) }}">Refresh status</a></noscript></div>
           {% else %}<div><strong>{{ 'Research interrupted' if job.state == 'interrupted' else 'Research failed' }}</strong><p>{{ job.error|default('Your question and attachments are saved. Retry when you are ready.', true) }}</p><form method="post" action="{{ url_for('open_session', session_id=saved.metadata.session_id) }}/jobs/{{ job.job_id }}/retry"><input type="hidden" name="form_token" value="{{ form_token('retry') }}"><button class="small-button" type="submit">Retry this question</button></form></div>{% endif %}
@@ -189,6 +189,7 @@
       </section>
       {% elif saved and not turns %}<p class="empty-session">This research hasn’t saved an answer yet. Ask a question below.</p>{% endif %}
     </div>
+  </div>
   </div>
   {% if saved and not unavailable %}<footer class="composer-footer">{{ composer() }}</footer>{% endif %}
 </main>

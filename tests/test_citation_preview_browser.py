@@ -82,6 +82,10 @@ def test_keyboard_focus_actions_escape_and_exact_saved_excerpt(browser, citation
         assert preview.is_visible()
         citation.press('Tab')
         assert preview.locator('.source-url a').evaluate('(el) => el === document.activeElement')
+        # A queued focus-scroll event can arrive after Tab enters the preview.
+        page.locator('.reading-scroll').dispatch_event('scroll')
+        assert preview.is_visible()
+        assert preview.locator('.source-url a').evaluate('(el) => el === document.activeElement')
         page.keyboard.press('Escape')
         assert preview.is_hidden()
         assert citation.evaluate('(el) => el === document.activeElement')
@@ -90,12 +94,21 @@ def test_keyboard_focus_actions_escape_and_exact_saved_excerpt(browser, citation
         citation.press('ArrowDown')
         page.keyboard.press('Tab')
         assert preview.locator('.saved-excerpt-link').evaluate('(el) => el === document.activeElement')
+        page.locator('.reading-scroll').dispatch_event('scroll')
+        assert preview.is_visible()
         page.keyboard.press('Enter')
         excerpt = page.locator('#turn-1-source-1-excerpt')
         assert excerpt.get_attribute('open') is not None
         assert excerpt.locator('summary').first.evaluate('(el) => el === document.activeElement')
         assert "Synthetic field note, initial edition." in excerpt.locator('.material-text').inner_text()
         assert "Extractive highlight" in excerpt.inner_text()
+        assert preview.is_hidden()
+        # Keeping keyboard actions stable must not leave a detached preview.
+        citation.focus()
+        citation.press('Tab')
+        assert preview.is_visible()
+        page.locator('.reading-scroll').evaluate('(el) => { el.scrollTop = el.scrollHeight; }')
+        page.locator('.reading-scroll').dispatch_event('scroll')
         assert preview.is_hidden()
 
 
