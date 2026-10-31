@@ -48,7 +48,8 @@ Bounds:
 - PNG, JPEG and WebP still images: 8 MiB each, 4096 px per side, 16 million pixels.
 - 24 MiB aggregate attachments, including explicitly reused image references.
 - Existing text PDFs: 20 MiB, 500 pages, two million extracted characters.
-- Multipart text fields remain bounded at 256 KiB; questions at 20,000 characters.
+- Multipart text fields remain bounded at 256 KiB; URL-encoded bodies at 256 KiB
+  total; questions at 20,000 characters.
 
 Pillow verifies and fully decodes actual image bytes, checks format/dimensions,
 and rejects animation and malformed content. PNG/JPEG/WebP originals and their
@@ -156,9 +157,32 @@ citation previews, and `desktop-zoom-200.png`.
 The frozen implementation passed all 1,128 offline tests, including 14 actual
 headless Edge checks, plus Ruff, Python compilation, JavaScript syntax,
 whitespace checks and all six configured hooks. Live validation used that exact runtime at
-`a136d3db80550a7aabc28e91a1c254c005fea1fa`. Subsequent changes update documentation
-and ignore generated ownership sidecars; no runtime code changed.
+`a136d3db80550a7aabc28e91a1c254c005fea1fa`. Subsequent runtime changes are limited
+to the request-body correction below. It was verified offline without additional
+live submissions; the two-submission license remains exhausted.
 
+
+## Request-body compatibility correction
+
+Windows CI installed Werkzeug 3.1.9, which [stopped applying the form-memory
+limit to URL-encoded request bodies](https://werkzeug.palletsprojects.com/en/stable/changes/#version-3-1-9).
+The initial implementation relied on that parser check while granting every ask
+request the larger file envelope. Consequently the 300 KiB URL-encoded test
+reached CSRF validation and returned 409 instead of the required 413. The previous
+local environment used Werkzeug 3.1.8 and did not expose that dependency change.
+
+The application now grants the larger envelope only to multipart ask requests.
+URL-encoded bodies retain their explicit 256 KiB content-length/stream ceiling.
+For a safely terminated body without Content-Length, a cached read probes one
+byte beyond that ceiling before parsing, distinguishing overflow from an
+exact-limit body without an unbounded read. Multipart files remain streamed.
+The eight focused regressions cover new/existing conversations, known/absent
+Content-Length, exact-limit text admission, larger valid PDFs, and no job or
+model execution on rejection. No dependency pin or research-engine change was
+needed. PRODUCT intent remains unchanged. The corrected implementation passed
+all 1,136 offline tests, including 14 actual headless-browser checks, using
+Werkzeug 3.1.9, pypdf 6.21.4 and pytest 9.2.0. Ruff, compilation, JavaScript syntax,
+whitespace checks and all configured hooks passed.
 
 ## Bounded live result and resources
 

@@ -189,9 +189,12 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
     def protect_local_requests():
         # Host validation also prevents DNS rebinding. Do not trust proxy headers.
         question_upload = request.endpoint in _QUESTION_UPLOADS
-        limit = (MAX_ATTACHMENT_REQUEST_BYTES + _FORM_BODY_BYTES if question_upload
+        multipart_upload = question_upload and request.mimetype == "multipart/form-data"
+        limit = (MAX_ATTACHMENT_REQUEST_BYTES + _FORM_BODY_BYTES if multipart_upload
                  else _FORM_BODY_BYTES)
-        # This also bounds a body without Content-Length.
+        # Only actual file uploads need the larger body allowance. URL-encoded
+        # bodies are bounded here, including streams without Content-Length,
+        # independently of the parser's multipart form-memory limit.
         request.max_content_length = limit
         request.max_form_memory_size = _FORM_BODY_BYTES if question_upload else limit
         if request.method not in {"GET", "HEAD", "OPTIONS"}:
@@ -206,6 +209,16 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                 abort(415)
             if request.content_length is not None and request.content_length > limit:
                 abort(413)
+            if request.mimetype == "application/x-www-form-urlencoded" and request.content_length is None:
+                # LimitedStream.read() can stop at its ceiling without signaling
+                # overflow. Probe one extra byte, then parse only cached bytes.
+                request.max_content_length = limit + 1
+                try:
+                    body = request.get_data(cache=True)
+                finally:
+                    request.max_content_length = limit
+                if len(body) > limit:
+                    abort(413)
 
     @app.after_request
     def response_safety(response):

@@ -2,6 +2,7 @@
 
 from io import BytesIO
 from threading import Event
+from urllib.parse import urlencode
 
 import pytest
 from pdf_fixtures import text_pdf
@@ -20,6 +21,61 @@ tmp_path = external_tmp_path
 def form(client, location="/"):
     action = "/ask" if location == "/" else location + "/ask"
     return action, token(client.get(location), action)
+
+
+@pytest.mark.parametrize("existing", [False, True])
+@pytest.mark.parametrize("known_length", [False, True])
+def test_oversized_urlencoded_question_is_rejected_before_admission(tmp_path, existing, known_length):
+    store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
+    saved = store.create("Existing conversation") if existing else None
+    calls = []
+    app = create_app(store=store, session_options={"engine": lambda *a, **k: calls.append(a)})
+    client = app.test_client()
+    action, fields = form(client, f"/sessions/{saved.metadata.session_id}" if saved else "/")
+    before = store.list_sessions()
+    body = urlencode(fields | {"question": "q" * (300 * 1024)}).encode()
+    overrides = {} if known_length else {"CONTENT_LENGTH": None, "wsgi.input_terminated": True}
+    response = client.post(action, data=body, content_type="application/x-www-form-urlencoded",
+                           environ_overrides=overrides)
+    assert response.status_code == 413 and b"too large" in response.data
+    assert calls == [] and store.list_jobs() == () and store.list_sessions() == before
+
+
+@pytest.mark.parametrize("known_length", [False, True])
+def test_urlencoded_question_accepts_exact_text_form_limit(tmp_path, known_length):
+    store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
+    app = create_app(store=store, session_options={"engine": engine})
+    manager = app.extensions["research_jobs"]
+    client = app.test_client()
+    action, fields = form(client)
+    body = urlencode(fields | {"question": "Inspect this question"}).encode() + b"&padding="
+    body += b"x" * (256 * 1024 - len(body))
+    overrides = {} if known_length else {"CONTENT_LENGTH": None, "wsgi.input_terminated": True}
+    response = client.post(action, data=body, content_type="application/x-www-form-urlencoded",
+                           environ_overrides=overrides)
+    assert response.status_code == 303 and manager.wait_idle(10)
+    job, = store.list_jobs()
+    assert job.state == "completed" and store.load(job.session_id).metadata.revision == 1
+
+
+@pytest.mark.parametrize("known_length", [False, True])
+def test_multipart_question_accepts_pdf_larger_than_text_form_limit(tmp_path, known_length):
+    store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
+    app = create_app(store=store, session_options={"engine": engine})
+    manager = app.extensions["research_jobs"]
+    client = app.test_client()
+    action, fields = form(client)
+    pdf = text_pdf(["Public synthetic document. " + "x" * (300 * 1024)])
+    assert len(pdf) > 256 * 1024
+    overrides = {} if known_length else {"CONTENT_LENGTH": None, "wsgi.input_terminated": True}
+    response = client.post(action, data=fields | {
+        "question": "Inspect this PDF", "files": (BytesIO(pdf), "notes.pdf", "application/pdf")},
+        environ_overrides=overrides)
+    assert response.status_code == 303 and manager.wait_idle(10)
+    job, = store.list_jobs()
+    saved = store.load(job.session_id)
+    assert job.state == "completed" and saved.metadata.revision == 1
+    assert saved.documents[0].original_pdf == pdf and saved.state.turns[0].question == "Inspect this PDF"
 
 
 @pytest.mark.parametrize("filename,media_type,data", [

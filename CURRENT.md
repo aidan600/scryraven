@@ -39,7 +39,7 @@ with an accepted question. Existing titles, URLs, exact excerpts and historical
 answer descriptions are not rewritten. Invalid/missing descriptions remain a
 local optional-metadata fallback with no mandatory retry.
 
-The implementation passed 1,128 offline tests including 14 real-browser checks,
+The implementation passed 1,136 offline tests including 14 real-browser checks,
 Ruff, compilation, JavaScript syntax and all six configured hooks. At frozen
 runtime `a136d3db80550a7aabc28e91a1c254c005fea1fa`, two ordinary personal-plan
 Terra/medium Research and Sol/medium Answer submissions identified the attached
@@ -49,8 +49,12 @@ browser; the exact original image also reopened. They used five physical model
 requests and one Exa Lite acquisition, zero independent verification searches,
 and 7.094/12.328 engine seconds. The conservative acquisition reservation was
 $0.025 of $0.15; actual third-party and plan charges are unknown. No API fallback
-or extra live retry occurred. Later changes are documentation and a generated
-ownership-file ignore pattern only. Detailed evidence and limits are recorded in
+or extra live retry occurred. A subsequent HTTP correction enforces the existing
+256 KiB URL-encoded body limit independently of Werkzeug's form-memory behavior,
+including bounded overflow detection without Content-Length. Only multipart
+questions receive the larger attachment envelope; exact-limit text forms and
+larger valid multipart PDFs retain admission. This correction has deterministic
+offline coverage and uses no additional live-model runway. Detailed evidence and limits are recorded in
 `docs/operator/READING_ROOM_PRODUCT_UX_01.md`. General model vision reliability,
 very long histories, and survival beyond local server exit are not promised.
 
