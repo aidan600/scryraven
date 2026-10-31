@@ -61,7 +61,9 @@ are not analyzed. No SVG, active document, executable, arbitrary format, audio o
 video input is added.
 
 Research and Answer receive actual Responses `input_image` blocks whose
-`image_url` is a Base64 data URL of the original, alongside non-Evidence image
+`image_url` is a Base64 data URL of the original, following the [official Responses image-input
+contract](https://developers.openai.com/api/docs/guides/images-vision?api-mode=responses),
+alongside non-Evidence image
 identity metadata. The API and personal-plan transports preserve these blocks;
 no filename-only substitute or fake OCR is used. Images attached now reach both
 roles. Older images appear as catalog metadata until an existing local Read or
@@ -153,5 +155,65 @@ citation previews, and `desktop-zoom-200.png`.
 
 The frozen implementation passed all 1,128 offline tests, including 14 actual
 headless Edge checks, plus Ruff, Python compilation, JavaScript syntax,
-whitespace checks and all six configured hooks. The licensed live validation
-has not yet run at this implementation checkpoint.
+whitespace checks and all six configured hooks. Live validation used that exact runtime at
+`a136d3db80550a7aabc28e91a1c254c005fea1fa`. Subsequent changes update documentation
+and ignore generated ownership sidecars; no runtime code changed.
+
+
+## Bounded live result and resources
+
+**Outcome: met for all four product features.** Two ordinary browser submissions
+used explicit personal-plan GPT-6.1 Terra/medium Research and GPT-6.1 Sol/medium
+Answer. The credential doorman alone read the approved external environment
+file; the controller did not read keys, vault contents or .env values. No model,
+backend, service tier or billing fallback occurred. Plan payload behavior remains
+unchanged; returned tier was default and no Fast equivalence is claimed.
+
+| Licensed submission | Actual result | Model requests | Acquisitions | Engine / submit-to-complete seconds |
+| --- | --- | ---: | ---: | ---: |
+| Locally generated red circle and blue square | “The image shows a red circle on the left and a blue square on the right.” Actual image input, no fabricated Evidence/citations; exact original and answer reopened. | 2 | 0 | 7.094 / 7.141 |
+| 10^30 SI prefix, cite BIPM | Supported quetta (Q), citing the BIPM SI-prefix table actually acquired. Navigated away while researching and returned to the completed saved answer. | 3 | 1 Exa Lite Search | 12.328 / 12.344 |
+
+Acceptance returned durable identities in 0.109 and 0.078 seconds respectively.
+The campaign consumed **2/2 submissions, 5/12 physical model requests and 1/4
+external acquisition attempts**. Exa calls: 1; Serper: 0; LinkUp: 0. Independent
+verification searches: 0. Reported tokens: 14,646 input and 329 output. A $0.025
+conservative acquisition reservation is charged to the $0.15 licensed allowance;
+this is not an invoice. Actual third-party billing and personal-plan usage charges
+are unknown; no billing-account query was performed. No additional live calls or
+retries were made. Later browser reopening used zero model/provider calls.
+
+Exact synthetic/public results, body-free turn diagnostics, broker completion
+status, selected BIPM original material, actual screenshots and the resource
+ledger are in the external review bundle. The image screenshot initially captured
+the still-rendered working page before the next poll; that exact image is retained
+as `live-image-researching.png`. A separate zero-inference fresh-page reopening
+verified and captured the actual completed image answer. The continuing-research
+screenshot already came from a fresh return after navigation. No result was
+reconstructed or translated.
+
+The new image control is preserved as an ignored development candidate in this
+isolated worktree. Its exact original artifacts also remain in the review bundle;
+the canonical corpus in the ordinary checkout was not modified under this work
+item's explicit boundary. The simple BIPM control added no new failure case.
+
+## Review limits and handoff
+
+The former large composer/separate PDF-upload routes are removed; no dormant
+frontend or legacy upload path remains. The only new persistent lifecycle is the
+explicitly requested local research run and its custody. No new semantic owner,
+provider policy, search strategy, prompt redesign, engine resource budget or
+external citation authority is introduced. No experimental investigator or
+Perplexity code was imported. The ordinary checkout and other worktrees remain
+untouched.
+
+The live observations establish these two bounded outcomes, not general vision,
+multilingual-generation or research reliability. Polish and Japanese source-title
+previews and preference propagation were tested offline with actual browser
+display; no extra multilingual live submission was licensed. Unsent files need
+reselection after navigation. Scanned PDFs, audio/video, automatic inference
+resumption and work continuing beyond local server exit remain unsupported.
+
+The implementation and all required checks are complete. Publication is one PR
+for review; merge, rebase, force-push, branch/worktree deletion and successor work
+are not authorized.
