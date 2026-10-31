@@ -5,3 +5,4 @@ pydantic>=2,<3
 markdown-it-py>=3,<5
 Flask>=3.1,<4
 pypdf>=6.19,<7
+Pillow>=12.3,<13

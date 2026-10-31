@@ -17,7 +17,6 @@ from test_research_loop import Script, answer, decision, request
 from core.exa_transport import DEFAULT_DISCOVERY_RESULT_COUNT
 from scryraven import documents
 from scryraven.documents import (
-    ALREADY_ATTACHED_NOTICE,
     MAX_EXTRACTED_CHARACTERS,
     MAX_FILENAME_LENGTH,
     MAX_PDF_BYTES,
@@ -96,12 +95,12 @@ def document_rows(path, session_id=None):
         ).fetchall()
 
 
-def upload(client, location, pdf, filename="report.pdf", headers=None):
-    action = "/documents" if location == "/" else location + "/documents"
+def upload(client, location, pdf, filename="report.pdf", headers=None, question="What does this attached PDF say?"):
+    action = "/ask" if location == "/" else location + "/ask"
     fields = token(client.get(location), action)
     return client.post(action, data={
-        "form_token": fields["form_token"],
-        "pdf": (BytesIO(pdf), filename, "application/pdf"),
+        **fields, "question": question,
+        "files": (BytesIO(pdf), filename, "application/pdf"),
     }, headers=headers)
 
 
@@ -166,7 +165,7 @@ def test_fresh_schema_and_version_one_migration_preserve_payloads(tmp_path):
     store = SQLiteSessionStore(path)
     created = store.create("Existing")
     with closing(sqlite3.connect(path)) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == SQLiteSessionStore.SCHEMA_VERSION
         assert connection.execute(
             "SELECT name FROM sqlite_master WHERE name = 'session_documents'").fetchone()[0] == "session_documents"
     before = path.read_bytes()
@@ -189,7 +188,7 @@ def test_fresh_schema_and_version_one_migration_preserve_payloads(tmp_path):
     migrated = SQLiteSessionStore(legacy).load(session_id)
     assert migrated.metadata.revision == 1 and migrated.documents == () and migrated.state.turns
     with closing(sqlite3.connect(legacy)) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == SQLiteSessionStore.SCHEMA_VERSION
         assert connection.execute("SELECT payload FROM sessions").fetchone()[0] == payload
         assert connection.execute("SELECT count(*) FROM session_documents").fetchone()[0] == 0
     assert legacy.read_bytes() != legacy_before
@@ -198,7 +197,7 @@ def test_fresh_schema_and_version_one_migration_preserve_payloads(tmp_path):
     with closing(sqlite3.connect(newer)) as connection:
         connection.execute("CREATE TABLE sessions (session_id TEXT PRIMARY KEY, payload TEXT)")
         connection.execute("INSERT INTO sessions VALUES (?, ?)", (session_id, payload))
-        connection.execute("PRAGMA user_version = 3")
+        connection.execute(f"PRAGMA user_version = {SQLiteSessionStore.SCHEMA_VERSION + 1}")
         connection.commit()
     frozen = newer.read_bytes()
     with pytest.raises(SessionStoreError) as caught:
@@ -619,37 +618,56 @@ def test_documents_do_not_consume_lite_or_disable_web_search(monkeypatch):
     assert only_document.citations[0].source_kind == "user_document"
 
 
-def test_reading_room_upload_list_original_and_deletion(tmp_path):
+def test_reading_room_question_pdf_is_atomic_durable_isolated_and_deletable(tmp_path):
     store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
-    client = app_for(store).test_client()
+    calls = []
+
+    def read_pdf(stage, _instructions, material, _schema):
+        calls.append(stage)
+        if stage == "research":
+            if not material["evidence"]:
+                result = decision(requests=[request("read", target="D1", mode="local")])
+            else:
+                result = decision("return", [material["evidence"][0]["id"]])
+        else:
+            result = answer(f"The PDF reports revenue of 184 million dollars. [{material['evidence'][0]['id']}]")
+        return json.dumps(result)
+
+    app = app_for(store, model=read_pdf)
+    manager = app.extensions["research_jobs"]
+    client = app.test_client()
     pdf = text_pdf([PAGE_FACT, ""])
-    refused = client.post("/documents", data={"form_token": "missing"})
-    assert refused.status_code == 415 and store.list_sessions() == ()
+    refused = client.post("/ask", data={"form_token": "missing", "question": "Inspect"})
+    assert refused.status_code == 409 and store.list_sessions() == ()
     forged = upload(client, "/", pdf, headers={"Origin": "https://evil.example"})
     assert forged.status_code == 403 and store.list_sessions() == ()
-    page = client.get("/")
-    fields = token(page, "/documents")
-    replay_body = {"form_token": fields["form_token"], "pdf": (BytesIO(pdf), "annual<script>.pdf", "application/pdf")}
-    created = client.post("/documents", data=replay_body)
+    fields = token(client.get("/"), "/ask")
+    question = "What revenue does this attached report state?"
+
+    def body():
+        return fields | {"question": question, "files": (BytesIO(pdf), "annual<script>.pdf", "application/pdf")}
+
+    created = client.post("/ask", data=body())
     assert created.status_code == 303
-    again = client.post("/documents", data={
-        "form_token": fields["form_token"],
-        "pdf": (BytesIO(pdf), "annual<script>.pdf", "application/pdf"),
-    })
-    assert again.status_code == 409
+    again = client.post("/ask", data=body())
+    assert again.status_code == 303 and again.headers["Location"] == created.headers["Location"]
+    assert manager.wait_idle(10)
     metadata, = store.list_sessions()
-    assert metadata.revision == 0 and metadata.title == ""
+    assert metadata.revision == 1 and metadata.title == question
     location = f"/sessions/{metadata.session_id}"
+    saved = store.load(metadata.session_id)
+    assert len(saved.state.turns) == 1 and saved.state.turns[0].question == question
+    assert saved.documents[0].original_pdf == pdf
+    assert len(calls) == 3
+    assert len(manager.list()) == 1 and manager.list()[0].state == "completed"
+    assert manager.list()[0].document_ids == ("D1",)
     html = client.get(location).get_data(as_text=True)
     assert "annual&lt;script&gt;.pdf" in html and "annual<script>.pdf" not in html
-    assert TEXT_ONLY_WARNING in html
-    assert "1 page contained no extractable text." in html
+    assert TEXT_ONLY_WARNING in html and "1 page contained no extractable text." in html
     assert "Text-only analysis" in html
-    history = client.get("/").get_data(as_text=True)
-    assert "Untitled research" in history and metadata.session_id in history
+    assert question in client.get("/").get_data(as_text=True)
     original = client.get(f"{location}/documents/D1/original")
-    assert original.status_code == 200 and original.data == pdf
-    assert original.mimetype == "application/pdf"
+    assert original.status_code == 200 and original.data == pdf and original.mimetype == "application/pdf"
     assert original.headers["X-Content-Type-Options"] == "nosniff"
     assert original.headers["Cache-Control"] == "no-store"
     disposition = original.headers["Content-Disposition"]
@@ -659,44 +677,61 @@ def test_reading_room_upload_list_original_and_deletion(tmp_path):
     assert client.get(f"/sessions/{other.metadata.session_id}/documents/D1/original").status_code == 404
     assert client.get(f"{location}/documents/D2/original").status_code == 404
     assert client.get(f"/sessions/{'b' * 32}/documents/D1/original").status_code == 404
+
+    before_jobs = manager.list()
     broken = upload(client, location, b"%PDF-1.4\nnot-a-pdf", filename="broken.pdf")
     assert broken.status_code == 400
     broken_html = broken.get_data(as_text=True)
     assert "could not be read as a PDF" in broken_html
     assert "Traceback" not in broken_html and "pypdf" not in broken_html and "site-packages" not in broken_html
-    assert store.load(metadata.session_id).documents[0].original_pdf == pdf
-    duplicate = upload(client, location, pdf, filename="copy.pdf")
-    assert duplicate.status_code == 303 and "already_attached" in duplicate.headers["Location"]
-    assert ALREADY_ATTACHED_NOTICE in client.get(duplicate.headers["Location"]).get_data(as_text=True)
+    assert store.load(metadata.session_id) == saved and manager.list() == before_jobs
+    too_large = upload(client, location, b"%PDF-" + b"0" * MAX_PDF_BYTES, filename="big.pdf")
+    assert too_large.status_code == 400 and "20 MB" in too_large.get_data(as_text=True)
+    assert store.load(metadata.session_id) == saved and manager.list() == before_jobs
+    invalid_type = client.post(location + "/ask", data=token(client.get(location), location + "/ask") | {
+        "question": "Never silently send me alone", "files": (BytesIO(b"MZ executable"), "program.exe", "application/octet-stream")})
+    assert invalid_type.status_code == 400 and manager.list() == before_jobs
+    assert "Never silently send me alone" in invalid_type.get_data(as_text=True)
+    wrong_field = client.post(location + "/ask", data=token(client.get(location), location + "/ask") | {
+        "question": "Never ignore this PDF", "pdf": (BytesIO(pdf), "a.pdf", "application/pdf")})
+    assert wrong_field.status_code == 400 and manager.list() == before_jobs
+    assert store.load(metadata.session_id) == saved
+    duplicate = upload(client, location, pdf, filename="copy.pdf", question="Reopen that same report.")
+    assert duplicate.status_code == 303 and manager.wait_idle(10)
     assert [item.document_id for item in store.load(metadata.session_id).documents] == ["D1"]
+    assert store.load(metadata.session_id).metadata.revision == 2
     oversized = client.post("/ask", data={"question": "q" * (300 * 1024)})
     assert oversized.status_code == 413 and "too large" in oversized.get_data(as_text=True)
     assert "Traceback" not in oversized.get_data(as_text=True)
-    multipart_question = client.post("/ask", data={"question": "q", "pdf": (BytesIO(pdf), "a.pdf")})
-    assert multipart_question.status_code == 415
     confirmation = client.get(location + "/delete")
     assert "attached documents" in confirmation.get_data(as_text=True)
     deleted = client.post(location + "/delete", data=token(confirmation, location + "/delete") | {"confirm": "delete"})
-    assert deleted.status_code == 303
-    assert document_rows(store.path) == []
+    assert deleted.status_code == 303 and document_rows(store.path) == []
     assert store.list_sessions() == (other.metadata,)
+    manager.shutdown()
 
 
-def test_failed_first_question_keeps_the_uploaded_pdf(tmp_path):
+def test_failed_coherent_question_keeps_exact_question_and_uploaded_pdf(tmp_path):
     store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
 
     def explode(*_args):
         raise RuntimeError("PRIVATE_PARSER_PATH_C:/secret")
 
-    client = app_for(store, model=explode).test_client()
+    app = app_for(store, model=explode)
+    manager = app.extensions["research_jobs"]
+    client = app.test_client()
     pdf = text_pdf([PAGE_FACT])
-    created = upload(client, "/", pdf, filename="kept.pdf")
-    assert created.status_code == 303
+    question = "What does this attached PDF say?"
+    created = upload(client, "/", pdf, filename="kept.pdf", question=question)
+    assert created.status_code == 303 and manager.wait_idle(10)
     metadata, = store.list_sessions()
     location = f"/sessions/{metadata.session_id}"
-    failed = client.post(location + "/ask", data=token(client.get(location), location + "/ask") | {"question": "What does it say?"})
-    html = failed.get_data(as_text=True)
-    assert failed.status_code == 503 and "PRIVATE_PARSER" not in html
+    html = client.get(location).get_data(as_text=True)
+    assert "Research failed" in html and question in html and "PRIVATE_PARSER" not in html
+    job, = manager.list(session_id=metadata.session_id)
+    assert job.state == "failed" and job.question == question and job.document_ids == ("D1",)
     saved = store.load(metadata.session_id)
     assert saved.metadata.revision == 0 and saved.state.turns == ()
     assert saved.documents[0].filename == "kept.pdf" and saved.documents[0].original_pdf == pdf
+    assert client.get(location + "/documents/D1/original").data == pdf
+    manager.shutdown()

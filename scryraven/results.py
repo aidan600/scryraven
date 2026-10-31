@@ -23,6 +23,7 @@ class CompletedAnswer:
     selected_evidence: tuple[Evidence, ...]
     citations: tuple[Citation, ...]
     citation_uses: tuple[CitationUse, ...]
+    image_ids: tuple[str, ...] = ()
 
 
 def resolve_citations(

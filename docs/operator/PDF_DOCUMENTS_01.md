@@ -14,8 +14,9 @@ independently verify an outside-world claim.
 ## Custody
 
 `pypdf>=6.19,<7` extracts text at upload. This verification used pypdf 6.19.0.
-Parsing uses an in-memory reader. There is no OCR engine, image pipeline, or
-vision-model call.
+Parsing uses an in-memory reader. This PDF path has no OCR or embedded-image
+analysis. Separate image attachments are covered in
+[Reading Room Product UX 01](READING_ROOM_PRODUCT_UX_01.md).
 
 Bounds, in `scryraven/documents.py`:
 
@@ -36,9 +37,8 @@ copy. Filenames are display metadata. They are not filesystem paths or routes.
 
 ## Storage
 
-The SQLite session store is schema 2. A version-1 database creates
-`session_documents` and sets `PRAGMA user_version` to 2 without rewriting
-session payloads. Opening a current database does not rewrite those payloads.
+The SQLite session store is schema 3. Version-1/2 stores gain additive
+document/image/job custody as needed, without rewriting session payloads. Opening a current database does not rewrite those payloads.
 An unknown newer schema still fails as `incompatible_session_store`.
 
 Each row stores the original PDF blob and the extracted pages, separate from
@@ -56,8 +56,8 @@ those views against the stored extraction.
 The catalog lists document metadata only. Local Read (`target=D1`) and Find
 (`scope=["D1"]`, or an unscoped Find that also sees retained web material) use
 the retained text. They spend no external attempt and do not consume the Exa
-Deep bootstrap. The first eligible generic Search on a turn with no retained
-web acquisitions still uses Deep. A large document stays on the existing
+Lite bootstrap. The first eligible generic Search on a turn with no retained
+web acquisitions uses Lite; later generic Searches use Auto. A large document stays on the existing
 bounded packet and exact-view limits. Exact refs look like `D1@12034:14789`.
 Page numbers are the PDF page indexes from extraction, starting at 1. Page
 boundaries are not crossed as one source sentence.
@@ -68,10 +68,11 @@ selected views. Contiguous pages compact into a run, and a gap stays a gap, so
 pages 1 and 7 appear as “pp. 1, 7”. The original PDF for that session is
 `/sessions/<session_id>/documents/<document_id>/original`.
 
-Reading Room accepts `multipart/form-data` only on the two attach routes.
-Other mutating forms stay URL-encoded, with the existing 256 KiB body bound.
-Upload routes use the 20 MiB bound, the attach form token, and the existing
-same-origin protection.
+Reading Room accepts multipart question submissions with all selected files in
+the composer. The old separate attach routes are removed. Question/file/job
+admission is atomic; PDFs retain their existing 20 MiB bound, and combined files
+have the 24 MiB/four-file request bound. Other mutating forms stay URL-encoded.
+CSRF, origin/host protection and small text-field bounds remain.
 
 ## Verification
 

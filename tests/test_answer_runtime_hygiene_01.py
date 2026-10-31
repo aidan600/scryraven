@@ -105,5 +105,5 @@ def test_operational_inability_round_trips_through_existing_session_schema(tmp_p
     assert turn.posture == "unable" and turn.stop_reason == "not_established"
     assert turn.selected_evidence == turn.citations == turn.citation_uses == ()
     assert set(asdict(turn)) == {"question", "answer", "analysis", "posture", "stop_reason",
-                                 "selected_evidence", "citations", "citation_uses"}
+                                 "selected_evidence", "citations", "citation_uses", "image_ids"}
     assert rejected not in repr(turn)

@@ -16,6 +16,8 @@ from typing import Any
 
 import requests
 
+from scryraven.images import image_input_blocks, supports_image_input
+
 
 @dataclass(frozen=True)
 class ModelRole:
@@ -255,6 +257,8 @@ def _input_blocks(instructions: str, material: dict, stage: str, phase: str) -> 
     current evidence, decision or correction tails. Up to four explicit markers.
     See https://developers.openai.com/api/docs/guides/prompt-caching .
     """
+    images = material.get("_user_images", ())
+    material = {key: value for key, value in material.items() if key != "_user_images"}
     labels = ["instructions"]
     developer = {"type": "input_text", "text": instructions,
                  "prompt_cache_breakpoint": {"mode": "explicit"}}
@@ -304,7 +308,10 @@ def _input_blocks(instructions: str, material: dict, stage: str, phase: str) -> 
             flush("research_context")
     pending += "}"
     flush()
-    return [{"role": "developer", "content": [developer]}, {"role": "user", "content": blocks}], tuple(labels)
+    inputs = [{"role": "developer", "content": [developer]}, {"role": "user", "content": blocks}]
+    if images:
+        inputs.append({"role": "user", "content": image_input_blocks(images)})
+    return inputs, tuple(labels)
 
 
 def _calculation_output(
@@ -413,16 +420,29 @@ class OpenAIModel:
         resource_snapshot: Callable[[], dict] | None = None,
         remaining_seconds: Callable[[], float] | None = None,
         final_feedback: Callable[[str], str | dict | None] | None = None,
+        image_inputs: Callable[[], tuple] | None = None,
     ) -> str:
         token = os.getenv("OPENAI_API_KEY", "").strip() if self.backend == "api" else None
         if self.backend == "api" and not token:
             raise ModelError("model_configuration_missing")
         role = self.config.answer if stage == "answer" else self.config.research
+        if material.get("_user_images") and not supports_image_input(role.model):
+            raise ModelError("model_image_input_unsupported")
         use_calculator = stage == "answer" and calculator is not None
         declared_tools = [_CALCULATOR_TOOL] if use_calculator else []
         if stage == "answer" and answer_library is not None:
             from scryraven.answer_library import LIBRARY_TOOLS
-            declared_tools += LIBRARY_TOOLS
+            library_tools = LIBRARY_TOOLS
+            if material.get("image_catalog"):
+                library_tools = [
+                    {**tool, "description": tool["description"].replace(
+                        "Read only acquired text by material/source/document ID; never fetches externally.",
+                        "Read acquired text by material/source/document ID or a retained user-provided image by I#; never fetches externally.") +
+                     " For an I# image, use null offsets: actual visual content is supplied to this interaction. "
+                     "An image has no text offsets and is not external Evidence or citation authority."}
+                    if tool["name"] == "library_read" else tool for tool in LIBRARY_TOOLS
+                ]
+            declared_tools += library_tools
         if stage == "answer" and research_tool is not None:
             declared_tools.append(_RESEARCH_TOOL)
         allowed_names = {tool["name"] for tool in declared_tools}
@@ -442,6 +462,7 @@ class OpenAIModel:
         family = sha256(_json(family_parts).encode("utf-8")).hexdigest()[:32]
         cache_family = f"sr-v1:{safe_stage}:{safe_phase}:{family}"
         inputs, breakpoints = _input_blocks(instructions, material, stage, phase)
+        supplied_image_ids = {image.image_id for image in material.get("_user_images", ())}
         payload = {
             "model": role.model,
             "input": inputs,
@@ -611,6 +632,16 @@ class OpenAIModel:
                         sequence += 1
                         outputs.append(_calculation_output(call, calculator, on_calculation, sequence))
                     continuation = [*payload["input"], *items, *outputs]
+                    # Existing Read/research tools can select a retained user image.
+                    # Deliver its actual content in this same interaction, never
+                    # a filename or fabricated text in function output.
+                    new_images = tuple(image for image in (image_inputs() if image_inputs else ())
+                                       if image.image_id not in supplied_image_ids)
+                    if new_images:
+                        if not supports_image_input(role.model):
+                            raise ModelError("model_image_input_unsupported")
+                        continuation.append({"role": "user", "content": image_input_blocks(new_images)})
+                        supplied_image_ids.update(image.image_id for image in new_images)
                     if resource_snapshot is not None:
                         continuation.append({"role": "developer", "content": [{
                             "type": "input_text", "text": "Shared remaining turn resources: " + _json(resource_snapshot()),

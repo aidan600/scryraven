@@ -38,8 +38,8 @@ def test_forensic_events_capture_exposure_rejection_and_stay_out_of_product_reco
     completed = []
     original_ask = ResearchSession.ask
 
-    def capture_answer(self, question):
-        result = original_ask(self, question)
+    def capture_answer(self, question, **kwargs):
+        result = original_ask(self, question, **kwargs)
         completed.append(result)
         return result
 
@@ -104,7 +104,7 @@ def test_forensic_cli_option_wires_distinct_logs_without_running_a_turn(tmp_path
     assert len(served) == 1 and served[0][1] == 7332
     assert dogfood.read_text(encoding="utf-8") == ""
     assert forensic.read_text(encoding="utf-8") == ""
-    assert not database.exists()  # Creating the app does not open a session.
+    assert SQLiteSessionStore(database).list_sessions() == ()  # Startup recovers jobs but creates no conversation.
 
 
 def test_forensic_write_failure_disables_sink_and_preserves_subsequent_turns(
