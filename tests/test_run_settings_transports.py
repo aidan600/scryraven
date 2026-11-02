@@ -194,6 +194,35 @@ def test_openrouter_incompatibility_stops_without_paid_repair_or_fallback(monkey
     assert len(calls) == 1
 
 
+def test_openai_malformed_feedback_dictionary_preserves_native_history_for_one_correction(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "offline-openai")
+    calls, feedbacks = [], []
+    opaque = {"type": "reasoning", "id": "offline-reasoning", "encrypted_content": "opaque-kept-context"}
+    function = {"type": "function_call", "name": "calculate", "call_id": "native-calculation",
+                "arguments": '{"expression":"12 - 4"}'}
+    outputs = iter([{"status": "completed", "output": [opaque, function]},
+                    reply({"invalid": "REJECTED FINAL CLAIM"}), reply({"answer": "8"})])
+
+    def post(_url, **kwargs):
+        calls.append(deepcopy(kwargs["json"]))
+        return Response(next(outputs))
+
+    def feedback(raw):
+        feedbacks.append(raw)
+        return None if json.loads(raw) == {"answer": "8"} else {"code": "malformed_model_response"}
+
+    model = OpenAIModel(config(), backend="api", post=post)
+    assert model("answer", "prompt", {}, {}, calculator=lambda _: {"value": "8"}, final_feedback=feedback) == '{"answer": "8"}'
+    assert len(calls) == 3 and len(feedbacks) == 2
+    assert calls[-1]["input"][:len(calls[-2]["input"])] == calls[-2]["input"]
+    assert opaque in calls[-1]["input"] and function in calls[-1]["input"]
+    assert any(item.get("type") == "function_call_output" and item.get("call_id") == "native-calculation"
+               for item in calls[-1]["input"])
+    assert "malformed_model_response" in json.dumps(calls[-1]["input"][-1])
+    assert "REJECTED FINAL CLAIM" not in json.dumps(calls)
+    assert all(payload["store"] is False and "previous_response_id" not in payload for payload in calls)
+
+
 def test_openrouter_reported_model_mismatch_cannot_publish_as_selected_model(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "offline-router")
     observed, calls = [], []

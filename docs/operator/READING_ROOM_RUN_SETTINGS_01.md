@@ -70,9 +70,13 @@ native function continuation. Unsupported image capability fails explicitly;
 recognized OpenAI image models also work with their `openai/` slugs. General
 arbitrary-model vision compatibility is not established.
 
-Malformed paid structured responses fail as `model_contract_incompatible`
-without spending on schema repair, including inside delegated Research. Existing
-semantic citation/source validation and valid native tool continuation survive.
+Malformed OpenRouter structured responses fail as `model_contract_incompatible`
+without spending on schema repair, including inside delegated Research. The
+first-party OpenAI API retains its existing one-correction Research and Answer
+behavior, bounded by the existing correction budget and physical request/run
+limits. Answer correction keeps its native tool/opaque continuation; rejected
+final prose is not fed back as Evidence or a draft. Existing semantic
+citation/source validation and valid native tool continuation survive.
 No acquisition-provider routing, prompt, semantic schema or research owner is
 changed. No additional execution manager, arbitrary-base-URL client, backend
 fallback, premium escalation or automatic replacement run exists.
@@ -95,16 +99,19 @@ without invalidating a valid answer.
 The focused suites exercise all backends, exact IDs and omitted/explicit effort,
 Standard/Fast distinction, plan parameter omission/catalog rejection, fixed
 OpenRouter endpoint/credential isolation, strict function/reasoning continuation,
-no paid incompatibility repair, returned-model mismatch, simultaneous/queued
+no OpenRouter incompatibility repair, returned-model mismatch, simultaneous/queued
 settings, original retry, tampered duplicate requests, missing credentials,
 historical migration/reopening, source/citation custody, new and retained images.
 Real Edge checks cover desktop, 390/320px, actual 200% browser zoom, keyboard
 dialog operation and first-completion receipts. Actual screenshots are external
 review artifacts; their synthetic answers are presentation fixtures.
 
-All 1,218 offline tests passed, with no skips in the final ordinary-user run.
-Ruff, compilation, JavaScript syntax, whitespace and all six configured hooks
-passed before bounded live validation. The live caller
+The original implementation passed all 1,218 offline tests, with no skips in
+the final ordinary-user run. Ruff, compilation, JavaScript syntax, whitespace
+and all six configured hooks passed before bounded live validation. The focused
+review fix subsequently passed 139 correction/continuation tests and all 1,223
+offline tests, Ruff, compilation, whitespace and all six configured hooks.
+The live caller
 uses ordinary browser submission -> actual HTTP route -> ResearchJobManager ->
 ResearchSession -> Responses transport -> durable answer, without scripting the
 model's semantic work. It requests the licensed apple premise question only,
@@ -143,8 +150,11 @@ directory. The authentication boundary is also a sanitized ignored local
 development candidate at
 `local-evals/candidates/reading-room-run-settings-01-openrouter-auth-20261101/`.
 It is operational diagnostic evidence, not a semantic model failure or gold case.
-No runtime code changed after this live-tested revision; subsequent branch
-changes record evidence and review facts only.
+The focused review fix restores bounded first-party API malformed-output
+correction while preserving OpenRouter's fail-closed behavior. That correction
+path is covered by offline regression/continuation checks; no additional live
+inference, provider call or API spending was authorized or performed for the fix.
+The earlier live smoke checks did not exercise malformed-output recovery.
 
 ## Installed launcher aftercare: only after merge
 

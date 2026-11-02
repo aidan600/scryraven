@@ -317,9 +317,7 @@ def test_real_model_transport_through_ordinary_run_and_session_with_fake_respons
         outputs += list(local_turn()) + [decision(), decision("return", ["E2"]),
                                          answer(FACT_C + " [E2]")]
     replies = [("research" if "briefing" in output else "answer", output) for output in outputs]
-    # A schema-valid action-shape correction still exercises stable cache
-    # identity. A paid provider's malformed strict JSON now fails without repair.
-    replies.insert(0, ("research", decision("research", requests=[])))
+    replies.insert(0, ("research", '{"briefing":'))
 
     def post(url, **kwargs):
         calls.append(kwargs["json"])

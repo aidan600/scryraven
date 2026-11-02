@@ -150,14 +150,17 @@ def test_missing_credential_retains_question_and_selected_configuration_without_
         manager.shutdown()
 
 
-@pytest.mark.parametrize("backend", ["openai", "openrouter"])
-def test_incompatible_structured_output_spends_no_repair_and_duplicate_tampering_is_rejected(tmp_path, monkeypatch, backend):
-    monkeypatch.setenv("OPENAI_API_KEY", "offline-openai")
+@pytest.mark.parametrize("phase", ["research", "answer", "delegated_research"])
+def test_openrouter_incompatible_output_spends_no_repair_and_duplicate_tampering_is_rejected(tmp_path, monkeypatch, phase):
     monkeypatch.setenv("OPENROUTER_API_KEY", "offline-router")
+    outputs = iter(([decision("return")] if phase == "answer" else
+                    [decision("return"), [{"type": "function_call", "name": "research",
+                        "call_id": "delegated-contract", "arguments": '{"need":"Check the stipulated quantity."}'}]]
+                    if phase == "delegated_research" else []) + [{"invalid": "REJECTED CONTRACT CLAIM"}])
     calls = []
     def post(url, **kwargs):
-        calls.append((url, kwargs["json"]))
-        return response(kwargs["json"], {"invalid": "Research contract"})
+        calls.append((url, deepcopy(kwargs["json"])))
+        return response(kwargs["json"], next(outputs))
     store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
     app = create_app(store=store, run_model_factory=lambda settings: OpenAIModel(settings.model_config(),
         backend="api" if settings.backend == "openai" else settings.backend, post=post),
@@ -165,16 +168,74 @@ def test_incompatible_structured_output_spends_no_repair_and_duplicate_tampering
     manager = app.extensions["research_jobs"]
     client = app.test_client()
     try:
-        fields = selected_fields(client, backend)
+        fields = selected_fields(client, "openrouter")
         accepted = client.post("/ask", data=fields)
         assert accepted.status_code == 303 and manager.wait_idle()
         job, = store.list_jobs()
         assert job.state == "failed" and job.error_code == "model_contract_incompatible"
-        assert len(calls) == 1 and job.run_settings.research_model == fields["research_model"]
+        requests = {"research": 1, "answer": 2, "delegated_research": 3}[phase]
+        assert len(calls) == requests and job.run_settings.research_model == fields["research_model"]
+        assert all(url == "https://openrouter.ai/api/v1/responses" for url, _ in calls)
+        assert len(job.run_receipt["requests"]) == requests
+        assert store.load(job.session_id).state.turns == ()
+        assert "REJECTED CONTRACT CLAIM" not in json.dumps(calls)
         assert client.post("/ask", data=fields).status_code == 303
         assert client.post("/ask", data=fields | {"answer_model": fields["answer_model"] + "-changed"}).status_code == 409
         assert client.post("/ask", data=fields | {"question": "Changed question"}).status_code == 409
-        assert len(calls) == len(store.list_jobs()) == 1
+        assert len(calls) == requests and len(store.list_jobs()) == 1
+    finally:
+        manager.shutdown()
+
+
+@pytest.mark.parametrize("processing", ["standard", "fast"])
+def test_openai_submission_repairs_research_and_answer_once_with_original_settings(tmp_path, monkeypatch, processing):
+    monkeypatch.setenv("OPENAI_API_KEY", "offline-openai")
+    calls = []
+    opaque = {"type": "reasoning", "id": "calculation-reasoning", "encrypted_content": "opaque-offline-context"}
+    calculation = {"type": "function_call", "name": "calculate", "call_id": "accepted-calculation",
+                   "arguments": '{"expression":"12 - 4"}'}
+    outputs = iter([{"invalid": "REJECTED RESEARCH CLAIM"}, decision("return"),
+                    [opaque, calculation], {"invalid": "REJECTED ANSWER CLAIM"}, FINAL])
+
+    def post(url, **kwargs):
+        calls.append((url, deepcopy(kwargs["json"])))
+        return response(kwargs["json"], next(outputs))
+
+    store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
+    app = create_app(store=store, run_model_factory=lambda settings: OpenAIModel(
+        settings.model_config(), backend="api", post=post),
+        session_options={"search": no_io, "fetch": no_io, "lexical_search": no_io})
+    manager = app.extensions["research_jobs"]
+    client = app.test_client()
+    try:
+        fields = selected_fields(client, "openai", processing)
+        accepted = client.post("/ask", data=fields)
+        assert accepted.status_code == 303 and manager.wait_idle(10)
+        job, = store.list_jobs()
+        assert job.state == "completed" and job.run_settings.backend == "openai"
+        assert job.run_settings.api_processing == processing and job.run_settings.physical_request_limit == 6
+        assert all(url == "https://api.openai.com/v1/responses" for url, _ in calls)
+        payloads = [payload for _, payload in calls]
+        assert len(payloads) == 5
+        assert [payload["text"]["format"]["name"] for payload in payloads] == [
+            "research", "research", "answer", "answer", "answer"]
+        assert [payload["model"] for payload in payloads] == [fields["research_model"]] * 2 + [fields["answer_model"]] * 3
+        tier = "fast" if processing == "fast" else "default"
+        assert all(payload["service_tier"] == tier for payload in payloads)
+        assert all(payload["reasoning"] == {"effort": "low"} for payload in payloads[:2])
+        assert all("reasoning" not in payload for payload in payloads[2:])
+        assert "output_correction" in json.dumps(payloads[1])
+        assert payloads[-1]["input"][:len(payloads[-2]["input"])] == payloads[-2]["input"]
+        assert opaque in payloads[-1]["input"] and calculation in payloads[-1]["input"]
+        assert any(item.get("type") == "function_call_output" and item.get("call_id") == "accepted-calculation"
+                   for item in payloads[-1]["input"])
+        assert "output_correction" in json.dumps(payloads[-1]["input"][-1])
+        assert "REJECTED RESEARCH CLAIM" not in json.dumps(payloads)
+        assert "REJECTED ANSWER CLAIM" not in json.dumps(payloads)
+        assert len(job.run_receipt["requests"]) == 5
+        saved = SQLiteSessionStore(store.path).load(job.session_id)
+        assert saved.state.turns[0].answer == FINAL["answer"]
+        assert saved.state.turns[0].citations == saved.state.turns[0].selected_evidence == ()
     finally:
         manager.shutdown()
 

@@ -313,11 +313,6 @@ def test_invalid_final_after_research_corrects_inside_same_native_history(monkey
 def test_existing_mechanical_corrections_share_native_context(monkeypatch, backend, invalid, code):
     model, payloads, _ = scripted(monkeypatch, [reply(initial(requests=[request()])),
         reply(initial("return", ["E1"])), reply(invalid), reply(answer())], backend)
-    if backend == "api" and code == "malformed_model_response":
-        with pytest.raises(RunError, match="model_contract_incompatible"):
-            run("What is the original value?", model=model, search=search)
-        assert len(payloads) == 3  # No paid schema repair or replacement.
-        return
     result = run("What is the original value?", model=model, search=search)
     owners = payloads[-2:]
     # The plan projection inserts its tools before the first response item;
@@ -332,6 +327,32 @@ def test_existing_mechanical_corrections_share_native_context(monkeypatch, backe
     assert [e["code"] for e in result.trace if e["action"] == "response_rejected"] == [code]
     assert result.posture == "supported"
     assert len([e for e in result.trace if e["action"] == "model_started" and e.get("contract") == "answer"]) == 1
+
+
+def test_api_delegated_research_repairs_once_and_returns_to_same_answer(monkeypatch):
+    model, payloads, _ = scripted(monkeypatch, [reply(initial("return")),
+        tool("research", {"need": "Find the original value."}, "delegated-value"),
+        reply({"invalid": "REJECTED DELEGATED CLAIM"}),
+        reply(delegated(requests=[request()])), reply(delegated("return", ["E1"])),
+        reply(answer())])
+    result = run("What is the original value?", model=model, search=search,
+                 fetch=prohibited, lexical_search=prohibited,
+                 limits=research.RunLimits(physical_model_requests=6))
+    assert stages(payloads) == ["research", "answer", "research", "research", "research", "answer"]
+    assert packet(payloads[2])["delegated_need"] == packet(payloads[3])["delegated_need"] == "Find the original value."
+    assert packet(payloads[3])["output_correction"]
+    assert "REJECTED DELEGATED CLAIM" not in json.dumps(payloads)
+    owner_before, owner_after = payloads[1], payloads[-1]
+    assert owner_after["input"][:len(owner_before["input"])] == owner_before["input"]
+    assert any(item.get("encrypted_content") == "opaque-delegated-value" for item in owner_after["input"])
+    assert list(results(owner_after)) == ["delegated-value"]
+    assert results(owner_after)["delegated-value"]["evidence"][0]["content"] == VALUE
+    assert result.posture == "supported" and result.citations[0].materials[0].content == VALUE
+    assert [event["code"] for event in result.trace if event["action"] == "response_rejected"] == ["malformed_model_response"]
+    assert len([event for event in result.trace if event["action"] == "model_started"
+                and event.get("contract") == "answer"]) == 1
+    budget = result.trace[-1]["budget"]
+    assert budget["physical_requests"] == 6 and budget["role_physical_requests"] == {"answer": 2, "research": 4}
 
 
 @pytest.mark.parametrize("backend", ["api", "chatgpt_plan"])
@@ -362,14 +383,6 @@ def test_research_validation_exhaustion_preserves_last_briefing_and_originals(
     outputs.append(finish)
     model, payloads, _ = scripted(monkeypatch, outputs, backend)
     diagnostics = TurnDiagnostics()
-    if backend == "api" and malformed:
-        with pytest.raises(RunError, match="model_contract_incompatible") as failure:
-            run("What is the value and its qualification?", model=model, search=search,
-                fetch=prohibited, lexical_search=prohibited, observe=diagnostics.observe)
-        assert len(payloads) == (5 if is_delegated else 3)
-        assert "REJECTED GENERATED CLAIM" not in json.dumps(failure.value.trace)
-        assert diagnostics.corrections["research"]["malformed_model_response"] == 1
-        return
     result = run("What is the value and its qualification?", model=model, search=search,
                  fetch=prohibited, lexical_search=prohibited, observe=diagnostics.observe)
     assert result.posture == "partial" and result.stop_reason == "research_bound"
@@ -407,11 +420,6 @@ def test_non_json_final_and_empty_evidence_basis_use_only_one_native_correction(
                   "content": [{"type": "output_text", "text": "not-json-at-all"}]}]
     model, payloads, _ = scripted(monkeypatch, [reply(initial("return")), malformed,
         reply(answer("A claim without supplied evidence"))], backend)
-    if backend == "api":
-        with pytest.raises(RunError, match="model_contract_incompatible"):
-            run("Find the missing original.", model=model, search=prohibited)
-        assert len(payloads) == 2
-        return
     result = run("Find the missing original.", model=model, search=prohibited)
     assert result.answer == research.ANSWER_VALIDATION_FAILURE_MESSAGE
     assert [e["code"] for e in result.trace if e["action"] == "response_rejected"] == [

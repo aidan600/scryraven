@@ -27,13 +27,18 @@ commit atomically with the completed answer/job and appear under Run details.
 Unreported usage/pricing and actual billing remain unknown. The fixed-endpoint
 OpenRouter adapter uses strict parameter filtering and native schema/function
 continuation, disables provider fallback/plugins/transforms and rejects a
-different reported model. Paid schema incompatibility fails without additional
-schema-repair spending, including delegated Research. Research ownership,
+different reported model. OpenRouter schema incompatibility fails without
+additional schema-repair spending, including delegated Research. First-party
+OpenAI API retains its existing one-correction Research/Answer behavior and
+native continuation within the same correction and run budgets. Research ownership,
 semantic schemas, source/citation validation and acquisition routing remain.
 
-All 1,218 offline tests passed, including actual Edge desktop/mobile/200%-zoom
-and keyboard checks. Ruff, compilation, JavaScript syntax, whitespace and all six
-configured hooks passed. At frozen runtime
+All 1,223 offline tests passed after the focused review fix, including actual
+Edge desktop/mobile/200%-zoom and keyboard checks; 139 focused correction and
+continuation tests passed. Ruff, compilation, whitespace and all six configured
+hooks passed. No additional live inference/provider call or API spending was
+performed for the fix; malformed-output recovery is verified offline. The prior
+live smoke checks did not exercise that recovery path. At frozen runtime
 `89b002475482c28b3548b97347fe26b9c0b6780f`, ordinary browser Standard and Fast
 OpenAI API turns each answered the public apple premise correctly in two
 Luna/none requests, with exact returned model and respectively `default`/`fast`

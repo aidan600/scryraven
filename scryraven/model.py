@@ -807,10 +807,10 @@ class OpenAIModel:
                 if not output.strip():
                     raise ModelError("model_response_empty")
                 feedback = final_feedback(output) if final_feedback is not None else None
-                if (self.backend in {"api", "openrouter"} and isinstance(feedback, dict)
+                if (self.backend == "openrouter" and isinstance(feedback, dict)
                         and feedback.get("code") == "malformed_model_response"):
-                    # The selected model must satisfy the ordinary contract.
-                    # An incompatibility never purchases another repair call.
+                    # OpenRouter must satisfy the strict contract without a
+                    # repair call. First-party API retains bounded correction.
                     raise ModelError("model_contract_incompatible")
                 if feedback is not None and not corrected_final:
                     # Keep the native tool/opaque history, but never feed rejected

@@ -469,7 +469,7 @@ def _run_turn(
             return shape.model_validate_json(wrapped.group(1) if wrapped else raw)
         except ValidationError:
             emit("response_rejected", contract=stage, code="malformed_model_response")
-            if isinstance(model, OpenAIModel) and model.backend in {"api", "openrouter"}:
+            if isinstance(model, OpenAIModel) and model.backend == "openrouter":
                 raise RunError(stage, "model_contract_incompatible", trace)
             return None
 
