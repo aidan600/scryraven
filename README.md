@@ -43,7 +43,7 @@ python -m scryraven "What is the maximum allowed weight of a ten-pin bowling bal
 ```
 
 The ordinary runtime selects semantic Research and Answer roles. Shipped defaults
-in `scryraven/model_roles.defaults.json` configure GPT-6 Luna / high / Fast for
+in `scryraven/model_roles.defaults.json` configure GPT-6.1 Terra / medium / Fast for
 Research and GPT-6.1 Sol / medium / Fast for Answer. An optional per-user file
 controls active settings; see [model configuration](#model-configuration).
 Exa supplies ordinary general
@@ -340,7 +340,7 @@ community or current-web discovery needs `SERPER_API_KEY` only when invoked.
 External Read needs `LINKUP_API_KEY` when invoked. It does not load `.env`.
 Ordinary code selects the semantic roles `research` and `answer` through
 `ModelConfig.research` and `ModelConfig.answer`. The package ships tracked defaults
-in `scryraven/model_roles.defaults.json`: Research is GPT-6 Luna / high / Fast;
+in `scryraven/model_roles.defaults.json`: Research is GPT-6.1 Terra / medium / Fast;
 Answer is GPT-6.1 Sol / medium / Fast. `built_in_model_config()` reads these shipped
 values independently of local choices. Active ordinary settings use this precedence:
 explicit injected `ModelConfig` > complete per-user file > shipped defaults.
@@ -377,20 +377,29 @@ An empty reasoning string omits the effort parameter; service tier accepts
 contact a provider to validate model availability or model/effort compatibility.
 **No source edit, commit or PR is required for a local active configuration change.**
 `default_model_config()`, `ModelConfig()` and `OpenAIModel()` resolve one coherent
-effective snapshot. CLI, Reading Room, sessions and direct `run()` resolve a fresh
-ordinary model for each turn, so edits apply on the next turn without restarting
-the process. An explicitly constructed and retained `OpenAIModel` keeps its
+effective snapshot. CLI, sessions and direct `run()` resolve a fresh ordinary
+model for each turn. Reading Room initially displays its launch model profile;
+its compact Run Settings dialog selects ChatGPT plan, OpenAI API or OpenRouter,
+exact editable Research/Answer model identifiers and reasoning. API Standard
+explicitly requests `default`; API Fast requests `fast`. Plan/OpenRouter omit
+API tier controls. Paid execution requires an explicit selection and confirmation.
+An explicitly constructed and retained `OpenAIModel` keeps its
 resolved snapshot. Full explicit injection reads neither user nor shipped files;
 partial injection retains the supplied role and resolves the missing role from
 the effective configuration. Injection neither changes nor persists user settings.
-This external file is the current user/operator settings boundary; there is no
-graphical settings UI or settings write API yet. Compatible injected or local
-configurations may vary in quality and validation coverage.
+The external file remains valid and is never overwritten by Reading Room.
+Reading Room saves last-used preferences separately in its existing database and
+captures immutable per-job settings, including the request allowance. Retry
+copies the original snapshot; historical unknown configurations remain unknown.
+Completed Run details show exact settings and reported usage, model and tier;
+unreported costs and actual billing remain unknown. See
+[Run Settings](docs/operator/READING_ROOM_RUN_SETTINGS_01.md) for compatibility,
+migration and narrowly scoped post-merge launcher instructions.
 
 The obsolete FAST/SMART model environment overrides are removed. Model values are
 not read from environment variables. `.env.example` contains credential placeholders only;
 the product does not load `.env`. There is no automatic premium escalation or
-model fallback. One stateless OpenAI Responses transport uses structured output;
+model fallback. Stateless Responses transports use strict structured output;
 no model has built-in web tools. The historical isolated fixed-packet GPT-6 Sol /
 medium / Fast screen showed a consistent latency benefit; Luna / high / Fast
 evidence was noisier. The shipped GPT-6.1 Sol / medium / Fast Answer configuration

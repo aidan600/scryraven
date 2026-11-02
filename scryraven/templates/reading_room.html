@@ -35,6 +35,78 @@
 {% endif %}
 {%- endmacro %}
 
+{% macro configuration(settings) -%}
+<dl class="run-configuration">
+  <div><dt>Backend</dt><dd>{{ {'chatgpt_plan': 'ChatGPT plan', 'openai': 'OpenAI API · API billed', 'openrouter': 'OpenRouter · OpenRouter billed'}.get(settings.backend, 'Unknown') }}</dd></div>
+  <div><dt>Research</dt><dd><code>{{ settings.research_model }}</code> · {{ settings.research_reasoning or 'model default' }}</dd></div>
+  <div><dt>Answer</dt><dd><code>{{ settings.answer_model }}</code> · {{ settings.answer_reasoning or 'model default' }}</dd></div>
+  {% if settings.backend == 'openai' %}<div><dt>Processing</dt><dd>{{ 'Fast' if settings.api_processing == 'fast' else 'Standard' }}</dd></div>{% endif %}
+  <div><dt>Run allowance</dt><dd>Up to {{ settings.physical_request_limit }} model requests</dd></div>
+</dl>
+{%- endmacro %}
+
+{% macro run_record(settings, receipt=none) -%}
+<details class="run-record">
+  <summary>Run details{% if settings %} · {{ {'chatgpt_plan':'ChatGPT plan', 'openai':'OpenAI API', 'openrouter':'OpenRouter'}.get(settings.backend, 'Unknown') }}{% endif %}</summary>
+  {% if settings %}{{ configuration(settings) }}{% else %}<p>Historical run configuration unknown.</p>{% endif %}
+  {% if receipt %}
+  <div class="run-usage">
+    {% for item in receipt.requests|default([]) %}
+    <div class="run-request"><p><strong>{{ item.role|capitalize }}</strong> · requested <code>{{ item.model or 'model unreported' }}</code></p>
+      {% if item.returned_model %}<p>Provider-returned model: <code>{{ item.returned_model }}</code></p>{% endif %}
+      {% if item.provider %}<p>Routed provider: {{ item.provider }}</p>{% endif %}
+      {% if item.reported_cost_usd is not none %}<p>Provider-reported cost: ${{ item.reported_cost_usd }}. Actual billing may differ.</p>{% endif %}
+      <p>Provider-reported tokens: {{ item.input_tokens if item.input_tokens is not none else 'unknown' }} input · {{ item.output_tokens if item.output_tokens is not none else 'unknown' }} output{% if item.cached_input_tokens is not none %} · {{ item.cached_input_tokens }} cached input{% endif %}{% if item.reasoning_tokens is not none %} · {{ item.reasoning_tokens }} reasoning{% endif %}</p>
+      <p>Requested service tier: {{ item.requested_service_tier or 'not requested' }} · Returned tier: {{ item.returned_service_tier or 'unreported' }}</p>
+    </div>
+    {% endfor %}
+    {% if receipt.estimated_cost_usd is not none %}<p>Estimated inference spend: ${{ receipt.estimated_cost_usd }}. This is an estimate, not an actual bill.</p>{% else %}<p>Estimated inference spend: unknown.</p>{% endif %}
+    <p>Actual billing and credit balances are not available here. Unreported usage and prices remain unknown.</p>
+  </div>
+  {% elif settings %}<p class="run-usage">Provider usage and returned service tier were not reported. Actual billing is unknown.</p>{% endif %}
+</details>
+{%- endmacro %}
+
+{% macro run_controls() -%}
+{% set settings = run_settings|default({}) %}
+<div class="run-selection">
+  <button class="run-settings-open" type="button" aria-haspopup="dialog" aria-controls="run-settings-dialog"><span class="run-selection-backend">{{ {'chatgpt_plan':'ChatGPT plan', 'openai':'OpenAI API · API billed', 'openrouter':'OpenRouter · OpenRouter billed'}.get(settings.backend, 'Run settings') }}</span><span class="run-selection-roles">Research {{ settings.research_model }} · {{ settings.research_reasoning or 'model default' }} / Answer {{ settings.answer_model }} · {{ settings.answer_reasoning or 'model default' }}{% if settings.backend == 'openai' %} · {{ 'Choose processing' if initial_processing_profile|default(none) else ('Fast' if settings.api_processing == 'fast' else 'Standard') }}{% endif %}</span><span class="run-selection-edit">Edit</span></button>
+</div>
+<dialog class="run-settings-dialog" id="run-settings-dialog" aria-labelledby="run-settings-title" aria-describedby="run-settings-intro">
+  <div class="run-settings-heading"><div><p class="eyebrow">For your next question</p><h2 id="run-settings-title">Run settings</h2></div><button class="icon-button run-settings-close" type="button" aria-label="Close run settings">{{ icon('close') }}</button></div>
+  <p class="settings-intro" id="run-settings-intro">Saved with your question. Changing these settings never changes an accepted run or its retry.</p>
+  <label for="run-backend">Inference backend</label>
+  <select id="run-backend" name="backend">
+    {% for value, label in [('chatgpt_plan', 'ChatGPT personal plan'), ('openai', 'OpenAI API · API billed'), ('openrouter', 'OpenRouter · OpenRouter billed')] %}<option value="{{ value }}"{% if settings.backend == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  <p class="provider-disclosure" id="provider-disclosure">Your question, conversation context, source text, PDFs and images used in the run are supplied to the selected model provider.</p>
+  <div class="run-roles">
+    {% for role, label in [('research', 'Research'), ('answer', 'Answer')] %}
+    <fieldset><legend>{{ label }}</legend>
+      <label for="{{ role }}-model">{{ label }} model identifier</label>
+      <input id="{{ role }}-model" name="{{ role }}_model" value="{{ settings[role + '_model'] }}" list="run-model-presets" maxlength="200" autocomplete="off" spellcheck="false" required>
+      <label for="{{ role }}-reasoning">{{ label }} reasoning effort</label>
+      <select id="{{ role }}-reasoning" name="{{ role }}_reasoning">
+      {% for value, text in [('', 'Model default (omit parameter)'), ('none', 'None'), ('low', 'Low'), ('medium', 'Medium'), ('high', 'High'), ('xhigh', 'Extra high'), ('max', 'Max')] %}<option value="{{ value }}"{% if (settings[role + '_reasoning'] or '') == value %} selected{% endif %}>{{ text }}</option>{% endfor %}
+      </select>
+    </fieldset>
+    {% endfor %}
+  </div>
+  <datalist id="run-model-presets"><option value="gpt-6.1-terra"><option value="gpt-6.1-sol"><option value="gpt-6-luna"></datalist>
+  <p class="settings-note">Choose a suggested model or enter its exact identifier. Model and reasoning support depend on the backend; unsupported settings fail without substitution.</p>
+  <div class="run-processing"{% if settings.backend != 'openai' %} hidden{% endif %}>
+    <label for="api-processing">OpenAI API processing</label>
+    <select id="api-processing" name="api_processing" required{% if settings.backend != 'openai' %} disabled{% endif %}>{% if initial_processing_profile|default(none) %}<option value="" selected disabled>Choose for this run</option>{% endif %}<option value="standard"{% if settings.api_processing != 'fast' and not initial_processing_profile|default(none) %} selected{% endif %}>Standard</option><option value="fast"{% if settings.api_processing == 'fast' and not initial_processing_profile|default(none) %} selected{% endif %}>Fast · higher rates may apply</option></select>
+    {% if initial_processing_profile|default(none) %}<p class="settings-note initial-tier-profile">Existing model profile requests Research <strong>{{ initial_processing_profile.research or 'unspecified' }}</strong> and Answer <strong>{{ initial_processing_profile.answer or 'unspecified' }}</strong>. Choose Standard or Fast for this run.</p>{% endif %}
+  </div>
+  <label for="physical-request-limit">Per-run model request allowance</label>
+  <select id="physical-request-limit" name="physical_request_limit"><option value="6"{% if settings.physical_request_limit == 6 %} selected{% endif %}>Smaller · up to 6 requests</option><option value="12"{% if settings.physical_request_limit == 12 %} selected{% endif %}>Standard · up to 12 requests</option>{% if settings.backend == 'chatgpt_plan' %}<option value="40"{% if settings.physical_request_limit == 40 %} selected{% endif %}>Plan · up to 40 requests</option>{% endif %}</select>
+  <p class="settings-note paid-run-note"{% if settings.backend == 'chatgpt_plan' %} hidden{% endif %}>This selects paid inference. Monthly credits may not cover every charge. The request allowance limits resource use; it is not a dollar ceiling.</p>
+  <label class="paid-inference-confirmation"{% if settings.backend == 'chatgpt_plan' %} hidden{% endif %}><input type="checkbox" name="paid_inference_confirmed" value="1"{% if settings.backend != 'chatgpt_plan' %} required{% else %} disabled{% endif %}>Use billed API inference for this question</label>
+  <div class="dialog-actions"><button type="button" class="small-button run-settings-done">Use these settings</button></div>
+</dialog>
+{%- endmacro %}
+
 {% macro composer(is_new=false) -%}
 <div class="composer-wrap{% if is_new %} welcome-composer{% endif %}">
   <form class="ask-form" method="post" enctype="multipart/form-data" action="{{ url_for('ask', session_id=saved.metadata.session_id) if saved else url_for('ask') }}" data-draft-key="{{ saved.metadata.session_id if saved else 'new' }}">
@@ -64,6 +136,7 @@
       </div>
       <div class="drop-hint" aria-hidden="true">Drop PDF or image files here</div>
     </div>
+    {{ run_controls() }}
     <p class="composer-error" id="composer-error" role="alert" hidden></p>
     <div class="submission-recovery" hidden></div>
     <p class="composer-status sr-only" role="status" aria-live="polite"></p>
@@ -176,12 +249,14 @@
           </div>
         </details>
         {% endif %}
+        {{ run_record(turn.run_settings|default(none), turn.run_receipt|default(none)) }}
       </section>
       {% endfor %}
       {% if job and job.state in ['queued', 'researching', 'failed', 'interrupted'] %}
       <section class="research-job" id="research-status" data-job-id="{{ job.job_id }}" aria-labelledby="job-question" tabindex="-1">
         <div class="question-block"><h2 id="job-question">{{ job.question }}</h2></div>
         {% if job.attachments %}<ul class="turn-attachments" aria-label="Attachments to this question">{% for attachment in job.attachments %}<li><a href="{{ attachment.href }}" title="{{ attachment.filename }}" target="_blank" rel="noopener noreferrer">{% if attachment.preview_href %}<img src="{{ attachment.preview_href }}" alt="Attached image: {{ attachment.filename }}" loading="lazy">{% else %}<span class="attachment-kind">PDF</span>{% endif %}<span>{{ attachment.filename }}</span></a></li>{% endfor %}</ul>{% endif %}
+        {{ run_record(job.run_settings|default(none), job.run_receipt|default(none)) }}
         <div class="job-message" role="status" aria-live="polite">
           {% if job.state in ['queued', 'researching'] %}<span class="working-indicator" aria-hidden="true"></span><div><strong>{{ 'Queued' if job.state == 'queued' else 'Researching' }}</strong><p>{{ 'Waiting for a research slot.' if job.state == 'queued' else 'ScryRaven is working on your question.' }} You can open another conversation while this continues.</p><noscript><a href="{{ url_for('open_session', session_id=saved.metadata.session_id) }}">Refresh status</a></noscript></div>
           {% else %}<div><strong>{{ 'Research interrupted' if job.state == 'interrupted' else 'Research failed' }}</strong><p>{{ job.error|default('Your question and attachments are saved. Retry when you are ready.', true) }}</p><form method="post" action="{{ url_for('open_session', session_id=saved.metadata.session_id) }}/jobs/{{ job.job_id }}/retry"><input type="hidden" name="form_token" value="{{ form_token('retry') }}"><button class="small-button" type="submit">Retry this question</button></form></div>{% endif %}

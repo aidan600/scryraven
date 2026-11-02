@@ -1,5 +1,62 @@
 # ScryRaven Current Truth
 
+## Reading Room run settings
+
+Reading Room offers a compact Run Settings dialog and pre-submit summary for
+ChatGPT personal plan, OpenAI API and OpenRouter. Both role identifiers remain
+editable; model-default reasoning omits the parameter, while explicit supported
+efforts remain exact. OpenAI Standard explicitly requests `default`; Fast requests
+`fast`. The returned tier is recorded independently. Plan/OpenRouter omit API
+processing controls. Paid submissions require explicit confirmation and offer
+12 or a smaller 6 physical requests; plan also retains its 40-request allowance.
+These are physical resource guards, not a dollar ceiling or credit-balance claim.
+
+The initial profile comes from the actual launch model/personal configuration;
+the personal file and shipped defaults remain unchanged. Last-used UI settings
+live separately in the existing session database. Each accepted job owns an
+immutable backend/role/effort/processing/run-limit snapshot. Per-job model clones
+use the existing manager factory. Active and queued runs do not reread UI
+preferences; retry copies the original snapshot and preserves newer preferences.
+Legacy jobs retain unknown historical configuration and require a new reviewed
+submission rather than a retry with invented provenance. Schema 4 additively
+adds nullable job settings/receipt columns and UI preferences without rewriting
+historical session payloads, evidence, attachments or citations.
+
+Available provider counters, reported model/provider and requested/returned tier
+commit atomically with the completed answer/job and appear under Run details.
+Unreported usage/pricing and actual billing remain unknown. The fixed-endpoint
+OpenRouter adapter uses strict parameter filtering and native schema/function
+continuation, disables provider fallback/plugins/transforms and rejects a
+different reported model. OpenRouter schema incompatibility fails without
+additional schema-repair spending, including delegated Research. First-party
+OpenAI API retains its existing one-correction Research/Answer behavior and
+native continuation within the same correction and run budgets. Research ownership,
+semantic schemas, source/citation validation and acquisition routing remain.
+
+All 1,223 offline tests passed after the focused review fix, including actual
+Edge desktop/mobile/200%-zoom and keyboard checks; 139 focused correction and
+continuation tests passed. Ruff, compilation, whitespace and all six configured
+hooks passed. No additional live inference/provider call or API spending was
+performed for the fix; malformed-output recovery is verified offline. The prior
+live smoke checks did not exercise that recovery path. At frozen runtime
+`89b002475482c28b3548b97347fe26b9c0b6780f`, ordinary browser Standard and Fast
+OpenAI API turns each answered the public apple premise correctly in two
+Luna/none requests, with exact returned model and respectively `default`/`fast`
+tiers. The optional OpenRouter turn failed authentication on its single physical
+request; the question/settings remained saved and no fallback or retry occurred.
+OpenRouter live model/strict-contract compatibility remains unproved despite
+controlled adapter checks and public parameter/pricing metadata. Across the three
+turns: five physical requests, zero external acquisition, zero independent source
+checks, and $0.375396 conservative pre-dispatch reservation against the licensed
+$2 combined allowance. Actual charges and unreported OpenRouter usage are unknown.
+The diagnostic boundary is preserved as a sanitized local development candidate.
+Final receipts are recorded in
+`docs/operator/READING_ROOM_RUN_SETTINGS_01.md` and the external review bundle
+at `C:\tmp\scryraven-run-settings-01`; no general arbitrary-model or provider
+compatibility is claimed. The installed launcher and production database remain
+untouched; the exact post-merge launcher adjustment preserves sessions.sqlite3
+and only makes existing approved API credentials available to per-job routing.
+
 ## Reading Room product UX
 
 The Reading Room polish pass simplifies the empty-state copy, question/answer

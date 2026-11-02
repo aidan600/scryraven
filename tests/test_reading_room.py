@@ -50,18 +50,28 @@ class Form(HTMLParser):
     def __init__(self, html, action):
         super().__init__()
         self.action, self.active, self.fields = action, False, {}
+        self.selected_name = None
         self.feed(html)
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
         if tag == "form":
             self.active = attrs.get("action") == self.action
-        if self.active and tag == "input" and "name" in attrs:
-            self.fields[attrs["name"]] = attrs.get("value", "")
+        if self.active and tag == "input" and "name" in attrs and "disabled" not in attrs:
+            kind = attrs.get("type", "text")
+            if kind not in {"file", "submit", "button"} and (kind not in {"checkbox", "radio"} or "checked" in attrs):
+                self.fields[attrs["name"]] = attrs.get("value", "")
+        if self.active and tag == "select":
+            self.selected_name = attrs.get("name") if "disabled" not in attrs else None
+        if self.selected_name and tag == "option":
+            if "selected" in attrs or self.selected_name not in self.fields:
+                self.fields[self.selected_name] = attrs.get("value", "")
 
     def handle_endtag(self, tag):
         if tag == "form":
             self.active = False
+        if tag == "select":
+            self.selected_name = None
 
 
 def token(page, action):
@@ -125,7 +135,7 @@ def test_exact_historical_citations_multiple_materials_and_all_acquisitions(tmp_
     assert {"turn-1-source-1", "turn-2-source-1", "turn-3-source-1"} <= {a["data-source-id"] for a in links}
     assert {a["href"] for a in links} == {c.url for turn in session.turns for c in turn.citations}
     assert all(a["target"] == "_blank" and a["rel"] == "noopener noreferrer" for a in links)
-    old = html.split('id="turn-1-source-1"', 1)[1].split('</details>', 1)[0]
+    old = html.split('<details class="source" id="turn-1-source-1">', 1)[1].split('</details>', 1)[0]
     old_text = "".join(Page(old).text)
     assert EARLY in old_text and LATER[:100] not in old_text
     assert session.turns[0].citations[0].materials == (session.acquisitions[0],)

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import math
 import os
+import re
 import sys
 from collections.abc import Callable
 from contextlib import contextmanager
@@ -22,7 +24,7 @@ from scryraven.images import image_input_blocks, supports_image_input
 @dataclass(frozen=True)
 class ModelRole:
     model: str
-    reasoning: str
+    reasoning: str | None
     service_tier: str | None = None
 
 
@@ -135,6 +137,10 @@ class ModelUsage:
     duration_seconds: float | None = None
     input_characters: int | None = None
     continuation_index: int | None = None
+    returned_model: str | None = None
+    backend: str | None = None
+    provider: str | None = None
+    reported_cost_usd: float | None = None
 
     @property
     def ordinary_uncached_tokens(self) -> int | None:
@@ -353,7 +359,31 @@ def _calculation_output(
     return {"type": "function_call_output", "call_id": call["call_id"], "output": output}
 
 
-def _api_response(post, payload, token, timeout, *, before_dispatch=None):
+def valid_model_identifier(value: Any, backend: str) -> bool:
+    """Identifiers are bounded data, never endpoints or routing instructions."""
+    if not isinstance(value, str) or not 1 <= len(value) <= 200:
+        return False
+    if backend == "openrouter":
+        # OpenRouter colon variants can activate search or routing. Explicit
+        # provider/model slugs select one model; routers are not model choices.
+        return (re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._-]*/[a-zA-Z0-9][a-zA-Z0-9._-]*", value) is not None
+                and value.split("/", 1)[0].lower() != "openrouter")
+    return re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._:-]*", value) is not None
+
+
+def _safe_provider(value: Any) -> str | None:
+    return value if isinstance(value, str) and re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9 ._/-]{0,79}", value) else None
+
+
+def _reported_cost(data: Any) -> float | None:
+    value = data.get("usage", {}).get("cost") if isinstance(data, dict) and isinstance(data.get("usage"), dict) else None
+    try:
+        return float(value) if type(value) in {int, float} and math.isfinite(value) and value >= 0 else None
+    except (OverflowError, ValueError):
+        return None
+
+
+def _api_response(post, payload, token, timeout, *, before_dispatch=None, backend="api"):
     """Bound connection, headers and body under one physical request allowance."""
     from urllib3.util import Timeout
 
@@ -366,11 +396,16 @@ def _api_response(post, payload, token, timeout, *, before_dispatch=None):
             timeout = min(timeout, before_dispatch())
         started = monotonic()
         response = post(
-            "https://api.openai.com/v1/responses",
+            {"api": "https://api.openai.com/v1/responses",
+             "openrouter": "https://openrouter.ai/api/v1/responses"}[backend],
             headers=headers, json=payload,
             timeout=Timeout(total=timeout, connect=timeout, read=timeout), stream=True,
+            allow_redirects=False,
         )
         with response_deadline(response, timeout - (monotonic() - started)):
+            status = getattr(response, "status_code", None)
+            if isinstance(status, int) and 300 <= status < 400:
+                raise ModelError("model_request_rejected")
             response.raise_for_status()
             return response.json()
     finally:
@@ -395,9 +430,9 @@ class OpenAIModel:
         plan_account: str = "personal",
         plan_auth: Any = None,
     ) -> None:
-        if backend not in {"api", "chatgpt_plan"}:
+        if backend not in {"api", "chatgpt_plan", "openrouter"}:
             raise ValueError("invalid_model_backend")
-        if backend == "api" and plan_auth is not None:
+        if backend != "chatgpt_plan" and plan_auth is not None:
             raise ValueError("plan_auth_requires_plan_backend")
         self.config = config if config is not None else default_model_config()
         self.post = post or requests.post
@@ -405,10 +440,82 @@ class OpenAIModel:
         self.cache_namespace = cache_namespace
         self.timeout_seconds = timeout_seconds
         self.backend = backend
+        self.plan_account = plan_account
         self.plan_transport = None
         if backend == "chatgpt_plan":
             from .chatgpt_plan.transport import PlanResponses
             self.plan_transport = PlanResponses(plan_account, auth=plan_auth)
+
+    def with_config(self, config: ModelConfig, *, backend: str | None = None) -> OpenAIModel:
+        """Build an independent job model, retaining injected transport plumbing."""
+        selected = self.backend if backend is None else backend
+        auth = self.plan_transport.auth if selected == "chatgpt_plan" and self.plan_transport is not None else None
+        return OpenAIModel(
+            config, post=self.post, usage_observer=self.usage_observer,
+            cache_namespace=self.cache_namespace, timeout_seconds=self.timeout_seconds,
+            backend=selected, plan_account=self.plan_account, plan_auth=auth,
+        )
+
+    def plan_catalog(self) -> tuple[dict, ...]:
+        """Fetch only safe account-specific model choices; never expose tokens."""
+        if self.plan_transport is None:
+            return ()
+        from scryraven.chatgpt_plan.auth import Deadline
+        from scryraven.chatgpt_plan.http import MODELS
+
+        deadline = Deadline(min(30, self.timeout_seconds))
+        try:
+            auth = self.plan_transport.auth
+            row = auth.access(self.plan_account, timeout=deadline.left())
+            body = auth.http.json("GET", MODELS, timeout=deadline.left(),
+                                  headers={"Authorization": "Bearer " + row["access_token"]})
+            values = body.get("models")
+            if not isinstance(values, list):
+                raise ModelError("model_catalog_unavailable")
+            choices = []
+            for value in values:
+                if not isinstance(value, dict) or value.get("visibility") != "list":
+                    continue
+                slug = value.get("slug")
+                if not valid_model_identifier(slug, "chatgpt_plan"):
+                    continue
+                # Some catalogs publish effort metadata, others leave provider
+                # validation authoritative. Never manufacture supported efforts.
+                efforts = value.get("supported_reasoning_levels")
+                if isinstance(efforts, list):
+                    efforts = tuple(item.get("effort") if isinstance(item, dict) else item for item in efforts)
+                    efforts = tuple(item for item in efforts if item in {"none", "minimal", "low", "medium", "high", "xhigh", "max"})
+                else:
+                    efforts = None
+                label = value.get("display_name")
+                choices.append({"slug": slug, "display_name": label if isinstance(label, str) and len(label) <= 100 else slug,
+                                "reasoning_efforts": efforts})
+            return tuple(choices)
+        except ModelError:
+            raise
+        except Exception:
+            raise ModelError("model_catalog_unavailable") from None
+
+    def validate_configuration(self, *, catalog: tuple[dict, ...] | None = None) -> None:
+        """Preflight exact selections without inference or a replacement model."""
+        for role in (self.config.research, self.config.answer):
+            if not valid_model_identifier(role.model, self.backend):
+                raise ModelError("model_identifier_invalid")
+            if role.reasoning not in {None, "", "none", "minimal", "low", "medium", "high", "xhigh", "max"}:
+                raise ModelError("model_reasoning_unsupported")
+        if self.backend != "chatgpt_plan":
+            variable = "OPENROUTER_API_KEY" if self.backend == "openrouter" else "OPENAI_API_KEY"
+            if not os.getenv(variable, "").strip():
+                raise ModelError("model_configuration_missing")
+            return
+        choices = self.plan_catalog() if catalog is None else catalog
+        for role in (self.config.research, self.config.answer):
+            selected = next((item for item in choices if item.get("slug") == role.model), None)
+            if selected is None:
+                raise ModelError("model_unavailable")
+            efforts = selected.get("reasoning_efforts")
+            if role.reasoning and efforts is not None and role.reasoning not in efforts:
+                raise ModelError("model_reasoning_unsupported")
 
     def __call__(
         self, stage: str, instructions: str, material: dict, schema: dict,
@@ -422,11 +529,17 @@ class OpenAIModel:
         final_feedback: Callable[[str], str | dict | None] | None = None,
         image_inputs: Callable[[], tuple] | None = None,
     ) -> str:
-        token = os.getenv("OPENAI_API_KEY", "").strip() if self.backend == "api" else None
-        if self.backend == "api" and not token:
+        variable = "OPENROUTER_API_KEY" if self.backend == "openrouter" else "OPENAI_API_KEY"
+        token = os.getenv(variable, "").strip() if self.backend != "chatgpt_plan" else None
+        if self.backend != "chatgpt_plan" and not token:
             raise ModelError("model_configuration_missing")
         role = self.config.answer if stage == "answer" else self.config.research
-        if material.get("_user_images") and not supports_image_input(role.model):
+        if not valid_model_identifier(role.model, self.backend):
+            raise ModelError("model_identifier_invalid")
+        if role.reasoning not in {None, "", "none", "minimal", "low", "medium", "high", "xhigh", "max"}:
+            raise ModelError("model_reasoning_unsupported")
+        image_model = role.model.removeprefix("openai/") if self.backend == "openrouter" else role.model
+        if material.get("_user_images") and not supports_image_input(image_model):
             raise ModelError("model_image_input_unsupported")
         use_calculator = stage == "answer" and calculator is not None
         declared_tools = [_CALCULATOR_TOOL] if use_calculator else []
@@ -477,13 +590,16 @@ class OpenAIModel:
         }
         if role.reasoning:
             payload["reasoning"] = {"effort": role.reasoning}
-        if role.service_tier is not None:
+        if self.backend == "api" and role.service_tier is not None:
             if role.service_tier not in {"default", "fast"}:
                 raise ValueError("invalid_service_tier")
             payload["service_tier"] = role.service_tier
         if use_tools:
             payload["tools"] = declared_tools
             payload["include"] = ["reasoning.encrypted_content"]
+        if self.backend == "openrouter":
+            from scryraven.openrouter import openrouter_payload
+            payload = openrouter_payload(payload)
         # Every invocation owns its payload, continuation, timeout and observers.
         # A nested Research call on this model cannot change the suspended owner.
         request_ceiling = min(300, self.timeout_seconds)
@@ -534,7 +650,7 @@ class OpenAIModel:
                                                        before_dispatch=before_dispatch)
                 else:
                     data = _api_response(self.post, payload, token, timeout,
-                                         before_dispatch=before_dispatch)
+                                         before_dispatch=before_dispatch, backend=self.backend)
             except _DispatchDenied as exc:
                 raise exc.error
             except ModelError as exc:
@@ -545,6 +661,8 @@ class OpenAIModel:
                     raise
                 if str(exc) == "model_request_timed_out":
                     raise ModelError("model_request_timed_out") from None
+                if str(exc) in {"model_request_rejected", "model_contract_incompatible"}:
+                    raise ModelError(str(exc)) from None
                 raise ModelError("model_transport_failed") from None
             except requests.Timeout:
                 raise ModelError("model_request_timed_out") from None
@@ -555,6 +673,8 @@ class OpenAIModel:
                     403: "model_access_denied", 404: "model_unavailable",
                     429: "model_rate_limited",
                 }.get(status, "model_transport_failed")
+                if self.backend == "openrouter" and status in {400, 404, 422}:
+                    code = "model_contract_incompatible"
                 raise ModelError(code) from None
             except Exception:
                 raise ModelError("model_transport_failed") from None
@@ -563,17 +683,23 @@ class OpenAIModel:
                 if dispatched and any(observer is not None for observer in observers):
                     usage = ModelUsage(
                         safe_stage, safe_phase, cache_family, role.model,
-                        () if self.plan_transport is not None else breakpoints,
+                        breakpoints if self.backend == "api" else (),
                         _counter(data, "usage", "input_tokens"),
                         _counter(data, "usage", "input_tokens_details", "cached_tokens"),
                         _counter(data, "usage", "input_tokens_details", "cache_write_tokens"),
                         _counter(data, "usage", "output_tokens"),
                         _counter(data, "usage", "output_tokens_details", "reasoning_tokens"),
-                        None if self.plan_transport is not None else role.service_tier,
+                        role.service_tier if self.backend == "api" else None,
                         (data.get("service_tier") if isinstance(data, dict)
                          and data.get("service_tier") in {"default", "fast", "priority"} else None),
                         round(max(0.0, monotonic() - request_started), 6),
                         request_input_characters, continuation_index,
+                        (data.get("model") if isinstance(data, dict)
+                         and (valid_model_identifier(data.get("model"), self.backend)
+                              or valid_model_identifier(data.get("model"), "api")) else None),
+                        self.backend,
+                        _safe_provider(data.get("provider")) if isinstance(data, dict) else None,
+                        _reported_cost(data) if self.backend == "openrouter" else None,
                     )
                     for observer in observers:
                         if observer is not None:
@@ -584,6 +710,12 @@ class OpenAIModel:
                                 pass
 
             try:
+                if (self.backend == "openrouter" and data.get("model") is not None
+                        and data["model"] != role.model):
+                    # OpenRouter documents the selected provider/model slug in
+                    # the response. An unexpected identity cannot publish an
+                    # answer as though the requested model completed it.
+                    raise ModelError("model_routing_mismatch")
                 if data.get("status") != "completed":
                     details = data.get("incomplete_details")
                     reason = details.get("reason") if isinstance(details, dict) else None
@@ -595,6 +727,9 @@ class OpenAIModel:
                 items = data["output"]
                 if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
                     raise ModelError("malformed_model_response")
+                if self.backend == "openrouter" and any(item.get("type") not in {"message", "reasoning", "function_call"}
+                                                        for item in items):
+                    raise ModelError("model_contract_incompatible")
                 calls = [item for item in items if item.get("type") == "function_call"]
                 if calls:
                     for call in calls:
@@ -603,7 +738,8 @@ class OpenAIModel:
                                 or not isinstance(call.get("call_id"), str) or not call["call_id"]
                                 or call["call_id"] in call_ids
                                 or not isinstance(call.get("arguments"), str)):
-                            raise ModelError("malformed_model_response")
+                            raise ModelError("model_contract_incompatible" if self.backend == "openrouter"
+                                             else "malformed_model_response")
                         call_ids.add(call["call_id"])
                     # Replaying every output item also preserves encrypted reasoning
                     # for stateless reasoning-model continuation with store=False.
@@ -626,11 +762,18 @@ class OpenAIModel:
                                     result = research_tool(call["arguments"])
                             else:
                                 result = answer_library(call["name"], call["arguments"])
+                            if (self.backend == "openrouter" and isinstance(result, dict)
+                                    and result.get("error") == "invalid_tool_arguments"):
+                                raise ModelError("model_contract_incompatible")
                             outputs.append({"type": "function_call_output", "call_id": call["call_id"],
                                             "output": json.dumps(result, ensure_ascii=False, allow_nan=False)})
                             continue
                         sequence += 1
-                        outputs.append(_calculation_output(call, calculator, on_calculation, sequence))
+                        calculated = _calculation_output(call, calculator, on_calculation, sequence)
+                        if (self.backend == "openrouter"
+                                and json.loads(calculated["output"]).get("error") == "invalid_tool_arguments"):
+                            raise ModelError("model_contract_incompatible")
+                        outputs.append(calculated)
                     continuation = [*payload["input"], *items, *outputs]
                     # Existing Read/research tools can select a retained user image.
                     # Deliver its actual content in this same interaction, never
@@ -638,7 +781,7 @@ class OpenAIModel:
                     new_images = tuple(image for image in (image_inputs() if image_inputs else ())
                                        if image.image_id not in supplied_image_ids)
                     if new_images:
-                        if not supports_image_input(role.model):
+                        if not supports_image_input(image_model):
                             raise ModelError("model_image_input_unsupported")
                         continuation.append({"role": "user", "content": image_input_blocks(new_images)})
                         supplied_image_ids.update(image.image_id for image in new_images)
@@ -664,6 +807,11 @@ class OpenAIModel:
                 if not output.strip():
                     raise ModelError("model_response_empty")
                 feedback = final_feedback(output) if final_feedback is not None else None
+                if (self.backend == "openrouter" and isinstance(feedback, dict)
+                        and feedback.get("code") == "malformed_model_response"):
+                    # OpenRouter must satisfy the strict contract without a
+                    # repair call. First-party API retains bounded correction.
+                    raise ModelError("model_contract_incompatible")
                 if feedback is not None and not corrected_final:
                     # Keep the native tool/opaque history, but never feed rejected
                     # final prose back as evidence or as a draft to imitate.

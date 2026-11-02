@@ -17,12 +17,16 @@ does not read `OPENAI_API_KEY`. `plan_auth=...` permits injection of the same
 approved Auth implementation for brokered operation and offline tests. Production
 runtime imports no experimental harness or evaluation module.
 
-Selection is currently programmatic. The ordinary CLI has no backend flag,
-Reading Room has no visible selector, and `model_roles.json` has no transport
-field. Unmodified launches remain API-default. Existing ResearchSession and
-Reading Room `create_app(session_options={"model": model})` injection can use the
-selected model. The sign-in/models commands below configure access; they do not
-select the backend for ordinary research launches.
+The ordinary CLI has no backend flag and `model_roles.json` has no transport
+field. Reading Room now offers a compact Run Settings dialog for ChatGPT plan,
+OpenAI API and OpenRouter. Its initial model profile comes from the actual
+launch configuration; accepted jobs capture immutable settings and retry copies
+them. Plan preflight validates exact choices against the authenticated account
+catalog, omits API processing parameters and never falls back to API inference.
+The sign-in/models commands below configure plan access. Existing
+`create_app(session_options={"model": model})` injection remains supported.
+See [Run Settings](READING_ROOM_RUN_SETTINGS_01.md) for the installed launcher's
+post-merge credential-plumbing change; the forensic launcher below is separate.
 
 For isolated local dogfooding, the development launcher explicitly injects
 `OpenAIModel(backend="chatgpt_plan", plan_account="personal")` through the ordinary

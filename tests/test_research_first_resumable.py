@@ -329,6 +329,32 @@ def test_existing_mechanical_corrections_share_native_context(monkeypatch, backe
     assert len([e for e in result.trace if e["action"] == "model_started" and e.get("contract") == "answer"]) == 1
 
 
+def test_api_delegated_research_repairs_once_and_returns_to_same_answer(monkeypatch):
+    model, payloads, _ = scripted(monkeypatch, [reply(initial("return")),
+        tool("research", {"need": "Find the original value."}, "delegated-value"),
+        reply({"invalid": "REJECTED DELEGATED CLAIM"}),
+        reply(delegated(requests=[request()])), reply(delegated("return", ["E1"])),
+        reply(answer())])
+    result = run("What is the original value?", model=model, search=search,
+                 fetch=prohibited, lexical_search=prohibited,
+                 limits=research.RunLimits(physical_model_requests=6))
+    assert stages(payloads) == ["research", "answer", "research", "research", "research", "answer"]
+    assert packet(payloads[2])["delegated_need"] == packet(payloads[3])["delegated_need"] == "Find the original value."
+    assert packet(payloads[3])["output_correction"]
+    assert "REJECTED DELEGATED CLAIM" not in json.dumps(payloads)
+    owner_before, owner_after = payloads[1], payloads[-1]
+    assert owner_after["input"][:len(owner_before["input"])] == owner_before["input"]
+    assert any(item.get("encrypted_content") == "opaque-delegated-value" for item in owner_after["input"])
+    assert list(results(owner_after)) == ["delegated-value"]
+    assert results(owner_after)["delegated-value"]["evidence"][0]["content"] == VALUE
+    assert result.posture == "supported" and result.citations[0].materials[0].content == VALUE
+    assert [event["code"] for event in result.trace if event["action"] == "response_rejected"] == ["malformed_model_response"]
+    assert len([event for event in result.trace if event["action"] == "model_started"
+                and event.get("contract") == "answer"]) == 1
+    budget = result.trace[-1]["budget"]
+    assert budget["physical_requests"] == 6 and budget["role_physical_requests"] == {"answer": 2, "research": 4}
+
+
 @pytest.mark.parametrize("backend", ["api", "chatgpt_plan"])
 @pytest.mark.parametrize("is_delegated", [False, True])
 @pytest.mark.parametrize("malformed", [False, True])

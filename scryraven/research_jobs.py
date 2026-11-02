@@ -8,6 +8,7 @@ from threading import Condition, Thread
 from time import monotonic
 
 from scryraven.documents import PreparedDocument
+from scryraven.model import ModelError
 from scryraven.session import ResearchSession
 from scryraven.session_store import ResearchJob, SessionConflictError, SessionStoreError, SQLiteSessionStore
 
@@ -65,7 +66,13 @@ class _JobStore:
         with self.manager.condition:
             if self.manager.closed:
                 raise SessionConflictError()
-            return self.store.commit_job(self.job.job_id, session_id, revision, state)
+            receipt = None
+            if self.manager.completion_receipt_factory is not None:
+                try:
+                    receipt = self.manager.completion_receipt_factory(self.job)
+                except Exception:
+                    pass  # Optional reporting cannot invalidate the answer.
+            return self.store.commit_job(self.job.job_id, session_id, revision, state, run_receipt=receipt)
 
 
 class ResearchJobManager:
@@ -81,10 +88,12 @@ class ResearchJobManager:
 
     def __init__(self, store: SQLiteSessionStore, *, session_options: dict | None = None,
                  session_options_factory: Callable[[ResearchJob], dict] | None = None,
+                 completion_receipt_factory: Callable[[ResearchJob], dict | None] | None = None,
                  on_finished: Callable | None = None):
         self.store = store
         self.options = dict(session_options or {})
         self.options_factory = session_options_factory
+        self.completion_receipt_factory = completion_receipt_factory
         self.on_finished = on_finished
         self.condition = Condition()
         self.workers: set[Thread] = set()
@@ -139,13 +148,16 @@ class ResearchJobManager:
         old = self.get(job_id)
         if old.state not in {"failed", "interrupted"}:
             raise SessionStoreError("job_not_retryable")
+        if old.run_settings is None:
+            raise SessionStoreError("historical_run_settings_unknown")
         saved = self.store.load(old.session_id)
         documents = tuple(PreparedDocument(**{name: getattr(document, name)
                                               for name in PreparedDocument.__dataclass_fields__})
                           for document in saved.documents if document.document_id in old.document_ids)
         return self.submit(old.question, session_id=old.session_id, revision=old.revision,
                            idempotency_key=idempotency_key, documents=documents,
-                           retained_image_ids=old.image_ids, citation_language=old.citation_language)
+                           retained_image_ids=old.image_ids, citation_language=old.citation_language,
+                           run_settings=old.run_settings, remember_settings=False)
 
     def _work(self):
         from threading import current_thread
@@ -173,7 +185,14 @@ class ResearchJobManager:
                                          citation_language=job.citation_language)
                 except Exception as exc:
                     error = exc
-                    code = "session_conflict" if isinstance(exc, SessionConflictError) else getattr(exc, "code", "research_failed")
+                    if isinstance(exc, SessionConflictError):
+                        code = "session_conflict"
+                    elif isinstance(exc, ModelError):
+                        code = str(exc)
+                    elif isinstance(exc, ValueError) and str(exc) == "historical_run_settings_unknown":
+                        code = "historical_run_settings_unknown"
+                    else:
+                        code = getattr(exc, "code", "research_failed")
                     self.store.fail_job(job.job_id, code)
                 finally:
                     if self.on_finished is not None:

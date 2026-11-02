@@ -416,8 +416,11 @@ def _run_turn(
         if (image_id not in active_images and available_images[image_id].byte_length
                 + sum(image.byte_length for image in active_images.values()) > MAX_ATTACHMENT_REQUEST_BYTES):
             return {"error": "image_attention_limit"}
-        if isinstance(model, OpenAIModel) and any(not supports_image_input(role.model)
-                                                  for role in (model.config.research, model.config.answer)):
+        if isinstance(model, OpenAIModel) and any(
+            not supports_image_input(role.model.removeprefix("openai/")
+                                     if model.backend == "openrouter" else role.model)
+            for role in (model.config.research, model.config.answer)
+        ):
             raise RunError("research", "model_image_input_unsupported", [])
         active_images[image_id] = available_images[image_id]
         return {"image": available_images[image_id].metadata(), "visual_input_supplied": True,
@@ -466,6 +469,8 @@ def _run_turn(
             return shape.model_validate_json(wrapped.group(1) if wrapped else raw)
         except ValidationError:
             emit("response_rejected", contract=stage, code="malformed_model_response")
+            if isinstance(model, OpenAIModel) and model.backend == "openrouter":
+                raise RunError(stage, "model_contract_incompatible", trace)
             return None
 
     def ask(stage, prompt, packet, shape, *, answer_library=None, research_tool=None,
@@ -970,7 +975,7 @@ def _run_turn(
                 error = exc.code
                 break
             except RunError as exc:
-                if need is None:
+                if need is None or exc.code in {"model_contract_incompatible", "model_routing_mismatch"}:
                     raise
                 error = exc.code
                 break
