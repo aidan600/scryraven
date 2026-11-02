@@ -313,3 +313,46 @@ dialog::backdrop { background: #1e323d26; }
 .citation-preview .citation-original-title { font-size: 11px; color: var(--muted); line-height: 1.55; margin: 0 0 10px; overflow-wrap: anywhere; }
 .citation-preview h2.has-description { font-size: 14px; font-weight: 500; line-height: 1.6; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; scroll-behavior: auto !important; } }
+
+/* Run settings occupy a short summary; editing stays in a bounded dialog. */
+.run-selection { margin: 5px 3px 0; min-width: 0; }
+.run-settings-open { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 8px; width: 100%; padding: 3px 0; text-align: left; background: transparent; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.run-selection-backend { color: #45616e; font-weight: 600; }
+.run-selection-roles { overflow-wrap: anywhere; }
+.run-selection-edit { margin-left: auto; text-decoration: underline; text-underline-offset: 3px; color: #45616e; }
+.run-settings-open:hover { color: var(--ink); }
+.run-settings-dialog { position: fixed; inset: 0; margin: auto; width: 570px; max-width: calc(100vw - 28px); max-height: calc(100dvh - 28px); padding: 24px; border-radius: 12px; background: #fffefb; box-shadow: 0 16px 70px #20353a24; overflow-y: auto; text-align: left; }
+.run-settings-heading { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
+.run-settings-heading .eyebrow { margin: 0 0 4px; }
+.run-settings-heading h2 { margin: 0; font: 400 28px/1.2 Georgia, serif; letter-spacing: -.4px; }
+.settings-intro { font-size: 12px; line-height: 1.65; color: var(--muted); margin: 16px 0 20px; }
+.run-settings-dialog label { display: block; font-size: 12px; font-weight: 500; margin: 12px 0 6px; }
+.run-settings-dialog input, .run-settings-dialog select { width: 100%; min-width: 0; min-height: 40px; padding: 8px 10px; border: 1px solid #bdcbc9; background: white; border-radius: 5px; font-size: 12px; }
+.run-settings-dialog input { font-family: 'Cascadia Code', Consolas, monospace; }
+.provider-disclosure { font-size: 11px; line-height: 1.7; color: #526a74; background: #eff4f3; border-radius: 6px; padding: 10px 12px; margin: 10px 0 18px; }
+.run-roles { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+.run-roles fieldset { min-width: 0; margin: 0; padding: 0 12px 12px; border: 1px solid var(--line); border-radius: 7px; }
+.run-roles legend { padding: 0 4px; font-size: 12px; color: #45616e; font-weight: 600; }
+.run-roles label { font-size: 11px; }
+.settings-note { margin: 10px 0 14px; font-size: 11px; line-height: 1.65; color: var(--muted); }
+.run-settings-dialog .dialog-actions { margin-top: 18px; }
+.run-record { margin-top: 12px; font-size: 11px; color: var(--muted); }
+.run-record > summary { width: fit-content; padding: 6px 0; }
+.run-configuration { margin: 10px 0; padding: 12px 14px; background: #f1f4f1; border-radius: 6px; }
+.run-configuration > div { display: grid; grid-template-columns: 95px minmax(0, 1fr); gap: 12px; margin: 4px 0; }
+.run-configuration dt { color: #536870; }
+.run-configuration dd { margin: 0; overflow-wrap: anywhere; color: #394e58; }
+.run-configuration code { font-size: 11px; }
+.run-usage { font-size: 11px; line-height: 1.65; overflow-wrap: anywhere; }
+.run-usage p { margin: 6px 0; }
+@media (max-width: 520px) {
+  .run-settings-dialog { padding: 20px 16px; }
+  .run-roles { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .run-configuration > div { grid-template-columns: 75px minmax(0, 1fr); gap: 8px; }
+  .run-selection-edit { margin-left: 0; }
+  .run-selection-roles { flex-basis: 100%; }
+}
+
+.run-settings-dialog .paid-inference-confirmation { display: flex; align-items: center; gap: 9px; font-size: 12px; line-height: 1.6; }
+.run-settings-dialog .paid-inference-confirmation input { flex-shrink: 0; width: 17px; height: 17px; min-height: 0; margin: 0; accent-color: #3e6375; }
+.run-request { padding: 5px 0; border-bottom: 1px solid var(--line); }

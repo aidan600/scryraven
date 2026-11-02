@@ -170,6 +170,82 @@
     const recovery = askForm.querySelector('.submission-recovery');
     const announcement = askForm.querySelector('.composer-status');
     const preferences = askForm.querySelector('.composer-preferences');
+    const settingsDialog = askForm.querySelector('.run-settings-dialog');
+    const settingsOpen = askForm.querySelector('.run-settings-open');
+    const backend = askForm.querySelector('#run-backend');
+    const processing = askForm.querySelector('#api-processing');
+    const allowance = askForm.querySelector('#physical-request-limit');
+    const paidConfirmation = askForm.querySelector('[name=paid_inference_confirmed]');
+    const disclosures = {
+      chatgpt_plan: 'Your question, conversation context, source text, PDFs and images used in this run are supplied through your ChatGPT personal plan.',
+      openai: 'API billed. Your question, conversation context, source text, PDFs and images used in this run are supplied to OpenAI through its API.',
+      openrouter: 'OpenRouter billed. OpenRouter can route your question, conversation context, source text, PDFs and images used in this run to underlying model providers.'
+    };
+    const backendLabels = {chatgpt_plan: 'ChatGPT plan', openai: 'OpenAI API · API billed', openrouter: 'OpenRouter · OpenRouter billed'};
+    function updateRunSummary() {
+      const effort = role => askForm.querySelector('#' + role + '-reasoning').value || 'model default';
+      const model = role => askForm.querySelector('#' + role + '-model').value;
+      settingsOpen.querySelector('.run-selection-backend').textContent = backendLabels[backend.value];
+      settingsOpen.querySelector('.run-selection-roles').textContent = 'Research ' + model('research') + ' · ' + effort('research') + ' / Answer ' + model('answer') + ' · ' + effort('answer') + (backend.value === 'openai' ? ' · ' + (processing.value === 'fast' ? 'Fast' : processing.value === 'standard' ? 'Standard' : 'Choose processing') : '');
+    }
+    function updateBackend() {
+      const api = backend.value === 'openai';
+      const paid = backend.value !== 'chatgpt_plan';
+      askForm.querySelector('.run-processing').hidden = !api;
+      processing.disabled = !api;
+      processing.required = api;
+      askForm.querySelector('.paid-run-note').hidden = !paid;
+      paidConfirmation.closest('label').hidden = !paid;
+      paidConfirmation.disabled = !paid;
+      paidConfirmation.required = paid;
+      askForm.querySelector('#provider-disclosure').textContent = disclosures[backend.value];
+      const planAllowance = allowance.querySelector('[value="40"]');
+      if (paid && planAllowance) {
+        if (allowance.value === '40') allowance.value = '12';
+        planAllowance.remove();
+      } else if (!paid && !planAllowance) {
+        const option = document.createElement('option');
+        option.value = '40';
+        option.textContent = 'Plan · up to 40 requests';
+        allowance.append(option);
+      }
+      const presets = askForm.querySelector('#run-model-presets');
+      presets.replaceChildren(...['gpt-6.1-terra', 'gpt-6.1-sol', 'gpt-6-luna'].map(model => {
+        const option = document.createElement('option');
+        option.value = (backend.value === 'openrouter' ? 'openai/' : '') + model;
+        return option;
+      }));
+      updateRunSummary();
+    }
+    function openSettings() {
+      if (!settingsDialog.open) settingsDialog.showModal();
+    }
+    function closeSettings() {
+      settingsDialog.close();
+      updateRunSummary();
+      settingsOpen.focus({preventScroll: true});
+    }
+    settingsOpen.addEventListener('click', openSettings);
+    settingsDialog.querySelector('.run-settings-close').addEventListener('click', closeSettings);
+    settingsDialog.querySelector('.run-settings-done').addEventListener('click', () => {
+      const invalid = [...settingsDialog.querySelectorAll('input, select')].find(control => !control.checkValidity());
+      if (invalid) { invalid.reportValidity(); return; }
+      closeSettings();
+    });
+    settingsDialog.addEventListener('cancel', () => updateRunSummary());
+    settingsDialog.addEventListener('input', updateRunSummary);
+    processing.addEventListener('change', () => {
+      const inherited = askForm.querySelector('.initial-tier-profile');
+      if (inherited) inherited.hidden = Boolean(processing.value);
+    });
+    backend.addEventListener('change', () => { paidConfirmation.checked = false; updateBackend(); });
+    askForm.addEventListener('invalid', event => {
+      if (settingsDialog.contains(event.target)) {
+        openSettings();
+        event.target.focus();
+      }
+    }, true);
+    updateBackend();
     const draftKey = 'scryraven-draft:' + askForm.dataset.draftKey;
     let submitting = false;
     let files = [];

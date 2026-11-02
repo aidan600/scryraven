@@ -14,6 +14,7 @@ from werkzeug.serving import make_server
 
 from core.exa_transport import DiscoveryCandidate
 from scryraven.reading_room import _QuietHandler, create_app
+from scryraven.run_settings import RunSettings
 from scryraven.session import ResearchSession
 from scryraven.session_store import SQLiteSessionStore
 
@@ -35,7 +36,7 @@ def test_compact_composer_grows_without_covering_answer_and_keeps_draft(browser,
         footer = page.locator(".composer-footer")
         textarea = page.locator("#question")
         initial = footer.bounding_box()["height"]
-        assert 65 <= initial <= 80
+        assert 90 <= initial <= (140 if mobile else 105)
         assert footer.bounding_box()["y"] + initial <= page.viewport_size["height"]
         if not mobile:
             assert abs(page.locator('.sidebar-foot').bounding_box()['y'] - footer.bounding_box()['y']) <= 1
@@ -287,7 +288,7 @@ def test_completion_badges_require_a_visible_current_answer_and_sync_between_tab
     app = create_app(store=store, session_options={"model": model, "search": no_io, "fetch": no_io})
     manager = app.extensions["research_jobs"]
     first = manager.submit("Suppose two marbles become three.", session_id=session_id,
-        idempotency_key="first-completed-notification")
+        idempotency_key="first-completed-notification", run_settings=RunSettings.effective(model=no_io))
     assert manager.wait_idle(10)
     assert manager.get(first.job_id).state == "completed"
     server = make_server("127.0.0.1", 0, app, threaded=True, request_handler=_QuietHandler)
@@ -310,7 +311,7 @@ def test_completion_badges_require_a_visible_current_answer_and_sync_between_tab
             assert badge.is_hidden()
 
             second = manager.submit("Suppose three marbles become four.", session_id=session_id, revision=1,
-                idempotency_key="second-completed-notification")
+                idempotency_key="second-completed-notification", run_settings=RunSettings.effective(model=no_io))
             assert manager.wait_idle(10)
             assert manager.get(second.job_id).state == "completed"
             page.wait_for_function("""jobId => document.querySelector('.session-job-state').dataset.jobId === jobId""", arg=second.job_id)
@@ -346,7 +347,8 @@ def test_visible_completion_stays_quiet_when_browser_storage_is_unavailable(brow
 
     app = create_app(store=store, session_options={"model": model, "search": no_io, "fetch": no_io})
     manager = app.extensions["research_jobs"]
-    job = manager.submit("Suppose the premise is true.", idempotency_key="storage-unavailable-completion")
+    job = manager.submit("Suppose the premise is true.", idempotency_key="storage-unavailable-completion",
+        run_settings=RunSettings.effective(model=no_io))
     assert manager.wait_idle(10)
     assert manager.get(job.job_id).state == "completed"
     server = make_server("127.0.0.1", 0, app, threaded=True, request_handler=_QuietHandler)
@@ -471,7 +473,7 @@ def test_actual_browser_zoom_reflows_composer_and_keeps_visible_keyboard_focus(c
             assert page.evaluate("innerWidth") <= initial_width / 2 + 2
             assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
             assert page.locator(".sidebar").is_hidden()
-            assert 65 <= page.locator(".composer-footer").bounding_box()["height"] <= 80
+            assert 90 <= page.locator(".composer-footer").bounding_box()["height"] <= 140
             assert page.locator(".composer-footer").evaluate("el => el.getBoundingClientRect().bottom <= innerHeight + 1")
             page.locator("#question").focus()
             assert page.locator("#question").evaluate("el => getComputedStyle(el).outlineStyle !== 'none'")

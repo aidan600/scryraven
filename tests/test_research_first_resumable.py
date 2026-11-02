@@ -313,6 +313,11 @@ def test_invalid_final_after_research_corrects_inside_same_native_history(monkey
 def test_existing_mechanical_corrections_share_native_context(monkeypatch, backend, invalid, code):
     model, payloads, _ = scripted(monkeypatch, [reply(initial(requests=[request()])),
         reply(initial("return", ["E1"])), reply(invalid), reply(answer())], backend)
+    if backend == "api" and code == "malformed_model_response":
+        with pytest.raises(RunError, match="model_contract_incompatible"):
+            run("What is the original value?", model=model, search=search)
+        assert len(payloads) == 3  # No paid schema repair or replacement.
+        return
     result = run("What is the original value?", model=model, search=search)
     owners = payloads[-2:]
     # The plan projection inserts its tools before the first response item;
@@ -357,6 +362,14 @@ def test_research_validation_exhaustion_preserves_last_briefing_and_originals(
     outputs.append(finish)
     model, payloads, _ = scripted(monkeypatch, outputs, backend)
     diagnostics = TurnDiagnostics()
+    if backend == "api" and malformed:
+        with pytest.raises(RunError, match="model_contract_incompatible") as failure:
+            run("What is the value and its qualification?", model=model, search=search,
+                fetch=prohibited, lexical_search=prohibited, observe=diagnostics.observe)
+        assert len(payloads) == (5 if is_delegated else 3)
+        assert "REJECTED GENERATED CLAIM" not in json.dumps(failure.value.trace)
+        assert diagnostics.corrections["research"]["malformed_model_response"] == 1
+        return
     result = run("What is the value and its qualification?", model=model, search=search,
                  fetch=prohibited, lexical_search=prohibited, observe=diagnostics.observe)
     assert result.posture == "partial" and result.stop_reason == "research_bound"
@@ -394,6 +407,11 @@ def test_non_json_final_and_empty_evidence_basis_use_only_one_native_correction(
                   "content": [{"type": "output_text", "text": "not-json-at-all"}]}]
     model, payloads, _ = scripted(monkeypatch, [reply(initial("return")), malformed,
         reply(answer("A claim without supplied evidence"))], backend)
+    if backend == "api":
+        with pytest.raises(RunError, match="model_contract_incompatible"):
+            run("Find the missing original.", model=model, search=prohibited)
+        assert len(payloads) == 2
+        return
     result = run("Find the missing original.", model=model, search=prohibited)
     assert result.answer == research.ANSWER_VALIDATION_FAILURE_MESSAGE
     assert [e["code"] for e in result.trace if e["action"] == "response_rejected"] == [

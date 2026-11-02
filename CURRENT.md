@@ -1,5 +1,45 @@
 # ScryRaven Current Truth
 
+## Reading Room run settings
+
+Reading Room offers a compact Run Settings dialog and pre-submit summary for
+ChatGPT personal plan, OpenAI API and OpenRouter. Both role identifiers remain
+editable; model-default reasoning omits the parameter, while explicit supported
+efforts remain exact. OpenAI Standard explicitly requests `default`; Fast requests
+`fast`. The returned tier is recorded independently. Plan/OpenRouter omit API
+processing controls. Paid submissions require explicit confirmation and offer
+12 or a smaller 6 physical requests; plan also retains its 40-request allowance.
+These are physical resource guards, not a dollar ceiling or credit-balance claim.
+
+The initial profile comes from the actual launch model/personal configuration;
+the personal file and shipped defaults remain unchanged. Last-used UI settings
+live separately in the existing session database. Each accepted job owns an
+immutable backend/role/effort/processing/run-limit snapshot. Per-job model clones
+use the existing manager factory. Active and queued runs do not reread UI
+preferences; retry copies the original snapshot and preserves newer preferences.
+Legacy jobs retain unknown historical configuration and require a new reviewed
+submission rather than a retry with invented provenance. Schema 4 additively
+adds nullable job settings/receipt columns and UI preferences without rewriting
+historical session payloads, evidence, attachments or citations.
+
+Available provider counters, reported model/provider and requested/returned tier
+commit atomically with the completed answer/job and appear under Run details.
+Unreported usage/pricing and actual billing remain unknown. The fixed-endpoint
+OpenRouter adapter uses strict parameter filtering and native schema/function
+continuation, disables provider fallback/plugins/transforms and rejects a
+different reported model. Paid schema incompatibility fails without additional
+schema-repair spending, including delegated Research. Research ownership,
+semantic schemas, source/citation validation and acquisition routing remain.
+
+All 1,218 offline tests passed, including actual Edge desktop/mobile/200%-zoom
+and keyboard checks. Ruff, compilation, JavaScript syntax and whitespace checks
+passed. Bounded live validation and final hook receipts are recorded in
+`docs/operator/READING_ROOM_RUN_SETTINGS_01.md` and the external review bundle
+at `C:\tmp\scryraven-run-settings-01`; no general arbitrary-model or provider
+compatibility is claimed. The installed launcher and production database remain
+untouched; the exact post-merge launcher adjustment preserves sessions.sqlite3
+and only makes existing approved API credentials available to per-job routing.
+
 ## Reading Room product UX
 
 The Reading Room polish pass simplifies the empty-state copy, question/answer

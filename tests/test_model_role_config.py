@@ -5,7 +5,7 @@ from dataclasses import asdict
 
 import pytest
 from test_model_transport import Response
-from test_reading_room import submit
+from test_reading_room import token
 from test_research_loop import answer, decision
 
 from scryraven import __main__ as cli
@@ -21,6 +21,22 @@ from scryraven.model import (
 from scryraven.reading_room import create_app
 from scryraven.research import run
 from scryraven.session import ResearchSession
+
+
+def submit(client, location="/", question="What follows?"):
+    page = client.get(location)
+    action = "/ask" if location == "/" else location + "/ask"
+    fields = token(page, action)
+    fields.update(question=question, paid_inference_confirmed="1")
+    if fields.get("backend") == "openai" and not fields.get("api_processing"):
+        # A preexisting mixed API tier profile requires a concrete choice;
+        # explicitly choose ordinary processing for the submitted question.
+        fields["api_processing"] = "standard"
+    response = client.post(action, data=fields)
+    manager = client.application.extensions.get("research_jobs")
+    if manager is not None:
+        assert manager.wait_idle(10)
+    return response
 
 
 @pytest.fixture(params=["shipped", "user"])
@@ -267,11 +283,12 @@ def test_ordinary_surfaces_resolve_the_same_effective_roles(
         role = expected[stage]
         assert call["model"] == role["model"]
         assert call.get("reasoning") == ({"effort": role["reasoning"]} if role["reasoning"] else None)
-        assert call.get("service_tier") == role["service_tier"]
+        expected_tier = ("default" if alternate_config else "fast") if surface == "reading_room" else role["service_tier"]
+        assert call.get("service_tier") == expected_tier
 
 
 @pytest.mark.parametrize("surface", ["run", "session", "cli", "reading_room"])
-def test_user_amendment_is_used_by_the_next_ordinary_turn(monkeypatch, tmp_path, capsys, surface):
+def test_personal_amendment_applies_until_explicit_reading_room_preferences_are_saved(monkeypatch, tmp_path, capsys, surface):
     path = model_module.user_model_config_path()
     before = configured_roles()
     after = {
@@ -324,12 +341,15 @@ def test_user_amendment_is_used_by_the_next_ordinary_turn(monkeypatch, tmp_path,
         assert second.status_code == 303
         assert client.get(second.headers["Location"]).get_data(as_text=True).count(text) == 2
     assert [call["text"]["format"]["name"] for call in calls] == ["research", "answer"] * 2
-    for settings, turn_calls in ((before, calls[:2]), (after, calls[2:])):
+    # Reading Room's explicitly accepted UI preferences remain primary after
+    # the initial launch resolves the existing personal model_roles file.
+    next_settings = before if surface == "reading_room" else after
+    for settings, turn_calls in ((before, calls[:2]), (next_settings, calls[2:])):
         for stage, call in zip(("research", "answer"), turn_calls):
             role = settings[stage]
             assert call["model"] == role["model"]
             assert call.get("reasoning") == ({"effort": role["reasoning"]} if role["reasoning"] else None)
-            assert call.get("service_tier") == role["service_tier"]
+            assert call.get("service_tier") == ("default" if surface == "reading_room" else role["service_tier"])
 
 
 @pytest.mark.parametrize("field,value", [("model", "amended-answer"), ("reasoning", "high"),

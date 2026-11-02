@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
+import re
 import sqlite3
 import sys
 from contextlib import contextmanager
@@ -26,7 +28,9 @@ from scryraven.documents import (
 from scryraven.errors import RunError
 from scryraven.historical import Analysis, validate_historical_analysis
 from scryraven.images import MAX_ATTACHMENT_REQUEST_BYTES, MAX_ATTACHMENTS_PER_QUESTION, PreparedImage, SessionImage
+from scryraven.model import valid_model_identifier
 from scryraven.presentation import Citation, CitationUse
+from scryraven.run_settings import RunSettings
 from scryraven.sources import Evidence, SupportRegion, exact_view, support_text
 
 
@@ -367,7 +371,12 @@ _JOBS_SQL = """CREATE TABLE IF NOT EXISTS research_jobs (
     fingerprint TEXT NOT NULL, question TEXT NOT NULL, revision INTEGER NOT NULL,
     state TEXT NOT NULL CHECK (state IN ('queued','researching','completed','failed','interrupted')),
     document_ids TEXT NOT NULL, image_ids TEXT NOT NULL, citation_language TEXT NOT NULL,
-    created_at TEXT NOT NULL, started_at TEXT, finished_at TEXT, error_code TEXT
+    created_at TEXT NOT NULL, started_at TEXT, finished_at TEXT, error_code TEXT,
+    run_settings TEXT, run_receipt TEXT
+)"""
+
+_PREFERENCES_SQL = """CREATE TABLE IF NOT EXISTS app_preferences (
+    name TEXT PRIMARY KEY, value TEXT NOT NULL
 )"""
 
 
@@ -385,11 +394,58 @@ class ResearchJob:
     started_at: str | None = None
     finished_at: str | None = None
     error_code: str | None = None
+    run_settings: RunSettings | None = None
+    run_receipt: dict | None = None
 
 
 def _job(row: sqlite3.Row) -> ResearchJob:
-    return ResearchJob(**{name: (tuple(json.loads(row[name])) if name in {"image_ids", "document_ids"}
-                                else row[name]) for name in ResearchJob.__dataclass_fields__})
+    values = {name: (tuple(json.loads(row[name])) if name in {"image_ids", "document_ids"}
+                    else row[name]) for name in ResearchJob.__dataclass_fields__}
+    values["run_settings"] = RunSettings.from_dict(json.loads(row["run_settings"])) if row["run_settings"] else None
+    values["run_receipt"] = json.loads(row["run_receipt"]) if row["run_receipt"] else None
+    return ResearchJob(**values)
+
+
+def _receipt_json(receipt: dict) -> str:
+    """Persist counters only; raw provider bodies and arbitrary fields have no slot."""
+    invalid = SessionStoreError("invalid_run_receipt")
+    if (not isinstance(receipt, dict)
+            or set(receipt) - {"requests", "estimated_cost_usd", "actual_billed_usd"}
+            or not isinstance(receipt.get("requests"), list) or len(receipt["requests"]) > 40):
+        raise invalid
+    for field in ("estimated_cost_usd", "actual_billed_usd"):
+        value = receipt.get(field)
+        if value is not None and (type(value) not in {int, float} or not math.isfinite(value) or not 0 <= value <= 1e9):
+            raise invalid
+    text_fields = {
+        "role": {"research", "answer"},
+        "reasoning": {None, "none", "minimal", "low", "medium", "high", "xhigh", "max"},
+        "backend": {"chatgpt_plan", "openai", "openrouter"},
+        "requested_service_tier": {None, "default", "fast", "priority", "flex", "auto"},
+        "returned_service_tier": {None, "default", "fast", "priority", "flex", "auto", "scale"},
+    }
+    counter_fields = {"input_tokens", "output_tokens", "cached_input_tokens", "reasoning_tokens"}
+    for row in receipt["requests"]:
+        if not isinstance(row, dict) or set(row) - (set(text_fields) | counter_fields | {"model", "returned_model", "provider", "reported_cost_usd"}):
+            raise invalid
+        for field, allowed in text_fields.items():
+            if field in row and (not isinstance(row[field], (str, type(None))) or row[field] not in allowed):
+                raise invalid
+        for field in ("model", "returned_model"):
+            value = row.get(field)
+            if value is not None and not (valid_model_identifier(value, "api") or valid_model_identifier(value, "openrouter")):
+                raise invalid
+        provider = row.get("provider")
+        if provider is not None and (not isinstance(provider, str) or not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9 ._/-]{0,79}", provider)):
+            raise invalid
+        cost = row.get("reported_cost_usd")
+        if cost is not None and (type(cost) not in {int, float} or not math.isfinite(cost) or not 0 <= cost <= 1e9):
+            raise invalid
+        for field in counter_fields:
+            value = row.get(field)
+            if value is not None and (type(value) is not int or not 0 <= value <= 10**12):
+                raise invalid
+    return json.dumps(receipt, sort_keys=True, separators=(",", ":"), allow_nan=False)
 
 
 def _load_images(connection: sqlite3.Connection, session_id: str) -> tuple[SessionImage, ...]:
@@ -441,7 +497,7 @@ class SQLiteSessionStore:
     from research are stored. This is local plaintext data, not cloud account state.
     """
 
-    SCHEMA_VERSION = 3
+    SCHEMA_VERSION = 4
 
     def __init__(self, path: str | Path | None = None) -> None:
         try:
@@ -465,6 +521,7 @@ class SQLiteSessionStore:
                 connection.execute(_DOCUMENTS_SQL)
                 connection.execute(_IMAGES_SQL)
                 connection.execute(_JOBS_SQL)
+                connection.execute(_PREFERENCES_SQL)
                 connection.execute("CREATE UNIQUE INDEX one_active_research_job ON research_jobs(session_id) "
                                    "WHERE state IN ('queued', 'researching')")
                 connection.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
@@ -474,8 +531,16 @@ class SQLiteSessionStore:
                 connection.execute("ALTER TABLE sessions ADD COLUMN citation_language TEXT NOT NULL DEFAULT 'en'")
                 connection.execute(_IMAGES_SQL)
                 connection.execute(_JOBS_SQL)
+                connection.execute(_PREFERENCES_SQL)
                 connection.execute("CREATE UNIQUE INDEX one_active_research_job ON research_jobs(session_id) "
                                    "WHERE state IN ('queued', 'researching')")
+                connection.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
+            elif version == 3:
+                # Unknown historical runtime configuration remains NULL. Preserve
+                # every session payload, attachment, citation and job identity.
+                connection.execute("ALTER TABLE research_jobs ADD COLUMN run_settings TEXT")
+                connection.execute("ALTER TABLE research_jobs ADD COLUMN run_receipt TEXT")
+                connection.execute(_PREFERENCES_SQL)
                 connection.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
             elif version != self.SCHEMA_VERSION:
                 raise SessionStoreError("incompatible_session_store")
@@ -673,7 +738,8 @@ class SQLiteSessionStore:
     def accept_job(self, question: str, *, idempotency_key: str, session_id: str | None = None,
                    revision: int = 0, documents: tuple[PreparedDocument, ...] = (),
                    images: tuple[PreparedImage, ...] = (), retained_image_ids: tuple[str, ...] = (),
-                   citation_language: str | None = None, capacity: int = 10) -> ResearchJob:
+                   citation_language: str | None = None, capacity: int = 10,
+                   run_settings: RunSettings | None = None, remember_settings: bool = True) -> ResearchJob:
         """Atomically accept a question, its validated files, and its durable identity.
 
         Validation/decode happens before this short transaction. Invalid admission
@@ -685,14 +751,20 @@ class SQLiteSessionStore:
             raise SessionStoreError("invalid_submission_key")
         if citation_language is not None and citation_language not in CITATION_LANGUAGES:
             raise SessionStoreError("invalid_citation_language")
+        if run_settings is not None and not isinstance(run_settings, RunSettings):
+            raise SessionStoreError("invalid_run_settings")
+        settings_json = json.dumps(run_settings.to_dict(), sort_keys=True) if run_settings is not None else None
         if len(documents) + len(images) + len(retained_image_ids) > MAX_ATTACHMENTS_PER_QUESTION:
             raise SessionStoreError("attachment_count_exceeded")
         if sum(item.byte_length for item in (*documents, *images)) > MAX_ATTACHMENT_REQUEST_BYTES:
             raise SessionStoreError("attachment_request_too_large")
         question = question.strip()
-        fingerprint = hashlib.sha256(json.dumps(
-            [session_id, revision, question, [d.sha256 for d in documents], [i.sha256 for i in images],
-             list(retained_image_ids), citation_language], separators=(",", ":")).encode()).hexdigest()
+        fingerprint_values = [session_id, revision, question, [d.sha256 for d in documents], [i.sha256 for i in images],
+                              list(retained_image_ids), citation_language]
+        if run_settings is not None:
+            fingerprint_values.append(run_settings.to_dict())
+        fingerprint = hashlib.sha256(json.dumps(fingerprint_values,
+            separators=(",", ":"), sort_keys=True).encode()).hexdigest()
         with self._transaction() as connection:
             old = connection.execute("SELECT * FROM research_jobs WHERE idempotency_key=?", (idempotency_key,)).fetchone()
             if old:
@@ -729,10 +801,40 @@ class SQLiteSessionStore:
             connection.execute("UPDATE sessions SET citation_language=?, updated_at=? WHERE session_id=?",
                                (language, max(now, saved.metadata.updated_at), session_id))
             job_id = uuid4().hex
-            connection.execute("INSERT INTO research_jobs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            connection.execute("INSERT INTO research_jobs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                                (job_id, session_id, idempotency_key, fingerprint, question, revision, "queued",
-                                json.dumps(document_ids), json.dumps(image_ids), language, now, None, None, None))
+                                json.dumps(document_ids), json.dumps(image_ids), language, now, None, None, None,
+                                settings_json, None))
+            if settings_json is not None and remember_settings:
+                connection.execute("INSERT INTO app_preferences(name,value) VALUES ('run_settings',?) "
+                                   "ON CONFLICT(name) DO UPDATE SET value=excluded.value", (settings_json,))
             return _job(connection.execute("SELECT * FROM research_jobs WHERE job_id=?", (job_id,)).fetchone())
+
+    def get_run_settings(self) -> RunSettings | None:
+        """Last-used UI preferences, independent of every accepted job snapshot."""
+        with self._transaction() as connection:
+            row = connection.execute("SELECT value FROM app_preferences WHERE name='run_settings'").fetchone()
+            return RunSettings.from_dict(json.loads(row["value"])) if row else None
+
+    def set_run_settings(self, settings: RunSettings) -> None:
+        if not isinstance(settings, RunSettings):
+            raise SessionStoreError("invalid_run_settings")
+        with self._transaction() as connection:
+            connection.execute("INSERT INTO app_preferences(name,value) VALUES ('run_settings',?) "
+                               "ON CONFLICT(name) DO UPDATE SET value=excluded.value",
+                               (json.dumps(settings.to_dict(), sort_keys=True),))
+
+    def save_run_receipt(self, job_id: str, receipt: dict) -> None:
+        """Attach optional safe usage once; a historical receipt is never rewritten."""
+        encoded = _receipt_json(receipt)
+        with self._transaction() as connection:
+            row = connection.execute("SELECT run_receipt FROM research_jobs WHERE job_id=?", (job_id,)).fetchone()
+            if row is None:
+                raise SessionStoreError("job_not_found")
+            if row["run_receipt"] is not None and row["run_receipt"] != encoded:
+                raise SessionStoreError("run_receipt_conflict")
+            connection.execute("UPDATE research_jobs SET run_receipt=? WHERE job_id=? AND run_receipt IS NULL",
+                               (encoded, job_id))
 
     def get_job(self, job_id: str) -> ResearchJob:
         with self._transaction() as connection:
@@ -763,7 +865,14 @@ class SQLiteSessionStore:
                                (datetime.now(timezone.utc).isoformat(), row["job_id"]))
             return _job(connection.execute("SELECT * FROM research_jobs WHERE job_id=?", (row["job_id"],)).fetchone())
 
-    def commit_job(self, job_id: str, session_id: str, revision: int, state: SessionState) -> SessionMetadata:
+    def commit_job(self, job_id: str, session_id: str, revision: int, state: SessionState,
+                   *, run_receipt: dict | None = None) -> SessionMetadata:
+        try:
+            encoded_receipt = _receipt_json(run_receipt) if run_receipt is not None else None
+        except SessionStoreError:
+            # Invalid optional reporting is unknown; the validated answer and
+            # immutable configuration still commit normally. No raw data is saved.
+            encoded_receipt = None
         with self._transaction() as connection:
             row = connection.execute("SELECT * FROM research_jobs WHERE job_id=?", (job_id,)).fetchone()
             if row is None or row["state"] != "researching" or (row["session_id"], row["revision"]) != (session_id, revision):
@@ -771,12 +880,21 @@ class SQLiteSessionStore:
             _require(state.turns[-1].question == row["question"])
             _require(set(json.loads(row["image_ids"])) <= set(state.turns[-1].image_ids))
             metadata = self._commit(connection, session_id, revision, state)
-            connection.execute("UPDATE research_jobs SET state='completed',finished_at=? WHERE job_id=?",
-                               (datetime.now(timezone.utc).isoformat(), job_id))
+            connection.execute("UPDATE research_jobs SET state='completed',finished_at=?, "
+                               "run_receipt=COALESCE(run_receipt,?) WHERE job_id=?",
+                               (datetime.now(timezone.utc).isoformat(), encoded_receipt, job_id))
             return metadata
 
     def fail_job(self, job_id: str, code: str = "research_failed") -> None:
-        allowed = {"research_failed", "session_conflict", "model_image_input_unsupported"}
+        allowed = {"research_failed", "session_conflict", "model_image_input_unsupported",
+                   "model_configuration_missing", "model_request_rejected", "model_authentication_failed",
+                   "model_access_denied", "model_unavailable", "model_rate_limited", "model_transport_failed",
+                   "model_request_timed_out", "model_backend_incompatible", "model_reasoning_unsupported",
+                   "model_not_supported", "malformed_model_response", "model_response_incomplete",
+                   "model_response_incomplete_content_filter", "model_response_incomplete_max_output_tokens",
+                   "model_catalog_unavailable", "model_identifier_invalid", "model_contract_incompatible",
+                   "model_routing_mismatch",
+                   "historical_run_settings_unknown"}
         with self._transaction() as connection:
             connection.execute("UPDATE research_jobs SET state='failed',finished_at=?,error_code=? "
                                "WHERE job_id=? AND state IN ('queued','researching')",

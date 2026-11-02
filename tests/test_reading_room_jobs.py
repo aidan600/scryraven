@@ -7,6 +7,7 @@ from urllib.parse import urlencode
 import pytest
 from pdf_fixtures import text_pdf
 from PIL import Image
+from reading_room_samples import no_io
 from test_persistent_sessions import tmp_path as external_tmp_path
 from test_reading_room import token
 from test_research_jobs import Workers, engine
@@ -29,7 +30,7 @@ def test_oversized_urlencoded_question_is_rejected_before_admission(tmp_path, ex
     store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
     saved = store.create("Existing conversation") if existing else None
     calls = []
-    app = create_app(store=store, session_options={"engine": lambda *a, **k: calls.append(a)})
+    app = create_app(store=store, session_options={"model": no_io, "engine": lambda *a, **k: calls.append(a)})
     client = app.test_client()
     action, fields = form(client, f"/sessions/{saved.metadata.session_id}" if saved else "/")
     before = store.list_sessions()
@@ -44,7 +45,7 @@ def test_oversized_urlencoded_question_is_rejected_before_admission(tmp_path, ex
 @pytest.mark.parametrize("known_length", [False, True])
 def test_urlencoded_question_accepts_exact_text_form_limit(tmp_path, known_length):
     store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
-    app = create_app(store=store, session_options={"engine": engine})
+    app = create_app(store=store, session_options={"model": no_io, "engine": engine})
     manager = app.extensions["research_jobs"]
     client = app.test_client()
     action, fields = form(client)
@@ -61,7 +62,7 @@ def test_urlencoded_question_accepts_exact_text_form_limit(tmp_path, known_lengt
 @pytest.mark.parametrize("known_length", [False, True])
 def test_multipart_question_accepts_pdf_larger_than_text_form_limit(tmp_path, known_length):
     store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
-    app = create_app(store=store, session_options={"engine": engine})
+    app = create_app(store=store, session_options={"model": no_io, "engine": engine})
     manager = app.extensions["research_jobs"]
     client = app.test_client()
     action, fields = form(client)
@@ -90,7 +91,7 @@ def test_invalid_attachment_never_dispatches_question_or_partial_files(tmp_path,
         data = output.getvalue()
     store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
     calls = []
-    app = create_app(store=store, session_options={"engine": lambda *a, **k: calls.append(a)})
+    app = create_app(store=store, session_options={"model": no_io, "engine": lambda *a, **k: calls.append(a)})
     client = app.test_client()
     action, fields = form(client)
     response = client.post(action, data=fields | {
@@ -114,7 +115,7 @@ def test_http_navigation_refresh_and_two_sessions_continue_with_exact_commits(tm
     second = store.create("Existing B")
     a_path, b_path = f"/sessions/{first.session_id}", f"/sessions/{second.metadata.session_id}"
     workers = Workers()
-    app = create_app(store=store, session_options={"engine": workers})
+    app = create_app(store=store, session_options={"model": no_io, "engine": workers})
     manager = app.extensions["research_jobs"]
     client = app.test_client()
     try:
@@ -183,7 +184,7 @@ def test_http_failure_keeps_question_and_explicit_retry_commits_once(tmp_path):
         if len(calls) == 1:
             raise RuntimeError("PRIVATE_EXCEPTION_PATH")
         return engine(question, **kwargs)
-    app = create_app(store=store, session_options={"engine": fail_once})
+    app = create_app(store=store, session_options={"model": no_io, "engine": fail_once})
     manager = app.extensions["research_jobs"]
     client = app.test_client()
     try:
@@ -219,7 +220,7 @@ def test_http_restart_shows_interrupted_run_and_requires_user_retry(tmp_path):
         entered.set()
         assert release.wait(10)
         return engine(question, **kwargs)
-    app = create_app(store=store, session_options={"engine": blocked})
+    app = create_app(store=store, session_options={"model": no_io, "engine": blocked})
     manager = app.extensions["research_jobs"]
     client = app.test_client()
     action, fields = form(client)
@@ -229,7 +230,7 @@ def test_http_restart_shows_interrupted_run_and_requires_user_retry(tmp_path):
     manager.shutdown()
     release.set()
     assert manager.wait_idle()
-    restarted = create_app(store=SQLiteSessionStore(store.path), session_options={"engine": engine})
+    restarted = create_app(store=SQLiteSessionStore(store.path), session_options={"model": no_io, "engine": engine})
     new_manager = restarted.extensions["research_jobs"]
     try:
         new_client = restarted.test_client()

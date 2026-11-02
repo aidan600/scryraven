@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import secrets
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from threading import Lock
 from time import monotonic
@@ -39,6 +40,7 @@ from scryraven.images import (
     image_preview,
     prepare_image,
 )
+from scryraven.model import OpenAIModel
 from scryraven.presentation import (
     answer_html,
     citation_preview_html,
@@ -47,6 +49,8 @@ from scryraven.presentation import (
     source_label,
 )
 from scryraven.research_jobs import ResearchJobManager
+from scryraven.run_settings import ERROR_MESSAGES as RUN_SETTINGS_ERRORS
+from scryraven.run_settings import RunSettings, settings_from_form
 from scryraven.session_store import (
     SessionConflictError,
     SessionStore,
@@ -103,6 +107,7 @@ class _Forms:
 
 def create_app(*, database: str | Path | None = None, store: SessionStore | None = None,
                session_options: dict | None = None,
+               run_model_factory: Callable | None = None,
                dogfood_log: str | Path | None = None,
                forensic_log: str | Path | None = None) -> Flask:
     """Inject only the existing store and ResearchSession's ordinary I/O options."""
@@ -113,6 +118,13 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                       TRUSTED_HOSTS=["127.0.0.1", "localhost"])
     custody = store if store is not None else SQLiteSessionStore(database)
     options = dict(session_options or {})
+    initial_model = options.get("model")
+    if initial_model is None:
+        initial_model = OpenAIModel()
+    initial_settings = RunSettings.effective(initial_model, options.get("limits"))
+    initial_config = getattr(initial_model, "config", None)
+    mixed_processing = (initial_settings.backend == "openai" and initial_config is not None
+                        and initial_config.research.service_tier != initial_config.answer.service_tier)
     session_path = custody.path if isinstance(custody, SQLiteSessionStore) else None
     diagnostic_path = Path(dogfood_log).expanduser().resolve() if dogfood_log is not None else None
     forensic_path = Path(forensic_log).expanduser().resolve() if forensic_log is not None else None
@@ -137,11 +149,57 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                  if forensic_path is not None else None)
     forms = _Forms()
     diagnostic_runs = {}
+    usage_runs = {}
 
     def job_options(job):
         turn_diagnostics = TurnDiagnostics(started_at=monotonic(), clock=monotonic) if diagnostics else None
         diagnostic_runs[job.job_id] = turn_diagnostics
         turn_options = dict(options)
+        settings = job.run_settings
+        if settings is None:
+            raise ValueError("historical_run_settings_unknown")
+        records = []
+        usage_runs[job.job_id] = records
+        base_model = initial_model
+        if run_model_factory is not None:
+            turn_model = run_model_factory(settings)
+            if isinstance(turn_model, OpenAIModel):
+                turn_model = turn_model.with_config(
+                    settings.model_config(), backend="api" if settings.backend == "openai" else settings.backend)
+        elif isinstance(base_model, OpenAIModel):
+            turn_model = base_model.with_config(
+                settings.model_config(), backend="api" if settings.backend == "openai" else settings.backend)
+        elif base_model is not None:
+            # Existing controlled transport injection is retained for offline
+            # application checks. Production launches inject OpenAIModel.
+            turn_model = base_model
+        else:
+            turn_model = OpenAIModel(settings.model_config(),
+                                     backend="api" if settings.backend == "openai" else settings.backend)
+        if isinstance(turn_model, OpenAIModel):
+            prior_usage = turn_model.usage_observer
+
+            def usage(item):
+                records.append({
+                    "role": item.stage, "model": item.model,
+                    "reasoning": settings.answer_reasoning if item.stage == "answer" else settings.research_reasoning,
+                    "backend": settings.backend,
+                    "returned_model": getattr(item, "returned_model", None),
+                    "provider": getattr(item, "provider", None),
+                    "reported_cost_usd": getattr(item, "reported_cost_usd", None),
+                    "requested_service_tier": item.requested_service_tier,
+                    "returned_service_tier": item.returned_service_tier,
+                    "input_tokens": item.input_tokens, "output_tokens": item.output_tokens,
+                    "cached_input_tokens": item.cached_input_tokens,
+                    "reasoning_tokens": item.reasoning_tokens,
+                })
+                if prior_usage:
+                    prior_usage(item)
+
+            turn_model.usage_observer = usage
+            turn_model.validate_configuration()
+        turn_options["model"] = turn_model
+        turn_options["limits"] = settings.limits()
         prior_observer = turn_options.get("observe")
 
         def observe(event):
@@ -165,6 +223,14 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
         return turn_options
 
     def job_finished(job, result, error, session):
+        records = usage_runs.pop(job.job_id, [])
+        try:
+            if job.state != "completed":
+                custody.save_run_receipt(job.job_id, {
+                    "requests": records, "estimated_cost_usd": None, "actual_billed_usd": None,
+                })
+        except (SessionStoreError, ValueError):
+            pass  # Usage remains unknown if optional receipt storage is unavailable.
         turn_diagnostics = diagnostic_runs.pop(job.job_id, None)
         if turn_diagnostics is not None:
             try:
@@ -178,7 +244,11 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                       file=sys.stderr, flush=True)
 
     try:
-        jobs = ResearchJobManager(custody, session_options_factory=job_options, on_finished=job_finished)
+        jobs = ResearchJobManager(custody, session_options_factory=job_options, on_finished=job_finished,
+                                  completion_receipt_factory=lambda job: {
+                                      "requests": list(usage_runs.get(job.job_id, [])),
+                                      "estimated_cost_usd": None, "actual_billed_usd": None,
+                                  })
     except SessionStoreError as exc:
         if exc.code == "research_server_owned":
             raise OSError("reading_room_already_running") from None
@@ -246,12 +316,15 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
             "interrupted": "Research was interrupted when the local server stopped. Retry explicitly to start again.",
         }
         error = IMAGE_ERROR_MESSAGES.get(job.error_code, messages[job.state])
+        error = RUN_SETTINGS_ERRORS.get(job.error_code, error)
         if job.error_code == "storage_interrupted":
             error = ("Research was interrupted because local storage became unavailable. "
                      "Your question and attachments are saved; retry explicitly.")
         return {"job_id": job.job_id, "session_id": job.session_id, "state": job.state,
                 "question": job.question, "revision": job.revision,
-                "error": error, "error_code": job.error_code}
+                "error": error, "error_code": job.error_code,
+                "run_settings": job.run_settings.to_dict() if job.run_settings else None,
+                "run_receipt": job.run_receipt}
 
     def attachment_links(saved, document_ids=(), image_ids=()):
         result = []
@@ -313,6 +386,9 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                 "operating_bound": turn.stop_reason == "research_bound",
                 "source_free": source_free_supported(turn),
                 "answer": Markup(answer_html(turn, source_prefix=prefix, citation_previews=True)),
+                "run_settings": (session_jobs[number].run_settings.to_dict()
+                                 if number in session_jobs and session_jobs[number].run_settings else None),
+                "run_receipt": session_jobs[number].run_receipt if number in session_jobs else None,
                 "attachments": attachment_links(saved,
                     session_jobs[number].document_ids if number in session_jobs else (), turn.image_ids),
                 "sources": [{"number": c.number, "id": prefix + str(c.number), "title": source_label(c),
@@ -338,6 +414,11 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
             images=attachment_links(saved, image_ids=tuple(item.image_id for item in saved.images)) if saved else [],
             job=job, history_jobs=history_jobs, idempotency_key=uuid4().hex,
             citation_language=metadata.citation_language if metadata else "en",
+            run_settings=(custody.get_run_settings() or initial_settings).to_dict(),
+            initial_processing_profile=({
+                "research": initial_config.research.service_tier or "model default",
+                "answer": initial_config.answer.service_tier or "model default",
+            } if mixed_processing and custody.get_run_settings() is None else None),
             text_only_warning=TEXT_ONLY_WARNING, question=question,
             error=error, notice=notice, confirmation=confirmation, form_token=issue,
             renaming=bool(saved and (edit_title or request.args.get("edit") == "rename")),
@@ -401,11 +482,15 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
             return page(session_id, question=question, error="Choose a citation explanation language.", status=400)
         key = request.form.get("idempotency_key", "") or request.form.get("form_token", "")
         try:
+            settings = settings_from_form(request.form, initial_settings)
             documents, images = read_attachments()
             job = jobs.submit(question, session_id=session_id, revision=revision,
                               idempotency_key=key, documents=documents, images=images,
                               retained_image_ids=tuple(request.form.getlist("retained_image_ids")),
-                              citation_language=language)
+                              citation_language=language, run_settings=settings)
+        except ValueError as exc:
+            return page(session_id, question=question, status=400,
+                        error=RUN_SETTINGS_ERRORS.get(str(exc), RUN_SETTINGS_ERRORS["invalid_run_settings"]))
         except (DocumentRejected, ImageRejected) as exc:
             message = DOCUMENT_ERROR_MESSAGES.get(exc.code) or IMAGE_ERROR_MESSAGES.get(exc.code)
             return page(session_id, question=question, error=message, status=400)
@@ -447,7 +532,13 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
         if saved.metadata.revision != revision or revision != previous.revision:
             return page(session_id, question=previous.question,
                         error="The conversation changed. Review it before submitting a new question.", status=409)
-        job = jobs.retry(job_id, idempotency_key=request.form.get("form_token", ""))
+        try:
+            job = jobs.retry(job_id, idempotency_key=request.form.get("form_token", ""))
+        except SessionStoreError as exc:
+            if exc.code == "historical_run_settings_unknown":
+                return page(session_id, question=previous.question, status=409,
+                            error=RUN_SETTINGS_ERRORS[exc.code])
+            raise
         return redirect(url_for("open_session", session_id=job.session_id, _anchor="research-status"), 303)
 
     @app.post("/sessions/<session_id>/rename")

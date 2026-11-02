@@ -15,6 +15,7 @@ from scryraven.documents import prepare_pdf
 from scryraven.images import prepare_image
 from scryraven.research_jobs import ResearchJobManager
 from scryraven.results import CompletedAnswer
+from scryraven.run_settings import RunSettings
 from scryraven.session import ResearchSession
 from scryraven.session_store import SessionConflictError, SessionStoreError, SQLiteSessionStore
 
@@ -31,6 +32,10 @@ def engine(question, **kwargs):
 
 def key(number):
     return f"submission-key-{number:08d}"
+
+
+def run_settings():
+    return RunSettings("chatgpt_plan", "gpt-6.1-terra", "medium", "gpt-6.1-sol", "medium", None, 40)
 
 
 class Workers:
@@ -117,7 +122,7 @@ def test_failed_question_survives_and_explicit_retry_is_independent(tmp_path):
     def broken(question, **kwargs):
         raise RuntimeError("private transport body must never become public status")
     manager = ResearchJobManager(store, session_options={"engine": broken})
-    first = manager.submit("Keep my question", idempotency_key=key(1))
+    first = manager.submit("Keep my question", idempotency_key=key(1), run_settings=run_settings())
     assert manager.wait_idle()
     failed = manager.get(first.job_id)
     assert failed.question == "Keep my question" and failed.state == "failed"
@@ -299,7 +304,7 @@ def test_storage_failure_never_strands_queued_questions_or_replays_calls(tmp_pat
         raise RuntimeError("PRIVATE_MODEL_ERROR")
     manager = ResearchJobManager(store, session_options={"engine": broken})
     store.unavailable = True
-    job = manager.submit("Keep this accepted question", idempotency_key=key(1))
+    job = manager.submit("Keep this accepted question", idempotency_key=key(1), run_settings=run_settings())
     assert manager.wait_idle()
     with pytest.raises(SessionStoreError):
         manager.list()

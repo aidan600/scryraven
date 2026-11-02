@@ -31,13 +31,17 @@ fallback. macOS uses `~/Library/Application Support/ScryRaven/model_roles.json`.
 Unix uses `$XDG_CONFIG_HOME/scryraven/model_roles.json`, falling back to
 `~/.config/scryraven/model_roles.json` for an absent, empty or relative root.
 The loader creates no file and reads no model-value environment overrides.
-CLI, Reading Room, sessions and direct `run()` construct a fresh ordinary model
-per turn, so a user edit applies to the next turn without restarting the process
-or editing source, committing or opening a PR. Explicitly retained model instances
+CLI, sessions and direct `run()` construct a fresh ordinary model per turn.
+Reading Room initializes from its effective launch profile, then uses immutable
+job-owned settings and independent model instances through the existing
+ResearchJobManager option factory. Explicitly retained model instances
 keep their resolved settings. Full injection bypasses both files; partial injection
 fills only the missing role from effective settings. Injection is invocation-local
-and writes nothing. The external file is the current settings boundary; no UI,
-settings endpoint, write API, database settings, watcher or merging layer exists.
+and writes nothing. The external file remains an initial configuration source.
+Reading Room's compact Run Settings dialog saves separate last-used preferences
+and exact per-job backend, model, effort, tier and resource limits in SQLite.
+Retry copies the original settings; legacy unknown runtime identities stay
+unknown. No research owner or alternate research loop is added.
 These values are reversible product configuration, not architectural requirements
 or a model router. Compatible injected configurations may vary in quality and
 validation coverage. The Terra/medium choice and Lite-first acquisition are
