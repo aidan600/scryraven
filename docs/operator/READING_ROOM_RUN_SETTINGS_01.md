@@ -1,6 +1,9 @@
 # Reading Room Run Settings 01
 
-Outcome and final verification receipts are recorded in the review bundle at
+Outcome: implementation met. OpenAI Standard and Fast were demonstrated through
+the ordinary browser product; OpenRouter's optional live turn failed at
+authentication, so live model compatibility remains unproved. Final receipts are
+recorded in the review bundle at
 `C:\tmp\scryraven-run-settings-01`. This phase builds from
 `99ef3e113b164835dc694bedb26355c01386cb72` in the explicitly requested isolated
 worktree. The installed launcher, personal model profile, credentials and
@@ -55,9 +58,9 @@ estimate is introduced into the product.
 | Selection | Routing and credential boundary | Strict contract and tier behavior | Evidence |
 | --- | --- | --- | --- |
 | ChatGPT personal plan | Existing authenticated plan transport/account catalog; no API key read or inference fallback | Native schema/tools/continuation; API tier/cache/output-limit parameters omitted | Controlled transport, app, image and regression checks; no new paid-plan inference |
-| OpenAI API Standard | Existing fixed `https://api.openai.com/v1/responses`; `OPENAI_API_KEY` read only by credentialed process | Explicit `service_tier=default` for both roles, exact reasoning including omitted default | Controlled transport/app/browser; bounded live status in final receipts |
-| OpenAI API Fast | Same fixed API route and credential | Explicit `service_tier=fast`; returned tier recorded separately; no retry/downgrade to Standard | Controlled transport/app/browser; returned live tier must be observed |
-| OpenRouter | Fixed `https://openrouter.ai/api/v1/responses`; only `OPENROUTER_API_KEY` | `provider.require_parameters=true`, `allow_fallbacks=false`; plugins/transforms empty; no model list/fallback, server web tools or schema relaxation | Controlled strict schema/function/reasoning continuation, model mismatch, credential and image checks; live compatibility conditional/unproved unless receipts show it |
+| OpenAI API Standard | Existing fixed `https://api.openai.com/v1/responses`; `OPENAI_API_KEY` read only by credentialed process | Explicit `service_tier=default` for both roles, exact reasoning including omitted default | Ordinary browser Luna/none turn completed in 2 requests; exact model and `default` tier returned |
+| OpenAI API Fast | Same fixed API route and credential | Explicit `service_tier=fast`; returned tier recorded separately; no retry/downgrade to Standard | Ordinary browser Luna/none turn completed in 2 requests; exact model and `fast` tier returned |
+| OpenRouter | Fixed `https://openrouter.ai/api/v1/responses`; only `OPENROUTER_API_KEY` | `provider.require_parameters=true`, `allow_fallbacks=false`; plugins/transforms empty; no model list/fallback, server web tools or schema relaxation | Controlled strict schema/function/reasoning continuation, model mismatch, credential and image checks passed. Single optional live request failed authentication; live compatibility unproved |
 
 OpenRouter requires an explicit provider/model slug and rejects routing/search
 modifiers and automatic router identifiers. If a reported model differs from the
@@ -99,8 +102,9 @@ Real Edge checks cover desktop, 390/320px, actual 200% browser zoom, keyboard
 dialog operation and first-completion receipts. Actual screenshots are external
 review artifacts; their synthetic answers are presentation fixtures.
 
-Full offline suite, Ruff, compilation, JavaScript syntax, whitespace and all six
-configured hooks are required before bounded live validation. The live caller
+All 1,218 offline tests passed, with no skips in the final ordinary-user run.
+Ruff, compilation, JavaScript syntax, whitespace and all six configured hooks
+passed before bounded live validation. The live caller
 uses ordinary browser submission -> actual HTTP route -> ResearchJobManager ->
 ResearchSession -> Responses transport -> durable answer, without scripting the
 model's semantic work. It requests the licensed apple premise question only,
@@ -108,8 +112,39 @@ with Luna/none for both roles, six requests per turn and zero external attempts.
 A separate pre-dispatch guard enforces the combined 12-request/$2 authorization
 using documented pricing and conservative input/output reservations. Those
 phase-only guard calculations do not promise a general product dollar ceiling.
-No plan allowance is spent. Optional OpenRouter is skipped when credentials or
-verified model pricing/parameter compatibility are not established.
+No plan allowance was spent. Public OpenRouter catalog/endpoint metadata
+established `openai/gpt-6-luna`, Responses, tools, strict outputs, `none` effort
+and known rates below the conservative guard before the optional request.
+
+At frozen runtime `89b002475482c28b3548b97347fe26b9c0b6780f`:
+
+| Turn | Result | Physical requests | Input/output tokens | Requested / returned tier |
+| --- | --- | --- | --- | --- |
+| OpenAI Standard, Luna/none both roles | 8 apples; reopened exact answer and receipt, no sources/citations | 2 | 3,869 / 95 | `default` / `default` for both requests |
+| OpenAI Fast, Luna/none both roles | 8 apples; reopened exact answer and receipt, no sources/citations | 2 | 3,861 / 84 | `fast` / `fast` for both requests |
+| OpenRouter, `openai/gpt-6-luna`/none both roles | `model_authentication_failed`; exact question/settings saved, no answer committed | 1 | Unknown | Omitted / unreported |
+
+Both OpenAI roles reported the exact requested `gpt-6-luna` model, zero cached
+input and zero reasoning tokens. Total known OpenAI input/output was 7,730/179.
+The third request used OpenRouter's fixed endpoint and its distinct credential;
+credential presence was confirmed only as a boolean inside the brokered child.
+Authentication rejection does not establish model or structured-output
+compatibility. No credential inspection, repair, retry, substitution or extra
+turn followed it. Three turns/five physical requests consumed the entire licensed
+turn runway, with zero external acquisition and zero independent source checks.
+The pre-dispatch conservative reservation was $0.375396 of $2; this is an upper
+resource reservation using above-listed-price rates and request/output bounds,
+not an invoice or reported charge. OpenRouter usage and all actual billing remain
+unknown. No latency/Fast speed comparison is claimed from this smoke check.
+
+Exact safe receipts, provider-public metadata, callers, broker lifecycle output,
+validation SQLite and actual browser screenshots are preserved in the review
+directory. The authentication boundary is also a sanitized ignored local
+development candidate at
+`local-evals/candidates/reading-room-run-settings-01-openrouter-auth-20261101/`.
+It is operational diagnostic evidence, not a semantic model failure or gold case.
+No runtime code changed after this live-tested revision; subsequent branch
+changes record evidence and review facts only.
 
 ## Installed launcher aftercare: only after merge
 

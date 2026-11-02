@@ -32,8 +32,20 @@ schema-repair spending, including delegated Research. Research ownership,
 semantic schemas, source/citation validation and acquisition routing remain.
 
 All 1,218 offline tests passed, including actual Edge desktop/mobile/200%-zoom
-and keyboard checks. Ruff, compilation, JavaScript syntax and whitespace checks
-passed. Bounded live validation and final hook receipts are recorded in
+and keyboard checks. Ruff, compilation, JavaScript syntax, whitespace and all six
+configured hooks passed. At frozen runtime
+`89b002475482c28b3548b97347fe26b9c0b6780f`, ordinary browser Standard and Fast
+OpenAI API turns each answered the public apple premise correctly in two
+Luna/none requests, with exact returned model and respectively `default`/`fast`
+tiers. The optional OpenRouter turn failed authentication on its single physical
+request; the question/settings remained saved and no fallback or retry occurred.
+OpenRouter live model/strict-contract compatibility remains unproved despite
+controlled adapter checks and public parameter/pricing metadata. Across the three
+turns: five physical requests, zero external acquisition, zero independent source
+checks, and $0.375396 conservative pre-dispatch reservation against the licensed
+$2 combined allowance. Actual charges and unreported OpenRouter usage are unknown.
+The diagnostic boundary is preserved as a sanitized local development candidate.
+Final receipts are recorded in
 `docs/operator/READING_ROOM_RUN_SETTINGS_01.md` and the external review bundle
 at `C:\tmp\scryraven-run-settings-01`; no general arbitrary-model or provider
 compatibility is claimed. The installed launcher and production database remain
