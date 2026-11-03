@@ -85,6 +85,27 @@ historical inspection. The answer is the primary reading surface; evidence is
 available in depth when requested. Working states and research limitations remain
 honest, and the interface remains usable at narrow browser widths.
 
+## Private hosted beta
+
+The Reading Room may run as one privately hosted application for the owner and
+explicitly invited testers. Cloudflare Access supplies server-verified identity.
+Each conversation belongs to its authenticated owner; testers can create, reopen,
+rename and delete only their own research. The administrator can read tester
+conversations and export selected research with available diagnostics, but cannot
+mutate a tester's conversation. Research uses the same Research/Answer roles,
+Evidence custody and citation semantics as the local product.
+
+Hosted inference uses operator-authorized OpenAI API settings and credentials.
+Testers cannot change billing, backend, model or technical limits through HTTP.
+Daily per-user submission quotas bound admission; physical request ceilings are
+not dollar guarantees. Two workers can research for separate users concurrently,
+with at most one active job per hosted user and a bounded waiting queue.
+Persistent conversations, attachments and acquired Evidence survive restarts and
+diagnostic retention. Interrupted work requires explicit retry. Protected
+source-bearing forensic files have finite age/storage retention, separate from
+ordinary application logs and durable research. Local personal-plan and
+OpenRouter capabilities remain available locally.
+
 ## Durable product invariants
 
 - Research is question-directed and may adapt when an initial attempt is inadequate.

@@ -12,6 +12,7 @@
 {%- endmacro %}
 
 {% macro actions(item) -%}
+{% if not read_only|default(false) and (not hosted_mode or item.owner_id == identity.email) %}
 <details class="session-actions">
   <summary class="icon-button" aria-label="Actions for {{ item.title or 'Untitled research' }}">{{ icon('more') }}</summary>
   <div class="action-menu">
@@ -19,6 +20,7 @@
     <a class="danger-text" href="{{ url_for('confirm_delete', session_id=item.session_id) }}">Delete</a>
   </div>
 </details>
+{% endif %}
 {%- endmacro %}
 
 {% macro document_list() -%}
@@ -41,7 +43,6 @@
   <div><dt>Research</dt><dd><code>{{ settings.research_model }}</code> · {{ settings.research_reasoning or 'model default' }}</dd></div>
   <div><dt>Answer</dt><dd><code>{{ settings.answer_model }}</code> · {{ settings.answer_reasoning or 'model default' }}</dd></div>
   {% if settings.backend == 'openai' %}<div><dt>Processing</dt><dd>{{ 'Fast' if settings.api_processing == 'fast' else 'Standard' }}</dd></div>{% endif %}
-  <div><dt>Run allowance</dt><dd>Up to {{ settings.physical_request_limit }} model requests</dd></div>
 </dl>
 {%- endmacro %}
 
@@ -69,10 +70,15 @@
 
 {% macro run_controls() -%}
 {% set settings = run_settings|default({}) %}
+{% if hosted_mode %}
+<details class="hosted-run-settings"><summary>Run settings · OpenAI API</summary>{{ configuration(settings) }}
+<p>Configured by the operator. Up to {{ submissions_per_day }} accepted questions per user per UTC day, including retries. Technical research limits apply; these are not dollar limits.</p>
+<p>Your question, conversation, source material and attachments used in research are supplied to OpenAI. The administrator can read research and export diagnostics.</p></details>
+{% else %}
 <div class="run-selection">
   <button class="run-settings-open" type="button" aria-haspopup="dialog" aria-controls="run-settings-dialog"><span class="run-selection-backend">{{ {'chatgpt_plan':'ChatGPT plan', 'openai':'OpenAI API · API billed', 'openrouter':'OpenRouter · OpenRouter billed'}.get(settings.backend, 'Run settings') }}</span><span class="run-selection-roles">Research {{ settings.research_model }} · {{ settings.research_reasoning or 'model default' }} / Answer {{ settings.answer_model }} · {{ settings.answer_reasoning or 'model default' }}{% if settings.backend == 'openai' %} · {{ 'Choose processing' if initial_processing_profile|default(none) else ('Fast' if settings.api_processing == 'fast' else 'Standard') }}{% endif %}</span><span class="run-selection-edit">Edit</span></button>
 </div>
-<dialog class="run-settings-dialog" id="run-settings-dialog" aria-labelledby="run-settings-title" aria-describedby="run-settings-intro">
+<dialog class="run-settings-dialog" id="run-settings-dialog" aria-labelledby="run-settings-title" aria-describedby="run-settings-intro" data-billing-url="{{ url_for('update_billing_authorization') }}" data-billing-token="{{ form_token('billing') }}" data-billing-authorizations='{{ billing_authorizations|tojson }}' data-model-profiles='{{ run_settings_profiles|tojson }}'>
   <div class="run-settings-heading"><div><p class="eyebrow">For your next question</p><h2 id="run-settings-title">Run settings</h2></div><button class="icon-button run-settings-close" type="button" aria-label="Close run settings">{{ icon('close') }}</button></div>
   <p class="settings-intro" id="run-settings-intro">Saved with your question. Changing these settings never changes an accepted run or its retry.</p>
   <label for="run-backend">Inference backend</label>
@@ -83,8 +89,12 @@
   <div class="run-roles">
     {% for role, label in [('research', 'Research'), ('answer', 'Answer')] %}
     <fieldset><legend>{{ label }}</legend>
+      <label for="{{ role }}-suggestions">{{ label }} suggested models</label>
+      <select id="{{ role }}-suggestions" class="model-suggestions" data-role="{{ role }}" aria-describedby="model-selection-help">
+        <option value="">Choose a suggestion…</option>
+      </select>
       <label for="{{ role }}-model">{{ label }} model identifier</label>
-      <input id="{{ role }}-model" name="{{ role }}_model" value="{{ settings[role + '_model'] }}" list="run-model-presets" maxlength="200" autocomplete="off" spellcheck="false" required>
+      <input id="{{ role }}-model" name="{{ role }}_model" value="{{ settings[role + '_model'] }}" maxlength="200" autocomplete="off" spellcheck="false" required>
       <label for="{{ role }}-reasoning">{{ label }} reasoning effort</label>
       <select id="{{ role }}-reasoning" name="{{ role }}_reasoning">
       {% for value, text in [('', 'Model default (omit parameter)'), ('none', 'None'), ('low', 'Low'), ('medium', 'Medium'), ('high', 'High'), ('xhigh', 'Extra high'), ('max', 'Max')] %}<option value="{{ value }}"{% if (settings[role + '_reasoning'] or '') == value %} selected{% endif %}>{{ text }}</option>{% endfor %}
@@ -92,24 +102,27 @@
     </fieldset>
     {% endfor %}
   </div>
-  <datalist id="run-model-presets"><option value="gpt-6.1-terra"><option value="gpt-6.1-sol"><option value="gpt-6-luna"></datalist>
-  <p class="settings-note">Choose a suggested model or enter its exact identifier. Model and reasoning support depend on the backend; unsupported settings fail without substitution.</p>
+  <p class="settings-note" id="model-selection-help">Open suggestions at any time, or enter an exact model identifier. Unsupported settings fail without substitution.</p>
+  <p class="settings-note openrouter-model-help"{% if settings.backend != 'openrouter' %} hidden{% endif %}>OpenRouter requires an explicit provider/model identifier. <a href="https://openrouter.ai/models" target="_blank" rel="noopener noreferrer">Browse OpenRouter models</a>.</p>
   <div class="run-processing"{% if settings.backend != 'openai' %} hidden{% endif %}>
     <label for="api-processing">OpenAI API processing</label>
     <select id="api-processing" name="api_processing" required{% if settings.backend != 'openai' %} disabled{% endif %}>{% if initial_processing_profile|default(none) %}<option value="" selected disabled>Choose for this run</option>{% endif %}<option value="standard"{% if settings.api_processing != 'fast' and not initial_processing_profile|default(none) %} selected{% endif %}>Standard</option><option value="fast"{% if settings.api_processing == 'fast' and not initial_processing_profile|default(none) %} selected{% endif %}>Fast · higher rates may apply</option></select>
     {% if initial_processing_profile|default(none) %}<p class="settings-note initial-tier-profile">Existing model profile requests Research <strong>{{ initial_processing_profile.research or 'unspecified' }}</strong> and Answer <strong>{{ initial_processing_profile.answer or 'unspecified' }}</strong>. Choose Standard or Fast for this run.</p>{% endif %}
   </div>
-  <label for="physical-request-limit">Per-run model request allowance</label>
-  <select id="physical-request-limit" name="physical_request_limit"><option value="6"{% if settings.physical_request_limit == 6 %} selected{% endif %}>Smaller · up to 6 requests</option><option value="12"{% if settings.physical_request_limit == 12 %} selected{% endif %}>Standard · up to 12 requests</option>{% if settings.backend == 'chatgpt_plan' %}<option value="40"{% if settings.physical_request_limit == 40 %} selected{% endif %}>Plan · up to 40 requests</option>{% endif %}</select>
-  <p class="settings-note paid-run-note"{% if settings.backend == 'chatgpt_plan' %} hidden{% endif %}>This selects paid inference. Monthly credits may not cover every charge. The request allowance limits resource use; it is not a dollar ceiling.</p>
-  <label class="paid-inference-confirmation"{% if settings.backend == 'chatgpt_plan' %} hidden{% endif %}><input type="checkbox" name="paid_inference_confirmed" value="1"{% if settings.backend != 'chatgpt_plan' %} required{% else %} disabled{% endif %}>Use billed API inference for this question</label>
+  <div class="billing-authorization"{% if settings.backend == 'chatgpt_plan' %} hidden{% endif %}>
+    <p class="settings-note">Authorize billed inference for this backend on this local Reading Room. Saved until you revoke it here; applies to subsequent questions and retries. Provider charges may apply.</p>
+    <p class="billing-status" role="status" aria-live="polite"></p>
+    <button class="small-button billing-toggle" type="button">Authorize billed inference</button>
+    <p class="billing-error" role="alert" hidden></p>
+  </div>
   <div class="dialog-actions"><button type="button" class="small-button run-settings-done">Use these settings</button></div>
 </dialog>
+{% endif %}
 {%- endmacro %}
 
 {% macro composer(is_new=false) -%}
 <div class="composer-wrap{% if is_new %} welcome-composer{% endif %}">
-  <form class="ask-form" method="post" enctype="multipart/form-data" action="{{ url_for('ask', session_id=saved.metadata.session_id) if saved else url_for('ask') }}" data-draft-key="{{ saved.metadata.session_id if saved else 'new' }}">
+  <form class="ask-form" method="post" enctype="multipart/form-data" action="{{ url_for('ask', session_id=saved.metadata.session_id) if saved else url_for('ask') }}" data-draft-key="{% if hosted_mode %}{{ browser_identity }}:{% endif %}{{ saved.metadata.session_id if saved else 'new' }}">
     <input type="hidden" name="form_token" value="{{ form_token('ask') }}">
     <input type="hidden" name="idempotency_key" value="{{ idempotency_key|default('') }}">
     <label class="sr-only" for="question">{{ 'Ask a follow-up' if saved else 'Your research question' }}</label>
@@ -157,7 +170,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='reading_room.css') }}">
   <script src="{{ url_for('static', filename='reading_room.js') }}" defer></script>
 </head>
-<body data-session-id="{{ saved.metadata.session_id if saved else '' }}" data-revision="{{ saved.metadata.revision if saved else 0 }}" data-job-id="{{ job.job_id if job else '' }}" data-job-state="{{ job.state if job else '' }}">
+<body data-session-id="{{ saved.metadata.session_id if saved else '' }}" data-revision="{{ saved.metadata.revision if saved else 0 }}" data-job-id="{{ job.job_id if job else '' }}" data-job-state="{{ job.state if job else '' }}" data-browser-identity="{{ browser_identity }}">
 <a class="skip-link" href="#reading">Skip to reading</a>
 <aside class="sidebar" id="history" aria-label="Research history">
   <div class="sidebar-main">
@@ -179,7 +192,7 @@
     {% endfor %}
   </nav>
   </div>
-  <div class="sidebar-foot"><span class="local-dot" aria-hidden="true"></span>Saved on this device</div>
+  <div class="sidebar-foot"><span class="local-dot" aria-hidden="true"></span>{% if hosted_mode %}Private beta{% if identity and identity.is_admin %} · <a href="{{ url_for('admin_sessions') }}">Administration</a>{% endif %}{% else %}Saved on this device{% endif %}</div>
 </aside>
 
 <main class="workspace{% if not saved %} new-state{% endif %}" id="reading" tabindex="-1">
@@ -189,7 +202,7 @@
     <div class="room-name">Reading Room</div>
     {% if saved %}
     <span class="header-separator" aria-hidden="true">/</span>
-    {% if renaming %}
+    {% if renaming and not read_only %}
     <form class="rename-form" method="post" action="{{ url_for('rename_session', session_id=saved.metadata.session_id) }}">
       <input type="hidden" name="form_token" value="{{ form_token('rename') }}">
       <label class="sr-only" for="session-title">Session title</label>
@@ -208,6 +221,7 @@
     <div class="reading-content">
       {% if notice %}<div class="notice" role="status">{{ notice }}</div>{% endif %}
       {% if error %}<div class="error-notice" role="alert"><p>{{ error }}</p>{% if unavailable %}<a href="{{ url_for('new_research') }}">Reopen Reading Room</a>{% endif %}</div>{% endif %}
+      {% if read_only %}<p class="notice">Administrator view · read only · {{ saved.metadata.owner_id }} · <a href="{{ url_for('export_session', session_id=saved.metadata.session_id) }}">Export session and diagnostics</a></p>{% endif %}
       {% if not saved and not unavailable %}
       <section class="welcome" aria-labelledby="welcome-title">
         <h1 id="welcome-title">What would you like to understand?</h1>
@@ -259,14 +273,14 @@
         {{ run_record(job.run_settings|default(none), job.run_receipt|default(none)) }}
         <div class="job-message" role="status" aria-live="polite">
           {% if job.state in ['queued', 'researching'] %}<span class="working-indicator" aria-hidden="true"></span><div><strong>{{ 'Queued' if job.state == 'queued' else 'Researching' }}</strong><p>{{ 'Waiting for a research slot.' if job.state == 'queued' else 'ScryRaven is working on your question.' }} You can open another conversation while this continues.</p><noscript><a href="{{ url_for('open_session', session_id=saved.metadata.session_id) }}">Refresh status</a></noscript></div>
-          {% else %}<div><strong>{{ 'Research interrupted' if job.state == 'interrupted' else 'Research failed' }}</strong><p>{{ job.error|default('Your question and attachments are saved. Retry when you are ready.', true) }}</p><form method="post" action="{{ url_for('open_session', session_id=saved.metadata.session_id) }}/jobs/{{ job.job_id }}/retry"><input type="hidden" name="form_token" value="{{ form_token('retry') }}"><button class="small-button" type="submit">Retry this question</button></form></div>{% endif %}
+          {% else %}<div><strong>{{ 'Research interrupted' if job.state == 'interrupted' else 'Research failed' }}</strong><p>{{ job.error|default('Your question and attachments are saved. Retry when you are ready.', true) }}</p>{% if not read_only %}<form method="post" action="{{ url_for('open_session', session_id=saved.metadata.session_id) }}/jobs/{{ job.job_id }}/retry"><input type="hidden" name="form_token" value="{{ form_token('retry') }}"><button class="small-button" type="submit">Retry this question</button></form>{% endif %}</div>{% endif %}
         </div>
       </section>
       {% elif saved and not turns %}<p class="empty-session">This research hasn’t saved an answer yet. Ask a question below.</p>{% endif %}
     </div>
   </div>
   </div>
-  {% if saved and not unavailable %}<footer class="composer-footer">{{ composer() }}</footer>{% endif %}
+  {% if saved and not unavailable and not read_only %}<footer class="composer-footer">{{ composer() }}</footer>{% endif %}
 </main>
 
 <aside class="citation-preview" id="citation-preview" role="dialog" aria-labelledby="citation-preview-title" hidden>

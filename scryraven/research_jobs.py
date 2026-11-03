@@ -127,7 +127,8 @@ class ResearchJobManager:
             if self.closed:
                 raise SessionStoreError("research_server_stopping")
             self._recover_storage()
-            job = self.store.accept_job(question, capacity=self.concurrency + self.queue_capacity, **kwargs)
+            job = self.store.accept_job(question, capacity=self.concurrency + self.queue_capacity,
+                                        queue_capacity=self.queue_capacity, **kwargs)
             if job.state == "queued":
                 while len(self.workers) < self.concurrency:
                     worker = Thread(target=self._work, name="scryraven-research", daemon=True)
@@ -143,21 +144,25 @@ class ResearchJobManager:
         self._recover_storage()
         return self.store.list_jobs(session_id)
 
-    def retry(self, job_id: str, *, idempotency_key: str) -> ResearchJob:
+    def retry(self, job_id: str, *, idempotency_key: str, owner_id: str | None = None,
+              submission_quota: int | None = None) -> ResearchJob:
         """Only an explicit user action retries; keep exact question and files."""
         old = self.get(job_id)
+        saved = self.store.load(old.session_id)
+        if owner_id is not None and saved.metadata.owner_id != owner_id:
+            raise SessionStoreError("session_not_found")
         if old.state not in {"failed", "interrupted"}:
             raise SessionStoreError("job_not_retryable")
         if old.run_settings is None:
             raise SessionStoreError("historical_run_settings_unknown")
-        saved = self.store.load(old.session_id)
         documents = tuple(PreparedDocument(**{name: getattr(document, name)
                                               for name in PreparedDocument.__dataclass_fields__})
                           for document in saved.documents if document.document_id in old.document_ids)
         return self.submit(old.question, session_id=old.session_id, revision=old.revision,
                            idempotency_key=idempotency_key, documents=documents,
                            retained_image_ids=old.image_ids, citation_language=old.citation_language,
-                           run_settings=old.run_settings, remember_settings=False)
+                           run_settings=old.run_settings, remember_settings=False,
+                           owner_id=owner_id, submission_quota=submission_quota)
 
     def _work(self):
         from threading import current_thread

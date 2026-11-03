@@ -1,0 +1,4 @@
+# Hosted Reading Room identity verification and single-process production WSGI.
+-r requirements.txt
+PyJWT[crypto]>=2.10,<3
+waitress>=3.0.2,<4

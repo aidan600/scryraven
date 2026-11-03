@@ -1,22 +1,99 @@
 # ScryRaven Current Truth
 
+## Private hosted beta preparation
+
+The Reading Room has an explicit hosted mode for one Railway process/volume and
+Cloudflare Access, separate from the existing local launcher. Waitress serves
+the same Flask application; configuration fails closed without the required
+identity, billing and storage settings. Railway startup also requires its volume
+mount configuration. Application routes validate signed RS256 Access tokens,
+issuer, audience, lifetime and exact invited/admin email identities. Unverified
+email and proxy headers have no identity authority; direct-origin requests still
+require a valid token. Only `/healthz` is unauthenticated and contains no research.
+
+Schema 5 additively adds nullable session ownership and a durable UTC daily
+submission ledger. Historical session payloads, source identity, citations and
+attachments remain unchanged. Local unowned sessions remain local; hosted startup
+refuses a database containing them. Hosted testers access only their own sessions
+and job status. The owner has a read-only tester view at `/admin` and can export a
+selected session with original attachments and available diagnostics. No personal
+Reading Room database was imported or used for testing.
+
+Hosted runs use fixed centrally configured OpenAI API Research/Answer settings,
+independent per-job models and the existing technical ceilings. Modified forms
+cannot select a backend/model, supply credentials, alter limits or authorize
+billing. Local Run Settings, personal-plan and OpenRouter behavior remain.
+The default quota is 20 accepted questions per user per UTC day, including explicit
+retries; deletion/restart do not reset it. Two workers and eight waiting slots
+remain, with at most one active job per hosted owner across conversations.
+Restart interrupts unfinished work and does not automatically replay requests.
+
+Hosted body-free summaries and existing source-bearing observer records are
+stored separately from application output on the protected volume, associated
+with user/session/job. Default retention is 30 days and 1 GiB total, with a 64 MiB
+per-file cap. Cleanup removes only diagnostic files; normal conversations,
+citations, attachments and acquired Evidence persist. Age/byte maintenance runs on
+startup, hourly in the production process, requests/health checks and writes. Active files stop at their bounds;
+truncation or write failure can leave incomplete diagnostic records. Admin views
+report measured diagnostic bytes/files and database bytes. Exports are private
+and selected-session scoped; no public raw-log download exists.
+
+The final hosted integration passed all 1,404 offline tests with no skips on
+Python 3.12.14 with the declared dependencies, including pypdf 6.19.0, Pillow
+12.3.0, Waitress 3.0.2 and PyJWT 2.15.1. Separate-user Edge browser checks at
+1440/390/320px cover session lifecycle, attachments, citations, admin read/export
+and forged URLs/forms; local Run Settings/200% zoom checks also pass. Signed
+synthetic tokens exercise actual Waitress HTTP, ordinary Research/Answer through
+mocked API transport, two-user overlap, private persistence and restart without
+replay. Focused checks cover token rejection/cache outage, all data routes,
+ownership migration, quotas, retention/alias safety and idle cleanup. Ruff,
+compilation, JavaScript syntax, whitespace and all six configured hooks pass.
+Screenshots were visually reviewed. Only synthetic data/identities and offline
+transports were used; no live model, search or authentication calls occurred.
+
+Deployment settings must be configured in the Railway dashboard, with the root
+Dockerfile, explicit startup/health checks, one replica, five On Failure restarts
+and a `/data` volume. The obsolete legacy configuration file is removed; no
+Config as Code or TypeScript infrastructure system is required. Manual deployment
+uses an archive of an explicitly reviewed revision, with GitHub autodeploy and PR
+environments disabled. Activation/backup/restore procedures are in
+`docs/operator/PRIVATE_DOGFOOD_DEPLOYMENT_01.md`.
+This establishes offline deployment readiness only. Live TLS/login, Railway volume
+behavior, backup recovery and exact model/provider compatibility remain unproved.
+The Python 3.13 Linux Docker image was not built locally because the Docker
+daemon was unavailable; actual Railway/container execution remains unverified.
+Source promotion must be a reviewed explicit revision, with automatic deployments
+disabled. Research/Answer semantic ownership, prompts, acquisition routing,
+evidence selection and citation policy are unchanged.
+
 ## Reading Room run settings
 
 Reading Room offers a compact Run Settings dialog and pre-submit summary for
-ChatGPT personal plan, OpenAI API and OpenRouter. Both role identifiers remain
-editable; model-default reasoning omits the parameter, while explicit supported
+ChatGPT personal plan, OpenAI API and OpenRouter. Both roles have suggestion menus
+that open with the current exact identifier intact, plus editable custom identifiers.
+The first OpenRouter choice leaves neutral exact-model fields and links to its
+model catalog; configured backend profiles survive switching and later submissions.
+Model-default reasoning omits the parameter, while explicit supported
 efforts remain exact. OpenAI Standard explicitly requests `default`; Fast requests
 `fast`. The returned tier is recorded independently. Plan/OpenRouter omit API
-processing controls. Paid submissions require explicit confirmation and offer
-12 or a smaller 6 physical requests; plan also retains its 40-request allowance.
-These are physical resource guards, not a dollar ceiling or credit-balance claim.
+processing controls. Each billed backend requires explicit persistent authorization
+in this trusted local Reading Room, revocable in Run Settings. The existing database
+stores authorization separately from job settings; admission, retry and each paid
+dispatch check current authorization. Revocation blocks subsequent dispatches but
+cannot undo an already sent request. No repeated per-question checkbox remains.
+New submissions use the ordinary internal 40-physical-request ceiling across all
+backends, with no visible allowance control. External acquisition, wall-time and
+attention limits remain unchanged. The ceiling is a technical guard, not a dollar
+limit, usage target or credit-balance claim.
 
 The initial profile comes from the actual launch model/personal configuration;
-the personal file and shipped defaults remain unchanged. Last-used UI settings
-live separately in the existing session database. Each accepted job owns an
+the personal file and shipped defaults remain unchanged. Last-used UI settings and
+per-backend model/processing profiles live separately in the existing session
+database preferences table, without a schema-version change. Each accepted job owns an
 immutable backend/role/effort/processing/run-limit snapshot. Per-job model clones
-use the existing manager factory. Active and queued runs do not reread UI
-preferences; retry copies the original snapshot and preserves newer preferences.
+use the existing manager factory. Active and queued runs do not reread model
+preferences; retry copies the original snapshot, including older smaller resource
+allowances and exact Standard/Fast choices, and preserves newer preferences.
 Legacy jobs retain unknown historical configuration and require a new reviewed
 submission rather than a retry with invented provenance. Schema 4 additively
 adds nullable job settings/receipt columns and UI preferences without rewriting
@@ -33,12 +110,17 @@ OpenAI API retains its existing one-correction Research/Answer behavior and
 native continuation within the same correction and run budgets. Research ownership,
 semantic schemas, source/citation validation and acquisition routing remain.
 
-All 1,223 offline tests passed after the focused review fix, including actual
-Edge desktop/mobile/200%-zoom and keyboard checks; 139 focused correction and
-continuation tests passed. Ruff, compilation, whitespace and all six configured
-hooks passed. No additional live inference/provider call or API spending was
-performed for the fix; malformed-output recovery is verified offline. The prior
-live smoke checks did not exercise that recovery path. At frozen runtime
+The simplified settings passed all 1,298 offline tests with no skips, including
+12 Run Settings Edge browser checks at desktop, 390/320px and actual 200% zoom,
+with keyboard suggestion selection, persisted authorization and saved profiles.
+The focused backend run passed 119 tests covering authorization/revocation,
+physical request bounds, malicious forms, exact routing/tiers, legacy persistence
+and immutable retries. Ruff, Python compilation, JavaScript syntax, whitespace
+and all six configured hooks passed. Screenshots were visually reviewed.
+This pass used zero live model, provider or search requests and no production
+database or credential access. Offline checks do not establish new live model
+compatibility, response quality or billing outcomes. Earlier live smoke checks
+did not exercise malformed-output recovery. At the earlier frozen runtime
 `89b002475482c28b3548b97347fe26b9c0b6780f`, ordinary browser Standard and Fast
 OpenAI API turns each answered the public apple premise correctly in two
 Luna/none requests, with exact returned model and respectively `default`/`fast`
@@ -658,8 +740,9 @@ bypasses both files; partial injection resolves the missing role from effective
 ordinary settings. CLI, Reading Room, sessions and direct `run()` construct a
 fresh ordinary model per turn. Editing the user file affects the next turn in
 the same process without any source edit, commit or PR; an explicitly retained
-model keeps its resolved snapshot. The external file is the current user/operator
-settings boundary, with no settings UI, write API or watcher.
+model keeps its resolved snapshot. The external file remains the CLI/direct
+user/operator settings boundary, with no file-writing API or watcher. Reading
+Room keeps its separate database-backed Run Settings preferences described above.
 
 Offline mocked transport checks cover those ordinary surfaces and between-turn
 amendments, actual resolved-model telemetry and model/effort-sensitive cache
@@ -697,8 +780,8 @@ base constraint.
 The ordinary model transport remains API-default. Programmatic opt-in via
 `OpenAIModel(backend="chatgpt_plan", plan_account="personal")` uses the optional
 ChatGPT-plan backend with the existing sign-in flow and Windows CurrentUser DPAPI
-vault. The CLI and Reading Room have no transport selector; their existing model
-injection seam can use the explicitly selected backend. No API-key or billing
+vault. The CLI retains its model-injection seam for an explicitly selected backend;
+Reading Room also offers its per-job Run Settings selector. No API-key or billing
 fallback exists. Research/Answer contracts, calculator continuations, citation
 validation and source/session behavior remain production responsibilities.
 Plan requests stream with `store=false`, omit the unsupported output-token cap,
@@ -984,9 +1067,9 @@ validated only on serialization/reopen; it never controls new research or become
 Evidence. Historical turns and citations are not rewritten on reopening.
 The synthetic pre-supersession fixture exercises mixed historical/native sessions.
 
-The session store is schema 3. Version-1/2 databases gain additive image/job
-custody and the session citation-language preference (plus documents for version
-1), without rewriting existing session payloads. Opening a current database does not rewrite
+The session store is schema 5. Version-1–4 databases gain the applicable additive
+document/image/job custody, language preference, run settings/receipts, ownership
+and quota tables without rewriting existing session payloads. Opening a current database does not rewrite
 those payloads. An unknown newer schema still fails as `incompatible_session_store`
 without being rewritten. Each text PDF belongs to one session as `D1`, `D2`, and
 so on. The row stores the original PDF blob, filename, SHA-256, page count, and

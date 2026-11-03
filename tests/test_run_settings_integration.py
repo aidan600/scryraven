@@ -1,6 +1,7 @@
 """Run Settings exercise ordinary HTTP, jobs, role transports and durable answers."""
 
 import json
+import re
 from copy import deepcopy
 
 import pytest
@@ -21,19 +22,21 @@ FINAL = answer("Eight apples remain, given those premises.", support_basis="user
 
 
 def selected_fields(client, backend="openai", processing="standard"):
-    fields = token(client.get("/"), "/ask")
+    page = client.get("/")
+    fields = token(page, "/ask")
     prefix = "openai/" if backend == "openrouter" else ""
     fields.update(question=QUESTION, backend=backend, research_model=prefix + "gpt-6.1-terra",
                   research_reasoning="low", answer_model=prefix + "gpt-6.1-sol",
-                  answer_reasoning="", physical_request_limit="6")
+                  answer_reasoning="")
     if backend == "openai":
         fields["api_processing"] = processing
     else:
         fields.pop("api_processing", None)
     if backend != "chatgpt_plan":
-        fields["paid_inference_confirmed"] = "1"
-    else:
-        fields.pop("paid_inference_confirmed", None)
+        billing_token = re.search(r'data-billing-token="([^"]+)"', page.get_data(as_text=True)).group(1)
+        authorized = client.post("/settings/billing", data={"form_token": billing_token,
+            "backend": backend, "authorized": "1"}, headers={"Accept": "application/json"})
+        assert authorized.status_code == 200
     return fields
 
 
@@ -91,7 +94,7 @@ def test_ordinary_submission_snapshots_exact_roles_and_persists_each_request_rec
         assert job.run_settings.research_model == fields["research_model"]
         assert job.run_settings.answer_model == fields["answer_model"]
         assert job.run_settings.research_reasoning == "low" and job.run_settings.answer_reasoning is None
-        assert job.run_settings.api_processing == processing and job.run_settings.physical_request_limit == 6
+        assert job.run_settings.api_processing == processing and job.run_settings.physical_request_limit == 40
         saved = SQLiteSessionStore(store.path).load(job.session_id)
         assert saved.state.turns[0].answer == FINAL["answer"]
         assert saved.state.turns[0].citations == saved.state.turns[0].selected_evidence == ()
@@ -213,7 +216,7 @@ def test_openai_submission_repairs_research_and_answer_once_with_original_settin
         assert accepted.status_code == 303 and manager.wait_idle(10)
         job, = store.list_jobs()
         assert job.state == "completed" and job.run_settings.backend == "openai"
-        assert job.run_settings.api_processing == processing and job.run_settings.physical_request_limit == 6
+        assert job.run_settings.api_processing == processing and job.run_settings.physical_request_limit == 40
         assert all(url == "https://api.openai.com/v1/responses" for url, _ in calls)
         payloads = [payload for _, payload in calls]
         assert len(payloads) == 5

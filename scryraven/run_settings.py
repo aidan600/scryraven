@@ -8,10 +8,12 @@ from scryraven.model import ModelConfig, ModelRole, default_model_config, valid_
 from scryraven.research import RunLimits
 
 BACKENDS = {"chatgpt_plan", "openai", "openrouter"}
+BILLED_BACKENDS = {"openai", "openrouter"}
+PHYSICAL_REQUEST_CEILING = 40
 REASONING = {None, "none", "low", "medium", "high", "xhigh", "max"}
 ERROR_MESSAGES = {
-    "invalid_run_settings": "Review the backend, exact model identifiers, reasoning and run allowance in Run Settings.",
-    "paid_inference_confirmation_required": "Select billed API inference explicitly in Run Settings before submitting.",
+    "invalid_run_settings": "Review the backend, exact model identifiers, reasoning and processing in Run Settings.",
+    "paid_inference_authorization_required": "Authorize this billed backend in Run Settings before submitting or retrying.",
     "model_configuration_missing": "The selected backend is unavailable. Its API key or plan sign-in is not configured in the credentialed launcher.",
     "model_request_rejected": "The provider rejected this exact model or its required parameters. Review Run Settings; no replacement model or backend was used.",
     "model_backend_incompatible": "This model cannot satisfy the required strict schema and tool contract. No replacement inference was requested.",
@@ -50,7 +52,7 @@ class RunSettings:
                 or (self.api_processing not in {"standard", "fast"} if self.backend == "openai"
                     else self.api_processing is not None)
                 or type(self.physical_request_limit) is not int
-                or not 2 <= self.physical_request_limit <= (40 if self.backend == "chatgpt_plan" else 12)
+                or not 2 <= self.physical_request_limit <= PHYSICAL_REQUEST_CEILING
                 or type(self.external_attempt_limit) is not int or not 0 <= self.external_attempt_limit <= 16
                 or type(self.seconds_limit) not in {float, int} or not 0 < self.seconds_limit <= 900
                 or type(self.attention_character_limit) is not int
@@ -81,7 +83,7 @@ class RunSettings:
                       else "standard") if backend == "openai" else None
         return cls(backend, config.research.model, config.research.reasoning or None,
                    config.answer.model, config.answer.reasoning or None, processing,
-                   min(limits.physical_model_requests, 40 if backend == "chatgpt_plan" else 12),
+                   PHYSICAL_REQUEST_CEILING,
                    limits.external_attempts, limits.seconds, limits.attention_characters)
 
     def model_config(self) -> ModelConfig:
@@ -97,23 +99,19 @@ class RunSettings:
 def settings_from_form(form, initial: RunSettings) -> RunSettings:
     """Only allow bounded data fields; never treat an identifier as routing code."""
     names = ("backend", "research_model", "research_reasoning", "answer_model",
-             "answer_reasoning", "api_processing", "physical_request_limit")
+             "answer_reasoning", "api_processing")
+    # These controls no longer belong to submissions. Never let a stale or
+    # tampered form create authorization or replace the technical ceiling.
+    if any(name in form for name in ("physical_request_limit", "paid_inference_confirmed",
+                                     "external_attempt_limit", "seconds_limit", "attention_character_limit")):
+        raise ValueError("invalid_run_settings")
     if any(len(form.getlist(name)) != 1 for name in names if name != "api_processing"):
         raise ValueError("invalid_run_settings")
     if len(form.getlist("api_processing")) != (1 if form.get("backend") == "openai" else 0):
         raise ValueError("invalid_run_settings")
-    try:
-        limit = int(form["physical_request_limit"])
-    except (TypeError, ValueError):
-        raise ValueError("invalid_run_settings") from None
     backend = form["backend"]
-    if limit not in ({6, 12, 40} if backend == "chatgpt_plan" else {6, 12}):
-        raise ValueError("invalid_run_settings")
-    settings = RunSettings(backend, form["research_model"], form["research_reasoning"] or None,
+    return RunSettings(backend, form["research_model"], form["research_reasoning"] or None,
                            form["answer_model"], form["answer_reasoning"] or None,
-                           form["api_processing"] if backend == "openai" else None, limit,
+                           form["api_processing"] if backend == "openai" else None, PHYSICAL_REQUEST_CEILING,
                            initial.external_attempt_limit, initial.seconds_limit,
                            initial.attention_character_limit)
-    if backend != "chatgpt_plan" and form.getlist("paid_inference_confirmed") != ["1"]:
-        raise ValueError("paid_inference_confirmation_required")
-    return settings

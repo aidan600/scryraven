@@ -1,0 +1,17 @@
+**
+!Dockerfile
+!requirements.txt
+!requirements-hosted.txt
+!core/
+!core/**
+!scryraven/
+!scryraven/**
+**/__pycache__
+**/*.pyc
+**/.env*
+**/*.db
+**/*.sqlite*
+**/*.jsonl
+**/*.log
+**/*.pem
+**/*.key
