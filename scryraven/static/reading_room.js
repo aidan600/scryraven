@@ -171,6 +171,11 @@
     const announcement = askForm.querySelector('.composer-status');
     const preferences = askForm.querySelector('.composer-preferences');
     const settingsDialog = askForm.querySelector('.run-settings-dialog');
+    let billingSaving = false;
+    let authorizations = {};
+    let authorizeSubmission = () => true;
+    let refreshAuthorization = () => {};
+    if (settingsDialog) {
     const settingsOpen = askForm.querySelector('.run-settings-open');
     const backend = askForm.querySelector('#run-backend');
     const processing = askForm.querySelector('#api-processing');
@@ -178,8 +183,7 @@
     const billingToggle = billingPanel.querySelector('.billing-toggle');
     const billingStatus = billingPanel.querySelector('.billing-status');
     const billingError = billingPanel.querySelector('.billing-error');
-    let authorizations = JSON.parse(settingsDialog.dataset.billingAuthorizations);
-    let billingSaving = false;
+    authorizations = JSON.parse(settingsDialog.dataset.billingAuthorizations);
     const profiles = JSON.parse(settingsDialog.dataset.modelProfiles);
     let previousBackend = backend.value;
     const firstPartyProfile = {
@@ -315,6 +319,22 @@
       }
     }, true);
     updateBackend();
+    authorizeSubmission = () => {
+      if (backend.value !== 'chatgpt_plan' && authorizations[backend.value] !== true) {
+        openSettings();
+        billingToggle.focus();
+        return false;
+      }
+      return true;
+    };
+    refreshAuthorization = billing => {
+      if (billing?.dataset.billingAuthorizations) {
+        authorizations = JSON.parse(billing.dataset.billingAuthorizations);
+        settingsDialog.dataset.billingToken = billing.dataset.billingToken;
+        updateAuthorization();
+      }
+    };
+    }
     const draftKey = 'scryraven-draft:' + askForm.dataset.draftKey;
     let submitting = false;
     let files = [];
@@ -455,11 +475,7 @@
         return;
       }
       if (!askForm.reportValidity()) return;
-      if (backend.value !== 'chatgpt_plan' && authorizations[backend.value] !== true) {
-        openSettings();
-        billingToggle.focus();
-        return;
-      }
+      if (!authorizeSubmission()) return;
       submitting = true;
       submit.disabled = true;
       question.readOnly = true;
@@ -480,11 +496,7 @@
           const rendered = new DOMParser().parseFromString(await response.text(), 'text/html');
           showError(rendered.querySelector('.error-notice')?.textContent.trim() || 'Your question could not be accepted. Your text and selected files are still here.');
           const billing = rendered.querySelector('.run-settings-dialog');
-          if (billing?.dataset.billingAuthorizations) {
-            authorizations = JSON.parse(billing.dataset.billingAuthorizations);
-            settingsDialog.dataset.billingToken = billing.dataset.billingToken;
-            updateAuthorization();
-          }
+          refreshAuthorization(billing);
           const replacement = rendered.querySelector('.ask-form [name=form_token]');
           if (replacement) askForm.querySelector('[name=form_token]').value = replacement.value;
           if (response.headers.get('X-ScryRaven-Submission-Conflict') === '1') {

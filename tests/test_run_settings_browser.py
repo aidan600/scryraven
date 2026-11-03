@@ -244,7 +244,7 @@ def test_actual_200_percent_zoom_settings_dialog_and_keyboard(settings_page, tmp
                 return await chrome.tabs.getZoom(tab.id);
             }""", page.url)
             assert zoom == 2
-            page.wait_for_function("devicePixelRatio === 2")
+            page.wait_for_function("() => devicePixelRatio === 2")
             page.locator(".run-settings-open").focus()
             page.keyboard.press("Enter")
             dialog = page.get_by_role("dialog", name="Run settings")

@@ -56,6 +56,11 @@ Research–Answer contract.
 
 ## Reading Room
 
+For the prepared single-instance private hosted beta, see the
+[Railway + Cloudflare Access operator guide](docs/operator/PRIVATE_DOGFOOD_DEPLOYMENT_01.md).
+Hosted mode uses separate persistent storage, verified identities and operator
+inference policy. It has not been deployed or verified against live services.
+
 **Direct launch:** from the repository root and activated environment above, with
 `OPENAI_API_KEY` for model execution and `EXA_API_KEY` for ordinary web Search in
 the process environment. Supply `SERPER_API_KEY` when Research invokes alternate

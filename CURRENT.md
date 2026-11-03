@@ -1,5 +1,67 @@
 # ScryRaven Current Truth
 
+## Private hosted beta preparation
+
+The Reading Room has an explicit hosted mode for one Railway process/volume and
+Cloudflare Access, separate from the existing local launcher. Waitress serves
+the same Flask application; configuration fails closed without the required
+identity, billing and storage settings. Railway startup also requires its volume
+mount configuration. Application routes validate signed RS256 Access tokens,
+issuer, audience, lifetime and exact invited/admin email identities. Unverified
+email and proxy headers have no identity authority; direct-origin requests still
+require a valid token. Only `/healthz` is unauthenticated and contains no research.
+
+Schema 5 additively adds nullable session ownership and a durable UTC daily
+submission ledger. Historical session payloads, source identity, citations and
+attachments remain unchanged. Local unowned sessions remain local; hosted startup
+refuses a database containing them. Hosted testers access only their own sessions
+and job status. The owner has a read-only tester view at `/admin` and can export a
+selected session with original attachments and available diagnostics. No personal
+Reading Room database was imported or used for testing.
+
+Hosted runs use fixed centrally configured OpenAI API Research/Answer settings,
+independent per-job models and the existing technical ceilings. Modified forms
+cannot select a backend/model, supply credentials, alter limits or authorize
+billing. Local Run Settings, personal-plan and OpenRouter behavior remain.
+The default quota is 20 accepted questions per user per UTC day, including explicit
+retries; deletion/restart do not reset it. Two workers and eight waiting slots
+remain, with at most one active job per hosted owner across conversations.
+Restart interrupts unfinished work and does not automatically replay requests.
+
+Hosted body-free summaries and existing source-bearing observer records are
+stored separately from application output on the protected volume, associated
+with user/session/job. Default retention is 30 days and 1 GiB total, with a 64 MiB
+per-file cap. Cleanup removes only diagnostic files; normal conversations,
+citations, attachments and acquired Evidence persist. Age/byte maintenance runs on
+startup, hourly in the production process, requests/health checks and writes. Active files stop at their bounds;
+truncation or write failure can leave incomplete diagnostic records. Admin views
+report measured diagnostic bytes/files and database bytes. Exports are private
+and selected-session scoped; no public raw-log download exists.
+
+The final hosted integration passed all 1,404 offline tests with no skips on
+Python 3.12.14 with the declared dependencies, including pypdf 6.19.0, Pillow
+12.3.0, Waitress 3.0.2 and PyJWT 2.15.1. Separate-user Edge browser checks at
+1440/390/320px cover session lifecycle, attachments, citations, admin read/export
+and forged URLs/forms; local Run Settings/200% zoom checks also pass. Signed
+synthetic tokens exercise actual Waitress HTTP, ordinary Research/Answer through
+mocked API transport, two-user overlap, private persistence and restart without
+replay. Focused checks cover token rejection/cache outage, all data routes,
+ownership migration, quotas, retention/alias safety and idle cleanup. Ruff,
+compilation, JavaScript syntax, whitespace and all six configured hooks pass.
+Screenshots were visually reviewed. Only synthetic data/identities and offline
+transports were used; no live model, search or authentication calls occurred.
+
+Deployment configuration and activation/backup/restore procedures are in
+`docs/operator/PRIVATE_DOGFOOD_DEPLOYMENT_01.md`. This is offline readiness only:
+no Railway deployment, Cloudflare change, live authentication, inference or search
+was performed, and no branch was published. Live TLS/login, Railway volume
+behavior, backup recovery and exact model/provider compatibility remain unproved.
+The Python 3.13 Linux Docker image was not built locally because the Docker
+daemon was unavailable; actual Railway/container execution remains unverified.
+Source promotion must be a reviewed explicit revision, with automatic deployments
+disabled. Research/Answer semantic ownership, prompts, acquisition routing,
+evidence selection and citation policy are unchanged.
+
 ## Reading Room run settings
 
 Reading Room offers a compact Run Settings dialog and pre-submit summary for
@@ -1001,9 +1063,9 @@ validated only on serialization/reopen; it never controls new research or become
 Evidence. Historical turns and citations are not rewritten on reopening.
 The synthetic pre-supersession fixture exercises mixed historical/native sessions.
 
-The session store is schema 3. Version-1/2 databases gain additive image/job
-custody and the session citation-language preference (plus documents for version
-1), without rewriting existing session payloads. Opening a current database does not rewrite
+The session store is schema 5. Version-1–4 databases gain the applicable additive
+document/image/job custody, language preference, run settings/receipts, ownership
+and quota tables without rewriting existing session payloads. Opening a current database does not rewrite
 those payloads. An unknown newer schema still fails as `incompatible_session_store`
 without being rewritten. Each text PDF belongs to one session as `D1`, `D2`, and
 so on. The row stores the original PDF blob, filename, SHA-256, page count, and

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Administration · ScryRaven</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='reading_room.css') }}">
+</head>
+<body class="admin-page">
+<main class="admin-content">
+  <a href="{{ url_for('new_research') }}">Return to your research</a>
+  <h1>Private beta administration</h1>
+  <p>Read conversations and download selected session exports. Tester research is read only.</p>
+  <p>Session database: {{ database_bytes }} bytes. Diagnostic storage: {{ usage.bytes if usage.bytes is not none else 'unavailable' }} bytes / {{ usage.limit_bytes }} bytes; {{ usage.files }} files. Retention: {{ usage.retention_days }} days; earlier removal when storage limits apply.</p>
+  {% if not usage.enabled %}<p role="alert">Diagnostic recording is unavailable. Check protected volume storage.</p>{% endif %}
+  <p>Exports contain private questions, answers, source material, attachments and available diagnostic records. Keep them in protected operator storage.</p>
+  <ul class="admin-sessions">
+    {% for item in sessions %}
+    <li><strong>{{ item.owner_id }}</strong><br>
+      <a href="{{ url_for('open_session', session_id=item.session_id) }}">{{ item.title or 'Untitled research' }}</a>
+      <span> · {{ item.revision }} saved answers · {{ item.updated_at }}</span><br>
+      <a href="{{ url_for('export_session', session_id=item.session_id) }}">Export session and diagnostics</a>
+    </li>
+    {% else %}<li>No conversations saved.</li>{% endfor %}
+  </ul>
+</main>
+</body>
+</html>

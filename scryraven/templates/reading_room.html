@@ -12,6 +12,7 @@
 {%- endmacro %}
 
 {% macro actions(item) -%}
+{% if not read_only|default(false) and (not hosted_mode or item.owner_id == identity.email) %}
 <details class="session-actions">
   <summary class="icon-button" aria-label="Actions for {{ item.title or 'Untitled research' }}">{{ icon('more') }}</summary>
   <div class="action-menu">
@@ -19,6 +20,7 @@
     <a class="danger-text" href="{{ url_for('confirm_delete', session_id=item.session_id) }}">Delete</a>
   </div>
 </details>
+{% endif %}
 {%- endmacro %}
 
 {% macro document_list() -%}
@@ -68,6 +70,11 @@
 
 {% macro run_controls() -%}
 {% set settings = run_settings|default({}) %}
+{% if hosted_mode %}
+<details class="hosted-run-settings"><summary>Run settings · OpenAI API</summary>{{ configuration(settings) }}
+<p>Configured by the operator. Up to {{ submissions_per_day }} accepted questions per user per UTC day, including retries. Technical research limits apply; these are not dollar limits.</p>
+<p>Your question, conversation, source material and attachments used in research are supplied to OpenAI. The administrator can read research and export diagnostics.</p></details>
+{% else %}
 <div class="run-selection">
   <button class="run-settings-open" type="button" aria-haspopup="dialog" aria-controls="run-settings-dialog"><span class="run-selection-backend">{{ {'chatgpt_plan':'ChatGPT plan', 'openai':'OpenAI API · API billed', 'openrouter':'OpenRouter · OpenRouter billed'}.get(settings.backend, 'Run settings') }}</span><span class="run-selection-roles">Research {{ settings.research_model }} · {{ settings.research_reasoning or 'model default' }} / Answer {{ settings.answer_model }} · {{ settings.answer_reasoning or 'model default' }}{% if settings.backend == 'openai' %} · {{ 'Choose processing' if initial_processing_profile|default(none) else ('Fast' if settings.api_processing == 'fast' else 'Standard') }}{% endif %}</span><span class="run-selection-edit">Edit</span></button>
 </div>
@@ -110,11 +117,12 @@
   </div>
   <div class="dialog-actions"><button type="button" class="small-button run-settings-done">Use these settings</button></div>
 </dialog>
+{% endif %}
 {%- endmacro %}
 
 {% macro composer(is_new=false) -%}
 <div class="composer-wrap{% if is_new %} welcome-composer{% endif %}">
-  <form class="ask-form" method="post" enctype="multipart/form-data" action="{{ url_for('ask', session_id=saved.metadata.session_id) if saved else url_for('ask') }}" data-draft-key="{{ saved.metadata.session_id if saved else 'new' }}">
+  <form class="ask-form" method="post" enctype="multipart/form-data" action="{{ url_for('ask', session_id=saved.metadata.session_id) if saved else url_for('ask') }}" data-draft-key="{% if hosted_mode %}{{ browser_identity }}:{% endif %}{{ saved.metadata.session_id if saved else 'new' }}">
     <input type="hidden" name="form_token" value="{{ form_token('ask') }}">
     <input type="hidden" name="idempotency_key" value="{{ idempotency_key|default('') }}">
     <label class="sr-only" for="question">{{ 'Ask a follow-up' if saved else 'Your research question' }}</label>
@@ -162,7 +170,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='reading_room.css') }}">
   <script src="{{ url_for('static', filename='reading_room.js') }}" defer></script>
 </head>
-<body data-session-id="{{ saved.metadata.session_id if saved else '' }}" data-revision="{{ saved.metadata.revision if saved else 0 }}" data-job-id="{{ job.job_id if job else '' }}" data-job-state="{{ job.state if job else '' }}">
+<body data-session-id="{{ saved.metadata.session_id if saved else '' }}" data-revision="{{ saved.metadata.revision if saved else 0 }}" data-job-id="{{ job.job_id if job else '' }}" data-job-state="{{ job.state if job else '' }}" data-browser-identity="{{ browser_identity }}">
 <a class="skip-link" href="#reading">Skip to reading</a>
 <aside class="sidebar" id="history" aria-label="Research history">
   <div class="sidebar-main">
@@ -184,7 +192,7 @@
     {% endfor %}
   </nav>
   </div>
-  <div class="sidebar-foot"><span class="local-dot" aria-hidden="true"></span>Saved on this device</div>
+  <div class="sidebar-foot"><span class="local-dot" aria-hidden="true"></span>{% if hosted_mode %}Private beta{% if identity and identity.is_admin %} · <a href="{{ url_for('admin_sessions') }}">Administration</a>{% endif %}{% else %}Saved on this device{% endif %}</div>
 </aside>
 
 <main class="workspace{% if not saved %} new-state{% endif %}" id="reading" tabindex="-1">
@@ -194,7 +202,7 @@
     <div class="room-name">Reading Room</div>
     {% if saved %}
     <span class="header-separator" aria-hidden="true">/</span>
-    {% if renaming %}
+    {% if renaming and not read_only %}
     <form class="rename-form" method="post" action="{{ url_for('rename_session', session_id=saved.metadata.session_id) }}">
       <input type="hidden" name="form_token" value="{{ form_token('rename') }}">
       <label class="sr-only" for="session-title">Session title</label>
@@ -213,6 +221,7 @@
     <div class="reading-content">
       {% if notice %}<div class="notice" role="status">{{ notice }}</div>{% endif %}
       {% if error %}<div class="error-notice" role="alert"><p>{{ error }}</p>{% if unavailable %}<a href="{{ url_for('new_research') }}">Reopen Reading Room</a>{% endif %}</div>{% endif %}
+      {% if read_only %}<p class="notice">Administrator view · read only · {{ saved.metadata.owner_id }} · <a href="{{ url_for('export_session', session_id=saved.metadata.session_id) }}">Export session and diagnostics</a></p>{% endif %}
       {% if not saved and not unavailable %}
       <section class="welcome" aria-labelledby="welcome-title">
         <h1 id="welcome-title">What would you like to understand?</h1>
@@ -264,14 +273,14 @@
         {{ run_record(job.run_settings|default(none), job.run_receipt|default(none)) }}
         <div class="job-message" role="status" aria-live="polite">
           {% if job.state in ['queued', 'researching'] %}<span class="working-indicator" aria-hidden="true"></span><div><strong>{{ 'Queued' if job.state == 'queued' else 'Researching' }}</strong><p>{{ 'Waiting for a research slot.' if job.state == 'queued' else 'ScryRaven is working on your question.' }} You can open another conversation while this continues.</p><noscript><a href="{{ url_for('open_session', session_id=saved.metadata.session_id) }}">Refresh status</a></noscript></div>
-          {% else %}<div><strong>{{ 'Research interrupted' if job.state == 'interrupted' else 'Research failed' }}</strong><p>{{ job.error|default('Your question and attachments are saved. Retry when you are ready.', true) }}</p><form method="post" action="{{ url_for('open_session', session_id=saved.metadata.session_id) }}/jobs/{{ job.job_id }}/retry"><input type="hidden" name="form_token" value="{{ form_token('retry') }}"><button class="small-button" type="submit">Retry this question</button></form></div>{% endif %}
+          {% else %}<div><strong>{{ 'Research interrupted' if job.state == 'interrupted' else 'Research failed' }}</strong><p>{{ job.error|default('Your question and attachments are saved. Retry when you are ready.', true) }}</p>{% if not read_only %}<form method="post" action="{{ url_for('open_session', session_id=saved.metadata.session_id) }}/jobs/{{ job.job_id }}/retry"><input type="hidden" name="form_token" value="{{ form_token('retry') }}"><button class="small-button" type="submit">Retry this question</button></form>{% endif %}</div>{% endif %}
         </div>
       </section>
       {% elif saved and not turns %}<p class="empty-session">This research hasn’t saved an answer yet. Ask a question below.</p>{% endif %}
     </div>
   </div>
   </div>
-  {% if saved and not unavailable %}<footer class="composer-footer">{{ composer() }}</footer>{% endif %}
+  {% if saved and not unavailable and not read_only %}<footer class="composer-footer">{{ composer() }}</footer>{% endif %}
 </main>
 
 <aside class="citation-preview" id="citation-preview" role="dialog" aria-labelledby="citation-preview-title" hidden>

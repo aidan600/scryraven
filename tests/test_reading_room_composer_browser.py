@@ -469,7 +469,7 @@ def test_actual_browser_zoom_reflows_composer_and_keeps_visible_keyboard_focus(c
                 return await chrome.tabs.getZoom(tab.id);
             }""", page.url)
             assert zoom == 2
-            page.wait_for_function("devicePixelRatio === 2")
+            page.wait_for_function("() => devicePixelRatio === 2")
             assert page.evaluate("innerWidth") <= initial_width / 2 + 2
             assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
             assert page.locator(".sidebar").is_hidden()

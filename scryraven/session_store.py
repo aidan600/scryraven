@@ -65,6 +65,7 @@ class SessionMetadata:
     title: str
     revision: int
     citation_language: str = "en"
+    owner_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -97,9 +98,9 @@ class SessionConflictError(SessionStoreError):
 class SessionStore(Protocol):
     """Application boundary shared by any shell; one completed turn per commit."""
 
-    def create(self, title: str = "") -> StoredSession: ...
+    def create(self, title: str = "", *, owner_id: str | None = None) -> StoredSession: ...
     def load(self, session_id: str) -> StoredSession: ...
-    def list_sessions(self) -> tuple[SessionMetadata, ...]: ...
+    def list_sessions(self, *, owner_id: str | None = None) -> tuple[SessionMetadata, ...]: ...
     def commit(self, session_id: str, revision: int, state: SessionState) -> SessionMetadata: ...
     def rename(self, session_id: str, title: str) -> SessionMetadata: ...
     def delete(self, session_id: str, *, revision: int | None = None) -> None: ...
@@ -201,6 +202,7 @@ class _MetadataRecord(_Record):
     title: str
     revision: int
     citation_language: str = "en"
+    owner_id: str | None = None
 
 
 def _require(condition: bool) -> None:
@@ -379,6 +381,11 @@ _PREFERENCES_SQL = """CREATE TABLE IF NOT EXISTS app_preferences (
     name TEXT PRIMARY KEY, value TEXT NOT NULL
 )"""
 
+_SUBMISSIONS_SQL = """CREATE TABLE user_submissions (
+    owner_id TEXT NOT NULL, utc_day TEXT NOT NULL, submission_count INTEGER NOT NULL,
+    PRIMARY KEY (owner_id, utc_day)
+)"""
+
 
 @dataclass(frozen=True)
 class ResearchJob:
@@ -497,7 +504,7 @@ class SQLiteSessionStore:
     from research are stored. This is local plaintext data, not cloud account state.
     """
 
-    SCHEMA_VERSION = 4
+    SCHEMA_VERSION = 5
 
     def __init__(self, path: str | Path | None = None) -> None:
         try:
@@ -542,8 +549,15 @@ class SQLiteSessionStore:
                 connection.execute("ALTER TABLE research_jobs ADD COLUMN run_receipt TEXT")
                 connection.execute(_PREFERENCES_SQL)
                 connection.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
-            elif version != self.SCHEMA_VERSION:
+            elif version not in {4, self.SCHEMA_VERSION}:
                 raise SessionStoreError("incompatible_session_store")
+            if version < 5:
+                # Ownership is metadata only. Legacy sessions stay unowned; no
+                # payload, historical citation or attachment is rewritten.
+                connection.execute("ALTER TABLE sessions ADD COLUMN owner_id TEXT")
+                connection.execute("CREATE INDEX sessions_owner ON sessions(owner_id)")
+                connection.execute(_SUBMISSIONS_SQL)
+                connection.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
             yield connection
             connection.commit()
         except SessionStoreError:
@@ -560,16 +574,23 @@ class SQLiteSessionStore:
                 except sqlite3.Error:
                     raise SessionStoreError() from None
 
-    def create(self, title: str = "") -> StoredSession:
+    def create(self, title: str = "", *, owner_id: str | None = None) -> StoredSession:
         with self._transaction() as connection:
             _require(isinstance(title, str))
+            self._validate_owner(owner_id)
             now = datetime.now(timezone.utc).isoformat()
-            metadata = SessionMetadata(uuid4().hex, now, now, title, 0)
+            metadata = SessionMetadata(uuid4().hex, now, now, title, 0, owner_id=owner_id)
             state = SessionState()
-            connection.execute("INSERT INTO sessions (session_id,created_at,updated_at,title,revision,payload) "
-                               "VALUES (?, ?, ?, ?, ?, ?)",
-                               (metadata.session_id, now, now, title, 0, _encode(state)))
+            connection.execute("INSERT INTO sessions (session_id,created_at,updated_at,title,revision,payload,owner_id) "
+                               "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                               (metadata.session_id, now, now, title, 0, _encode(state), owner_id))
         return StoredSession(metadata, state, ())
+
+    @staticmethod
+    def _validate_owner(owner_id: str | None) -> None:
+        if owner_id is not None and (not isinstance(owner_id, str) or not owner_id.strip()
+                                     or len(owner_id) > 320):
+            raise SessionStoreError("invalid_owner")
 
     @staticmethod
     def _load(connection: sqlite3.Connection, session_id: str) -> StoredSession:
@@ -586,10 +607,22 @@ class SQLiteSessionStore:
             snapshot = self._load(connection, session_id)
         return snapshot
 
-    def list_sessions(self) -> tuple[SessionMetadata, ...]:
+    def get_metadata(self, session_id: str) -> SessionMetadata:
+        """Authorize custody without decoding a conversation or its attachments."""
         with self._transaction() as connection:
-            rows = connection.execute("SELECT session_id, created_at, updated_at, title, revision, citation_language "
-                                      "FROM sessions ORDER BY updated_at DESC, session_id").fetchall()
+            row = connection.execute("SELECT session_id,created_at,updated_at,title,revision,citation_language,owner_id "
+                                     "FROM sessions WHERE session_id=?", (session_id,)).fetchone()
+            if row is None:
+                raise SessionStoreError("session_not_found")
+            return _metadata(row)
+
+    def list_sessions(self, *, owner_id: str | None = None) -> tuple[SessionMetadata, ...]:
+        self._validate_owner(owner_id)
+        with self._transaction() as connection:
+            rows = connection.execute("SELECT session_id, created_at, updated_at, title, revision, citation_language, "
+                                      "owner_id FROM sessions " + ("WHERE owner_id=? " if owner_id is not None else "")
+                                      + "ORDER BY updated_at DESC, session_id",
+                                      (owner_id,) if owner_id is not None else ()).fetchall()
             metadata = tuple(_metadata(row) for row in rows)
         return metadata
 
@@ -611,7 +644,7 @@ class SQLiteSessionStore:
         now = max(current.metadata.updated_at, datetime.now(timezone.utc).isoformat())
         title = current.metadata.title or " ".join(state.turns[0].question.split())[:100]
         metadata = SessionMetadata(session_id, current.metadata.created_at, now, title, revision + 1,
-                                   current.metadata.citation_language)
+                                   current.metadata.citation_language, current.metadata.owner_id)
         updated = connection.execute(
             "UPDATE sessions SET updated_at = ?, title = ?, revision = ?, payload = ? "
             "WHERE session_id = ? AND revision = ?",
@@ -632,7 +665,7 @@ class SQLiteSessionStore:
             connection.execute("UPDATE sessions SET title = ?, updated_at = ? WHERE session_id = ?",
                                (title, now, session_id))
             metadata = SessionMetadata(session_id, current.created_at, now, title, current.revision,
-                                       current.citation_language)
+                                       current.citation_language, current.owner_id)
         return metadata
 
     def delete(self, session_id: str, *, revision: int | None = None) -> None:
@@ -739,7 +772,9 @@ class SQLiteSessionStore:
                    revision: int = 0, documents: tuple[PreparedDocument, ...] = (),
                    images: tuple[PreparedImage, ...] = (), retained_image_ids: tuple[str, ...] = (),
                    citation_language: str | None = None, capacity: int = 10,
-                   run_settings: RunSettings | None = None, remember_settings: bool = True) -> ResearchJob:
+                   run_settings: RunSettings | None = None, remember_settings: bool = True,
+                   owner_id: str | None = None, submission_quota: int | None = None,
+                   queue_capacity: int | None = None) -> ResearchJob:
         """Atomically accept a question, its validated files, and its durable identity.
 
         Validation/decode happens before this short transaction. Invalid admission
@@ -753,6 +788,10 @@ class SQLiteSessionStore:
             raise SessionStoreError("invalid_citation_language")
         if run_settings is not None and not isinstance(run_settings, RunSettings):
             raise SessionStoreError("invalid_run_settings")
+        self._validate_owner(owner_id)
+        if submission_quota is not None and (owner_id is None or type(submission_quota) is not int
+                                              or submission_quota < 1):
+            raise SessionStoreError("invalid_submission_quota")
         settings_json = json.dumps(run_settings.to_dict(), sort_keys=True) if run_settings is not None else None
         if len(documents) + len(images) + len(retained_image_ids) > MAX_ATTACHMENTS_PER_QUESTION:
             raise SessionStoreError("attachment_count_exceeded")
@@ -763,26 +802,37 @@ class SQLiteSessionStore:
                               list(retained_image_ids), citation_language]
         if run_settings is not None:
             fingerprint_values.append(run_settings.to_dict())
+        if owner_id is not None:
+            fingerprint_values.append(owner_id)
         fingerprint = hashlib.sha256(json.dumps(fingerprint_values,
             separators=(",", ":"), sort_keys=True).encode()).hexdigest()
         with self._transaction() as connection:
             old = connection.execute("SELECT * FROM research_jobs WHERE idempotency_key=?", (idempotency_key,)).fetchone()
             if old:
+                if owner_id is not None and self._load(connection, old["session_id"]).metadata.owner_id != owner_id:
+                    raise SessionStoreError("session_not_found")
                 if old["fingerprint"] != fingerprint:
                     raise SessionStoreError("submission_conflict")
                 return _job(old)
             active = connection.execute("SELECT count(*) FROM research_jobs WHERE state IN ('queued','researching')").fetchone()[0]
             if active >= capacity:
                 raise SessionStoreError("research_queue_full")
+            if queue_capacity is not None:
+                queued = connection.execute("SELECT count(*) FROM research_jobs WHERE state='queued'").fetchone()[0]
+                if queued >= queue_capacity:
+                    raise SessionStoreError("research_queue_full")
             now = datetime.now(timezone.utc).isoformat()
             if session_id is None:
                 if revision != 0:
                     raise SessionConflictError()
                 session_id = uuid4().hex
                 title = " ".join(question.split())[:100]
-                connection.execute("INSERT INTO sessions VALUES (?,?,?,?,?,?,?)",
-                                   (session_id, now, now, title, 0, _encode(SessionState()), citation_language or "en"))
+                connection.execute("INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?)",
+                                   (session_id, now, now, title, 0, _encode(SessionState()), citation_language or "en",
+                                    owner_id))
             saved = self._load(connection, session_id)
+            if owner_id is not None and saved.metadata.owner_id != owner_id:
+                raise SessionStoreError("session_not_found")
             if saved.metadata.revision != revision:
                 raise SessionConflictError()
             self._require_idle(connection, session_id)
@@ -797,6 +847,17 @@ class SQLiteSessionStore:
                                             *(self._insert_image(connection, session_id, i) for i in images))))
             # Reconstruct and validate custody before acceptance becomes durable.
             self._load(connection, session_id)
+            if submission_quota is not None:
+                # Aggregate admissions are separate from sessions, so deletion,
+                # retries and restarts cannot reset an operator's daily quota.
+                utc_day = now[:10]
+                charged = connection.execute("SELECT submission_count FROM user_submissions "
+                                             "WHERE owner_id=? AND utc_day=?", (owner_id, utc_day)).fetchone()
+                if charged is not None and charged[0] >= submission_quota:
+                    raise SessionStoreError("submission_quota_exceeded")
+                connection.execute("INSERT INTO user_submissions VALUES (?,?,1) "
+                                   "ON CONFLICT(owner_id,utc_day) DO UPDATE "
+                                   "SET submission_count=submission_count+1", (owner_id, utc_day))
             language = citation_language or saved.metadata.citation_language
             connection.execute("UPDATE sessions SET citation_language=?, updated_at=? WHERE session_id=?",
                                (language, max(now, saved.metadata.updated_at), session_id))
@@ -883,11 +944,12 @@ class SQLiteSessionStore:
                 raise SessionStoreError("job_not_found")
             return _job(row)
 
-    def find_submission(self, idempotency_key: str) -> ResearchJob | None:
+    def find_submission(self, idempotency_key: str, *, owner_id: str | None = None) -> ResearchJob | None:
         """Resolve an explicitly replayed form to its accepted local run."""
         with self._transaction() as connection:
-            row = connection.execute("SELECT * FROM research_jobs WHERE idempotency_key=?",
-                                     (idempotency_key,)).fetchone()
+            row = connection.execute("SELECT j.* FROM research_jobs j JOIN sessions s ON s.session_id=j.session_id "
+                                     "WHERE j.idempotency_key=? " + ("AND s.owner_id=?" if owner_id is not None else ""),
+                                     (idempotency_key, owner_id) if owner_id is not None else (idempotency_key,)).fetchone()
             return _job(row) if row else None
 
     def list_jobs(self, session_id: str | None = None) -> tuple[ResearchJob, ...]:
@@ -898,7 +960,15 @@ class SQLiteSessionStore:
 
     def claim_next_job(self) -> ResearchJob | None:
         with self._transaction() as connection:
-            row = connection.execute("SELECT * FROM research_jobs WHERE state='queued' ORDER BY created_at, job_id LIMIT 1").fetchone()
+            # An owner's queued conversations do not occupy both research
+            # workers or block an eligible second user behind them. NULL owners
+            # retain the ordinary trusted-local two-conversation behavior.
+            row = connection.execute(
+                "SELECT q.* FROM research_jobs q JOIN sessions s ON s.session_id=q.session_id "
+                "WHERE q.state='queued' AND (s.owner_id IS NULL OR NOT EXISTS ("
+                "SELECT 1 FROM research_jobs active JOIN sessions a ON a.session_id=active.session_id "
+                "WHERE active.state='researching' AND a.owner_id=s.owner_id)) "
+                "ORDER BY q.created_at,q.job_id LIMIT 1").fetchone()
             if row is None:
                 return None
             connection.execute("UPDATE research_jobs SET state='researching',started_at=? WHERE job_id=? AND state='queued'",

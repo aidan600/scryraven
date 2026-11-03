@@ -12,6 +12,15 @@ Research -> Analyst -> Author remains retired. There is no production selector,
 alternate engine or fallback. `CURRENT.md` distinguishes implementation from
 bounded demonstrations and remaining limitations.
 
+Hosted Reading Room execution adds verified Cloudflare Access identity, nullable
+session ownership, private data routes, fixed operator OpenAI API settings,
+per-user admission and bounded protected diagnostics around these same roles.
+Its explicit environment settings bypass the local personal model file. The
+local configuration precedence below remains unchanged. Hosting does not add a
+research role or change prompts, acquisition, evidence selection or citations.
+See `docs/operator/PRIVATE_DOGFOOD_DEPLOYMENT_01.md` for the single-process
+Railway topology and offline/live verification distinction.
+
 ## Two semantic contracts
 
 `scryraven.research` has two semantic model contracts: Research and Answer.
