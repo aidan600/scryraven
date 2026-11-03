@@ -429,6 +429,7 @@ class OpenAIModel:
         backend: str = "api",
         plan_account: str = "personal",
         plan_auth: Any = None,
+        request_authorizer: Callable[[], None] | None = None,
     ) -> None:
         if backend not in {"api", "chatgpt_plan", "openrouter"}:
             raise ValueError("invalid_model_backend")
@@ -441,6 +442,7 @@ class OpenAIModel:
         self.timeout_seconds = timeout_seconds
         self.backend = backend
         self.plan_account = plan_account
+        self.request_authorizer = request_authorizer
         self.plan_transport = None
         if backend == "chatgpt_plan":
             from .chatgpt_plan.transport import PlanResponses
@@ -454,6 +456,7 @@ class OpenAIModel:
             config, post=self.post, usage_observer=self.usage_observer,
             cache_namespace=self.cache_namespace, timeout_seconds=self.timeout_seconds,
             backend=selected, plan_account=self.plan_account, plan_auth=auth,
+            request_authorizer=self.request_authorizer,
         )
 
     def plan_catalog(self) -> tuple[dict, ...]:
@@ -632,6 +635,8 @@ class OpenAIModel:
             def before_dispatch():
                 nonlocal dispatched
                 try:
+                    if self.request_authorizer is not None:
+                        self.request_authorizer()
                     left = timeout - (monotonic() - request_started)
                     if remaining_seconds is not None:
                         left = min(left, remaining_seconds())

@@ -30,7 +30,7 @@ from scryraven.historical import Analysis, validate_historical_analysis
 from scryraven.images import MAX_ATTACHMENT_REQUEST_BYTES, MAX_ATTACHMENTS_PER_QUESTION, PreparedImage, SessionImage
 from scryraven.model import valid_model_identifier
 from scryraven.presentation import Citation, CitationUse
-from scryraven.run_settings import RunSettings
+from scryraven.run_settings import BILLED_BACKENDS, RunSettings
 from scryraven.sources import Evidence, SupportRegion, exact_view, support_text
 
 
@@ -806,8 +806,7 @@ class SQLiteSessionStore:
                                 json.dumps(document_ids), json.dumps(image_ids), language, now, None, None, None,
                                 settings_json, None))
             if settings_json is not None and remember_settings:
-                connection.execute("INSERT INTO app_preferences(name,value) VALUES ('run_settings',?) "
-                                   "ON CONFLICT(name) DO UPDATE SET value=excluded.value", (settings_json,))
+                self._remember_run_settings(connection, run_settings, settings_json)
             return _job(connection.execute("SELECT * FROM research_jobs WHERE job_id=?", (job_id,)).fetchone())
 
     def get_run_settings(self) -> RunSettings | None:
@@ -820,9 +819,50 @@ class SQLiteSessionStore:
         if not isinstance(settings, RunSettings):
             raise SessionStoreError("invalid_run_settings")
         with self._transaction() as connection:
-            connection.execute("INSERT INTO app_preferences(name,value) VALUES ('run_settings',?) "
+            encoded = json.dumps(settings.to_dict(), sort_keys=True)
+            self._remember_run_settings(connection, settings, encoded)
+
+    @staticmethod
+    def _remember_run_settings(connection, settings: RunSettings, encoded: str) -> None:
+        # Preserve a legacy single preference before another backend replaces it.
+        previous = connection.execute("SELECT value FROM app_preferences WHERE name='run_settings'").fetchone()
+        if previous:
+            old = RunSettings.from_dict(json.loads(previous["value"]))
+            connection.execute("INSERT INTO app_preferences(name,value) VALUES (?,?) ON CONFLICT(name) DO NOTHING",
+                               ("run_settings:" + old.backend, previous["value"]))
+        connection.executemany("INSERT INTO app_preferences(name,value) VALUES (?,?) "
                                "ON CONFLICT(name) DO UPDATE SET value=excluded.value",
-                               (json.dumps(settings.to_dict(), sort_keys=True),))
+                               [("run_settings", encoded), ("run_settings:" + settings.backend, encoded)])
+
+    def get_run_settings_profiles(self) -> dict[str, RunSettings]:
+        """Retain exact last-used role/tier choices separately for each backend."""
+        with self._transaction() as connection:
+            rows = connection.execute("SELECT name,value FROM app_preferences WHERE name IN (?,?,?,?)",
+                                      ("run_settings", "run_settings:chatgpt_plan", "run_settings:openai",
+                                       "run_settings:openrouter")).fetchall()
+        profiles = {}
+        for row in rows:
+            settings = RunSettings.from_dict(json.loads(row["value"]))
+            if row["name"] == "run_settings":
+                profiles.setdefault(settings.backend, settings)
+            elif row["name"] == "run_settings:" + settings.backend:
+                profiles[settings.backend] = settings
+        return profiles
+
+    def get_billing_authorizations(self) -> dict[str, bool]:
+        """Trusted-local preferences; absent or malformed values never authorize."""
+        with self._transaction() as connection:
+            rows = dict(connection.execute("SELECT name,value FROM app_preferences WHERE name IN (?,?)",
+                                           tuple("billing_authorized:" + backend for backend in sorted(BILLED_BACKENDS))))
+        return {backend: rows.get("billing_authorized:" + backend) == "true" for backend in sorted(BILLED_BACKENDS)}
+
+    def set_billing_authorization(self, backend: str, authorized: bool) -> None:
+        if type(backend) is not str or backend not in BILLED_BACKENDS or type(authorized) is not bool:
+            raise SessionStoreError("invalid_billing_authorization")
+        with self._transaction() as connection:
+            connection.execute("INSERT INTO app_preferences(name,value) VALUES (?,?) "
+                               "ON CONFLICT(name) DO UPDATE SET value=excluded.value",
+                               ("billing_authorized:" + backend, json.dumps(authorized)))
 
     def save_run_receipt(self, job_id: str, receipt: dict) -> None:
         """Attach optional safe usage once; a historical receipt is never rewritten."""
@@ -893,7 +933,7 @@ class SQLiteSessionStore:
                    "model_not_supported", "malformed_model_response", "model_response_incomplete",
                    "model_response_incomplete_content_filter", "model_response_incomplete_max_output_tokens",
                    "model_catalog_unavailable", "model_identifier_invalid", "model_contract_incompatible",
-                   "model_routing_mismatch",
+                   "model_routing_mismatch", "paid_inference_authorization_required",
                    "historical_run_settings_unknown"}
         with self._transaction() as connection:
             connection.execute("UPDATE research_jobs SET state='failed',finished_at=?,error_code=? "

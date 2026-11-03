@@ -1,6 +1,7 @@
 """Shipped defaults, user settings and ordinary entrypoints, all offline."""
 
 import json
+import re
 from dataclasses import asdict
 
 import pytest
@@ -27,7 +28,13 @@ def submit(client, location="/", question="What follows?"):
     page = client.get(location)
     action = "/ask" if location == "/" else location + "/ask"
     fields = token(page, action)
-    fields.update(question=question, paid_inference_confirmed="1")
+    fields.update(question=question)
+    if fields.get("backend") in {"openai", "openrouter"}:
+        authorization = client.post("/settings/billing", data={
+            "form_token": re.search(r'data-billing-token="([^"]+)"', page.get_data(as_text=True))[1],
+            "backend": fields["backend"], "authorized": "1",
+        }, headers={"Accept": "application/json"})
+        assert authorization.status_code == 200
     if fields.get("backend") == "openai" and not fields.get("api_processing"):
         # A preexisting mixed API tier profile requires a concrete choice;
         # explicitly choose ordinary processing for the submitted question.

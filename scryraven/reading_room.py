@@ -40,7 +40,7 @@ from scryraven.images import (
     image_preview,
     prepare_image,
 )
-from scryraven.model import OpenAIModel
+from scryraven.model import ModelError, OpenAIModel
 from scryraven.presentation import (
     answer_html,
     citation_preview_html,
@@ -49,8 +49,8 @@ from scryraven.presentation import (
     source_label,
 )
 from scryraven.research_jobs import ResearchJobManager
+from scryraven.run_settings import BILLED_BACKENDS, RunSettings, settings_from_form
 from scryraven.run_settings import ERROR_MESSAGES as RUN_SETTINGS_ERRORS
-from scryraven.run_settings import RunSettings, settings_from_form
 from scryraven.session_store import (
     SessionConflictError,
     SessionStore,
@@ -151,6 +151,10 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
     diagnostic_runs = {}
     usage_runs = {}
 
+    def require_billing_authorization(backend):
+        if backend in BILLED_BACKENDS and not custody.get_billing_authorizations()[backend]:
+            raise ModelError("paid_inference_authorization_required")
+
     def job_options(job):
         turn_diagnostics = TurnDiagnostics(started_at=monotonic(), clock=monotonic) if diagnostics else None
         diagnostic_runs[job.job_id] = turn_diagnostics
@@ -158,6 +162,7 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
         settings = job.run_settings
         if settings is None:
             raise ValueError("historical_run_settings_unknown")
+        require_billing_authorization(settings.backend)
         records = []
         usage_runs[job.job_id] = records
         base_model = initial_model
@@ -178,6 +183,14 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                                      backend="api" if settings.backend == "openai" else settings.backend)
         if isinstance(turn_model, OpenAIModel):
             prior_usage = turn_model.usage_observer
+            prior_authorizer = turn_model.request_authorizer
+
+            def authorize_request():
+                require_billing_authorization(settings.backend)
+                if prior_authorizer is not None:
+                    prior_authorizer()
+
+            turn_model.request_authorizer = authorize_request
 
             def usage(item):
                 records.append({
@@ -404,8 +417,8 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                                                 if c.source_kind == "user_document" and c.document_id else None),
                              ))} for c in turn.citations],
             })
-        issue = lambda action: forms.issue(action, metadata.session_id if metadata else "",
-                                           metadata.revision if metadata else 0)
+        issue = lambda action: forms.issue(action, metadata.session_id if metadata and action != "billing" else "",
+                                           metadata.revision if metadata and action != "billing" else 0)
         notice = {"missing": "That session is no longer available. Your other research is here.",
                   "deleted": "Session deleted.", "renamed": "Session renamed.",
                   "already_attached": ALREADY_ATTACHED_NOTICE}.get(request.args.get("notice"))
@@ -415,6 +428,9 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
             job=job, history_jobs=history_jobs, idempotency_key=uuid4().hex,
             citation_language=metadata.citation_language if metadata else "en",
             run_settings=(custody.get_run_settings() or initial_settings).to_dict(),
+            billing_authorizations=custody.get_billing_authorizations(),
+            run_settings_profiles={backend: settings.to_dict()
+                                   for backend, settings in custody.get_run_settings_profiles().items()},
             initial_processing_profile=({
                 "research": initial_config.research.service_tier or "model default",
                 "answer": initial_config.answer.service_tier or "model default",
@@ -434,6 +450,20 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
 
     def claim(action, session_id=""):
         return forms.claim(request.form.get("form_token", ""), action, session_id)
+
+    @app.post("/settings/billing")
+    def update_billing_authorization():
+        names = {"form_token", "backend", "authorized"}
+        if (set(request.form) != names or any(len(request.form.getlist(name)) != 1 for name in names)
+                or request.form.get("backend") not in BILLED_BACKENDS
+                or request.form.get("authorized") not in {"0", "1"}):
+            abort(400)
+        claim("billing")
+        custody.set_billing_authorization(request.form["backend"], request.form["authorized"] == "1")
+        if request.accept_mimetypes.best == "application/json":
+            return jsonify(billing_authorizations=custody.get_billing_authorizations(),
+                           form_token=forms.issue("billing"))
+        return redirect(url_for("new_research"), 303)
 
     def read_attachments():
         uploads = request.files.getlist("files")
@@ -483,12 +513,13 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
         key = request.form.get("idempotency_key", "") or request.form.get("form_token", "")
         try:
             settings = settings_from_form(request.form, initial_settings)
+            require_billing_authorization(settings.backend)
             documents, images = read_attachments()
             job = jobs.submit(question, session_id=session_id, revision=revision,
                               idempotency_key=key, documents=documents, images=images,
                               retained_image_ids=tuple(request.form.getlist("retained_image_ids")),
                               citation_language=language, run_settings=settings)
-        except ValueError as exc:
+        except (ValueError, ModelError) as exc:
             return page(session_id, question=question, status=400,
                         error=RUN_SETTINGS_ERRORS.get(str(exc), RUN_SETTINGS_ERRORS["invalid_run_settings"]))
         except (DocumentRejected, ImageRejected) as exc:
@@ -533,7 +564,12 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
             return page(session_id, question=previous.question,
                         error="The conversation changed. Review it before submitting a new question.", status=409)
         try:
+            if previous.run_settings is not None:
+                require_billing_authorization(previous.run_settings.backend)
             job = jobs.retry(job_id, idempotency_key=request.form.get("form_token", ""))
+        except ModelError as exc:
+            return page(session_id, question=previous.question, status=400,
+                        error=RUN_SETTINGS_ERRORS[str(exc)])
         except SessionStoreError as exc:
             if exc.code == "historical_run_settings_unknown":
                 return page(session_id, question=previous.question, status=409,

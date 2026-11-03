@@ -174,8 +174,44 @@
     const settingsOpen = askForm.querySelector('.run-settings-open');
     const backend = askForm.querySelector('#run-backend');
     const processing = askForm.querySelector('#api-processing');
-    const allowance = askForm.querySelector('#physical-request-limit');
-    const paidConfirmation = askForm.querySelector('[name=paid_inference_confirmed]');
+    const billingPanel = askForm.querySelector('.billing-authorization');
+    const billingToggle = billingPanel.querySelector('.billing-toggle');
+    const billingStatus = billingPanel.querySelector('.billing-status');
+    const billingError = billingPanel.querySelector('.billing-error');
+    let authorizations = JSON.parse(settingsDialog.dataset.billingAuthorizations);
+    let billingSaving = false;
+    const profiles = JSON.parse(settingsDialog.dataset.modelProfiles);
+    let previousBackend = backend.value;
+    const firstPartyProfile = {
+      research_model: previousBackend === 'openrouter' ? 'gpt-6.1-terra' : askForm.querySelector('#research-model').value,
+      answer_model: previousBackend === 'openrouter' ? 'gpt-6.1-sol' : askForm.querySelector('#answer-model').value,
+      research_reasoning: askForm.querySelector('#research-reasoning').value,
+      answer_reasoning: askForm.querySelector('#answer-reasoning').value,
+      api_processing: processing.value
+    };
+    const profileFields = ['research_model', 'answer_model', 'research_reasoning', 'answer_reasoning'];
+    function rememberProfile() {
+      const profile = {};
+      profileFields.forEach(name => { profile[name] = askForm.elements[name].value; });
+      if (previousBackend === 'openai') profile.api_processing = processing.value;
+      profiles[previousBackend] = profile;
+    }
+    function restoreProfile() {
+      const profile = profiles[backend.value] || (backend.value === 'openrouter' ? {
+        research_model: '', answer_model: '',
+        research_reasoning: firstPartyProfile.research_reasoning,
+        answer_reasoning: firstPartyProfile.answer_reasoning
+      } : firstPartyProfile);
+      profileFields.forEach(name => { askForm.elements[name].value = profile[name] || ''; });
+      if (backend.value === 'openai' && profile.api_processing !== undefined) processing.value = profile.api_processing;
+    }
+    function updateAuthorization() {
+      billingPanel.hidden = backend.value === 'chatgpt_plan';
+      const label = backend.value === 'openrouter' ? 'OpenRouter' : 'OpenAI API';
+      const authorized = authorizations[backend.value] === true;
+      billingStatus.textContent = authorized ? label + ' billed inference is authorized.' : label + ' billed inference is not authorized.';
+      billingToggle.textContent = (authorized ? 'Revoke ' : 'Authorize ') + label + ' billed inference';
+    }
     const disclosures = {
       chatgpt_plan: 'Your question, conversation context, source text, PDFs and images used in this run are supplied through your ChatGPT personal plan.',
       openai: 'API billed. Your question, conversation context, source text, PDFs and images used in this run are supplied to OpenAI through its API.',
@@ -184,37 +220,29 @@
     const backendLabels = {chatgpt_plan: 'ChatGPT plan', openai: 'OpenAI API · API billed', openrouter: 'OpenRouter · OpenRouter billed'};
     function updateRunSummary() {
       const effort = role => askForm.querySelector('#' + role + '-reasoning').value || 'model default';
-      const model = role => askForm.querySelector('#' + role + '-model').value;
+      const model = role => askForm.querySelector('#' + role + '-model').value || 'choose model';
       settingsOpen.querySelector('.run-selection-backend').textContent = backendLabels[backend.value];
       settingsOpen.querySelector('.run-selection-roles').textContent = 'Research ' + model('research') + ' · ' + effort('research') + ' / Answer ' + model('answer') + ' · ' + effort('answer') + (backend.value === 'openai' ? ' · ' + (processing.value === 'fast' ? 'Fast' : processing.value === 'standard' ? 'Standard' : 'Choose processing') : '');
     }
     function updateBackend() {
       const api = backend.value === 'openai';
-      const paid = backend.value !== 'chatgpt_plan';
       askForm.querySelector('.run-processing').hidden = !api;
       processing.disabled = !api;
       processing.required = api;
-      askForm.querySelector('.paid-run-note').hidden = !paid;
-      paidConfirmation.closest('label').hidden = !paid;
-      paidConfirmation.disabled = !paid;
-      paidConfirmation.required = paid;
+      updateAuthorization();
       askForm.querySelector('#provider-disclosure').textContent = disclosures[backend.value];
-      const planAllowance = allowance.querySelector('[value="40"]');
-      if (paid && planAllowance) {
-        if (allowance.value === '40') allowance.value = '12';
-        planAllowance.remove();
-      } else if (!paid && !planAllowance) {
-        const option = document.createElement('option');
-        option.value = '40';
-        option.textContent = 'Plan · up to 40 requests';
-        allowance.append(option);
+      askForm.querySelector('.openrouter-model-help').hidden = backend.value !== 'openrouter';
+      for (const role of ['research', 'answer']) {
+        const input = askForm.querySelector('#' + role + '-model');
+        input.placeholder = backend.value === 'openrouter' ? 'provider/model (exact identifier)' : 'Exact model identifier';
+        const suggestions = askForm.querySelector('#' + role + '-suggestions');
+        suggestions.replaceChildren(...['', 'gpt-6.1-terra', 'gpt-6.1-sol', 'gpt-6-luna'].map(model => {
+          const option = document.createElement('option');
+          option.value = model ? (backend.value === 'openrouter' ? 'openai/' : '') + model : '';
+          option.textContent = option.value || 'Choose a suggestion…';
+          return option;
+        }));
       }
-      const presets = askForm.querySelector('#run-model-presets');
-      presets.replaceChildren(...['gpt-6.1-terra', 'gpt-6.1-sol', 'gpt-6-luna'].map(model => {
-        const option = document.createElement('option');
-        option.value = (backend.value === 'openrouter' ? 'openai/' : '') + model;
-        return option;
-      }));
       updateRunSummary();
     }
     function openSettings() {
@@ -238,7 +266,48 @@
       const inherited = askForm.querySelector('.initial-tier-profile');
       if (inherited) inherited.hidden = Boolean(processing.value);
     });
-    backend.addEventListener('change', () => { paidConfirmation.checked = false; updateBackend(); });
+    backend.addEventListener('change', () => {
+      rememberProfile();
+      restoreProfile();
+      previousBackend = backend.value;
+      billingError.hidden = true;
+      updateBackend();
+    });
+    askForm.querySelectorAll('.model-suggestions').forEach(suggestions => {
+      suggestions.addEventListener('change', () => {
+        if (!suggestions.value) return;
+        const input = askForm.querySelector('#' + suggestions.dataset.role + '-model');
+        input.value = suggestions.value;
+        suggestions.value = '';
+        updateRunSummary();
+      });
+    });
+    billingToggle.addEventListener('click', async () => {
+      const selectedBackend = backend.value;
+      billingSaving = true;
+      billingToggle.disabled = true;
+      backend.disabled = true;
+      billingError.hidden = true;
+      try {
+        const response = await fetch(settingsDialog.dataset.billingUrl, {
+          method: 'POST', credentials: 'same-origin', headers: {'Accept': 'application/json'},
+          body: new URLSearchParams({form_token: settingsDialog.dataset.billingToken,
+            backend: selectedBackend, authorized: authorizations[selectedBackend] ? '0' : '1'})
+        });
+        const result = await response.json().catch(() => null);
+        if (result?.form_token) settingsDialog.dataset.billingToken = result.form_token;
+        if (!response.ok || !result?.billing_authorizations) throw new Error('authorization_save_failed');
+        authorizations = result.billing_authorizations;
+        updateAuthorization();
+      } catch (_) {
+        billingError.textContent = 'Authorization could not be saved. Reopen Reading Room and try again.';
+        billingError.hidden = false;
+      } finally {
+        billingSaving = false;
+        billingToggle.disabled = false;
+        backend.disabled = false;
+      }
+    });
     askForm.addEventListener('invalid', event => {
       if (settingsDialog.contains(event.target)) {
         openSettings();
@@ -378,7 +447,7 @@
     });
     askForm.addEventListener('submit', async event => {
       event.preventDefault();
-      if (submitting || activeJob) return;
+      if (submitting || activeJob || billingSaving) return;
       if (uploadProblem) { showError(uploadProblem); return; }
       if (!question.value.trim()) {
         question.setCustomValidity('Write a research question to begin.');
@@ -386,6 +455,11 @@
         return;
       }
       if (!askForm.reportValidity()) return;
+      if (backend.value !== 'chatgpt_plan' && authorizations[backend.value] !== true) {
+        openSettings();
+        billingToggle.focus();
+        return;
+      }
       submitting = true;
       submit.disabled = true;
       question.readOnly = true;
@@ -405,6 +479,12 @@
         if (!response.ok) {
           const rendered = new DOMParser().parseFromString(await response.text(), 'text/html');
           showError(rendered.querySelector('.error-notice')?.textContent.trim() || 'Your question could not be accepted. Your text and selected files are still here.');
+          const billing = rendered.querySelector('.run-settings-dialog');
+          if (billing?.dataset.billingAuthorizations) {
+            authorizations = JSON.parse(billing.dataset.billingAuthorizations);
+            settingsDialog.dataset.billingToken = billing.dataset.billingToken;
+            updateAuthorization();
+          }
           const replacement = rendered.querySelector('.ask-form [name=form_token]');
           if (replacement) askForm.querySelector('[name=form_token]').value = replacement.value;
           if (response.headers.get('X-ScryRaven-Submission-Conflict') === '1') {

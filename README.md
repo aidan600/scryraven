@@ -380,17 +380,26 @@ contact a provider to validate model availability or model/effort compatibility.
 effective snapshot. CLI, sessions and direct `run()` resolve a fresh ordinary
 model for each turn. Reading Room initially displays its launch model profile;
 its compact Run Settings dialog selects ChatGPT plan, OpenAI API or OpenRouter,
-exact editable Research/Answer model identifiers and reasoning. API Standard
+exact editable Research/Answer model identifiers and reasoning. Separate suggestion
+menus open without clearing the current identifier; exact custom identifiers remain
+editable. OpenRouter starts with a neutral exact-model field and links to its model
+catalog. API Standard
 explicitly requests `default`; API Fast requests `fast`. Plan/OpenRouter omit
-API tier controls. Paid execution requires an explicit selection and confirmation.
+API tier controls. Paid execution requires explicit, saved authorization for each
+billed backend in this trusted local Reading Room. Authorization can be revoked in
+Run Settings and is checked before subsequent paid requests, including retries.
 An explicitly constructed and retained `OpenAIModel` keeps its
 resolved snapshot. Full explicit injection reads neither user nor shipped files;
 partial injection retains the supplied role and resolves the missing role from
 the effective configuration. Injection neither changes nor persists user settings.
 The external file remains valid and is never overwritten by Reading Room.
-Reading Room saves last-used preferences separately in its existing database and
-captures immutable per-job settings, including the request allowance. Retry
-copies the original snapshot; historical unknown configurations remain unknown.
+Reading Room saves last-used preferences, including each backend's model selections
+and OpenAI processing choice, separately in its existing database. New questions
+use an internal ceiling of 40 physical model requests across all backends, with
+unchanged external-attempt, time and attention limits. The ceiling is a technical
+guard, not a dollar limit or usage target. Accepted jobs keep immutable settings
+and resource allowances. Retry copies the original snapshot, including older
+smaller allowances; historical unknown configurations remain unknown.
 Completed Run details show exact settings and reported usage, model and tier;
 unreported costs and actual billing remain unknown. See
 [Run Settings](docs/operator/READING_ROOM_RUN_SETTINGS_01.md) for compatibility,

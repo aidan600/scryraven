@@ -1,19 +1,22 @@
 # Reading Room Run Settings 01
 
-Outcome: implementation met. OpenAI Standard and Fast were demonstrated through
+Outcome: implementation met. The original OpenAI Standard and Fast checks demonstrated them through
 the ordinary browser product; OpenRouter's optional live turn failed at
 authentication, so live model compatibility remains unproved. Final receipts are
 recorded in the review bundle at
-`C:\tmp\scryraven-run-settings-01`. This phase builds from
-`99ef3e113b164835dc694bedb26355c01386cb72` in the explicitly requested isolated
-worktree. The installed launcher, personal model profile, credentials and
+`C:\tmp\scryraven-run-settings-01`. That original implementation built from
+`99ef3e113b164835dc694bedb26355c01386cb72` in an explicitly requested isolated
+worktree. The UX simplification uses the ordinary checkout from merged reference
+`5148a7c50e22b99e8abbb9321e31c1fc87bbd142` and permits zero live requests.
+The installed launcher, personal model profile, credentials and
 persistent production sessions database are not changed during development.
 
 ## Product behavior and execution
 
 The compact composer summary opens an accessible Run Settings dialog. It shows
 the backend and exact Research/Answer identifiers and efforts before submission.
-Editable identifiers retain convenient suggestions; they are bounded data, never
+Separate suggestion menus open with the current identifier intact. Editable exact
+identifiers remain bounded data, never
 URLs or executable/routing instructions. Reasoning default omits the parameter;
 `none`, `low`, `medium`, `high`, `xhigh` and `max` remain exact requested values.
 Unsupported selections fail without substitution. Plan model membership and
@@ -24,20 +27,35 @@ Initial launch reads the genuinely effective injected or existing personal
 file is absent. The file is never overwritten. Saved Reading Room preferences
 then take precedence for new submissions. An inherited mixed API tier profile
 is displayed exactly and requires an explicit uniform Standard/Fast choice.
-Paid inference requires explicit confirmation for each new submission; retry
-clearly uses its original billed selection. PDFs, images, conversation and source
+Paid inference requires explicit saved authorization for each billed backend in
+this trusted local Reading Room. Run Settings offers authorization and revocation;
+the existing database preferences retain this choice across browser/server restarts.
+Authorization is checked at admission, retry, and before each paid dispatch.
+Revocation prevents subsequent paid dispatches; it cannot undo a request already
+sent. No per-question confirmation is required. PDFs, images, conversation and source
 text used in inference are disclosed as supplied to the chosen provider.
 
 Each accepted question atomically saves its frozen `RunSettings` with its job:
 backend; both exact model identifiers/efforts; OpenAI processing choice; physical
-request, external-attempt, elapsed-time and attention limits. Paid runs offer 12
-or a smaller 6 physical requests; plan also retains its existing 40-request
-allowance. These bounds use the existing physical dispatch accounting, including
-native tool continuations. They are resource limits, not a promised dollar cap.
+request, external-attempt, elapsed-time and attention limits. New submissions use
+40 physical requests for all backends as an internal technical ceiling. The UI
+does not offer a request allowance. External-attempt, time and attention limits
+remain unchanged. These bounds use the existing physical dispatch accounting,
+including native tool continuations. They are resource limits, not a promised
+dollar cap or usage target. Older accepted jobs and retries keep their exact
+original allowances.
+
+Per-backend model selections and OpenAI Standard/Fast choices survive switching
+backends and later submissions. The first OpenRouter selection leaves both exact
+model fields empty with a neutral provider/model placeholder; configured choices
+are preserved. Its [model catalog](https://openrouter.ai/models) is linked directly.
+Only explicit supported model identities are accepted; automatic routing remains
+unavailable.
 
 The existing ResearchJobManager per-job options factory creates an independent
 model instance from the accepted snapshot. Active/queued jobs never reread UI
-preferences. Two workers, eight waiting slots, one active job per conversation,
+model preferences. Billing authorization remains separately revocable. Two
+workers, eight waiting slots, one active job per conversation,
 revision checks, durable commit and idempotency remain. Duplicate requests with
 changed settings conflict. Retry copies the original settings, question and
 attachments without overwriting newer UI preferences. A historical job without
@@ -85,7 +103,8 @@ fallback, premium escalation or automatic replacement run exists.
 
 SQLite schema 4 adds nullable `research_jobs.run_settings` and `run_receipt` JSON
 columns, plus the small `app_preferences(name,value)` table for last-used UI
-settings. Version 3 migrates with additive ALTER TABLE operations; versions 1/2
+settings, per-backend profiles and billing authorization. No new schema version
+is required for the UX simplification. Version 3 migrates with additive ALTER TABLE operations; versions 1/2
 continue their existing additive upgrade while creating the current job table.
 Existing session payloads, evidence, original attachments, citation identities,
 turn revision numbers and historical jobs are preserved. No historical backend,
@@ -106,12 +125,21 @@ Real Edge checks cover desktop, 390/320px, actual 200% browser zoom, keyboard
 dialog operation and first-completion receipts. Actual screenshots are external
 review artifacts; their synthetic answers are presentation fixtures.
 
-The original implementation passed all 1,218 offline tests, with no skips in
-the final ordinary-user run. Ruff, compilation, JavaScript syntax, whitespace
-and all six configured hooks passed before bounded live validation. The focused
-review fix subsequently passed 139 correction/continuation tests and all 1,223
-offline tests, Ruff, compilation, whitespace and all six configured hooks.
-The live caller
+The UX simplification passed all 1,298 offline regression tests without skips,
+including 12 Run Settings real-Edge checks. A separate 119-test focused backend
+run covered new 40-request submissions and the 40th/41st physical-dispatch boundary
+for every backend, independent saved/revoked authorization, queued and continuation
+revocation, strict malformed/duplicate form rejection, exact models/tiers, historical
+persistence and original retry allowances. Browser checks include populated-value
+suggestion menus, exact custom identifiers, neutral/configured OpenRouter profiles,
+saved Standard/Fast choices, desktop, 390/320px, keyboard selection and actual 200%
+zoom. Screenshots were visually reviewed. Ruff, Python compilation, JavaScript
+syntax, whitespace and all six configured hooks passed. The regression XML and
+screenshots are at `C:\tmp\scryraven-run-settings-ux-simplification-01`.
+
+This simplification used zero live model, provider or search requests. The following
+live observations belong to the original implementation, not this UX verification.
+The original live caller
 uses ordinary browser submission -> actual HTTP route -> ResearchJobManager ->
 ResearchSession -> Responses transport -> durable answer, without scripting the
 model's semantic work. It requests the licensed apple premise question only,

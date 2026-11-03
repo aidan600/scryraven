@@ -353,6 +353,8 @@ dialog::backdrop { background: #1e323d26; }
   .run-selection-roles { flex-basis: 100%; }
 }
 
-.run-settings-dialog .paid-inference-confirmation { display: flex; align-items: center; gap: 9px; font-size: 12px; line-height: 1.6; }
-.run-settings-dialog .paid-inference-confirmation input { flex-shrink: 0; width: 17px; height: 17px; min-height: 0; margin: 0; accent-color: #3e6375; }
+.billing-authorization { padding-top: 4px; }
+.billing-status { font-size: 12px; color: #45616e; margin: 10px 0; }
+.billing-toggle { white-space: normal; text-align: left; }
+.billing-error { font-size: 12px; color: #934a3d; line-height: 1.6; }
 .run-request { padding: 5px 0; border-bottom: 1px solid var(--line); }

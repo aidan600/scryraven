@@ -50,6 +50,24 @@ def test_snapshot_and_last_used_preferences_are_independent_and_transactional(tm
         store.accept_job("Altered question", idempotency_key=key(1), run_settings=original)
 
 
+def test_per_backend_profiles_preserve_exact_models_and_processing_with_legacy_fallback(tmp_path):
+    store = SQLiteSessionStore(tmp_path / "profiles.sqlite3")
+    assert store.get_run_settings() is None
+    router = settings("anthropic/custom-version-2", "openrouter")
+    # Existing schema-4 databases may contain only their single last-used value.
+    with closing(sqlite3.connect(store.path)) as connection:
+        connection.execute("INSERT INTO app_preferences VALUES ('run_settings',?)", (json.dumps(router.to_dict()),))
+        connection.commit()
+    assert store.get_run_settings_profiles() == {"openrouter": router}
+    api = replace(settings("custom.exact-api-model"), api_processing="fast", physical_request_limit=40)
+    job = store.accept_job("Offline profile", idempotency_key=key(1), run_settings=api)
+    assert SQLiteSessionStore(store.path).get_run_settings_profiles() == {"openai": api, "openrouter": router}
+    changed = replace(api, api_processing="standard")
+    store.set_run_settings(changed)
+    assert store.get_run_settings_profiles() == {"openai": changed, "openrouter": router}
+    assert store.get_job(job.job_id).run_settings == api
+
+
 def test_two_running_jobs_and_queued_snapshot_ignore_preference_changes(tmp_path):
     store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
     started = {name: Event() for name in "ABC"}

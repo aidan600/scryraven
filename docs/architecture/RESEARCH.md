@@ -38,9 +38,13 @@ ResearchJobManager option factory. Explicitly retained model instances
 keep their resolved settings. Full injection bypasses both files; partial injection
 fills only the missing role from effective settings. Injection is invocation-local
 and writes nothing. The external file remains an initial configuration source.
-Reading Room's compact Run Settings dialog saves separate last-used preferences
-and exact per-job backend, model, effort, tier and resource limits in SQLite.
-Retry copies the original settings; legacy unknown runtime identities stay
+Reading Room's compact Run Settings dialog saves last-used per-backend model and
+processing preferences and separate, revocable billed-backend authorization in
+the existing SQLite preferences table. Authorization is checked at admission and
+before each paid request. New submissions use the ordinary internal 40-physical-
+request ceiling; the other resource limits remain unchanged. Exact per-job
+backend, model, effort, tier and resource limits remain immutable in SQLite.
+Retry copies the original settings and allowances; legacy unknown runtime identities stay
 unknown. No research owner or alternate research loop is added.
 These values are reversible product configuration, not architectural requirements
 or a model router. Compatible injected configurations may vary in quality and
