@@ -51,10 +51,18 @@ compilation, JavaScript syntax, whitespace and all six configured hooks pass.
 Screenshots were visually reviewed. Only synthetic data/identities and offline
 transports were used; no live model, search or authentication calls occurred.
 
-Deployment configuration and activation/backup/restore procedures are in
-`docs/operator/PRIVATE_DOGFOOD_DEPLOYMENT_01.md`. This is offline readiness only:
-no Railway deployment, Cloudflare change, live authentication, inference or search
-was performed, and no branch was published. Live TLS/login, Railway volume
+Deployment settings must be configured in the Railway dashboard, with the root
+Dockerfile, explicit startup/health checks, one replica, five On Failure restarts
+and a `/data` volume. The obsolete legacy configuration file is removed; no
+Config as Code or TypeScript infrastructure system is required. Manual deployment
+uses an archive of an explicitly reviewed revision, with GitHub autodeploy and PR
+environments disabled. Activation/backup/restore procedures are in
+`docs/operator/PRIVATE_DOGFOOD_DEPLOYMENT_01.md`.
+The review branch `codex/private-dogfood-deployment-01` was published through
+`c0ab0997753a38abd488c8eadb464d075b4b6491`, including the Run Settings parent;
+this configuration correction is local and not yet pushed. No PR was created.
+This remains offline readiness only: no Railway deployment, Cloudflare change,
+live authentication, inference or search was performed. Live TLS/login, Railway volume
 behavior, backup recovery and exact model/provider compatibility remain unproved.
 The Python 3.13 Linux Docker image was not built locally because the Docker
 daemon was unavailable; actual Railway/container execution remains unverified.

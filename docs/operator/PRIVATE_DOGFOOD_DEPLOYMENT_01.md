@@ -1,16 +1,18 @@
 # Private dogfood deployment 01
 
 This is offline deployment preparation for the product owner and two invited
-testers. No Railway service, DNS record, Cloudflare Access application, live
-credential, public deployment, push or PR was created by this work item. Live
+testers. The review branch `codex/private-dogfood-deployment-01` is published at
+`c0ab0997753a38abd488c8eadb464d075b4b6491`; this dashboard-configuration correction
+is local and has not been pushed. No PR, Railway service, DNS record, Cloudflare
+Access application, live credential or public deployment was created. Live
 provider/model compatibility, custom-domain TLS, Access login and Railway volume
 behavior still require operator verification after review.
 
 ## Release and topology
 
 Use one Railway Hobby service, one replica, one mounted persistent volume, and
-one Python process. `railway.toml` selects the Dockerfile, `/healthz`, bounded
-restart attempts and one replica. `python -m scryraven.wsgi` runs Waitress with
+one Python process. Configure the service in the Railway dashboard using the
+settings below. `python -m scryraven.wsgi` runs Waitress with
 eight HTTP threads by default; ResearchJobManager still has two research workers
 and eight waiting admissions. Do not launch multiple WSGI processes, replicas,
 workers, a development reloader or a second Reading Room against this database.
@@ -18,20 +20,70 @@ The existing OS database-owner lock prevents overlapping managers; startup fails
 instead of interrupting another live owner. Restart marks outstanding work
 interrupted and never automatically repeats model or acquisition calls.
 
-Disable Railway automatic Git deployments and PR environments. Promote a reviewed
-full Git revision explicitly, including the unmerged Run Settings parent change.
-Use a detached source archive of that exact revision as the deployment source, or
-an immutable image built from that archive. Record the source SHA, image digest,
-dependency versions and Railway deployment ID in the private operator record.
-Do not deploy a moving branch tip or use an automatic `main` trigger. Railway CLI
-upload from an extracted `git archive` is one manual option; do not upload the
-ordinary checkout containing ignored personal material. No build needs `.git`,
+Promote a reviewed full Git revision explicitly, including the unmerged Run
+Settings parent change and this correction. Use an extracted `git archive` of
+that exact revision as the deployment source. Record the source SHA, built image
+digest when available, dependency versions and Railway deployment ID in the
+private operator record. Do not upload the ordinary checkout containing ignored
+personal material. No build needs `.git`,
 local evaluation artifacts, local credentials, a personal model file or a personal
 Reading Room database. Docker's allowlisted context excludes databases/logs/keys.
 
 Install Python 3.13 and `requirements-hosted.txt` (which includes the ordinary API
 requirements). The Dockerfile does this. Local personal-plan/OpenRouter launch
 and Run Settings remain available through the existing local entrypoint.
+
+## Required Railway dashboard settings
+
+Checked against official Railway documentation on November 2, 2026. Legacy
+[Config as Code](https://docs.railway.com/config-as-code) is unavailable to new
+services and ends for existing users on December 1, 2026. The obsolete file is
+removed; this service uses dashboard configuration, with no Config as Code or
+TypeScript infrastructure project.
+
+Create an **Empty Service** in the Hobby project. Leave its GitHub repository
+source disconnected and PR environments disabled. Configure these values before
+the first application deployment:
+
+| Dashboard location | Required setting |
+| --- | --- |
+| Service **Settings > Build** | Build the repository-root `Dockerfile`; Railway detects it automatically. Keep the source root at `/` and leave Custom Build Command empty. Confirm Dockerfile use in the build log. |
+| **Settings > Deploy > Custom Start Command** | `python -m scryraven.wsgi` (also the Dockerfile's CMD). |
+| **Settings > Deploy > Pre-Deploy Command** | Empty; the app initializes/migrates SQLite at startup with the volume mounted. |
+| **Settings > Deploy > Healthcheck Path** | `/healthz`. |
+| **Settings > Deploy**, healthcheck timeout | **60 seconds**. Leave Railway's supplied `PORT` available to the app. |
+| **Settings > Scale > Regions** | One region and **one replica total**. Do not add replicas or additional application services. |
+| Service **Settings**, restart policy | **On Failure**, maximum **5 restarts**. Hobby permits this finite policy. |
+| **Settings > Deploy > Serverless** | **Enable Serverless off**; keep the service running for research jobs and hourly diagnostic retention. Leave any cron schedule empty. |
+| Project canvas/command palette, **Create a volume**, select this service | One **new empty volume**, mount path **`/data`**. In the service **Variables** tab set `SCRYRAVEN_DATA_DIR=/data`, plus the protected variables below. |
+| **Settings > Source** | No GitHub source for this manual-upload service. If a repository is already connected, use **Disable** for autodeploy; do not deploy from a moving branch tip. |
+
+Railway documents [Dockerfile detection](https://docs.railway.com/builds/dockerfiles),
+[start commands](https://docs.railway.com/deployments/start-command),
+[build/deploy controls](https://docs.railway.com/overview/advanced-concepts),
+[health checks](https://docs.railway.com/deployments/healthchecks),
+[restart policies](https://docs.railway.com/deployments/restart-policy),
+[Serverless controls](https://docs.railway.com/pricing/cost-control), and
+[volume attachment](https://docs.railway.com/volumes). Railway supplies
+`RAILWAY_VOLUME_MOUNT_PATH` automatically after attachment; do not substitute a
+manually invented value for a real volume. Hosted startup checks the data path
+against that mount. Volume-backed redeployments can have brief downtime.
+
+During separately authorized activation, review the dashboard's staged changes
+with **Details**. Hold **Alt** while clicking **Deploy** to commit settings
+without triggering a redeploy. Then manually upload only the extracted reviewed
+archive with `railway up <archive-directory> --path-as-root`, explicitly selecting
+the existing project, service and environment. This command
+builds and deploys immediately; it is not a preparation-only command. Repeat the
+same review and manual upload for each promoted revision. No merge or push to
+`main` should trigger deployment. Railway's **Deploy Latest Commit** command uses
+the connected branch's current tip, so it is not this revision-promotion path.
+See [manual source upload](https://docs.railway.com/cli/up),
+[staged settings](https://docs.railway.com/deployments/staged-changes), and
+[autodeploy controls](https://docs.railway.com/deployments/github-autodeploys).
+After activation, verify the effective settings in the deployment details and
+record them with the promoted SHA. This local correction applies no dashboard
+settings and performs no deployment.
 
 ## Volume and configuration
 
@@ -219,7 +271,8 @@ through an explicit owner decision. Never reset the live volume to hide a failur
 
 ## Activation checklist after review
 
-Offline verification of the final source passed 1,404 tests with no skips using
+Offline verification of the reviewed runtime at
+`c0ab0997753a38abd488c8eadb464d075b4b6491` passed 1,404 tests with no skips using
 the repository Python 3.12.14 environment, declared dependency versions including
 pypdf 6.19.0/Pillow 12.3.0 and isolated Waitress 3.0.2. The full suite includes
 signed synthetic JWTs, actual local Waitress startup/HTTP, mocked ordinary API
@@ -246,11 +299,13 @@ Do not share native-wheel target directories between Python versions. These
 offline results establish integration mechanics, not live login/provider quality
 or operational recovery on Railway.
 
-1. Review the combined changes, select and record the exact source SHA/image.
-2. Create one Hobby service and new volume; disable automatic deploys/replicas.
+1. Review the combined changes, select and record the exact source SHA.
+2. Create one empty Hobby service and new `/data` volume; apply the dashboard
+   settings above with one replica and no GitHub autodeploy or PR environments.
 3. Set protected identity, model/provider, quota and retention configuration.
 4. Configure the exact Cloudflare Access app/policy, custom DNS and TLS.
-5. Start the promoted image; confirm health and application denial at every origin.
+5. Manually upload the reviewed source archive; confirm health and application
+   denial at every origin.
 6. Verify login, owner isolation, admin read/export, two-user research and queueing.
 7. Rehearse restart and backup/restore with synthetic conversations and citations.
 8. Check actual provider compatibility/charges, storage usage and tester privacy
