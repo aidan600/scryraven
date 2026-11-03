@@ -58,11 +58,7 @@ Config as Code or TypeScript infrastructure system is required. Manual deploymen
 uses an archive of an explicitly reviewed revision, with GitHub autodeploy and PR
 environments disabled. Activation/backup/restore procedures are in
 `docs/operator/PRIVATE_DOGFOOD_DEPLOYMENT_01.md`.
-The review branch `codex/private-dogfood-deployment-01` was published through
-`c0ab0997753a38abd488c8eadb464d075b4b6491`, including the Run Settings parent;
-this configuration correction is local and not yet pushed. No PR was created.
-This remains offline readiness only: no Railway deployment, Cloudflare change,
-live authentication, inference or search was performed. Live TLS/login, Railway volume
+This establishes offline deployment readiness only. Live TLS/login, Railway volume
 behavior, backup recovery and exact model/provider compatibility remain unproved.
 The Python 3.13 Linux Docker image was not built locally because the Docker
 daemon was unavailable; actual Railway/container execution remains unverified.

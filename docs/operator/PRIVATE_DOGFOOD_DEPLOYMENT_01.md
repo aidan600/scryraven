@@ -1,12 +1,10 @@
 # Private dogfood deployment 01
 
-This is offline deployment preparation for the product owner and two invited
-testers. The review branch `codex/private-dogfood-deployment-01` is published at
-`c0ab0997753a38abd488c8eadb464d075b4b6491`; this dashboard-configuration correction
-is local and has not been pushed. No PR, Railway service, DNS record, Cloudflare
-Access application, live credential or public deployment was created. Live
-provider/model compatibility, custom-domain TLS, Access login and Railway volume
-behavior still require operator verification after review.
+This guide covers offline deployment readiness for the product owner and two
+invited testers. The hosted application has passed offline integration and browser
+checks. Live provider/model compatibility, custom-domain TLS, Access login,
+Railway volume behavior and backup recovery still require operator verification
+during activation.
 
 ## Release and topology
 
@@ -20,8 +18,8 @@ The existing OS database-owner lock prevents overlapping managers; startup fails
 instead of interrupting another live owner. Restart marks outstanding work
 interrupted and never automatically repeats model or acquisition calls.
 
-Promote a reviewed full Git revision explicitly, including the unmerged Run
-Settings parent change and this correction. Use an extracted `git archive` of
+Promote a reviewed full Git revision explicitly, including the Run Settings and
+private hosted deployment changes. Use an extracted `git archive` of
 that exact revision as the deployment source. Record the source SHA, built image
 digest when available, dependency versions and Railway deployment ID in the
 private operator record. Do not upload the ordinary checkout containing ignored
@@ -82,8 +80,8 @@ See [manual source upload](https://docs.railway.com/cli/up),
 [staged settings](https://docs.railway.com/deployments/staged-changes), and
 [autodeploy controls](https://docs.railway.com/deployments/github-autodeploys).
 After activation, verify the effective settings in the deployment details and
-record them with the promoted SHA. This local correction applies no dashboard
-settings and performs no deployment.
+record them with the promoted SHA. Offline preparation does not apply dashboard
+settings or perform a deployment.
 
 ## Volume and configuration
 
