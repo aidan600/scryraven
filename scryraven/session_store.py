@@ -431,7 +431,7 @@ def _receipt_json(receipt: dict) -> str:
         "requested_service_tier": {None, "default", "fast", "priority", "flex", "auto"},
         "returned_service_tier": {None, "default", "fast", "priority", "flex", "auto", "scale"},
     }
-    counter_fields = {"input_tokens", "output_tokens", "cached_input_tokens", "reasoning_tokens"}
+    counter_fields = {"input_tokens", "output_tokens", "cached_input_tokens", "cache_write_tokens", "reasoning_tokens"}
     for row in receipt["requests"]:
         if not isinstance(row, dict) or set(row) - (set(text_fields) | counter_fields | {"model", "returned_model", "provider", "reported_cost_usd"}):
             raise invalid
@@ -883,6 +883,44 @@ class SQLiteSessionStore:
             encoded = json.dumps(settings.to_dict(), sort_keys=True)
             self._remember_run_settings(connection, settings, encoded)
 
+    def get_hosted_preferences(self) -> dict | None:
+        """Hosted administrator defaults, separate from trusted-local profiles."""
+        with self._transaction() as connection:
+            row = connection.execute("SELECT value FROM app_preferences WHERE name='hosted_preferences'").fetchone()
+            value = json.loads(row["value"]) if row else None
+            if value is not None and not isinstance(value, dict):
+                raise SessionStoreError("invalid_run_settings")
+            return value
+
+    def set_hosted_preferences(self, value: dict) -> None:
+        if not isinstance(value, dict):
+            raise SessionStoreError("invalid_run_settings")
+        with self._transaction() as connection:
+            connection.execute("INSERT INTO app_preferences(name,value) VALUES ('hosted_preferences',?) "
+                               "ON CONFLICT(name) DO UPDATE SET value=excluded.value",
+                               (json.dumps(value, sort_keys=True),))
+
+    def get_hosted_processing(self, owner_id: str) -> str | None:
+        self._validate_owner(owner_id)
+        if owner_id is None:
+            raise SessionStoreError("invalid_identity")
+        with self._transaction() as connection:
+            row = connection.execute("SELECT value FROM app_preferences WHERE name=?",
+                                     ("hosted_processing:" + owner_id,)).fetchone()
+            value = json.loads(row["value"]) if row else None
+            if value not in {None, "standard", "fast"}:
+                raise SessionStoreError("invalid_run_settings")
+            return value
+
+    def set_hosted_processing(self, owner_id: str, processing: str) -> None:
+        self._validate_owner(owner_id)
+        if owner_id is None or processing not in {"standard", "fast"}:
+            raise SessionStoreError("invalid_run_settings")
+        with self._transaction() as connection:
+            connection.execute("INSERT INTO app_preferences(name,value) VALUES (?,?) "
+                               "ON CONFLICT(name) DO UPDATE SET value=excluded.value",
+                               ("hosted_processing:" + owner_id, json.dumps(processing)))
+
     @staticmethod
     def _remember_run_settings(connection, settings: RunSettings, encoded: str) -> None:
         # Preserve a legacy single preference before another backend replaces it.
@@ -960,14 +998,10 @@ class SQLiteSessionStore:
 
     def claim_next_job(self) -> ResearchJob | None:
         with self._transaction() as connection:
-            # An owner's queued conversations do not occupy both research
-            # workers or block an eligible second user behind them. NULL owners
-            # retain the ordinary trusted-local two-conversation behavior.
+            # Admission already protects one active job per conversation.
+            # Owners share the bounded pool; separate conversations may overlap.
             row = connection.execute(
-                "SELECT q.* FROM research_jobs q JOIN sessions s ON s.session_id=q.session_id "
-                "WHERE q.state='queued' AND (s.owner_id IS NULL OR NOT EXISTS ("
-                "SELECT 1 FROM research_jobs active JOIN sessions a ON a.session_id=active.session_id "
-                "WHERE active.state='researching' AND a.owner_id=s.owner_id)) "
+                "SELECT q.* FROM research_jobs q WHERE q.state='queued' "
                 "ORDER BY q.created_at,q.job_id LIMIT 1").fetchone()
             if row is None:
                 return None

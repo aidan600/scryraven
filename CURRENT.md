@@ -1,70 +1,78 @@
 # ScryRaven Current Truth
 
-## Private hosted beta preparation
+## Private Preview V2
 
-The Reading Room has an explicit hosted mode for one Railway process/volume and
-Cloudflare Access, separate from the existing local launcher. Waitress serves
-the same Flask application; configuration fails closed without the required
-identity, billing and storage settings. Railway startup also requires its volume
-mount configuration. Application routes validate signed RS256 Access tokens,
-issuer, audience, lifetime and exact invited/admin email identities. Unverified
-email and proxy headers have no identity authority; direct-origin requests still
-require a valid token. Only `/healthz` is unauthenticated and contains no research.
+The Reading Room hosted mode uses one Railway process/replica, the existing
+protected volume and Cloudflare Access. The retained resource limits are 2 vCPU
+and 2 GB memory. No deployment or infrastructure change is part of this V2.
+Waitress retains eight HTTP threads. Hosted research has four workers shared
+across all users, including four independent conversations for one user, and
+eight waiting slots. One conversation still accepts only one active question.
+The local Reading Room retains two research workers and local personal-plan and
+OpenRouter behavior. Each job has independent model instances, immutable settings
+and source custody; SQLite transactions do not span provider I/O. Restart marks
+unfinished jobs interrupted without replaying them.
 
-Schema 5 additively adds nullable session ownership and a durable UTC daily
-submission ledger. Historical session payloads, source identity, citations and
-attachments remain unchanged. Local unowned sessions remain local; hosted startup
-refuses a database containing them. Hosted testers access only their own sessions
-and job status. The owner has a read-only tester view at `/admin` and can export a
-selected session with original attachments and available diagnostics. No personal
-Reading Room database was imported or used for testing.
+Accepted waiting questions say “Your question is queued.” and explain automatic
+start and navigation. Conversation/history status updates from Queued to
+Researching through polling. Run details stay collapsed and secondary below
+progress or the completed answer. Failed and interrupted runs retain the saved
+question/files and explicit retry; fixed interruption codes distinguish server
+interruption from storage interruption without inventing a cause for unknown failures.
+The mobile history drawer uses vertical flex layout, a scrollable conversation
+list and footer, with viewport-positioned action menus and explicit dismissal.
 
-Hosted runs use fixed centrally configured OpenAI API Research/Answer settings,
-independent per-job models and the existing technical ceilings. Modified forms
-cannot select a backend/model, supply credentials, alter limits or authorize
-billing. Local Run Settings, personal-plan and OpenRouter behavior remain.
-The default quota is 20 accepted questions per user per UTC day, including explicit
-retries; deletion/restart do not reset it. Two workers and eight waiting slots
-remain, with at most one active job per hosted owner across conversations.
-Restart interrupts unfinished work and does not automatically replay requests.
+Sidebar Settings works on desktop and mobile. The administrator can durably save
+exact approved OpenAI Research/Answer models and compatible reasoning efforts,
+plus the shared Standard/Fast processing choice, without restart. Initial hosted
+defaults are gpt-6.1-terra/medium Research, gpt-6.1-sol/medium Answer and Fast.
+Environment role/tier configuration seeds the profile until administrator choices
+are saved; the saved protected SQLite profile then takes precedence on restart.
+Invited testers can save only their own Standard/Fast preference, applied with the
+administrator's current models/reasoning at admission. It overrides the global
+tier for that tester's new questions. Accepted and queued jobs, historical records
+and explicit retries retain original settings when defaults change. Unknown
+historical settings still cannot be invented for retry. Billing authorization
+remains operator-owned without repeated confirmation.
 
-Hosted body-free summaries and existing source-bearing observer records are
-stored separately from application output on the protected volume, associated
-with user/session/job. Default retention is 30 days and 1 GiB total, with a 64 MiB
-per-file cap. Cleanup removes only diagnostic files; normal conversations,
-citations, attachments and acquired Evidence persist. Age/byte maintenance runs on
-startup, hourly in the production process, requests/health checks and writes. Active files stop at their bounds;
-truncation or write failure can leave incomplete diagnostic records. Admin views
-report measured diagnostic bytes/files and database bytes. Exports are private
-and selected-session scoped; no public raw-log download exists.
+Approved exact hosted identifiers are gpt-6.1-terra, gpt-6.1-sol and gpt-6-luna.
+Static provider compatibility validation follows their official Responses API
+model documentation: low/medium/high/xhigh/max for all three, none for Terra/Luna,
+and model default by omitting effort. Sol/none, arbitrary identifiers, backends,
+credentials and altered technical limits are rejected. This is offline parameter
+validation, not proof of live model/account access or provider behavior.
 
-The final hosted integration passed all 1,404 offline tests with no skips on
-Python 3.12.14 with the declared dependencies, including pypdf 6.19.0, Pillow
-12.3.0, Waitress 3.0.2 and PyJWT 2.15.1. Separate-user Edge browser checks at
-1440/390/320px cover session lifecycle, attachments, citations, admin read/export
-and forged URLs/forms; local Run Settings/200% zoom checks also pass. Signed
-synthetic tokens exercise actual Waitress HTTP, ordinary Research/Answer through
-mocked API transport, two-user overlap, private persistence and restart without
-replay. Focused checks cover token rejection/cache outage, all data routes,
-ownership migration, quotas, retention/alias safety and idle cleanup. Ruff,
-compilation, JavaScript syntax, whitespace and all six configured hooks pass.
-Screenshots were visually reviewed. Only synthetic data/identities and offline
-transports were used; no live model, search or authentication calls occurred.
+Preferences use schema 5's existing app_preferences table, without a schema
+migration or historical payload rewrite. Nullable ownership and durable UTC daily
+submission ledger remain. The default quota is 20 accepted questions per user per
+UTC day including explicit retries; deletion/restart do not reset it. Local
+unowned sessions remain local and hosted startup refuses a database containing
+them. Signed RS256 Access validation, exact invited identities, ownership isolation,
+identity-bound CSRF forms and trusted-host checks remain. The administrator retains
+read-only tester access at /admin and selected diagnostic/attachment exports.
 
-Deployment settings must be configured in the Railway dashboard, with the root
-Dockerfile, explicit startup/health checks, one replica, five On Failure restarts
-and a `/data` volume. The obsolete legacy configuration file is removed; no
-Config as Code or TypeScript infrastructure system is required. Manual deployment
-uses an archive of an explicitly reviewed revision, with GitHub autodeploy and PR
-environments disabled. Activation/backup/restore procedures are in
-`docs/operator/PRIVATE_DOGFOOD_DEPLOYMENT_01.md`.
-This establishes offline deployment readiness only. Live TLS/login, Railway volume
-behavior, backup recovery and exact model/provider compatibility remain unproved.
-The Python 3.13 Linux Docker image was not built locally because the Docker
-daemon was unavailable; actual Railway/container execution remains unverified.
-Source promotion must be a reviewed explicit revision, with automatic deployments
-disabled. Research/Answer semantic ownership, prompts, acquisition routing,
-evidence selection and citation policy are unchanged.
+Privacy & participation explains external provider processing, administrator
+inspection of conversations and available diagnostics during the monitored
+preview, and avoiding confidential information. The large composer operator panel
+is removed. No end-to-end privacy or participant opt-out is claimed. Existing
+source-bearing diagnostic retention remains separate from durable conversations,
+attachments, Evidence and citations: 30 days, 1 GiB total and 64 MiB per file by
+default, with hourly/request/write/startup maintenance and honest incomplete-record
+limits. No new credential handling or research semantic responsibility is added.
+
+V2 verification and resource measurements are recorded in
+`docs/operator/PRIVATE_PREVIEW_V2.md` and
+`docs/operator/PRIVATE_PREVIEW_V2_RESOURCES.md`. Testing uses synthetic identities,
+databases, attachments, sources and mocked provider transports only. No live
+provider/model/search calls, production database, private conversations,
+credentials or source-bearing private traces were accessed. Live four-job
+capacity, provider latency/rate limits, exact account compatibility, Railway
+resource behavior and Linux container execution remain unproved by offline work.
+Activation, backup and restore guidance remains in
+`docs/operator/PRIVATE_DOGFOOD_DEPLOYMENT_01.md`. Manual promotion requires an
+explicit reviewed revision with GitHub autodeploy and PR environments disabled.
+Research/Answer prompts, semantic ownership, acquisition routing, evidence
+selection, citations and unrelated technical limits are unchanged.
 
 ## Reading Room run settings
 

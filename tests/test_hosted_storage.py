@@ -127,10 +127,11 @@ def test_failed_validation_and_queue_rejection_do_not_charge_quota(tmp_path):
     assert admit(store, "Accepted", 3, quota=1)
 
 
-def test_two_users_overlap_while_same_owner_queues_and_then_resumes(tmp_path):
+@pytest.mark.parametrize("owners", [(ALICE,) * 5, (ALICE, BOB, ALICE, BOB, ALICE)])
+def test_four_conversations_overlap_and_fifth_queues_then_resumes(tmp_path, owners):
     store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
-    started = {name: Event() for name in "ABC"}
-    release = {name: Event() for name in "ABC"}
+    started = {name: Event() for name in "ABCDE"}
+    release = {name: Event() for name in "ABCDE"}
     seen = {}
     def options(job):
         owner = store.load(job.session_id).metadata.owner_id
@@ -140,45 +141,61 @@ def test_two_users_overlap_while_same_owner_queues_and_then_resumes(tmp_path):
             assert release[question].wait(10)
             return result(question)
         return {"engine": engine}
-    manager = ResearchJobManager(store, session_options_factory=options)
+    manager = ResearchJobManager(store, session_options_factory=options, concurrency=4)
     try:
-        a = manager.submit("A", idempotency_key=key(1), owner_id=ALICE, submission_quota=10)
-        assert started["A"].wait(5)
-        b = manager.submit("B", idempotency_key=key(2), owner_id=ALICE, submission_quota=10)
-        c = manager.submit("C", idempotency_key=key(3), owner_id=BOB, submission_quota=10)
-        assert started["C"].wait(5)
-        assert manager.get(b.job_id).state == "queued" and not started["B"].is_set()
-        assert manager.get(a.job_id).state == manager.get(c.job_id).state == "researching"
+        jobs = []
+        for number, (name, owner) in enumerate(zip("ABCD", owners), 1):
+            jobs.append(manager.submit(name, idempotency_key=key(number), owner_id=owner, submission_quota=10))
+            assert started[name].wait(5)
+        queued = manager.submit("E", idempotency_key=key(5), owner_id=owners[4], submission_quota=10)
+        jobs.append(queued)
+        assert manager.get(queued.job_id).state == "queued" and not started["E"].is_set()
+        assert all(manager.get(job.job_id).state == "researching" for job in jobs[:4])
+        with pytest.raises(SessionStoreError, match="session_busy"):
+            manager.submit("second question", session_id=jobs[0].session_id, revision=0,
+                           idempotency_key=key(6), owner_id=owners[0], submission_quota=10)
         release["A"].set()
-        assert started["B"].wait(5)
+        assert started["E"].wait(5)
+        assert all(manager.get(job.job_id).state == "researching" for job in jobs[1:])
     finally:
         for event in release.values():
             event.set()
         assert manager.wait_idle(10)
         manager.shutdown()
-    assert seen == {"A": ALICE, "C": BOB, "B": ALICE}
-    for job in (a, b, c):
+    assert seen == dict(zip("ABCDE", owners))
+    for job in jobs:
         saved = store.load(job.session_id)
         assert saved.state.turns[0].question == job.question
         assert saved.metadata.owner_id == seen[job.question]
 
 
-def test_one_active_owner_cannot_grow_waiting_queue_past_eight(tmp_path):
+def test_four_active_jobs_cannot_grow_waiting_queue_past_eight(tmp_path):
     store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
-    started, release = Event(), Event()
+    started, release = {str(n): Event() for n in range(1, 5)}, Event()
     def blocked(question, **kwargs):
-        started.set()
+        if question in started:
+            started[question].set()
         assert release.wait(10)
         return result(question)
-    manager = ResearchJobManager(store, session_options={"engine": blocked})
+    manager = ResearchJobManager(store, session_options={"engine": blocked}, concurrency=4)
     try:
-        manager.submit("active", idempotency_key=key(1), owner_id=ALICE, submission_quota=20)
-        assert started.wait(5)
-        for number in range(2, 10):
+        for number in range(1, 5):
             manager.submit(str(number), idempotency_key=key(number), owner_id=ALICE, submission_quota=20)
+            assert started[str(number)].wait(5)
+        def burst(number):
+            try:
+                return manager.submit(str(number), idempotency_key=key(number), owner_id=ALICE, submission_quota=20)
+            except SessionStoreError as exc:
+                return exc.code
+        with ThreadPoolExecutor(max_workers=24) as pool:
+            admissions = list(pool.map(burst, range(5, 29)))
+        assert sum(not isinstance(value, str) for value in admissions) == 8
+        assert admissions.count("research_queue_full") == 16
+        assert len(store.list_sessions()) == len(store.list_jobs()) == 12
         with pytest.raises(SessionStoreError, match="research_queue_full"):
-            manager.submit("overflow", idempotency_key=key(10), owner_id=BOB, submission_quota=20)
+            manager.submit("overflow", idempotency_key=key(29), owner_id=BOB, submission_quota=20)
         assert sum(job.state == "queued" for job in manager.list()) == 8
+        assert sum(job.state == "researching" for job in manager.list()) == 4
     finally:
         release.set()
         assert manager.wait_idle(10)

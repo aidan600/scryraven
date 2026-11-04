@@ -95,16 +95,26 @@ conversations and export selected research with available diagnostics, but canno
 mutate a tester's conversation. Research uses the same Research/Answer roles,
 Evidence custody and citation semantics as the local product.
 
-Hosted inference uses operator-authorized OpenAI API settings and credentials.
-Testers cannot change billing, backend, model or technical limits through HTTP.
-Daily per-user submission quotas bound admission; physical request ceilings are
-not dollar guarantees. Two workers can research for separate users concurrently,
-with at most one active job per hosted user and a bounded waiting queue.
+Hosted inference uses administrator-approved OpenAI API settings and credentials.
+Settings lets the administrator save supported Terra, Sol and Luna models and
+reasoning efforts; invited testers can choose Standard or Fast processing with
+those approved roles. Testers cannot change billing, backend, model, credentials
+or technical limits through HTTP. Accepted questions and retries retain their
+immutable settings. Daily per-user submission quotas bound admission; physical
+request ceilings are not dollar guarantees. Four workers can research separate
+conversations concurrently, including for one user, with one active question per
+conversation and eight waiting slots. Queued questions begin automatically.
 Persistent conversations, attachments and acquired Evidence survive restarts and
 diagnostic retention. Interrupted work requires explicit retry. Protected
 source-bearing forensic files have finite age/storage retention, separate from
 ordinary application logs and durable research. Local personal-plan and
 OpenRouter capabilities remain available locally.
+
+The monitored private preview explains that external AI/research providers process
+relevant question and source material, and the administrator can inspect
+conversations and available diagnostic records. Participants should avoid
+confidential information. Privacy & participation keeps that explanation
+available without repeating it under every question.
 
 ## Durable product invariants
 

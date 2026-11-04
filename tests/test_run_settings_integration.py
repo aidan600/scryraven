@@ -111,6 +111,8 @@ def test_ordinary_submission_snapshots_exact_roles_and_persists_each_request_rec
         assert [row["role"] for row in receipt["requests"]] == ["research", "answer", "answer"]
         assert all(row["input_tokens"] == 10 and row["output_tokens"] == 5 for row in receipt["requests"])
         if backend == "openai":
+            assert all(row["cached_input_tokens"] == 2 and row["cache_write_tokens"] == 0
+                       for row in receipt["requests"])
             tier = "fast" if processing == "fast" else "default"
             assert all(item["service_tier"] == tier for item in payloads)
             assert all(url == "https://api.openai.com/v1/responses" for url, _ in calls)

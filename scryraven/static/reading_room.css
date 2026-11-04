@@ -31,8 +31,9 @@ button, a, summary { touch-action: manipulation; }
 .icon-button:hover { background: #e5e8e5; color: var(--ink); text-decoration: none; }
 .eyebrow { font: 600 10px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
 .sidebar { background: var(--sidebar); border-right: 1px solid var(--line); display: grid; grid-row: 1 / -1; grid-template-rows: subgrid; min-width: 0; min-height: 0; height: 100%; z-index: 20; }
+.sidebar:has(.sidebar-entry) { grid-template-rows: minmax(0, 1fr) auto; }
 .sidebar-main, .workspace-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.sidebar-top { padding: 24px 18px 23px; }
+.sidebar-top { padding: 24px 18px 23px; flex-shrink: 0; }
 .wordmark { display: flex; align-items: center; gap: 10px; color: var(--ink); font-size: 19px; font-weight: 600; letter-spacing: -.5px; text-decoration: none; width: fit-content; }
 .wordmark:hover { text-decoration: none; }
 .brand-mark { width: 30px; height: 30px; display: grid; place-items: center; color: var(--paper); background: #304c58; border-radius: 7px; }
@@ -46,17 +47,23 @@ button, a, summary { touch-action: manipulation; }
 .session-row { display: flex; align-items: center; min-width: 0; margin: 2px 0; border-radius: 5px; }
 .session-row:hover { background: #e9e9e2; }
 .session-row.selected { background: #e0e6e3; }
-.session-link { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #556166; font-size: 12.5px; padding: 12px 0 12px 12px; flex: 1; text-decoration: none; }
+.session-link { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #556166; font-size: 12.5px; padding: 12px 0 12px 12px; flex: 1; text-decoration: none; }
 .selected .session-link { color: #294a58; font-weight: 600; }
 .session-link:hover { text-decoration: none; }
 .session-actions { position: relative; flex-shrink: 0; }
 .session-actions summary { list-style: none; }
 summary::-webkit-details-marker { display: none; }
-.action-menu { position: absolute; right: 3px; top: 35px; z-index: 30; background: #fff; padding: 5px; min-width: 135px; border: 1px solid var(--line); border-radius: 7px; box-shadow: 0 5px 20px #22383b12; }
+.action-menu { position: fixed; z-index: 110; background: #fff; padding: 5px; min-width: 150px; max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); overflow-y: auto; border: 1px solid var(--line); border-radius: 7px; box-shadow: 0 5px 20px #22383b12; }
 .action-menu a { display: block; color: var(--ink); padding: 9px 12px; text-decoration: none; font-size: 13px; border-radius: 3px; }
 .action-menu a:hover { background: var(--cool); }
 .action-menu .danger-text { color: #9a4640; }
-.sidebar-foot { display: flex; gap: 8px; align-items: center; color: #73807d; font-size: 10.5px; min-height: 67px; padding: 16px 24px; border-top: 1px solid var(--line); }
+.sidebar-foot { display: flex; flex-direction: column; gap: 2px; align-items: stretch; flex-shrink: 0; color: #73807d; font-size: 10.5px; min-height: 67px; padding: 12px 14px; border-top: 1px solid var(--line); }
+.sidebar-entry { display: flex; align-items: center; gap: 10px; min-height: 40px; width: 100%; padding: 8px 10px; border-radius: 5px; background: transparent; color: #52636a; text-align: left; text-decoration: none; font-size: 12px; }
+.sidebar-entry:hover { background: #e5e8e2; text-decoration: none; }
+.sidebar-entry .icon { width: 17px; height: 17px; }
+.privacy-mark { display: inline-grid; place-items: center; width: 17px; height: 17px; border: 1px solid; border-radius: 50%; font: 12px Georgia, serif; }
+.sidebar-custody { display: flex; align-items: center; gap: 8px; padding: 4px 10px; margin: 2px 0 0; }
+.history-backdrop { position: fixed; inset: 0; background: #20313966; z-index: 89; }
 .local-dot { width: 5px; height: 5px; border-radius: 50%; background: #7c9486; }
 .close-history, .open-history { display: none; }
 .workspace { min-width: 0; min-height: 0; display: grid; grid-row: 1 / -1; grid-template-rows: subgrid; grid-template-columns: minmax(0, 1fr); }
@@ -244,7 +251,7 @@ dialog::backdrop { background: #1e323d26; }
 @media (max-width: 760px) {
   body { grid-template-columns: minmax(0, 1fr); }
   .sidebar { display: none; }
-  .sidebar:target, .sidebar.is-open { display: flex; position: fixed; top: 0; left: 0; width: min(310px, calc(100% - 44px)); box-shadow: 0 0 0 100vmax #20313966; z-index: 90; }
+  .sidebar:target, .sidebar.is-open { display: flex; flex-direction: column; position: fixed; top: 0; left: 0; width: min(310px, calc(100% - 44px)); z-index: 90; }
   .sidebar-main { flex: 1; }
   .sidebar-top { position: relative; padding-top: 25px; }
   .close-history { position: absolute; right: 12px; top: 20px; display: flex; }
@@ -358,10 +365,15 @@ dialog::backdrop { background: #1e323d26; }
 .billing-toggle { white-space: normal; text-align: left; }
 .billing-error { font-size: 12px; color: #934a3d; line-height: 1.6; }
 .run-request { padding: 5px 0; border-bottom: 1px solid var(--line); }
-/* Hosted custody and operator views use the existing Reading Room type scale. */
-.hosted-run-settings { margin: 8px 0; color: #625f58; font-size: 12px; }
-.hosted-run-settings summary { cursor: pointer; }
-.hosted-run-settings p { margin: 8px 0; }
+/* Hosted preview controls remain secondary to the conversation. */
+.hosted-processing-note { margin: 5px 3px 0; color: var(--muted); font-size: 10px; }
+.hosted-processing-note span { color: #76817f; }
+.preview-intro { max-width: 480px; margin: 16px 2px 0; color: var(--muted); font-size: 11px; line-height: 1.7; }
+.preview-intro button { background: none; color: var(--accent); padding: 0; text-decoration: underline; text-underline-offset: 3px; }
+.approved-models { padding: 10px 14px; background: #f1f4f1; border-radius: 6px; font-size: 12px; overflow-wrap: anywhere; }
+.approved-models p { margin: 6px 0; }
+.approved-models strong { display: inline-block; margin-right: 8px; }
+.participation-copy { font-size: 13px; line-height: 1.8; color: #52636a; }
 .admin-page { display: block; overflow: auto; }
 .admin-content { max-width: 960px; margin: 0 auto; padding: 24px; overflow-wrap: anywhere; }
 .admin-sessions { list-style: none; padding: 0; }

@@ -1,17 +1,18 @@
 # Private dogfood deployment 01
 
-This guide covers offline deployment readiness for the product owner and two
-invited testers. The hosted application has passed offline integration and browser
-checks. Live provider/model compatibility, custom-domain TLS, Access login,
-Railway volume behavior and backup recovery still require operator verification
-during activation.
+This guide covers the private hosted Reading Room for the product owner and
+invited testers. Private Preview V2 changes source behavior and settings only;
+the existing hosted service is untouched during development. See
+`PRIVATE_PREVIEW_V2.md` and `PRIVATE_PREVIEW_V2_RESOURCES.md` for V2 offline
+verification. Live four-job provider capacity, deployed resource behavior and
+exact model/account compatibility require separately authorized observation.
 
 ## Release and topology
 
 Use one Railway Hobby service, one replica, one mounted persistent volume, and
 one Python process. Configure the service in the Railway dashboard using the
 settings below. `python -m scryraven.wsgi` runs Waitress with
-eight HTTP threads by default; ResearchJobManager still has two research workers
+eight HTTP threads by default; hosted ResearchJobManager has four research workers
 and eight waiting admissions. Do not launch multiple WSGI processes, replicas,
 workers, a development reloader or a second Reading Room against this database.
 The existing OS database-owner lock prevents overlapping managers; startup fails
@@ -51,6 +52,7 @@ the first application deployment:
 | **Settings > Deploy > Healthcheck Path** | `/healthz`. |
 | **Settings > Deploy**, healthcheck timeout | **60 seconds**. Leave Railway's supplied `PORT` available to the app. |
 | **Settings > Scale > Regions** | One region and **one replica total**. Do not add replicas or additional application services. |
+| **Settings > Scale**, resource limits | Retain **2 vCPU** and **2 GB memory**. Four research workers share this one process; no resource increase is part of V2. |
 | Service **Settings**, restart policy | **On Failure**, maximum **5 restarts**. Hobby permits this finite policy. |
 | **Settings > Deploy > Serverless** | **Enable Serverless off**; keep the service running for research jobs and hourly diagnostic retention. Leave any cron schedule empty. |
 | Project canvas/command palette, **Create a volume**, select this service | One **new empty volume**, mount path **`/data`**. In the service **Variables** tab set `SCRYRAVEN_DATA_DIR=/data`, plus the protected variables below. |
@@ -98,6 +100,8 @@ original PDFs/images, job/settings/usage snapshots, ownership and quota counters
 Schema 5 additively adds nullable ownership and an independent UTC daily admission
 ledger to schema 4; legacy payloads and attachments are not rewritten. Local
 unowned sessions continue working locally. The hosted app excludes them entirely.
+V2 preferences use the existing `app_preferences` table; no schema migration or
+conversation rewrite is needed.
 
 Set these through protected Railway service variables, never tracked files:
 
@@ -127,26 +131,50 @@ Optional operator controls:
 | `PORT` | `8080`; Railway supplies its assigned listening port |
 | `SCRYRAVEN_BIND_HOST` | `0.0.0.0`; use `127.0.0.1` for local verification |
 | `SCRYRAVEN_HTTP_THREADS` | `8`, permitted range 4–32 |
-| `SCRYRAVEN_RESEARCH_MODEL` / `SCRYRAVEN_ANSWER_MODEL` | Shipped role identifiers, ignoring personal model files |
-| `SCRYRAVEN_RESEARCH_REASONING` / `SCRYRAVEN_ANSWER_REASONING` | Shipped efforts; empty omits effort |
-| `SCRYRAVEN_API_PROCESSING` | `standard`; optional `fast` may cost more |
+| `SCRYRAVEN_RESEARCH_MODEL` / `SCRYRAVEN_ANSWER_MODEL` | Initial `gpt-6.1-terra` / `gpt-6.1-sol`, ignoring personal model files |
+| `SCRYRAVEN_RESEARCH_REASONING` / `SCRYRAVEN_ANSWER_REASONING` | Initial `medium` / `medium`; empty omits effort |
+| `SCRYRAVEN_API_PROCESSING` | Initial `fast`; higher rates may apply |
 | `SCRYRAVEN_SUBMISSIONS_PER_DAY` | `20` per identity per UTC day |
 | `SCRYRAVEN_FORENSIC_DAYS` | `30` |
 | `SCRYRAVEN_FORENSIC_MAX_BYTES` | `1073741824` (1 GiB total diagnostic budget) |
 
-Hosted forms cannot select backend/model/effort/tier/limits, supply keys, change
-billing authorization or set ownership. Such fields are rejected server-side.
-Every dispatch uses a job-owned OpenAI API configuration. Operator configuration
-changes do not silently reroute retries: a retry must match the current hosted
-policy; otherwise submit a new question. Admission and explicit retries count
+The sidebar **Settings** entry allows the administrator to save approved exact
+OpenAI Research/Answer models, compatible reasoning efforts and Standard/Fast
+processing immediately, without Railway variable edits or restart. The approved
+identifiers are `gpt-6.1-terra`, `gpt-6.1-sol` and `gpt-6-luna`. All offer Low,
+Medium, High, Extra high and Max; Terra/Luna also offer None. Model default omits
+the effort parameter. Sol/None and unknown identifiers are rejected server-side.
+These static compatibility checks follow the official
+[Terra](https://developers.openai.com/api/docs/models/gpt-6.1-terra),
+[Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol) and
+[Luna](https://developers.openai.com/api/docs/models/gpt-6-luna) API model pages;
+offline validation does not establish account access or live compatibility.
+
+Environment configuration supplies the initial hosted defaults until an
+administrator saves Settings. The durable saved administrator profile then takes
+precedence across restarts. Each tester can save only their own Standard/Fast
+choice; it overrides the administrator's tier for that tester's new submissions,
+while both model roles and reasoning remain administrator-owned. There is no
+repetitive billing confirmation. Forms cannot select a backend, supply keys,
+change billing authorization, ownership or technical limits. Testers cannot
+modify administrator preferences or supply arbitrary model/effort fields.
+
+Every dispatch uses a job-owned OpenAI API configuration. Changing defaults
+affects new admissions only. Accepted/queued jobs and explicit retries keep their
+original validated settings; no equality check against newer defaults reroutes or
+blocks an otherwise valid retry. Historical jobs with unknown settings require a
+new submission rather than invented provenance. Admission and explicit retries count
 against the durable daily quota; exact submission replay does not. Failed or
 interrupted accepted questions still count. Deleting a conversation or restarting
 does not reset the quota. The existing ceilings remain 40 physical model requests,
 16 external attempts, 900 whole-turn seconds, and 128,000 cumulative Answer source
 characters. These are technical ceilings, **not guaranteed dollar limits**.
-The shared waiting queue can fill; users should wait for capacity rather than
-retrying repeatedly. At most one active research job per hosted owner prevents
-one user from occupying both active slots across conversations.
+When all four workers are occupied, accepted questions automatically wait in the
+eight-slot queue and start as capacity frees. One user may occupy all four workers
+in separate conversations. A conversation still permits only one accepted active
+question. The shared waiting queue can fill; rejected submissions keep the draft
+and do not consume the daily quota. Local personal-plan/OpenRouter operation
+retains its two-worker behavior.
 
 ## Access, hostname and origin verification
 
@@ -195,8 +223,8 @@ Hostname protection alone is never the authorization mechanism.
 
 Test both invited users simultaneously, each with independent browser profiles.
 Verify each can create/reopen/rename/delete only their own sessions; supplying
-the other's URL or form fields must not reveal material. Verify two active jobs,
-a third queued job, private status, and the administrator's read-only view at
+the other's URL or form fields must not reveal material. Verify four active jobs
+(also four for one user), a fifth queued job, private status, and the administrator's read-only view at
 `/admin`. The owner can research in their own conversations but cannot mutate
 another user's conversation, including through crafted HTTP requests.
 
@@ -267,7 +295,7 @@ Do not run an older schema-4 binary against a schema-5 database; use a compatibl
 revision or an identified pre-upgrade backup, accepting any later data loss only
 through an explicit owner decision. Never reset the live volume to hide a failure.
 
-## Activation checklist after review
+## Original deployment preparation evidence and activation checklist
 
 Offline verification of the reviewed runtime at
 `c0ab0997753a38abd488c8eadb464d075b4b6491` passed 1,404 tests with no skips using

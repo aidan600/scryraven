@@ -76,7 +76,7 @@ class _JobStore:
 
 
 class ResearchJobManager:
-    """Two local workers and eight waiting admissions; never a research scheduler.
+    """Bounded workers and eight waiting admissions; never a research scheduler.
 
     Only accepted jobs from this server lifetime are dispatched. Restarting marks
     prior work interrupted, requiring an explicit new user submission. Workers
@@ -89,7 +89,10 @@ class ResearchJobManager:
     def __init__(self, store: SQLiteSessionStore, *, session_options: dict | None = None,
                  session_options_factory: Callable[[ResearchJob], dict] | None = None,
                  completion_receipt_factory: Callable[[ResearchJob], dict | None] | None = None,
-                 on_finished: Callable | None = None):
+                 on_finished: Callable | None = None, concurrency: int = 2):
+        if type(concurrency) is not int or concurrency not in {2, 4}:
+            raise ValueError("invalid_research_concurrency")
+        self.concurrency = concurrency
         self.store = store
         self.options = dict(session_options or {})
         self.options_factory = session_options_factory

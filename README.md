@@ -56,10 +56,14 @@ Research–Answer contract.
 
 ## Reading Room
 
-For the prepared single-instance private hosted beta, see the
+For the single-instance private hosted Reading Room, see the
 [Railway + Cloudflare Access operator guide](docs/operator/PRIVATE_DOGFOOD_DEPLOYMENT_01.md).
-Hosted mode uses separate persistent storage, verified identities and operator
-inference policy. It has not been deployed or verified against live services.
+Hosted mode uses separate persistent storage, verified identities and
+administrator-approved inference settings. Private Preview V2 adds four research
+workers, eight waiting slots, sidebar Settings and Privacy & participation.
+See the [V2 verification record](docs/operator/PRIVATE_PREVIEW_V2.md) for offline
+evidence and limits. This source update does not deploy or modify the existing
+hosted service.
 
 **Direct launch:** from the repository root and activated environment above, with
 `OPENAI_API_KEY` for model execution and `EXA_API_KEY` for ordinary web Search in

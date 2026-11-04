@@ -48,7 +48,7 @@
 
 {% macro run_record(settings, receipt=none) -%}
 <details class="run-record">
-  <summary>Run details{% if settings %} · {{ {'chatgpt_plan':'ChatGPT plan', 'openai':'OpenAI API', 'openrouter':'OpenRouter'}.get(settings.backend, 'Unknown') }}{% endif %}</summary>
+  <summary>Run details{% if receipt and receipt.requests|default([]) %} <span>· {{ receipt.requests|length }} reported {{ 'request' if receipt.requests|length == 1 else 'requests' }}</span>{% endif %}</summary>
   {% if settings %}{{ configuration(settings) }}{% else %}<p>Historical run configuration unknown.</p>{% endif %}
   {% if receipt %}
   <div class="run-usage">
@@ -57,12 +57,12 @@
       {% if item.returned_model %}<p>Provider-returned model: <code>{{ item.returned_model }}</code></p>{% endif %}
       {% if item.provider %}<p>Routed provider: {{ item.provider }}</p>{% endif %}
       {% if item.reported_cost_usd is not none %}<p>Provider-reported cost: ${{ item.reported_cost_usd }}. Actual billing may differ.</p>{% endif %}
-      <p>Provider-reported tokens: {{ item.input_tokens if item.input_tokens is not none else 'unknown' }} input · {{ item.output_tokens if item.output_tokens is not none else 'unknown' }} output{% if item.cached_input_tokens is not none %} · {{ item.cached_input_tokens }} cached input{% endif %}{% if item.reasoning_tokens is not none %} · {{ item.reasoning_tokens }} reasoning{% endif %}</p>
+      <p>Provider-reported tokens: {{ item.input_tokens if item.input_tokens is not none else 'unknown' }} input · {{ item.output_tokens if item.output_tokens is not none else 'unknown' }} output{% if item.cached_input_tokens is not none %} · {{ item.cached_input_tokens }} cached input{% endif %}{% if item.cache_write_tokens|default(none) is not none %} · {{ item.cache_write_tokens }} cache write{% endif %}{% if item.reasoning_tokens is not none %} · {{ item.reasoning_tokens }} reasoning{% endif %}</p>
       <p>Requested service tier: {{ item.requested_service_tier or 'not requested' }} · Returned tier: {{ item.returned_service_tier or 'unreported' }}</p>
     </div>
     {% endfor %}
     {% if receipt.estimated_cost_usd is not none %}<p>Estimated inference spend: ${{ receipt.estimated_cost_usd }}. This is an estimate, not an actual bill.</p>{% else %}<p>Estimated inference spend: unknown.</p>{% endif %}
-    <p>Actual billing and credit balances are not available here. Unreported usage and prices remain unknown.</p>
+    {% if receipt.actual_billed_usd|default(none) is not none %}<p>Recorded actual billed cost: ${{ receipt.actual_billed_usd }}.</p>{% else %}<p>Actual billing and credit balances are not available here. Unreported usage and prices remain unknown.</p>{% endif %}
   </div>
   {% elif settings %}<p class="run-usage">Provider usage and returned service tier were not reported. Actual billing is unknown.</p>{% endif %}
 </details>
@@ -71,9 +71,7 @@
 {% macro run_controls() -%}
 {% set settings = run_settings|default({}) %}
 {% if hosted_mode %}
-<details class="hosted-run-settings"><summary>Run settings · OpenAI API</summary>{{ configuration(settings) }}
-<p>Configured by the operator. Up to {{ submissions_per_day }} accepted questions per user per UTC day, including retries. Technical research limits apply; these are not dollar limits.</p>
-<p>Your question, conversation, source material and attachments used in research are supplied to OpenAI. The administrator can read research and export diagnostics.</p></details>
+<p class="hosted-processing-note">{{ 'Fast' if settings.api_processing == 'fast' else 'Standard' }} processing <span>· Change in Settings</span></p>
 {% else %}
 <div class="run-selection">
   <button class="run-settings-open" type="button" aria-haspopup="dialog" aria-controls="run-settings-dialog"><span class="run-selection-backend">{{ {'chatgpt_plan':'ChatGPT plan', 'openai':'OpenAI API · API billed', 'openrouter':'OpenRouter · OpenRouter billed'}.get(settings.backend, 'Run settings') }}</span><span class="run-selection-roles">Research {{ settings.research_model }} · {{ settings.research_reasoning or 'model default' }} / Answer {{ settings.answer_model }} · {{ settings.answer_reasoning or 'model default' }}{% if settings.backend == 'openai' %} · {{ 'Choose processing' if initial_processing_profile|default(none) else ('Fast' if settings.api_processing == 'fast' else 'Standard') }}{% endif %}</span><span class="run-selection-edit">Edit</span></button>
@@ -192,8 +190,16 @@
     {% endfor %}
   </nav>
   </div>
-  <div class="sidebar-foot"><span class="local-dot" aria-hidden="true"></span>{% if hosted_mode %}Private beta{% if identity and identity.is_admin %} · <a href="{{ url_for('admin_sessions') }}">Administration</a>{% endif %}{% else %}Saved on this device{% endif %}</div>
+  <div class="sidebar-foot">
+    {% if hosted_mode and not unavailable and identity %}
+    <button class="sidebar-entry" type="button" data-dialog-open="hosted-settings-dialog">{{ icon('settings') }}<span>Settings</span></button>
+    <button class="sidebar-entry" type="button" data-dialog-open="participation-dialog"><span class="privacy-mark" aria-hidden="true">i</span><span>Privacy &amp; participation</span></button>
+    {% if identity and identity.is_admin %}<a class="sidebar-entry" href="{{ url_for('admin_sessions') }}">Administration</a>{% endif %}
+    <p class="sidebar-custody"><span class="local-dot" aria-hidden="true"></span>Private preview · monitored</p>
+    {% else %}<p class="sidebar-custody"><span class="local-dot" aria-hidden="true"></span>Saved on this device</p>{% endif %}
+  </div>
 </aside>
+<div class="history-backdrop" hidden></div>
 
 <main class="workspace{% if not saved %} new-state{% endif %}" id="reading" tabindex="-1">
   <div class="workspace-main">
@@ -227,7 +233,7 @@
         <h1 id="welcome-title">What would you like to understand?</h1>
         <p class="welcome-description">Answers grounded in public sources, with citations to explore.</p>
         {{ composer(true) }}
-        <p class="welcome-note">Add a PDF or image for context.</p>
+        <p class="welcome-note">Add a PDF or image for context.</p>{% if hosted_mode %}<p class="preview-intro">A monitored private preview. Please avoid confidential information. <button type="button" data-dialog-open="participation-dialog">Privacy &amp; participation</button></p>{% endif %}
       </section>
       {% endif %}
 
@@ -270,11 +276,11 @@
       <section class="research-job" id="research-status" data-job-id="{{ job.job_id }}" aria-labelledby="job-question" tabindex="-1">
         <div class="question-block"><h2 id="job-question">{{ job.question }}</h2></div>
         {% if job.attachments %}<ul class="turn-attachments" aria-label="Attachments to this question">{% for attachment in job.attachments %}<li><a href="{{ attachment.href }}" title="{{ attachment.filename }}" target="_blank" rel="noopener noreferrer">{% if attachment.preview_href %}<img src="{{ attachment.preview_href }}" alt="Attached image: {{ attachment.filename }}" loading="lazy">{% else %}<span class="attachment-kind">PDF</span>{% endif %}<span>{{ attachment.filename }}</span></a></li>{% endfor %}</ul>{% endif %}
-        {{ run_record(job.run_settings|default(none), job.run_receipt|default(none)) }}
         <div class="job-message" role="status" aria-live="polite">
-          {% if job.state in ['queued', 'researching'] %}<span class="working-indicator" aria-hidden="true"></span><div><strong>{{ 'Queued' if job.state == 'queued' else 'Researching' }}</strong><p>{{ 'Waiting for a research slot.' if job.state == 'queued' else 'ScryRaven is working on your question.' }} You can open another conversation while this continues.</p><noscript><a href="{{ url_for('open_session', session_id=saved.metadata.session_id) }}">Refresh status</a></noscript></div>
+          {% if job.state in ['queued', 'researching'] %}<span class="working-indicator" aria-hidden="true"></span><div><strong>{{ 'Your question is queued.' if job.state == 'queued' else 'Researching' }}</strong><p>{{ 'It will begin automatically when a research slot is available. You may navigate away.' if job.state == 'queued' else 'ScryRaven is working on your question. You may navigate away while research continues.' }}</p><noscript><a href="{{ url_for('open_session', session_id=saved.metadata.session_id) }}">Refresh status</a></noscript></div>
           {% else %}<div><strong>{{ 'Research interrupted' if job.state == 'interrupted' else 'Research failed' }}</strong><p>{{ job.error|default('Your question and attachments are saved. Retry when you are ready.', true) }}</p>{% if not read_only %}<form method="post" action="{{ url_for('open_session', session_id=saved.metadata.session_id) }}/jobs/{{ job.job_id }}/retry"><input type="hidden" name="form_token" value="{{ form_token('retry') }}"><button class="small-button" type="submit">Retry this question</button></form>{% endif %}</div>{% endif %}
         </div>
+        {{ run_record(job.run_settings|default(none), job.run_receipt|default(none)) }}
       </section>
       {% elif saved and not turns %}<p class="empty-session">This research hasn’t saved an answer yet. Ask a question below.</p>{% endif %}
     </div>
@@ -282,6 +288,54 @@
   </div>
   {% if saved and not unavailable and not read_only %}<footer class="composer-footer">{{ composer() }}</footer>{% endif %}
 </main>
+
+{% if hosted_mode and not unavailable and identity %}
+{% set preferences = hosted_preferences|default(run_settings) %}
+<dialog class="run-settings-dialog hosted-settings-dialog" id="hosted-settings-dialog" aria-labelledby="hosted-settings-title" data-model-choices='{{ hosted_model_choices|default({})|tojson }}'>
+  <form method="post" action="{{ url_for('update_hosted_preferences') if identity.is_admin else url_for('update_hosted_processing') }}">
+    <input type="hidden" name="form_token" value="{{ form_token('hosted-settings' if identity.is_admin else 'processing') }}">
+    {% if saved and not read_only %}<input type="hidden" name="return_session_id" value="{{ saved.metadata.session_id }}">{% endif %}
+    <div class="run-settings-heading"><div><p class="eyebrow">Private preview</p><h2 id="hosted-settings-title">Settings</h2></div><button class="icon-button" type="button" data-dialog-close aria-label="Close settings">{{ icon('close') }}</button></div>
+    <p class="settings-intro">{% if identity.is_admin %}Set the models and reasoning for future questions across this preview. {% endif %}Accepted questions and retries keep their original settings.</p>
+    {% if identity.is_admin %}
+    <div class="run-roles">
+    {% for role, label in [('research', 'Research'), ('answer', 'Answer')] %}
+      <fieldset><legend>{{ label }}</legend>
+        <label for="hosted-{{ role }}-model">{{ label }} model</label>
+        <select id="hosted-{{ role }}-model" name="{{ role }}_model" data-hosted-role="{{ role }}" required>
+        {% for model_id, choice in hosted_model_choices.items() %}<option value="{{ model_id }}"{% if preferences[role + '_model'] == model_id %} selected{% endif %}>{{ choice.label }} · {{ model_id }}</option>{% endfor %}
+        </select>
+        <label for="hosted-{{ role }}-reasoning">{{ label }} reasoning effort</label>
+        <select id="hosted-{{ role }}-reasoning" name="{{ role }}_reasoning">
+        {% for effort in hosted_model_choices.get(preferences[role + '_model'], {}).get('reasoning', []) %}<option value="{{ effort }}"{% if (preferences[role + '_reasoning'] or '') == effort %} selected{% endif %}>{{ effort|capitalize if effort else 'Model default' }}</option>{% endfor %}
+        </select>
+      </fieldset>
+    {% endfor %}
+    </div>
+    {% else %}
+    <div class="approved-models"><p><strong>Research</strong> {{ run_settings.research_model }} · {{ (run_settings.research_reasoning or 'Model default')|capitalize }}</p><p><strong>Answer</strong> {{ run_settings.answer_model }} · {{ (run_settings.answer_reasoning or 'Model default')|capitalize }}</p><p class="settings-note">Models and reasoning are chosen by the administrator.</p></div>
+    {% endif %}
+    <label for="hosted-api-processing">API processing</label>
+    <select id="hosted-api-processing" name="api_processing" required>
+    {% set processing = preferences.api_processing if identity.is_admin else run_settings.api_processing %}
+      <option value="standard"{% if processing == 'standard' %} selected{% endif %}>Standard</option><option value="fast"{% if processing == 'fast' %} selected{% endif %}>Fast</option>
+    </select>
+    <p class="settings-note">{% if identity.is_admin %}Default for new questions. Testers can choose their own Standard or Fast processing. {% endif %}Both Research and Answer use this choice. Provider availability applies.</p>
+    <p class="settings-note">Up to {{ submissions_per_day }} accepted questions per person per UTC day, including retries. Existing technical research limits apply.</p>
+    <div class="dialog-actions"><button type="button" class="text-button" data-dialog-close>Cancel</button><button class="small-button" type="submit">Save settings</button></div>
+  </form>
+</dialog>
+<dialog class="run-settings-dialog participation-dialog" id="participation-dialog" aria-labelledby="participation-title">
+  <div class="run-settings-heading"><div><p class="eyebrow">Private preview</p><h2 id="participation-title">Privacy &amp; participation</h2></div><button class="icon-button" type="button" data-dialog-close aria-label="Close privacy and participation">{{ icon('close') }}</button></div>
+  <div class="participation-copy">
+    <p>ScryRaven is a monitored private preview for invited participants. Please avoid submitting confidential information.</p>
+    <p>External AI and research providers process relevant question, conversation, attachment and source material to carry out research.</p>
+    <p>During this preview, the administrator can inspect conversations and available diagnostic records, and export selected research with its attachments and diagnostics.</p>
+    <p>Deleting a conversation removes it from ordinary application storage. Diagnostic records may remain until their retention period ends; protected backups and prior exports may also retain copies.</p>
+  </div>
+  <div class="dialog-actions"><button class="small-button" type="button" data-dialog-close>Done</button></div>
+</dialog>
+{% endif %}
 
 <aside class="citation-preview" id="citation-preview" role="dialog" aria-labelledby="citation-preview-title" hidden>
   <div class="citation-preview-top"><span class="eyebrow citation-preview-number"></span><button class="icon-button preview-close" type="button" aria-label="Close citation preview">{{ icon('close') }}</button></div>
