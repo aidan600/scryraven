@@ -60,6 +60,17 @@ attachments, Evidence and citations: 30 days, 1 GiB total and 64 MiB per file by
 default, with hourly/request/write/startup maintenance and honest incomplete-record
 limits. No new credential handling or research semantic responsibility is added.
 
+The frozen V2 runtime `feb7a91bb84afff4ed009e43767a70a0a20ee9f4` passed all
+1,453 offline tests with no skips, including real Edge checks at desktop, tablet,
+390px and 320px and existing local 200% zoom checks. All six repository hooks,
+Ruff, compilation, JavaScript syntax and whitespace checks pass. A separate
+clean-revision Waitress resource probe completed ten large-context/PDF/image jobs,
+with four same-owner and four mixed-owner jobs overlapping and each fifth queued
+job starting automatically. OS peak working set was 216.22 MiB and peak commit
+201.39 MiB; approximately one-second peak CPU was 1.56 cores under two-CPU Windows
+affinity. These are bounded offline measurements, not deployed limits or provider
+latency evidence. No deterministic submission-caused interruption reproduced.
+
 V2 verification and resource measurements are recorded in
 `docs/operator/PRIVATE_PREVIEW_V2.md` and
 `docs/operator/PRIVATE_PREVIEW_V2_RESOURCES.md`. Testing uses synthetic identities,

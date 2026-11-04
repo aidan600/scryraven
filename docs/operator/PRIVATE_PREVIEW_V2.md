@@ -98,6 +98,23 @@ also reject external browser requests. Windows Edge and filesystem-link checks
 need the authorized execution context outside the restricted launch sandbox.
 The first sandbox pass failed to launch Edge; that is not product evidence.
 
+At clean runtime commit `feb7a91bb84afff4ed009e43767a70a0a20ee9f4`, the complete
+suite passed **1,453 tests with no skips** in 136.13 seconds. The complete output is
+`C:/tmp/sr-preview-v2/full-suite-feb7a91.log`. All six configured repository hooks,
+Ruff, Python compilation, JavaScript syntax and whitespace checks pass. The
+resource receipt for the same clean commit reports 216.22 MiB OS peak working set,
+201.39 MiB peak commit and 155.91% of one core over approximately one second.
+Its CPU interval was 9.015625 seconds over 7.359 wall seconds; these are mocked
+transport observations. A preliminary concurrent browser batch had one loopback
+`ERR_NO_BUFFER_SPACE`; isolated checks and the frozen full suite passed. No
+production failure or provider performance conclusion is inferred from it.
+
+Review also repaired two concrete edge cases: exact accepted-submission replay
+after defaults changed, and modal Escape canceling an underlying unsaved rename.
+Both have focused regression coverage. Shutdown-without-restart verifies honest
+server-interruption wording. Existing historical session, source, attachment and
+quota tests pass; no existing database or private history was opened.
+
 ## Current limits and review
 
 No live provider/model/search calls or production access are part of this phase.
