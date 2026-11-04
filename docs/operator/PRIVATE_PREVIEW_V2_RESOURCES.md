@@ -57,10 +57,11 @@ submission-caused interruption occurs in these scenarios.
 
 ## Measured local result
 
-Initial successful measurement: `C:/tmp/scryraven-private-preview-v2-stress-03`,
-using the V2 implementation working tree. The final review bundle identifies the
-exact subsequently tested commit; this initial measurement is not presented as
-an immutable commit receipt.
+Frozen-runtime measurement: `C:/tmp/scryraven-private-preview-v2-stress-feb7a91`,
+at clean commit `feb7a91bb84afff4ed009e43767a70a0a20ee9f4`. The exact
+`result.json` records that SHA and `working_tree_has_changes=false`; sampled
+counters remain in `samples.json`. Subsequent evidence-documentation changes do
+not change the measured runtime.
 
 The measured child runs Python 3.12.14 on Windows 11 (build 26300), on a host
 reporting sixteen logical CPUs. Its process affinity is restricted to two
@@ -69,22 +70,21 @@ the HTTP client, image generation and signed-token creation are excluded.
 
 | Measurement | Observed |
 | --- | ---: |
-| OS peak working set, including startup | 227,241,984 bytes (216.72 MiB) |
-| OS peak committed process memory | 211,378,176 bytes (201.59 MiB) |
-| Maximum sampled resident memory | 190,459,904 bytes (181.64 MiB) |
-| Maximum sampled private memory | 190,267,392 bytes (181.45 MiB) |
-| CPU time during measured server interval | 12.78125 seconds |
-| Measured wall interval | 11.516 seconds |
-| Average CPU, where one full core is 100% | 110.99% |
-| Peak CPU over approximately one second | 160.38% |
-| Peak CPU between nominal 100 ms samples | 215.02% |
-| Final synthetic SQLite database | 57,569,280 bytes (54.90 MiB) |
+| OS peak working set, including startup | 226,721,792 bytes (216.22 MiB) |
+| OS peak committed process memory | 211,169,280 bytes (201.39 MiB) |
+| Maximum sampled resident memory | 205,271,040 bytes (195.76 MiB) |
+| Maximum sampled private memory | 189,927,424 bytes (181.13 MiB) |
+| CPU time during measured server interval | 9.015625 seconds |
+| Measured wall interval | 7.359 seconds |
+| Average CPU, where one full core is 100% | 122.51% |
+| Peak CPU over approximately one second | 155.91% |
+| Peak CPU between nominal 100 ms samples | 186.35% |
+| Final synthetic SQLite database | 57,589,760 bytes (54.92 MiB) |
 | Completion | 10 completed; zero failed/interrupted |
 
 Sampling is nominally every 100 ms; Python scheduling and the Windows CPU clock
-are granular. The short-interval 215.02% reading can exceed the two-core nominal
-200% because the CPU and wall snapshots are not atomic. The approximately
-one-second peak and total CPU time are more useful than that short spike.
+are granular, and CPU/wall snapshots are not atomic. The approximately one-second
+peak and total CPU time are more useful than the short-interval peak.
 OS high-water memory catches allocations missed between samples. Measurement
 includes production forensic recording and database writes. Startup is included
 in OS memory high-water marks and excluded from the CPU/wall interval.
