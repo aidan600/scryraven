@@ -19,6 +19,7 @@ import jwt
 import requests
 from urllib3.util import Timeout
 
+from scryraven.hosted_preferences import validate_hosted_settings
 from scryraven.model import ModelError, built_in_model_config
 from scryraven.run_settings import PHYSICAL_REQUEST_CEILING, RunSettings
 
@@ -70,6 +71,7 @@ class HostedConfig:
 
     def __post_init__(self):
         try:
+            validate_hosted_settings(self.run_settings)
             if (not _ISSUER.fullmatch(self.issuer)
                     or not isinstance(self.audience, str) or not 1 <= len(self.audience) <= 256
                     or any(c.isspace() for c in self.audience)
@@ -112,7 +114,7 @@ class HostedConfig:
             if env.get("SCRYRAVEN_MODE") != "hosted" or env.get("SCRYRAVEN_BILLING_AUTHORIZED") != "true":
                 raise ValueError()
             defaults = built_in_model_config()
-            processing = env.get("SCRYRAVEN_API_PROCESSING", "standard")
+            processing = env.get("SCRYRAVEN_API_PROCESSING", "fast")
             settings = RunSettings(
                 "openai", env.get("SCRYRAVEN_RESEARCH_MODEL", defaults.research.model),
                 env.get("SCRYRAVEN_RESEARCH_REASONING", defaults.research.reasoning) or None,

@@ -157,6 +157,43 @@
       if (!menu.contains(event.target)) menu.open = false;
     });
   });
+  function closeActionMenus(restoreFocus = false) {
+    document.querySelectorAll('.session-actions[open]').forEach(menu => {
+      menu.open = false;
+      menu.querySelector('summary').setAttribute('aria-expanded', 'false');
+      if (restoreFocus) menu.querySelector('summary').focus({preventScroll: true});
+    });
+  }
+  document.querySelectorAll('.session-actions').forEach(menu => {
+    const summary = menu.querySelector('summary');
+    const popup = menu.querySelector('.action-menu');
+    summary.setAttribute('aria-expanded', 'false');
+    summary.addEventListener('click', event => {
+      // Own the opening click so the new popup cannot receive that same tap.
+      event.preventDefault();
+      event.stopPropagation();
+      const opening = !menu.open;
+      closeActionMenus();
+      if (!opening) return;
+      menu.open = true;
+      summary.setAttribute('aria-expanded', 'true');
+      const anchor = summary.getBoundingClientRect();
+      const card = popup.getBoundingClientRect();
+      popup.style.left = Math.max(8, Math.min(anchor.right - card.width, innerWidth - card.width - 8)) + 'px';
+      const below = anchor.bottom + 5;
+      popup.style.top = (below + card.height <= innerHeight - 8 ? below : Math.max(8, anchor.top - card.height - 5)) + 'px';
+    });
+    summary.addEventListener('keydown', event => {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        if (!menu.open) summary.click();
+        popup.querySelector('a').focus();
+      }
+    });
+    menu.addEventListener('toggle', () => summary.setAttribute('aria-expanded', String(menu.open)));
+  });
+  document.querySelector('.history-list')?.addEventListener('scroll', () => closeActionMenus(), {passive: true});
+  window.addEventListener('resize', () => closeActionMenus());
 
   const askForm = document.querySelector('.ask-form');
   let saveDraft = () => {};
@@ -673,8 +710,9 @@
               const message = document.querySelector('.research-job .job-message');
               if (message) {
                 message.querySelector('strong').textContent = 'Researching';
-                message.querySelector('p').textContent = 'ScryRaven is working on your question. You can open another conversation while this continues.';
+                message.querySelector('p').textContent = 'ScryRaven is working on your question. You may navigate away while research continues.';
               }
+              document.body.dataset.jobState = 'researching';
             }
           } else if (['queued', 'researching'].includes(previous) && ['completed', 'failed', 'interrupted'].includes(job.state)) {
             notifyJob(job);
@@ -689,26 +727,31 @@
   const sidebar = document.querySelector('.sidebar');
   const workspace = document.querySelector('.workspace');
   const openHistory = document.querySelector('.open-history');
-  function closeHistory() {
+  const historyBackdrop = document.querySelector('.history-backdrop');
+  function closeHistory(restoreFocus = true) {
+    closeActionMenus();
     sidebar.classList.remove('is-open');
     sidebar.removeAttribute('role');
     sidebar.removeAttribute('aria-modal');
     workspace.inert = false;
+    historyBackdrop.hidden = true;
     if (location.hash === '#history') history.replaceState(null, '', location.pathname + location.search);
-    openHistory.focus({preventScroll: true});
+    if (restoreFocus) openHistory.focus({preventScroll: true});
   }
   openHistory.addEventListener('click', event => {
     event.preventDefault();
     sidebar.classList.add('is-open');
     sidebar.setAttribute('role', 'dialog');
     sidebar.setAttribute('aria-modal', 'true');
+    historyBackdrop.hidden = false;
     workspace.inert = true;
     sidebar.querySelector('.close-history').focus();
   });
   sidebar.querySelector('.close-history').addEventListener('click', event => { event.preventDefault(); closeHistory(); });
+  historyBackdrop.addEventListener('click', () => closeHistory());
   sidebar.addEventListener('keydown', event => {
     if (!sidebar.classList.contains('is-open') || event.key !== 'Tab') return;
-    const focusable = [...sidebar.querySelectorAll('a, summary')].filter(el => el.getClientRects().length);
+    const focusable = [...sidebar.querySelectorAll('a, summary, button')].filter(el => el.getClientRects().length);
     const first = focusable[0], last = focusable.at(-1);
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
@@ -716,6 +759,35 @@
   narrow.addEventListener('change', () => {
     if (sidebar.classList.contains('is-open')) closeHistory();
   });
+
+  document.querySelectorAll('[data-dialog-open]').forEach(button => {
+    const dialog = document.getElementById(button.dataset.dialogOpen);
+    button.addEventListener('click', () => {
+      if (sidebar.classList.contains('is-open')) closeHistory(false);
+      dialog.showModal();
+      dialog.dataset.returnToHistory = String(narrow.matches && sidebar.contains(button));
+      dialog.addEventListener('close', () => {
+        if (dialog.dataset.returnToHistory === 'true') openHistory.focus({preventScroll: true});
+        else button.focus({preventScroll: true});
+      }, {once: true});
+    });
+  });
+  document.querySelectorAll('[data-dialog-close]').forEach(button => {
+    button.addEventListener('click', () => button.closest('dialog').close());
+  });
+  const hostedSettings = document.querySelector('#hosted-settings-dialog');
+  if (hostedSettings) {
+    const choices = JSON.parse(hostedSettings.dataset.modelChoices);
+    hostedSettings.querySelectorAll('[data-hosted-role]').forEach(model => {
+      model.addEventListener('change', () => {
+        const reasoning = hostedSettings.querySelector('[name=' + model.dataset.hostedRole + '_reasoning]');
+        const previous = reasoning.value;
+        const efforts = choices[model.value].reasoning;
+        reasoning.replaceChildren(...efforts.map(effort => new Option(effort ? effort[0].toUpperCase() + effort.slice(1) : 'Model default', effort)));
+        reasoning.value = efforts.includes(previous) ? previous : efforts.includes('medium') ? 'medium' : efforts[0];
+      });
+    });
+  }
 
   const rename = document.querySelector('.rename-form');
   if (rename) rename.querySelector('[name=title]').select();
@@ -734,7 +806,11 @@
   }
   document.addEventListener('keydown', event => {
     if (event.key !== 'Escape') return;
+    // A modal owns Escape. Native dismissal must leave the underlying editor,
+    // history drawer and conversation in place.
+    if (event.defaultPrevented || event.target.closest('dialog[open]')) return;
     if (!preview.hidden) { event.preventDefault(); closePreview(true); return; }
+    if (document.querySelector('.session-actions[open]')) { event.preventDefault(); closeActionMenus(true); return; }
     if (sidebar.classList.contains('is-open')) { closeHistory(); return; }
     if (rename) { location.href = rename.querySelector('.rename-cancel').href; return; }
     document.querySelectorAll('.session-actions[open]').forEach(menu => {

@@ -107,7 +107,8 @@ def hosted_ui(tmp_path):
 def private_context(stack, browser, hosted_ui, user, width):
     context = stack.enter_context(browser.new_context(viewport={"width": width, "height": 1000 if width == 1440 else 844},
                                                       extra_http_headers={"Cf-Access-Jwt-Assertion": user},
-                                                      ignore_https_errors=True))
+                                                      ignore_https_errors=True, has_touch=width < 761,
+                                                      is_mobile=width < 761))
     attempted_external, errors = [], []
     def loopback_only(route):
         outgoing = urlsplit(route.request.url)
@@ -153,9 +154,8 @@ def test_separate_user_history_citations_and_admin_read_only(browser, hosted_ui,
         for page in (alice, bob):
             fits(page)
             assert not page.locator("#run-backend, input[name=research_model], input[name=answer_model]").count()
-            page.locator(".hosted-run-settings summary").click()
-            assert "Configured by the operator" in page.locator(".hosted-run-settings").inner_text()
-            page.locator(".hosted-run-settings summary").click()
+            assert not page.locator(".hosted-run-settings").count()
+            assert "Standard processing" in page.locator(".hosted-processing-note").inner_text()
             citation = page.locator("a.citation").first
             citation.focus()
             page.locator("#citation-preview").wait_for(state="visible")

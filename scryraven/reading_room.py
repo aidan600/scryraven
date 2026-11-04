@@ -127,9 +127,11 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
     chosen_database = database if database is not None else hosted.database if hosted is not None else None
     custody = store if store is not None else SQLiteSessionStore(chosen_database)
     validator = hosted_diagnostics = None
+    hosted_preferences = None
     if hosted is not None:
         from scryraven.hosted import AccessTokenValidator
         from scryraven.hosted_diagnostics import HostedDiagnostics
+        from scryraven.hosted_preferences import HostedPreferences
 
         if not isinstance(custody, SQLiteSessionStore):
             raise ValueError("hosted_sqlite_required")
@@ -144,6 +146,7 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
         hosted_diagnostics = HostedDiagnostics(hosted.diagnostics_dir,
             retention_days=hosted.forensic_days, max_bytes=hosted.forensic_max_bytes)
         app.extensions["hosted_diagnostics"] = hosted_diagnostics
+        hosted_preferences = HostedPreferences(custody, hosted.run_settings)
     options = dict(session_options or {})
     initial_model = options.get("model")
     if initial_model is None:
@@ -198,8 +201,9 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
         settings = job.run_settings
         if settings is None:
             raise ValueError("historical_run_settings_unknown")
-        if hosted is not None and settings != hosted.run_settings:
-            raise ModelError("invalid_run_settings")
+        if hosted is not None:
+            from scryraven.hosted_preferences import validate_hosted_settings
+            validate_hosted_settings(settings)
         require_billing_authorization(settings.backend)
         records = []
         usage_runs[job.job_id] = records
@@ -242,6 +246,7 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                     "returned_service_tier": item.returned_service_tier,
                     "input_tokens": item.input_tokens, "output_tokens": item.output_tokens,
                     "cached_input_tokens": item.cached_input_tokens,
+                    "cache_write_tokens": item.cache_write_tokens,
                     "reasoning_tokens": item.reasoning_tokens,
                 })
                 if prior_usage:
@@ -302,7 +307,8 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
             hosted_diagnostics.finish(record, job=job, owner_id=job_owners.pop(job.job_id, None))
 
     try:
-        jobs = ResearchJobManager(custody, session_options_factory=job_options, on_finished=job_finished,
+        jobs = ResearchJobManager(custody, concurrency=4 if hosted is not None else 2,
+                                  session_options_factory=job_options, on_finished=job_finished,
                                   completion_receipt_factory=lambda job: {
                                       "requests": list(usage_runs.get(job.job_id, [])),
                                       "estimated_cost_usd": None, "actual_billed_usd": None,
@@ -325,11 +331,17 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
         return ({"owner_id": principal(), "submission_quota": hosted.submissions_per_day}
                 if hosted is not None else {})
 
+    def current_hosted_settings():
+        return hosted_preferences.for_user(principal(), admin=g.identity.is_admin)
+
     @app.context_processor
     def hosted_context():
         identity = getattr(g, "identity", None)
+        from scryraven.hosted_preferences import HOSTED_MODEL_CHOICES
         return {"hosted_mode": hosted is not None, "identity": identity,
-                "browser_identity": sha256(identity.email.encode()).hexdigest() if identity else "local"}
+                "browser_identity": sha256(identity.email.encode()).hexdigest() if identity else "local",
+                "hosted_model_choices": HOSTED_MODEL_CHOICES if hosted is not None else {},
+                "hosted_preferences": hosted_preferences.defaults().to_dict() if hosted is not None else {}}
 
     @app.before_request
     def protect_local_requests():
@@ -348,6 +360,8 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
             if request.endpoint in {"admin_sessions", "export_session"} and not g.identity.is_admin:
                 abort(404)
             if request.endpoint == "update_billing_authorization":
+                abort(403)
+            if request.endpoint == "update_hosted_preferences" and not g.identity.is_admin:
                 abort(403)
             session_id = (request.view_args or {}).get("session_id")
             if session_id:
@@ -420,17 +434,20 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
         if job is None:
             return None
         messages = {
-            "queued": "Queued. Research will start when a local worker is available.",
+            "queued": "Your question is queued. It will begin automatically when a worker is available. You may navigate away.",
             "researching": "Researching. You can browse other conversations while this continues.",
             "completed": "Research completed.",
             "failed": "Research did not complete. Your question and attachments are saved. You can retry explicitly.",
-            "interrupted": "Research was interrupted when the local server stopped. Retry explicitly to start again.",
+            "interrupted": "Research was interrupted. Your question and attachments are saved. Retry explicitly to start again.",
         }
         error = IMAGE_ERROR_MESSAGES.get(job.error_code, messages[job.state])
         error = RUN_SETTINGS_ERRORS.get(job.error_code, error)
         if job.error_code == "storage_interrupted":
-            error = ("Research was interrupted because local storage became unavailable. "
+            error = ("Research was interrupted because application storage became unavailable. "
                      "Your question and attachments are saved; retry explicitly.")
+        elif job.state == "interrupted" and job.error_code == "server_interrupted":
+            error = ("The server interrupted this run. Your question and attachments are saved; "
+                     "retry explicitly to start again.")
         return {"job_id": job.job_id, "session_id": job.session_id, "state": job.state,
                 "question": job.question, "revision": job.revision,
                 "error": error, "error_code": job.error_code,
@@ -517,18 +534,20 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                                                 if c.source_kind == "user_document" and c.document_id else None),
                              ))} for c in turn.citations],
             })
-        issue = lambda action: forms.issue(action, metadata.session_id if metadata and action != "billing" else "",
-                                           metadata.revision if metadata and action != "billing" else 0,
+        global_actions = {"billing", "hosted-settings", "processing"}
+        issue = lambda action: forms.issue(action, metadata.session_id if metadata and action not in global_actions else "",
+                                           metadata.revision if metadata and action not in global_actions else 0,
                                            principal=principal())
         notice = {"missing": "That session is no longer available. Your other research is here.",
                   "deleted": "Session deleted.", "renamed": "Session renamed.",
-                  "already_attached": ALREADY_ATTACHED_NOTICE}.get(request.args.get("notice"))
+                  "already_attached": ALREADY_ATTACHED_NOTICE,
+                  "settings_saved": "Settings saved. Accepted questions keep their original settings."}.get(request.args.get("notice"))
         return render_template(
             "reading_room.html", history=history, saved=saved, turns=turns, documents=documents,
             images=attachment_links(saved, image_ids=tuple(item.image_id for item in saved.images)) if saved else [],
             job=job, history_jobs=history_jobs, idempotency_key=uuid4().hex,
             citation_language=metadata.citation_language if metadata else "en",
-            run_settings=(initial_settings if hosted is not None else custody.get_run_settings() or initial_settings).to_dict(),
+            run_settings=(current_hosted_settings() if hosted is not None else custody.get_run_settings() or initial_settings).to_dict(),
             billing_authorizations={} if hosted is not None else custody.get_billing_authorizations(),
             run_settings_profiles=({} if hosted is not None else {backend: settings.to_dict()
                                    for backend, settings in custody.get_run_settings_profiles().items()}),
@@ -607,6 +626,57 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
     def claim(action, session_id=""):
         return forms.claim(request.form.get("form_token", ""), action, session_id, principal=principal())
 
+    def settings_form(names):
+        required = {"form_token", *names}
+        if (set(request.form) - (required | {"return_session_id"})
+                or not required.issubset(request.form)
+                or any(len(request.form.getlist(name)) != 1 for name in request.form)):
+            abort(400)
+
+    def settings_return_session():
+        session_id = request.form.get("return_session_id")
+        if session_id:
+            try:
+                metadata = custody.get_metadata(session_id)
+            except SessionStoreError as exc:
+                if exc.code == "session_not_found":
+                    abort(404)
+                raise
+            if metadata.owner_id != principal():
+                abort(404)
+        return session_id
+
+    def settings_redirect(session_id):
+        if session_id:
+            return redirect(url_for("open_session", session_id=session_id, notice="settings_saved"), 303)
+        return redirect(url_for("new_research", notice="settings_saved"), 303)
+
+    @app.post("/settings/hosted")
+    def update_hosted_preferences():
+        if hosted is None:
+            abort(404)
+        settings_form({"research_model", "research_reasoning", "answer_model", "answer_reasoning", "api_processing"})
+        claim("hosted-settings")
+        return_session_id = settings_return_session()
+        try:
+            hosted_preferences.save_defaults(request.form)
+        except ValueError:
+            return page(error="Choose approved models, supported reasoning efforts and Standard or Fast processing.", status=400)
+        return settings_redirect(return_session_id)
+
+    @app.post("/settings/processing")
+    def update_hosted_processing():
+        if hosted is None:
+            abort(404)
+        settings_form({"api_processing"})
+        claim("processing")
+        return_session_id = settings_return_session()
+        try:
+            hosted_preferences.save_processing(principal(), request.form["api_processing"], admin=g.identity.is_admin)
+        except ValueError:
+            return page(error="Choose Standard or Fast processing.", status=400)
+        return settings_redirect(return_session_id)
+
     @app.post("/settings/billing")
     def update_billing_authorization():
         names = {"form_token", "backend", "authorized"}
@@ -672,11 +742,23 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
             key = sha256((principal() + "\0" + key).encode()).hexdigest()
         try:
             if hosted is not None:
-                allowed_fields = {"form_token", "idempotency_key", "question", "citation_language", "retained_image_ids"}
+                allowed_fields = {"form_token", "idempotency_key", "question", "citation_language", "retained_image_ids",
+                                  "api_processing"}
                 if (set(request.form) - allowed_fields
                         or any(len(request.form.getlist(name)) > 1 for name in allowed_fields - {"retained_image_ids"})):
                     raise ValueError("invalid_run_settings")
-                settings = hosted.run_settings
+                settings = current_hosted_settings()
+                if "api_processing" in request.form:
+                    from dataclasses import replace
+                    settings = replace(settings, api_processing=request.form["api_processing"])
+                accepted = custody.find_submission(key, owner_id=principal())
+                if (accepted is not None and accepted.run_settings is not None
+                        and ("api_processing" not in request.form
+                             or request.form["api_processing"] == accepted.run_settings.api_processing)):
+                    # A lost-response replay still names the original accepted
+                    # snapshot after defaults change. accept_job compares the
+                    # complete question/files/context fingerprint as usual.
+                    settings = accepted.run_settings
             else:
                 settings = settings_from_form(request.form, initial_settings)
             require_billing_authorization(settings.backend)
@@ -700,7 +782,7 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                 "session_not_found": "That conversation was deleted. Your question is kept below.",
                 "session_conflict": "This conversation changed. Review the latest answer before submitting again.",
                 "session_busy": "This conversation already has an active question. Your unsent question is kept below.",
-                "research_queue_full": "The local research queue is full. Your question is kept below; try again shortly.",
+                "research_queue_full": "The research queue is full. Your question is kept below; try again shortly.",
                 "submission_conflict": "An earlier version of this question is already saved. This edited draft was not sent.",
                 "submission_quota_exceeded": "Your daily submission limit has been reached. Try again after midnight UTC.",
             }
@@ -737,13 +819,14 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                         error="The conversation changed. Review it before submitting a new question.", status=409)
         try:
             if previous.run_settings is not None:
-                if hosted is not None and previous.run_settings != hosted.run_settings:
-                    raise ModelError("invalid_run_settings")
+                if hosted is not None:
+                    from scryraven.hosted_preferences import validate_hosted_settings
+                    validate_hosted_settings(previous.run_settings)
                 require_billing_authorization(previous.run_settings.backend)
             job = jobs.retry(job_id, idempotency_key=request.form.get("form_token", ""), **admission_identity())
-        except ModelError as exc:
+        except (ModelError, ValueError) as exc:
             return page(session_id, question=previous.question, status=400,
-                        error=RUN_SETTINGS_ERRORS[str(exc)])
+                        error=RUN_SETTINGS_ERRORS.get(str(exc), RUN_SETTINGS_ERRORS["invalid_run_settings"]))
         except SessionStoreError as exc:
             if exc.code == "submission_quota_exceeded":
                 return page(session_id, question=previous.question, status=429,

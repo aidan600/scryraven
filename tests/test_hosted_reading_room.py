@@ -121,7 +121,7 @@ def test_admin_readonly_historical_citations_pdf_and_selected_export(room, confi
     assert store.load(alice).metadata.revision == 1
 
 
-def test_hosted_forms_bind_identity_origin_and_fixed_operator_policy(room, config, key):
+def test_hosted_forms_bind_identity_origin_and_protected_operator_policy(room, config, key):
     _, store, _, _ = room
     initial = get(room, config, key)
     token = form(initial)
@@ -139,7 +139,8 @@ def test_hosted_forms_bind_identity_origin_and_fixed_operator_policy(room, confi
     assert response.status_code == 403
     assert post(room, config, key, "/settings/billing", {"authorized": "1"}).status_code == 403
     assert not store.list_jobs()
-    assert "Configured by the operator" in initial.text
+    assert "Privacy &amp; participation" in initial.text
+    assert 'id="hosted-settings-dialog"' in initial.text
     assert 'id="run-settings-dialog"' not in initial.text
 
 
