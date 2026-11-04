@@ -57,6 +57,7 @@ from scryraven.research_jobs import ResearchJobManager
 from scryraven.run_settings import BILLED_BACKENDS, RunSettings, settings_from_form
 from scryraven.run_settings import ERROR_MESSAGES as RUN_SETTINGS_ERRORS
 from scryraven.session_store import (
+    MAX_ANSWER_FEEDBACK_CHARS,
     SessionConflictError,
     SessionStore,
     SessionStoreError,
@@ -472,10 +473,12 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                                                        image_id=item.image_id)})
         return result
 
-    def page(session_id=None, *, question="", error=None, status=200, confirmation=False, edit_title=False):
+    def page(session_id=None, *, question="", error=None, status=200, confirmation=False, edit_title=False,
+             feedback_turn=None, feedback_error=None, feedback_text=""):
         try:
             history = visible_sessions()
             saved = custody.load(session_id) if session_id else None
+            feedback = custody.list_feedback(session_id) if saved and hosted is not None else ()
             if jobs is None:
                 raise SessionStoreError()
             history_jobs = {}
@@ -512,7 +515,13 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
         for number, turn in enumerate(saved.state.turns if saved else (), 1):
             prefix = f"turn-{number}-source-"
             turns.append({
-                "number": number, "question": turn.question, "posture": turn.posture,
+                "number": number, "turn_index": number, "question": turn.question, "posture": turn.posture,
+                "feedback": tuple(item for item in feedback if item.turn_index == number),
+                "feedback_error": feedback_error if feedback_turn == number else None,
+                "feedback_text": feedback_text if feedback_turn == number else "",
+                "feedback_notice": ({"feedback_sent": "Feedback sent.", "feedback_removed": "Feedback removed."}
+                                    .get(request.args.get("notice"))
+                                    if request.args.get("feedback_turn") == str(number) else None),
                 "operating_bound": turn.stop_reason == "research_bound",
                 "source_free": source_free_supported(turn),
                 "answer": Markup(answer_html(turn, source_prefix=prefix, citation_previews=True)),
@@ -535,9 +544,12 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                              ))} for c in turn.citations],
             })
         global_actions = {"billing", "hosted-settings", "processing"}
-        issue = lambda action: forms.issue(action, metadata.session_id if metadata and action not in global_actions else "",
-                                           metadata.revision if metadata and action not in global_actions else 0,
-                                           principal=principal())
+        def issue(action):
+            # Feedback belongs to an immutable completed answer, independently
+            # of the research-session revision displayed by this page.
+            revision_bound = action not in global_actions and not action.startswith(("feedback:", "feedback-delete:"))
+            return forms.issue(action, metadata.session_id if metadata and action not in global_actions else "",
+                               metadata.revision if metadata and revision_bound else 0, principal=principal())
         notice = {"missing": "That session is no longer available. Your other research is here.",
                   "deleted": "Session deleted.", "renamed": "Session renamed.",
                   "already_attached": ALREADY_ATTACHED_NOTICE,
@@ -560,6 +572,7 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
             renaming=bool(saved and (edit_title or request.args.get("edit") == "rename")),
             read_only=getattr(g, "read_only", False),
             submissions_per_day=hosted.submissions_per_day if hosted is not None else None,
+            max_feedback_chars=MAX_ANSWER_FEEDBACK_CHARS,
         ), status
 
     @app.get("/")
@@ -607,6 +620,15 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                           "state": json.loads(_encode(saved.state, saved.documents, saved.images)),
                           "documents": documents, "images": images,
                           "jobs": [asdict(item) for item in jobs.list(session_id)],
+                          "answer_feedback": [dict(asdict(item), provenance="authenticated_participant")
+                                              for item in custody.list_feedback(session_id)
+                                              if item.turn_index <= len(saved.state.turns)],
+                          "answer_feedback_provenance": {
+                              "author_id": "Server-verified Cloudflare Access participant email at submission.",
+                              "turn_index": "Immutable 1-based completed answer index within session_id.",
+                              "created_at": "Server UTC timestamp at submission.",
+                              "text": "Participant feedback to the administrator; never research context or Evidence.",
+                          },
                           "diagnostics": "Available records only; retention or write limits may have removed records."}
                 archive.writestr("session.json", json.dumps(record, ensure_ascii=True, allow_nan=False))
                 hosted_diagnostics.add_to_archive(archive, session_id)
@@ -625,6 +647,47 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
 
     def claim(action, session_id=""):
         return forms.claim(request.form.get("form_token", ""), action, session_id, principal=principal())
+
+    def feedback_form(action, session_id, fields):
+        if hosted is None:
+            abort(404)
+        if (set(request.form) != fields
+                or any(len(request.form.getlist(name)) != 1 for name in fields)):
+            abort(400)
+        try:
+            claim(action, session_id)
+        except _FormError as exc:
+            abort(409 if exc.repeated else 403)
+
+    def feedback_failure(exc):
+        if exc.code in {"session_not_found", "feedback_turn_not_found", "feedback_not_found"}:
+            abort(404)
+        raise exc
+
+    @app.post("/sessions/<session_id>/turns/<int:turn_index>/feedback")
+    def submit_answer_feedback(session_id, turn_index):
+        feedback_form(f"feedback:{turn_index}", session_id, {"form_token", "text"})
+        text = request.form["text"]
+        try:
+            custody.add_feedback(session_id, turn_index, text, owner_id=principal())
+        except SessionStoreError as exc:
+            if exc.code == "invalid_feedback":
+                return page(session_id, status=400, feedback_turn=turn_index,
+                            feedback_error=f"Write a comment of 1 to {MAX_ANSWER_FEEDBACK_CHARS:,} characters using plain text.",
+                            feedback_text=text[:MAX_ANSWER_FEEDBACK_CHARS])
+            feedback_failure(exc)
+        return redirect(url_for("open_session", session_id=session_id, notice="feedback_sent",
+                                feedback_turn=turn_index, _anchor=f"feedback-{turn_index}"), 303)
+
+    @app.post("/sessions/<session_id>/turns/<int:turn_index>/feedback/<feedback_id>/delete")
+    def remove_answer_feedback(session_id, turn_index, feedback_id):
+        feedback_form(f"feedback-delete:{turn_index}:{feedback_id}", session_id, {"form_token"})
+        try:
+            custody.delete_feedback(session_id, turn_index, feedback_id, owner_id=principal())
+        except SessionStoreError as exc:
+            feedback_failure(exc)
+        return redirect(url_for("open_session", session_id=session_id, notice="feedback_removed",
+                                feedback_turn=turn_index, _anchor=f"feedback-{turn_index}"), 303)
 
     def settings_form(names):
         required = {"form_token", *names}

@@ -44,7 +44,7 @@ def test_additive_schema_four_migration_preserves_exact_history_and_unowned_sess
     assert not store.list_sessions(owner_id=ALICE)
     with closing(sqlite3.connect(path)) as connection:
         assert connection.execute("SELECT payload FROM sessions").fetchone()[0] == payload
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == SQLiteSessionStore.SCHEMA_VERSION
     alice = store.create("Owned", owner_id=ALICE)
     assert store.rename(alice.metadata.session_id, "Renamed").owner_id == ALICE
     assert [s.session_id for s in store.list_sessions(owner_id=ALICE)] == [alice.metadata.session_id]

@@ -95,6 +95,14 @@ conversations and export selected research with available diagnostics, but canno
 mutate a tester's conversation. Research uses the same Research/Answer roles,
 Evidence custody and citation semantics as the local product.
 
+In the hosted private preview, participants may leave multiple short plain-text
+comments directly beneath each completed answer, see their saved comments, and
+remove their own comments. These comments are feedback for the administrator,
+who can read and export them with their answer association. Feedback persists
+independently of research revisions, remains usable during research, and never
+becomes a conversational turn, model input, research job or quota submission.
+Deleting a session removes its ordinary feedback records.
+
 Hosted inference uses administrator-approved OpenAI API settings and credentials.
 Settings lets the administrator save supported Terra, Sol and Luna models and
 reasoning efforts; invited testers can choose Standard or Fast processing with
