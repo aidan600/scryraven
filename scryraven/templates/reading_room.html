@@ -270,6 +270,37 @@
         </details>
         {% endif %}
         {{ run_record(turn.run_settings|default(none), turn.run_receipt|default(none)) }}
+        {% if hosted_mode %}
+        <section class="answer-feedback" id="feedback-{{ turn.turn_index }}" aria-labelledby="feedback-title-{{ turn.turn_index }}">
+          <h3 id="feedback-title-{{ turn.turn_index }}">Feedback on this answer</h3>
+          {% if turn.feedback %}
+          <ol class="feedback-comments" aria-label="Submitted feedback for answer {{ turn.turn_index }}">
+            {% for comment in turn.feedback %}
+            <li data-feedback-id="{{ comment.feedback_id }}">
+              <p class="feedback-text">{{ comment.text }}</p>
+              <div class="feedback-meta"><time datetime="{{ comment.created_at }}">{{ comment.created_at[:16]|replace('T', ' ') }} UTC</time>
+              {% if not read_only %}
+              <form class="feedback-remove-form" method="post" action="{{ url_for('remove_answer_feedback', session_id=saved.metadata.session_id, turn_index=turn.turn_index, feedback_id=comment.feedback_id) }}">
+                <input type="hidden" name="form_token" value="{{ form_token('feedback-delete:' ~ turn.turn_index ~ ':' ~ comment.feedback_id) }}">
+                <button class="feedback-remove" type="submit" aria-label="Remove feedback: {{ comment.text[:60] }}">Remove</button>
+              </form>
+              {% endif %}</div>
+            </li>
+            {% endfor %}
+          </ol>
+          {% endif %}
+          <p class="feedback-confirmation" id="feedback-status-{{ turn.turn_index }}" role="status" aria-live="polite"{% if not turn.feedback_notice %} hidden{% endif %}>{{ turn.feedback_notice or '' }}</p>
+          {% if not read_only %}
+          <form class="feedback-form" method="post" action="{{ url_for('submit_answer_feedback', session_id=saved.metadata.session_id, turn_index=turn.turn_index) }}">
+            <input type="hidden" name="form_token" value="{{ form_token('feedback:' ~ turn.turn_index) }}">
+            <label class="sr-only" for="feedback-text-{{ turn.turn_index }}">Comment on answer {{ turn.turn_index }}</label>
+            <textarea id="feedback-text-{{ turn.turn_index }}" name="text" rows="2" maxlength="{{ max_feedback_chars }}" required aria-describedby="feedback-help-{{ turn.turn_index }} feedback-error-{{ turn.turn_index }} feedback-status-{{ turn.turn_index }}" placeholder="Leave a short comment…">{{ turn.feedback_text or '' }}</textarea>
+            <div class="feedback-controls"><p id="feedback-help-{{ turn.turn_index }}">For the product administrator · up to 2,000 characters.</p><button class="feedback-send" type="submit">Send feedback</button></div>
+          </form>
+          <p class="feedback-error" id="feedback-error-{{ turn.turn_index }}" role="alert"{% if not turn.feedback_error %} hidden{% endif %}>{{ turn.feedback_error or '' }}</p>
+          {% elif not turn.feedback %}<p class="feedback-empty">No feedback submitted.</p>{% endif %}
+        </section>
+        {% endif %}
       </section>
       {% endfor %}
       {% if job and job.state in ['queued', 'researching', 'failed', 'interrupted'] %}

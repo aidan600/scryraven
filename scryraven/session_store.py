@@ -76,6 +76,21 @@ class StoredSession:
     images: tuple[SessionImage, ...] = ()
 
 
+MAX_ANSWER_FEEDBACK_CHARS = 2000
+
+
+@dataclass(frozen=True)
+class AnswerFeedback:
+    """Participant feedback, separate from the immutable research conversation."""
+
+    feedback_id: str
+    session_id: str
+    turn_index: int
+    author_id: str
+    created_at: str
+    text: str
+
+
 @dataclass(frozen=True)
 class AttachedDocument:
     document: SessionDocument
@@ -387,6 +402,14 @@ _SUBMISSIONS_SQL = """CREATE TABLE user_submissions (
 )"""
 
 
+_FEEDBACK_SQL = f"""CREATE TABLE IF NOT EXISTS answer_feedback (
+    feedback_id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+    turn_index INTEGER NOT NULL CHECK (turn_index > 0), author_id TEXT NOT NULL,
+    created_at TEXT NOT NULL, text TEXT NOT NULL
+    CHECK (length(text) BETWEEN 1 AND {MAX_ANSWER_FEEDBACK_CHARS})
+)"""
+
+
 @dataclass(frozen=True)
 class ResearchJob:
     job_id: str
@@ -504,7 +527,7 @@ class SQLiteSessionStore:
     from research are stored. This is local plaintext data, not cloud account state.
     """
 
-    SCHEMA_VERSION = 5
+    SCHEMA_VERSION = 6
 
     def __init__(self, path: str | Path | None = None) -> None:
         try:
@@ -549,7 +572,7 @@ class SQLiteSessionStore:
                 connection.execute("ALTER TABLE research_jobs ADD COLUMN run_receipt TEXT")
                 connection.execute(_PREFERENCES_SQL)
                 connection.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
-            elif version not in {4, self.SCHEMA_VERSION}:
+            elif version not in {4, 5, self.SCHEMA_VERSION}:
                 raise SessionStoreError("incompatible_session_store")
             if version < 5:
                 # Ownership is metadata only. Legacy sessions stay unowned; no
@@ -557,6 +580,12 @@ class SQLiteSessionStore:
                 connection.execute("ALTER TABLE sessions ADD COLUMN owner_id TEXT")
                 connection.execute("CREATE INDEX sessions_owner ON sessions(owner_id)")
                 connection.execute(_SUBMISSIONS_SQL)
+                connection.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
+            if version < 6:
+                # Feedback is an independent record, never a conversation turn
+                # or a revision of historical answers, sources or citations.
+                connection.execute(_FEEDBACK_SQL)
+                connection.execute("CREATE INDEX IF NOT EXISTS feedback_session ON answer_feedback(session_id)")
                 connection.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
             yield connection
             connection.commit()
@@ -626,6 +655,56 @@ class SQLiteSessionStore:
             metadata = tuple(_metadata(row) for row in rows)
         return metadata
 
+    @staticmethod
+    def _feedback_owner(connection: sqlite3.Connection, session_id: str, owner_id: str) -> None:
+        # Authorize metadata before decoding any conversation or attachments.
+        row = connection.execute("SELECT owner_id FROM sessions WHERE session_id=?", (session_id,)).fetchone()
+        if not isinstance(owner_id, str) or not owner_id or row is None or row["owner_id"] != owner_id:
+            raise SessionStoreError("session_not_found")
+
+    def _feedback_turn(self, connection: sqlite3.Connection, session_id: str, turn_index: int) -> None:
+        saved = self._load(connection, session_id)
+        # Completed turns use stable one-based indexes: commits can only append
+        # and cannot replace or reorder an existing answer.
+        if type(turn_index) is not int or not 1 <= turn_index <= len(saved.state.turns):
+            raise SessionStoreError("feedback_turn_not_found")
+
+    def add_feedback(self, session_id: str, turn_index: int, text: str, *, owner_id: str) -> AnswerFeedback:
+        """Append ordinary participant feedback without admission or session edits."""
+        if (not isinstance(text, str) or not text.strip() or len(text) > MAX_ANSWER_FEEDBACK_CHARS
+                or any((ord(char) < 32 and char not in "\t\r\n") or ord(char) == 127
+                       or 0xD800 <= ord(char) <= 0xDFFF for char in text)):
+            raise SessionStoreError("invalid_feedback")
+        with self._transaction() as connection:
+            self._feedback_owner(connection, session_id, owner_id)
+            self._feedback_turn(connection, session_id, turn_index)
+            feedback = AnswerFeedback(uuid4().hex, session_id, turn_index, owner_id,
+                                      datetime.now(timezone.utc).isoformat(), text.strip())
+            connection.execute("INSERT INTO answer_feedback VALUES (?,?,?,?,?,?)",
+                               (feedback.feedback_id, session_id, turn_index, owner_id,
+                                feedback.created_at, feedback.text))
+        return feedback
+
+    def list_feedback(self, session_id: str) -> tuple[AnswerFeedback, ...]:
+        """Read feedback after the caller has authorized participant/admin access."""
+        with self._transaction() as connection:
+            if connection.execute("SELECT 1 FROM sessions WHERE session_id=?", (session_id,)).fetchone() is None:
+                raise SessionStoreError("session_not_found")
+            rows = connection.execute("SELECT * FROM answer_feedback WHERE session_id=? ORDER BY rowid",
+                                      (session_id,)).fetchall()
+            return tuple(AnswerFeedback(**dict(row)) for row in rows)
+
+    def delete_feedback(self, session_id: str, turn_index: int, feedback_id: str, *, owner_id: str) -> None:
+        """Remove only the authenticated participant's feedback on their answer."""
+        with self._transaction() as connection:
+            self._feedback_owner(connection, session_id, owner_id)
+            self._feedback_turn(connection, session_id, turn_index)
+            deleted = connection.execute("DELETE FROM answer_feedback WHERE session_id=? AND turn_index=? "
+                                         "AND feedback_id=? AND author_id=?",
+                                         (session_id, turn_index, feedback_id, owner_id))
+            if deleted.rowcount != 1:
+                raise SessionStoreError("feedback_not_found")
+
     def commit(self, session_id: str, revision: int, state: SessionState) -> SessionMetadata:
         with self._transaction() as connection:
             metadata = self._commit(connection, session_id, revision, state)
@@ -678,6 +757,7 @@ class SQLiteSessionStore:
             connection.execute("DELETE FROM session_documents WHERE session_id = ?", (session_id,))
             connection.execute("DELETE FROM session_images WHERE session_id = ?", (session_id,))
             connection.execute("DELETE FROM research_jobs WHERE session_id = ?", (session_id,))
+            connection.execute("DELETE FROM answer_feedback WHERE session_id = ?", (session_id,))
             connection.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
 
     def attach_document(self, session_id: str, revision: int, filename: str,

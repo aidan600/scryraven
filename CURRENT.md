@@ -1,5 +1,34 @@
 # ScryRaven Current Truth
 
+## Hosted answer feedback
+
+The private hosted preview shows a quiet Feedback on this answer section beneath
+each completed answer and its sources. Participants can submit multiple plain-text
+comments of up to 2,000 characters, see them in submission order with UTC times,
+and remove their own comments. Feedback is for the product administrator, separate
+from follow-up questions. Administrator inspection shows the comments read only.
+
+Schema 6 additively stores feedback separately from session payloads, keyed by
+session ID and the immutable 1-based completed-turn index. Feedback survives
+restart and later questions, does not advance the research-session revision, and
+can be submitted or removed during active research. It never enters Research or
+Answer context, starts research, or consumes question quotas. Session deletion
+removes its ordinary feedback records. Existing ownership enforcement, verified
+Cloudflare identity and identity/action-bound CSRF protection apply. Feedback
+forms do not depend on the mutable research revision.
+
+Administrator ZIP exports preserve the existing export format and source custody,
+adding an `answer_feedback` array with answer association, author, server UTC
+timestamp and authenticated-participant provenance. Older conversations have an
+empty array; historical payloads and citations are not rewritten. The trusted
+local Reading Room has no feedback interface or usable feedback mutation route.
+
+Verification uses synthetic accounts, isolated local SQLite databases and mocked
+research only, including desktop and 390/320px browser interaction. No live model,
+search provider, Railway or production database access is part of this work.
+Deployment and live hosted operation remain unobserved. Implementation and
+verification details are in `docs/operator/DOGFOOD_ANSWER_FEEDBACK_01.md`.
+
 ## Private Preview V2
 
 The Reading Room hosted mode uses one Railway process/replica, the existing
@@ -42,8 +71,8 @@ and model default by omitting effort. Sol/none, arbitrary identifiers, backends,
 credentials and altered technical limits are rejected. This is offline parameter
 validation, not proof of live model/account access or provider behavior.
 
-Preferences use schema 5's existing app_preferences table, without a schema
-migration or historical payload rewrite. Nullable ownership and durable UTC daily
+Preferences retain the existing app_preferences table without a historical
+payload rewrite. Nullable ownership and durable UTC daily
 submission ledger remain. The default quota is 20 accepted questions per user per
 UTC day including explicit retries; deletion/restart do not reset it. Local
 unowned sessions remain local and hosted startup refuses a database containing
@@ -1086,9 +1115,10 @@ validated only on serialization/reopen; it never controls new research or become
 Evidence. Historical turns and citations are not rewritten on reopening.
 The synthetic pre-supersession fixture exercises mixed historical/native sessions.
 
-The session store is schema 5. Version-1–4 databases gain the applicable additive
+The session store is schema 6. Version-1–5 databases gain the applicable additive
 document/image/job custody, language preference, run settings/receipts, ownership
-and quota tables without rewriting existing session payloads. Opening a current database does not rewrite
+and quota tables plus independent answer feedback without rewriting existing
+session payloads. Opening a current database does not rewrite
 those payloads. An unknown newer schema still fails as `incompatible_session_store`
 without being rewritten. Each text PDF belongs to one session as `D1`, `D2`, and
 so on. The row stores the original PDF blob, filename, SHA-256, page count, and

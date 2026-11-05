@@ -196,6 +196,53 @@
   window.addEventListener('resize', () => closeActionMenus());
 
   const askForm = document.querySelector('.ask-form');
+  let feedbackSubmitting = 0;
+  function bindFeedback(section) {
+    section.querySelectorAll('form').forEach(form => {
+      form.addEventListener('submit', async event => {
+        event.preventDefault();
+        if (section.dataset.submitting) return;
+        section.dataset.submitting = 'true';
+        feedbackSubmitting += 1;
+        const draft = section.querySelector('textarea');
+        const retainedDraft = form.classList.contains('feedback-remove-form') ? draft?.value : null;
+        if (draft) draft.readOnly = true;
+        section.querySelectorAll('button').forEach(button => { button.disabled = true; });
+        const error = section.querySelector('.feedback-error');
+        if (error) error.hidden = true;
+        try {
+          const response = await fetch(form.action, {
+            method: 'POST', credentials: 'same-origin',
+            body: new URLSearchParams(new FormData(form)),
+          });
+          const rendered = new DOMParser().parseFromString(await response.text(), 'text/html');
+          const replacement = rendered.getElementById(section.id);
+          if (!replacement) throw new Error('feedback_unavailable');
+          if (retainedDraft !== null && replacement.querySelector('textarea')) {
+            replacement.querySelector('textarea').value = retainedDraft;
+          }
+          section.replaceWith(replacement);
+          bindFeedback(replacement);
+          replacement.querySelector('textarea')?.focus({preventScroll: true});
+        } catch (_) {
+          if (error) {
+            error.textContent = 'Feedback could not be confirmed. Reopen this conversation to check before sending again.';
+            error.hidden = false;
+          }
+        } finally {
+          feedbackSubmitting -= 1;
+          delete section.dataset.submitting;
+          if (draft) draft.readOnly = false;
+          section.querySelectorAll('button').forEach(button => { button.disabled = false; });
+        }
+      });
+    });
+  }
+  document.querySelectorAll('.answer-feedback').forEach(bindFeedback);
+  function feedbackInUse() {
+    return feedbackSubmitting > 0 || !!document.activeElement?.closest('.answer-feedback') ||
+      [...document.querySelectorAll('.feedback-form textarea')].some(input => input.value.length > 0);
+  }
   let saveDraft = () => {};
   if (askForm) {
     const question = askForm.querySelector('textarea');
@@ -701,6 +748,10 @@
           const isCurrent = job.session_id === document.body.dataset.sessionId && job.job_id === document.body.dataset.jobId;
           if (isCurrent && ['queued', 'researching'].includes(document.body.dataset.jobState)) {
             if (['completed', 'failed', 'interrupted'].includes(job.state)) {
+              if (feedbackInUse()) {
+                notifyJob(job);
+                continue;
+              }
               saveDraft();
               if (job.state === 'completed') history.replaceState(null, '', '#turn-' + (job.revision + 1));
               location.reload();
