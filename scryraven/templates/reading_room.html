@@ -271,8 +271,9 @@
         {% endif %}
         {{ run_record(turn.run_settings|default(none), turn.run_receipt|default(none)) }}
         {% if hosted_mode %}
-        <section class="answer-feedback" id="feedback-{{ turn.turn_index }}" aria-labelledby="feedback-title-{{ turn.turn_index }}">
-          <h3 id="feedback-title-{{ turn.turn_index }}">Feedback on this answer</h3>
+        <details class="answer-feedback" id="feedback-{{ turn.turn_index }}"{% if turn.feedback_notice or turn.feedback_error %} open{% endif %}>
+          <summary class="feedback-disclosure">{{ 'Feedback on this answer' if read_only else 'Leave feedback' }}{% if turn.feedback %} <span class="feedback-count">· {{ turn.feedback|length }} {{ 'comment' if turn.feedback|length == 1 else 'comments' }}</span>{% endif %}</summary>
+          <div class="feedback-content">
           {% if turn.feedback %}
           <ol class="feedback-comments" aria-label="Submitted feedback for answer {{ turn.turn_index }}">
             {% for comment in turn.feedback %}
@@ -299,7 +300,8 @@
           </form>
           <p class="feedback-error" id="feedback-error-{{ turn.turn_index }}" role="alert"{% if not turn.feedback_error %} hidden{% endif %}>{{ turn.feedback_error or '' }}</p>
           {% elif not turn.feedback %}<p class="feedback-empty">No feedback submitted.</p>{% endif %}
-        </section>
+          </div>
+        </details>
         {% endif %}
       </section>
       {% endfor %}
