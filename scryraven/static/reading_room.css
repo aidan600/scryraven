@@ -81,8 +81,12 @@ summary::-webkit-details-marker { display: none; }
 .welcome-note { margin: 12px 2px 0; color: var(--muted); font-size: 11px; }
 .turn { scroll-margin-top: 28px; }
 .turn + .turn { margin-top: 32px; padding-top: 28px; border-top: 1px solid var(--line); }
-.answer-feedback { margin-top: 24px; padding-top: 15px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; scroll-margin-top: 20px; }
-.answer-feedback h3 { margin: 0 0 10px; font-size: 12px; font-weight: 600; }
+.answer-feedback { margin-top: 4px; color: var(--muted); font-size: 12px; scroll-margin-top: 20px; }
+.feedback-disclosure { list-style: none; display: inline-flex; align-items: center; gap: 4px; padding: 7px 8px; margin-left: -8px; border-radius: 5px; color: #526c79; font-size: 11px; font-weight: 500; }
+.feedback-disclosure::after { content: ''; width: 5px; height: 5px; border-right: 1px solid; border-bottom: 1px solid; transform: rotate(45deg); margin: -3px 3px 0 6px; }
+.answer-feedback[open] > .feedback-disclosure::after { transform: rotate(225deg); margin-top: 3px; }
+.feedback-disclosure:hover { background: #edf1ee; }
+.feedback-content { margin-top: 10px; }
 .feedback-form textarea { display: block; width: 100%; min-height: 62px; resize: vertical; padding: 9px 11px; border: 1px solid #d7ddda; border-radius: 6px; background: #ffffff80; font-size: 14px; line-height: 1.5; }
 .feedback-form textarea::placeholder { color: #7c8587; }
 .feedback-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; margin-top: 5px; }

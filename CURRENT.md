@@ -2,8 +2,10 @@
 
 ## Hosted answer feedback
 
-The private hosted preview shows a quiet Feedback on this answer section beneath
-each completed answer and its sources. Participants can submit multiple plain-text
+The private hosted preview shows a collapsed Leave feedback disclosure beneath
+each completed answer and its sources, with a count when comments exist. It opens
+inline and stays open after feedback submission, removal, or validation failure.
+Participants can submit multiple plain-text
 comments of up to 2,000 characters, see them in submission order with UTC times,
 and remove their own comments. Feedback is for the product administrator, separate
 from follow-up questions. Administrator inspection shows the comments read only.
@@ -27,7 +29,8 @@ Verification uses synthetic accounts, isolated local SQLite databases and mocked
 research only, including desktop and 390/320px browser interaction. No live model,
 search provider, Railway or production database access is part of this work.
 Deployment and live hosted operation remain unobserved. Implementation and
-verification details are in `docs/operator/DOGFOOD_ANSWER_FEEDBACK_01.md`.
+verification details are in `docs/operator/DOGFOOD_ANSWER_FEEDBACK_01.md` and
+`docs/operator/FEEDBACK_UI_CORRECTION_01.md`.
 
 ## Private Preview V2
 

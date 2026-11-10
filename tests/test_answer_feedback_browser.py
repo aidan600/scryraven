@@ -12,8 +12,19 @@ browser = hosted_browser.browser
 hosted_ui = hosted_browser.hosted_ui
 
 
+def feedback_is_open(section):
+    return section.locator("summary").evaluate("el => el.closest('details').open")
+
+
+def open_feedback(section):
+    if not feedback_is_open(section):
+        section.locator("summary").click()
+    assert feedback_is_open(section)
+
+
 def send_feedback(page, turn_index, text):
     section = page.locator(f"#feedback-{turn_index}")
+    open_feedback(section)
     section.locator("textarea").fill(text)
     section.get_by_role("button", name="Send feedback", exact=True).click()
     page.wait_for_function(
@@ -21,6 +32,7 @@ def send_feedback(page, turn_index, text):
         arg=[turn_index, text],
     )
     assert section.locator("textarea").input_value() == ""
+    assert feedback_is_open(section)
     assert section.locator(".feedback-confirmation").is_visible()
 
 
@@ -30,6 +42,26 @@ def test_feedback_is_quiet_durable_answer_specific_and_keeps_followup_draft(brow
         _, page, external, errors = private_context(stack, browser, hosted_ui, "alice", width)
         page.goto(hosted_ui.origin + "/sessions/" + hosted_ui.alice_id)
         assert page.locator(".answer-feedback").count() == 3
+        for section in page.locator(".answer-feedback").all():
+            assert not feedback_is_open(section)
+            assert section.locator("summary").is_visible()
+            assert not section.locator("textarea").is_visible()
+            assert not section.get_by_role("button", name="Send feedback", exact=True).is_visible()
+            assert not section.locator(".feedback-comments").is_visible()
+        first = page.locator("#feedback-1")
+        first.scroll_into_view_if_needed()
+        screenshot(page, f"feedback-collapsed-{width}.png")
+        first.locator("summary").focus()
+        page.keyboard.press("Enter")
+        assert feedback_is_open(first)
+        assert first.locator("textarea").is_visible()
+        first.locator("summary").focus()
+        page.keyboard.press("Space")
+        assert not feedback_is_open(first)
+        assert not first.locator("textarea").is_visible()
+        open_feedback(first)
+        first.scroll_into_view_if_needed()
+        screenshot(page, f"feedback-expanded-{width}.png")
         assert page.locator("#turn-1").evaluate(
             "el => !!(el.querySelector('.sources-overview').compareDocumentPosition(el.querySelector('.answer-feedback')) & Node.DOCUMENT_POSITION_FOLLOWING)"
         )
@@ -51,13 +83,19 @@ def test_feedback_is_quiet_durable_answer_specific_and_keeps_followup_draft(brow
         assert page.locator("#feedback-1 .feedback-text").all_text_contents() == [literal, "A second comment on the first answer."]
         assert page.locator("#feedback-2 .feedback-text").all_text_contents() == ["This belongs to the humidity answer."]
         assert page.locator("#feedback-3 .feedback-text").count() == 0
+        assert "2" in page.locator("#feedback-1 summary").inner_text()
+        assert "1" in page.locator("#feedback-2 summary").inner_text()
         assert hosted_ui.store.load(hosted_ui.alice_id).metadata.revision == revision
         fits(page)
         assert page.locator("#feedback-2").evaluate("el => el.scrollWidth <= el.clientWidth")
         screenshot(page, f"answer-feedback-owner-{width}.png")
         page.reload()
+        for section in page.locator(".answer-feedback").all():
+            assert not feedback_is_open(section)
+            assert not section.locator(".feedback-comments").is_visible()
         assert page.locator("#feedback-1 .feedback-text").all_text_contents() == [literal, "A second comment on the first answer."]
         assert page.locator("#feedback-2 .feedback-text").all_text_contents() == ["This belongs to the humidity answer."]
+        open_feedback(page.locator("#feedback-1"))
         page.locator("#feedback-text-1").fill("An unsent additional comment")
         page.locator("#feedback-1 .feedback-remove").first.focus()
         page.keyboard.press("Enter")
@@ -65,8 +103,13 @@ def test_feedback_is_quiet_durable_answer_specific_and_keeps_followup_draft(brow
         assert page.locator("#feedback-1 .feedback-text").inner_text() == "A second comment on the first answer."
         assert page.locator("#feedback-text-1").input_value() == "An unsent additional comment"
         assert page.locator("#feedback-text-1").evaluate("el => el === document.activeElement")
+        assert feedback_is_open(page.locator("#feedback-1"))
+        assert page.locator("#feedback-1 .feedback-confirmation").is_visible()
         _, admin, external_admin, errors_admin = private_context(stack, browser, hosted_ui, "admin", width)
         admin.goto(hosted_ui.origin + "/sessions/" + hosted_ui.alice_id)
+        assert not feedback_is_open(admin.locator("#feedback-1"))
+        open_feedback(admin.locator("#feedback-1"))
+        open_feedback(admin.locator("#feedback-2"))
         assert admin.locator("#feedback-1 .feedback-text").inner_text() == "A second comment on the first answer."
         assert admin.locator("#feedback-2 .feedback-text").inner_text() == "This belongs to the humidity answer."
         assert admin.locator(".answer-feedback form, .answer-feedback textarea").count() == 0
@@ -106,7 +149,10 @@ def test_feedback_works_during_research_and_completion_does_not_discard_comment(
             send_feedback(page, 1, "A comment while my next question is researching.")
             assert page.locator(".answer").count() == 3
             assert page.locator(".submit-question").is_disabled()
+            open_feedback(page.locator("#feedback-2"))
             page.locator("#feedback-text-2").fill("An unsent comment stays here through completion.")
+            page.locator("#feedback-2 summary").click()
+            assert not feedback_is_open(page.locator("#feedback-2"))
             page.locator("#question").fill("A later question draft stays separate.")
             page.evaluate("document.body.dataset.feedbackSentinel = 'research page retained'")
             release.set()
@@ -119,6 +165,8 @@ def test_feedback_works_during_research_and_completion_does_not_discard_comment(
             assert page.locator("#feedback-1 .feedback-text").inner_text() == "A comment while my next question is researching."
             page.locator(".research-notifications a").click()
             assert page.locator(".answer").count() == 4
+            assert not feedback_is_open(page.locator("#feedback-2"))
+            open_feedback(page.locator("#feedback-2"))
             assert page.locator("#feedback-2 .feedback-text").inner_text() == "An unsent comment stays here through completion."
             assert page.locator("#feedback-4 .feedback-text").count() == 0
             assert page.locator("#question").input_value() == "A later question draft stays separate."
@@ -145,13 +193,34 @@ def test_feedback_native_forms_work_without_javascript(browser, hosted_ui):
         context.route("**/*", loopback_only)
         page = context.new_page()
         page.goto(hosted_ui.origin + "/sessions/" + hosted_ui.alice_id)
+        assert not feedback_is_open(page.locator("#feedback-1"))
+        open_feedback(page.locator("#feedback-1"))
         page.locator("#feedback-text-1").fill("A native form comment.")
         page.locator("#feedback-1").get_by_role("button", name="Send feedback", exact=True).click()
         page.wait_for_url("**#feedback-1")
+        assert feedback_is_open(page.locator("#feedback-1"))
+        assert page.locator("#feedback-1 .feedback-confirmation").is_visible()
         assert page.locator("#feedback-1 .feedback-text").inner_text() == "A native form comment."
         page.reload()
         assert page.locator("#feedback-1 .feedback-text").inner_text() == "A native form comment."
         with page.expect_navigation():
             page.locator("#feedback-1 .feedback-remove").click()
         assert page.locator("#feedback-1 .feedback-text").count() == 0
+        assert feedback_is_open(page.locator("#feedback-1"))
+        assert page.locator("#feedback-1 .feedback-confirmation").is_visible()
         assert external == []
+
+
+def test_invalid_feedback_stays_open_and_retains_text(browser, hosted_ui):
+    with ExitStack() as stack:
+        _, page, external, errors = private_context(stack, browser, hosted_ui, "alice", 390)
+        page.goto(hosted_ui.origin + "/sessions/" + hosted_ui.alice_id)
+        section = page.locator("#feedback-1")
+        open_feedback(section)
+        section.locator("textarea").fill("   ")
+        section.get_by_role("button", name="Send feedback", exact=True).click()
+        section.locator(".feedback-error").wait_for(state="visible")
+        assert feedback_is_open(section)
+        assert section.locator("textarea").input_value() == "   "
+        assert section.locator("textarea").evaluate("el => el === document.activeElement")
+        assert external == errors == []
