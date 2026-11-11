@@ -146,6 +146,7 @@ def test_feedback_works_during_research_and_completion_does_not_discard_comment(
             page.get_by_role("button", name="Ask follow-up", exact=True).click()
             assert started.wait(5)
             page.locator("#research-status").wait_for()
+            page.wait_for_load_state("domcontentloaded")
             send_feedback(page, 1, "A comment while my next question is researching.")
             assert page.locator(".answer").count() == 3
             assert page.locator(".submit-question").is_disabled()
@@ -163,7 +164,10 @@ def test_feedback_works_during_research_and_completion_does_not_discard_comment(
             assert page.locator("#question").input_value() == "A later question draft stays separate."
             send_feedback(page, 2, "An unsent comment stays here through completion.")
             assert page.locator("#feedback-1 .feedback-text").inner_text() == "A comment while my next question is researching."
-            page.locator(".research-notifications a").click()
+            with page.expect_response(lambda response: response.request.is_navigation_request()):
+                page.locator(".research-notifications a").click()
+            page.wait_for_load_state("domcontentloaded")
+            assert page.url.endswith("#turn-4")
             assert page.locator(".answer").count() == 4
             assert not feedback_is_open(page.locator("#feedback-2"))
             open_feedback(page.locator("#feedback-2"))

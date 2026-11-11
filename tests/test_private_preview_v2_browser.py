@@ -61,7 +61,7 @@ def test_hosted_settings_privacy_and_supported_model_controls(browser, hosted_ui
         tester.keyboard.press("Escape")
         assert privacy.is_hidden()
         if width < 761:
-            assert tester.get_by_role("link", name="Open history", exact=True).evaluate("el => el === document.activeElement")
+            tester.locator(".open-history:focus").wait_for(state="visible")
         fits(tester)
         assert external == errors == external_tester == errors_tester == []
 
@@ -133,6 +133,7 @@ def test_history_layout_scrolling_menu_hit_testing_and_lifecycle(browser, hosted
         if mobile:
             opening = page.get_by_role("link", name="Open history", exact=True)
             opening.click()
+            page.locator(".sidebar[aria-modal=true]").wait_for(state="visible")
             page.locator(".close-history").click()
             assert sidebar.is_hidden()
             opening.click()

@@ -184,7 +184,7 @@ def test_suggestions_open_with_populated_exact_value_and_backend_roundtrips(brow
         assert page.get_by_label("Answer model identifier").input_value() == "vendor.answer-exact-v2"
         page.get_by_label("Inference backend").select_option("openai")
         assert page.get_by_label("OpenAI API processing").input_value() == "fast"
-        assert page.locator(".run-settings-dialog").evaluate("el => el.scrollWidth <= el.clientWidth")
+        assert page.locator("#run-settings-dialog").evaluate("el => el.scrollWidth <= el.clientWidth")
 
 
 @pytest.mark.parametrize("settings_page", [True], indirect=True)
@@ -228,8 +228,11 @@ def test_actual_200_percent_zoom_settings_dialog_and_keyboard(settings_page, tmp
         "permissions": ["tabs"], "host_permissions": ["<all_urls>"], "background": {"service_worker": "zoom.js"}}), encoding="utf-8")
     (extension / "zoom.js").write_text("chrome.runtime.onInstalled.addListener(() => {});", encoding="utf-8")
     with playwright.sync_playwright() as runtime:
+        executable = Path(runtime.chromium.executable_path)
+        if not executable.is_file():
+            executable = Path("C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe")
         with runtime.chromium.launch_persistent_context(str(tmp_path / "browser-profile"),
-                executable_path="C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe", headless=True,
+                executable_path=str(executable), headless=True,
                 no_viewport=True, ignore_default_args=["--disable-extensions"], args=[
                     f"--disable-extensions-except={extension}", f"--load-extension={extension}",
                     "--window-size=1280,900"]) as context:

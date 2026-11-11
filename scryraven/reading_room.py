@@ -6,6 +6,7 @@ import argparse
 import json
 import secrets
 import sys
+from base64 import b64encode
 from collections.abc import Callable
 from dataclasses import asdict
 from hashlib import sha256
@@ -22,6 +23,7 @@ from markupsafe import Markup
 from werkzeug.exceptions import HTTPException, SecurityError
 from werkzeug.serving import WSGIRequestHandler, make_server
 
+from scryraven import dictation
 from scryraven.documents import (
     ALREADY_ATTACHED_NOTICE,
     DOCUMENT_ERROR_MESSAGES,
@@ -57,6 +59,7 @@ from scryraven.research_jobs import ResearchJobManager
 from scryraven.run_settings import BILLED_BACKENDS, RunSettings, settings_from_form
 from scryraven.run_settings import ERROR_MESSAGES as RUN_SETTINGS_ERRORS
 from scryraven.session_store import (
+    CITATION_LANGUAGES,
     MAX_ANSWER_FEEDBACK_CHARS,
     SessionConflictError,
     SessionStore,
@@ -69,7 +72,20 @@ _HOST = "127.0.0.1"
 _PORT = 7331
 _FORM_BODY_BYTES = 256 * 1024
 _QUESTION_UPLOADS = {"ask"}
-_LANGUAGES = {"en", "match", "es", "fr", "de", "pl", "pt", "ja", "zh", "ar"}
+
+# WebKit can retry an initial fragment scroll while deferred assets are pending.
+# Install this before the readable HTML so deliberate reading takes precedence.
+_READING_CONTEXT_SCRIPT = """(() => {
+  function preserveReadingContext(event) {
+    if (document.readyState === 'complete' || !/^#(?:turn-\\d+|research-status)$/.test(location.hash)) return;
+    if (event.target.closest?.('.reading-scroll')) {
+      history.replaceState(history.state, '', location.pathname + location.search);
+    }
+  }
+  document.addEventListener('pointerdown', preserveReadingContext, true);
+  document.addEventListener('keydown', preserveReadingContext, true);
+})();"""
+_READING_CONTEXT_SCRIPT_HASH = b64encode(sha256(_READING_CONTEXT_SCRIPT.encode()).digest()).decode()
 
 
 class _FormError(Exception):
@@ -121,6 +137,7 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                hosted=None, identity_validator=None) -> Flask:
     """Inject only the existing store and ResearchSession's ordinary I/O options."""
     app = Flask(__name__)
+    app.jinja_env.globals["reading_context_script"] = Markup(_READING_CONTEXT_SCRIPT)
     # Multipart questions have bounded file bodies; text fields stay small.
     app.config.update(MAX_CONTENT_LENGTH=MAX_ATTACHMENT_REQUEST_BYTES + _FORM_BODY_BYTES,
                       MAX_FORM_MEMORY_SIZE=_FORM_BODY_BYTES, MAX_FORM_PARTS=32,
@@ -180,6 +197,7 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                             dogfood_log=diagnostic_path)
                  if forensic_path is not None else None)
     forms = _Forms()
+    transcription_slots = dictation.TranscriptionSlots()
     diagnostic_runs = {}
     usage_runs = {}
     job_owners = {}
@@ -382,13 +400,19 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                 hosted_diagnostics.maintenance()
         # Host validation also prevents DNS rebinding. Do not trust proxy headers.
         question_upload = request.endpoint in _QUESTION_UPLOADS
+        dictation_upload = request.endpoint == "transcribe_question"
         multipart_upload = question_upload and request.mimetype == "multipart/form-data"
         limit = (MAX_ATTACHMENT_REQUEST_BYTES + _FORM_BODY_BYTES if multipart_upload
                  else _FORM_BODY_BYTES)
+        if dictation_upload:
+            limit = dictation.MAX_AUDIO_BYTES
         # Only actual file uploads need the larger body allowance. URL-encoded
         # bodies are bounded here, including streams without Content-Length,
         # independently of the parser's multipart form-memory limit.
         request.max_content_length = limit
+        if dictation_upload:
+            # Keep one byte to distinguish oversized streams from an exact-limit WAV.
+            request.max_content_length = limit + 1
         request.max_form_memory_size = _FORM_BODY_BYTES if question_upload else limit
         if request.method not in {"GET", "HEAD", "OPTIONS"}:
             origin = request.headers.get("Origin")
@@ -397,8 +421,11 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                 request.headers.get("Sec-Fetch-Site") == "cross-site"
             ):
                 abort(403)
-            allowed_types = ({"multipart/form-data", "application/x-www-form-urlencoded"} if question_upload
-                             else {"application/x-www-form-urlencoded"})
+            allowed_types = {"application/x-www-form-urlencoded"}
+            if question_upload:
+                allowed_types.add("multipart/form-data")
+            if dictation_upload:
+                allowed_types = {"audio/wav"}
             if request.mimetype not in allowed_types:
                 abort(415)
             if request.content_length is not None and request.content_length > limit:
@@ -417,7 +444,8 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
     @app.after_request
     def response_safety(response):
         response.headers["Content-Security-Policy"] = (
-            "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob:; connect-src 'self'; "
+            f"default-src 'none'; script-src 'self' 'sha256-{_READING_CONTEXT_SCRIPT_HASH}'; "
+            "style-src 'self'; img-src 'self' blob:; connect-src 'self'; "
             "base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
         )
         # Browsers can send Origin: null on native POSTs under no-referrer.
@@ -455,6 +483,19 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                 "run_settings": job.run_settings.to_dict() if job.run_settings else None,
                 "run_receipt": job.run_receipt}
 
+    def job_summaries(records, visible_ids, owned_ids):
+        latest = {}
+        for item in records:
+            if item.session_id not in visible_ids:
+                continue
+            if item.session_id not in latest:
+                latest[item.session_id] = dict(public_job(item), new_answer=None)
+            summary = latest[item.session_id]
+            if (item.session_id in owned_ids and summary["new_answer"] is None
+                    and item.state == "completed" and not item.viewed):
+                summary["new_answer"] = {"job_id": item.job_id, "turn": item.revision + 1}
+        return latest
+
     def attachment_links(saved, document_ids=(), image_ids=()):
         result = []
         for document in saved.documents:
@@ -477,20 +518,21 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
              feedback_turn=None, feedback_error=None, feedback_text=""):
         try:
             history = visible_sessions()
-            saved = custody.load(session_id) if session_id else None
-            feedback = custody.list_feedback(session_id) if saved and hosted is not None else ()
             if jobs is None:
                 raise SessionStoreError()
-            history_jobs = {}
+            # Completion commits its answer and job state atomically. Read jobs
+            # first so a completed job never points beyond this page's turns.
+            records = jobs.list()
+            saved = custody.load(session_id) if session_id else None
+            feedback = custody.list_feedback(session_id) if saved and hosted is not None else ()
             visible_ids = {item.session_id for item in history}
-            for research_job in jobs.list():
-                if research_job.session_id in visible_ids or research_job.session_id == session_id:
-                    history_jobs.setdefault(research_job.session_id, public_job(research_job))
+            owned_ids = {item.session_id for item in history if item.owner_id == (principal() or None)}
+            history_jobs = job_summaries(records, visible_ids | {session_id}, owned_ids)
             job = history_jobs.get(session_id)
-            session_jobs = {item.revision + 1: item for item in jobs.list(session_id=session_id)
-                            if item.state == "completed"} if saved else {}
+            session_records = tuple(item for item in records if item.session_id == session_id) if saved else ()
+            session_jobs = {item.revision + 1: item for item in session_records if item.state == "completed"}
             if job and saved:
-                pending = next(item for item in jobs.list(session_id=session_id) if item.job_id == job["job_id"])
+                pending = session_records[0]
                 job["attachments"] = attachment_links(saved, pending.document_ids, pending.image_ids)
         except SessionStoreError as exc:
             if exc.code == "session_not_found":
@@ -503,19 +545,24 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                                    unavailable=True), 503
         metadata = saved.metadata if saved else None
         documents = []
+        document_hrefs = {}
         if saved:
             for document in saved.documents:
+                href = url_for("original_pdf", session_id=metadata.session_id, document_id=document.document_id)
+                document_hrefs[document.document_id] = href
                 documents.append({
                     "filename": document.filename, "pages": document.page_count,
                     "textless": textless_page_warning(document.textless_page_count),
-                    "href": url_for("original_pdf", session_id=metadata.session_id,
-                                    document_id=document.document_id),
+                    "href": href,
                 })
         turns = []
         for number, turn in enumerate(saved.state.turns if saved else (), 1):
             prefix = f"turn-{number}-source-"
+            completed = session_jobs.get(number)
             turns.append({
                 "number": number, "turn_index": number, "question": turn.question, "posture": turn.posture,
+                "unviewed_job_id": (completed.job_id if completed and not completed.viewed
+                                    and session_id in owned_ids else None),
                 "feedback": tuple(item for item in feedback if item.turn_index == number),
                 "feedback_error": feedback_error if feedback_turn == number else None,
                 "feedback_text": feedback_text if feedback_turn == number else "",
@@ -524,7 +571,8 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                                     if request.args.get("feedback_turn") == str(number) else None),
                 "operating_bound": turn.stop_reason == "research_bound",
                 "source_free": source_free_supported(turn),
-                "answer": Markup(answer_html(turn, source_prefix=prefix, citation_previews=True)),
+                "answer": Markup(answer_html(turn, source_prefix=prefix, citation_previews=True,
+                                             document_hrefs=document_hrefs)),
                 "run_settings": (session_jobs[number].run_settings.to_dict()
                                  if number in session_jobs and session_jobs[number].run_settings else None),
                 "run_receipt": session_jobs[number].run_receipt if number in session_jobs else None,
@@ -532,35 +580,44 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                     session_jobs[number].document_ids if number in session_jobs else (), turn.image_ids),
                 "sources": [{"number": c.number, "id": prefix + str(c.number), "title": source_label(c),
                              "preview": Markup(citation_preview_html(
-                                 c, original_href=(url_for("original_pdf", session_id=metadata.session_id,
-                                                          document_id=c.document_id)
-                                                   if c.source_kind == "user_document" and c.document_id else None),
+                                 c, original_href=document_hrefs.get(c.document_id),
                              )),
                              "body": Markup(source_body_html(
                                  c, collapse_long=True, uses=turn.citation_uses,
-                                 original_href=(url_for("original_pdf", session_id=metadata.session_id,
-                                                        document_id=c.document_id)
-                                                if c.source_kind == "user_document" and c.document_id else None),
+                                 original_href=document_hrefs.get(c.document_id),
                              ))} for c in turn.citations],
             })
         global_actions = {"billing", "hosted-settings", "processing"}
         def issue(action):
-            # Feedback belongs to an immutable completed answer, independently
+            # These actions belong to an immutable completed answer, independently
             # of the research-session revision displayed by this page.
-            revision_bound = action not in global_actions and not action.startswith(("feedback:", "feedback-delete:"))
+            revision_bound = (action not in global_actions and action != "source-language"
+                              and not action.startswith(("feedback:", "feedback-delete:", "view-answer:")))
             return forms.issue(action, metadata.session_id if metadata and action not in global_actions else "",
                                metadata.revision if metadata and revision_bound else 0, principal=principal())
         notice = {"missing": "That session is no longer available. Your other research is here.",
                   "deleted": "Session deleted.", "renamed": "Session renamed.",
                   "already_attached": ALREADY_ATTACHED_NOTICE,
                   "settings_saved": "Settings saved. Accepted questions keep their original settings."}.get(request.args.get("notice"))
+        billing_authorizations = {} if hosted is not None else custody.get_billing_authorizations()
+        dictation_configured = dictation.available()
+        dictation_authorized = hosted is not None or billing_authorizations["openai"]
+        dictation_error = ""
+        if not dictation_configured:
+            dictation_error = dictation.API_UNAVAILABLE
+        elif not dictation_authorized:
+            dictation_error = dictation.BILLING_REQUIRED
         return render_template(
             "reading_room.html", history=history, saved=saved, turns=turns, documents=documents,
             images=attachment_links(saved, image_ids=tuple(item.image_id for item in saved.images)) if saved else [],
             job=job, history_jobs=history_jobs, idempotency_key=uuid4().hex,
-            citation_language=metadata.citation_language if metadata else "en",
+            citation_language=metadata.citation_language if metadata else getattr(g, "new_citation_language", "en"),
             run_settings=(current_hosted_settings() if hosted is not None else custody.get_run_settings() or initial_settings).to_dict(),
-            billing_authorizations={} if hosted is not None else custody.get_billing_authorizations(),
+            billing_authorizations=billing_authorizations,
+            dictation_configured=dictation_configured, dictation_enabled=not dictation_error,
+            dictation_error=dictation_error,
+            dictation_token=forms.issue("dictation", session_id or "", principal=principal()),
+            dictation_max_seconds=dictation.MAX_SECONDS,
             run_settings_profiles=({} if hosted is not None else {backend: settings.to_dict()
                                    for backend, settings in custody.get_run_settings_profiles().items()}),
             initial_processing_profile=({
@@ -619,7 +676,8 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                 record = {"format": "scryraven-session-export-1", "metadata": asdict(saved.metadata),
                           "state": json.loads(_encode(saved.state, saved.documents, saved.images)),
                           "documents": documents, "images": images,
-                          "jobs": [asdict(item) for item in jobs.list(session_id)],
+                          "jobs": [{key: value for key, value in asdict(item).items() if key != "viewed"}
+                                   for item in jobs.list(session_id)],
                           "answer_feedback": [dict(asdict(item), provenance="authenticated_participant")
                                               for item in custody.list_feedback(session_id)
                                               if item.turn_index <= len(saved.state.turns)],
@@ -714,6 +772,26 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
             return redirect(url_for("open_session", session_id=session_id, notice="settings_saved"), 303)
         return redirect(url_for("new_research", notice="settings_saved"), 303)
 
+    @app.post("/sessions/<session_id>/settings/source-language")
+    def update_source_language(session_id):
+        if (set(request.form) != {"form_token", "citation_language"}
+                or any(len(request.form.getlist(name)) != 1 for name in request.form)
+                or request.form["citation_language"] not in CITATION_LANGUAGES):
+            abort(400)
+        try:
+            claim("source-language", session_id)
+        except _FormError:
+            abort(403)
+        try:
+            custody.set_citation_language(session_id, request.form["citation_language"], owner_id=principal() or None)
+        except SessionStoreError as exc:
+            if exc.code == "session_not_found":
+                abort(404)
+            raise
+        if request.accept_mimetypes.best == "application/json":
+            return jsonify(form_token=forms.issue("source-language", session_id, principal=principal()))
+        return settings_redirect(session_id)
+
     @app.post("/settings/hosted")
     def update_hosted_preferences():
         if hosted is None:
@@ -754,6 +832,36 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                            form_token=forms.issue("billing"))
         return redirect(url_for("new_research"), 303)
 
+    @app.post("/transcribe")
+    @app.post("/sessions/<session_id>/transcribe")
+    def transcribe_question(session_id=None):
+        try:
+            forms.claim(request.headers.get("X-Form-Token", ""), "dictation", session_id or "",
+                        replayable=True, principal=principal())
+        except _FormError:
+            return jsonify(error="Reopen this conversation to use dictation."), 403
+        if session_id and hosted is None:
+            try:
+                custody.get_metadata(session_id)
+            except SessionStoreError as exc:
+                if exc.code == "session_not_found":
+                    abort(404)
+                raise
+        if not dictation.available():
+            return jsonify(error=dictation.API_UNAVAILABLE), 503
+        try:
+            audio = request.get_data(cache=False)
+            dictation.validate_audio(audio)
+            if hosted is None and not custody.get_billing_authorizations()["openai"]:
+                return jsonify(error=dictation.BILLING_REQUIRED), 403
+            with transcription_slots.reserve(principal()):
+                text = dictation.transcribe(audio)
+        except dictation.TranscriptionError as exc:
+            return jsonify(error=str(exc)), exc.status
+        if not text:
+            return jsonify(error="No speech was transcribed. Try recording again."), 422
+        return jsonify(text=text)
+
     def read_attachments():
         uploads = request.files.getlist("files")
         # Unknown file fields must never be silently discarded.
@@ -787,6 +895,9 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
     @app.post("/sessions/<session_id>/ask")
     def ask(session_id=None):
         question = request.form.get("question", "").strip()
+        language = request.form.get("citation_language", None if session_id else "en")
+        if session_id is None and language in CITATION_LANGUAGES:
+            g.new_citation_language = language
         try:
             revision = forms.claim(request.form.get("form_token", ""), "ask", session_id or "", replayable=True,
                                    principal=principal())
@@ -797,8 +908,7 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
             return page(session_id, error="Write a research question to begin.", status=400)
         if len(question) > 20000:
             return page(session_id, question=question, error="Keep the question within 20,000 characters.", status=400)
-        language = request.form.get("citation_language", "en")
-        if language not in _LANGUAGES:
+        if language is not None and language not in CITATION_LANGUAGES:
             return page(session_id, question=question, error="Choose a citation explanation language.", status=400)
         key = request.form.get("idempotency_key", "") or request.form.get("form_token", "")
         if hosted is not None:
@@ -862,13 +972,29 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
 
     @app.get("/jobs/status")
     def job_status():
-        latest = {}
-        allowed = (custody.list_sessions() if hosted is not None and g.identity.is_admin else visible_sessions())
+        own_sessions = visible_sessions()
+        allowed = custody.list_sessions() if hosted is not None and g.identity.is_admin else own_sessions
         visible_ids = {item.session_id for item in allowed}
-        for item in jobs.list():
-            if item.session_id in visible_ids:
-                latest.setdefault(item.session_id, public_job(item))
+        owned_ids = {item.session_id for item in own_sessions if item.owner_id == (principal() or None)}
+        latest = job_summaries(jobs.list(), visible_ids, owned_ids)
         return jsonify(jobs=list(latest.values()))
+
+    @app.post("/sessions/<session_id>/jobs/<job_id>/viewed")
+    def acknowledge_answer(session_id, job_id):
+        if set(request.form) != {"form_token"} or len(request.form.getlist("form_token")) != 1:
+            abort(400)
+        try:
+            forms.claim(request.form["form_token"], f"view-answer:{job_id}", session_id,
+                        replayable=True, principal=principal())
+        except _FormError:
+            abort(403)
+        try:
+            custody.acknowledge_completion(session_id, job_id, owner_id=principal() or None)
+        except SessionStoreError as exc:
+            if exc.code == "job_not_found":
+                abort(404)
+            raise
+        return "", 204
 
     @app.post("/sessions/<session_id>/jobs/<job_id>/retry")
     def retry_job(session_id, job_id):
@@ -998,6 +1124,8 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
 
     @app.errorhandler(413)
     def request_too_large(exc):
+        if request.endpoint == "transcribe_question":
+            return jsonify(error=f"Record up to {dictation.MAX_SECONDS} seconds at a time."), 413
         return page(error="That request is too large.", status=413)
 
     return app
