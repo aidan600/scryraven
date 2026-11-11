@@ -425,6 +425,7 @@ class ResearchJob:
     error_code: str | None = None
     run_settings: RunSettings | None = None
     run_receipt: dict | None = None
+    viewed: bool = False
 
 
 def _job(row: sqlite3.Row) -> ResearchJob:
@@ -432,6 +433,7 @@ def _job(row: sqlite3.Row) -> ResearchJob:
                     else row[name]) for name in ResearchJob.__dataclass_fields__}
     values["run_settings"] = RunSettings.from_dict(json.loads(row["run_settings"])) if row["run_settings"] else None
     values["run_receipt"] = json.loads(row["run_receipt"]) if row["run_receipt"] else None
+    values["viewed"] = bool(row["viewed"])
     return ResearchJob(**values)
 
 
@@ -526,7 +528,7 @@ class SQLiteSessionStore:
     from research are stored. This is local plaintext data, not cloud account state.
     """
 
-    SCHEMA_VERSION = 6
+    SCHEMA_VERSION = 7
 
     def __init__(self, path: str | Path | None = None) -> None:
         try:
@@ -571,7 +573,7 @@ class SQLiteSessionStore:
                 connection.execute("ALTER TABLE research_jobs ADD COLUMN run_receipt TEXT")
                 connection.execute(_PREFERENCES_SQL)
                 connection.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
-            elif version not in {4, 5, self.SCHEMA_VERSION}:
+            elif version not in {4, 5, 6, self.SCHEMA_VERSION}:
                 raise SessionStoreError("incompatible_session_store")
             if version < 5:
                 # Ownership is metadata only. Legacy sessions stay unowned; no
@@ -585,6 +587,11 @@ class SQLiteSessionStore:
                 # or a revision of historical answers, sources or citations.
                 connection.execute(_FEEDBACK_SQL)
                 connection.execute("CREATE INDEX IF NOT EXISTS feedback_session ON answer_feedback(session_id)")
+                connection.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
+            if version < 7:
+                connection.execute("ALTER TABLE research_jobs ADD COLUMN viewed INTEGER NOT NULL DEFAULT 0 "
+                                   "CHECK (viewed IN (0, 1))")
+                connection.execute("UPDATE research_jobs SET viewed=1 WHERE state='completed'")
                 connection.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
             yield connection
             connection.commit()
@@ -808,11 +815,13 @@ class SQLiteSessionStore:
                               "AND state IN ('queued','researching')", (session_id,)).fetchone():
             raise SessionStoreError("session_busy")
 
-    def set_citation_language(self, session_id: str, language: str) -> SessionMetadata:
+    def set_citation_language(self, session_id: str, language: str, *, owner_id: str | None = None) -> SessionMetadata:
         if language not in CITATION_LANGUAGES:
             raise SessionStoreError("invalid_citation_language")
         with self._transaction() as connection:
-            self._load(connection, session_id)
+            saved = self._load(connection, session_id)
+            if owner_id is not None and saved.metadata.owner_id != owner_id:
+                raise SessionStoreError("session_not_found")
             connection.execute("UPDATE sessions SET citation_language = ? WHERE session_id = ?",
                                (language, session_id))
             return self._load(connection, session_id).metadata
@@ -852,6 +861,7 @@ class SQLiteSessionStore:
                    images: tuple[PreparedImage, ...] = (), retained_image_ids: tuple[str, ...] = (),
                    citation_language: str | None = None, capacity: int = 10,
                    run_settings: RunSettings | None = None, remember_settings: bool = True,
+                   remember_citation_language: bool = True,
                    owner_id: str | None = None, submission_quota: int | None = None,
                    queue_capacity: int | None = None) -> ResearchJob:
         """Atomically accept a question, its validated files, and its durable identity.
@@ -938,10 +948,14 @@ class SQLiteSessionStore:
                                    "ON CONFLICT(owner_id,utc_day) DO UPDATE "
                                    "SET submission_count=submission_count+1", (owner_id, utc_day))
             language = citation_language or saved.metadata.citation_language
+            preferred_language = language if remember_citation_language else saved.metadata.citation_language
             connection.execute("UPDATE sessions SET citation_language=?, updated_at=? WHERE session_id=?",
-                               (language, max(now, saved.metadata.updated_at), session_id))
+                               (preferred_language, max(now, saved.metadata.updated_at), session_id))
             job_id = uuid4().hex
-            connection.execute("INSERT INTO research_jobs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            connection.execute("INSERT INTO research_jobs "
+                               "(job_id, session_id, idempotency_key, fingerprint, question, revision, state, "
+                               "document_ids, image_ids, citation_language, created_at, started_at, finished_at, "
+                               "error_code, run_settings, run_receipt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                                (job_id, session_id, idempotency_key, fingerprint, question, revision, "queued",
                                 json.dumps(document_ids), json.dumps(image_ids), language, now, None, None, None,
                                 settings_json, None))
@@ -1074,6 +1088,17 @@ class SQLiteSessionStore:
             rows = connection.execute("SELECT * FROM research_jobs " + ("WHERE session_id=? " if session_id else "")
                                       + "ORDER BY created_at DESC, job_id DESC", (session_id,) if session_id else ()).fetchall()
             return tuple(_job(row) for row in rows)
+
+    def acknowledge_completion(self, session_id: str, job_id: str, *, owner_id: str | None) -> None:
+        """Record a view for the immutable conversation owner, independently of turn revisions."""
+        with self._transaction() as connection:
+            updated = connection.execute(
+                "UPDATE research_jobs SET viewed=1 WHERE job_id=? AND session_id=? AND state='completed' "
+                "AND EXISTS (SELECT 1 FROM sessions WHERE session_id=? AND owner_id IS ?)",
+                (job_id, session_id, session_id, owner_id),
+            )
+            if updated.rowcount != 1:
+                raise SessionStoreError("job_not_found")
 
     def claim_next_job(self) -> ResearchJob | None:
         with self._transaction() as connection:

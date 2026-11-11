@@ -165,6 +165,7 @@ class ResearchJobManager:
                            idempotency_key=idempotency_key, documents=documents,
                            retained_image_ids=old.image_ids, citation_language=old.citation_language,
                            run_settings=old.run_settings, remember_settings=False,
+                           remember_citation_language=False,
                            owner_id=owner_id, submission_quota=submission_quota)
 
     def _work(self):

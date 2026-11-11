@@ -3,9 +3,12 @@
   const reader = document.querySelector('.reading-scroll');
   const preview = document.querySelector('#citation-preview');
   const narrow = matchMedia('(max-width: 760px)');
+  const withoutHover = matchMedia('(hover: none)');
   let origin = null;
   let dismissTimer = null;
   let touchCitation = null;
+  let tappedPreview = false;
+  let excerptReturn = null;
   let suppressedFocus = null;
 
   function closePreview(restoreFocus = false) {
@@ -15,6 +18,7 @@
     previous?.setAttribute('aria-expanded', 'false');
     previous?.classList.remove('is-previewed');
     origin = null;
+    tappedPreview = false;
     if (restoreFocus && previous) {
       suppressedFocus = previous;
       previous.focus({preventScroll: true});
@@ -24,11 +28,19 @@
   function positionPreview() {
     if (!origin || preview.hidden) return;
     const anchor = origin.getBoundingClientRect();
-    const card = preview.getBoundingClientRect();
+    const viewport = window.visualViewport;
     const margin = 12;
-    const left = Math.min(Math.max(margin, anchor.left - 16), innerWidth - card.width - margin);
+    const minX = (viewport?.offsetLeft ?? 0) + margin;
+    const minY = (viewport?.offsetTop ?? 0) + margin;
+    const maxX = minX + (viewport?.width ?? innerWidth) - 2 * margin;
+    const maxY = minY + (viewport?.height ?? innerHeight) - 2 * margin;
+    preview.style.maxWidth = Math.max(0, maxX - minX) + 'px';
+    preview.style.maxHeight = Math.max(0, Math.min(520, maxY - minY)) + 'px';
+    const card = preview.getBoundingClientRect();
+    const left = Math.max(minX, Math.min(anchor.left - 16, maxX - card.width));
     const below = anchor.bottom + 8;
-    const top = below + card.height <= innerHeight - margin ? below : Math.max(margin, anchor.top - card.height - 8);
+    const preferredTop = below + card.height <= maxY ? below : anchor.top - card.height - 8;
+    const top = Math.max(minY, Math.min(preferredTop, maxY - card.height));
     preview.style.left = left + 'px';
     preview.style.top = top + 'px';
   }
@@ -37,7 +49,11 @@
     const source = document.getElementById(citation.dataset.sourceId);
     if (!source) return;
     clearTimeout(dismissTimer);
-    if (origin !== citation) closePreview();
+    if (origin === citation) {
+      positionPreview();
+      return;
+    }
+    closePreview();
     origin = citation;
     citation.setAttribute('aria-expanded', 'true');
     citation.classList.add('is-previewed');
@@ -58,22 +74,43 @@
     saved.href = hasPassage ? citation.hash : '#' + source.id + '-excerpt';
     saved.textContent = hasPassage ? 'View saved passage' : 'View saved excerpt';
     preview.hidden = false;
+    preview.scrollTop = 0;
     positionPreview();
   }
 
   function scheduleDismiss() {
     clearTimeout(dismissTimer);
     dismissTimer = setTimeout(() => {
-      if (!preview.matches(':hover') && !origin?.matches(':hover') &&
+      if (!tappedPreview && !preview.matches(':hover') && !origin?.matches(':hover') &&
           !preview.contains(document.activeElement) && document.activeElement !== origin) closePreview();
     }, 180);
   }
 
-  function openSavedCitation(target) {
-    const excerpt = target.closest('.saved-excerpt');
+  function focusPreviewControl(control) {
+    control.focus({preventScroll: true});
+    const bounds = control.getBoundingClientRect();
+    const card = preview.getBoundingClientRect();
+    if (bounds.top < card.top + 4) preview.scrollTop += bounds.top - card.top - 4;
+    else if (bounds.bottom > card.bottom - 4) preview.scrollTop += bounds.bottom - card.bottom + 4;
+  }
+
+  function scrollReaderTo(target, offset) {
+    reader.scrollTop += target.getBoundingClientRect().top - reader.getBoundingClientRect().top - offset;
+  }
+
+  function openSavedCitation(hash, citation) {
+    const target = document.getElementById(hash.slice(1));
+    const excerpt = target?.closest('.saved-excerpt');
+    if (!excerpt) return false;
     const source = excerpt.closest('.source');
+    const overview = source.closest('.sources-overview');
     const passage = target.closest('.citation-support');
-    source.closest('.sources-overview').open = true;
+    excerptReturn = citation ? {
+      overview,
+      citation,
+      offset: citation.getBoundingClientRect().top - reader.getBoundingClientRect().top,
+    } : null;
+    overview.open = true;
     source.open = true;
     excerpt.open = true;
     excerpt.querySelectorAll('.citation-support').forEach(support => {
@@ -82,12 +119,17 @@
     closePreview();
     const opened = passage || excerpt;
     opened.querySelector('summary').focus({preventScroll: true});
-    opened.scrollIntoView({block: 'start', behavior: 'instant'});
+    scrollReaderTo(opened, 20);
+    return true;
   }
 
   document.querySelectorAll('a.citation[data-source-id]').forEach(citation => {
+    citation.tabIndex = 0;
+    citation.setAttribute('aria-controls', preview.id);
+    citation.setAttribute('aria-haspopup', 'dialog');
+    citation.setAttribute('aria-expanded', 'false');
     citation.addEventListener('pointerenter', event => {
-      if (event.pointerType === 'touch') return;
+      if (event.pointerType !== 'mouse' || withoutHover.matches) return;
       suppressedFocus = null;
       showPreview(citation);
     });
@@ -96,46 +138,69 @@
       if (suppressedFocus !== citation) showPreview(citation);
     });
     citation.addEventListener('blur', () => { suppressedFocus = null; scheduleDismiss(); });
-    citation.addEventListener('pointerdown', event => { touchCitation = event.pointerType === 'touch' ? citation : null; });
+    citation.addEventListener('pointerdown', event => {
+      touchCitation = ['touch', 'pen'].includes(event.pointerType) ? citation : null;
+    });
+    citation.addEventListener('pointercancel', () => { touchCitation = null; });
     citation.addEventListener('click', event => {
+      // WebKit can report a touch-generated click as a mouse event.
+      const tapped = touchCitation === citation || withoutHover.matches ||
+        ['touch', 'pen'].includes(event.pointerType);
+      touchCitation = null;
       if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
       if (citation.hasAttribute('data-saved-passage')) {
-        event.preventDefault();
-        openSavedCitation(document.getElementById(citation.hash.slice(1)));
-      } else if (touchCitation === citation || !citation.hasAttribute('target')) {
-        // On touch, source-level citations expose the preview's actions.
+        if (openSavedCitation(citation.hash, citation)) event.preventDefault();
+      } else if (tapped || citation.hasAttribute('data-preview-on-click') || !citation.hasAttribute('target')) {
         event.preventDefault();
         showPreview(citation);
-        if (event.detail === 0) preview.querySelector('.source-url a, .saved-excerpt-link').focus();
+        tappedPreview = tapped && event.detail !== 0;
+        if (event.detail === 0) focusPreviewControl(preview.querySelector('.source-url a, .saved-excerpt-link'));
       }
-      touchCitation = null;
     });
     citation.addEventListener('keydown', event => {
       if ((event.key === 'Tab' && !event.shiftKey && !preview.hidden && origin === citation) ||
           event.key === 'ArrowDown' || event.key === ' ') {
         event.preventDefault();
         showPreview(citation);
-        preview.querySelector('.source-url a, .saved-excerpt-link').focus();
+        focusPreviewControl(preview.querySelector('.source-url a, .saved-excerpt-link'));
       }
     });
+    if (document.activeElement === citation) showPreview(citation);
   });
   preview.addEventListener('pointerenter', () => clearTimeout(dismissTimer));
   preview.addEventListener('pointerleave', scheduleDismiss);
   preview.addEventListener('focusout', scheduleDismiss);
   preview.querySelector('.preview-close').addEventListener('click', () => closePreview(true));
   preview.querySelector('.saved-excerpt-link').addEventListener('click', event => {
-    event.preventDefault();
-    openSavedCitation(document.getElementById(event.currentTarget.hash.slice(1)));
+    if (openSavedCitation(event.currentTarget.hash, origin)) event.preventDefault();
+  });
+  reader.querySelectorAll('.back-to-answer').forEach(link => {
+    link.tabIndex = 0;
+    link.addEventListener('click', event => {
+      if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+      const previous = excerptReturn?.overview === link.closest('.sources-overview') ? excerptReturn : null;
+      const target = previous?.citation ?? document.getElementById(link.hash.slice(1));
+      if (!target) return;
+      event.preventDefault();
+      excerptReturn = null;
+      suppressedFocus = previous?.citation ?? null;
+      target.focus({preventScroll: true});
+      scrollReaderTo(target, previous?.offset ?? 20);
+    });
   });
   preview.addEventListener('keydown', event => {
     if (event.key !== 'Tab') return;
     const controls = [...preview.querySelectorAll('a, button')];
-    if (event.shiftKey && document.activeElement === controls[0]) {
-      event.preventDefault();
+    const current = controls.indexOf(document.activeElement);
+    if (current < 0) return;
+    event.preventDefault();
+    const nextControl = controls[current + (event.shiftKey ? -1 : 1)];
+    if (nextControl) {
+      focusPreviewControl(nextControl);
+    } else if (event.shiftKey) {
       suppressedFocus = origin;
       origin.focus({preventScroll: true});
-    } else if (!event.shiftKey && document.activeElement === controls.at(-1)) {
-      event.preventDefault();
+    } else {
       const all = [...document.querySelectorAll('a[href], button, summary, textarea, input:not([type=hidden])')]
         .filter(el => !preview.contains(el) && el.getClientRects().length && !el.disabled);
       const next = all[all.indexOf(origin) + 1];
@@ -150,7 +215,7 @@
     if (!preview.hidden && !preview.contains(event.target) && event.target !== origin) closePreview();
   });
   reader.addEventListener('scroll', () => {
-    if (origin && (document.activeElement === origin || preview.contains(document.activeElement))) {
+    if (origin && (tappedPreview || document.activeElement === origin || preview.contains(document.activeElement))) {
       const anchor = origin.getBoundingClientRect();
       const viewport = reader.getBoundingClientRect();
       if (anchor.bottom > viewport.top && anchor.top < viewport.bottom &&
@@ -161,7 +226,9 @@
     }
     closePreview();
   }, {passive: true});
-  window.addEventListener('resize', () => closePreview());
+  window.addEventListener('resize', positionPreview);
+  window.visualViewport?.addEventListener('resize', positionPreview);
+  window.visualViewport?.addEventListener('scroll', positionPreview);
   document.addEventListener('click', event => {
     document.querySelectorAll('.session-actions[open]').forEach(menu => {
       if (!menu.contains(event.target)) menu.open = false;
@@ -263,7 +330,6 @@
     const error = askForm.querySelector('.composer-error');
     const recovery = askForm.querySelector('.submission-recovery');
     const announcement = askForm.querySelector('.composer-status');
-    const preferences = askForm.querySelector('.composer-preferences');
     const settingsDialog = askForm.querySelector('.run-settings-dialog');
     let billingSaving = false;
     let authorizations = {};
@@ -277,6 +343,9 @@
     const billingToggle = billingPanel.querySelector('.billing-toggle');
     const billingStatus = billingPanel.querySelector('.billing-status');
     const billingError = billingPanel.querySelector('.billing-error');
+    const billingNote = billingPanel.querySelector('.settings-note');
+    const billingHelp = billingNote.textContent;
+    const microphone = askForm.querySelector('.dictation-toggle');
     authorizations = JSON.parse(settingsDialog.dataset.billingAuthorizations);
     const profiles = JSON.parse(settingsDialog.dataset.modelProfiles);
     let previousBackend = backend.value;
@@ -303,10 +372,18 @@
       profileFields.forEach(name => { askForm.elements[name].value = profile[name] || ''; });
       if (backend.value === 'openai' && profile.api_processing !== undefined) processing.value = profile.api_processing;
     }
+    const billedBackend = () => backend.value === 'chatgpt_plan' ? 'openai' : backend.value;
     function updateAuthorization() {
-      billingPanel.hidden = backend.value === 'chatgpt_plan';
-      const label = backend.value === 'openrouter' ? 'OpenRouter' : 'OpenAI API';
-      const authorized = authorizations[backend.value] === true;
+      const plan = backend.value === 'chatgpt_plan';
+      billingPanel.hidden = plan && microphone.dataset.configured !== 'true';
+      billingNote.textContent = plan
+        ? 'Dictation uses the separately billed OpenAI API. This authorization keeps the ChatGPT personal plan selected for research.'
+        : billingHelp;
+      const label = billedBackend() === 'openrouter' ? 'OpenRouter' : 'OpenAI API';
+      const authorized = authorizations[billedBackend()] === true;
+      if (microphone.dataset.configured === 'true') {
+        microphone.dataset.enabled = String(authorizations.openai === true);
+      }
       billingStatus.textContent = authorized ? label + ' billed inference is authorized.' : label + ' billed inference is not authorized.';
       billingToggle.textContent = (authorized ? 'Revoke ' : 'Authorize ') + label + ' billed inference';
     }
@@ -381,7 +458,7 @@
       });
     });
     billingToggle.addEventListener('click', async () => {
-      const selectedBackend = backend.value;
+      const selectedBackend = billedBackend();
       billingSaving = true;
       billingToggle.disabled = true;
       backend.disabled = true;
@@ -436,13 +513,27 @@
     let dragDepth = 0;
     let uploadProblem = '';
     const activeJob = ['queued', 'researching'].includes(document.body.dataset.jobState);
-    if (activeJob) {
-      submit.disabled = true;
-      submit.title = 'This conversation is still researching. Your draft will be kept.';
-    }
+    const narrowComposer = matchMedia('(max-width: 760px)');
+    const touchKeyboard = matchMedia('(pointer: coarse)');
+    const visualViewport = window.visualViewport;
     function expand() {
+      const height = narrowComposer.matches && visualViewport?.scale === 1
+        ? visualViewport.height : innerHeight;
       question.style.height = 'auto';
-      question.style.height = Math.max(44, Math.min(question.scrollHeight, 240, innerHeight * .35)) + 'px';
+      question.style.height = Math.max(44, Math.min(question.scrollHeight, 240, height * .35)) + 'px';
+      if (narrowComposer.matches && reader.contains(question) && document.activeElement === question) {
+        // On a short keyboard viewport, scroll the welcome pane as the draft
+        // grows. Panning the document would move the composer under the keyboard.
+        const overflow = question.getBoundingClientRect().bottom + 8 - reader.getBoundingClientRect().bottom;
+        if (overflow > 0) reader.scrollTop += overflow;
+      }
+    }
+    function fitComposer() {
+      const resized = narrowComposer.matches && visualViewport?.scale === 1;
+      document.body.style.setProperty('--reading-height', resized ? visualViewport.height + 'px' : '');
+      // Safari can pan the layout viewport while the software keyboard is up.
+      document.body.style.setProperty('--reading-top', resized ? visualViewport.offsetTop + 'px' : '');
+      expand();
     }
     saveDraft = () => {
       try {
@@ -453,7 +544,21 @@
     try {
       if (!question.value) question.value = sessionStorage.getItem(draftKey) || '';
     } catch (_) { /* The server-rendered form remains usable without storage. */ }
-    expand();
+    fitComposer();
+    window.addEventListener('resize', fitComposer);
+    visualViewport?.addEventListener('resize', fitComposer);
+    visualViewport?.addEventListener('scroll', fitComposer);
+    const newLanguage = document.querySelector('#citation-language[form="ask-question"]');
+    const languageKey = draftKey + ':source-language';
+    if (newLanguage) {
+      try {
+        const previous = sessionStorage.getItem(languageKey);
+        if ([...newLanguage.options].some(option => option.value === previous)) newLanguage.value = previous;
+      } catch (_) {}
+      newLanguage.addEventListener('change', () => {
+        try { sessionStorage.setItem(languageKey, newLanguage.value); } catch (_) {}
+      });
+    }
     function showError(message) {
       error.textContent = message;
       error.hidden = !message;
@@ -579,7 +684,6 @@
       showError('');
       recovery.hidden = true;
       recovery.replaceChildren();
-      preferences.open = false;
       // Snapshot every file with the question before disabling picker controls.
       const body = new FormData(askForm);
       body.delete('files');
@@ -625,7 +729,10 @@
           showError('The server did not confirm a saved research run. Your question and files are still here.');
           return;
         }
-        try { sessionStorage.removeItem(draftKey); } catch (_) {}
+        try {
+          sessionStorage.removeItem(draftKey);
+          if (newLanguage) sessionStorage.removeItem(languageKey);
+        } catch (_) {}
         question.value = '';
         location.assign(response.url);
       } catch (_) {
@@ -643,17 +750,15 @@
       expand();
       saveDraft();
     });
+    let composing = false;
+    question.addEventListener('compositionstart', () => { composing = true; });
+    question.addEventListener('compositionend', () => { composing = false; });
     question.addEventListener('keydown', event => {
-      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
-        event.preventDefault();
-        askForm.requestSubmit();
-      }
-    });
-    document.addEventListener('pointerdown', event => {
-      if (preferences.open && !preferences.contains(event.target)) preferences.open = false;
-    });
-    preferences.addEventListener('keydown', event => {
-      if (event.key === 'Escape') { preferences.open = false; preferences.querySelector('summary').focus(); }
+      if (event.key !== 'Enter' || event.shiftKey || event.altKey ||
+          composing || event.isComposing || event.keyCode === 229) return;
+      if (touchKeyboard.matches && !event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      if (!event.repeat && !submit.disabled) askForm.requestSubmit(submit);
     });
     window.addEventListener('pagehide', saveDraft);
     window.addEventListener('pageshow', () => {
@@ -662,103 +767,129 @@
       question.readOnly = false;
       picker.disabled = false;
       askForm.removeAttribute('aria-busy');
-      expand();
+      fitComposer();
     });
   }
 
-  const stateLabels = {queued: 'Queued', researching: 'Researching', completed: 'New answer', failed: 'Failed', interrupted: 'Interrupted'};
+  const stateLabels = {queued: 'Queued', researching: 'Researching', failed: 'Failed', interrupted: 'Interrupted'};
   const knownJobs = new Map();
-  const viewedCompletionPrefix = 'scryraven-viewed-completion:';
-  const viewedCompletions = new Set();
+  const sessionRows = new Map();
   document.querySelectorAll('.session-row[data-session-id]').forEach(row => {
-    knownJobs.set(row.dataset.sessionId, row.querySelector('.session-job-state')?.dataset.state || '');
+    sessionRows.set(row.dataset.sessionId, row);
+    const {jobId, state} = row.querySelector('.session-job-state').dataset;
+    knownJobs.set(row.dataset.sessionId, {jobId, state});
+    row.querySelector('.session-link').addEventListener('click', openUnrenderedAnswer);
   });
   const notifications = document.querySelector('.research-notifications');
-  function completionViewed(jobId) {
-    if (!jobId) return false;
-    if (viewedCompletions.has(jobId)) return true;
+  const visibleAnswers = new Set();
+  const acknowledging = new Set();
+  const completionObserver = new IntersectionObserver(entries => {
+    for (const entry of entries) {
+      if (entry.intersectionRatio > 0) visibleAnswers.add(entry.target);
+      else visibleAnswers.delete(entry.target);
+    }
+    acknowledgeVisibleAnswers();
+  }, {threshold: 0.01});
+  document.querySelectorAll('[data-completion-url]').forEach(answer => completionObserver.observe(answer));
+
+  function acknowledgeVisibleAnswers() {
+    if (document.hidden || document.querySelector('.workspace[inert], dialog[open]')) return;
+    for (const answer of visibleAnswers) {
+      if (!acknowledging.has(answer)) acknowledgeAnswer(answer);
+    }
+  }
+
+  async function acknowledgeAnswer(answer) {
+    acknowledging.add(answer);
     try {
-      return localStorage.getItem(viewedCompletionPrefix + jobId) === '1';
-    } catch (_) {
-      return false;
-    }
-  }
-  function refreshJobBadges() {
-    document.querySelectorAll('.session-row[data-session-id]').forEach(row => {
-      const badge = row.querySelector('.session-job-state');
-      if (!badge) return;
-      const state = badge.dataset.state;
-      badge.textContent = stateLabels[state] || '';
-      badge.hidden = !stateLabels[state] || (state === 'completed' && completionViewed(badge.dataset.jobId));
-    });
-    if (notifications.dataset.state === 'completed' &&
-        completionViewed(notifications.dataset.jobId)) {
-      notifications.replaceChildren();
-    }
-  }
-  function acknowledgeCurrentCompletion() {
-    const {sessionId, jobId, jobState} = document.body.dataset;
-    // A background tab or an old answer must not acknowledge a newer result.
-    if (!document.hidden && jobState === 'completed' && sessionId && jobId) {
-      viewedCompletions.add(jobId);
-      try { localStorage.setItem(viewedCompletionPrefix + jobId, '1'); } catch (_) {
-        // The visible result still counts as viewed when browser storage is unavailable.
+      const response = await fetch(answer.dataset.completionUrl, {
+        method: 'POST', credentials: 'same-origin', keepalive: true,
+        body: new URLSearchParams({form_token: answer.dataset.completionToken}),
+      });
+      if (response.status === 204) {
+        completionObserver.unobserve(answer);
+        visibleAnswers.delete(answer);
+        pollJobs();
       }
+    } catch (_) { /* An interrupted acknowledgment can safely be retried. */ }
+    finally { acknowledging.delete(answer); }
+  }
+
+  function refreshVisibleJobs() {
+    if (!document.hidden) pollJobs();
+  }
+  document.addEventListener('visibilitychange', refreshVisibleJobs);
+  window.addEventListener('pageshow', refreshVisibleJobs);
+
+  function openUnrenderedAnswer(event) {
+    const link = event.currentTarget;
+    if (event.defaultPrevented || event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey ||
+        link.pathname !== location.pathname || !link.hash.startsWith('#turn-') ||
+        document.getElementById(link.hash.slice(1))) return;
+    // The answer finished after this document rendered. A fragment alone cannot load it.
+    event.preventDefault();
+    saveDraft();
+    history.replaceState(null, '', link.href);
+    location.reload();
+  }
+
+  function updateJobBadges(job) {
+    const row = sessionRows.get(job.session_id);
+    if (row) {
+      const badge = row.querySelector('.session-job-state');
+      badge.dataset.state = job.state;
+      badge.dataset.jobId = job.job_id;
+      badge.textContent = stateLabels[job.state] || '';
+      badge.hidden = !stateLabels[job.state];
+      const completion = row.querySelector('.session-completion-state');
+      completion.dataset.jobId = job.new_answer?.job_id || '';
+      completion.hidden = !job.new_answer;
+      row.querySelector('.session-link').hash = job.new_answer ? 'turn-' + job.new_answer.turn : '';
     }
-    refreshJobBadges();
-  }
-  acknowledgeCurrentCompletion();
-  document.addEventListener('visibilitychange', acknowledgeCurrentCompletion);
-  window.addEventListener('pageshow', acknowledgeCurrentCompletion);
-  window.addEventListener('storage', event => {
-    if (event.key === null || event.key.startsWith(viewedCompletionPrefix)) refreshJobBadges();
-  });
-  if (location.hash === '#research-status') {
-    const pending = document.querySelector('#research-status');
-    if (pending) {
-      pending.focus({preventScroll: true});
-      pending.scrollIntoView({block: 'start'});
-    } else if (document.body.dataset.jobState === 'completed') {
-      history.replaceState(null, '', '#turn-' + document.body.dataset.revision);
+    if (notifications.dataset.sessionId === job.session_id && notifications.dataset.state === 'completed' &&
+        notifications.dataset.jobId !== job.new_answer?.job_id) {
+      notifications.replaceChildren();
+      delete notifications.dataset.jobId;
     }
   }
-  if (document.body.dataset.jobState === 'completed' && /^#turn-\d+$/.test(location.hash)) {
-    const completed = document.querySelector(location.hash);
-    completed?.querySelector('h2').focus({preventScroll: true});
-    completed?.scrollIntoView({block: 'start'});
-  }
+
   function notifyJob(job) {
-    if (job.state === 'completed' && completionViewed(job.job_id)) return;
+    if (job.state === 'completed' && job.new_answer?.job_id !== job.job_id) return;
+    if (notifications.dataset.jobId === job.job_id && notifications.dataset.state === job.state) return;
     notifications.replaceChildren();
     notifications.dataset.state = job.state;
     notifications.dataset.jobId = job.job_id;
+    notifications.dataset.sessionId = job.session_id;
     const message = document.createElement('span');
     message.textContent = job.state === 'completed' ? 'Research completed. ' : 'Research ' + stateLabels[job.state].toLowerCase() + '. ';
     const link = document.createElement('a');
     link.href = '/sessions/' + encodeURIComponent(job.session_id);
+    if (job.state === 'completed') {
+      link.hash = 'turn-' + (job.revision + 1);
+      link.addEventListener('click', openUnrenderedAnswer);
+    }
     link.textContent = 'Open conversation';
     notifications.append(message, link);
   }
+  let pollTimer;
+  let polling = false;
   async function pollJobs() {
+    if (polling) return;
+    polling = true;
+    clearTimeout(pollTimer);
+    acknowledgeVisibleAnswers();
     try {
       const response = await fetch('/jobs/status', {credentials: 'same-origin', headers: {'Accept': 'application/json'}});
       if (response.ok) {
         const status = await response.json();
         for (const job of status.jobs || []) {
           const previous = knownJobs.get(job.session_id);
-          knownJobs.set(job.session_id, job.state);
-          const row = [...document.querySelectorAll('.session-row[data-session-id]')].find(item => item.dataset.sessionId === job.session_id);
-          const badge = row?.querySelector('.session-job-state');
-          if (badge) {
-            badge.dataset.state = job.state;
-            badge.dataset.jobId = job.job_id;
-            badge.textContent = stateLabels[job.state] || '';
-            badge.hidden = !stateLabels[job.state] || (job.state === 'completed' && completionViewed(job.job_id));
-          }
+          knownJobs.set(job.session_id, {jobId: job.job_id, state: job.state});
+          updateJobBadges(job);
           const isCurrent = job.session_id === document.body.dataset.sessionId && job.job_id === document.body.dataset.jobId;
           if (isCurrent && ['queued', 'researching'].includes(document.body.dataset.jobState)) {
             if (['completed', 'failed', 'interrupted'].includes(job.state)) {
-              if (feedbackInUse()) {
+              if (feedbackInUse() || askForm?.querySelector('.dictation-toggle[aria-busy="true"]')) {
                 notifyJob(job);
                 continue;
               }
@@ -775,13 +906,17 @@
               }
               document.body.dataset.jobState = 'researching';
             }
-          } else if (['queued', 'researching'].includes(previous) && ['completed', 'failed', 'interrupted'].includes(job.state)) {
+          } else if ((job.state === 'completed' && (previous?.state !== 'completed' || previous.jobId !== job.job_id)) ||
+                     (['queued', 'researching'].includes(previous?.state) && ['failed', 'interrupted'].includes(job.state))) {
             notifyJob(job);
           }
         }
       }
     } catch (_) { /* A disconnected browser does not determine the job state. */ }
-    setTimeout(pollJobs, document.hidden ? 4000 : 1500);
+    finally {
+      polling = false;
+      pollTimer = setTimeout(pollJobs, document.hidden ? 4000 : 1500);
+    }
   }
   if (document.querySelector('.history-list')) pollJobs();
 
@@ -799,14 +934,17 @@
     if (location.hash === '#history') history.replaceState(null, '', location.pathname + location.search);
     if (restoreFocus) openHistory.focus({preventScroll: true});
   }
-  openHistory.addEventListener('click', event => {
-    event.preventDefault();
+  function showHistory() {
     sidebar.classList.add('is-open');
     sidebar.setAttribute('role', 'dialog');
     sidebar.setAttribute('aria-modal', 'true');
     historyBackdrop.hidden = false;
     workspace.inert = true;
     sidebar.querySelector('.close-history').focus();
+  }
+  openHistory.addEventListener('click', event => {
+    event.preventDefault();
+    showHistory();
   });
   sidebar.querySelector('.close-history').addEventListener('click', event => { event.preventDefault(); closeHistory(); });
   historyBackdrop.addEventListener('click', () => closeHistory());
@@ -820,22 +958,60 @@
   narrow.addEventListener('change', () => {
     if (sidebar.classList.contains('is-open')) closeHistory();
   });
+  function adoptHistoryFragment() {
+    if (!narrow.matches) return;
+    if (location.hash === '#history') showHistory();
+    else if (sidebar.classList.contains('is-open')) closeHistory(false);
+  }
+  sidebar.setAttribute('data-history-enhanced', '');
+  adoptHistoryFragment();
+  window.addEventListener('hashchange', adoptHistoryFragment);
 
   document.querySelectorAll('[data-dialog-open]').forEach(button => {
     const dialog = document.getElementById(button.dataset.dialogOpen);
+    if (!dialog) return;
     button.addEventListener('click', () => {
       if (sidebar.classList.contains('is-open')) closeHistory(false);
+      const opener = narrow.matches && sidebar.contains(button) ? openHistory : button;
       dialog.showModal();
-      dialog.dataset.returnToHistory = String(narrow.matches && sidebar.contains(button));
       dialog.addEventListener('close', () => {
-        if (dialog.dataset.returnToHistory === 'true') openHistory.focus({preventScroll: true});
-        else button.focus({preventScroll: true});
+        const focused = document.activeElement;
+        if (focused === document.body || focused === button || dialog.contains(focused)) {
+          opener.focus({preventScroll: true});
+        }
       }, {once: true});
     });
+    button.disabled = false;
   });
   document.querySelectorAll('[data-dialog-close]').forEach(button => {
     button.addEventListener('click', () => button.closest('dialog').close());
   });
+  const sourceSettings = document.querySelector('form.source-settings');
+  if (sourceSettings) {
+    const save = sourceSettings.querySelector('button[type=submit]');
+    const status = sourceSettings.querySelector('[role=status]');
+    const language = sourceSettings.elements.citation_language;
+    sourceSettings.addEventListener('submit', async event => {
+      event.preventDefault();
+      if (save.disabled) return;
+      const body = new URLSearchParams(new FormData(sourceSettings));
+      save.disabled = language.disabled = true;
+      status.textContent = 'Saving…';
+      try {
+        const response = await fetch(sourceSettings.action, {
+          method: 'POST', credentials: 'same-origin', headers: {Accept: 'application/json'}, body
+        });
+        if (!response.ok) throw new Error('source_language_save_failed');
+        sourceSettings.elements.form_token.value = (await response.json()).form_token;
+        status.textContent = 'Language saved.';
+      } catch (_) {
+        status.textContent = 'Language could not be saved. Reopen Settings after refreshing the conversation.';
+      } finally {
+        save.disabled = language.disabled = false;
+      }
+    });
+    language.addEventListener('change', () => { status.textContent = ''; });
+  }
   const hostedSettings = document.querySelector('#hosted-settings-dialog');
   if (hostedSettings) {
     const choices = JSON.parse(hostedSettings.dataset.modelChoices);

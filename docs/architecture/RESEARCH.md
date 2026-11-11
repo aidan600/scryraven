@@ -513,10 +513,12 @@ Reading Room citation links identify their source and occurrence by the saved
 answer offset. Activating an anchored citation opens its highlighted passage in
 the saved text. Source-level web links open the original publication, with touch
 exposing the source preview. The hover and keyboard preview keeps original
-publication access and opens the saved passage or source excerpt. The inline
-Reader shows acquisition labels and identifies physical PDF pages. Original PDFs
-remain accessible. Reopening and inspection use saved coordinates and text without
-model calls or fetching the current publication.
+publication access and opens the saved passage or source excerpt. Back to answer
+restores the originating citation and its reading position. The inline Reader
+shows acquisition labels and identifies physical PDF pages. Original PDF links
+and native source disclosures work with JavaScript disabled. Reopening and
+inspection use saved coordinates and text without model calls or fetching the
+current publication.
 
 The Reading Room and CLI disclose that no external sources were used for
 completed source-free supported/partial answers. Presentation derives this from

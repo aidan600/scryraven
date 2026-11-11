@@ -1,6 +1,7 @@
 """Offline hosted HTTP security boundaries with signed identities and synthetic custody."""
 
 import json
+import re
 from dataclasses import replace
 from io import BytesIO
 from pathlib import Path
@@ -51,8 +52,6 @@ def get(room, config, key, path="/", email="alice@example.test", **kwargs):
 
 
 def form(response, action="ask"):
-    import re
-
     if action == "ask":
         area = response.text.split('class="ask-form"', 1)[1]
     else:
@@ -94,6 +93,43 @@ def test_foreign_session_routes_and_jobs_are_undiscoverable(room, config, key):
     assert bob in response.text and alice not in response.text and "Alice private" not in response.text
     assert get(room, config, key, "/admin").status_code == 404
     assert get(room, config, key, f"/admin/sessions/{bob}/export").status_code == 404
+
+
+def test_answer_view_is_idempotent_and_bound_to_owner_session_and_completed_job(room, config, key):
+    app, store, _, bob = room
+    accepted = post(room, config, key, "/ask", {"form_token": form(get(room, config, key)),
+                    "idempotency_key": "synthetic-completion-view", "question": "Synthetic canopy"})
+    assert accepted.status_code == 303
+    assert app.extensions["research_jobs"].wait_idle()
+    job, = store.list_jobs()
+    sid = job.session_id
+    session_url = f"/sessions/{sid}"
+    viewed_url = f"{session_url}/jobs/{job.job_id}/viewed"
+    initial = get(room, config, key, session_url)
+    token = re.search(r'data-completion-token="([^"]+)"', initial.text)[1]
+    data = {"form_token": token}
+    assert job.state == "completed" and not job.viewed
+    assert get(room, config, key, "/jobs/status").get_json()["jobs"][0]["new_answer"] == {
+        "job_id": job.job_id, "turn": 1,
+    }
+    assert app.test_client().post(viewed_url, base_url=config.origin, data=data).status_code == 401
+    assert post(room, config, key, viewed_url, data, email="bob@example.test").status_code == 404
+    assert post(room, config, key, viewed_url, data, email=config.admin_email).status_code == 404
+    assert "data-completion-token" not in get(room, config, key, session_url, email=config.admin_email).text
+    assert post(room, config, key, f"/sessions/{bob}/jobs/{job.job_id}/viewed",
+                data, email="bob@example.test").status_code == 403
+    assert post(room, config, key, session_url + f"/jobs/{'f' * 32}/viewed", data).status_code == 403
+    assert post(room, config, key, viewed_url, {"form_token": "bad"}).status_code == 403
+    assert app.test_client().post(viewed_url, base_url=config.origin, data=data, headers={
+        **headers(config, key), "Origin": "https://different.example.test",
+    }).status_code == 403
+    assert not store.get_job(job.job_id).viewed
+    for _ in range(2):
+        assert post(room, config, key, viewed_url, data).status_code == 204
+    assert SQLiteSessionStore(config.database).get_job(job.job_id).viewed
+    assert get(room, config, key, "/jobs/status").get_json()["jobs"][0]["new_answer"] is None
+    assert "data-completion-token" not in get(room, config, key, session_url).text
+    assert store.load(sid).metadata.revision == 1
 
 
 def test_admin_readonly_historical_citations_pdf_and_selected_export(room, config, key):

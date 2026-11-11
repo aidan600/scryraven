@@ -120,8 +120,16 @@ def private_context(stack, browser, hosted_ui, user, width):
     context.route("**/*", loopback_only)
     page = context.new_page()
     page.on("pageerror", lambda error: errors.append(str(error)))
-    page.on("requestfailed", lambda failed: errors.append(f"{failed.url}: {failed.failure}")
-            if not (urlsplit(failed.url).path.endswith("/export") and failed.failure == "net::ERR_ABORTED") else None)
+    def record_request_failure(failed):
+        path = urlsplit(failed.url).path
+        # Native navigation can leave a document before its deferred scripts
+        # arrive. Chromium also reports canceled downloads via requestfailed.
+        if failed.failure == "net::ERR_ABORTED" and (
+            path in {"/static/reading_room.js", "/static/reading_room_dictation.js"} or path.endswith("/export")
+        ):
+            return
+        errors.append(f"{failed.url}: {failed.failure}")
+    page.on("requestfailed", record_request_failure)
     page.on("console", lambda message: errors.append(message.text) if message.type == "error" and "the server responded with a status of" not in message.text else None)
     return context, page, attempted_external, errors
 
@@ -136,6 +144,51 @@ def screenshot(page, name):
 
 def fits(page):
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+
+
+def test_viewed_completion_survives_administration_and_a_separate_authenticated_device(browser, hosted_ui):
+    store = hosted_ui.store
+    manager = hosted_ui.app.extensions["research_jobs"]
+    job = manager.submit("Given ten apples and two removed, how many remain?", owner_id=EMAILS["admin"],
+                         idempotency_key="admin-completion-view", run_settings=hosted_ui.config.run_settings)
+    assert manager.wait_idle(10)
+    assert store.get_job(job.job_id).state == "completed"
+    base = hosted_ui.origin
+    with ExitStack() as stack:
+        _, admin, external, errors = private_context(stack, browser, hosted_ui, "admin", 1440)
+        _, other_device, external_other, errors_other = private_context(stack, browser, hosted_ui, "admin", 1440)
+        admin.goto(base)
+        badge = admin.locator(f'.session-row[data-session-id="{job.session_id}"] .session-completion-state')
+        assert badge.is_visible()
+        admin.get_by_role("link", name="Administration").click()
+        admin.wait_for_load_state("load")
+        assert admin.url == base + "/admin"
+        assert not store.get_job(job.job_id).viewed
+        admin.goto(base)
+        assert badge.is_visible()
+        with admin.expect_response(lambda response: response.url.endswith("/viewed") and response.status == 204) as viewed:
+            admin.locator(f'.session-row[data-session-id="{job.session_id}"] .session-link').click()
+        assert viewed.value.status == 204
+        admin.wait_for_url(f"{base}/sessions/{job.session_id}#turn-1")
+        badge.wait_for(state="hidden")
+        assert store.get_job(job.job_id).viewed
+        admin.get_by_role("link", name="Administration").click()
+        admin.wait_for_load_state("load")
+        admin.goto(base + f"/sessions/{job.session_id}")
+        assert badge.is_hidden()
+        admin.reload()
+        assert badge.is_hidden()
+        other_device.goto(base)
+        assert other_device.locator(".session-completion-state").is_hidden()
+        # Navigation may cancel the browser's delivery of an already committed
+        # keepalive acknowledgment. The independent-device assertions prove custody.
+        viewed_url = f"{base}/sessions/{job.session_id}/jobs/{job.job_id}/viewed"
+        navigation_cancellations = {
+            viewed_url + ": net::ERR_ABORTED", viewed_url + ": Load request cancelled",
+            base + "/jobs/status: net::ERR_ABORTED", base + "/jobs/status: Load request cancelled",
+        }
+        assert external == external_other == errors_other == []
+        assert all(error in navigation_cancellations for error in errors), errors
 
 
 @pytest.mark.parametrize("width", [1440, 390, 320])
@@ -214,8 +267,14 @@ def test_owner_creates_reopens_renames_and_deletes_with_attachment_composer(brow
         assert hosted_ui.app.extensions["research_jobs"].wait_idle(10)
         job = hosted_ui.app.extensions["research_jobs"].list(session_id)[0]
         assert job.state == "completed", (job.state, job.error_code)
+        result = page.locator(".answer")
+        result.wait_for(state="visible")
+        result.scroll_into_view_if_needed()
+        badge = page.locator(f'.session-row[data-session-id="{session_id}"] .session-completion-state[hidden]')
+        badge.wait_for(state="attached")
+        assert hosted_ui.store.get_job(job.job_id).viewed
         page.reload()
-        assert "8 apples remain" in page.locator(".answer").inner_text()
+        assert "8 apples remain" in result.inner_text()
         saved = hosted_ui.store.load(session_id)
         assert saved.metadata.owner_id == EMAILS["alice"]
         assert len(saved.documents) == len(saved.images) == 1
@@ -238,7 +297,10 @@ def test_owner_creates_reopens_renames_and_deletes_with_attachment_composer(brow
         page.wait_for_url(hosted_ui.origin + "/?notice=deleted")
         assert len(hosted_ui.store.list_sessions(owner_id=EMAILS["alice"])) == 1
         assert session_id not in {item.session_id for item in hosted_ui.store.list_sessions()}
-        assert external == errors == []
+        assert external == []
+        # Reload may cancel response delivery after the acknowledgment has committed.
+        acknowledged_abort = f"{hosted_ui.origin}/sessions/{session_id}/jobs/{job.job_id}/viewed: net::ERR_ABORTED"
+        assert all(error == acknowledged_abort for error in errors), errors
 
 
 def test_browser_manipulations_cannot_cross_owner_or_change_hosted_policy(browser, hosted_ui):

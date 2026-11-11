@@ -180,13 +180,14 @@ pwsh -NoProfile -File .\scripts\clean-forensic-run.ps1 -RunDirectory 'C:\tmp\scr
 The cleanup command accepts only one exact direct child of the fixed forensic
 root. It prints and copies a deletion summary to the Windows clipboard.
 
-Choose **New research**, ask a question, and use the composer for follow-ups. Submit
-with the arrow or Ctrl+Enter / Command+Enter; plain Enter adds a line. Research
-continues on the local server while you navigate, refresh or close the browser
-tab. Two conversations can research at once, with a bounded waiting queue and one
+Choose **New research**, ask a question, and use the composer for follow-ups.
+Submit with the arrow or, on desktop, Enter. Shift+Enter adds a line on desktop,
+and touch keyboards retain multiline Enter. Research continues on the local
+server while you navigate, refresh or close the browser tab. Two conversations
+can research at once, with a bounded waiting queue and one
 active question per conversation. The sidebar reports actual run states. The
-language control defaults source explanations to English; an accepted question
-saves the conversation preference for subsequent answers. Original titles and
+sidebar language control defaults source explanations to English and saves the
+conversation preference for subsequent answers. Original titles and
 historical answers remain unchanged.
 
 Completed answers, including limited results, are saved. Failed/interrupted runs
@@ -205,9 +206,10 @@ A source-level web citation opens the original publication in a new tab. On
 touch screens, tapping a source-level citation opens its preview. Tab, Arrow
 Down or Space enters preview actions, and Escape dismisses the preview.
 The preview offers original-publication access and **View saved passage** or
-**View saved excerpt**. **Sources** also exposes each publication and its saved
-material. Long saved material can be expanded in full. Saved selections remain
-available when the original site changes.
+**View saved excerpt**. **Back to answer** returns to the citation at its prior
+reading position. **Sources** also exposes each publication and its saved
+material through native disclosures. Long saved material can be expanded in full.
+Saved selections remain available when the original site changes.
 
 Each session's **…** menu offers **Rename** and **Delete**. Rename preserves all
 research and requires no model call. Delete requires confirmation and permanently

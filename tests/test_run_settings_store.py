@@ -145,6 +145,7 @@ def test_version_three_migration_keeps_historical_payload_citations_and_unknown_
         connection.execute("UPDATE sessions SET payload=?,revision=1 WHERE session_id=?", (payload, saved.metadata.session_id))
         connection.execute("ALTER TABLE research_jobs DROP COLUMN run_settings")
         connection.execute("ALTER TABLE research_jobs DROP COLUMN run_receipt")
+        connection.execute("ALTER TABLE research_jobs DROP COLUMN viewed")
         connection.execute("DROP TABLE app_preferences")
         connection.execute("DROP INDEX sessions_owner")
         connection.execute("ALTER TABLE sessions DROP COLUMN owner_id")
