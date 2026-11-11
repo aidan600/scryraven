@@ -226,15 +226,17 @@ and configured API access. Authorization can be enabled while ChatGPT-plan
 research stays selected. Hosted use retains the operator's API configuration.
 Dictation uses separate API billing and does not change Research/Answer routing.
 
-Completed jobs retain “New answer” until their actual answer intersects a visible
-reading viewport. SQLite schema 7 stores a viewed bit per immutable job belonging
+New completions show “New answer” until the answer enters a visible reading
+viewport. SQLite schema 7 stores a viewed bit per immutable job belonging
 to its conversation owner. Owner/action-bound CSRF protects the idempotent update.
 Acknowledgments survive refresh, Administration navigation, server restart and
 separate authenticated browser contexts, including when browser storage is
-unavailable. Existing completed jobs start unread on migration. A later completion
-has its own acknowledgment. Reading an earlier answer leaves later unread
-answers pending. Queued, researching, failed and interrupted statuses remain
-independent of unread completions.
+unavailable. Upgrading an existing database to schema 7 marks already completed
+jobs as viewed. Jobs completed after the upgrade or in a fresh database start
+unread. Reopening a schema-7 database preserves its acknowledgment state.
+Reading an earlier answer leaves later unread answers pending. Queued,
+researching, failed and interrupted statuses remain independent of unread
+completions.
 
 WebKit checks reproduced PDF fragment jumps before deferred script startup and
 late initial-fragment scrolling after readers had expanded Sources. PDF citations

@@ -4,6 +4,7 @@ import sqlite3
 import subprocess
 import sys
 from contextlib import closing
+from dataclasses import replace
 from io import BytesIO
 from pathlib import Path
 from threading import Event, Lock
@@ -40,34 +41,94 @@ def run_settings():
     return RunSettings("chatgpt_plan", "gpt-6.1-terra", "medium", "gpt-6.1-sol", "medium", None, 40)
 
 
-def test_legacy_completion_starts_unread_and_view_does_not_change_session(tmp_path):
-    store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
-    manager = ResearchJobManager(store, session_options={"engine": engine})
-    try:
-        job = manager.submit("A previous answer", idempotency_key=key(1), owner_id="owner@example.test")
-        assert manager.wait_idle()
-        assert manager.get(job.job_id).state == "completed"
-        original_session = store.load(job.session_id)
-    finally:
-        manager.shutdown()
+def set_legacy_job_schema(store, version):
     with closing(sqlite3.connect(store.path)) as connection:
         connection.execute("ALTER TABLE research_jobs DROP COLUMN viewed")
-        connection.execute("PRAGMA user_version=6")
+        if version < 6:
+            connection.execute("DROP TABLE answer_feedback")
+        if version < 5:
+            connection.execute("DROP INDEX sessions_owner")
+            connection.execute("ALTER TABLE sessions DROP COLUMN owner_id")
+            connection.execute("DROP TABLE user_submissions")
+        if version < 4:
+            connection.execute("ALTER TABLE research_jobs DROP COLUMN run_settings")
+            connection.execute("ALTER TABLE research_jobs DROP COLUMN run_receipt")
+            connection.execute("DROP TABLE app_preferences")
+        connection.execute(f"PRAGMA user_version={version}")
         connection.commit()
 
+
+@pytest.mark.parametrize("version", [3, 4, 5, 6])
+def test_migration_marks_only_preexisting_completed_jobs_viewed(tmp_path, version):
+    store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
+    owner = "owner@example.test" if version >= 5 else None
+    document = prepare_pdf("notes.pdf", "application/pdf", text_pdf(["Historical notes"]))
+    manager = ResearchJobManager(store, session_options={"engine": engine})
+    try:
+        first = manager.submit("A previous answer", idempotency_key=key(1), owner_id=owner, documents=(document,))
+        assert manager.wait_idle()
+        manager.submit("Another historical answer", idempotency_key=key(2), owner_id=owner,
+                       session_id=first.session_id, revision=1)
+        assert manager.wait_idle()
+    finally:
+        manager.shutdown()
+
+    store.accept_job("An interrupted job", idempotency_key=key(3))
+    store.interrupt_jobs()
+    failed = store.accept_job("A failed job", idempotency_key=key(4))
+    store.fail_job(failed.job_id)
+    store.accept_job("A researching job", idempotency_key=key(5))
+    store.claim_next_job()
+    store.accept_job("A queued job", idempotency_key=key(6))
+    if version == 6:
+        store.add_feedback(first.session_id, 1, "Historical feedback", owner_id=owner)
+
+    jobs = store.list_jobs()
+    assert sorted(job.state for job in jobs) == ["completed", "completed", "failed", "interrupted", "queued", "researching"]
+    assert all(not job.viewed for job in jobs)
+    session = store.load(first.session_id)
+    feedback = store.list_feedback(first.session_id)
+    set_legacy_job_schema(store, version)
+
     reopened = SQLiteSessionStore(store.path)
-    assert not reopened.get_job(job.job_id).viewed
-    with pytest.raises(SessionStoreError, match="job_not_found"):
-        reopened.acknowledge_completion(job.session_id, job.job_id, owner_id="another@example.test")
-    reopened.acknowledge_completion(job.session_id, job.job_id, owner_id="owner@example.test")
-    assert store.get_job(job.job_id).viewed
-    assert reopened.load(job.session_id) == original_session
-    pending = reopened.accept_job("A future answer", session_id=job.session_id, revision=1,
-                                  idempotency_key=key(2), owner_id="owner@example.test")
-    with pytest.raises(SessionStoreError, match="job_not_found"):
-        reopened.acknowledge_completion(job.session_id, pending.job_id, owner_id="owner@example.test")
-    assert not reopened.get_job(pending.job_id).viewed
+    assert reopened.list_jobs() == tuple(replace(job, viewed=job.state == "completed") for job in jobs)
+    assert reopened.load(first.session_id) == session
+    assert reopened.list_feedback(first.session_id) == feedback
+
+
+@pytest.mark.parametrize("migrated", [False, True], ids=["fresh", "migrated"])
+def test_new_completion_starts_unread_and_view_does_not_change_session(tmp_path, migrated):
+    store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
+    if migrated:
+        assert store.list_jobs() == ()
+        set_legacy_job_schema(store, 6)
+    owner = "owner@example.test"
+    manager = ResearchJobManager(store, session_options={"engine": engine})
+    try:
+        job = manager.submit("A new answer", idempotency_key=key(1), owner_id=owner)
+        assert manager.wait_idle()
+        assert manager.get(job.job_id).state == "completed"
+        assert not manager.get(job.job_id).viewed
+        original_session = store.load(job.session_id)
+        with pytest.raises(SessionStoreError, match="job_not_found"):
+            store.acknowledge_completion(job.session_id, job.job_id, owner_id="another@example.test")
+        store.acknowledge_completion(job.session_id, job.job_id, owner_id=owner)
+        assert store.load(job.session_id) == original_session
+        followup = manager.submit("A later answer", idempotency_key=key(2), owner_id=owner,
+                                  session_id=job.session_id, revision=1)
+        assert manager.wait_idle()
+    finally:
+        manager.shutdown()
+
+    reopened = SQLiteSessionStore(store.path)
     assert reopened.get_job(job.job_id).viewed
+    assert reopened.get_job(followup.job_id).state == "completed"
+    assert not reopened.get_job(followup.job_id).viewed
+    pending = reopened.accept_job("A future answer", session_id=job.session_id, revision=2,
+                                  idempotency_key=key(3), owner_id=owner)
+    with pytest.raises(SessionStoreError, match="job_not_found"):
+        reopened.acknowledge_completion(job.session_id, pending.job_id, owner_id=owner)
+    assert not reopened.get_job(pending.job_id).viewed
 
 
 class Workers:

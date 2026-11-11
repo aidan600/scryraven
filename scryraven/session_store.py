@@ -592,6 +592,7 @@ class SQLiteSessionStore:
             if version < 7:
                 connection.execute("ALTER TABLE research_jobs ADD COLUMN viewed INTEGER NOT NULL DEFAULT 0 "
                                    "CHECK (viewed IN (0, 1))")
+                connection.execute("UPDATE research_jobs SET viewed=1 WHERE state='completed'")
                 connection.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
             yield connection
             connection.commit()
