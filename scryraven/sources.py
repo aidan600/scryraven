@@ -96,13 +96,47 @@ class Evidence:
 
 @dataclass(frozen=True)
 class SupportRegion:
-    """Exact half-open coordinates in a historical selected Evidence snapshot."""
+    """Exact half-open coordinates in a saved selected Evidence snapshot."""
 
     evidence_ref: str
     start_char: int
     end_char: int
     material_sha256: str
     passage_sha256: str
+
+
+def locate_unique_passage(original: str, locator: str) -> tuple[int, int]:
+    """Locate literal text, then whitespace-only variation, in immutable text."""
+    if not locator.strip():
+        raise ValueError("passage_not_found")
+    start = original.find(locator)
+    if start >= 0:
+        if original.find(locator, start + 1) >= 0:
+            raise ValueError("passage_ambiguous")
+        return start, start + len(locator)
+
+    # Each normalized whitespace run is one space. Map only removed whitespace
+    # back to original offsets; no case, punctuation, word or evidence changes.
+    removed, shifts = 0, []
+
+    def collapse(match):
+        nonlocal removed
+        extra = match.end() - match.start() - 1
+        if extra:
+            shifts.append((match.start() - removed, extra))
+        removed += extra
+        return " "
+
+    normalized = re.sub(r"\s+", collapse, original)
+    needle = re.sub(r"\s+", " ", locator).strip()
+    start = normalized.find(needle)
+    if start < 0:
+        raise ValueError("passage_not_found")
+    if normalized.find(needle, start + 1) >= 0:
+        raise ValueError("passage_ambiguous")
+    end = start + len(needle)
+    return (start + sum(extra for position, extra in shifts if position < start),
+            end + sum(extra for position, extra in shifts if position < end))
 
 
 def support_text(region: SupportRegion, material: Evidence) -> str:

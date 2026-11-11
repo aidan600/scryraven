@@ -538,6 +538,7 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                              )),
                              "body": Markup(source_body_html(
                                  c, collapse_long=True, uses=turn.citation_uses,
+                                 source_anchor=prefix + str(c.number),
                                  original_href=(url_for("original_pdf", session_id=metadata.session_id,
                                                         document_id=c.document_id)
                                                 if c.source_kind == "user_document" and c.document_id else None),

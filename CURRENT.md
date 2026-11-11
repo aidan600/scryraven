@@ -1055,8 +1055,11 @@ scenario premise without verifying that value externally.
 Research chooses external acquisition. Answer's local tools can inspect all legitimate
 retained session material independently. Answer owns meaning, interpretation,
 prose, completeness, supported/partial/unable posture, consequential missing needs
-and citations. The primary `SemanticAnswerDecision` fields remain strict; optional
-generated citation descriptions are discarded locally when malformed. A
+and citations. For legal questions, the roles consider applicable authority,
+publication status, later treatment, opinion components and statutory scope
+when they affect the answer. The primary `SemanticAnswerDecision` fields remain
+strict. Optional citation descriptions and passage locators are discarded
+locally when malformed. A
 completed valid primary Answer publishes directly through
 the strict deterministic citation resolver. Mandatory model localization, its
 region/use mapping machinery, automatic legacy whole-answer regeneration,
@@ -1078,14 +1081,15 @@ incomplete streams and Research notes cannot become a published answer. Premise-
 derivations need no Evidence citation even when unrelated originals are available;
 actual mixed factual claims retain Evidence citation requirements.
 
-New Reading Room citations offer compact previews and direct publication access;
-the secondary saved excerpt uses the existing exact-material Reader, with its
-original publication or retained PDF and selected-page identity.
-They have no passage coordinates or highlighted-support claim. Historical citation
-records, occurrence-specific support coordinates and material/passage hashes remain
-readable and validated on reopen, without model/provider I/O or payload rewriting.
-Historical localized turns still show their saved support and surrounding context.
-Saved material now expands inline instead of opening the removed large inspector.
+Reading Room citations with a valid passage locator open the exact saved text
+for that occurrence. Answer can supply a short quote tied to the specific
+material alias it cited. The resolver stores coordinates and hashes only when
+the quote uniquely locates a passage in that selected material. Occurrences
+without a locator keep the source preview, original access and saved excerpt.
+The saved-text highlight establishes location. Formal legal pinpoints appear in
+the answer when supported by the acquired authority. The Reader labels physical
+PDF pages separately. Historical and new coordinates and hashes are validated on
+reopen without model/provider I/O or payload rewriting.
 Earlier public-web/PDF localization observations remain historical evidence in
 `docs/operator/CITATION_READER_DURABLE_SUPPORT_PRODUCT_01.md`.
 

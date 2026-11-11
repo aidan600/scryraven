@@ -10,6 +10,7 @@ from threading import Thread
 
 import pytest
 from reading_room_samples import no_io, prepared_session
+from test_durable_support_reader import saved_session
 from werkzeug.serving import make_server
 
 from scryraven.reading_room import _QuietHandler, create_app
@@ -27,10 +28,8 @@ def browser():
             yield browser
 
 
-@pytest.fixture
-def citation_page(tmp_path):
-    store = SQLiteSessionStore(tmp_path / "preview-browser.sqlite3")
-    session = prepared_session(store)
+@contextmanager
+def served_citation_page(store, session):
     app = create_app(store=store, session_options={"model": no_io, "search": no_io, "fetch": no_io})
     server = make_server("127.0.0.1", 0, app, threaded=True, request_handler=_QuietHandler)
     thread = Thread(target=server.serve_forever, daemon=True)
@@ -43,10 +42,24 @@ def citation_page(tmp_path):
         thread.join(timeout=5)
 
 
+@pytest.fixture
+def citation_page(tmp_path):
+    store = SQLiteSessionStore(tmp_path / "preview-browser.sqlite3")
+    with served_citation_page(store, prepared_session(store)) as url:
+        yield url
+
+
+@pytest.fixture
+def saved_passage_page(tmp_path):
+    store, session = saved_session(tmp_path)
+    with served_citation_page(store, session) as url:
+        yield url
+
+
 @contextmanager
-def page_at(browser, url, *, mobile=False):
+def page_at(browser, url, *, mobile=False, javascript=True):
     with browser.new_context(viewport={"width": 390 if mobile else 1440, "height": 844 if mobile else 1000},
-                             is_mobile=mobile, has_touch=mobile) as context:
+                             is_mobile=mobile, has_touch=mobile, java_script_enabled=javascript) as context:
         context.route("https://example.org/**", lambda route: route.fulfill(body="Offline original publication"))
         page = context.new_page()
         page.goto(url)
@@ -170,3 +183,60 @@ def test_mobile_tap_exposes_preview_original_and_saved_material_without_overflow
         assert page.locator('#turn-1-source-1-excerpt').get_attribute('open') is not None
         assert page.locator('#turn-1-source-1-excerpt .material-text').is_visible()
         assert preview.is_hidden()
+
+
+@pytest.mark.parametrize("interaction", ["click", "keyboard", "touch"])
+def test_occurrences_open_their_own_saved_passages_after_reopen(browser, saved_passage_page, interaction):
+    with page_at(browser, saved_passage_page, mobile=interaction == "touch") as page:
+        links = page.locator('a.citation[data-saved-passage]')
+        preview = page.locator('#citation-preview')
+        first, second = links.first, links.last
+        assert links.count() == 2
+        assert first.get_attribute('data-source-id') == second.get_attribute('data-source-id')
+        assert first.get_attribute('href') != second.get_attribute('href')
+
+        if interaction == "click":
+            first.hover()
+            assert preview.get_by_role('link', name='View saved passage').get_attribute('href') == first.get_attribute('href')
+            with page.expect_popup() as opened:
+                preview.get_by_role('link', name='Open original publication').click()
+            assert opened.value.url == 'https://example.org/record'
+            opened.value.close()
+            first.click()
+        elif interaction == "keyboard":
+            first.press('Enter')
+        else:
+            first.tap()
+        selected = page.locator('.citation-support[open]')
+        assert selected.locator('mark.support-text').all_inner_texts() == [
+            'Alpha is seven.', 'A consequential exception applies.',
+        ]
+        assert selected.locator('summary').first.evaluate('(el) => el === document.activeElement')
+        assert selected.locator('mark.support-text').first.is_visible()
+
+        page.reload()
+        if interaction == "click":
+            second.hover()
+            preview.get_by_role('link', name='View saved passage').click()
+        elif interaction == "keyboard":
+            second.press('Enter')
+        else:
+            second.tap()
+        assert selected.count() == 1
+        mark = selected.locator('mark.support-text')
+        assert mark.inner_text() == 'Omega is nine.' and mark.is_visible()
+        assert mark.evaluate('''el => {
+            const viewport = el.closest('.reading-scroll').getBoundingClientRect();
+            const bounds = el.getBoundingClientRect();
+            return bounds.top >= viewport.top && bounds.bottom <= viewport.bottom;
+        }''')
+        assert preview.is_hidden()
+        assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+
+
+def test_saved_passage_fragment_reveals_the_occurrence_without_javascript(browser, saved_passage_page):
+    with page_at(browser, saved_passage_page, javascript=False) as page:
+        link = page.locator('a.citation[data-saved-passage]').last
+        link.click()
+        mark = page.locator('.citation-support[open] mark.support-text')
+        assert mark.inner_text() == 'Omega is nine.' and mark.is_visible()

@@ -53,7 +53,10 @@
     description?.remove();
     preview.querySelector('.citation-preview-number').textContent = 'Source ' + source.querySelector('.source-number').textContent;
     preview.querySelector('.citation-preview-content').replaceChildren(...content.childNodes);
-    preview.querySelector('.saved-excerpt-link').href = '#' + source.id + '-excerpt';
+    const saved = preview.querySelector('.saved-excerpt-link');
+    const hasPassage = citation.hasAttribute('data-saved-passage');
+    saved.href = hasPassage ? citation.hash : '#' + source.id + '-excerpt';
+    saved.textContent = hasPassage ? 'View saved passage' : 'View saved excerpt';
     preview.hidden = false;
     positionPreview();
   }
@@ -64,6 +67,22 @@
       if (!preview.matches(':hover') && !origin?.matches(':hover') &&
           !preview.contains(document.activeElement) && document.activeElement !== origin) closePreview();
     }, 180);
+  }
+
+  function openSavedCitation(target) {
+    const excerpt = target.closest('.saved-excerpt');
+    const source = excerpt.closest('.source');
+    const passage = target.closest('.citation-support');
+    source.closest('.sources-overview').open = true;
+    source.open = true;
+    excerpt.open = true;
+    excerpt.querySelectorAll('.citation-support').forEach(support => {
+      support.open = support === passage;
+    });
+    closePreview();
+    const opened = passage || excerpt;
+    opened.querySelector('summary').focus({preventScroll: true});
+    opened.scrollIntoView({block: 'start', behavior: 'instant'});
   }
 
   document.querySelectorAll('a.citation[data-source-id]').forEach(citation => {
@@ -80,9 +99,11 @@
     citation.addEventListener('pointerdown', event => { touchCitation = event.pointerType === 'touch' ? citation : null; });
     citation.addEventListener('click', event => {
       if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
-      // A touch tap exposes the same actions without depending on hover. Mouse
-      // clicks and keyboard Enter retain the direct original-publication link.
-      if (touchCitation === citation || !citation.hasAttribute('target')) {
+      if (citation.hasAttribute('data-saved-passage')) {
+        event.preventDefault();
+        openSavedCitation(document.getElementById(citation.hash.slice(1)));
+      } else if (touchCitation === citation || !citation.hasAttribute('target')) {
+        // On touch, source-level citations expose the preview's actions.
         event.preventDefault();
         showPreview(citation);
         if (event.detail === 0) preview.querySelector('.source-url a, .saved-excerpt-link').focus();
@@ -104,18 +125,7 @@
   preview.querySelector('.preview-close').addEventListener('click', () => closePreview(true));
   preview.querySelector('.saved-excerpt-link').addEventListener('click', event => {
     event.preventDefault();
-    const excerpt = document.getElementById(event.currentTarget.hash.slice(1));
-    const source = excerpt.closest('.source');
-    const citationStart = origin?.dataset.citationStart;
-    source.closest('.sources-overview').open = true;
-    source.open = true;
-    excerpt.open = true;
-    excerpt.querySelectorAll('.citation-support').forEach(support => {
-      support.open = support.dataset.citationStart === citationStart;
-    });
-    closePreview();
-    excerpt.querySelector('summary').focus({preventScroll: true});
-    excerpt.scrollIntoView({block: 'start', behavior: 'instant'});
+    openSavedCitation(document.getElementById(event.currentTarget.hash.slice(1)));
   });
   preview.addEventListener('keydown', event => {
     if (event.key !== 'Tab') return;
