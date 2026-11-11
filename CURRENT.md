@@ -245,13 +245,22 @@ handles WebKit mouse-labeled synthetic clicks. Preview, keyboard actions, saved
 excerpt navigation and Back to answer preserve the reading context. Native
 original links and source disclosures remain available when JavaScript is disabled.
 
-Verification uses synthetic research/source fixtures and mocked transcription.
-Chromium 151 exercises actual Web Audio capture/resampling with synthetic input.
+Offline verification uses synthetic research/source fixtures and mocked
+transcription. Chromium 151 exercises Web Audio capture and resampling with
+synthetic input.
 Windows headless WebKit 26.5 has no Web Audio implementation and exercises the
 unsupported-recording response. Both engines exercise mobile layouts, simulated
-VisualViewport keyboard changes, submission and source interaction. Actual
-iPhone/iOS Safari microphone and keyboard behavior and live OpenAI transcription
-remain unverified. Research/Answer and search-provider checks use offline fixtures.
+VisualViewport keyboard changes, submission and source interaction.
+
+One approved brokered Chromium run at `c32b92ac10b2c13253f38a2b9c6df0d38dbb8a81`
+sent 3.030 seconds of synthetic audio through the Reading Room to OpenAI
+gpt-transcribe. The transcript appended the spoken question to the existing draft
+and included the start of a repeat from the synthetic microphone. The run made
+one transcription request and zero research submissions, sessions or jobs.
+ChatGPT-plan research stayed selected. The estimated transcription charge at
+the published rate was $0.00023. Actual billing was not inspected. Physical
+iPhone Safari microphone and keyboard behavior remains unverified. Research/Answer
+and search-provider checks use offline fixtures.
 
 Reading Room Product UX 01 extends merged baseline
 `0229128b1a8d7a0b78a042327b971fa01a411967` with a compact expanding composer,
