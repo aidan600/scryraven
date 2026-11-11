@@ -206,7 +206,8 @@ After the reviewed phase has merged and local aftercare is authorized:
    The ready record may continue reporting the boolean credential presence.
 4. Run the existing launcher with `-PrepareOnly 2>&1`; verify its database is
    still `%LOCALAPPDATA%\ScryRaven\sessions.sqlite3` and its broker still reads
-   the approved `credentials.env` by path. Do not inspect that file or keys.
+   the maintained `C:\Users\aidan\ScryRaven\.env` by absolute path through the
+   existing doorman.
 5. Launch normally. Existing sessions reopen; Run Settings chooses each job's
    backend. No new conversation database or forensic run is needed to change
    backend. An absent OpenRouter key remains a configuration-unavailable state.

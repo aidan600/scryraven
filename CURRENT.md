@@ -846,8 +846,9 @@ operational differences.
 
 The forensic development launcher explicitly injects the plan backend for
 `personal` through Reading Room's existing `session_options` seam. It delegates
-credential loading to the existing command doorman using the approved external
-credential file, removes the API key only in its own child, and requires nonblank
+credential loading to the existing command doorman using the absolute
+`C:\Users\aidan\ScryRaven\.env` path, including from phase worktrees. It removes
+the API key only in its own child and requires nonblank
 Exa configuration before creating the app or server. Optional Serper/LinkUp
 configuration is reported only as booleans. A child manifest records the actual
 revision, resolved role profile, selected backend and zero startup model
@@ -1095,7 +1096,9 @@ personal-plan demonstration, the California general-plan question saved and
 reopened as unable after discovery failures. A nonlegal control also had search
 failures and stopped on a Research model transport error. Neither turn acquired
 source material. Legal authority selection and live passage navigation remain
-unverified.
+unverified. The first brokered check of the maintained `.env` stopped on
+`invalid_environment_assignment` before dispatch. The ordinary demonstration
+remains blocked on a valid local credential configuration.
 Earlier public-web/PDF localization observations remain historical evidence in
 `docs/operator/CITATION_READER_DURABLE_SUPPORT_PRODUCT_01.md`.
 

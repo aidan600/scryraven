@@ -72,6 +72,8 @@ def test_launcher_uses_doorman_and_explicit_forensic_child_without_credential_lo
         assert f"'{flag}'" in script
     assert "run_brokered_command_once.py" in script
     assert "'scripts.forensic_reading_room'" in script
+    assert r"'C:\Users\aidan\ScryRaven\.env'" in script
+    assert "'--env-file', $credentialFile" in script
     assert "Get-Content .env" not in script
     assert "ReadAllText" not in script
 

@@ -79,8 +79,9 @@ Open [http://127.0.0.1:7331](http://127.0.0.1:7331) in your browser. Keep the te
 running; Ctrl+C stops the server. It binds only to `127.0.0.1`. If the port is busy,
 choose another with `--port 7339`. There is no remote bind option.
 
-**Launch with private credentials:** use the existing doorman, which
-supplies the child process environment without printing or exposing secret values.
+**Launch with private credentials:** the doorman privately supplies the child
+process environment from the maintained local file `C:\Users\aidan\ScryRaven\.env`.
+Pass that absolute path even when launching from a separate worktree.
 From the repository root in PowerShell:
 
 ```powershell
@@ -88,7 +89,7 @@ $roomLogs = Join-Path $env:TEMP ('scryraven-room-' + [guid]::NewGuid().ToString(
 New-Item -ItemType Directory -Path $roomLogs | Out-Null
 $roomProcess = Start-Process .\.venv\Scripts\python.exe -WindowStyle Hidden -PassThru -WorkingDirectory (Get-Location).Path -ArgumentList @(
     'scripts/run_brokered_command_once.py', '--repo-root', ('"{0}"' -f (Get-Location).Path),
-    '--env-file', 'C:\Users\aidan\AppData\Local\ScryRaven\credentials.env',
+    '--env-file', 'C:\Users\aidan\ScryRaven\.env',
     '--stdout', ('"{0}\stdout.txt"' -f $roomLogs),
     '--stderr', ('"{0}\stderr.txt"' -f $roomLogs), '--status', ('"{0}\status.json"' -f $roomLogs),
     '--timeout-seconds', '28800', '--target-current-python', '--', '-m', 'scryraven.reading_room'
@@ -524,13 +525,14 @@ Acquisition preserves fixed safe Exa, Serper and LinkUp configuration-missing
 codes and LinkUp material-unavailable codes; other Search/Read exceptions remain
 generic safe failures.
 
-Agents must use the existing doorman for credentialed commands and must not read
-`.env` or keys. An operator may configure `.env` using `.env.example`. For an
-authorized observation use fresh external output filenames:
+Agents must use the existing doorman for credentialed commands. The operator
+maintains the single local credential file at `C:\Users\aidan\ScryRaven\.env`
+using `.env.example` as a reference. For an authorized observation use fresh
+external output filenames:
 
 ```powershell
 New-Item -ItemType Directory -Force C:\tmp\scryraven-observation | Out-Null
-python scripts/run_brokered_command_once.py --repo-root C:\Users\aidan\ScryRaven --env-file C:\Users\aidan\AppData\Local\ScryRaven\credentials.env --stdout C:\tmp\scryraven-observation\answer.txt --stderr C:\tmp\scryraven-observation\trace.txt --status C:\tmp\scryraven-observation\status.json --timeout-seconds 1200 --target-current-python -- -m scryraven "What is the maximum allowed weight of a ten-pin bowling ball?" --trace
+python scripts/run_brokered_command_once.py --repo-root C:\Users\aidan\ScryRaven --env-file C:\Users\aidan\ScryRaven\.env --stdout C:\tmp\scryraven-observation\answer.txt --stderr C:\tmp\scryraven-observation\trace.txt --status C:\tmp\scryraven-observation\status.json --timeout-seconds 1200 --target-current-python -- -m scryraven "What is the maximum allowed weight of a ten-pin bowling ball?" --trace
 ```
 
 The doorman owns only secret custody and process plumbing; the product does not
