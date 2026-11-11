@@ -1091,14 +1091,17 @@ The saved-text highlight establishes location. Answer can include formal legal
 pinpoints based on the acquired authority. The Reader labels physical PDF pages
 separately. Historical and new coordinates and hashes are validated on reopen
 without model/provider I/O or payload rewriting.
-Offline checks verify passage binding, reopening and navigation. In the bounded
-personal-plan demonstration, the California general-plan question saved and
-reopened as unable after discovery failures. A nonlegal control also had search
-failures and stopped on a Research model transport error. Neither turn acquired
-source material. Legal authority selection and live passage navigation remain
-unverified. The first brokered check of the maintained `.env` stopped on
-`invalid_environment_assignment` before dispatch. The ordinary demonstration
-remains blocked on a valid local credential configuration.
+Authenticated Exa and Serper searches succeeded through the broker with the
+maintained `.env`. In the recovered personal-plan Reading Room demonstration,
+the California general-plan answer cited planning guidance and applicable
+statutes, avoiding the reversed and unpublished opinions in the earlier answer.
+It and the Cinnabar opinion answer reopened with source-level citations. With
+clearer Answer guidance, the Housing Accountability Act and Kelo answers saved
+five exact passage links, including separate subsections of one statute and
+separate majority and dissent passages. The links reopened on desktop and
+390px touch. The ordinary nonlegal control retained source-level navigation.
+Same-opinion passage navigation is verified offline. Live case-specific formal
+pinpoint coverage and broader legal authority judgment remain unproved.
 Earlier public-web/PDF localization observations remain historical evidence in
 `docs/operator/CITATION_READER_DURABLE_SUPPORT_PRODUCT_01.md`.
 
