@@ -1,7 +1,9 @@
 """Durable jobs exercise ordinary ask/commit using controlled worker events."""
 
+import sqlite3
 import subprocess
 import sys
+from contextlib import closing
 from io import BytesIO
 from pathlib import Path
 from threading import Event, Lock
@@ -36,6 +38,36 @@ def key(number):
 
 def run_settings():
     return RunSettings("chatgpt_plan", "gpt-6.1-terra", "medium", "gpt-6.1-sol", "medium", None, 40)
+
+
+def test_legacy_completion_starts_unread_and_view_does_not_change_session(tmp_path):
+    store = SQLiteSessionStore(tmp_path / "sessions.sqlite3")
+    manager = ResearchJobManager(store, session_options={"engine": engine})
+    try:
+        job = manager.submit("A previous answer", idempotency_key=key(1), owner_id="owner@example.test")
+        assert manager.wait_idle()
+        assert manager.get(job.job_id).state == "completed"
+        original_session = store.load(job.session_id)
+    finally:
+        manager.shutdown()
+    with closing(sqlite3.connect(store.path)) as connection:
+        connection.execute("ALTER TABLE research_jobs DROP COLUMN viewed")
+        connection.execute("PRAGMA user_version=6")
+        connection.commit()
+
+    reopened = SQLiteSessionStore(store.path)
+    assert not reopened.get_job(job.job_id).viewed
+    with pytest.raises(SessionStoreError, match="job_not_found"):
+        reopened.acknowledge_completion(job.session_id, job.job_id, owner_id="another@example.test")
+    reopened.acknowledge_completion(job.session_id, job.job_id, owner_id="owner@example.test")
+    assert store.get_job(job.job_id).viewed
+    assert reopened.load(job.session_id) == original_session
+    pending = reopened.accept_job("A future answer", session_id=job.session_id, revision=1,
+                                  idempotency_key=key(2), owner_id="owner@example.test")
+    with pytest.raises(SessionStoreError, match="job_not_found"):
+        reopened.acknowledge_completion(job.session_id, pending.job_id, owner_id="owner@example.test")
+    assert not reopened.get_job(pending.job_id).viewed
+    assert reopened.get_job(job.job_id).viewed
 
 
 class Workers:

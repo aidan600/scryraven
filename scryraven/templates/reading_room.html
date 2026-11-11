@@ -8,6 +8,8 @@
 {% elif name == 'more' %}<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>
 {% elif name == 'attach' %}<path d="m8 12 7-7a4 4 0 0 1 6 6L11 21a6 6 0 0 1-8-8L13 3"/><path d="m7 14 8-8a2 2 0 0 1 3 3l-8 8a2 2 0 0 1-3-3Z"/>
 {% elif name == 'settings' %}<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c-5 5-5 13 0 18 5-5 5-13 0-18Z"/>
+{% elif name == 'mic' %}<rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11v1a7 7 0 0 0 14 0v-1M12 19v3m-3 0h6"/>
+{% elif name == 'stop' %}<rect x="6" y="6" width="12" height="12" rx="2"/>
 {% endif %}</svg>
 {%- endmacro %}
 
@@ -120,7 +122,7 @@
 
 {% macro composer(is_new=false) -%}
 <div class="composer-wrap{% if is_new %} welcome-composer{% endif %}">
-  <form class="ask-form" method="post" enctype="multipart/form-data" action="{{ url_for('ask', session_id=saved.metadata.session_id) if saved else url_for('ask') }}" data-draft-key="{% if hosted_mode %}{{ browser_identity }}:{% endif %}{{ saved.metadata.session_id if saved else 'new' }}">
+  <form class="ask-form" id="ask-question" method="post" enctype="multipart/form-data" action="{{ url_for('ask', session_id=saved.metadata.session_id) if saved else url_for('ask') }}" data-draft-key="{% if hosted_mode %}{{ browser_identity }}:{% endif %}{{ saved.metadata.session_id if saved else 'new' }}">
     <input type="hidden" name="form_token" value="{{ form_token('ask') }}">
     <input type="hidden" name="idempotency_key" value="{{ idempotency_key|default('') }}">
     <label class="sr-only" for="question">{{ 'Ask a follow-up' if saved else 'Your research question' }}</label>
@@ -130,22 +132,21 @@
       <label class="icon-button attachment-picker" for="attachment-files" title="Attach PDF or image">{{ icon('attach') }}<span class="sr-only">Attach PDF or image</span></label>
       <input id="attachment-files" class="file-input" type="file" name="files" accept="application/pdf,image/png,image/jpeg,image/webp,.pdf,.png,.jpg,.jpeg,.webp" multiple>
       <textarea id="question" name="question" rows="1" required aria-describedby="composer-error" placeholder="{{ 'Ask a follow-up…' if saved else 'Ask a question…' }}">{{ question or '' }}</textarea>
-      <details class="composer-preferences">
-        <summary class="icon-button" title="Citation explanation language" aria-label="Citation explanation language">{{ icon('settings') }}</summary>
-        <div class="preferences-menu">
-          <label for="citation-language">Source explanation language</label>
-          <select id="citation-language" name="citation_language">
-          {% set chosen_language = citation_language|default(saved.metadata.citation_language|default('en') if saved else 'en') %}
-          {% for value, label in [('en', 'English'), ('match', 'Match answer language'), ('es', 'Español'), ('fr', 'Français'), ('de', 'Deutsch'), ('pl', 'Polski'), ('pt', 'Português'), ('ja', '日本語'), ('zh', '中文'), ('ar', 'العربية')] %}
-            <option value="{{ value }}"{% if chosen_language == value %} selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-          </select>
-          <p>Applies to your next answer. Original titles and saved answers stay unchanged.</p>
-        </div>
-      </details>
-      <button class="submit-question" type="submit" aria-label="{{ 'Ask follow-up' if saved else 'Start research' }}">{{ icon('arrow') }}</button>
+      <button type="button" class="icon-button dictation-toggle" hidden title="Dictate with OpenAI" aria-label="Start dictation"
+        data-url="{{ url_for('transcribe_question', session_id=saved.metadata.session_id) if saved else url_for('transcribe_question') }}"
+        data-token="{{ dictation_token }}" data-configured="{{ dictation_configured|tojson }}"
+        data-enabled="{{ dictation_enabled|tojson }}" data-unavailable="{{ dictation_error or '' }}"
+        data-max-seconds="{{ dictation_max_seconds }}"
+        data-worklet="{{ url_for('static', filename='dictation_recorder.js') }}">
+        <span class="dictation-mic">{{ icon('mic') }}</span><span class="dictation-stop" hidden>{{ icon('stop') }}</span>
+      </button>
+      <button class="submit-question" type="submit" aria-label="{{ 'Ask follow-up' if saved else 'Start research' }}"{% if job and job.state in ['queued', 'researching'] %} disabled title="This conversation is still researching. Your draft will be kept."{% endif %}>{{ icon('arrow') }}</button>
       </div>
       <div class="drop-hint" aria-hidden="true">Drop PDF or image files here</div>
+    </div>
+    <div class="dictation-controls" hidden>
+      <p class="dictation-status" role="status"></p>
+      <button type="button" class="text-button dictation-cancel" hidden>Cancel dictation</button>
     </div>
     {{ run_controls() }}
     <p class="composer-error" id="composer-error" role="alert" hidden></p>
@@ -160,17 +161,19 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="referrer" content="same-origin">
   <meta name="color-scheme" content="light">
   <title>{{ saved.metadata.title if saved else 'Reading Room' }} · ScryRaven</title>
   <link rel="icon" href="{{ url_for('static', filename='mark.svg') }}" type="image/svg+xml">
+  <script>{{ reading_context_script }}</script>
   <link rel="stylesheet" href="{{ url_for('static', filename='reading_room.css') }}">
   <script src="{{ url_for('static', filename='reading_room.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='reading_room_dictation.js') }}" defer></script>
 </head>
 <body data-session-id="{{ saved.metadata.session_id if saved else '' }}" data-revision="{{ saved.metadata.revision if saved else 0 }}" data-job-id="{{ job.job_id if job else '' }}" data-job-state="{{ job.state if job else '' }}" data-browser-identity="{{ browser_identity }}">
 <a class="skip-link" href="#reading">Skip to reading</a>
-<aside class="sidebar" id="history" aria-label="Research history">
+<aside class="sidebar{% if hosted_mode %} hosted-sidebar{% endif %}" id="history" aria-label="Research history">
   <div class="sidebar-main">
   <div class="sidebar-top">
     <a class="wordmark" href="{{ url_for('new_research') }}"><span class="brand-mark">{{ icon('book') }}</span>ScryRaven</a>
@@ -181,8 +184,13 @@
     <div class="eyebrow history-label">Your research</div>
     {% for item in history %}
     {% set item_job = (history_jobs|default({})).get(item.session_id) %}
+    {% set new_answer = item_job.new_answer if item_job else none %}
     <div class="session-row{% if saved and item.session_id == saved.metadata.session_id %} selected{% endif %}" data-session-id="{{ item.session_id }}">
-      <a class="session-link" href="{{ url_for('open_session', session_id=item.session_id) }}" title="{{ item.title or 'Untitled research' }}"{% if saved and item.session_id == saved.metadata.session_id %} aria-current="page"{% endif %}><span class="session-link-title">{{ item.title or 'Untitled research' }}</span><span class="session-job-state" data-job-id="{{ item_job.job_id if item_job else '' }}" data-state="{{ item_job.state if item_job else '' }}"{% if not item_job %} hidden{% endif %}>{{ {'queued':'Queued', 'researching':'Researching', 'completed':'New answer', 'failed':'Failed', 'interrupted':'Interrupted'}.get(item_job.state, '') if item_job else '' }}</span></a>
+      <a class="session-link" href="{{ url_for('open_session', session_id=item.session_id, _anchor=('turn-' ~ new_answer.turn if new_answer else none)) }}" title="{{ item.title or 'Untitled research' }}"{% if saved and item.session_id == saved.metadata.session_id %} aria-current="page"{% endif %}>
+        <span class="session-link-title">{{ item.title or 'Untitled research' }}</span>
+        <span class="session-job-state" data-job-id="{{ item_job.job_id if item_job else '' }}" data-state="{{ item_job.state if item_job else '' }}"{% if not item_job or item_job.state == 'completed' %} hidden{% endif %}>{{ {'queued':'Queued', 'researching':'Researching', 'failed':'Failed', 'interrupted':'Interrupted'}.get(item_job.state, '') if item_job else '' }}</span>
+        <span class="session-completion-state" data-job-id="{{ new_answer.job_id if new_answer else '' }}"{% if not new_answer %} hidden{% endif %}>New answer</span>
+      </a>
       {{ actions(item) }}
     </div>
     {% else %}
@@ -191,9 +199,11 @@
   </nav>
   </div>
   <div class="sidebar-foot">
+    {% if not unavailable %}
+    <button class="sidebar-entry" type="button" data-dialog-open="{{ 'hosted' if hosted_mode else 'conversation' }}-settings-dialog" disabled>{{ icon('settings') }}<span>Settings</span></button>
+    {% endif %}
     {% if hosted_mode and not unavailable and identity %}
-    <button class="sidebar-entry" type="button" data-dialog-open="hosted-settings-dialog">{{ icon('settings') }}<span>Settings</span></button>
-    <button class="sidebar-entry" type="button" data-dialog-open="participation-dialog"><span class="privacy-mark" aria-hidden="true">i</span><span>Privacy &amp; participation</span></button>
+    <button class="sidebar-entry" type="button" data-dialog-open="participation-dialog" disabled><span class="privacy-mark" aria-hidden="true">i</span><span>Privacy &amp; participation</span></button>
     {% if identity and identity.is_admin %}<a class="sidebar-entry" href="{{ url_for('admin_sessions') }}">Administration</a>{% endif %}
     <p class="sidebar-custody"><span class="local-dot" aria-hidden="true"></span>Private preview · monitored</p>
     {% else %}<p class="sidebar-custody"><span class="local-dot" aria-hidden="true"></span>Saved on this device</p>{% endif %}
@@ -230,19 +240,20 @@
       {% if read_only %}<p class="notice">Administrator view · read only · {{ saved.metadata.owner_id }} · <a href="{{ url_for('export_session', session_id=saved.metadata.session_id) }}">Export session and diagnostics</a></p>{% endif %}
       {% if not saved and not unavailable %}
       <section class="welcome" aria-labelledby="welcome-title">
-        <h1 id="welcome-title">What would you like to understand?</h1>
+        <h1 id="welcome-title">Ask away.</h1>
         <p class="welcome-description">Answers grounded in public sources, with citations to explore.</p>
         {{ composer(true) }}
-        <p class="welcome-note">Add a PDF or image for context.</p>{% if hosted_mode %}<p class="preview-intro">A monitored private preview. Please avoid confidential information. <button type="button" data-dialog-open="participation-dialog">Privacy &amp; participation</button></p>{% endif %}
+        <p class="welcome-note">Add a PDF or image for context.</p>{% if hosted_mode %}<p class="preview-intro">A monitored private preview. Please avoid confidential information. <button type="button" data-dialog-open="participation-dialog" disabled>Privacy &amp; participation</button></p>{% endif %}
       </section>
       {% endif %}
 
       {{ document_list() }}
       {% for turn in turns %}
       <section class="turn" id="turn-{{ turn.number }}" aria-labelledby="question-{{ turn.number }}">
+        {% if job and job.state == 'completed' and job.revision + 1 == turn.number %}<span id="research-status" aria-hidden="true"></span>{% endif %}
         <div class="question-block"><h2 id="question-{{ turn.number }}" tabindex="-1">{{ turn.question }}</h2></div>
         {% if turn.attachments %}<ul class="turn-attachments" aria-label="Attachments to this question">{% for attachment in turn.attachments %}<li><a href="{{ attachment.href }}" title="{{ attachment.filename }}" target="_blank" rel="noopener noreferrer">{% if attachment.preview_href %}<img src="{{ attachment.preview_href }}" alt="Attached image: {{ attachment.filename }}" loading="lazy">{% else %}<span class="attachment-kind">PDF</span>{% endif %}<span>{{ attachment.filename }}</span></a></li>{% endfor %}</ul>{% endif %}
-        <article class="answer" aria-label="Answer to {{ turn.question }}">{{ turn.answer }}</article>
+        <article class="answer" aria-label="Answer to {{ turn.question }}"{% if turn.unviewed_job_id %} data-completion-url="{{ url_for('acknowledge_answer', session_id=saved.metadata.session_id, job_id=turn.unviewed_job_id) }}" data-completion-token="{{ form_token('view-answer:' ~ turn.unviewed_job_id) }}"{% endif %}>{{ turn.answer }}</article>
         {% if turn.source_free %}
         <aside class="source-free-note">No external sources were used for this answer.</aside>
         {% endif %}
@@ -256,12 +267,14 @@
         <details class="sources-overview" id="turn-{{ turn.number }}-sources">
           <summary class="sources-control">{{ icon('book') }} Sources <span aria-hidden="true">·</span> {{ turn.sources|length }}</summary>
           <div class="source-list">
+          <a class="back-to-answer" href="#question-{{ turn.number }}">Back to answer</a>
           {% for source in turn.sources %}
             <details class="source" id="{{ source.id }}">
               <summary><span class="source-number">[{{ source.number }}]</span> <span class="source-title">{{ source.title }}</span></summary>
               <div class="source-preview">{{ source.preview }}</div>
               <details class="saved-excerpt" id="{{ source.id }}-excerpt">
                 <summary>View saved excerpt</summary>
+                <a class="back-to-answer" href="#question-{{ turn.number }}">Back to answer</a>
                 <div class="source-body">{{ source.body }}</div>
               </details>
             </details>
@@ -322,13 +335,35 @@
   {% if saved and not unavailable and not read_only %}<footer class="composer-footer">{{ composer() }}</footer>{% endif %}
 </main>
 
-{% if hosted_mode and not unavailable and identity %}
+{% if not unavailable %}
 {% set preferences = hosted_preferences|default(run_settings) %}
-<dialog class="run-settings-dialog hosted-settings-dialog" id="hosted-settings-dialog" aria-labelledby="hosted-settings-title" data-model-choices='{{ hosted_model_choices|default({})|tojson }}'>
+<dialog class="run-settings-dialog hosted-settings-dialog" id="{{ 'hosted' if hosted_mode else 'conversation' }}-settings-dialog" aria-labelledby="reading-room-settings-title" data-model-choices='{{ hosted_model_choices|default({})|tojson }}'>
+  <div class="run-settings-heading"><h2 id="reading-room-settings-title">Settings</h2><button class="icon-button" type="button" data-dialog-close aria-label="Close settings">{{ icon('close') }}</button></div>
+  {% if not read_only %}
+  {% if saved %}
+  <form class="source-settings" method="post" action="{{ url_for('update_source_language', session_id=saved.metadata.session_id) }}">
+    <input type="hidden" name="form_token" value="{{ form_token('source-language') }}">
+  {% else %}
+  <div class="source-settings">
+  {% endif %}
+    <label for="citation-language">Source explanation language</label>
+    <select id="citation-language" name="citation_language" aria-describedby="source-language-note"{% if not saved %} form="ask-question"{% endif %}>
+      {% for value, label in [('en', 'English'), ('match', 'Match answer language'), ('es', 'Español'), ('fr', 'Français'), ('de', 'Deutsch'), ('pl', 'Polski'), ('pt', 'Português'), ('ja', '日本語'), ('zh', '中文'), ('ar', 'العربية')] %}
+        <option value="{{ value }}"{% if citation_language == value %} selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <p class="settings-note" id="source-language-note">{{ 'Applies to future answers in this conversation.' if saved else 'Applies to the conversation you are about to start.' }}</p>
+  {% if saved %}
+    <div class="source-settings-actions"><button class="small-button" type="submit">Save language</button><p role="status"></p></div>
+  </form>
+  {% else %}
+  </div>
+  {% endif %}
+  {% endif %}
+  {% if hosted_mode %}
   <form method="post" action="{{ url_for('update_hosted_preferences') if identity.is_admin else url_for('update_hosted_processing') }}">
     <input type="hidden" name="form_token" value="{{ form_token('hosted-settings' if identity.is_admin else 'processing') }}">
     {% if saved and not read_only %}<input type="hidden" name="return_session_id" value="{{ saved.metadata.session_id }}">{% endif %}
-    <div class="run-settings-heading"><div><p class="eyebrow">Private preview</p><h2 id="hosted-settings-title">Settings</h2></div><button class="icon-button" type="button" data-dialog-close aria-label="Close settings">{{ icon('close') }}</button></div>
     <p class="settings-intro">{% if identity.is_admin %}Set the models and reasoning for future questions across this preview. {% endif %}Accepted questions and retries keep their original settings.</p>
     {% if identity.is_admin %}
     <div class="run-roles">
@@ -357,12 +392,16 @@
     <p class="settings-note">Up to {{ submissions_per_day }} accepted questions per person per UTC day, including retries. Existing technical research limits apply.</p>
     <div class="dialog-actions"><button type="button" class="text-button" data-dialog-close>Cancel</button><button class="small-button" type="submit">Save settings</button></div>
   </form>
+  {% endif %}
 </dialog>
+{% endif %}
+{% if hosted_mode and not unavailable and identity %}
 <dialog class="run-settings-dialog participation-dialog" id="participation-dialog" aria-labelledby="participation-title">
   <div class="run-settings-heading"><div><p class="eyebrow">Private preview</p><h2 id="participation-title">Privacy &amp; participation</h2></div><button class="icon-button" type="button" data-dialog-close aria-label="Close privacy and participation">{{ icon('close') }}</button></div>
   <div class="participation-copy">
     <p>ScryRaven is a monitored private preview for invited participants. Please avoid submitting confidential information.</p>
     <p>External AI and research providers process relevant question, conversation, attachment and source material to carry out research.</p>
+    <p>Dictation sends your recording to OpenAI for separately billed transcription. ScryRaven discards the audio after processing.</p>
     <p>During this preview, the administrator can inspect conversations and available diagnostic records, and export selected research with its attachments and diagnostics.</p>
     <p>Deleting a conversation removes it from ordinary application storage. Diagnostic records may remain until their retention period ends; protected backups and prior exports may also retain copies.</p>
   </div>

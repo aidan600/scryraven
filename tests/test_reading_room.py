@@ -387,7 +387,11 @@ def test_untrusted_question_title_answer_and_material_are_inert(tmp_path):
     page = Page(html)
     assert not any(tag in {"img", "iframe", "object", "embed"} for tag, a in page.tags)
     assert not any(name.startswith("on") for tag, a in page.tags for name in a)
-    assert len([1 for tag, a in page.tags if tag == "script"]) == 1
+    scripts = [attrs for tag, attrs in page.tags if tag == "script"]
+    assert [script.get("src") for script in scripts] == [
+        None, "/static/reading_room.js", "/static/reading_room_dictation.js",
+    ]
+    assert "<script>" + reading_room._READING_CONTEXT_SCRIPT + "</script>" in html
     assert page.pre == [attack]
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
 

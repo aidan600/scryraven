@@ -120,7 +120,7 @@ def render_cli(result: Result | SessionTurn) -> str:
 
 
 def answer_html(result: Result | SessionTurn, *, source_prefix: str = "source-",
-                citation_previews: bool = False) -> str:
+                citation_previews: bool = False, document_hrefs: dict[str, str] | None = None) -> str:
     # Only spans emitted by validation become links. Ordinary numeric brackets
     # in prose are not citations. Insert trusted fragment destinations before
     # Markdown parsing; raw HTML, images and autolinks remain disabled.
@@ -158,12 +158,17 @@ def answer_html(result: Result | SessionTurn, *, source_prefix: str = "source-",
                 if citation_previews:
                     citation = citations[number]
                     token.attrSet("data-source-id", f"{source_prefix}{number}")
-                    token.attrSet("aria-controls", "citation-preview")
-                    token.attrSet("aria-haspopup", "dialog")
-                    token.attrSet("aria-expanded", "false")
                     token.attrSet("aria-label", f"Source {number}: {source_label(citation)}")
-                    if citation.source_kind == "web" and safe_publication_url(citation.url):
-                        token.attrSet("href", citation.url)
+                    href = ""
+                    if citation.source_kind == "user_document":
+                        token.attrSet("data-preview-on-click", "")
+                        original = (document_hrefs or {}).get(citation.document_id or "", "")
+                        if safe_original_href(original):
+                            href = original
+                    elif safe_publication_url(citation.url):
+                        href = citation.url
+                    if href:
+                        token.attrSet("href", href)
                         token.attrSet("target", "_blank")
                         token.attrSet("rel", "noopener noreferrer")
             elif safe_publication_url(destination):

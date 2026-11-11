@@ -2,6 +2,7 @@
 
 import json
 from io import BytesIO
+from pathlib import Path
 from threading import Event, Thread
 
 import pytest
@@ -13,6 +14,7 @@ from test_research_loop import Script, answer, decision
 from werkzeug.serving import make_server
 
 from core.exa_transport import DiscoveryCandidate
+from scryraven import dictation
 from scryraven.reading_room import _QuietHandler, create_app
 from scryraven.run_settings import RunSettings
 from scryraven.session import ResearchSession
@@ -27,6 +29,190 @@ def browser():
 @pytest.fixture
 def citation_page(tmp_path):
     yield from citation_browser.citation_page.__wrapped__(tmp_path)
+
+
+@pytest.fixture(params=("chromium", "webkit"))
+def composer_engine(request):
+    yield from citation_browser.browser_at(request.param)
+
+
+def test_mobile_welcome_composer_and_keyboard_viewport(composer_engine, citation_page):
+    root = citation_page.rsplit("/sessions/", 1)[0]
+    with composer_engine.new_context(viewport={"width": 320, "height": 720}, is_mobile=True, has_touch=True) as context:
+        page = context.new_page()
+        page.add_init_script("""
+            const viewport = Object.assign(new EventTarget(), {height: innerHeight, offsetTop: 0, scale: 1});
+            Object.defineProperty(window, 'visualViewport', {value: viewport});
+            window.showKeyboard = () => {
+              viewport.height = 310;
+              viewport.offsetTop = 80;
+              viewport.dispatchEvent(new Event('resize'));
+            };
+        """)
+        page.goto(root)
+        assert page.get_by_role("heading", name="Ask away.").is_visible()
+        assert page.get_by_text("Answers grounded in public sources, with citations to explore.").is_visible()
+        assert page.locator(".composer").bounding_box()["y"] > 550
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        page.get_by_role("link", name="Open history").click()
+        page.get_by_role("button", name="Settings", exact=True).click()
+        page.locator("#citation-language").select_option("ja")
+        page.get_by_role("button", name="Close settings").click()
+        page.reload()
+        assert page.locator("#citation-language").input_value() == "ja"
+        assert page.locator(".ask-form").evaluate("el => new FormData(el).get('citation_language')") == "ja"
+        question = page.locator("#question")
+        question.fill("This is my draft.")
+        question.press("End")
+        question.press("Enter")
+        assert question.input_value() == "This is my draft.\n"
+        page.evaluate("showKeyboard()")
+        question.fill("\n".join(["A long draft line"] * 20))
+        send = page.locator(".submit-question")
+        assert send.evaluate("""el => {
+          const {top, bottom} = el.getBoundingClientRect();
+          return top >= visualViewport.offsetTop && bottom <= visualViewport.offsetTop + visualViewport.height + 1;
+        }""")
+        assert question.evaluate("el => el.clientHeight > 44 && el.clientHeight < el.scrollHeight")
+
+
+def test_desktop_enter_respects_newlines_and_ime(composer_engine, citation_page):
+    root = citation_page.rsplit("/sessions/", 1)[0]
+    with citation_browser.page_at(composer_engine, root) as page:
+        posts = []
+
+        def fail_submission(route):
+            posts.append(route.request.method)
+            route.fulfill(status=400, body="synthetic validation error")
+
+        page.route("**/ask", fail_submission)
+        question = page.locator("#question")
+        question.fill("Desktop draft")
+        question.press("End")
+        question.press("Shift+Enter")
+        assert question.input_value() == "Desktop draft\n"
+        question.dispatch_event("compositionstart")
+        question.press("Enter")
+        question.dispatch_event("compositionend")
+        question.dispatch_event("keydown", {"key": "Enter", "keyCode": 229, "cancelable": True})
+        assert posts == []
+        with page.expect_response(lambda response: response.url.endswith("/ask")):
+            question.press("Enter")
+        assert posts == ["POST"]
+        assert question.input_value().startswith("Desktop draft")
+
+
+def test_dictation_uses_transient_audio_and_inserts_editable_text(composer_engine, tmp_path, monkeypatch):
+    store = SQLiteSessionStore(tmp_path / "microphone.sqlite3")
+    monkeypatch.setattr(dictation, "available", lambda: True)
+    received = []
+
+    def transcribe(audio):
+        assert any(audio[44:])
+        received.append(len(audio))
+        return "What is the capital of Spain?" if len(received) == 1 else ""
+
+    monkeypatch.setattr(dictation, "transcribe", transcribe)
+    app = create_app(store=store, session_options={"model": no_io, "search": no_io, "fetch": no_io})
+    with citation_browser.running_room(app) as base, composer_engine.new_context() as context:
+        page = context.new_page()
+        page.add_init_script("""
+            window.microphoneDenied = false;
+            window.microphoneTracks = [];
+            navigator.mediaDevices.getUserMedia = async () => {
+              if (window.microphoneDenied) throw new DOMException('Denied', 'NotAllowedError');
+              const audio = new AudioContext();
+              const tone = audio.createOscillator();
+              const output = audio.createMediaStreamDestination();
+              tone.connect(output);
+              tone.start();
+              const track = output.stream.getAudioTracks()[0];
+              const stop = track.stop.bind(track);
+              track.stop = () => {
+                stop();
+                if (audio.state !== 'closed') void audio.close().catch(() => {});
+              };
+              window.microphoneTracks.push(track);
+              await audio.resume();
+              return output.stream;
+            };
+        """)
+        page.goto(base)
+        question = page.locator("#question")
+        question.fill("Use official sources.")
+        page.get_by_role("button", name="Start dictation").click()
+        page.get_by_text("Authorize OpenAI API billing in Run Settings to use dictation.", exact=True).wait_for()
+        page.locator(".run-settings-open").click()
+        assert page.locator("#run-backend").input_value() == "chatgpt_plan"
+        page.get_by_role("button", name="Authorize OpenAI API billed inference").click()
+        page.get_by_role("button", name="Revoke OpenAI API billed inference").wait_for()
+        assert page.locator("#run-backend").input_value() == "chatgpt_plan"
+        page.get_by_role("button", name="Use these settings").click()
+
+        if not page.evaluate("Boolean(window.AudioContext && window.AudioWorkletNode && window.OfflineAudioContext)"):
+            # The Windows headless WebKit build has no Web Audio implementation.
+            page.get_by_role("button", name="Start dictation").click()
+            page.get_by_text("Microphone recording is unavailable in this browser.", exact=True).wait_for()
+            assert question.input_value() == "Use official sources."
+            assert received == []
+            assert not store.list_sessions()
+            return
+
+        for expected in ("Transcript added to your draft.", "No speech was transcribed. Try recording again."):
+            page.get_by_role("button", name="Start dictation").click()
+            stop = page.get_by_role("button", name="Stop and transcribe")
+            page.wait_for_function("""() => {
+              const text = document.querySelector('.dictation-status').textContent;
+              return text && !text.startsWith('Waiting');
+            }""", timeout=23000)
+            assert stop.is_visible(), page.locator(".dictation-status").inner_text()
+            page.wait_for_timeout(650)
+            stop.click()
+            page.get_by_text(expected, exact=True).wait_for(timeout=10000)
+            assert page.evaluate("microphoneTracks.every(track => track.readyState === 'ended')")
+            assert question.input_value() == "Use official sources. What is the capital of Spain?"
+        assert len(received) == 2
+
+        page.get_by_role("button", name="Start dictation").click()
+        page.get_by_role("button", name="Stop and transcribe").wait_for()
+        page.get_by_role("button", name="Cancel dictation").click()
+        page.get_by_text("Dictation canceled.", exact=True).wait_for()
+        page.evaluate("microphoneDenied = true")
+        page.get_by_role("button", name="Start dictation").click()
+        page.get_by_text("Microphone permission was denied.", exact=False).wait_for()
+        page.evaluate("microphoneDenied = false")
+        page.route("**/transcribe", lambda route: route.abort())
+        page.get_by_role("button", name="Start dictation").click()
+        page.get_by_role("button", name="Stop and transcribe").wait_for()
+        page.wait_for_timeout(650)
+        page.get_by_role("button", name="Stop and transcribe").click()
+        page.get_by_text("Dictation could not be completed. Try again.", exact=True).wait_for()
+        page.unroute("**/transcribe")
+        page.evaluate("""
+            const nativeFetch = window.fetch;
+            const nativeTimeout = window.setTimeout;
+            window.setTimeout = (callback, delay, ...args) =>
+              nativeTimeout(callback, delay === 45000 ? 250 : delay, ...args);
+            window.fetch = (url, options) => String(url).endsWith('/transcribe')
+              ? new Promise((resolve, reject) => options.signal.addEventListener('abort',
+                  () => reject(new DOMException('Aborted', 'AbortError'))))
+              : nativeFetch(url, options);
+        """)
+        page.get_by_role("button", name="Start dictation").click()
+        page.get_by_role("button", name="Stop and transcribe").wait_for()
+        page.wait_for_timeout(650)
+        page.get_by_role("button", name="Stop and transcribe").click()
+        page.get_by_text("Dictation timed out. Try again.", exact=True).wait_for()
+        assert page.evaluate("microphoneTracks.every(track => track.readyState === 'ended')")
+        assert len(received) == 2
+        assert question.input_value() == "Use official sources. What is the capital of Spain?"
+        assert not store.list_sessions()
+        assert not app.extensions["research_jobs"].list()
+        page.reload()
+        assert question.input_value() == "Use official sources. What is the capital of Spain?"
+        question.press("End")
+        question.press("Backspace")
+        assert question.input_value() == "Use official sources. What is the capital of Spain"
 
 
 @pytest.mark.parametrize("mobile", [False, True])
@@ -66,12 +252,9 @@ def test_compact_composer_grows_without_covering_answer_and_keeps_draft(browser,
         assert not page.locator(".ask-form").get_attribute("aria-busy")
         textarea.fill("Draft after validation")
         textarea.press("Tab")
-        assert page.locator(".composer-preferences summary").evaluate("el => el === document.activeElement")
-        page.keyboard.press("Enter")
-        assert page.locator(".preferences-menu").is_visible()
-        page.keyboard.press("Escape")
-        assert not page.locator(".preferences-menu").is_visible()
-        assert page.locator(".composer-preferences summary").evaluate("el => el === document.activeElement")
+        assert page.locator(".dictation-toggle").evaluate("el => el === document.activeElement")
+        page.keyboard.press("Tab")
+        assert page.locator(".submit-question").evaluate("el => el === document.activeElement")
 
 
 def test_picker_drop_paste_removal_and_invalid_selection_blocks_question(browser, citation_page):
@@ -201,21 +384,24 @@ def test_browser_research_survives_navigation_with_atomic_attachments_and_indepe
     try:
         with citation_browser.page_at(browser, f"{base}/sessions/{a_id}") as page:
             page.locator("#question").fill("A: What colored shapes are in this attached image?")
-            page.locator(".composer-preferences summary").click()
+            page.get_by_role("button", name="Settings", exact=True).click()
             page.locator("#citation-language").select_option("pl")
-            page.locator(".composer-preferences summary").click()
+            page.get_by_role("button", name="Save language").click()
+            page.get_by_text("Language saved.", exact=True).wait_for()
+            page.get_by_role("button", name="Close settings").click()
             page.locator("#attachment-files").set_input_files([
                 {"name": "shapes.png", "mimeType": "image/png", "buffer": buffer.getvalue()},
                 {"name": "notes.pdf", "mimeType": "application/pdf", "buffer": pdf},
             ])
             with page.expect_navigation(wait_until="domcontentloaded"):
-                page.locator(".submit-question").click()
+                page.locator("#question").press("Enter")
             assert started["A"].wait(5)
             assert page.locator(".research-job").is_visible()
             assert page.locator(".research-job .turn-attachments li").count() == 2
             assert page.locator(".submit-question").is_disabled()
             a_job = manager.list(a_id)[0]
             assert a_job.state == "researching" and a_job.document_ids and a_job.image_ids
+            assert a_job.citation_language == "pl"
             assert store.load(a_id).state.turns == old_turns
             page.locator(f'.session-link[href="/sessions/{b_id}"]').click()
             page.wait_for_url(f"{base}/sessions/{b_id}")
@@ -236,12 +422,12 @@ def test_browser_research_survives_navigation_with_atomic_attachments_and_indepe
             notification = page.locator(".research-notifications")
             notification.get_by_role("link", name="Open conversation").wait_for(state="visible")
             assert "Research completed" in notification.inner_text()
-            a_badge = page.locator(f'.session-row[data-session-id="{a_id}"] .session-job-state')
+            a_badge = page.locator(f'.session-row[data-session-id="{a_id}"] .session-completion-state')
             assert a_badge.inner_text() == "New answer"
             assert a_badge.is_visible()
             notification.get_by_role("link", name="Open conversation").click()
-            page.wait_for_url(f"{base}/sessions/{a_id}")
-            assert a_badge.is_hidden()
+            page.wait_for_url(f"{base}/sessions/{a_id}#turn-4")
+            a_badge.wait_for(state="hidden")
             assert page.locator(".turn").count() == 4
             assert "one red circle" in page.locator("#turn-4 .answer").inner_text()
             assert page.locator("#turn-4 .turn-attachments li").count() == 2
@@ -261,7 +447,7 @@ def test_browser_research_survives_navigation_with_atomic_attachments_and_indepe
             assert manager.wait_idle(10)
             page.locator('.answer').wait_for(state='visible')
             assert "three marbles" in page.locator(".answer").inner_text()
-            assert page.locator(f'.session-row[data-session-id="{b_id}"] .session-job-state').is_hidden()
+            page.locator(f'.session-row[data-session-id="{b_id}"] .session-completion-state').wait_for(state="hidden")
             assert store.load(b_id).metadata.revision == 1
             assert [entry[:2] for entry in calls].count(("A", "research")) == 1
             assert [entry[:2] for entry in calls].count(("B", "research")) == 1
@@ -275,7 +461,7 @@ def test_browser_research_survives_navigation_with_atomic_attachments_and_indepe
         thread.join(timeout=5)
 
 
-def test_completion_badges_require_a_visible_current_answer_and_sync_between_tabs(browser, tmp_path):
+def test_completion_badges_require_the_matching_answer_in_view_and_sync_between_devices(browser, tmp_path):
     store = SQLiteSessionStore(tmp_path / "completion-notifications.sqlite3")
     saved = store.create("Completion notification")
     session_id = saved.metadata.session_id
@@ -283,7 +469,8 @@ def test_completion_badges_require_a_visible_current_answer_and_sync_between_tab
     def model(stage, prompt, material, schema):
         if stage == "research":
             return json.dumps(decision("return"))
-        return json.dumps(answer("Given your premises, the box holds three marbles.", support_basis="user_premises"))
+        return json.dumps(answer("Given your premises, the result follows.\n\n" * 25,
+                                 support_basis="user_premises"))
 
     app = create_app(store=store, session_options={"model": model, "search": no_io, "fetch": no_io})
     manager = app.extensions["research_jobs"]
@@ -297,7 +484,7 @@ def test_completion_badges_require_a_visible_current_answer_and_sync_between_tab
     base = f"http://127.0.0.1:{server.server_port}"
     try:
         with citation_browser.page_at(browser, base) as page:
-            badge = page.locator(f'.session-row[data-session-id="{session_id}"] .session-job-state')
+            badge = page.locator(f'.session-row[data-session-id="{session_id}"] .session-completion-state')
             assert badge.inner_text() == "New answer"
             assert badge.is_visible()
             page.reload()
@@ -306,30 +493,43 @@ def test_completion_badges_require_a_visible_current_answer_and_sync_between_tab
                 Object.defineProperty(document, 'hidden', {get: () => window.testDocumentHidden});""")
             page.goto(f"{base}/sessions/{session_id}")
             assert badge.is_visible()  # A background-loaded result remains unread.
-            assert page.evaluate("localStorage.getItem('scryraven-viewed-completion:' + document.body.dataset.jobId)") is None
-            page.evaluate("window.testDocumentHidden = false; document.dispatchEvent(new Event('visibilitychange'))")
-            assert badge.is_hidden()
+            assert not store.get_job(first.job_id).viewed
+            viewed_url = f"{base}/sessions/{session_id}/jobs/{first.job_id}/viewed"
+            page.route(viewed_url, lambda route: route.fulfill(status=503), times=1)
+            with page.expect_response(lambda response: response.url == viewed_url and response.status == 503):
+                page.evaluate("window.testDocumentHidden = false; document.dispatchEvent(new Event('visibilitychange'))")
+            assert not store.get_job(first.job_id).viewed
+            assert badge.is_visible()
+            badge.wait_for(state="hidden")
+            assert store.get_job(first.job_id).viewed
 
             second = manager.submit("Suppose three marbles become four.", session_id=session_id, revision=1,
                 idempotency_key="second-completed-notification", run_settings=RunSettings.effective(model=no_io))
             assert manager.wait_idle(10)
             assert manager.get(second.job_id).state == "completed"
-            page.wait_for_function("""jobId => document.querySelector('.session-job-state').dataset.jobId === jobId""", arg=second.job_id)
+            page.wait_for_function("""jobId => document.querySelector('.session-completion-state').dataset.jobId === jobId""", arg=second.job_id)
             assert badge.is_visible()
+            assert page.locator(".research-notifications a").get_attribute("href").endswith("#turn-2")
             page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
             assert badge.is_visible()  # An older rendered answer cannot acknowledge this new job.
 
-            other = page.context.new_page()
-            other.goto(f"{base}/sessions/{session_id}")
-            assert other.locator('.session-job-state').is_hidden()
-            badge.wait_for(state="hidden")  # Viewing it in another tab updates this tab too.
+            with browser.new_context(viewport={"width": 900, "height": 650}) as other_device:
+                other = other_device.new_page()
+                other.goto(f"{base}/sessions/{session_id}")
+                other_badge = other.locator(".session-completion-state")
+                assert other_badge.is_visible()
+                assert other.locator("#turn-2 .answer").bounding_box()["y"] > 650
+                assert not store.get_job(second.job_id).viewed
+                other.locator("#turn-2 .answer").evaluate("answer => answer.scrollIntoView({block: 'start'})")
+                other_badge.wait_for(state="hidden")
+                assert store.get_job(second.job_id).viewed
+            badge.wait_for(state="hidden")  # A separate browser context's view is durable.
             page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
             page.reload()
             assert badge.is_hidden()  # Revisiting the old document did not erase the newer acknowledgement.
             page.goto(base)
             assert badge.is_hidden()
             assert store.load(session_id).metadata.revision == 2
-            other.close()
     finally:
         manager.shutdown()
         server.shutdown()
@@ -361,10 +561,10 @@ def test_visible_completion_stays_quiet_when_browser_storage_is_unavailable(brow
             }});""")
             page = context.new_page()
             page.goto(f"http://127.0.0.1:{server.server_port}/sessions/{job.session_id}")
-            assert page.locator('.session-job-state').is_hidden()
-            with page.expect_response("**/jobs/status"):
-                page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
-            assert page.locator('.session-job-state').is_hidden()
+            page.locator('.session-completion-state').wait_for(state="hidden")
+            page.goto(f"http://127.0.0.1:{server.server_port}")
+            assert page.locator('.session-completion-state').is_hidden()
+            page.goto(f"http://127.0.0.1:{server.server_port}/sessions/{job.session_id}")
             assert page.locator('.answer').is_visible()
     finally:
         manager.shutdown()
@@ -452,8 +652,11 @@ def test_actual_browser_zoom_reflows_composer_and_keeps_visible_keyboard_focus(c
         "permissions": ["tabs"], "background": {"service_worker": "zoom.js"}}), encoding="utf-8")
     (extension / "zoom.js").write_text("chrome.runtime.onInstalled.addListener(() => {});", encoding="utf-8")
     with playwright.sync_playwright() as runtime:
+        executable = Path(runtime.chromium.executable_path)
+        if not executable.is_file():
+            executable = Path("C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe")
         with runtime.chromium.launch_persistent_context(str(tmp_path / "browser-profile"),
-                executable_path="C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe", headless=True,
+                executable_path=str(executable), headless=True,
                 no_viewport=True, ignore_default_args=["--disable-extensions"], args=[
                     f"--disable-extensions-except={extension}", f"--load-extension={extension}",
                     "--window-size=1280,900"]) as context:
@@ -478,8 +681,8 @@ def test_actual_browser_zoom_reflows_composer_and_keeps_visible_keyboard_focus(c
             page.locator("#question").focus()
             assert page.locator("#question").evaluate("el => getComputedStyle(el).outlineStyle !== 'none'")
             page.keyboard.press("Tab")
-            assert page.locator(".composer-preferences summary").evaluate("el => el === document.activeElement")
-            assert page.locator(".composer-preferences summary").bounding_box()["width"] >= 44
+            assert page.locator(".dictation-toggle").evaluate("el => el === document.activeElement")
+            assert page.locator(".dictation-toggle").bounding_box()["width"] >= 44
             page.keyboard.press("Tab")
             assert page.locator(".submit-question").evaluate("el => el === document.activeElement")
 

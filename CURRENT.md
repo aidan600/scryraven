@@ -10,7 +10,7 @@ comments of up to 2,000 characters, see them in submission order with UTC times,
 and remove their own comments. Feedback is for the product administrator, separate
 from follow-up questions. Administrator inspection shows the comments read only.
 
-Schema 6 additively stores feedback separately from session payloads, keyed by
+SQLite stores feedback separately from session payloads, keyed by
 session ID and the immutable 1-based completed-turn index. Feedback survives
 restart and later questions, does not advance the research-session revision, and
 can be submitted or removed during active research. It never enters Research or
@@ -201,18 +201,57 @@ excerpts keep their existing paths. A focus/scroll race is repaired so a queued
 scroll event does not dismiss a preview while its visible citation or a preview
 action has keyboard focus; an offscreen citation still dismisses it.
 
-Completed jobs show a browser-local “New answer” notification until their matching
-answer is opened in a visible document. Viewed markers survive navigation and
-refresh and synchronize between tabs at the same origin; hidden tabs and stale
-answers do not acknowledge newer results. Storage-disabled browsers acknowledge
-the visible result only in the current document. Queued, researching, failed and
-interrupted states retain their existing behavior. Durable jobs and session
-storage are unchanged. The full offline suite passed 1,138 tests, including 16
-Edge browser checks covering citations, attachments, navigation, completion
-notifications, expanding footer alignment, narrow layouts and actual 200% zoom.
-Ruff, compilation, JavaScript syntax and whitespace checks passed. Synthetic
-desktop and 390/320px browser screenshots were reviewed; no new live model or
-provider calls were made for this presentation pass.
+The welcome headline is “Ask away.” with the public-sources subtitle. Narrow
+screens place the empty-state composer near the bottom. Text expansion and the
+VisualViewport resize/offset events keep the composer within short software-keyboard
+viewports, with safe-area spacing and an internally scrollable reading pane.
+Desktop Enter submits through the existing protected question form, Shift+Enter
+adds a newline, and composing IME events do not submit. Coarse-pointer software
+keyboards retain multiline Enter behavior and the explicit send arrow.
+
+The composer microphone records transient audio through Web Audio, converts it
+to bounded mono PCM WAV, sends it to the protected server transcription route,
+and appends editable text to the current draft. OpenAI gpt-transcribe receives
+one recorded-audio request, with server-side API authentication and no retry.
+Recording is limited to 60 seconds and 1,920,044 bytes. Reaching the limit stops
+capture and requires an explicit Transcribe action. The server validates actual
+PCM duration and permits one active request per account, two total and 30 attempts
+per account in a rolling 24-hour process-local window. Restart resets that
+attempt window. Request time is bounded to 35 seconds. Audio bypasses durable
+sessions, Evidence, attachments and research quotas. Cancellation releases
+capture and discards the local recording or response. A request already
+dispatched to OpenAI can incur transcription charges even if its response is
+discarded. Local use requires the existing OpenAI API billing authorization
+and configured API access. Authorization can be enabled while ChatGPT-plan
+research stays selected. Hosted use retains the operator's API configuration.
+Dictation uses separate API billing and does not change Research/Answer routing.
+
+Completed jobs retain “New answer” until their actual answer intersects a visible
+reading viewport. SQLite schema 7 stores a viewed bit per immutable job belonging
+to its conversation owner. Owner/action-bound CSRF protects the idempotent update.
+Acknowledgments survive refresh, Administration navigation, server restart and
+separate authenticated browser contexts, including when browser storage is
+unavailable. Existing completed jobs start unread on migration. A later completion
+has its own acknowledgment. Reading an earlier answer leaves later unread
+answers pending. Queued, researching, failed and interrupted statuses remain
+independent of unread completions.
+
+WebKit checks reproduced PDF fragment jumps before deferred script startup and
+late initial-fragment scrolling after readers had expanded Sources. PDF citations
+now have protected original-file fallbacks. A small trusted CSP-hash initializer
+preserves intentional reading interaction while assets load, and startup no
+longer forces focus or scrolling over that interaction. Touch gesture tracking
+handles WebKit mouse-labeled synthetic clicks. Preview, keyboard actions, saved
+excerpt navigation and Back to answer preserve the reading context. Native
+original links and source disclosures remain available when JavaScript is disabled.
+
+Verification uses synthetic research/source fixtures and mocked transcription.
+Chromium 151 exercises actual Web Audio capture/resampling with synthetic input.
+Windows headless WebKit 26.5 has no Web Audio implementation and exercises the
+unsupported-recording response. Both engines exercise mobile layouts, simulated
+VisualViewport keyboard changes, submission and source interaction. Actual
+iPhone/iOS Safari microphone and keyboard behavior and live OpenAI transcription
+remain unverified. Research/Answer and search-provider checks use offline fixtures.
 
 Reading Room Product UX 01 extends merged baseline
 `0229128b1a8d7a0b78a042327b971fa01a411967` with a compact expanding composer,
@@ -245,11 +284,15 @@ late commits; restart never automatically repeats paid work. Process exit ends
 workers and releases ownership. This is not a distributed or resumable-inference
 system.
 
-English is the default session source-explanation language. The composer offers
-answer-language matching and explicit common-language choices, saved atomically
-with an accepted question. Existing titles, URLs, exact excerpts and historical
-answer descriptions are not rewritten. Invalid/missing descriptions remain a
-local optional-metadata fallback with no mandatory retry.
+English is the default session source-explanation language. Sidebar Settings
+offers answer-language matching and explicit common-language choices for the
+current conversation. Existing conversations save this preference independently
+of research revisions, including during active work. A new conversation's choice
+travels with its first protected question submission. Each accepted question keeps
+its language snapshot, including on retry. A retry preserves the conversation's
+current preference for subsequent questions. Existing titles, URLs, exact
+excerpts and historical answer descriptions are preserved. Invalid or missing
+descriptions use the existing optional metadata fallback.
 
 The implementation passed 1,136 offline tests including 14 real-browser checks,
 Ruff, compilation, JavaScript syntax and all six configured hooks. At frozen
@@ -401,9 +444,9 @@ sessions reopen without descriptions, migrations or backfill model calls.
 Reading Room web citations link directly to the original publication in a new
 tab. Hover/focus opens a compact title/domain/description preview; touch exposes
 the same actions. Keyboard actions and Escape are supported. View saved excerpt
-opens secondary inline exact saved material with highlight/fetched-text labels;
-original PDFs and historical support coordinates remain available. The large
-inspector, dock/sheet layouts and overview/back navigation are removed.
+opens secondary inline exact saved material with highlight/fetched-text labels.
+Back to answer restores the citation position in the reading pane. Original
+PDFs and historical support coordinates remain available.
 
 The complete candidate, including the final editorial correction and keyboard
 repair, passed the full offline suite (1,072 passed, including four real-browser
@@ -1118,11 +1161,11 @@ validated only on serialization/reopen; it never controls new research or become
 Evidence. Historical turns and citations are not rewritten on reopening.
 The synthetic pre-supersession fixture exercises mixed historical/native sessions.
 
-The session store is schema 6. Version-1–5 databases gain the applicable additive
+The session store is schema 7. Version-1–6 databases gain the applicable additive
 document/image/job custody, language preference, run settings/receipts, ownership
-and quota tables plus independent answer feedback without rewriting existing
-session payloads. Opening a current database does not rewrite
-those payloads. An unknown newer schema still fails as `incompatible_session_store`
+and quota tables, independent answer feedback and per-job view acknowledgment
+without rewriting existing session payloads. Opening a current database does
+not rewrite those payloads. An unknown newer schema still fails as `incompatible_session_store`
 without being rewritten. Each text PDF belongs to one session as `D1`, `D2`, and
 so on. The row stores the original PDF blob, filename, SHA-256, page count, and
 the deterministic pypdf page extraction. The same SHA-256 uploaded again into

@@ -143,8 +143,28 @@ def test_reading_room_preview_links_only_validated_occurrences_and_keeps_identit
     links = [attrs for tag, attrs in page.tags if tag == "a"]
     assert len(links) == 2
     assert all(attrs["href"] == URL and attrs["data-source-id"] == "turn-2-source-1" for attrs in links)
-    assert all(attrs["aria-controls"] == "citation-preview" and attrs["aria-expanded"] == "false" for attrs in links)
+    assert all(attrs["target"] == "_blank" and attrs["rel"] == "noopener noreferrer" for attrs in links)
     assert "An ordinary [1]." in "".join(page.text)
+
+
+@pytest.mark.parametrize("original_href", [
+    "/sessions/" + "a" * 32 + "/documents/D1/original",
+    "javascript:alert(1)",
+    "https://example.org/unrelated",
+    "/admin",
+    "",
+])
+def test_document_citation_fallback_accepts_only_the_retained_original_route(original_href):
+    result = answer()
+    original = "/sessions/" + "a" * 32 + "/documents/D1/original"
+    document = replace(result.citations[0], source_kind="user_document", document_id="D1",
+                       filename="notes.pdf", url="")
+    result = replace(result, citations=(document,))
+    page = Page(answer_html(result, citation_previews=True, document_hrefs={"D1": original_href}))
+    citation, = [attrs for tag, attrs in page.tags if tag == "a"]
+    assert citation["href"] == (original if original_href == original else "#source-1")
+    assert "data-preview-on-click" in citation
+    assert ("target" in citation) == (original_href == original)
 
 
 def test_first_validated_use_orders_sources_and_reuses_numbers_without_inline_titles():
