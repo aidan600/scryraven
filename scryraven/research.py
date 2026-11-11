@@ -103,7 +103,9 @@ class SemanticAnswerDecision(_Contract):
     answer: str
     missing_information: str | None
     citation_descriptions: list[CitationDescription] | None
-    citation_passages: list[CitationPassage] | None
+    citation_passages: list[CitationPassage] | None = Field(
+        description="Exact source excerpts for the principal cited legal propositions, when available."
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -220,7 +222,7 @@ Use support_basis=evidence when substantive claims rely on supplied originals, i
 
 Use supplied aliases such as [E1] or [D1@120:480], not URLs, Markdown links, footnotes, source lists or citations inside code. In citation_descriptions, provide a brief meaningful description per distinct cited source explaining its contribution to this answer. Use citation_description_language when supplied: en means English, match means the answer language, and another language code selects that language. Keep original publication titles and URLs unchanged. Use a supplied source or material alias as source_ref; repeated citations reuse one description. Stay faithful to the supplied material without duplicating the title, answer or routine disclaimers. Descriptions are presentation metadata, never evidence or citation authority; use null when none are useful.
 
-For a legal citation with a useful passage, optionally supply citation_passages entries to let the reader jump to the saved text. In each entry, ref is the exact supplied material ID printed in that citation, including any @range; use one alias per source in that marker. occurrence is the one-based count of that exact alias in the answer, from left to right. text is a short contiguous verbatim passage that supports the nearby proposition in context. Prefer a distinctive clause or sentence. A second citation to the same material can use a different passage and occurrence. These entries locate saved text only. Omit a locator if the relevant passage is unclear or cannot be uniquely located in that material. Use null when there are no locators to supply, including ordinary nonlegal answers. Never alter the prose or delay a supported answer merely to supply a locator. Shared resources do not renew. Return a useful final response within them; do not emit private reasoning.
+For the principal propositions in a legal answer, include citation_passages entries when the cited material contains a clear supporting passage. These give readers a direct link to the saved text. Copy a short, distinctive clause or sentence verbatim from the cited material. Use its exact supplied ID in both the answer marker and the entry's ref, including any @range. Use one alias per source in a marker. If the answer cites [E7] for one proposition and [E7] again for another, provide {"ref":"E7","occurrence":1,"text":"..."} and {"ref":"E7","occurrence":2,"text":"..."} with the corresponding excerpts. Count occurrences separately for each exact alias, from left to right. Use null when no clear passage is available or when the answer is nonlegal. A missing locator leaves the source citation usable. Shared resources do not renew. Return a useful final response within them; do not emit private reasoning.
 """
 
 

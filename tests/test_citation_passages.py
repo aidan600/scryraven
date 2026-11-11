@@ -126,3 +126,19 @@ def test_native_answer_drops_malformed_optional_passages_without_a_correction(mo
     assert result.citation_uses[0].support == ()
     assert stages(payloads) == ["research", "research", "answer"]
     assert "citation_passages" not in json.dumps(result.trace)
+
+
+def test_native_plan_answer_publishes_a_valid_passage(monkeypatch):
+    excerpt = "The stated value is seven."
+    model, payloads, _ = scripted(monkeypatch, [
+        reply(initial(requests=[request()])), reply(initial("return", ["E1"])),
+        reply({**answer("The source states seven. [E1]"),
+               "citation_passages": [locator("E1", 1, excerpt)]}),
+    ], "chatgpt_plan")
+    result = ResearchSession(model=model, search=search, fetch=no_fetch).ask("What value is stated?")
+
+    assert stages(payloads) == ["research", "research", "answer"]
+    assert result.answer == "The source states seven. [1]"
+    region, = result.citation_uses[0].support
+    material, = result.citations[0].materials
+    assert support_text(region, material) == excerpt
