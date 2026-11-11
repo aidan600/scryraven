@@ -1090,6 +1090,9 @@ The saved-text highlight establishes location. Formal legal pinpoints appear in
 the answer when supported by the acquired authority. The Reader labels physical
 PDF pages separately. Historical and new coordinates and hashes are validated on
 reopen without model/provider I/O or payload rewriting.
+The legal-authority guidance and new passage navigation have offline verification.
+Their ordinary legal PRODUCT demonstration awaits the required research-provider
+spending decision.
 Earlier public-web/PDF localization observations remain historical evidence in
 `docs/operator/CITATION_READER_DURABLE_SUPPORT_PRODUCT_01.md`.
 
