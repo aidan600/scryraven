@@ -1055,12 +1055,12 @@ scenario premise without verifying that value externally.
 Research chooses external acquisition. Answer's local tools can inspect all legitimate
 retained session material independently. Answer owns meaning, interpretation,
 prose, completeness, supported/partial/unable posture, consequential missing needs
-and citations. For legal questions, the roles consider applicable authority,
-publication status, later treatment, opinion components and statutory scope
-when they affect the answer. The primary `SemanticAnswerDecision` fields remain
-strict. Optional citation descriptions and passage locators are discarded
-locally when malformed. A
-completed valid primary Answer publishes directly through
+and citations. The legal guidance directs the roles to consider applicable
+authority, publication status, later treatment, opinion components and
+statutory scope when they affect the answer. The primary
+`SemanticAnswerDecision` fields remain strict. Optional citation descriptions
+and passage locators are discarded locally when malformed. A completed valid
+primary Answer publishes directly through
 the strict deterministic citation resolver. Mandatory model localization, its
 region/use mapping machinery, automatic legacy whole-answer regeneration,
 executable `source_readings` schema and literal-reading correction machinery are
@@ -1086,13 +1086,16 @@ for that occurrence. Answer can supply a short quote tied to the specific
 material alias it cited. The resolver stores coordinates and hashes only when
 the quote uniquely locates a passage in that selected material. Occurrences
 without a locator keep the source preview, original access and saved excerpt.
-The saved-text highlight establishes location. Formal legal pinpoints appear in
-the answer when supported by the acquired authority. The Reader labels physical
-PDF pages separately. Historical and new coordinates and hashes are validated on
-reopen without model/provider I/O or payload rewriting.
-The legal-authority guidance and new passage navigation have offline verification.
-Their ordinary legal PRODUCT demonstration awaits the required research-provider
-spending decision.
+The saved-text highlight establishes location. Answer can include formal legal
+pinpoints based on the acquired authority. The Reader labels physical PDF pages
+separately. Historical and new coordinates and hashes are validated on reopen
+without model/provider I/O or payload rewriting.
+Offline checks verify passage binding, reopening and navigation. In the bounded
+personal-plan demonstration, the California general-plan question saved and
+reopened as unable after discovery failures. A nonlegal control also had search
+failures and stopped on a Research model transport error. Neither turn acquired
+source material. Legal authority selection and live passage navigation remain
+unverified.
 Earlier public-web/PDF localization observations remain historical evidence in
 `docs/operator/CITATION_READER_DURABLE_SUPPORT_PRODUCT_01.md`.
 
