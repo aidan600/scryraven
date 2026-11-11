@@ -211,11 +211,11 @@ for presentation. Sol, through the existing Answer model role,
 owns meaning, prose, adequacy and citations. It evaluates the briefing against supplied Evidence and cites exact supplied
 aliases beside supported factual claims.
 A completed valid Answer proceeds directly to deterministic citation resolution
-and publication. No model localizes passages, copies `source_readings`, or
-regenerates an otherwise valid whole answer for presentation.
+and publication. The same Answer may propose optional locators. A failed
+locator leaves the completed answer and its source citation available.
 
 The primary schema, posture/need and support-basis checks remain strict. Invalid
-optional citation descriptions are discarded without invalidating the Answer. A missing
+optional citation metadata is discarded without invalidating the Answer. A missing
 required Evidence citation receives the existing single correction; all invalid
 primary response categories share that allowance and whole-turn limits.
 Invalid aliases, unavailable versions and custody failures reject publication.
@@ -227,12 +227,10 @@ derivations can complete without citations even when unrelated originals exist;
 mixed factual claims use Evidence and cite their originals. Generated notes,
 conversation and prior assistant prose never become Evidence.
 
-New citation uses have no passage coordinates. Inline Reading Room citations
-offer a compact preview and direct original-publication access. The secondary
-saved excerpt exposes exact selected material with retained PDF/page actions.
-They make no exact highlighted-support claim.
-Historical support coordinates, source snapshots and hash validation remain
-readable and render their saved occurrence-specific support without inference.
+Each citation occurrence can carry coordinates verified against its selected
+snapshot. Reading Room opens the saved passage when those coordinates are
+available. The preview and source panel retain original-publication access and
+the exact saved material, with physical PDF page labels where applicable.
 
 The same Answer semantic owner may call a bounded deterministic local arithmetic
 calculator while preparing a `SemanticAnswerDecision`. It may use numeric values from

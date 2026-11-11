@@ -198,14 +198,15 @@ An answer completed after Research reaches its operating limit says so without
 changing its supported, partial or unable status. Completed source-free supported
 or partial answers state that no external sources were used.
 
-Hover or keyboard-focus **[1]** for a compact preview explaining what its source
-contributes. Click a web citation to open the original publication in a new tab;
-on touch screens, tap for the preview and its original-publication action. Tab,
-Arrow Down or Space enters preview actions; Escape dismisses it. **View saved
-excerpt** expands the exact saved material inline. **Sources** also exposes each
-publication and saved excerpt. Long saved material can be expanded in full, and
-saved selections remain available when the original site changes. Historical
-answers without descriptions still expose their source identity and both actions.
+Hover or keyboard-focus **[1]** for a compact source preview. Click, tap or press
+Enter on a citation with a saved passage to open its highlighted text inline.
+A source-level web citation opens the original publication in a new tab. On
+touch screens, tapping a source-level citation opens its preview. Tab, Arrow
+Down or Space enters preview actions, and Escape dismisses the preview.
+The preview offers original-publication access and **View saved passage** or
+**View saved excerpt**. **Sources** also exposes each publication and its saved
+material. Long saved material can be expanded in full. Saved selections remain
+available when the original site changes.
 
 Each session's **…** menu offers **Rename** and **Delete**. Rename preserves all
 research and requires no model call. Delete requires confirmation and permanently
@@ -462,12 +463,13 @@ citation can receive the existing single bounded Answer correction. Mechanical
 checks establish source custody, not semantic entailment. Citations receive
 compact source numbers in first-use order and save their exact selected material
 and citation-use spans, so later acquisitions cannot change historical inspection.
-The same final Answer interaction supplies optional short citation descriptions.
-Invalid metadata is discarded without invalidating the primary answer or making
-another model call. Descriptions match only validated cited sources and remain
-presentation metadata, never Evidence. New citations retain generic saved-material
-inspection, with no invented passage highlights. Historical occurrence-specific
-passage support remains readable.
+The same final Answer interaction can supply short citation descriptions and
+passage locators. A locator becomes a highlight only if it uniquely locates
+text in the exact material cited at that occurrence. Missing or invalid metadata
+leaves the source citation available without another model call. The highlight
+is a saved-text location. Formal legal pinpoints come from the acquired
+authority and appear in the answer prose. Historical occurrence-specific
+passages remain readable.
 Views carry exact parent bounds; highlights never receive guessed offsets or
 invented page numbers.
 Source labels use publication metadata, PDF filenames or hostnames without
