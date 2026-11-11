@@ -957,11 +957,13 @@
     if (!dialog) return;
     button.addEventListener('click', () => {
       if (sidebar.classList.contains('is-open')) closeHistory(false);
+      const opener = narrow.matches && sidebar.contains(button) ? openHistory : button;
       dialog.showModal();
-      dialog.dataset.returnToHistory = String(narrow.matches && sidebar.contains(button));
       dialog.addEventListener('close', () => {
-        if (dialog.dataset.returnToHistory === 'true') openHistory.focus({preventScroll: true});
-        else button.focus({preventScroll: true});
+        const focused = document.activeElement;
+        if (focused === document.body || focused === button || dialog.contains(focused)) {
+          opener.focus({preventScroll: true});
+        }
       }, {once: true});
     });
     button.disabled = false;

@@ -267,8 +267,14 @@ def test_owner_creates_reopens_renames_and_deletes_with_attachment_composer(brow
         assert hosted_ui.app.extensions["research_jobs"].wait_idle(10)
         job = hosted_ui.app.extensions["research_jobs"].list(session_id)[0]
         assert job.state == "completed", (job.state, job.error_code)
+        result = page.locator(".answer")
+        result.wait_for(state="visible")
+        result.scroll_into_view_if_needed()
+        badge = page.locator(f'.session-row[data-session-id="{session_id}"] .session-completion-state[hidden]')
+        badge.wait_for(state="attached")
+        assert hosted_ui.store.get_job(job.job_id).viewed
         page.reload()
-        assert "8 apples remain" in page.locator(".answer").inner_text()
+        assert "8 apples remain" in result.inner_text()
         saved = hosted_ui.store.load(session_id)
         assert saved.metadata.owner_id == EMAILS["alice"]
         assert len(saved.documents) == len(saved.images) == 1

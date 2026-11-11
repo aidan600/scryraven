@@ -87,6 +87,13 @@ def test_desktop_enter_respects_newlines_and_ime(composer_engine, citation_page)
 
         page.route("**/ask", fail_submission)
         question = page.locator("#question")
+        page.get_by_role("button", name="Settings", exact=True).click()
+        assert question.evaluate("""question => new Promise(resolve => {
+          const settings = document.querySelector('#conversation-settings-dialog');
+          settings.addEventListener('close', () => resolve(document.activeElement === question), {once: true});
+          settings.querySelector('[data-dialog-close]').click();
+          question.focus();
+        })""")
         question.fill("Desktop draft")
         question.press("End")
         question.press("Shift+Enter")
