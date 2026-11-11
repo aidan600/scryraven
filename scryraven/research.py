@@ -35,7 +35,7 @@ from scryraven.images import (
 )
 from scryraven.model import ModelError, ModelUsage, OpenAIModel, capture_model_usage
 from scryraven.results import CompletedAnswer, resolve_citations
-from scryraven.sources import Evidence, exact_view
+from scryraven.sources import Evidence, exact_view, locate_unique_passage
 
 ANSWER_VALIDATION_FAILURE_MESSAGE = "I couldn't complete a source-validated answer for this request."
 # One Research route may already contain several independent generic Searches.
@@ -87,20 +87,31 @@ class CitationDescription(_Contract):
     description: str = Field(min_length=1, max_length=1200)
 
 
+class CitationPassage(_Contract):
+    """Optional literal locator in one supplied Evidence item."""
+
+    ref: str = Field(min_length=1, max_length=2048)
+    occurrence: int = Field(ge=1)
+    text: str = Field(min_length=1, max_length=1200)
+
+
 class SemanticAnswerDecision(_Contract):
-    """Primary Answer decision. It has no literal-reading field."""
+    """Primary Answer decision with optional citation presentation metadata."""
 
     posture: Literal["supported", "partial", "unable"]
     support_basis: Literal["evidence", "user_premises", "user_images", "none"]
     answer: str
     missing_information: str | None
     citation_descriptions: list[CitationDescription] | None
+    citation_passages: list[CitationPassage] | None = Field(
+        description="Exact source excerpts for the principal cited legal propositions, when available."
+    )
 
     @model_validator(mode="before")
     @classmethod
-    def optional_descriptions(cls, value):
-        # Keep the primary decision strict. Optional display metadata is the
-        # only field repaired locally; it never spends Answer's correction.
+    def optional_citation_metadata(cls, value):
+        # Keep the primary decision strict. Invalid optional metadata never
+        # spends Answer's correction.
         if not isinstance(value, dict):
             return value
         descriptions = []
@@ -113,7 +124,16 @@ class SemanticAnswerDecision(_Contract):
             text = " ".join(item.description.split())
             if text:
                 descriptions.append({"source_ref": item.source_ref, "description": text})
-        return {**value, "citation_descriptions": descriptions or None}
+        passages = []
+        raw = value.get("citation_passages")
+        for row in raw if isinstance(raw, list) else ():
+            try:
+                item = CitationPassage.model_validate(row)
+            except ValidationError:
+                continue
+            if item.text.strip():
+                passages.append(item)
+        return {**value, "citation_descriptions": descriptions or None, "citation_passages": passages or None}
 
 
 RESEARCH_PROMPT = """# Task
@@ -125,6 +145,8 @@ Use your knowledge to interpret terminology, form hypotheses and reason about so
 Let the current user request control the investigation, not the earlier answer or briefing. A refinement can change the interpretation, relevant institution, period or requested comparison. Revise your understanding when the question or sources warrant it.
 
 Read for consequences: what does a finding establish, change, rule out or leave unresolved for this question? Topic overlap alone is not support. Preserve a source's scope, time, conditions and quantitative basis when they change the result. Search for the unresolved relationship, not confirmation of a presumed answer. Preserve useful exact terminology.
+
+For legal questions, seek the applicable primary text for the jurisdiction, issue and time. Identify the operative provision and read neighboring definitions, exceptions or cross-references when they affect the result. For cases, identify whose language you are reading and the decision's court, precedential status and holding on the relevant issue. Treat syllabi, party arguments, separate opinions and quoted authorities according to their role. An unpublished decision can lead to the published authority it quotes. When status, later treatment or a statutory version could change the answer, investigate that issue with targeted acquisition. Read the later decision to see what it did to the particular proposition. A reversal alone does not settle that question. Pass material qualifications, unresolved status and supporting originals to Answer. Provider highlights may omit the context needed to make these judgments.
 
 Choose operations that can change a material part of the answer. Independent requests may be bundled; interpret their results before dependent work. Use a known source or retained passage when it offers a concrete route to the missing fact. When acquired text points to a specific section or document defining still-missing criteria that the user needs, inspect that lead rather than substitute a general overview or adjacent examples. References need no routine follow-up once the requested answer is established. Repeating a failed route needs a reason that something relevant will differ.
 
@@ -173,11 +195,15 @@ Develop the strongest reasonable conclusion that the premises support. It may be
 
 Address the user's material requested parts. Do not silently replace a missing requested fact with a discussion of a neighboring topic. Distinguish ordinary uncertainty from an unanswered part of the request. Give the useful available answer, with a specific remaining gap when necessary; an unverified connection is neither a verified fact nor proof of absence.
 
+For legal questions, state what the applicable authority supports at its proper weight and scope. Distinguish a court's holding from separate opinions, summaries, parties' positions and its discussion of other authorities. Keep the operative subsection, conditions, exceptions and applicable version tied to each statutory claim. Check the originals or delegate a targeted need when a case's publication status, later treatment or a provision's applicability could change a material conclusion. Describe the actual effect of later authority on the proposition at issue. When the available authority falls short, narrow, revise or omit the claim and disclose the material uncertainty. A general caveat cannot support an otherwise unsupported legal proposition.
+
 # Further work
 Inspect retained text when a concrete source can resolve a consequential issue. Delegate a substantive missing need when external acquisition has a credible prospect of changing the answer. Do not research merely to make an already useful conclusion more certain. Failed searches and budget limits do not establish factual absence. When further work is not worthwhile, finish with the best supported answer or partial rather than withholding the useful parts.
 
 # Presentation
 Lead with the answer or controlling distinction. Use prose, a list or a table according to the question, not a default report template. Develop the reasoning to the requested depth. State limitations where they change interpretation, and avoid repeating the same limitation. Prefer concise affirmative scope descriptions to lists of claims nobody made. Use headings and bold sparingly; do not bold entire analytical paragraphs.
+
+For legal authorities, include a conventional case or statutory reference in the prose when the acquired text establishes it, with the clickable citation beside it. Use a formal pinpoint only when the original authority's pagination, numbered paragraph or subsection is established for that passage by the acquired material. A reporter citation's opening page, a physical PDF page, a slip-opinion page and a saved-excerpt offset are distinct coordinates. If only the source or the saved text is established, cite at that level. Do not infer official numbering, publication status, subsequent treatment or currentness from a provider highlight or a text match.
 
 # Tools and final response
 library_find is bounded lexical retrieval over retained text, not web search or an exhaustive exact-string scan. library_read reads only acquired text; a retained highlight does not include its parent publication. Use paired offsets for a known exact range or focus terms for a large retained original. library_browse lists metadata; use next_offset for another page. For missing external support, call research(need). Its briefing and originals return to this same interaction. Bundle related needs when useful.
@@ -194,7 +220,9 @@ Return the supplied SemanticAnswerDecision schema. Use supported when the availa
 
 Use support_basis=evidence when substantive claims rely on supplied originals, including mixed source/premise/image answers. Cite their actual supplied aliases beside the supported external claims. Use user_images without Evidence citations only for observations of actual supplied user images (and explicit user premises); identify that visual basis naturally. Use user_premises without citations only when the result follows solely from explicit user premises, and make that conditional basis clear; use none only with unable. A catalog record, briefing reference or unseen source does not grant citation membership.
 
-Use supplied aliases such as [E1] or [D1@120:480], not URLs, Markdown links, footnotes, source lists, citations inside code or copied support/localization fields. In citation_descriptions, provide a brief meaningful description per distinct cited source explaining its contribution to this answer. Use citation_description_language when supplied: en means English, match means the answer language, and another language code selects that language. Keep original publication titles and URLs unchanged. Use a supplied source or material alias as source_ref; repeated citations reuse one description. Stay faithful to the supplied material without duplicating the title, answer or routine disclaimers. Descriptions are presentation metadata, never evidence or citation authority; use null when none are useful. Shared resources do not renew. Return a useful final response within them; do not emit private reasoning.
+Use supplied aliases such as [E1] or [D1@120:480], not URLs, Markdown links, footnotes, source lists or citations inside code. In citation_descriptions, provide a brief meaningful description per distinct cited source explaining its contribution to this answer. Use citation_description_language when supplied: en means English, match means the answer language, and another language code selects that language. Keep original publication titles and URLs unchanged. Use a supplied source or material alias as source_ref; repeated citations reuse one description. Stay faithful to the supplied material without duplicating the title, answer or routine disclaimers. Descriptions are presentation metadata, never evidence or citation authority; use null when none are useful.
+
+For the principal propositions in a legal answer, include citation_passages entries when the cited material contains a clear supporting passage. These give readers a direct link to the saved text. Copy a short, distinctive clause or sentence verbatim from the cited material. Use its exact supplied ID in both the answer marker and the entry's ref, including any @range. Use one alias per source in a marker. If the answer cites [E7] for one proposition and [E7] again for another, provide {"ref":"E7","occurrence":1,"text":"..."} and {"ref":"E7","occurrence":2,"text":"..."} with the corresponding excerpts. Count occurrences separately for each exact alias, from left to right. Use null when no clear passage is available or when the answer is nonlegal. A missing locator leaves the source citation usable. Shared resources do not renew. Return a useful final response within them; do not emit private reasoning.
 """
 
 
@@ -281,40 +309,6 @@ class _ResearchSelectionError(ValueError):
         super().__init__(self.reason)
 
 
-def _locate_research_passage(original, locator):
-    """Locate literal text, then whitespace-only variation, in immutable text."""
-    if not locator.strip():
-        raise _ResearchSelectionError("passage_not_found")
-    start = original.find(locator)
-    if start >= 0:
-        if original.find(locator, start + 1) >= 0:
-            raise _ResearchSelectionError("passage_ambiguous")
-        return start, start + len(locator)
-
-    # Each normalized whitespace run is one space. Map only removed whitespace
-    # back to original offsets; no case, punctuation, word or evidence changes.
-    removed, shifts = 0, []
-
-    def collapse(match):
-        nonlocal removed
-        extra = match.end() - match.start() - 1
-        if extra:
-            shifts.append((match.start() - removed, extra))
-        removed += extra
-        return " "
-
-    normalized = re.sub(r"\s+", collapse, original)
-    needle = re.sub(r"\s+", " ", locator).strip()
-    start = normalized.find(needle)
-    if start < 0:
-        raise _ResearchSelectionError("passage_not_found")
-    if normalized.find(needle, start + 1) >= 0:
-        raise _ResearchSelectionError("passage_ambiguous")
-    end = start + len(needle)
-    return (start + sum(extra for position, extra in shifts if position < start),
-            end + sum(extra for position, extra in shifts if position < end))
-
-
 def _research_range_exposed(parent_id, start, end, library, exposed):
     return 0 <= start < end and any(
         (item.id == parent_id and end <= len(item.content))
@@ -344,7 +338,10 @@ def _research_selection(selections, library, exposed):
                     raise _ResearchSelectionError("passage_parent_unavailable")
                 text, parent_id = original.content, original.parent_id or original.id
                 offset = original.start_char if original.parent_id else 0
-            start, end = _locate_research_passage(text, selection.text)
+            try:
+                start, end = locate_unique_passage(text, selection.text)
+            except ValueError as exc:
+                raise _ResearchSelectionError(str(exc)) from None
             start, end = start + offset, end + offset
             if not _research_range_exposed(parent_id, start, end, library, exposed):
                 raise _ResearchSelectionError("passage_range_unexposed")
@@ -725,6 +722,8 @@ def _run_turn(
             require_citation=decision.support_basis == "evidence" and decision.posture != "unable",
             descriptions=([item.model_dump() for item in decision.citation_descriptions]
                           if decision.citation_descriptions else None),
+            passages=([item.model_dump() for item in decision.citation_passages]
+                      if decision.citation_passages else None),
         )
         # Store only exact material actually cited; unused answer context remains
         # acquired, and exposure receipts retain what the answer call received.
@@ -1208,7 +1207,9 @@ def _run_turn(
             if validation_error is not None:
                 raise validation_error
             if validated is not None:
-                emit("answer_decision", decision=validated.model_dump(exclude={"answer", "citation_descriptions"}))
+                emit("answer_decision", decision=validated.model_dump(
+                    exclude={"answer", "citation_descriptions", "citation_passages"},
+                ))
                 return validated
         else:
             # Four-argument injected models cannot carry a native continuation.
@@ -1222,7 +1223,9 @@ def _run_turn(
                             research_tool=investigate)
                 feedback = correction(final)
                 if feedback is None:
-                    emit("answer_decision", decision=final.model_dump(exclude={"answer", "citation_descriptions"}))
+                    emit("answer_decision", decision=final.model_dump(
+                        exclude={"answer", "citation_descriptions", "citation_passages"},
+                    ))
                     return final
                 packet["output_correction"] = feedback
         emit("answer_validation_exhausted", code="answer_validation_exhausted", budget=budget.snapshot())

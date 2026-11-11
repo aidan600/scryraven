@@ -79,8 +79,9 @@ Open [http://127.0.0.1:7331](http://127.0.0.1:7331) in your browser. Keep the te
 running; Ctrl+C stops the server. It binds only to `127.0.0.1`. If the port is busy,
 choose another with `--port 7339`. There is no remote bind option.
 
-**Launch with private credentials:** use the existing doorman, which
-supplies the child process environment without printing or exposing secret values.
+**Launch with private credentials:** the doorman privately supplies the child
+process environment from the maintained local file `C:\Users\aidan\ScryRaven\.env`.
+Pass that absolute path even when launching from a separate worktree.
 From the repository root in PowerShell:
 
 ```powershell
@@ -88,7 +89,7 @@ $roomLogs = Join-Path $env:TEMP ('scryraven-room-' + [guid]::NewGuid().ToString(
 New-Item -ItemType Directory -Path $roomLogs | Out-Null
 $roomProcess = Start-Process .\.venv\Scripts\python.exe -WindowStyle Hidden -PassThru -WorkingDirectory (Get-Location).Path -ArgumentList @(
     'scripts/run_brokered_command_once.py', '--repo-root', ('"{0}"' -f (Get-Location).Path),
-    '--env-file', 'C:\Users\aidan\AppData\Local\ScryRaven\credentials.env',
+    '--env-file', 'C:\Users\aidan\ScryRaven\.env',
     '--stdout', ('"{0}\stdout.txt"' -f $roomLogs),
     '--stderr', ('"{0}\stderr.txt"' -f $roomLogs), '--status', ('"{0}\status.json"' -f $roomLogs),
     '--timeout-seconds', '28800', '--target-current-python', '--', '-m', 'scryraven.reading_room'
@@ -179,13 +180,14 @@ pwsh -NoProfile -File .\scripts\clean-forensic-run.ps1 -RunDirectory 'C:\tmp\scr
 The cleanup command accepts only one exact direct child of the fixed forensic
 root. It prints and copies a deletion summary to the Windows clipboard.
 
-Choose **New research**, ask a question, and use the composer for follow-ups. Submit
-with the arrow or Ctrl+Enter / Command+Enter; plain Enter adds a line. Research
-continues on the local server while you navigate, refresh or close the browser
-tab. Two conversations can research at once, with a bounded waiting queue and one
+Choose **New research**, ask a question, and use the composer for follow-ups.
+Submit with the arrow or, on desktop, Enter. Shift+Enter adds a line on desktop,
+and touch keyboards retain multiline Enter. Research continues on the local
+server while you navigate, refresh or close the browser tab. Two conversations
+can research at once, with a bounded waiting queue and one
 active question per conversation. The sidebar reports actual run states. The
-language control defaults source explanations to English; an accepted question
-saves the conversation preference for subsequent answers. Original titles and
+sidebar language control defaults source explanations to English and saves the
+conversation preference for subsequent answers. Original titles and
 historical answers remain unchanged.
 
 Completed answers, including limited results, are saved. Failed/interrupted runs
@@ -198,14 +200,16 @@ An answer completed after Research reaches its operating limit says so without
 changing its supported, partial or unable status. Completed source-free supported
 or partial answers state that no external sources were used.
 
-Hover or keyboard-focus **[1]** for a compact preview explaining what its source
-contributes. Click a web citation to open the original publication in a new tab;
-on touch screens, tap for the preview and its original-publication action. Tab,
-Arrow Down or Space enters preview actions; Escape dismisses it. **View saved
-excerpt** expands the exact saved material inline. **Sources** also exposes each
-publication and saved excerpt. Long saved material can be expanded in full, and
-saved selections remain available when the original site changes. Historical
-answers without descriptions still expose their source identity and both actions.
+Hover or keyboard-focus **[1]** for a compact source preview. Click, tap or press
+Enter on a citation with a saved passage to open its highlighted text inline.
+A source-level web citation opens the original publication in a new tab. On
+touch screens, tapping a source-level citation opens its preview. Tab, Arrow
+Down or Space enters preview actions, and Escape dismisses the preview.
+The preview offers original-publication access and **View saved passage** or
+**View saved excerpt**. **Back to answer** returns to the citation at its prior
+reading position. **Sources** also exposes each publication and its saved
+material through native disclosures. Long saved material can be expanded in full.
+Saved selections remain available when the original site changes.
 
 Each session's **…** menu offers **Rename** and **Delete**. Rename preserves all
 research and requires no model call. Delete requires confirmation and permanently
@@ -462,12 +466,13 @@ citation can receive the existing single bounded Answer correction. Mechanical
 checks establish source custody, not semantic entailment. Citations receive
 compact source numbers in first-use order and save their exact selected material
 and citation-use spans, so later acquisitions cannot change historical inspection.
-The same final Answer interaction supplies optional short citation descriptions.
-Invalid metadata is discarded without invalidating the primary answer or making
-another model call. Descriptions match only validated cited sources and remain
-presentation metadata, never Evidence. New citations retain generic saved-material
-inspection, with no invented passage highlights. Historical occurrence-specific
-passage support remains readable.
+The same final Answer interaction can supply short citation descriptions and
+passage locators. A locator becomes a highlight only if it uniquely locates
+text in the exact material cited at that occurrence. Missing or invalid metadata
+leaves the source citation available without another model call. The highlight
+is a saved-text location. Formal legal pinpoints come from the acquired
+authority and appear in the answer prose. Historical occurrence-specific
+passages remain readable.
 Views carry exact parent bounds; highlights never receive guessed offsets or
 invented page numbers.
 Source labels use publication metadata, PDF filenames or hostnames without
@@ -522,13 +527,14 @@ Acquisition preserves fixed safe Exa, Serper and LinkUp configuration-missing
 codes and LinkUp material-unavailable codes; other Search/Read exceptions remain
 generic safe failures.
 
-Agents must use the existing doorman for credentialed commands and must not read
-`.env` or keys. An operator may configure `.env` using `.env.example`. For an
-authorized observation use fresh external output filenames:
+Agents must use the existing doorman for credentialed commands. The operator
+maintains the single local credential file at `C:\Users\aidan\ScryRaven\.env`
+using `.env.example` as a reference. For an authorized observation use fresh
+external output filenames:
 
 ```powershell
 New-Item -ItemType Directory -Force C:\tmp\scryraven-observation | Out-Null
-python scripts/run_brokered_command_once.py --repo-root C:\Users\aidan\ScryRaven --env-file C:\Users\aidan\AppData\Local\ScryRaven\credentials.env --stdout C:\tmp\scryraven-observation\answer.txt --stderr C:\tmp\scryraven-observation\trace.txt --status C:\tmp\scryraven-observation\status.json --timeout-seconds 1200 --target-current-python -- -m scryraven "What is the maximum allowed weight of a ten-pin bowling ball?" --trace
+python scripts/run_brokered_command_once.py --repo-root C:\Users\aidan\ScryRaven --env-file C:\Users\aidan\ScryRaven\.env --stdout C:\tmp\scryraven-observation\answer.txt --stderr C:\tmp\scryraven-observation\trace.txt --status C:\tmp\scryraven-observation\status.json --timeout-seconds 1200 --target-current-python -- -m scryraven "What is the maximum allowed weight of a ten-pin bowling ball?" --trace
 ```
 
 The doorman owns only secret custody and process plumbing; the product does not

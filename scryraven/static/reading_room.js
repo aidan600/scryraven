@@ -69,7 +69,10 @@
     description?.remove();
     preview.querySelector('.citation-preview-number').textContent = 'Source ' + source.querySelector('.source-number').textContent;
     preview.querySelector('.citation-preview-content').replaceChildren(...content.childNodes);
-    preview.querySelector('.saved-excerpt-link').href = '#' + source.id + '-excerpt';
+    const saved = preview.querySelector('.saved-excerpt-link');
+    const hasPassage = citation.hasAttribute('data-saved-passage');
+    saved.href = hasPassage ? citation.hash : '#' + source.id + '-excerpt';
+    saved.textContent = hasPassage ? 'View saved passage' : 'View saved excerpt';
     preview.hidden = false;
     preview.scrollTop = 0;
     positionPreview();
@@ -89,6 +92,35 @@
     const card = preview.getBoundingClientRect();
     if (bounds.top < card.top + 4) preview.scrollTop += bounds.top - card.top - 4;
     else if (bounds.bottom > card.bottom - 4) preview.scrollTop += bounds.bottom - card.bottom + 4;
+  }
+
+  function scrollReaderTo(target, offset) {
+    reader.scrollTop += target.getBoundingClientRect().top - reader.getBoundingClientRect().top - offset;
+  }
+
+  function openSavedCitation(hash, citation) {
+    const target = document.getElementById(hash.slice(1));
+    const excerpt = target?.closest('.saved-excerpt');
+    if (!excerpt) return false;
+    const source = excerpt.closest('.source');
+    const overview = source.closest('.sources-overview');
+    const passage = target.closest('.citation-support');
+    excerptReturn = citation ? {
+      overview,
+      citation,
+      offset: citation.getBoundingClientRect().top - reader.getBoundingClientRect().top,
+    } : null;
+    overview.open = true;
+    source.open = true;
+    excerpt.open = true;
+    excerpt.querySelectorAll('.citation-support').forEach(support => {
+      support.open = support === passage;
+    });
+    closePreview();
+    const opened = passage || excerpt;
+    opened.querySelector('summary').focus({preventScroll: true});
+    scrollReaderTo(opened, 20);
+    return true;
   }
 
   document.querySelectorAll('a.citation[data-source-id]').forEach(citation => {
@@ -116,7 +148,9 @@
         ['touch', 'pen'].includes(event.pointerType);
       touchCitation = null;
       if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
-      if (tapped || citation.hasAttribute('data-preview-on-click') || !citation.hasAttribute('target')) {
+      if (citation.hasAttribute('data-saved-passage')) {
+        if (openSavedCitation(citation.hash, citation)) event.preventDefault();
+      } else if (tapped || citation.hasAttribute('data-preview-on-click') || !citation.hasAttribute('target')) {
         event.preventDefault();
         showPreview(citation);
         tappedPreview = tapped && event.detail !== 0;
@@ -137,27 +171,8 @@
   preview.addEventListener('pointerleave', scheduleDismiss);
   preview.addEventListener('focusout', scheduleDismiss);
   preview.querySelector('.preview-close').addEventListener('click', () => closePreview(true));
-  function scrollReaderTo(target, offset) {
-    reader.scrollTop += target.getBoundingClientRect().top - reader.getBoundingClientRect().top - offset;
-  }
   preview.querySelector('.saved-excerpt-link').addEventListener('click', event => {
-    event.preventDefault();
-    const excerpt = document.getElementById(event.currentTarget.hash.slice(1));
-    const source = excerpt.closest('.source');
-    const overview = source.closest('.sources-overview');
-    const citationStart = origin?.dataset.citationStart;
-    if (origin) {
-      excerptReturn = {overview, citation: origin, offset: origin.getBoundingClientRect().top - reader.getBoundingClientRect().top};
-    }
-    overview.open = true;
-    source.open = true;
-    excerpt.open = true;
-    excerpt.querySelectorAll('.citation-support').forEach(support => {
-      support.open = support.dataset.citationStart === citationStart;
-    });
-    closePreview();
-    excerpt.querySelector('summary').focus({preventScroll: true});
-    scrollReaderTo(excerpt, 20);
+    if (openSavedCitation(event.currentTarget.hash, origin)) event.preventDefault();
   });
   reader.querySelectorAll('.back-to-answer').forEach(link => {
     link.tabIndex = 0;

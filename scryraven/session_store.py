@@ -324,7 +324,6 @@ def _decode(payload: str, revision: int, documents: tuple[SessionDocument, ...] 
                 support_text(region, source_materials[region.evidence_ref])
             end = use.end
         _require(list(dict.fromkeys(use.number for use in uses)) == list(range(1, len(citations) + 1)))
-        _require(not any(use.support for use in uses) or all(use.support for use in uses))
         if analysis is not None or saved.posture != "unable":
             # Native source-free premise derivations have neither selected
             # material nor citations. Answer validates their semantic basis.

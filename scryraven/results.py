@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass
+from hashlib import sha256
 
 from scryraven.documents import SessionDocument, document_text_view
 from scryraven.errors import RunError
 from scryraven.presentation import Citation, CitationUse
-from scryraven.sources import Evidence, exact_view
+from scryraven.sources import Evidence, SupportRegion, exact_view, locate_unique_passage
 
 
 @dataclass(frozen=True)
@@ -26,12 +28,40 @@ class CompletedAnswer:
     image_ids: tuple[str, ...] = ()
 
 
+def _passage_proposals(rows: object) -> dict[tuple[str, int], str | None]:
+    proposals: dict[tuple[str, int], str | None] = {}
+    for row in rows if isinstance(rows, list) else ():
+        if not isinstance(row, dict):
+            continue
+        ref, occurrence, text = row.get("ref"), row.get("occurrence"), row.get("text")
+        if (not isinstance(ref, str) or type(occurrence) is not int or occurrence < 1
+                or not isinstance(text, str) or not 1 <= len(text) <= 1200 or not text.strip()):
+            continue
+        key = (ref, occurrence)
+        if proposals.setdefault(key, text) != text:
+            proposals[key] = None
+    return proposals
+
+
+def _saved_passage(material: Evidence | None, text: str | None) -> tuple[SupportRegion, ...]:
+    if material is None or text is None:
+        return ()
+    try:
+        start, end = locate_unique_passage(material.content, text)
+        material_hash = sha256(material.content.encode("utf-8")).hexdigest()
+        passage_hash = sha256(material.content[start:end].encode("utf-8")).hexdigest()
+    except ValueError:
+        return ()
+    return (SupportRegion(material.id, start, end, material_hash, passage_hash),)
+
+
 def resolve_citations(
     draft: str, selected: list[Evidence] | tuple[Evidence, ...],
     acquisitions: list[Evidence] | tuple[Evidence, ...], trace: list[dict], *,
     documents: tuple[SessionDocument, ...] = (),
     require_citation: bool = True,
     descriptions: object = None,
+    passages: object = None,
 ) -> tuple[str, tuple[Citation, ...], tuple[CitationUse, ...]]:
     """Resolve only aliases for actual supplied material, grouping by source.
 
@@ -67,6 +97,9 @@ def resolve_citations(
 
     used: list[str] = []
     uses: list[CitationUse] = []
+    selected_by_id = {item.id: item for item in selected}
+    proposals = _passage_proposals(passages)
+    occurrences: Counter[str] = Counter()
     offset = 0
     alias = r"(?:E|D)[0-9]+(?:@[0-9]+:[0-9]+)?"
     alias_list = rf"\s*{alias}(?:\s*,\s*{alias})*\s*"
@@ -100,20 +133,23 @@ def resolve_citations(
         if (len(prefix) - len(prefix.rstrip("\\"))) % 2:
             reject("malformed_citation_reference", "escaped_citation", match)
         references: list[str] = []
-        source_refs: list[str] = []
+        source_refs: dict[str, list[tuple[str, int]]] = {}
         for ref in re.findall(alias, match.group()):
             if ref not in aliases:
                 reject("invalid_citation_reference", "unknown_or_unselected_alias", match)
-            source_id = aliases[ref]
-            if source_id in source_refs:
-                continue
-            source_refs.append(source_id)
+            occurrences[ref] += 1
+            source_refs.setdefault(aliases[ref], []).append((ref, occurrences[ref]))
+        for source_id, keys in source_refs.items():
             if source_id not in used:
                 used.append(source_id)
             number = used.index(source_id) + 1
             marker = f"[{number}]"
             start = match.start() + offset + sum(len(part) + 1 for part in references)
-            uses.append(CitationUse(number, start, start + len(marker)))
+            support = ()
+            if len(keys) == 1:
+                key, = keys
+                support = _saved_passage(selected_by_id.get(key[0]), proposals.get(key))
+            uses.append(CitationUse(number, start, start + len(marker), support))
             references.append(marker)
         rendered = " ".join(references)
         offset += len(rendered) - len(match.group())

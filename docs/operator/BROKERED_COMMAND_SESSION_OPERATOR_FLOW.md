@@ -25,10 +25,10 @@ The doorman does not add retries, routing, budgets, or application policy.
 
 For the isolated forensic Reading Room, use
 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\forensic-reading-room.ps1 -Port 7332 2>&1`.
-That development launcher supplies the same approved external credential-file
-path to this doorman; it never opens or parses the file. Its target explicitly
-selects ChatGPT-plan inference and checks acquisition-credential presence inside
-the private child. See [ChatGPT-plan launch details](CHATGPT_PLAN_BACKEND.md).
+That development launcher passes the maintained absolute credential-file path
+to the doorman. The broker's private child opens and parses the file. The target
+selects ChatGPT-plan inference and checks acquisition-credential presence.
+See [ChatGPT-plan launch details](CHATGPT_PLAN_BACKEND.md).
 
 ## Standard invocation
 
@@ -38,23 +38,27 @@ From the repository root, prepare output paths outside the repository:
     $stderr = 'C:\tmp\broker.stderr.txt'
     $status = 'C:\tmp\broker.status.json'
 
-For phase worktrees, the human-approved external credential source is:
+The single user-maintained local credential source is:
 
-    C:\Users\aidan\AppData\Local\ScryRaven\credentials.env
+    C:\Users\aidan\ScryRaven\.env
+
+Use one `NAME=value` assignment per line. Blank lines and lines starting with
+`#` are allowed. The private child rejects malformed assignments before
+launching the command.
 
 Run the doorman from the current phase worktree and pass that worktree as
 `--repo-root`, for example:
 
-    .\.venv\Scripts\python.exe scripts\run_brokered_command_once.py --repo-root C:\Users\aidan\sr-phases\citation-reader-durable-support-product-01 --env-file C:\Users\aidan\AppData\Local\ScryRaven\credentials.env --stdout $stdout --stderr $stderr --status $status --timeout-seconds 90 --target-current-python -- <exact-target> <exact-argv> <tokens>
+    .\.venv\Scripts\python.exe scripts\run_brokered_command_once.py --repo-root C:\Users\aidan\sr-phases\citation-reader-durable-support-product-01 --env-file C:\Users\aidan\ScryRaven\.env --stdout $stdout --stderr $stderr --status $status --timeout-seconds 90 --target-current-python -- <exact-target> <exact-argv> <tokens>
 
 Everything after the required separator is the exact target argv. The
 separator prevents option ambiguity and the child is launched with shell=False.
-This external file remains the credential source for future phase worktrees
-unless the human changes it. Do not use `--repo-env` or inspect/copy credentials
-from the historical primary checkout. The public/controller process must not
-open, parse, print, inspect or copy credential values; only the doorman private
-child owns environment-file custody. Already-authorized bounded PRODUCT work
-can proceed through this boundary without another per-call approval.
+Pass the same absolute `--env-file` from every worktree. `--repo-env` resolves
+to the target checkout's own `.env` and is reserved for synthetic checks in this
+workflow. Only the doorman's private child owns environment-file custody. The
+public/controller process receives sanitized status and output. Already-authorized
+bounded PRODUCT work can proceed through this boundary without another per-call
+approval.
 
 Output files must be absolute, must have existing parents, and must be outside
 the repository. Existing output requires explicit --replace-output authority.

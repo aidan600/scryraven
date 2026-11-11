@@ -234,9 +234,8 @@ dialog::backdrop { background: #1e323d26; }
 .material-text, .preview-text { font: 15px/1.75 Georgia, "Times New Roman", serif; white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; color: #35464e; }
 .material > .material-text, .material-preview, .full-material .material-text { padding: 16px; background: #fffefb; border: 1px solid #e0e6e3; border-radius: 5px; }
 .material-text code { font: inherit; }
-.citation-support { margin: 24px 0; }
+.citation-support { margin: 24px 0; scroll-margin-top: 20px; }
 .citation-support > summary, .support-context > summary { cursor: pointer; color: #355f71; font-size: 13px; padding: 10px 0; }
-.citation-support h2 { font-size: 15px; margin: 0 0 8px; }
 .support-passage { margin: 22px 0; }
 .source-prose { font: 17px/1.8 Georgia, "Times New Roman", serif; white-space: pre-wrap; overflow-wrap: anywhere; color: #58666a; }
 .support-text, .context-support { color: #283238; background: #fff0ad; padding: 2px 0; box-decoration-break: clone; }

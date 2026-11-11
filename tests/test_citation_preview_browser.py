@@ -11,6 +11,7 @@ from threading import Thread
 import pytest
 from pdf_fixtures import text_pdf
 from reading_room_samples import Script, first_script, no_io, prepared_session, source_search
+from test_durable_support_reader import saved_session
 from test_reading_room import submit
 from test_research_loop import answer, decision
 from test_research_loop import request as research_request
@@ -74,6 +75,14 @@ def citation_page(tmp_path):
 
 
 @pytest.fixture
+def saved_passage_page(tmp_path):
+    store, session = saved_session(tmp_path)
+    app = create_app(store=store, session_options={"model": no_io, "search": no_io, "fetch": no_io})
+    with running_room(app) as base:
+        yield f"{base}/sessions/{session.session_id}"
+
+
+@pytest.fixture
 def pdf_citation_page(tmp_path):
     store = SQLiteSessionStore(tmp_path / "preview-browser.sqlite3")
     created = store.create()
@@ -104,9 +113,9 @@ def completed_citation_page(tmp_path):
 
 
 @contextmanager
-def page_at(browser, url, *, mobile=False):
+def page_at(browser, url, *, mobile=False, javascript=True):
     with browser.new_context(viewport={"width": 390 if mobile else 1440, "height": 844 if mobile else 1000},
-                             is_mobile=mobile, has_touch=mobile) as context:
+                             is_mobile=mobile, has_touch=mobile, java_script_enabled=javascript) as context:
         context.route("https://example.org/**", lambda route: route.fulfill(body="Offline original publication"))
         page = context.new_page()
         page.goto(url)
@@ -398,3 +407,93 @@ def test_deferred_settings_enables_dialog_and_adopts_native_history(citation_bro
         settings.tap()
         assert page.get_by_role("dialog", name="Settings", exact=True).is_visible()
         assert page.locator(".sidebar").is_hidden()
+
+
+@pytest.mark.parametrize("interaction", ["click", "keyboard", "touch"])
+def test_occurrences_open_their_own_saved_passages_after_reopen(citation_browser, saved_passage_page, interaction):
+    with page_at(citation_browser, saved_passage_page, mobile=interaction == "touch") as page:
+        links = page.locator('a.citation[data-saved-passage]')
+        preview = page.locator('#citation-preview')
+        first, second = links.first, links.last
+        assert links.count() == 2
+        assert first.get_attribute('data-source-id') == second.get_attribute('data-source-id')
+        assert first.get_attribute('href') != second.get_attribute('href')
+
+        if interaction == "click":
+            first.hover()
+            assert preview.get_by_role('link', name='View saved passage').get_attribute('href') == first.get_attribute('href')
+            with page.expect_popup() as opened:
+                preview.get_by_role('link', name='Open original publication').click()
+            assert opened.value.url == 'https://example.org/record'
+            opened.value.close()
+            first.click()
+        elif interaction == "keyboard":
+            first.press('Enter')
+        else:
+            first.tap()
+        selected = page.locator('.citation-support[open]')
+        assert selected.locator('mark.support-text').all_inner_texts() == [
+            'Alpha is seven.', 'A consequential exception applies.',
+        ]
+        assert selected.locator('summary').first.evaluate('(el) => el === document.activeElement')
+        assert selected.locator('mark.support-text').first.is_visible()
+
+        page.reload()
+        second.scroll_into_view_if_needed()
+        settle_layout(page)
+        before = reader_top(page)
+        if interaction == "click":
+            second.hover()
+            preview.get_by_role('link', name='View saved passage').click()
+        elif interaction == "keyboard":
+            second.press('Enter')
+        else:
+            second.tap()
+        assert selected.count() == 1
+        mark = selected.locator('mark.support-text')
+        assert mark.inner_text() == 'Omega is nine.' and mark.is_visible()
+        assert mark.evaluate('''el => {
+            const viewport = el.closest('.reading-scroll').getBoundingClientRect();
+            const bounds = el.getBoundingClientRect();
+            return bounds.top >= viewport.top && bounds.bottom <= viewport.bottom;
+        }''')
+        assert preview.is_hidden()
+        assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+
+        back = selected.locator('xpath=ancestor::details[contains(@class,"saved-excerpt")]').get_by_role(
+            'link', name='Back to answer',
+        )
+        if interaction == "touch":
+            back.tap()
+        else:
+            back.click()
+        settle_layout(page)
+        assert second.evaluate('(el) => el === document.activeElement')
+        assert abs(reader_top(page) - before) <= 1
+        assert preview.is_hidden()
+        assert page.url == saved_passage_page
+
+
+def test_saved_passage_fragment_reveals_the_occurrence_without_javascript(browser, saved_passage_page):
+    with page_at(browser, saved_passage_page, javascript=False) as page:
+        link = page.locator('a.citation[data-saved-passage]').last
+        link.click()
+        mark = page.locator('.citation-support[open] mark.support-text')
+        assert mark.inner_text() == 'Omega is nine.' and mark.is_visible()
+
+
+def test_native_sources_expose_saved_passage_and_original_on_mobile(citation_browser, saved_passage_page):
+    with page_at(citation_browser, saved_passage_page, mobile=True, javascript=False) as page:
+        for selector in ('.sources-control', '.source > summary', '.saved-excerpt > summary'):
+            summary = page.locator(selector)
+            summary.tap()
+            assert summary.evaluate('(el) => el.parentElement.open')
+        second = page.locator('.citation-support').last
+        second.locator('summary').first.tap()
+        mark = second.locator('mark.support-text')
+        assert mark.inner_text() == 'Omega is nine.' and mark.is_visible()
+        original = page.locator('.source-preview').get_by_role('link', name='Open original publication')
+        with page.expect_popup() as opened:
+            original.tap()
+        assert opened.value.url == 'https://example.org/record'
+        opened.value.close()

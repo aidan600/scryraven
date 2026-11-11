@@ -103,7 +103,7 @@ $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     $utf8NoBom
 )
 
-$credentialFile = 'C:\Users\aidan\AppData\Local\ScryRaven\credentials.env'
+$credentialFile = 'C:\Users\aidan\ScryRaven\.env'
 $brokerStdout = Join-Path $runDirectory 'broker.stdout.txt'
 $brokerStderr = Join-Path $runDirectory 'broker.stderr.txt'
 $brokerStatus = Join-Path $runDirectory 'broker.status.json'

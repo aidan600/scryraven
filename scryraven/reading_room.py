@@ -584,6 +584,7 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                              )),
                              "body": Markup(source_body_html(
                                  c, collapse_long=True, uses=turn.citation_uses,
+                                 source_anchor=prefix + str(c.number),
                                  original_href=document_hrefs.get(c.document_id),
                              ))} for c in turn.citations],
             })

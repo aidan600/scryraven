@@ -211,11 +211,11 @@ for presentation. Sol, through the existing Answer model role,
 owns meaning, prose, adequacy and citations. It evaluates the briefing against supplied Evidence and cites exact supplied
 aliases beside supported factual claims.
 A completed valid Answer proceeds directly to deterministic citation resolution
-and publication. No model localizes passages, copies `source_readings`, or
-regenerates an otherwise valid whole answer for presentation.
+and publication. The same Answer may propose optional locators. A failed
+locator leaves the completed answer and its source citation available.
 
 The primary schema, posture/need and support-basis checks remain strict. Invalid
-optional citation descriptions are discarded without invalidating the Answer. A missing
+optional citation metadata is discarded without invalidating the Answer. A missing
 required Evidence citation receives the existing single correction; all invalid
 primary response categories share that allowance and whole-turn limits.
 Invalid aliases, unavailable versions and custody failures reject publication.
@@ -227,12 +227,10 @@ derivations can complete without citations even when unrelated originals exist;
 mixed factual claims use Evidence and cite their originals. Generated notes,
 conversation and prior assistant prose never become Evidence.
 
-New citation uses have no passage coordinates. Inline Reading Room citations
-offer a compact preview and direct original-publication access. The secondary
-saved excerpt exposes exact selected material with retained PDF/page actions.
-They make no exact highlighted-support claim.
-Historical support coordinates, source snapshots and hash validation remain
-readable and render their saved occurrence-specific support without inference.
+Each citation occurrence can carry coordinates verified against its selected
+snapshot. Reading Room opens the saved passage when those coordinates are
+available. The preview and source panel retain original-publication access and
+the exact saved material, with physical PDF page labels where applicable.
 
 The same Answer semantic owner may call a bounded deterministic local arithmetic
 calculator while preparing a `SemanticAnswerDecision`. It may use numeric values from
@@ -492,11 +490,16 @@ Analysis code is decode-only schema/reference validation in `scryraven.historica
 Historical judgments are excluded from new model packets. The stopped Investigator
 executable harness and its Author adapter are retired to their preserved Git lineage.
 
-New completed turns retain exact cited material snapshots without passage
-localization. Historical citation uses with saved support coordinates and hashes
-remain validated against their own snapshots; a corrupt material, range or hash
-cannot reopen as trusted support. Historical records missing the additive support
-field remain readable without payload rewriting.
+The primary Answer may supply a short, contiguous passage locator for a legal
+citation occurrence using its exact supplied material alias and that alias's
+one-based occurrence in the answer. The resolver attaches coordinates and hashes
+only after a unique literal or whitespace-only match in the cited snapshot.
+Missing, conflicting or invalid locators leave ordinary source-level citations.
+New and historical coordinates and hashes are validated against their own saved
+material. Existing records without support remain readable without rewriting.
+There is no additional model call or correction for passage location. A text
+match locates saved material. Formal legal pinpoints depend on what the acquired
+authority establishes and are presented in the answer prose.
 
 The existing final Answer response may supply short source-specific descriptions.
 The primary decision remains strict; missing or malformed optional descriptions
@@ -507,13 +510,15 @@ storage; it never enters Evidence or future Research context. Historical records
 without descriptions reopen unchanged.
 
 Reading Room citation links identify their source and occurrence by the saved
-answer offset. Hover or keyboard focus opens a compact source preview, and web
-links open the exact original publication in a separate tab. Touch exposes the
-same preview and original action. View saved excerpt expands the inline exact
-retained Evidence, with acquisition labels and historical saved support/context
-where available. Original PDFs remain accessible. The large source inspector and
-its navigation are removed. Reopening and inspection do not invoke models, fetch
-current publication text, generate support coordinates or reconstruct text.
+answer offset. Activating an anchored citation opens its highlighted passage in
+the saved text. Source-level web links open the original publication, with touch
+exposing the source preview. The hover and keyboard preview keeps original
+publication access and opens the saved passage or source excerpt. Back to answer
+restores the originating citation and its reading position. The inline Reader
+shows acquisition labels and identifies physical PDF pages. Original PDF links
+and native source disclosures work with JavaScript disabled. Reopening and
+inspection use saved coordinates and text without model calls or fetching the
+current publication.
 
 The Reading Room and CLI disclose that no external sources were used for
 completed source-free supported/partial answers. Presentation derives this from

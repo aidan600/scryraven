@@ -6,7 +6,7 @@ from html.parser import HTMLParser
 
 import pytest
 
-from scryraven.presentation import Citation, CitationUse, render_html, source_body_html
+from scryraven.presentation import Citation, CitationUse, answer_html, render_html, source_body_html
 from scryraven.session_store import SessionTurn
 from scryraven.sources import Evidence, SupportRegion
 
@@ -65,12 +65,13 @@ def test_highlighted_support_and_nearby_text_are_exact_retained_characters():
     assert TextNodes(html, "source-prose").nodes == [body, body]
     assert '<script>unsafe()' not in html and '&lt;script&gt;' in html
     assert '<pre class="material-text support-text"' not in html
-    assert html.index('Open original publication') < html.index('Support for this citation')
-    assert html.index('Support for this citation') < html.index('Surrounding context') < html.index('Full saved material')
+    assert html.index('Open original publication') < html.index('Saved passage for this citation')
+    assert html.index('Saved passage for this citation') < html.index('Surrounding context') < html.index('Full saved material')
     assert asdict(use) == before
 
 
-@pytest.mark.parametrize(("page_start", "page_end", "label"), [(4, 4, "Page 4"), (4, 6, "Pages 4–6")])
+@pytest.mark.parametrize(("page_start", "page_end", "label"), [(4, 4, "Physical PDF page 4"),
+                                                             (4, 6, "Physical PDF pages 4–6")])
 def test_pdf_support_uses_saved_view_page_metadata_not_offsets(page_start, page_end, label):
     material = document_material("A weather exception applies.", page_start, page_end)
     use = CitationUse(1, 0, 3, (region(material, "weather exception"),))
@@ -89,8 +90,8 @@ def test_pdf_support_locators_follow_only_this_uses_materials():
             CitationUse(1, 4, 7, (region(materials[1], "Later exception."),)))
     first = source_body_html(citation(materials, document=True), uses=uses[:1])
     second = source_body_html(citation(materials, document=True), uses=uses[1:])
-    assert TextNodes(first, "support-location").nodes == ["Page 2", "Page 2"]
-    assert TextNodes(second, "support-location").nodes == ["Page 9", "Page 9"]
+    assert TextNodes(first, "support-location").nodes == ["Physical PDF page 2", "Physical PDF page 2"]
+    assert TextNodes(second, "support-location").nodes == ["Physical PDF page 9", "Physical PDF page 9"]
     assert TextNodes(first, "support-text").nodes == ["Early fact."]
     assert TextNodes(second, "support-text").nodes == ["Later exception."]
     # The overall source can still cover both saved views in full material inspection.
@@ -100,10 +101,27 @@ def test_pdf_support_locators_follow_only_this_uses_materials():
 def test_generic_source_body_has_no_use_specific_highlights_or_locators():
     material = Evidence("E1", "https://example.org", "Saved publication", "A saved fact.")
     html = source_body_html(citation([material]))
-    assert 'Support for this citation' not in html
+    assert 'Saved passage for this citation' not in html
     assert not TextNodes(html, "support-text").nodes
     assert not TextNodes(html, "support-location").nodes
     assert material.content in html
+
+
+def test_reader_does_not_infer_a_formal_pinpoint_from_a_saved_pdf_page():
+    text = "Reporter page 421 — The weather exception applies."
+    material = document_material(text, 4)
+    saved = citation([material], document=True)
+    answer = "The weather exception applies. *Example v. Town*, 88 Test Rep. 419, 421. [1]"
+    offset = answer.index("[1]")
+    use = CitationUse(1, offset, offset + 3, (region(material, "The weather exception applies."),))
+    turn = SessionTurn("Does the weather exception apply?", answer, None, "supported", "supported",
+                       (material,), (saved,), (use,))
+    html = answer_html(turn, source_prefix="turn-1-source-", citation_previews=True)
+    body = source_body_html(saved, uses=(use,), source_anchor="turn-1-source-1")
+    anchor = f"turn-1-source-1-passage-{offset}"
+    assert f'href="#{anchor}"' in html and f'id="{anchor}"' in body
+    assert "88 Test Rep. 419, 421." in html
+    assert TextNodes(body, "support-location").nodes == ["Physical PDF page 4", "Physical PDF page 4"]
 
 
 def test_standalone_uses_the_same_exact_highlighting_and_occurrence_markers():

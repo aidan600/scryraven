@@ -452,12 +452,12 @@ description separately from immutable Evidence. Multiple versions/excerpts and
 repeated references retain their original custody and numbering. Historical
 sessions reopen without descriptions, migrations or backfill model calls.
 
-Reading Room web citations link directly to the original publication in a new
-tab. Hover/focus opens a compact title/domain/description preview; touch exposes
-the same actions. Keyboard actions and Escape are supported. View saved excerpt
-opens secondary inline exact saved material with highlight/fetched-text labels.
-Back to answer restores the citation position in the reading pane. Original
-PDFs and historical support coordinates remain available.
+Source-level web citations link to the original publication, and touch opens
+the compact preview. Hover or focus exposes preview actions for a saved passage
+or excerpt and the original source. Activating a citation with validated support
+opens the exact passage for that occurrence. Back to answer restores the citation
+and its position in the reading pane. Original PDFs, source links and native
+disclosures remain available with JavaScript disabled.
 
 The complete candidate, including the final editorial correction and keyboard
 repair, passed the full offline suite (1,072 passed, including four real-browser
@@ -900,8 +900,9 @@ operational differences.
 
 The forensic development launcher explicitly injects the plan backend for
 `personal` through Reading Room's existing `session_options` seam. It delegates
-credential loading to the existing command doorman using the approved external
-credential file, removes the API key only in its own child, and requires nonblank
+credential loading to the existing command doorman using the absolute
+`C:\Users\aidan\ScryRaven\.env` path, including from phase worktrees. It removes
+the API key only in its own child and requires nonblank
 Exa configuration before creating the app or server. Optional Serper/LinkUp
 configuration is reported only as booleans. A child manifest records the actual
 revision, resolved role profile, selected backend and zero startup model
@@ -1109,9 +1110,12 @@ scenario premise without verifying that value externally.
 Research chooses external acquisition. Answer's local tools can inspect all legitimate
 retained session material independently. Answer owns meaning, interpretation,
 prose, completeness, supported/partial/unable posture, consequential missing needs
-and citations. The primary `SemanticAnswerDecision` fields remain strict; optional
-generated citation descriptions are discarded locally when malformed. A
-completed valid primary Answer publishes directly through
+and citations. The legal guidance directs the roles to consider applicable
+authority, publication status, later treatment, opinion components and
+statutory scope when they affect the answer. The primary
+`SemanticAnswerDecision` fields remain strict. Optional citation descriptions
+and passage locators are discarded locally when malformed. A completed valid
+primary Answer publishes directly through
 the strict deterministic citation resolver. Mandatory model localization, its
 region/use mapping machinery, automatic legacy whole-answer regeneration,
 executable `source_readings` schema and literal-reading correction machinery are
@@ -1132,14 +1136,29 @@ incomplete streams and Research notes cannot become a published answer. Premise-
 derivations need no Evidence citation even when unrelated originals are available;
 actual mixed factual claims retain Evidence citation requirements.
 
-New Reading Room citations offer compact previews and direct publication access;
-the secondary saved excerpt uses the existing exact-material Reader, with its
-original publication or retained PDF and selected-page identity.
-They have no passage coordinates or highlighted-support claim. Historical citation
-records, occurrence-specific support coordinates and material/passage hashes remain
-readable and validated on reopen, without model/provider I/O or payload rewriting.
-Historical localized turns still show their saved support and surrounding context.
-Saved material now expands inline instead of opening the removed large inspector.
+Reading Room citations with a valid passage locator open the exact saved text
+for that occurrence. Answer can supply a short quote tied to the specific
+material alias it cited. The resolver stores coordinates and hashes only when
+the quote uniquely locates a passage in that selected material. Occurrences
+without a locator keep the source preview, original access and saved excerpt.
+The saved-text highlight establishes location. Answer can include formal legal
+pinpoints based on the acquired authority. The Reader labels physical PDF pages
+separately. Historical and new coordinates and hashes are validated on reopen
+without model/provider I/O or payload rewriting.
+Authenticated Exa and Serper searches succeeded through the broker with the
+maintained `.env`. In the recovered personal-plan Reading Room demonstration,
+the California general-plan answer cited planning guidance and applicable
+statutes, avoiding the reversed and unpublished opinions in the earlier answer.
+It and the first Cinnabar answer reopened with source-level citations. With
+clearer Answer guidance, the Housing Accountability Act, Kelo and Cinnabar
+answers saved exact passage links, including separate statutory subsections,
+majority and dissent passages, and six distinct locations in one acquired
+Cinnabar opinion excerpt. The links reopened on desktop and 390px touch.
+The ordinary nonlegal control retained source-level navigation. Offline replay
+through schema 7 confirmed navigation and Back to answer for the saved
+Cinnabar, statutory and nonlegal answers in Edge and narrow WebKit. Live
+case-specific formal pinpoint coverage and broader legal authority judgment remain
+unproved.
 Earlier public-web/PDF localization observations remain historical evidence in
 `docs/operator/CITATION_READER_DURABLE_SUPPORT_PRODUCT_01.md`.
 

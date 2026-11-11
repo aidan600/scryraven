@@ -157,10 +157,15 @@ def answer_html(result: Result | SessionTurn, *, source_prefix: str = "source-",
                 token.attrSet("aria-label", f"Inspect source {number}")
                 if citation_previews:
                     citation = citations[number]
-                    token.attrSet("data-source-id", f"{source_prefix}{number}")
+                    source_anchor = f"{source_prefix}{number}"
+                    token.attrSet("data-source-id", source_anchor)
                     token.attrSet("aria-label", f"Source {number}: {source_label(citation)}")
                     href = ""
-                    if citation.source_kind == "user_document":
+                    if use.support and _validated_support(citation, use):
+                        token.attrSet("href", f"#{_passage_anchor(source_anchor, use)}")
+                        token.attrSet("data-saved-passage", "")
+                        token.attrSet("aria-label", f"View saved passage for source {number}, {source_label(citation)}")
+                    elif citation.source_kind == "user_document":
                         token.attrSet("data-preview-on-click", "")
                         original = (document_hrefs or {}).get(citation.document_id or "", "")
                         if safe_original_href(original):
@@ -212,6 +217,17 @@ _ACQUISITION_LABELS = {
 }
 
 
+def _material_provenance(material: Evidence) -> tuple[str, str]:
+    if material.source_kind == "user_document":
+        location = (f"page {material.page_start}" if material.page_start == material.page_end
+                    else f"pages {material.page_start}\u2013{material.page_end}")
+        return "Extracted document text", f"Exact text from {location}."
+    if material.range_basis == "acquired_highlight":
+        return ("Selected acquired excerpt",
+                "Offsets refer only to the retained provider excerpt. Omitted context and original-page positions are unknown.")
+    return _ACQUISITION_LABELS[material.acquisition]
+
+
 def _document_identity(citation: Citation, original_href: str | None) -> str:
     warning = textless_page_warning(next((item.textless_page_count or 0 for item in citation.materials), 0))
     detail = document_page_label(citation)
@@ -257,9 +273,12 @@ def _support_excerpts(material: Evidence, regions: list[SupportRegion], radius: 
             windows.append([left, right, [region]])
     locator = ""
     if material.source_kind == "user_document" and material.page_start is not None:
-        pages = (f"Page {material.page_start}" if material.page_start == material.page_end
-                 else f"Pages {material.page_start}\u2013{material.page_end}")
+        pages = (f"Physical PDF page {material.page_start}" if material.page_start == material.page_end
+                 else f"Physical PDF pages {material.page_start}\u2013{material.page_end}")
         locator = f'<figcaption class="support-location">{escape(pages)}</figcaption>'
+    elif mark_class == "support-text":
+        label, qualification = _material_provenance(material)
+        locator = f'<figcaption class="acquisition"><span>{label}</span> · {qualification}</figcaption>'
     excerpts = []
     for left, right, selected in windows:
         parts = []
@@ -276,48 +295,48 @@ def _support_excerpts(material: Evidence, regions: list[SupportRegion], radius: 
     return "".join(excerpts)
 
 
-def _support_html(citation: Citation, use: CitationUse) -> str:
+def _validated_support(citation: Citation, use: CitationUse) -> dict[str, list[SupportRegion]]:
     materials = {item.id: item for item in citation.materials}
-    selected = {}
+    selected: dict[str, list[SupportRegion]] = {}
     for region in use.support:
         try:
             material = materials[region.evidence_ref]
             support_text(region, material)
         except (KeyError, ValueError):
             # Never present coordinates from another material/version as support.
-            return ""
+            return {}
         selected.setdefault(material.id, []).append(region)
+    return selected
+
+
+def _passage_anchor(source_anchor: str, use: CitationUse) -> str:
+    return f"{source_anchor}-passage-{use.start}"
+
+
+def _support_html(citation: Citation, use: CitationUse, source_anchor: str) -> str:
+    selected = _validated_support(citation, use)
+    if not selected:
+        return ""
+    materials = {item.id: item for item in citation.materials}
     passages = "".join(_support_excerpts(materials[ref], regions, 160, mark_class="support-text")
                        for ref, regions in selected.items())
     contexts = "".join(_support_excerpts(materials[ref], regions, 700, mark_class="context-support")
                        for ref, regions in selected.items())
+    anchor = f' id="{escape(_passage_anchor(source_anchor, use), quote=True)}"' if source_anchor else ""
     return (f'<details class="citation-support" data-citation-start="{use.start}">'
-            '<summary>Read passages for this citation</summary><h2>Support for this citation</h2>'
-            '<p class="scope">Highlighted text is the exact support saved for this citation. '
-            'Nearby text provides context.</p>'
+            '<summary>Saved passage for this citation</summary>'
+            f'<p class="scope"{anchor}>The highlight locates the passage within the saved text.</p>'
             + passages
             + '<details class="support-context"><summary>Surrounding context</summary>'
             + '<div class="context-text">' + contexts + '</div></details></details>')
 
 
 def source_body_html(citation: Citation, *, collapse_long: bool = False, original_href: str | None = None,
-                     uses: tuple[CitationUse, ...] = ()) -> str:
+                     uses: tuple[CitationUse, ...] = (), source_anchor: str = "") -> str:
     """Exact saved material, shared by standalone disclosures and the Reading Room."""
     materials = []
     for index, item in enumerate(citation.materials, 1):
-        if item.source_kind == "user_document":
-            if item.page_start == item.page_end:
-                label, qualification = ("Extracted document text", f"Exact text from page {item.page_start}.")
-            else:
-                label, qualification = ("Extracted document text",
-                                        f"Exact text from pages {item.page_start}\u2013{item.page_end}.")
-        elif item.range_basis == "acquired_highlight":
-            label, qualification = (
-                "Selected acquired excerpt",
-                "Offsets refer only to the retained provider excerpt; omitted context and original-page positions are unknown.",
-            )
-        else:
-            label, qualification = _ACQUISITION_LABELS[item.acquisition]
+        label, qualification = _material_provenance(item)
         content = f'<pre class="material-text"><code>{escape(item.content)}</code></pre>'
         if collapse_long and (len(item.content) > 1200 or len(item.content.splitlines()) > 12):
             # A literal prefix only. Bound line-heavy extractions as well as prose;
@@ -334,7 +353,8 @@ def source_body_html(citation: Citation, *, collapse_long: bool = False, origina
                          + content + '</section>')
     identity = (_document_identity(citation, original_href) if citation.source_kind == "user_document"
                 else _source_link(citation.url))
-    support = "".join(_support_html(citation, use) for use in uses if use.number == citation.number and use.support)
+    support = "".join(_support_html(citation, use, source_anchor)
+                      for use in uses if use.number == citation.number and use.support)
     return (identity
             + support
             + ('<h2>Full saved material</h2>' if support else '<h2>Material ScryRaven used from this source</h2>')
@@ -397,7 +417,6 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; font: .86rem/1.65 system-u
 pre code { font: inherit; }
 .citation-support { border: 0; background: transparent; margin: 24px 0; }
 .citation-support > summary, .support-context > summary { color: #355f71; padding: 10px 0; }
-.citation-support h2 { font-size: 1rem; margin: 0 0 8px; }
 .support-passage { margin: 22px 0; }
 .source-prose { font: 17px/1.8 Georgia, "Times New Roman", serif; white-space: pre-wrap; overflow-wrap: anywhere; color: #58666a; }
 .support-text, .context-support { color: #283238; background: #fff0ad; padding: 2px 0; box-decoration-break: clone; }
