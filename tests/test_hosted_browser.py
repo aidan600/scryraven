@@ -297,7 +297,10 @@ def test_owner_creates_reopens_renames_and_deletes_with_attachment_composer(brow
         page.wait_for_url(hosted_ui.origin + "/?notice=deleted")
         assert len(hosted_ui.store.list_sessions(owner_id=EMAILS["alice"])) == 1
         assert session_id not in {item.session_id for item in hosted_ui.store.list_sessions()}
-        assert external == errors == []
+        assert external == []
+        # Reload may cancel response delivery after the acknowledgment has committed.
+        acknowledged_abort = f"{hosted_ui.origin}/sessions/{session_id}/jobs/{job.job_id}/viewed: net::ERR_ABORTED"
+        assert all(error == acknowledged_abort for error in errors), errors
 
 
 def test_browser_manipulations_cannot_cross_owner_or_change_hosted_policy(browser, hosted_ui):
