@@ -1095,13 +1095,14 @@ Authenticated Exa and Serper searches succeeded through the broker with the
 maintained `.env`. In the recovered personal-plan Reading Room demonstration,
 the California general-plan answer cited planning guidance and applicable
 statutes, avoiding the reversed and unpublished opinions in the earlier answer.
-It and the Cinnabar opinion answer reopened with source-level citations. With
-clearer Answer guidance, the Housing Accountability Act and Kelo answers saved
-five exact passage links, including separate subsections of one statute and
-separate majority and dissent passages. The links reopened on desktop and
-390px touch. The ordinary nonlegal control retained source-level navigation.
-Same-opinion passage navigation is verified offline. Live case-specific formal
-pinpoint coverage and broader legal authority judgment remain unproved.
+It and the first Cinnabar answer reopened with source-level citations. With
+clearer Answer guidance, the Housing Accountability Act, Kelo and Cinnabar
+answers saved exact passage links, including separate statutory subsections,
+majority and dissent passages, and six distinct locations in one acquired
+Cinnabar opinion excerpt. The links reopened on desktop and 390px touch.
+The ordinary nonlegal control retained source-level navigation. Live
+case-specific formal pinpoint coverage and broader legal authority judgment
+remain unproved.
 Earlier public-web/PDF localization observations remain historical evidence in
 `docs/operator/CITATION_READER_DURABLE_SUPPORT_PRODUCT_01.md`.
 
