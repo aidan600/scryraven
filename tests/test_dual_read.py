@@ -294,3 +294,36 @@ def test_whitespace_pipes_do_not_stall_structural_comparison():
         capture_output=True, text=True, check=True, timeout=3,
     )
     assert process.stdout.strip() == "0"
+
+
+def test_comparison_abandons_malformed_markdown_when_time_expires(monkeypatch):
+    # Repeated unterminated openers must not cause repeated long suffix scans.
+    text = "](" * 499_000
+    clock = iter((0.0, 0.0, 1.0))
+    monkeypatch.setattr(dual_read, "_clock", lambda: next(clock))
+    assert dual_read._upgrade(text, text + "x", deadline=0.1) is None
+    with pytest.raises(StopIteration):
+        next(clock)
+
+
+def test_cleanup_timeout_schedules_final_reap_and_closes_parent_pipe():
+    reaped = threading.Event()
+    wait_calls = []
+
+    class Process:
+        stdin = type("Stdin", (), {"close": lambda self: wait_calls.append("closed")})()
+
+        def wait(self, timeout=None):
+            if timeout is not None:
+                wait_calls.append("bounded")
+                raise subprocess.TimeoutExpired("worker", timeout)
+            wait_calls.append("reaped")
+            reaped.set()
+
+    attempt = dual_read._Attempt("linkup")
+    attempt.process = Process()
+    with pytest.raises(subprocess.TimeoutExpired):
+        attempt.reap(time.perf_counter())
+    assert reaped.wait(timeout=1)
+    assert wait_calls[0] == "bounded"
+    assert set(wait_calls[1:]) == {"reaped", "closed"}

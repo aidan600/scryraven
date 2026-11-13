@@ -81,8 +81,7 @@ _EMPTY_LANDING_BODY = re.compile(
     r"you need to enable javascript to run this app|loading(?: content)?)[\s.!…]*$",
     re.IGNORECASE,
 )
-_WORDS = re.compile(r"[^\W_]+", re.UNICODE)
-_LINK_TARGET = re.compile(r"(?<=\])\([^\n)]{1,3000}\)")
+_WORDS_OR_TARGET = re.compile(r"\]\(|[^\W_]+", re.UNICODE)
 _WORD_CELL = re.compile(r"[^\W_]+(?:\s+[^\W_]+)?", re.UNICODE)
 
 
@@ -142,18 +141,55 @@ def validate_read_material(url: str, material: FetchedMaterial) -> str | None:
     return None
 
 
-def _shingles(text):
-    words = _WORDS.findall(_LINK_TARGET.sub("", text).lower())
-    return set(zip(words, words[1:], words[2:]))
+class _ComparisonElapsed(Exception):
+    pass
 
 
-def _cell_noise(text):
+def _check_comparison_time(deadline):
+    if _clock() >= deadline:
+        raise _ComparisonElapsed
+
+
+def _shingles(text, deadline):
+    text = text.lower()
+    shingles = set()
+    previous = before_previous = None
+    position = 0
+    # Cache delimiter searches across neighboring malformed link openers.
+    close = newline = -2
+    for count in range(len(text)):
+        if count % 1024 == 0:
+            _check_comparison_time(deadline)
+        token = _WORDS_OR_TARGET.search(text, position)
+        if token is None:
+            break
+        position = token.end()
+        word = token.group()
+        if word == "](":
+            if close != -1 and close < position:
+                close = text.find(")", position)
+            if newline != -1 and newline < position:
+                newline = text.find("\n", position)
+            if position < close <= position + 3000 and (newline < 0 or close < newline):
+                position = close + 1
+            continue
+        if before_previous is not None:
+            shingles.add((before_previous, previous, word))
+        before_previous, previous = previous, word
+    return shingles
+
+
+def _cell_noise(text, deadline=math.inf):
     # OCR sometimes inserts a pipe between nearly every word of prose. A few
     # ordinary markdown tables are insufficient to establish this defect.
     total = 0
-    for line in text.splitlines():
+    for line_number, line in enumerate(text.splitlines()):
+        if line_number % 1024 == 0:
+            _check_comparison_time(deadline)
         run_cells = word_cells = 0
-        for cell in line.split("|")[1:-1]:
+        for cell_number, cell in enumerate(line.split("|")[1:-1]):
+            if cell_number % 1024 == 0:
+                _check_comparison_time(deadline)
             cell = cell.strip()
             if len(cell) <= 26:
                 run_cells += 1
@@ -167,16 +203,20 @@ def _cell_noise(text):
     return total
 
 
-def _upgrade(first, peer):
+def _upgrade(first, peer, deadline=math.inf):
     # Large sources remain usable. Keep the first when a bounded comparison
     # cannot support replacing its original material with the peer's.
     if max(len(first), len(peer)) > 1_000_000 or first == peer:
         return None
-    early, later = _shingles(first), _shingles(peer)
-    common = len(early & later)
-    if not early or not later:
+    try:
+        early, later = _shingles(first, deadline), _shingles(peer, deadline)
+        if not early or not later:
+            return None
+        common = len(early & later)
+        early_noise, later_noise = _cell_noise(first, deadline), _cell_noise(peer, deadline)
+        _check_comparison_time(deadline)
+    except _ComparisonElapsed:
         return None
-    early_noise, later_noise = _cell_noise(first), _cell_noise(peer)
     # Noise counts are compared against the amount of actual lexical material.
     # Normal table-heavy documents should not by themselves select a peer.
     if (common >= 0.85 * len(later) and common >= 0.78 * len(early)
@@ -359,6 +399,11 @@ class _Attempt:
             self.process.wait(timeout=max(0, deadline - _clock()))
             if self.reader is not None:
                 self.reader.join(timeout=max(0, deadline - _clock()))
+        except subprocess.TimeoutExpired:
+            # The kill was already issued. Finish reaping even if another
+            # Read never starts and the synchronous cleanup reserve expired.
+            threading.Thread(target=self.process.wait, daemon=True).start()
+            raise
         finally:
             # The worker watches this pipe and exits if the parent disappears.
             self.process.stdin.close()
@@ -463,9 +508,9 @@ def fetch_dual(url, *, timeout_seconds, providers=READ_PROVIDERS) -> DualReadRes
         return DualReadResult(None, None, receipts, None, "no_usable_material")
     first, *peers = sorted(usable, key=lambda attempt: attempt.completed_at)
     winner, selection = first, "first_usable"
-    if peers and _clock() < end - _COMPARISON_SECONDS:
+    if peers and _clock() < end:
         peer = peers[0]
-        reason = _upgrade(first.material.readable_text, peer.material.readable_text)
+        reason = _upgrade(first.material.readable_text, peer.material.readable_text, end)
         if reason is not None:
             winner, selection = peer, reason
     return DualReadResult(winner.provider, winner.material, receipts, first.provider, selection)

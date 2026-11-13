@@ -247,6 +247,12 @@ handles WebKit mouse-labeled synthetic clicks. Preview, keyboard actions, saved
 excerpt navigation and Back to answer preserve the reading context. Native
 original links and source disclosures remain available when JavaScript is disabled.
 
+Same-conversation submissions preserve the pending-job fragment while reloading,
+then position the refreshed pane at the running job or completed answer. The
+Reading Room visually consolidates adjacent references to one source while
+retaining separate controls for distinct saved support passages. The existing
+answer offsets and validated passage coordinates continue to own navigation.
+
 Offline verification uses synthetic research/source fixtures and mocked
 transcription. Chromium 151 exercises Web Audio capture and resampling with
 synthetic input.

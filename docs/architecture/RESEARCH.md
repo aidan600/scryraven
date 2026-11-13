@@ -528,7 +528,9 @@ without descriptions reopen unchanged.
 
 Reading Room citation links identify their source and occurrence by the saved
 answer offset. Activating an anchored citation opens its highlighted passage in
-the saved text. Source-level web links open the original publication, with touch
+the saved text. Adjacent references to the same source share a citation number
+in the rendered answer while distinct saved passages remain independently
+navigable. Source-level web links open the original publication, with touch
 exposing the source preview. The hover and keyboard preview keeps original
 publication access and opens the saved passage or source excerpt. Back to answer
 restores the originating citation and its reading position. The inline Reader
