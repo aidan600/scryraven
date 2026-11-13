@@ -121,6 +121,20 @@ def test_challenge_does_not_start_peer_timer_and_late_exa_is_retained(endpoint):
     assert result.attempts[0].code == "read_access_challenge"
 
 
+def test_collapsed_load_interstitial_does_not_cancel_late_exa(endpoint):
+    _, responses, _ = endpoint
+    collapsed = (
+        "Publisher | A required part of this site couldn’t load. "
+        "This may be due to a browser extension blocking required content. "
+        "Check browser settings and try again."
+    )
+    responses.update(linkup=(0, 200, collapsed), exa=(0.4, 200, EXA_TEXT))
+    result = fetch()
+    assert result.provider == result.first_usable_provider == "exa"
+    assert result.material == FetchedMaterial(URL, EXA_TEXT)
+    assert result.attempts[0].code == "read_access_challenge"
+
+
 def test_clear_subset_replaced_with_single_broader_original(endpoint):
     _, responses, _ = endpoint
     original = "\n".join(
@@ -288,8 +302,12 @@ def test_early_error_keeps_valid_36_second_result_with_remaining_turn_time(monke
     (FetchedMaterial(URL, CHALLENGE), "read_access_challenge"),
     (FetchedMaterial(URL, "# Error 404\n\nReturn to the homepage."), "read_landing_page"),
     (FetchedMaterial(URL, "You need to enable JavaScript to run this app."), "read_landing_page"),
+    (FetchedMaterial(URL, "Publisher | A required part of this site couldn’t load. Check your connection."),
+     "read_access_challenge"),
     (FetchedMaterial(URL, "# Cloudflare outage report\n\n## Access denied\n\n"
                           "Many users saw a Cloudflare Ray ID."), None),
+    (FetchedMaterial(URL, "# Browser incident report\n\nUsers saw the warning "
+                          "“A required part of this site couldn’t load.” Engineers investigated."), None),
     (FetchedMaterial(URL, "§ 404. Administrative review."), None),
 ])
 def test_validation_rejects_recognizable_interstitials_and_identity_mismatch(material, code):

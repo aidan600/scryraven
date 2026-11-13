@@ -76,6 +76,17 @@ _ERROR_DETAIL = re.compile(
     r"|this page is (?:no longer|currently) available)",
     re.IGNORECASE,
 )
+_SITE_LOAD_INTERSTITIAL = re.compile(
+    r"\ba required part of this site couldn['’]t load\b[.!]?",
+    re.IGNORECASE,
+)
+_SITE_LOAD_GUIDANCE = re.compile(
+    r"\b(?:browser extensions?|ad blockers?|enable javascript|browser settings|"
+    r"unsupported browser|network issues?|please (?:check|disable|try|reload))\b",
+    re.IGNORECASE,
+)
+_SITE_LOAD_QUOTATION = re.compile(r"\b(?:reports?|reported|investigat\w*|said|wrote|warning|message|users saw)\b",
+                                  re.IGNORECASE)
 _EMPTY_LANDING_BODY = re.compile(
     r"^(?:please )?(?:enable javascript (?:to (?:continue|run this (?:app|application)))|"
     r"you need to enable javascript to run this app|loading(?: content)?)[\s.!…]*$",
@@ -121,6 +132,13 @@ def validate_read_material(url: str, material: FetchedMaterial) -> str | None:
     text = material.readable_text
     if not text.strip():
         return "unusable_fetch_material"
+    # A site-load template may be collapsed onto one line with a heading.
+    if len(text) <= 400 and (interstitial := _SITE_LOAD_INTERSTITIAL.search(text)):
+        prefix = text[:interstitial.start()].strip()
+        quoted = prefix.endswith(('"', "“", "'", "‘", "`")) or _SITE_LOAD_QUOTATION.search(prefix)
+        if not quoted and (_SITE_LOAD_GUIDANCE.search(text, interstitial.end())
+                           or (len(text) <= 250 and len(prefix) <= 80)):
+            return "read_access_challenge"
     prefix = text[:1500]
     leading = []
     for line in prefix.splitlines()[:12]:
