@@ -83,8 +83,7 @@ _EMPTY_LANDING_BODY = re.compile(
 )
 _WORDS = re.compile(r"[^\W_]+", re.UNICODE)
 _LINK_TARGET = re.compile(r"(?<=\])\([^\n)]{1,3000}\)")
-_FALSE_CELL_RUN = re.compile(r"(?:\|\s*(?:[^|\n]{0,26})\s*){5,}\|")
-_WORD_CELL = re.compile(r"\|\s*[^\W_]+(?:\s+[^\W_]+)?\s*(?=\|)", re.UNICODE)
+_WORD_CELL = re.compile(r"[^\W_]+(?:\s+[^\W_]+)?", re.UNICODE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,7 +150,21 @@ def _shingles(text):
 def _cell_noise(text):
     # OCR sometimes inserts a pipe between nearly every word of prose. A few
     # ordinary markdown tables are insufficient to establish this defect.
-    return sum(len(_WORD_CELL.findall(run.group())) for run in _FALSE_CELL_RUN.finditer(text))
+    total = 0
+    for line in text.splitlines():
+        run_cells = word_cells = 0
+        for cell in line.split("|")[1:-1]:
+            cell = cell.strip()
+            if len(cell) <= 26:
+                run_cells += 1
+                word_cells += bool(_WORD_CELL.fullmatch(cell))
+            else:
+                if run_cells >= 5:
+                    total += word_cells
+                run_cells = word_cells = 0
+        if run_cells >= 5:
+            total += word_cells
+    return total
 
 
 def _upgrade(first, peer):

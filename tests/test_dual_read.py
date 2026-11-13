@@ -284,3 +284,13 @@ def test_no_upgrade_for_unrelated_text_or_navigation_bloat():
     assert dual_read._upgrade(
         LINKUP_TEXT, LINKUP_TEXT + "\n" + "[More](/home) [Catalog](/products)\n" * 50,
     ) is None
+
+
+def test_whitespace_pipes_do_not_stall_structural_comparison():
+    # Four sparse cells previously caused the pipe-run regex to backtrack.
+    blank = ("|" + " " * 100) * 4
+    process = subprocess.run(
+        [sys.executable, "-c", f"from core.dual_read import _cell_noise; print(_cell_noise({blank!r}))"],
+        capture_output=True, text=True, check=True, timeout=3,
+    )
+    assert process.stdout.strip() == "0"
