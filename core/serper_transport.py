@@ -6,9 +6,8 @@ import os
 from collections.abc import Callable, Mapping
 from typing import Any
 
-import requests
-
 from core.exa_transport import DiscoveryCandidate
+from core.transport import post_provider_request
 
 SERPER_SEARCH_URL = "https://google.serper.dev/search"
 SERPER_API_KEY_ENV = "SERPER_API_KEY"  # pragma: allowlist secret
@@ -37,7 +36,7 @@ def search_serper(
     if timeout <= 0:
         raise ValueError("timeout_seconds must be positive")
     try:
-        response = (post or requests.post)(
+        response = (post or post_provider_request)(
             SERPER_SEARCH_URL,
             json={"q": query.strip(), "num": DISCOVERY_RESULT_COUNT},
             headers={"X-API-KEY": token.strip(), "Content-Type": "application/json"},

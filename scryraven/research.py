@@ -22,7 +22,6 @@ from core.dual_read import configured_read_providers, fetch_dual
 from core.exa_transport import search_exa
 from core.linkup_transport import fetch_linkup
 from core.serper_transport import search_serper
-from core.transport import post_provider_request
 from scryraven import model as model_transport
 from scryraven.acquisition import AcquisitionError, AcquisitionLibrary, generic_search_failure
 from scryraven.calculator import calculate
@@ -456,19 +455,17 @@ def _run_turn(
         # Acquisition has already admitted this external attempt. Even a failed
         # executed request consumes the bootstrap; later searches use Auto.
         bootstrap_available = False
-        return search(query, search_type=provider_search_type, timeout_seconds=min(300, budget.remaining_seconds),
-                      post=post_provider_request)
+        return search(query, search_type=provider_search_type, timeout_seconds=min(300, budget.remaining_seconds))
 
     def lexical_call(query):
         if lexical_search is not search_serper:
             return lexical_search(query)
-        return lexical_search(query, timeout_seconds=min(300, budget.remaining_seconds),
-                              post=post_provider_request)
+        return lexical_search(query, timeout_seconds=min(300, budget.remaining_seconds))
 
     def fetch_call(url):
         if fetch is not fetch_linkup:
             return fetch(url)
-        return fetch(url, timeout_seconds=min(300, budget.remaining_seconds), post=post_provider_request)
+        return fetch(url, timeout_seconds=min(300, budget.remaining_seconds))
 
     read_providers = configured_read_providers() if fetch is fetch_linkup else ()
 
@@ -864,8 +861,7 @@ def _run_turn(
             leads = None
             try:
                 if search is search_exa:
-                    leads = search(query, search_type=search_type, timeout_seconds=timeout_seconds,
-                                   post=post_provider_request)
+                    leads = search(query, search_type=search_type, timeout_seconds=timeout_seconds)
                 else:
                     leads = search(query)
             except Exception as exc:

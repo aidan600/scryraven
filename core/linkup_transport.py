@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 
 import requests
 
-from core.transport import FetchedMaterial
+from core.transport import FetchedMaterial, post_provider_request
 
 LINKUP_FETCH_URL = "https://api.linkup.so/v1/fetch"
 LINKUP_API_KEY_ENV = "LINKUP_API_KEY"  # pragma: allowlist secret
@@ -43,7 +43,7 @@ def fetch_linkup(
     if timeout <= 0:
         raise ValueError("timeout_seconds must be positive")
     try:
-        response = (post or requests.post)(
+        response = (post or post_provider_request)(
             LINKUP_FETCH_URL,
             json={"url": url},
             headers={"Authorization": f"Bearer {token.strip()}", "Content-Type": "application/json"},

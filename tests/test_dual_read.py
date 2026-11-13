@@ -8,9 +8,10 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
+import requests
 
 from core import dual_read
-from core.transport import FetchedMaterial
+from core.transport import FetchedMaterial, post_provider_request
 
 URL = "https://example.org/article?section=methods"
 LINKUP_TEXT = "# Original equipment report\n\nThe tested compressor controls its outlet pressure."
@@ -225,6 +226,22 @@ def test_no_turn_runway_keeps_noncharged_deadline_receipts(endpoint):
     assert [(a.status, a.charged) for a in result.attempts] == [
         ("deadline", False), ("deadline", False),
     ]
+
+
+def test_fixed_api_redirect_does_not_dispatch_a_second_request(monkeypatch):
+    calls = []
+
+    def redirect(url, **options):
+        calls.append((url, options))
+        response = requests.Response()
+        response.status_code = 307
+        response.headers["Location"] = "https://elsewhere.example/api"
+        return response
+
+    monkeypatch.setattr(requests, "post", redirect)
+    with pytest.raises(requests.exceptions.HTTPError):
+        post_provider_request(URL)
+    assert calls == [(URL, {"allow_redirects": False})]
 
 
 def test_early_error_keeps_valid_36_second_result_with_remaining_turn_time(monkeypatch):

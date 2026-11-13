@@ -4,6 +4,7 @@ import json
 from threading import Lock
 
 import pytest
+import requests
 from test_exa_transport import Response
 from test_research_loop import Script, answer, decision, request
 
@@ -64,7 +65,7 @@ def production_post(monkeypatch, calls, *, fail_first=False):
         return Response({"results": [{"url": "https://example.test/fact",
                                       "highlights": ["The stated value is seven."]}]})
 
-    monkeypatch.setattr(exa.requests, "post", post)
+    monkeypatch.setattr(requests, "post", post)
 
 
 def test_one_shot_across_same_and_later_routes_with_safe_mode_telemetry(monkeypatch):

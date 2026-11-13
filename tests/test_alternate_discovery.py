@@ -5,7 +5,7 @@ import json
 from test_model_transport import Response
 from test_research_loop import Script, answer, decision, request
 
-from core import exa_transport, linkup_transport, serper_transport
+from core import dual_read, serper_transport
 from core.exa_transport import DiscoveryCandidate
 from core.transport import FetchedMaterial
 from scryraven import __main__ as cli
@@ -137,6 +137,12 @@ def test_cli_uses_serper_then_linkup_through_ordinary_run(monkeypatch, capsys):
     ])
     providers = []
 
+    def fetch_read(url, *, providers, timeout_seconds):
+        assert url == URL and providers == ("linkup",) and 0 < timeout_seconds <= 300
+        attempts = (dual_read.ReadAttempt("linkup", True, True, "usable", None, 0, 1),)
+        return dual_read.DualReadResult("linkup", FetchedMaterial(url, "The source says seven."),
+                                        attempts, "linkup", "first_usable")
+
     def post(url, **kwargs):
         if url.endswith("/v1/responses"):
             kwargs["json"]["text"]["format"]["name"]
@@ -148,17 +154,13 @@ def test_cli_uses_serper_then_linkup_through_ordinary_run(monkeypatch, capsys):
         providers.append(url)
         if url == serper_transport.SERPER_SEARCH_URL:
             return Response({"organic": [{"title": "Post", "link": URL, "snippet": "A claim"}]})
-        if url == linkup_transport.LINKUP_FETCH_URL:
-            return Response({"markdown": "The source says seven."})
         raise AssertionError("unexpected provider")
 
     monkeypatch.setattr(model.requests, "post", post)
-    monkeypatch.setattr(serper_transport.requests, "post", post)
-    monkeypatch.setattr(linkup_transport.requests, "post", post)
-    monkeypatch.setattr(exa_transport.requests, "post", post)
+    monkeypatch.setattr("scryraven.research.fetch_dual", fetch_read)
     assert cli.main(["What does this public post say?"]) == 0
     assert "The source says seven. [1]" in capsys.readouterr().out
-    assert providers == [serper_transport.SERPER_SEARCH_URL, linkup_transport.LINKUP_FETCH_URL]
+    assert providers == [serper_transport.SERPER_SEARCH_URL]
 
 
 def test_reading_room_uses_same_lexical_capability(tmp_path):
