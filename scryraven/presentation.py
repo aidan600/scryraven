@@ -119,6 +119,60 @@ def render_cli(result: Result | SessionTurn) -> str:
     return result.answer + "\n\n" + "\n".join(status) + ("\n\nSources\n" + sources if sources else "")
 
 
+_PassageLocation = frozenset[tuple[str, int, int, str]]
+
+
+def _adjacent_citation_runs(answer: str, uses: tuple[CitationUse, ...]):
+    """Keep citation runs inside one line and stop at prose or punctuation."""
+    start = 0
+    for index, (left, right) in enumerate(zip(uses, uses[1:]), 1):
+        if answer[left.end:right.start].strip(" \t\u00a0"):
+            yield uses[start:index]
+            start = index
+    if uses:
+        yield uses[start:]
+
+
+def _passage_location(citation: Citation, use: CitationUse) -> _PassageLocation:
+    valid = _validated_support(citation, use)
+    return frozenset(
+        (material.parent_id or material.id,
+         (material.start_char or 0) + region.start_char,
+         (material.start_char or 0) + region.end_char,
+         region.passage_sha256)
+        for material in citation.materials
+        for region in valid.get(material.id, ())
+    )
+
+
+def _collapse_citation_run(
+    run: tuple[CitationUse, ...],
+    citations: dict[int, Citation],
+    passage_numbers: dict[int, dict[_PassageLocation, int]],
+) -> list[tuple[CitationUse, str]]:
+    by_source: dict[int, list[CitationUse]] = {}
+    for use in run:
+        by_source.setdefault(use.number, []).append(use)
+
+    visible = []
+    for number, uses in by_source.items():
+        if len(uses) == 1:
+            visible.append((uses[0], str(number)))
+            continue
+        passages: dict[_PassageLocation, CitationUse] = {}
+        for use in uses:
+            if location := _passage_location(citations[number], use):
+                passages.setdefault(location, use)
+        if len(passages) <= 1:
+            visible.append((next(iter(passages.values()), uses[0]), str(number)))
+            continue
+        numbers = passage_numbers.setdefault(number, {})
+        for location, use in passages.items():
+            index = numbers.setdefault(location, len(numbers) + 1)
+            visible.append((use, f"{number}.{index}"))
+    return visible
+
+
 def answer_html(result: Result | SessionTurn, *, source_prefix: str = "source-",
                 citation_previews: bool = False, document_hrefs: dict[str, str] | None = None) -> str:
     # Only spans emitted by validation become links. Ordinary numeric brackets
@@ -127,13 +181,29 @@ def answer_html(result: Result | SessionTurn, *, source_prefix: str = "source-",
     # A content-derived marker distinguishes our links from answer-authored links.
     # It never survives rendering and contains no user-controlled HTML/URL syntax.
     marker = "sr-" + hashlib.sha256(result.answer.encode()).hexdigest() + "-"
-    destinations = {f"#{marker}{use.number}-{use.start}": use for use in result.citation_uses}
+    destinations: dict[str, tuple[CitationUse, str]] = {}
     citations = {citation.number: citation for citation in result.citations}
+    passage_numbers: dict[int, dict[_PassageLocation, int]] = {}
+
+    def marker_link(use: CitationUse, label: str) -> str:
+        destination = f"#{marker}{use.number}-{use.start}"
+        destinations[destination] = (use, label)
+        return f"[[{label}]]({destination})"
+
     parts = []
     previous = 0
-    for use in result.citation_uses:
-        parts.extend((result.answer[previous:use.start], f"[[{use.number}]](#{marker}{use.number}-{use.start})"))
-        previous = use.end
+    runs = (_adjacent_citation_runs(result.answer, result.citation_uses) if citation_previews
+            else ((use,) for use in result.citation_uses))
+    for run in runs:
+        if len({use.number for use in run}) < len(run):
+            parts.append(result.answer[previous:run[0].start])
+            visible = _collapse_citation_run(run, citations, passage_numbers)
+            parts.append(" ".join(marker_link(use, label) for use, label in visible))
+            previous = run[-1].end
+            continue
+        for use in run:
+            parts.extend((result.answer[previous:use.start], marker_link(use, str(use.number))))
+            previous = use.end
     parts.append(result.answer[previous:])
     markdown = MarkdownIt("commonmark", {"html": False}).enable("table").disable(["image", "autolink"])
 
@@ -149,7 +219,7 @@ def answer_html(result: Result | SessionTurn, *, source_prefix: str = "source-",
                 continue
             destination = token.attrGet("href") or ""
             if destination in destinations:
-                use = destinations[destination]
+                use, label = destinations[destination]
                 number = use.number
                 token.attrSet("href", f"#{source_prefix}{number}")
                 token.attrSet("class", "citation")
@@ -164,7 +234,9 @@ def answer_html(result: Result | SessionTurn, *, source_prefix: str = "source-",
                     if use.support and _validated_support(citation, use):
                         token.attrSet("href", f"#{_passage_anchor(source_anchor, use)}")
                         token.attrSet("data-saved-passage", "")
-                        token.attrSet("aria-label", f"View saved passage for source {number}, {source_label(citation)}")
+                        passage_label = "" if label == str(number) else f" {label}"
+                        token.attrSet("aria-label",
+                                      f"View saved passage{passage_label} for source {number}, {source_label(citation)}")
                     elif citation.source_kind == "user_document":
                         token.attrSet("data-preview-on-click", "")
                         original = (document_hrefs or {}).get(citation.document_id or "", "")
