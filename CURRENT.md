@@ -1401,6 +1401,21 @@ from acquired Exa Search highlights without an unnecessary Read; deterministic
 tests establish the Exa Search / LinkUp external Read composition. These results
 do not establish universal provider superiority or general product reliability.
 
+Dual Read Retrieval Implementation 03 exercised eight brokered local API turns.
+The candidate twice recovered and cited the exact Kluge court opinion through Exa
+Contents when LinkUp failed within the same Read. The completed comparison baseline
+used court Search highlights and a fetched reproduction. Both answers met the
+legal rubric. A BIPM control selected the same LinkUp text with an additional
+1.109 seconds of Read time. The earlier aircraft candidate acquired the requested
+study on its first attempt while omitting a consequential MD-81 mile-convention
+qualification from a different, byte-identical source. This observation leaves
+difficult-answer quality and end-to-end latency causation unproved. The final
+runtime repair rejected an observed browser-load interstitial and recovered the
+original AlphaFold article in a targeted paired check. That repair has no further
+ordinary PRODUCT draw. The NASA targeted check selected a later, cleaner
+representation that matched the previously adjudicated adequate original. These
+are bounded local results. The deployment and user data were untouched.
+
 The Research-selectable Serper lane completed one ordinary St. Dorothy's Rest
 observation at `884c69a917aa19528574da42fdae2a8b85ba86b1`: Research chose
 three lexical searches among seven Exa searches, then used two LinkUp Reads.
