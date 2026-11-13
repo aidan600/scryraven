@@ -29,6 +29,7 @@ _CONTRACTS = {"research", "answer"}
 _POSTURES = {"supported", "partial", "unable"}
 _STOP_REASONS = {"supported", "not_established", "research_bound"}
 _PROVIDERS = {"exa", "serper", "linkup", "local"}
+_READ_SELECTIONS = {"no_usable_material", "first_usable", "broader_original", "cleaner_structure"}
 _KINDS = {"search", "search_lexical", "read", "find"}
 _READ_MODES = {"auto", "local", "full", "refresh"}
 _BREAKPOINTS = {"instructions", "history", "research_context"}
@@ -58,6 +59,9 @@ _CODES = {
     "unknown_target", "unobserved_url", "unknown_exposure_reference",
     "local_material_unavailable",
     "search_failed", "read_failed", "model_configuration_missing",
+    "read_identity_mismatch", "read_access_challenge", "read_landing_page",
+    "read_worker_failed", "read_deadline", "read_peer_window_elapsed", "contents_material_unavailable",
+    "exa_transport_failed", "exa_response_invalid", "exa_results_invalid",
     "model_request_timed_out", "model_request_rejected",
     "model_authentication_failed", "model_access_denied", "model_unavailable",
     "model_rate_limited", "model_transport_failed", "model_response_incomplete",
@@ -177,6 +181,7 @@ class TurnDiagnostics:
         self.research_bounds: Counter[str] = Counter()
         self.semantic_attempts = None
         self.external_attempts = None
+        self.physical_acquisition_dispatches = None
 
     def _budget(self, event):
         budget = event.get("budget")
@@ -187,6 +192,9 @@ class TurnDiagnostics:
                 self.semantic_attempts = semantic
             if external is not None:
                 self.external_attempts = external
+            physical_acquisitions = _nonnegative_int(budget.get("physical_acquisition_dispatches"))
+            if physical_acquisitions is not None:
+                self.physical_acquisition_dispatches = physical_acquisitions
             self.physical_requests = _nonnegative_int(budget.get("physical_requests"))
             roles = budget.get("role_physical_requests", {})
             if isinstance(roles, dict):
@@ -284,6 +292,20 @@ class TurnDiagnostics:
                 search_type = _one_of(event.get("provider_search_type"), {"auto", "deep", "lite"})
                 if search_type is not None:
                     row["provider_search_type"] = search_type
+            attempts = event.get("read_provider_attempts")
+            if row["kind"] == "read" and isinstance(attempts, list):
+                row["read_provider_attempts"] = [{
+                    "provider": attempt["provider"],
+                    "dispatched": attempt.get("dispatched") is True,
+                    "charged": attempt.get("charged") is True,
+                    "status": _one_of(attempt.get("status"), {"usable", "error", "cancelled", "deadline"}),
+                    "code": _code(attempt["code"]) if attempt.get("code") is not None else None,
+                    "dispatch_offset_seconds": _seconds(attempt.get("dispatch_offset_seconds")),
+                    "elapsed_seconds": _seconds(attempt.get("elapsed_seconds")),
+                } for attempt in attempts[:2] if isinstance(attempt, dict)
+                    and _one_of(attempt.get("provider"), {"linkup", "exa"})]
+                row["first_usable_provider"] = _one_of(event.get("first_usable_provider"), {"linkup", "exa"})
+                row["read_selection"] = _one_of(event.get("read_selection"), _READ_SELECTIONS)
             receipt = event.get("search_novelty_receipt")
             if isinstance(receipt, dict):
                 row["search_novelty_receipt"] = {
@@ -388,6 +410,7 @@ class TurnDiagnostics:
             "failure": failure,
             "semantic_attempts": self.semantic_attempts,
             "external_attempts": self.external_attempts,
+            "physical_acquisition_dispatches": self.physical_acquisition_dispatches,
             "sizes": self.sizes,
             "model_calls": self.models,
             "acquisitions": self.acquisitions,

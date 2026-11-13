@@ -87,9 +87,9 @@ exact terminology, quotations and source constraints remain available when part
 of the need. Research writes the query directly; no mechanical query transformer,
 extra model call, new schema or semantic owner is introduced. Research may select
 lexical/community/current discovery through Serper for literal phrases, site
-constraints, social/community sources or exact/current navigation when useful. LinkUp static
-Fetch supplies ordinary external known-URL Read. There is no automatic search
-fallback, Read fallback, provider router, model router,
+constraints, social/community sources or exact/current navigation when useful. External
+known-URL Read can dispatch LinkUp static Fetch and Exa Contents concurrently for
+the same URL. There is no automatic Search fallback, model router,
 premium escalation, Scout, specialist hierarchy, verifier, or prose polisher.
 
 For a fresh first session turn (`session_turn == 1`) with no retained acquisitions
@@ -254,10 +254,24 @@ attempt; a missing continuation counter leaves a marked partial aggregate.
 `Evidence` and supplies an inspectable catalog. Ordinary Search admits source-derived Exa
 highlights mechanically. Serper lexical search supplies navigation candidates only:
 its snippets never become Evidence. Research can Read an observed candidate URL
-through LinkUp to acquire actual source material. Navigation-only metadata is not
-admitted as source text.
-External Read retains LinkUp's readable source representation as fetched Evidence;
-local Read reuses actual retained material or constructs an exact view. A historical
+to acquire actual source material. Navigation metadata is never admitted as source text.
+
+An external Read reserves up to two physical dispatches and sends each configured
+arm the exact same URL. If one slot is available, LinkUp is preferred when configured.
+A Read with one eligible provider uses that provider alone. Each arm runs in an
+independently terminable worker. Its collection and cleanup share the remaining
+turn runway and a 300-second maximum. Exa Contents keeps its 60-second socket
+cap. Recognizable access challenges, error pages, empty material and mismatched
+transport URL associations are rejected. A first mechanically usable return
+gives a still-pending peer up to 2.5 seconds to finish. The first usable original
+is retained unless the comparison finds clearly broader overlapping text or cleaner
+structure in substantially overlapping text. This comparison cannot establish
+that a source meets a specific research need or identify all wrong pages with
+plausible text. Research and Answer still judge the source. Only one actual
+representation enters Evidence, and safe receipts record the selected provider,
+each dispatch and its outcome. The worker does not splice text from the two arms.
+
+Local Read reuses actual retained material or constructs an exact view. A historical
 targeted-view ID can be rebuilt from its retained full parent without provider I/O;
 the view itself need not persist globally. Direct IDs follow the existing bounded
 targeted-view size; longer spans use an explicit parent range that splits into
@@ -287,8 +301,8 @@ receipts. It records attempted requests, resulting material/candidate IDs, safe
 errors and failed external Read details without repeating full originals. This
 replaces separate latest-route, failed-Read and delegated prior-history packets.
 It helps the investigator avoid repeating unchanged routes; it does not decide
-retry policy or establish absence. LinkUp's effective external strategy remains
-`static_fetch`; changing only the Read focus does not change that strategy.
+retry policy or establish absence. Changing only the Read focus does not change
+provider selection.
 The history is not persistent semantic memory. Answer receives actionable
 acquisition limitations rather than the full worker operation log. Existing
 forensic and body-free diagnostics keep their respective privacy boundaries.
@@ -405,10 +419,13 @@ research across seven completed families, including selective revision and
 multi-turn scenario-premise handling. It did not establish arbitrary-length
 continuity or general reliability.
 
-`RunLimits` permits 40 physical requests across roles, 16 external acquisition
-attempts, a 900-second hard whole-turn ceiling and 128,000 cumulative Answer source
+`RunLimits` permits 40 physical requests across roles, 16 logical external acquisition
+operations, a 900-second hard whole-turn ceiling and 128,000 cumulative Answer source
 characters. Each underlying model request is capped at 300 seconds and remaining
-turn time. No terminal reserve, separate Answer clock or renewed per-tool allowance
+turn time. The turn also permits 32 physical acquisition-provider dispatches. Search
+and Read each consume one logical operation. Each dispatched arm of a dual Read
+counts toward the physical ceiling, including failed or locally cancelled requests.
+No terminal reserve, separate Answer clock or renewed per-tool allowance
 exists. Research leaves one physical completion opportunity where feasible.
 Local inspection spends no external acquisition attempt. Denied external routes
 retain accurate receipts while local Research Read/Find and exact return selection

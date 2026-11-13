@@ -688,7 +688,8 @@ See `docs/operator/RESEARCH_ANSWER_BRIEFING_01.md` for the before/after graph,
 field accounting, implementation brief and final technical review.
 
 One turn shares library/history, Lite bootstrap eligibility, 900 seconds, 40 physical model
-attempts, 16 external attempts, 128,000 cumulative Answer source characters and
+attempts, 16 logical external operations, 32 physical acquisition-provider dispatches,
+128,000 cumulative Answer source characters and
 12 Answer local operations. There is no 180-second terminal reserve or 120-second
 Answer clock. Request arguments are at most 300 seconds and remaining turn time.
 Research briefings are fallible working analysis for both roles, not factual authority.
@@ -861,11 +862,20 @@ Exa supplies ordinary general
 Search. Research can explicitly select Serper lexical/community/current
 discovery for a needed source class. Serper
 candidates and snippets guide navigation only;
-they are not Evidence. LinkUp static Fetch supplies external known-URL Read when
-Research selects one. Exa Contents has no ordinary Read authority; there is no
-search or Read fallback or provider router. The production turn has one
+they are not Evidence. For a known-URL Read requiring a new fetch, the turn dispatches
+LinkUp static Fetch and Exa Contents concurrently when both are configured and physical
+allowance permits. A single eligible provider can supply a Read on its own. A short
+comparison can select a later original when it preserves clearly broader overlapping
+material or cleaner structure. A first mechanically usable response opens at most
+2.5 seconds for a pending peer. The rule rejects recognizable challenge/error pages
+and URL-association mismatches. It leaves research-specific adequacy to Research and
+Answer. One returned representation supplies the retained source and exact citation
+material. Local and retained Reads spend neither allowance. The production turn has one
 900-second hard whole-turn ceiling, 40 physically dispatched model requests across
-both roles, 16 external acquisition attempts and 128,000 cumulative Answer source characters.
+both roles, 16 logical external acquisition operations, 32 physical acquisition-provider
+dispatches and 128,000 cumulative Answer source characters. Each dispatched arm counts
+even if it fails, loses the selection, or is locally cancelled. The Read's total worker
+runway is bounded by 300 seconds and the remaining turn time, including cleanup.
 Individual model requests are capped at 300 seconds and remaining whole-turn time.
 There is no terminal time reserve or total Answer-stage clock. Research preserves
 one physical Answer completion opportunity where feasible. Native continuations,
@@ -971,8 +981,8 @@ consumes this run-local bootstrap, including a failed executed attempt. Direct
 allocation with `dynamic=true`, `verbosity=high` and the
 `Exa-Beta: dynamic-highlights-2026-08-28` header; no fixed `maxCharacters` is
 requested. Actual returned source selections retain `provider_highlights` custody,
-explicit separation and the existing size guard. Serper discovery and LinkUp
-known-URL Read are unchanged. The earlier integration received offline
+explicit separation and the existing size guard. Serper discovery remains unchanged.
+The earlier integration received offline
 verification; Exa Evidence-Objective Search 01 exercised the retained Highlight
 mechanics with the historical Deep/Auto default in four ordinary product runs.
 The Lite-first confirmation is recorded above. No universal answer-quality,
@@ -1377,7 +1387,7 @@ initial Search batch, so the registered 6/6 screen was formally inconclusive.
 No material Luna / high Research-layer failure was demonstrated. These bounded
 observations do not establish universal reliability.
 
-The LinkUp primary Read change is supported by bounded known-URL evidence: 4/4
+The former LinkUp-only Read path was supported by bounded known-URL evidence: 4/4
 rescues of demonstrated Exa Read problems, 8/8 task-sufficient ordinary controls
 with no observed material control regression, corrected integrated validation at
 3/3, and three supported source-bound product canaries. A no-URL control answered

@@ -400,10 +400,10 @@ def test_browser_research_survives_navigation_with_atomic_attachments_and_indepe
                 {"name": "shapes.png", "mimeType": "image/png", "buffer": buffer.getvalue()},
                 {"name": "notes.pdf", "mimeType": "application/pdf", "buffer": pdf},
             ])
-            with page.expect_navigation(wait_until="domcontentloaded"):
-                page.locator("#question").press("Enter")
+            page.locator("#question").press("Enter")
+            # The fragment can change before the refreshed conversation is rendered.
+            page.locator(".research-job").wait_for(state="visible")
             assert started["A"].wait(5)
-            assert page.locator(".research-job").is_visible()
             assert page.locator(".research-job .turn-attachments li").count() == 2
             assert page.locator(".submit-question").is_disabled()
             a_job = manager.list(a_id)[0]
@@ -413,8 +413,8 @@ def test_browser_research_survives_navigation_with_atomic_attachments_and_indepe
             page.locator(f'.session-link[href="/sessions/{b_id}"]').click()
             page.wait_for_url(f"{base}/sessions/{b_id}")
             page.locator("#question").fill("B: If a box holds two marbles and I add one, how many are there?")
-            with page.expect_navigation(wait_until="domcontentloaded"):
-                page.locator(".submit-question").click()
+            page.locator(".submit-question").click()
+            page.locator(".research-job").wait_for(state="visible")
             assert started["B"].wait(5)
             assert manager.list(b_id)[0].state == "researching"
             page.goto(f"{base}/sessions/{a_id}")
