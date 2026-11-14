@@ -1406,15 +1406,18 @@ The candidate twice recovered and cited the exact Kluge court opinion through Ex
 Contents when LinkUp failed within the same Read. The completed comparison baseline
 used court Search highlights and a fetched reproduction. Both answers met the
 legal rubric. A BIPM control selected the same LinkUp text with an additional
-1.109 seconds of Read time. The earlier aircraft candidate acquired the requested
-study on its first attempt while omitting a consequential MD-81 mile-convention
-qualification from a different, byte-identical source. This observation leaves
-difficult-answer quality and end-to-end latency causation unproved. The final
-runtime repair rejected an observed browser-load interstitial and recovered the
-original AlphaFold article in a targeted paired check. That repair has no further
-ordinary PRODUCT draw. The NASA targeted check selected a later, cleaner
-representation that matched the previously adjudicated adequate original. These
-are bounded local results. The deployment and user data were untouched.
+1.109 seconds of Read time. Targeted checks recovered the original AlphaFold
+article after rejecting a browser-load interstitial and selected the later,
+cleaner NASA representation that matched the previously adjudicated original.
+The aircraft closeout ran one more paired local API draw on the final runtime.
+The candidate obtained the requested study on its first Read and repeated the
+earlier omission of the MD-81 nautical-versus-statute-mile qualification. Every
+candidate Answer request contained the same complete MD-81 original that baseline
+received through a later local Read. Baseline used a different cost benchmark,
+leaving the focal conversion unexercised in its answer. The repeat establishes
+an answer-quality miss with the necessary source available. It does not establish
+a dual-Read evidence defect or causation. The quality gate stayed open, and the
+candidate branch was kept local. Deployment and user data were untouched.
 
 The Research-selectable Serper lane completed one ordinary St. Dorothy's Rest
 observation at `884c69a917aa19528574da42fdae2a8b85ba86b1`: Research chose
