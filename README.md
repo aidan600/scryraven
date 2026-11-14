@@ -35,7 +35,7 @@ optional plan authentication dependencies are not required for ordinary API use.
 Model execution requires `OPENAI_API_KEY`, and ordinary web Search requires
 `EXA_API_KEY` in the process environment. `SERPER_API_KEY` is required only when
 Research invokes alternate lexical/community/current discovery;
-`LINKUP_API_KEY` is required only when external known-URL Read is invoked.
+`LINKUP_API_KEY` enables the LinkUp arm of external known-URL Read.
 ScryRaven does **not** load `.env`. With the applicable variables supplied:
 
 ```powershell
@@ -46,10 +46,10 @@ The ordinary runtime selects semantic Research and Answer roles. Shipped default
 in `scryraven/model_roles.defaults.json` configure GPT-6.1 Terra / medium / Fast for
 Research and GPT-6.1 Sol / medium / Fast for Answer. An optional per-user file
 controls active settings; see [model configuration](#model-configuration).
-Exa supplies ordinary general
-Search; Research can select Serper for lexical/community/current discovery;
-LinkUp Fetch supplies external known-URL
-Read. There is no architecture selector, Analyst checkpoint,
+Exa supplies ordinary general Search. Research can select Serper for
+lexical/community/current discovery. External known-URL Read starts LinkUp Fetch
+and Exa Contents together when configured and permitted by the turn budget.
+There is no architecture selector, Analyst checkpoint,
 separate old Author handoff or fallback engine.
 See [research architecture](docs/architecture/RESEARCH.md) for the shared
 Research–Answer contract.
@@ -68,8 +68,8 @@ hosted service.
 **Direct launch:** from the repository root and activated environment above, with
 `OPENAI_API_KEY` for model execution and `EXA_API_KEY` for ordinary web Search in
 the process environment. Supply `SERPER_API_KEY` when Research invokes alternate
-lexical/community/current discovery and `LINKUP_API_KEY` when it invokes external
-known-URL Read:
+lexical/community/current discovery and `LINKUP_API_KEY` to enable dual-provider
+external known-URL Read:
 
 ```powershell
 python -m scryraven.reading_room
@@ -350,7 +350,8 @@ The bounded production restart observation and its limits are recorded in
 
 The process needs `OPENAI_API_KEY` and `EXA_API_KEY`; Research-selected lexical,
 community or current-web discovery needs `SERPER_API_KEY` only when invoked.
-External Read needs `LINKUP_API_KEY` when invoked. It does not load `.env`.
+External Read uses whichever of `LINKUP_API_KEY` and `EXA_API_KEY` are configured.
+With both, eligible Reads can use both providers. ScryRaven does not load `.env`.
 Ordinary code selects the semantic roles `research` and `answer` through
 `ModelConfig.research` and `ModelConfig.answer`. The package ships tracked defaults
 in `scryraven/model_roles.defaults.json`: Research is GPT-6.1 Terra / medium / Fast;
@@ -434,9 +435,9 @@ There is no runtime cost estimator.
 Exa supplies ordinary general Search (`auto`, six results, query-guided highlights
 up to 4,000 characters per result). Research may select Serper for lexical,
 community or current-web discovery (ten navigation candidates). Serper snippets
-are navigation only; Research must Read a useful URL through LinkUp Fetch before
-its source material becomes Evidence. LinkUp Fetch acquires ordinary known-URL
-readable source material. Generated provider summaries and answers are excluded. Metadata
+are navigation only. Research can Read a useful URL to acquire original text as
+Evidence. External Read selects one actual representation from LinkUp Fetch or
+Exa Contents. Generated provider summaries and answers are excluded. Metadata
 guides navigation; actual highlights can support only what their text establishes.
 Missing conditions, identity, applicability or connected context can require a Read.
 

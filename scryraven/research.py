@@ -18,6 +18,7 @@ from typing import Callable, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from core.dual_read import configured_read_providers, fetch_dual
 from core.exa_transport import search_exa
 from core.linkup_transport import fetch_linkup
 from core.serper_transport import search_serper
@@ -41,6 +42,7 @@ ANSWER_VALIDATION_FAILURE_MESSAGE = "I couldn't complete a source-validated answ
 # One Research route may already contain several independent generic Searches.
 # Overlap their Exa transports only; never fan out past this contiguous group.
 GENERIC_SEARCH_CONCURRENCY_LIMIT = 3
+PHYSICAL_ACQUISITION_DISPATCH_LIMIT = 32
 
 
 class _Contract(BaseModel):
@@ -250,6 +252,7 @@ class _Budget:
         self.limits, self.clock = limits, clock
         self.started = clock()
         self.semantic = self.physical = self.external = self.episodes = 0
+        self.acquisition_dispatches = 0
         self.answer_continuations = 0
         self.roles = {"answer": 0, "research": 0}
 
@@ -268,22 +271,33 @@ class _Budget:
         if stage == "answer" and continuation:
             self.answer_continuations += 1
 
-    def before_external(self):
+    def before_external(self, *, maximum_dispatches=1):
         if self.remaining_seconds <= 0:
             raise _Bound("deadline")
         if self.external >= self.limits.external_attempts:
             raise _Bound("external_attempts")
+        available = PHYSICAL_ACQUISITION_DISPATCH_LIMIT - self.acquisition_dispatches
+        if available <= 0:
+            raise _Bound("external_attempts")
+        reserved = min(maximum_dispatches, available)
         self.external += 1
+        self.acquisition_dispatches += reserved
+        return reserved
 
     def try_reserve_external(self, count):
         if (type(count) is not int or not 1 <= count <= GENERIC_SEARCH_CONCURRENCY_LIMIT
                 or self.remaining_seconds <= 0
-                or self.external + count > self.limits.external_attempts):
+                or self.external + count > self.limits.external_attempts
+                or self.acquisition_dispatches + count > PHYSICAL_ACQUISITION_DISPATCH_LIMIT):
             return None
         self.external += count
+        self.acquisition_dispatches += count
         return self.remaining_seconds
 
-    def snapshot(self):
+    def settle_external(self, reserved, charged):
+        self.acquisition_dispatches -= reserved - charged
+
+    def snapshot(self, *, diagnostics=True):
         elapsed = max(0.0, self.clock() - self.started)
         return {"semantic_attempts": self.semantic, "physical_requests": self.physical,
                 "physical_remaining": self.limits.physical_model_requests - self.physical,
@@ -291,6 +305,9 @@ class _Budget:
                 "answer_continuations": self.answer_continuations,
                 "external_attempts": self.external,
                 "external_remaining": self.limits.external_attempts - self.external,
+                **({"physical_acquisition_dispatches": self.acquisition_dispatches,
+                    "physical_acquisition_remaining": (
+                        PHYSICAL_ACQUISITION_DISPATCH_LIMIT - self.acquisition_dispatches)} if diagnostics else {}),
                 "seconds_remaining": round(self.remaining_seconds, 3),
                 "elapsed_seconds": round(elapsed, 3)}
 
@@ -440,10 +457,31 @@ def _run_turn(
         bootstrap_available = False
         return search(query, search_type=provider_search_type, timeout_seconds=min(300, budget.remaining_seconds))
 
-    lexical_call = (lambda query: lexical_search(query, timeout_seconds=min(300, budget.remaining_seconds))) if lexical_search is search_serper else lexical_search
-    fetch_call = (lambda url: fetch(url, timeout_seconds=min(300, budget.remaining_seconds))) if fetch is fetch_linkup else fetch
+    def lexical_call(query):
+        if lexical_search is not search_serper:
+            return lexical_search(query)
+        return lexical_search(query, timeout_seconds=min(300, budget.remaining_seconds))
+
+    def fetch_call(url):
+        if fetch is not fetch_linkup:
+            return fetch(url)
+        return fetch(url, timeout_seconds=min(300, budget.remaining_seconds))
+
+    read_providers = configured_read_providers() if fetch is fetch_linkup else ()
+
+    def fetch_external_read(url):
+        available = tuple(provider for provider in read_providers if provider not in library.unavailable_providers)
+        if not available:
+            return None
+        count = budget.before_external(maximum_dispatches=len(available))
+        outcome = fetch_dual(url, providers=available[:count],
+                             timeout_seconds=min(300, budget.remaining_seconds))
+        budget.settle_external(count, sum(attempt.charged for attempt in outcome.attempts))
+        return outcome
+
     library = AcquisitionLibrary(retained_acquisitions=retained_acquisitions, documents=documents,
-                                 search=search_call, lexical_search=lexical_call, fetch=fetch_call)
+                                 search=search_call, lexical_search=lexical_call, fetch=fetch_call,
+                                 fetch_read=fetch_external_read if read_providers else None)
     library.allow_question_urls(question)
     trace: list[dict] = []
 
@@ -598,7 +636,7 @@ def _run_turn(
                         calculator=do_calculate if stage == "answer" else None,
                         on_calculation=observed_calculation, answer_library=answer_library,
                         research_tool=research_tool, before_request=before_request,
-                        resource_snapshot=budget.snapshot,
+                        resource_snapshot=lambda: budget.snapshot(diagnostics=False),
                         remaining_seconds=lambda: budget.remaining_seconds,
                         final_feedback=final_feedback,
                         image_inputs=lambda: tuple(active_images.values()),
@@ -756,14 +794,19 @@ def _run_turn(
                    if "search_novelty_receipt" in operation else {}),
                 **({"document_navigation": operation["document_navigation"]}
                    if "document_navigation" in operation else {}),
+                **({"read_provider_attempts": operation["read_provider_attempts"],
+                    "first_usable_provider": operation["first_usable_provider"],
+                    "read_selection": operation["read_selection"]}
+                   if "read_provider_attempts" in operation else {}),
                 **({"provider_search_type": search_type}
                    if operation["kind"] == "search" and search_type is not None else {}),
             )
 
         def apply_acquisition(result):
             # Novelty is diagnostic metadata, never model-facing navigation.
-            last_route.append({key: value for key, value in result.items()
-                               if key != "search_novelty_receipt"})
+            last_route.append({key: value for key, value in result.items() if key not in {
+                "search_novelty_receipt", "read_provider_attempts", "first_usable_provider", "read_selection",
+            }})
             # One chronological receipt replaces duplicated latest-route and
             # failed-read packets. Keep outcomes that help choose the next route,
             # without diagnostics-only counts or empty request fields.
@@ -796,6 +839,8 @@ def _run_turn(
                 return False
 
             def observe_operation(operation, *, request_index=request_index):
+                if operation["external"] and "read_provider_attempts" not in operation:
+                    budget.settle_external(1, int(operation["provider_dispatched"]))
                 # Serial Search records the mode search_call assigned during this call.
                 record_timing(operation, request_index,
                               provider_search_type if operation["kind"] == "search" else None)
@@ -855,6 +900,7 @@ def _run_turn(
                         outcomes.append({"code": "search_failed", "leads": None,
                                          "started_at": now, "ended_at": now})
             results = []
+            budget.settle_external(len(group), sum(item["code"] != "exa_configuration_missing" for item in outcomes))
             for (request_index, _request, plan), outcome, mode in zip(group, outcomes, modes):
                 def observe_operation(operation, *, request_index=request_index, search_type=mode):
                     record_timing(operation, request_index, search_type)
@@ -964,7 +1010,7 @@ def _run_turn(
                       **({"unavailable_providers": unavailable_providers()}
                          if library.unavailable_providers else {}),
                       "selection_limitations": list(selection_limitations),
-                      "budget": budget.snapshot(), "output_correction": correction}
+                      "budget": budget.snapshot(diagnostics=False), "output_correction": correction}
             if need is not None:
                 packet.update(delegated_need=need, answer_delivery=owner_library.delivery_capacity())
             try:
@@ -1085,7 +1131,7 @@ def _run_turn(
         if budget.physical >= limits.physical_model_requests - 1:
             operating_bound = True
             return {"error": "physical_model_requests", "research_briefing": research_briefing,
-                    "budget": budget.snapshot()}
+                    "budget": budget.snapshot(diagnostics=False)}
         budget.episodes += 1
         episode = budget.episodes
         episode_started = clock()
@@ -1097,7 +1143,7 @@ def _run_turn(
         result = {**originals, "research_briefing": research_briefing,
                   "selection_limitations": selection_limitations,
                   "acquisition_limitations": acquisition_limitations(error),
-                  "error": error, "library": owner_library.catalog(), "budget": budget.snapshot()}
+                  "error": error, "library": owner_library.catalog(), "budget": budget.snapshot(diagnostics=False)}
         emit("research_returned", episode=episode, code=error,
              duration_seconds=round(max(0.0, clock() - episode_started), 6),
              exposed_ids=[row["id"] for row in originals["evidence"]], budget=budget.snapshot())
@@ -1109,7 +1155,7 @@ def _run_turn(
         packet = {**common, "phase": "answer", "research_briefing": initial_briefing,
                   "evidence": [], "selection_limitations": initial_selection_limitations,
                   "acquisition_limitations": initial_limitations,
-                  "library": owner_library.catalog(), "budget": budget.snapshot()}
+                  "library": owner_library.catalog(), "budget": budget.snapshot(diagnostics=False)}
 
         def correction(final):
             """Existing mechanical final checks, shared by native and offline callers."""
@@ -1217,7 +1263,7 @@ def _run_turn(
             for _ in range(2):
                 packet["evidence"] = [library.materials[ref].material() for ref in refs]
                 packet["library"] = owner_library.catalog()
-                packet["budget"] = budget.snapshot()
+                packet["budget"] = budget.snapshot(diagnostics=False)
                 final = ask("answer", ANSWER_PROMPT, packet, SemanticAnswerDecision,
                             answer_library=answer_library_with_images if available_images else owner_library,
                             research_tool=investigate)

@@ -2,6 +2,17 @@
 
 from dataclasses import dataclass
 
+import requests
+
+
+def post_provider_request(url, **kwargs):
+    """Send one fixed API request, without following provider endpoint redirects."""
+    response = requests.post(url, allow_redirects=False, **kwargs)
+    status = getattr(response, "status_code", None)
+    if type(status) is int and 300 <= status < 400:
+        raise requests.exceptions.HTTPError(response=response)
+    return response
+
 
 @dataclass(frozen=True, slots=True)
 class FetchedMaterial:

@@ -98,6 +98,11 @@
     reader.scrollTop += target.getBoundingClientRect().top - reader.getBoundingClientRect().top - offset;
   }
 
+  if (/^#(?:research-status|turn-\d+)$/.test(location.hash)) {
+    const target = document.getElementById(location.hash.slice(1));
+    if (target) scrollReaderTo(target, 28);
+  }
+
   function openSavedCitation(hash, citation) {
     const target = document.getElementById(hash.slice(1));
     const excerpt = target?.closest('.saved-excerpt');
@@ -734,7 +739,18 @@
           if (newLanguage) sessionStorage.removeItem(languageKey);
         } catch (_) {}
         question.value = '';
-        location.assign(response.url);
+        // Fetch omits the fragment from the server's redirect URL.
+        const destination = new URL(response.url);
+        if (destination.origin === location.origin && /^\/sessions\/[a-f0-9]{32}$/.test(destination.pathname)) {
+          destination.hash = 'research-status';
+          if (destination.pathname === location.pathname && destination.search === location.search) {
+            // A fragment-only navigation would leave the old conversation rendered.
+            history.replaceState(history.state, '', destination.href);
+            location.reload();
+            return;
+          }
+        }
+        location.assign(destination.href);
       } catch (_) {
         showError('Connection interrupted. Your question and selected files are still here. Retry uses the same submission identity.');
       } finally {

@@ -8,9 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlsplit
 
-import requests
-
-from core.transport import FetchedMaterial
+from core.transport import FetchedMaterial, post_provider_request
 
 EXA_SEARCH_URL = "https://api.exa.ai/search"
 EXA_CONTENTS_URL = "https://api.exa.ai/contents"
@@ -107,7 +105,7 @@ def _post_json(url, payload, api_key, timeout_seconds, post, *,
     if extra_headers:
         headers.update(extra_headers)
     try:
-        response = (post or requests.post)(
+        response = (post or post_provider_request)(
             url, json=payload, headers=headers, timeout=timeout,
         )
         response.raise_for_status()

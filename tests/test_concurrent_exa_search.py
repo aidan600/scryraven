@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier, Event, Lock
 
 import pytest
+import requests
 from test_exa_transport import Response
 from test_research_loop import Script, answer, decision, no_fetch, request
 
@@ -203,7 +204,7 @@ def test_lite_is_preassigned_before_dispatch_even_when_auto_finishes_first(monke
         return Response({"results": [{"url": f"https://example.test/{slug}", "title": slug,
                                       "highlights": [f"The {slug} stated value."]}]})
 
-    monkeypatch.setattr(exa.requests, "post", post)
+    monkeypatch.setattr(requests, "post", post)
     model = Script(decision(requests=[request(query="first"), request(query="second")]),
                    decision("return"), unable())
     result = run("Value?", model=model)
@@ -238,7 +239,7 @@ def test_failed_lite_still_consumes_bootstrap_when_auto_finishes_first(monkeypat
         assert release_lite.wait(timeout=2)
         raise OSError("SECRET lite failure")
 
-    monkeypatch.setattr(exa.requests, "post", post)
+    monkeypatch.setattr(requests, "post", post)
     model = Script(decision(requests=[request(query="first"), request(query="second")]),
                    decision(requests=[request(query="later")]),
                    decision("return"), unable())
@@ -266,7 +267,7 @@ def test_consumed_bootstrap_assigns_auto_to_the_whole_group(monkeypatch):
         return Response({"results": [{"url": "https://example.test/fact",
                                       "highlights": ["The stated value is seven."]}]})
 
-    monkeypatch.setattr(exa.requests, "post", post)
+    monkeypatch.setattr(requests, "post", post)
     model = Script(decision(requests=[request(query="one"), request(query="two")]),
                    decision("return"), unable())
     run("Value?", model=model, session_turn=2)
@@ -370,9 +371,9 @@ def test_mixed_operations_do_not_use_the_concurrent_executor(monkeypatch):
         ([request(query="one"), request("read", query="", target="C1"), request(query="two")],
          ["search", "read", "search"]),
     ]
-    for requests, kinds in routes:
+    for route_requests, kinds in routes:
         state["max"] = 0
-        model = Script(decision(requests=requests), decision("return"), unable())
+        model = Script(decision(requests=route_requests), decision("return"), unable())
         result = run(f"Read {URL_A} and {URL_B}", model=model, search=search,
                      lexical_search=lexical, fetch=fetch)
         assert state["max"] <= 1
@@ -536,7 +537,7 @@ def test_concurrent_exa_calls_share_the_timeout_snapshotted_at_dispatch(monkeypa
         return Response({"results": [{"url": "https://example.test/fact",
                                       "highlights": ["The stated value is seven."]}]})
 
-    monkeypatch.setattr(exa.requests, "post", post)
+    monkeypatch.setattr(requests, "post", post)
     model = Script(decision(requests=[request(query="first"), request(query="second")]),
                    decision("return"), unable())
     run("Value?", model=model, clock=lambda: now["t"], limits=RunLimits(seconds=300))

@@ -5,7 +5,7 @@ import pytest
 from test_model_transport import Response
 from test_research_loop import answer, decision
 
-from core import exa_transport, linkup_transport
+from core import dual_read, exa_transport
 from scryraven import __main__ as cli
 from scryraven import model
 
@@ -38,7 +38,6 @@ def test_cli_ordinary_run_invokes_research_and_answer_over_real_exa_adapter(monk
                                       'highlights': ['The exact value is seven.']}]})
 
     monkeypatch.setattr(model.requests, 'post', post)
-    monkeypatch.setattr(exa_transport.requests, 'post', post)
     path = tmp_path / 'answer.html'
     assert cli.main(['What is the value?', '--trace-evidence', '--html', str(path)]) == 0
     captured = capsys.readouterr()
@@ -51,7 +50,7 @@ def test_cli_ordinary_run_invokes_research_and_answer_over_real_exa_adapter(monk
     assert 'Synthetic fact' in path.read_text(encoding='utf-8')
 
 
-def test_cli_ordinary_search_then_read_uses_linkup_not_exa_contents(monkeypatch, capsys):
+def test_cli_ordinary_search_then_dual_read_preserves_selected_source(monkeypatch, capsys):
     monkeypatch.setenv("OPENAI_API_KEY", "offline-test-value")
     monkeypatch.setenv("EXA_API_KEY", "offline-test-value")
     monkeypatch.setenv("LINKUP_API_KEY", "offline-test-value")
@@ -66,6 +65,14 @@ def test_cli_ordinary_search_then_read_uses_linkup_not_exa_contents(monkeypatch,
     ])
     providers = []
 
+    def fetch_read(url, *, providers, timeout_seconds):
+        assert url == "https://example.org/fact"
+        assert providers == ("linkup", "exa") and 0 < timeout_seconds <= 300
+        attempts = (dual_read.ReadAttempt("linkup", True, True, "error", "linkup_transport_failed", 0, 1),
+                    dual_read.ReadAttempt("exa", True, True, "usable", None, 0, 1))
+        return dual_read.DualReadResult("exa", dual_read.FetchedMaterial(url, "The exact value is seven."),
+                                        attempts, "exa", "first_usable")
+
     def post(url, **kwargs):
         if url.endswith('/v1/responses'):
             kwargs["json"]["text"]["format"]["name"]
@@ -77,13 +84,10 @@ def test_cli_ordinary_search_then_read_uses_linkup_not_exa_contents(monkeypatch,
         providers.append((url, kwargs.get("json")))
         if url == exa_transport.EXA_SEARCH_URL:
             return Response({'results': [{'url': 'https://example.org/fact', 'title': 'Synthetic fact'}]})
-        if url == linkup_transport.LINKUP_FETCH_URL:
-            return Response({'markdown': 'The exact value is seven.'})
         raise AssertionError(f"unexpected provider endpoint: {url}")
 
     monkeypatch.setattr(model.requests, 'post', post)
-    monkeypatch.setattr(exa_transport.requests, 'post', post)
-    monkeypatch.setattr(linkup_transport.requests, 'post', post)
+    monkeypatch.setattr('scryraven.research.fetch_dual', fetch_read)
     assert cli.main(['What is the value?', '--trace-evidence']) == 0
     captured = capsys.readouterr()
     assert providers == [
@@ -93,9 +97,7 @@ def test_cli_ordinary_search_then_read_uses_linkup_not_exa_contents(monkeypatch,
                 "query": "public fact", "dynamic": True, "verbosity": "high",
             }},
         }),
-        (linkup_transport.LINKUP_FETCH_URL, {"url": "https://example.org/fact"}),
     ]
-    assert exa_transport.EXA_CONTENTS_URL not in str(providers)
     diagnostics = json.loads(captured.err)
     assert diagnostics['selected_evidence'][0]['content'] == 'The exact value is seven.'
 

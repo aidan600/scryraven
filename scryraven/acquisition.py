@@ -12,6 +12,7 @@ from collections.abc import Callable, Iterable
 from html import unescape
 from urllib.parse import quote, urljoin, urlsplit
 
+from core.dual_read import DualReadResult, validate_read_material
 from core.exa_transport import DiscoveryCandidate, ExaTransportError, search_exa
 from core.linkup_transport import LINKUP_FAILURE_CODES, LINKUP_FETCH_STRATEGY, LinkupTransportError, fetch_linkup
 from core.serper_transport import SerperTransportError, search_serper
@@ -121,8 +122,10 @@ class AcquisitionLibrary:
         search: Callable[..., list[DiscoveryCandidate]] = search_exa,
         lexical_search: Callable[..., list[DiscoveryCandidate]] = search_serper,
         fetch: Callable[..., FetchedMaterial] = fetch_linkup,
+        fetch_read: Callable[[str], DualReadResult | None] | None = None,
     ) -> None:
         self.search, self.lexical_search, self.fetch = search, lexical_search, fetch
+        self.fetch_read = fetch_read
         self.acquisitions = list(retained_acquisitions)
         self.materials: dict[str, Evidence] = {}
         self.exposed: set[str] = set()
@@ -495,8 +498,11 @@ class AcquisitionLibrary:
         result["suppressed"] = result.get("suppressed", False)
         # These fixed configuration failures happen before HTTP dispatch. An
         # attempted external operation and an actual provider request differ.
-        result["provider_dispatched"] = bool(
-            result["external"] and result.get("code") != PROVIDER_CONFIGURATION_CODES.get(provider))
+        if "read_provider_attempts" in result:
+            result["provider_dispatched"] = any(row["dispatched"] for row in result["read_provider_attempts"])
+        else:
+            result["provider_dispatched"] = bool(
+                result["external"] and result.get("code") != PROVIDER_CONFIGURATION_CODES.get(provider))
         if "failed_external_read" in result:
             result["failed_external_read"]["duration_seconds"] = round(duration, 6)
         if observe_operation is not None:
@@ -522,6 +528,10 @@ class AcquisitionLibrary:
             }
             if "search_novelty_receipt" in result:
                 event["search_novelty_receipt"] = dict(result["search_novelty_receipt"])
+            if "read_provider_attempts" in result:
+                event.update(read_provider_attempts=result["read_provider_attempts"],
+                             first_usable_provider=result["first_usable_provider"],
+                             read_selection=result["read_selection"])
             if "document_navigation" in result:
                 event["document_navigation"] = {
                     key: value for key, value in result["document_navigation"].items()
@@ -665,21 +675,27 @@ class AcquisitionLibrary:
         elif mode in {"auto", "full"} and full is not None:
             item = full
         else:
-            self._before_provider("linkup", result, before_external)
-            try:
-                fetched = self.fetch(url)
-            except Exception as exc:
-                code = (str(exc) if isinstance(exc, LinkupTransportError)
-                        and str(exc) in LINKUP_FAILURE_CODES else "read_failed")
+            outcome = self.fetch_read(url) if self.fetch_read is not None else None
+            if outcome is not None:
+                fetched, code, strategy = self._record_external_read(url, outcome, result)
             else:
-                code = None
-                if (not isinstance(fetched, FetchedMaterial) or fetched.requested_url != url
-                        or not isinstance(fetched.readable_text, str) or not fetched.readable_text.strip()):
-                    code = "unusable_fetch_material"
+                self._before_provider("linkup", result, before_external)
+                strategy = LINKUP_FETCH_STRATEGY
+                try:
+                    fetched = self.fetch(url)
+                except Exception as exc:
+                    fetched = None
+                    code = (str(exc) if isinstance(exc, LinkupTransportError)
+                            and str(exc) in LINKUP_FAILURE_CODES else "read_failed")
+                else:
+                    code = None
+                    if (not isinstance(fetched, FetchedMaterial) or fetched.requested_url != url
+                            or not isinstance(fetched.readable_text, str) or not fetched.readable_text.strip()):
+                        code = "unusable_fetch_material"
             if code is not None:
                 result["failed_external_read"] = {
-                    "candidate_ref": self._candidate_ids[url], "provider": "linkup",
-                    "strategy": LINKUP_FETCH_STRATEGY, "requested_mode": mode, "code": code,
+                    "candidate_ref": self._candidate_ids[url], "provider": result["provider"],
+                    "strategy": strategy, "requested_mode": mode, "code": code,
                 }
                 raise AcquisitionError(code) from None
             item = self._retain(url, title, fetched.readable_text, "fetched_source")
@@ -687,6 +703,29 @@ class AcquisitionLibrary:
         result["material_ids"] = [item.id for item in items]
         result["candidate_refs"] = [self._candidate_ids[url]]
         result["read_receipt"] = receipt
+
+    def _record_external_read(self, url, outcome, result):
+        # Receipts contain only fixed transport facts. Only the selected exact
+        # representation can enter the ordinary acquisition and citation path.
+        attempts = outcome.attempts
+        strategy = "dual_read" if len(attempts) == 2 else (
+            "exa_contents" if attempts[0].provider == "exa" else LINKUP_FETCH_STRATEGY)
+        for attempt in attempts:
+            if attempt.code == PROVIDER_CONFIGURATION_CODES[attempt.provider]:
+                self.unavailable_providers.setdefault(attempt.provider, attempt.code)
+        result.update(
+            provider=outcome.provider or attempts[0].provider, external=True, local=False,
+            read_provider_attempts=[{
+                "provider": attempt.provider, "dispatched": attempt.dispatched, "charged": attempt.charged,
+                "status": attempt.status, "code": attempt.code,
+                "dispatch_offset_seconds": attempt.dispatch_offset_seconds,
+                "elapsed_seconds": attempt.elapsed_seconds,
+            } for attempt in attempts],
+            first_usable_provider=outcome.first_usable_provider, read_selection=outcome.selection,
+        )
+        code = (validate_read_material(url, outcome.material) if outcome.material is not None
+                else attempts[0].code or "read_failed")
+        return outcome.material, code, strategy
 
     def _find(self, request: dict, result: dict) -> None:
         document_indexes = [self._index(self._index_parent(document)) for document in self._documents.values()]

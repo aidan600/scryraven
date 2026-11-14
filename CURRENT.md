@@ -247,6 +247,12 @@ handles WebKit mouse-labeled synthetic clicks. Preview, keyboard actions, saved
 excerpt navigation and Back to answer preserve the reading context. Native
 original links and source disclosures remain available when JavaScript is disabled.
 
+Same-conversation submissions preserve the pending-job fragment while reloading,
+then position the refreshed pane at the running job or completed answer. The
+Reading Room visually consolidates adjacent references to one source while
+retaining separate controls for distinct saved support passages. The existing
+answer offsets and validated passage coordinates continue to own navigation.
+
 Offline verification uses synthetic research/source fixtures and mocked
 transcription. Chromium 151 exercises Web Audio capture and resampling with
 synthetic input.
@@ -688,7 +694,8 @@ See `docs/operator/RESEARCH_ANSWER_BRIEFING_01.md` for the before/after graph,
 field accounting, implementation brief and final technical review.
 
 One turn shares library/history, Lite bootstrap eligibility, 900 seconds, 40 physical model
-attempts, 16 external attempts, 128,000 cumulative Answer source characters and
+attempts, 16 logical external operations, 32 physical acquisition-provider dispatches,
+128,000 cumulative Answer source characters and
 12 Answer local operations. There is no 180-second terminal reserve or 120-second
 Answer clock. Request arguments are at most 300 seconds and remaining turn time.
 Research briefings are fallible working analysis for both roles, not factual authority.
@@ -861,11 +868,20 @@ Exa supplies ordinary general
 Search. Research can explicitly select Serper lexical/community/current
 discovery for a needed source class. Serper
 candidates and snippets guide navigation only;
-they are not Evidence. LinkUp static Fetch supplies external known-URL Read when
-Research selects one. Exa Contents has no ordinary Read authority; there is no
-search or Read fallback or provider router. The production turn has one
+they are not Evidence. For a known-URL Read requiring a new fetch, the turn dispatches
+LinkUp static Fetch and Exa Contents concurrently when both are configured and physical
+allowance permits. A single eligible provider can supply a Read on its own. A short
+comparison can select a later original when it preserves clearly broader overlapping
+material or cleaner structure. A first mechanically usable response opens at most
+2.5 seconds for a pending peer. The rule rejects recognizable challenge/error pages
+and URL-association mismatches. It leaves research-specific adequacy to Research and
+Answer. One returned representation supplies the retained source and exact citation
+material. Local and retained Reads spend neither allowance. The production turn has one
 900-second hard whole-turn ceiling, 40 physically dispatched model requests across
-both roles, 16 external acquisition attempts and 128,000 cumulative Answer source characters.
+both roles, 16 logical external acquisition operations, 32 physical acquisition-provider
+dispatches and 128,000 cumulative Answer source characters. Each dispatched arm counts
+even if it fails, loses the selection, or is locally cancelled. The Read's total worker
+runway is bounded by 300 seconds and the remaining turn time, including cleanup.
 Individual model requests are capped at 300 seconds and remaining whole-turn time.
 There is no terminal time reserve or total Answer-stage clock. Research preserves
 one physical Answer completion opportunity where feasible. Native continuations,
@@ -971,8 +987,8 @@ consumes this run-local bootstrap, including a failed executed attempt. Direct
 allocation with `dynamic=true`, `verbosity=high` and the
 `Exa-Beta: dynamic-highlights-2026-08-28` header; no fixed `maxCharacters` is
 requested. Actual returned source selections retain `provider_highlights` custody,
-explicit separation and the existing size guard. Serper discovery and LinkUp
-known-URL Read are unchanged. The earlier integration received offline
+explicit separation and the existing size guard. Serper discovery remains unchanged.
+The earlier integration received offline
 verification; Exa Evidence-Objective Search 01 exercised the retained Highlight
 mechanics with the historical Deep/Auto default in four ordinary product runs.
 The Lite-first confirmation is recorded above. No universal answer-quality,
@@ -1377,13 +1393,31 @@ initial Search batch, so the registered 6/6 screen was formally inconclusive.
 No material Luna / high Research-layer failure was demonstrated. These bounded
 observations do not establish universal reliability.
 
-The LinkUp primary Read change is supported by bounded known-URL evidence: 4/4
+The former LinkUp-only Read path was supported by bounded known-URL evidence: 4/4
 rescues of demonstrated Exa Read problems, 8/8 task-sufficient ordinary controls
 with no observed material control regression, corrected integrated validation at
 3/3, and three supported source-bound product canaries. A no-URL control answered
 from acquired Exa Search highlights without an unnecessary Read; deterministic
 tests establish the Exa Search / LinkUp external Read composition. These results
 do not establish universal provider superiority or general product reliability.
+
+Dual Read Retrieval Implementation 03 exercised eight brokered local API turns.
+The candidate twice recovered and cited the exact Kluge court opinion through Exa
+Contents when LinkUp failed within the same Read. The completed comparison baseline
+used court Search highlights and a fetched reproduction. Both answers met the
+legal rubric. A BIPM control selected the same LinkUp text with an additional
+1.109 seconds of Read time. Targeted checks recovered the original AlphaFold
+article after rejecting a browser-load interstitial and selected the later,
+cleaner NASA representation that matched the previously adjudicated original.
+The aircraft closeout ran one more paired local API draw on the final runtime.
+The candidate obtained the requested study on its first Read and repeated the
+earlier omission of the MD-81 nautical-versus-statute-mile qualification. Every
+candidate Answer request contained the same complete MD-81 original that baseline
+received through a later local Read. Baseline used a different cost benchmark,
+leaving the focal conversion unexercised in its answer. The repeat establishes
+an answer-quality miss with the necessary source available. It does not establish
+a dual-Read evidence defect or causation. The quality gate stayed open, and the
+candidate branch was kept local. Deployment and user data were untouched.
 
 The Research-selectable Serper lane completed one ordinary St. Dorothy's Rest
 observation at `884c69a917aa19528574da42fdae2a8b85ba86b1`: Research chose
