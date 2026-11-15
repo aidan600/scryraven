@@ -89,7 +89,8 @@ class ResearchJobManager:
     def __init__(self, store: SQLiteSessionStore, *, session_options: dict | None = None,
                  session_options_factory: Callable[[ResearchJob], dict] | None = None,
                  completion_receipt_factory: Callable[[ResearchJob], dict | None] | None = None,
-                 on_finished: Callable | None = None, concurrency: int = 2):
+                 on_finished: Callable | None = None, on_shutdown: Callable[[], None] | None = None,
+                 concurrency: int = 2):
         if type(concurrency) is not int or concurrency not in {2, 4}:
             raise ValueError("invalid_research_concurrency")
         self.concurrency = concurrency
@@ -98,6 +99,7 @@ class ResearchJobManager:
         self.options_factory = session_options_factory
         self.completion_receipt_factory = completion_receipt_factory
         self.on_finished = on_finished
+        self.on_shutdown = on_shutdown
         self.condition = Condition()
         self.workers: set[Thread] = set()
         self.closed = False
@@ -238,16 +240,23 @@ class ResearchJobManager:
 
     def shutdown(self) -> None:
         """Reject admission/commits immediately; process exit ends daemon workers."""
-        with self.condition:
-            if self.closed:
-                return
-            self.closed = True
-            try:
-                self.store.interrupt_jobs()
-            finally:
-                # An embedding may keep the process alive after server shutdown.
-                # Keep ownership until its in-flight workers actually leave so
-                # a replacement server cannot overlap another pair of calls.
-                if not self.workers:
-                    self.owner.close()
-                self.condition.notify_all()
+        try:
+            with self.condition:
+                if self.closed:
+                    return
+                self.closed = True
+                try:
+                    self.store.interrupt_jobs()
+                finally:
+                    # An embedding may keep the process alive after server shutdown.
+                    # Keep ownership until its in-flight workers actually leave so
+                    # a replacement server cannot overlap another pair of calls.
+                    if not self.workers:
+                        self.owner.close()
+                    self.condition.notify_all()
+        finally:
+            if self.on_shutdown is not None:
+                try:
+                    self.on_shutdown()
+                except Exception:
+                    pass

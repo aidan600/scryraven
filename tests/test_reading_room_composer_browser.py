@@ -419,7 +419,8 @@ def test_browser_research_survives_navigation_with_atomic_attachments_and_indepe
             assert manager.list(b_id)[0].state == "researching"
             page.goto(f"{base}/sessions/{a_id}")
             page.reload()
-            assert "Researching" in page.locator(".research-job").inner_text()
+            assert page.locator("body[data-job-state=researching]").count() == 1
+            assert page.get_by_role("status", name="Current activity").is_visible()
             assert page.locator("#citation-language").input_value() == "pl"
             assert len(store.load(a_id).state.turns) == 3
             page.goto(f"{base}/sessions/{b_id}")

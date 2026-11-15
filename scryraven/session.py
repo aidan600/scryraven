@@ -72,11 +72,13 @@ class ResearchSession:
         limits: RunLimits = RunLimits(),
         engine: Callable[..., CompletedAnswer] | None = None,
         observe: Callable[[dict], None] | None = None,
+        activity: Callable[[dict], None] | None = None,
     ) -> None:
         self._model, self._search, self._lexical_search, self._fetch, self._limits = (
             model, search, lexical_search, fetch, limits)
         self._engine = engine
         self._observe = observe
+        self._activity = activity
         self._snapshot = _Snapshot(SessionState())
         self._store: SessionStore | None = None
 
@@ -149,6 +151,8 @@ class ResearchSession:
         prior_cited = (tuple(item for citation in state.turns[-1].citations for item in citation.materials)
                        if state.turns else ())
         initial_options = {"initial_evidence": prior_cited} if prior_cited else {}
+        if self._activity is not None and self._engine is None:
+            initial_options["activity"] = self._activity
         if snapshot.images:
             initial_options.update(images=snapshot.images, image_ids=image_ids)
         result = (self._engine or _run_turn)(
