@@ -150,7 +150,7 @@ def test_live_activity_recovers_and_reopens_with_the_saved_answer(tmp_path, widt
                     assert retrieval_started.wait(5)
                     state.filter(has_text="Retrieving source text").wait_for(timeout=5000)
                     assert "2 candidate links" in timeline.inner_text()
-                    assert "2 source highlights" in timeline.inner_text()
+                    assert "source highlights in 2 results" in timeline.inner_text()
                     page.locator("#question").fill("Keep this follow-up draft")
                     release_retrieval.set()
                     page.locator(".answer").wait_for(timeout=10000)

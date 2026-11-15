@@ -937,7 +937,7 @@
       meta.push(operation.candidates + (operation.candidates === 1 ? ' candidate link' : ' candidate links'));
     }
     if (Number.isInteger(operation.highlights)) {
-      meta.push(operation.highlights + (operation.highlights === 1 ? ' source highlight' : ' source highlights'));
+      meta.push('Source highlights in ' + operation.highlights + (operation.highlights === 1 ? ' result' : ' results'));
     }
     if (Number.isFinite(operation.elapsed_seconds)) meta.push(durationText(operation.elapsed_seconds));
     const description = meta.filter(Boolean).join(' · ');

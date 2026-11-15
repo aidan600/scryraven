@@ -221,7 +221,7 @@ class ActivityProjection:
         lead = _amount(len(successful), "search returned", "searches returned") if group else "Search returned"
         label = f"{lead} {_amount(candidates, 'candidate link', 'candidate links')}"
         if highlights:
-            label += f" and {_amount(highlights, 'source highlight', 'source highlights')}"
+            label += f", with source highlights in {_amount(highlights, 'result', 'results')}"
         if len(successful) < len(operations):
             count = len(operations) - len(successful)
             label += f". {_amount(count, 'search could not complete', 'searches could not complete')}"
