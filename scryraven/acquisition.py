@@ -416,6 +416,8 @@ class AcquisitionLibrary:
     def execute(
         self, request: dict, *, before_external: Callable[[], None],
         observe_operation: Callable[[dict], None] | None = None,
+        observe_start: Callable[[dict], None] | None = None,
+        on_search_dispatch: Callable[[str], None] | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> dict:
         started_at = clock()
@@ -428,15 +430,24 @@ class AcquisitionLibrary:
             normalized = self._request(request)
             result["request"] = normalized
             if normalized["kind"] in {"search", "search_lexical"}:
-                self._search(normalized, result, before_external)
+                self._search(normalized, result, before_external, on_search_dispatch)
             elif normalized["kind"] == "read":
-                self._read(normalized, result, before_external)
+                self._read(normalized, result, before_external, observe_start)
             else:
+                self._observe_start(observe_start, kind="find", external=False)
                 self._find(normalized, result)
         except AcquisitionError as exc:
             result.update(status="error", code=str(exc))
         ended_at = clock()
         return self._finish_execution(result, before, started_at, ended_at, observe_operation)
+
+    @staticmethod
+    def _observe_start(observer, **fields):
+        if observer is not None:
+            try:
+                observer(fields)
+            except Exception:
+                pass  # Optional activity cannot change the acquisition.
 
     def plan_generic_search(self, request: dict) -> dict | None:
         """Validate one ordinary generic Search without external I/O or library mutation."""
@@ -544,11 +555,13 @@ class AcquisitionLibrary:
                 pass
         return result
 
-    def _search(self, request: dict, result: dict, before_external: Callable[[], None]) -> None:
+    def _search(self, request: dict, result: dict, before_external: Callable[[], None], on_dispatch) -> None:
         lexical = request["kind"] == "search_lexical"
         self._before_provider("serper" if lexical else "exa", result, before_external)
         try:
-            leads = (self.lexical_search if lexical else self.search)(request["query"])
+            transport = self.lexical_search if lexical else self.search
+            leads = (transport(request["query"], on_dispatch=on_dispatch) if on_dispatch is not None
+                     else transport(request["query"]))
         except Exception as exc:
             if lexical and isinstance(exc, SerperTransportError) and str(exc) == "serper_configuration_missing":
                 raise AcquisitionError("serper_configuration_missing") from None
@@ -657,12 +670,18 @@ class AcquisitionLibrary:
             "exact_returned_region_count": len(items),
         }
 
-    def _read(self, request: dict, result: dict, before_external: Callable[[], None]) -> None:
+    def _read(self, request: dict, result: dict, before_external: Callable[[], None], observe_start) -> None:
         document_request = self._document_request(request["target"])
         if document_request is not None:
+            self._observe_start(observe_start, kind="read", external=False, title=document_request[0].filename)
             self._read_document(document_request[0], request, (document_request[1], document_request[2]), result)
             return
         url, title, exact_item = self._target(request["target"])
+        def read_started(external):
+            if observe_start is not None:
+                self._observe_start(observe_start, kind="read", external=external,
+                                    title=title, hostname=urlsplit(url).hostname)
+
         mode = request["mode"]
         full = next((item for item in reversed(self.acquisitions)
                      if item.url == url and item.acquisition == "fetched_source"), None)
@@ -675,11 +694,17 @@ class AcquisitionLibrary:
         elif mode in {"auto", "full"} and full is not None:
             item = full
         else:
-            outcome = self.fetch_read(url) if self.fetch_read is not None else None
+            outcome = None
+            if self.fetch_read is not None:
+                if observe_start is None:
+                    outcome = self.fetch_read(url)
+                else:
+                    outcome = self.fetch_read(url, on_start=lambda: read_started(True))
             if outcome is not None:
                 fetched, code, strategy = self._record_external_read(url, outcome, result)
             else:
                 self._before_provider("linkup", result, before_external)
+                read_started(True)
                 strategy = LINKUP_FETCH_STRATEGY
                 try:
                     fetched = self.fetch(url)
@@ -699,6 +724,8 @@ class AcquisitionLibrary:
                 }
                 raise AcquisitionError(code) from None
             item = self._retain(url, title, fetched.readable_text, "fetched_source")
+        if not result["external"]:
+            read_started(False)
         items, receipt = self._views(item, request["focus"], request["start_char"], request["end_char"])
         result["material_ids"] = [item.id for item in items]
         result["candidate_refs"] = [self._candidate_ids[url]]

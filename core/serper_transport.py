@@ -23,6 +23,7 @@ def search_serper(
     query: str, *, api_key: str | None = None,
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
     post: Callable[..., Any] | None = None,
+    on_dispatch: Callable[[str], None] | None = None,
 ) -> list[DiscoveryCandidate]:
     if not isinstance(query, str) or not query.strip():
         raise ValueError("query must be non-empty text")
@@ -35,10 +36,16 @@ def search_serper(
         raise ValueError("timeout_seconds must be positive") from None
     if timeout <= 0:
         raise ValueError("timeout_seconds must be positive")
+    query = query.strip()
+    if on_dispatch is not None:
+        try:
+            on_dispatch(query)
+        except Exception:
+            pass  # Optional activity cannot prevent dispatch.
     try:
         response = (post or post_provider_request)(
             SERPER_SEARCH_URL,
-            json={"q": query.strip(), "num": DISCOVERY_RESULT_COUNT},
+            json={"q": query, "num": DISCOVERY_RESULT_COUNT},
             headers={"X-API-KEY": token.strip(), "Content-Type": "application/json"},
             timeout=timeout,
         )

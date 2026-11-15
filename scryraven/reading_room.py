@@ -24,6 +24,7 @@ from werkzeug.exceptions import HTTPException, SecurityError
 from werkzeug.serving import WSGIRequestHandler, make_server
 
 from scryraven import dictation
+from scryraven.activity_journal import ActivityJournal
 from scryraven.documents import (
     ALREADY_ATTACHED_NOTICE,
     DOCUMENT_ERROR_MESSAGES,
@@ -55,6 +56,7 @@ from scryraven.presentation import (
     source_free_supported,
     source_label,
 )
+from scryraven.research_activity import ActivityProjection, activity_response
 from scryraven.research_jobs import ResearchJobManager
 from scryraven.run_settings import BILLED_BACKENDS, RunSettings, settings_from_form
 from scryraven.run_settings import ERROR_MESSAGES as RUN_SETTINGS_ERRORS
@@ -144,6 +146,8 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                       TRUSTED_HOSTS=["127.0.0.1", "localhost"])
     chosen_database = database if database is not None else hosted.database if hosted is not None else None
     custody = store if store is not None else SQLiteSessionStore(chosen_database)
+    journal = ActivityJournal(custody)
+    app.extensions["research_activity"] = journal
     validator = hosted_diagnostics = None
     hosted_preferences = None
     if hosted is not None:
@@ -211,6 +215,14 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
             raise ModelError("paid_inference_authorization_required")
 
     def job_options(job):
+        activity = None
+        try:
+            activity = ActivityProjection(
+                journal.publisher(job.job_id, session_id=job.session_id),
+                created_at=job.created_at, started_at=job.started_at,
+            )
+        except Exception:
+            pass  # An optional history must never block an admitted job.
         owner_id = custody.get_metadata(job.session_id).owner_id if hosted is not None else None
         if hosted is not None:
             job_owners[job.job_id] = owner_id
@@ -278,6 +290,11 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
         prior_observer = turn_options.get("observe")
 
         def observe(event):
+            if activity is not None:
+                try:
+                    activity.observe(event)
+                except Exception:
+                    pass
             if turn_diagnostics is not None:
                 try:
                     turn_diagnostics.observe(event)
@@ -297,9 +314,15 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                     pass
 
         turn_options["observe"] = observe
+        if activity is not None:
+            turn_options["activity"] = activity.receive
         return turn_options
 
     def job_finished(job, result, error, session):
+        try:
+            journal.finish(job.job_id)
+        except Exception:
+            pass
         records = usage_runs.pop(job.job_id, [])
         try:
             if job.state != "completed":
@@ -328,6 +351,7 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
     try:
         jobs = ResearchJobManager(custody, concurrency=4 if hosted is not None else 2,
                                   session_options_factory=job_options, on_finished=job_finished,
+                                  on_shutdown=journal.close,
                                   completion_receipt_factory=lambda job: {
                                       "requests": list(usage_runs.get(job.job_id, [])),
                                       "estimated_cost_usd": None, "actual_billed_usd": None,
@@ -383,7 +407,9 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
             if request.endpoint == "update_hosted_preferences" and not g.identity.is_admin:
                 abort(403)
             session_id = (request.view_args or {}).get("session_id")
-            if session_id:
+            # The activity query verifies session, job and owner together using
+            # a read-only lookup with no administrator exception.
+            if session_id and request.endpoint != "job_activity":
                 try:
                     metadata = custody.get_metadata(session_id)
                 except SessionStoreError as exc:
@@ -556,6 +582,11 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                     "href": href,
                 })
         turns = []
+        can_view_activity = session_id in owned_ids
+        activity_url = (
+            url_for("job_activity", session_id=session_id, job_id=job["job_id"])
+            if can_view_activity and job else None
+        )
         for number, turn in enumerate(saved.state.turns if saved else (), 1):
             prefix = f"turn-{number}-source-"
             completed = session_jobs.get(number)
@@ -563,6 +594,9 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                 "number": number, "turn_index": number, "question": turn.question, "posture": turn.posture,
                 "unviewed_job_id": (completed.job_id if completed and not completed.viewed
                                     and session_id in owned_ids else None),
+                "activity_url": (url_for("job_activity", session_id=session_id, job_id=completed.job_id)
+                                 if completed and can_view_activity else None),
+                "can_view_activity": can_view_activity,
                 "feedback": tuple(item for item in feedback if item.turn_index == number),
                 "feedback_error": feedback_error if feedback_turn == number else None,
                 "feedback_text": feedback_text if feedback_turn == number else "",
@@ -611,7 +645,7 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
         return render_template(
             "reading_room.html", history=history, saved=saved, turns=turns, documents=documents,
             images=attachment_links(saved, image_ids=tuple(item.image_id for item in saved.images)) if saved else [],
-            job=job, history_jobs=history_jobs, idempotency_key=uuid4().hex,
+            job=job, activity_url=activity_url, history_jobs=history_jobs, idempotency_key=uuid4().hex,
             citation_language=metadata.citation_language if metadata else getattr(g, "new_citation_language", "en"),
             run_settings=(current_hosted_settings() if hosted is not None else custody.get_run_settings() or initial_settings).to_dict(),
             billing_authorizations=billing_authorizations,
@@ -980,6 +1014,18 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
         latest = job_summaries(jobs.list(), visible_ids, owned_ids)
         return jsonify(jobs=list(latest.values()))
 
+    @app.get("/sessions/<session_id>/jobs/<job_id>/activity")
+    def job_activity(session_id, job_id):
+        cursor = request.args.get("after", "0")
+        if (set(request.args) - {"after"} or len(request.args.getlist("after")) > 1
+                or not 1 <= len(cursor) <= 12 or not cursor.isascii() or not cursor.isdecimal()):
+            abort(400)
+        try:
+            activity = journal.read(session_id, job_id, owner_id=principal() or None, after=int(cursor))
+        except SessionStoreError as exc:
+            abort(404 if exc.code == "job_not_found" else 503)
+        return jsonify(activity_response(activity))
+
     @app.post("/sessions/<session_id>/jobs/<job_id>/viewed")
     def acknowledge_answer(session_id, job_id):
         if set(request.form) != {"form_token"} or len(request.form.getlist("form_token")) != 1:
@@ -1054,6 +1100,10 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                 return page(session_id, error="Research is active in this conversation. Wait for it to finish before deleting.",
                             status=409)
             raise
+        try:
+            journal.discard_session(session_id)
+        except Exception:
+            pass
         return redirect(url_for("new_research", notice="deleted"), 303)
 
     @app.errorhandler(_FormError)

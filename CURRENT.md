@@ -1,5 +1,41 @@
 # ScryRaven Current Truth
 
+## Reading Room live research activity
+
+The conversation shows the current operation and elapsed time beneath a pending
+question. Recent activity groups parallel searches and shows a dual-provider
+Read as one retrieval. Activity distinguishes candidate links, acquired source
+highlights, retrieved source text, inspection of retained material, retrieval
+failures, and handoffs between Research and Answer. The timer advances during
+quiet operations. Completed answers can reopen their run's collapsed Research
+activity. Historical runs without recorded events show that history is
+unavailable.
+
+The owner can expand Actual searches to inspect dispatch query text, capped at
+512 characters with a visible truncation indication, and retrieval details
+including a safe title or hostname when available. A note explains that searches
+can include wording from the question or supplied documents. The same-origin,
+no-store activity endpoint requires an exact session, job, and owner match.
+Hosted administrator inspection of someone else's conversation does not grant
+activity access. The journal is separate from status summaries, usage receipts,
+session exports, and forensic diagnostics.
+
+SQLite schema 8 adds a job-scoped journal. Memory publication feeds the existing
+poll cadence and an asynchronous batched writer. Each job retains at most 128
+events and 128 KiB; cursor recovery reports when older activity was dropped.
+Conversation deletion removes its journal. The completed-job transaction owns
+answer publication and terminal status. Restart shows interrupted jobs with
+any previously saved activity, and abrupt exit can lose unflushed activity.
+The journal can be unavailable while the ordinary job path continues.
+
+Controlled Reading Room browser checks saw a pending operation within about
+0.83 seconds at 1440 and 320 pixels. The fixtures exercised concurrent Search,
+retrieval success and failure, refresh and reopening, saved history, keyboard
+disclosures, and scroll stability during timer updates. Across 36 controlled
+jobs against the merged baseline, model and acquisition counts matched. Median
+admission-to-commit time increased 4.9 ms for one Search and 3.2 ms for a
+parallel Search batch with two Reads. Timing ranges overlapped.
+
 ## Hosted answer feedback
 
 The private hosted preview shows a collapsed Leave feedback disclosure beneath

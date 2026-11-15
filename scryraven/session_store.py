@@ -9,7 +9,7 @@ import os
 import re
 import sqlite3
 import sys
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -391,6 +391,12 @@ _JOBS_SQL = """CREATE TABLE IF NOT EXISTS research_jobs (
     run_settings TEXT, run_receipt TEXT
 )"""
 
+MAX_ACTIVITY_BYTES = 128 * 1024
+_JOB_ACTIVITY_SQL = f"""CREATE TABLE IF NOT EXISTS research_job_activity (
+    job_id TEXT PRIMARY KEY, last_seq INTEGER NOT NULL CHECK (last_seq > 0),
+    events TEXT NOT NULL CHECK (length(events) <= {MAX_ACTIVITY_BYTES})
+)"""
+
 _PREFERENCES_SQL = """CREATE TABLE IF NOT EXISTS app_preferences (
     name TEXT PRIMARY KEY, value TEXT NOT NULL
 )"""
@@ -528,7 +534,7 @@ class SQLiteSessionStore:
     from research are stored. This is local plaintext data, not cloud account state.
     """
 
-    SCHEMA_VERSION = 7
+    SCHEMA_VERSION = 8
 
     def __init__(self, path: str | Path | None = None) -> None:
         try:
@@ -573,7 +579,7 @@ class SQLiteSessionStore:
                 connection.execute("ALTER TABLE research_jobs ADD COLUMN run_receipt TEXT")
                 connection.execute(_PREFERENCES_SQL)
                 connection.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
-            elif version not in {4, 5, 6, self.SCHEMA_VERSION}:
+            elif version not in {4, 5, 6, 7, self.SCHEMA_VERSION}:
                 raise SessionStoreError("incompatible_session_store")
             if version < 5:
                 # Ownership is metadata only. Legacy sessions stay unowned; no
@@ -592,6 +598,9 @@ class SQLiteSessionStore:
                 connection.execute("ALTER TABLE research_jobs ADD COLUMN viewed INTEGER NOT NULL DEFAULT 0 "
                                    "CHECK (viewed IN (0, 1))")
                 connection.execute("UPDATE research_jobs SET viewed=1 WHERE state='completed'")
+                connection.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
+            if version < 8:
+                connection.execute(_JOB_ACTIVITY_SQL)
                 connection.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
             yield connection
             connection.commit()
@@ -762,6 +771,8 @@ class SQLiteSessionStore:
                 raise SessionConflictError()
             connection.execute("DELETE FROM session_documents WHERE session_id = ?", (session_id,))
             connection.execute("DELETE FROM session_images WHERE session_id = ?", (session_id,))
+            connection.execute("DELETE FROM research_job_activity WHERE job_id IN "
+                               "(SELECT job_id FROM research_jobs WHERE session_id = ?)", (session_id,))
             connection.execute("DELETE FROM research_jobs WHERE session_id = ?", (session_id,))
             connection.execute("DELETE FROM answer_feedback WHERE session_id = ?", (session_id,))
             connection.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
@@ -1074,6 +1085,45 @@ class SQLiteSessionStore:
             if row is None:
                 raise SessionStoreError("job_not_found")
             return _job(row)
+
+    def read_job_activity(self, session_id: str, job_id: str, *, owner_id: str | None) -> dict:
+        """Read a single authorized job without taking a writer reservation."""
+        def lookup(*, include_activity: bool):
+            activity = "a.events" if include_activity else "NULL AS events"
+            join = "LEFT JOIN research_job_activity a ON a.job_id=j.job_id " if include_activity else ""
+            with closing(sqlite3.connect(self.path, timeout=0.05, isolation_level=None)) as connection:
+                connection.row_factory = sqlite3.Row
+                return connection.execute(
+                    "SELECT j.state,j.created_at,j.started_at,j.finished_at,j.error_code," + activity + " "
+                    "FROM research_jobs j JOIN sessions s ON s.session_id=j.session_id " + join +
+                    "WHERE j.job_id=? AND j.session_id=? AND s.owner_id IS ?", (job_id, session_id, owner_id),
+                ).fetchone()
+
+        try:
+            row = lookup(include_activity=True)
+        except (sqlite3.Error, OSError):
+            try:
+                row = lookup(include_activity=False)
+            except (sqlite3.Error, OSError):
+                raise SessionStoreError() from None
+        if row is None:
+            raise SessionStoreError("job_not_found")
+        return dict(row)
+
+    def save_job_activity_batch(self, snapshots: tuple[tuple[str, int, str], ...]) -> None:
+        """Persist optional activity without waiting for a product write to release SQLite."""
+        try:
+            with closing(sqlite3.connect(self.path, timeout=0, isolation_level=None)) as connection:
+                connection.execute("BEGIN IMMEDIATE")
+                connection.executemany(
+                    "INSERT INTO research_job_activity(job_id,last_seq,events) "
+                    "SELECT ?1,?2,?3 WHERE EXISTS (SELECT 1 FROM research_jobs WHERE job_id=?1) "
+                    "ON CONFLICT(job_id) DO UPDATE SET last_seq=excluded.last_seq,events=excluded.events "
+                    "WHERE excluded.last_seq > research_job_activity.last_seq", snapshots,
+                )
+                connection.commit()
+        except (sqlite3.Error, OSError):
+            raise SessionStoreError() from None
 
     def find_submission(self, idempotency_key: str, *, owner_id: str | None = None) -> ResearchJob | None:
         """Resolve an explicitly replayed form to its accepted local run."""

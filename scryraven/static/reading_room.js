@@ -887,6 +887,191 @@
     link.textContent = 'Open conversation';
     notifications.append(message, link);
   }
+
+  const activityStatus = {
+    queued: 'Your question is queued.',
+    researching: 'Researching',
+    completed: 'Answer saved',
+    failed: 'Research failed',
+    interrupted: 'Research interrupted',
+  };
+  const terminalActivityStates = ['completed', 'failed', 'interrupted'];
+  const livePanel = document.querySelector('[data-activity-live]');
+  const liveActivity = livePanel && activityView(livePanel, livePanel.dataset.activityLive);
+  const liveMessage = livePanel?.closest('.research-job').querySelector('.job-message');
+  const activityLabel = liveMessage?.querySelector('strong');
+  const activityTimer = liveMessage?.querySelector('[data-activity-timer]');
+  let activityState = document.body.dataset.jobState;
+  let activityClock = null;
+  const activityTicker = liveActivity && setInterval(paintActivityClock, 250);
+
+  function activityView(panel, url) {
+    return {panel, url, cursor: 0, events: new Map(), loading: false, loaded: false};
+  }
+
+  function activityText(tag, text, className) {
+    const element = document.createElement(tag);
+    element.textContent = text;
+    if (className) element.className = className;
+    return element;
+  }
+
+  function durationText(seconds) {
+    const wholeSeconds = Math.floor(seconds);
+    if (wholeSeconds < 60) return wholeSeconds + (wholeSeconds === 1 ? ' second' : ' seconds');
+    return Math.floor(wholeSeconds / 60) + ' min ' + (wholeSeconds % 60) + ' sec';
+  }
+
+  function activityOperation(operation) {
+    const row = document.createElement('li');
+    const name = [operation.title || operation.label, operation.host].filter(Boolean).join(' · ');
+    if (name) row.append(activityText('p', name));
+    if (operation.query) {
+      const query = activityText('p', operation.query, 'activity-query');
+      query.dir = 'auto';
+      row.append(query);
+      if (operation.query_truncated) row.append(activityText('p', 'Query truncated.', 'activity-note'));
+    }
+    const meta = [operation.provider, operation.outcome];
+    if (Number.isInteger(operation.candidates)) {
+      meta.push(operation.candidates + (operation.candidates === 1 ? ' candidate link' : ' candidate links'));
+    }
+    if (Number.isInteger(operation.highlights)) {
+      meta.push(operation.highlights + (operation.highlights === 1 ? ' source highlight' : ' source highlights'));
+    }
+    if (Number.isFinite(operation.elapsed_seconds)) meta.push(durationText(operation.elapsed_seconds));
+    const description = meta.filter(Boolean).join(' · ');
+    if (description) row.append(activityText('p', description, 'activity-note'));
+    return row;
+  }
+
+  function renderActivity(view) {
+    const {panel} = view;
+    const rows = Array.from(view.events.values());
+    const earlier = panel.querySelector('[data-activity-older]');
+    const olderRows = rows.slice(0, Math.max(0, rows.length - 5));
+    earlier.hidden = olderRows.length === 0;
+    earlier.querySelector('ol').replaceChildren(...olderRows.map(row => activityText('li', row.label)));
+    panel.querySelector('[data-activity-recent]').replaceChildren(
+      ...rows.slice(-5).map(row => activityText('li', row.label)),
+    );
+    const searches = panel.querySelector('[data-activity-searches]');
+    const groups = rows.filter(row => row.operations?.length).map(row => {
+      const list = document.createElement('ul');
+      list.setAttribute('role', 'list');
+      list.append(...row.operations.map(activityOperation));
+      const group = document.createElement('li');
+      group.append(activityText('p', row.label), list);
+      return group;
+    });
+    searches.hidden = groups.length === 0;
+    searches.querySelector('ol').replaceChildren(...groups);
+    panel.querySelector('[data-activity-events]').hidden = rows.length === 0;
+  }
+
+  function activityNote(view, message) {
+    const note = view.panel.querySelector('[data-activity-note]');
+    if (note.textContent !== message) note.textContent = message;
+    note.hidden = !message;
+  }
+
+  function paintActivityClock() {
+    if (!activityClock || document.hidden) return;
+    const seconds = Math.floor(Math.max(0, performance.now() - activityClock.started) / 1000);
+    if (activityTimer.dateTime !== 'PT' + seconds + 'S') {
+      activityTimer.dateTime = 'PT' + seconds + 'S';
+      activityTimer.textContent = durationText(seconds);
+    }
+    activityTimer.hidden = false;
+  }
+
+  function setLiveActivity(state, current) {
+    if (!liveActivity || (terminalActivityStates.includes(activityState) && activityState !== state) ||
+        (activityState === 'researching' && state === 'queued')) return;
+    const label = (state !== 'queued' && current?.label) || activityStatus[state];
+    if (label && activityLabel.textContent !== label) activityLabel.textContent = label;
+    if (activityState === 'queued' && state === 'researching') {
+      liveMessage.querySelector('p').textContent = 'You may navigate away while research continues.';
+    }
+    activityState = state;
+    const terminal = terminalActivityStates.includes(state);
+    if (terminal || !Number.isFinite(current?.elapsed_seconds)) {
+      activityClock = null;
+      activityTimer.hidden = true;
+      if (terminal) {
+        clearInterval(activityTicker);
+        liveMessage.querySelector('.working-indicator').hidden = true;
+        liveMessage.querySelector('p').hidden = true;
+      }
+      return;
+    }
+    const started = performance.now() - current.elapsed_seconds * 1000;
+    activityClock = {
+      state,
+      sequence: current.sequence,
+      started: activityClock?.state === state && activityClock.sequence === current.sequence
+        ? Math.min(activityClock.started, started) : started,
+    };
+    paintActivityClock();
+  }
+
+  async function loadActivity(view) {
+    if (view.loading) return;
+    view.loading = true;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    try {
+      const url = new URL(view.url, location.href);
+      url.searchParams.set('after', view.cursor);
+      const response = await fetch(url, {
+        credentials: 'same-origin', cache: 'no-store', headers: {'Accept': 'application/json'}, signal: controller.signal,
+      });
+      if (!response.ok) throw new Error('Activity unavailable');
+      const result = await response.json();
+      if (!Number.isSafeInteger(result.cursor) || !Array.isArray(result.events)) throw new Error('Activity unavailable');
+      if (result.reset) view.events.clear();
+      let pruned = false;
+      for (const [key, event] of view.events) {
+        if (event.sequence < result.first_cursor) {
+          view.events.delete(key);
+          pruned = true;
+        }
+      }
+      for (const event of result.events) {
+        const key = event.activity_id ? 'activity:' + event.activity_id : event.sequence;
+        view.events.set(key, event);
+      }
+      view.cursor = result.cursor;
+      if (!view.loaded || result.reset || pruned || result.events.length) renderActivity(view);
+      view.loaded = result.available;
+      activityNote(view, result.truncated ? 'Earlier activity is unavailable.' :
+        view !== liveActivity && !result.available ? 'Research activity is unavailable for this run.' : '');
+      if (view === liveActivity) {
+        setLiveActivity(result.state, result.current);
+      } else if (result.available && terminalActivityStates.includes(result.state)) {
+        const finish = view.panel.querySelector('[data-activity-finish]');
+        finish.textContent = result.current?.label || activityStatus[result.state];
+        finish.hidden = false;
+      }
+    } catch (_) {
+      activityNote(view, 'Research activity is temporarily unavailable.');
+      if (view === liveActivity) activityClock = null;
+    } finally {
+      clearTimeout(timeout);
+      view.loading = false;
+    }
+  }
+
+  document.querySelectorAll('[data-activity-archive]').forEach(panel => {
+    const view = activityView(panel, panel.dataset.activityArchive);
+    panel.addEventListener('toggle', () => {
+      if (panel.open && !view.loaded && !view.loading) {
+        activityNote(view, 'Loading research activity…');
+        loadActivity(view);
+      }
+    });
+  });
+
   let pollTimer;
   let polling = false;
   async function pollJobs() {
@@ -894,6 +1079,7 @@
     polling = true;
     clearTimeout(pollTimer);
     acknowledgeVisibleAnswers();
+    if (liveActivity && !document.hidden && !terminalActivityStates.includes(activityState)) loadActivity(liveActivity);
     try {
       const response = await fetch('/jobs/status', {credentials: 'same-origin', headers: {'Accept': 'application/json'}});
       if (response.ok) {
@@ -905,6 +1091,7 @@
           const isCurrent = job.session_id === document.body.dataset.sessionId && job.job_id === document.body.dataset.jobId;
           if (isCurrent && ['queued', 'researching'].includes(document.body.dataset.jobState)) {
             if (['completed', 'failed', 'interrupted'].includes(job.state)) {
+              setLiveActivity(job.state);
               if (feedbackInUse() || askForm?.querySelector('.dictation-toggle[aria-busy="true"]')) {
                 notifyJob(job);
                 continue;
@@ -914,11 +1101,13 @@
               location.reload();
               return;
             }
-            if (job.state === 'researching') {
-              const message = document.querySelector('.research-job .job-message');
-              if (message) {
-                message.querySelector('strong').textContent = 'Researching';
-                message.querySelector('p').textContent = 'ScryRaven is working on your question. You may navigate away while research continues.';
+            if (job.state === 'researching' && document.body.dataset.jobState === 'queued') {
+              if (liveActivity) {
+                if (activityState === 'queued') setLiveActivity(job.state);
+              } else {
+                const message = document.querySelector('.research-job .job-message');
+                message.querySelector('strong').textContent = activityStatus.researching;
+                message.querySelector('p').textContent = 'You may navigate away while research continues.';
               }
               document.body.dataset.jobState = 'researching';
             }

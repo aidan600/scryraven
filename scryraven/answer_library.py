@@ -89,11 +89,12 @@ def _available_exact_view(item, available):
 
 class AnswerLibrary:
     def __init__(self, library: AcquisitionLibrary, refs: list[str], *,
-                 attention_characters: int = 128_000, emit=None, clock=monotonic):
+                 attention_characters: int = 128_000, emit=None, activity=None, clock=monotonic):
         self.library, self.refs = library, refs
         self.remaining = attention_characters - sum(len(library.materials[r].content) for r in refs)
         self.operations = 0
         self.emit, self.clock = emit, clock
+        self.activity = activity
         self.library.expose(refs)
 
     def catalog(self, offset=0):
@@ -181,6 +182,12 @@ class AnswerLibrary:
         self.operations += 1
         args = None
         result = {"error": "invalid_tool_arguments"}
+        observed_operation = {}
+
+        def observe_start(operation):
+            observed_operation.update(operation)
+            self.activity("answer_inspection_started", **operation)
+
         if self.operations > MAX_OPERATIONS:
             result = {"error": "library_operation_limit"}
         else:
@@ -190,10 +197,14 @@ class AnswerLibrary:
                 args = ARGUMENTS[name].model_validate_json(raw_arguments).model_dump()
                 if name == "library_find" and any(len(ref) > 2048 for ref in args["scope"]):
                     raise ValueError()
-                result = self._execute(name, args)
+                result = self._execute(name, args, observe_start if self.activity is not None else None)
             except (ValidationError, ValueError, TypeError):
                 result = {"error": "invalid_tool_arguments"}
         evidence = result.get("evidence", [])
+        if observed_operation:
+            self.activity("answer_inspection_finished", **observed_operation,
+                          status="error" if "error" in result else "ok", material_count=len(evidence),
+                          duration_seconds=max(0, self.clock() - started))
         if self.emit is not None:
             self.emit("answer_library_used", contract="answer", operation=name,
                       sequence=self.operations, code=result.get("error"), external=False,
@@ -205,7 +216,7 @@ class AnswerLibrary:
                       operation=name, sequence=self.operations, arguments=args, result=result)
         return result
 
-    def _execute(self, name, args):
+    def _execute(self, name, args, observe_start=None):
         if name == "library_browse":
             return self.catalog(args["offset"])
         if self.remaining <= 0:
@@ -214,7 +225,9 @@ class AnswerLibrary:
         if name == "library_read" and args["start_char"] is not None and args["end_char"] is not None:
             if args["end_char"] - args["start_char"] > PACKET_CHARACTERS:
                 return {"error": "range_exceeds_local_packet", "max_characters": PACKET_CHARACTERS}
-        outcome = self.library.execute(request, before_external=self._no_external, clock=self.clock)
+        activity_options = {"observe_start": observe_start} if observe_start is not None else {}
+        outcome = self.library.execute(request, before_external=self._no_external, clock=self.clock,
+                                       **activity_options)
         if outcome["status"] == "error":
             return {"error": outcome["code"]}
         chosen, used = [], 0

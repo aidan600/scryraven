@@ -70,6 +70,32 @@
 </details>
 {%- endmacro %}
 
+{% macro activity_events() -%}
+<p class="activity-note" data-activity-note hidden></p>
+<div data-activity-events hidden>
+  <h3 class="activity-heading">Recent activity</h3>
+  <details class="activity-disclosure" data-activity-older hidden>
+    <summary>Earlier activity</summary>
+    <ol class="activity-timeline" role="list" aria-label="Earlier research activity"></ol>
+  </details>
+  <ol class="activity-timeline" data-activity-recent role="list" aria-label="Recent research activity"></ol>
+  <p class="activity-finish" data-activity-finish hidden></p>
+  <details class="activity-disclosure" data-activity-searches hidden>
+    <summary>Actual searches and retrievals</summary>
+    <p class="activity-note">Search queries may include wording from your question or supplied documents.</p>
+    <ol class="activity-searches" role="list" aria-label="Search and retrieval details"></ol>
+  </details>
+</div>
+{%- endmacro %}
+
+{% macro activity_archive(url) -%}
+<details class="activity-disclosure activity-archive" data-activity-archive="{{ url }}">
+  <summary>Research activity</summary>
+  {{ activity_events() }}
+  <noscript><p class="activity-note">Enable JavaScript to view research activity.</p></noscript>
+</details>
+{%- endmacro %}
+
 {% macro run_controls() -%}
 {% set settings = run_settings|default({}) %}
 {% if hosted_mode %}
@@ -282,6 +308,7 @@
           </div>
         </details>
         {% endif %}
+        {% if turn.activity_url %}{{ activity_archive(turn.activity_url) }}{% endif %}
         {{ run_record(turn.run_settings|default(none), turn.run_receipt|default(none)) }}
         {% if hosted_mode %}
         <details class="answer-feedback" id="feedback-{{ turn.turn_index }}"{% if turn.feedback_notice or turn.feedback_error %} open{% endif %}>
@@ -322,10 +349,24 @@
       <section class="research-job" id="research-status" data-job-id="{{ job.job_id }}" aria-labelledby="job-question" tabindex="-1">
         <div class="question-block"><h2 id="job-question">{{ job.question }}</h2></div>
         {% if job.attachments %}<ul class="turn-attachments" aria-label="Attachments to this question">{% for attachment in job.attachments %}<li><a href="{{ attachment.href }}" title="{{ attachment.filename }}" target="_blank" rel="noopener noreferrer">{% if attachment.preview_href %}<img src="{{ attachment.preview_href }}" alt="Attached image: {{ attachment.filename }}" loading="lazy">{% else %}<span class="attachment-kind">PDF</span>{% endif %}<span>{{ attachment.filename }}</span></a></li>{% endfor %}</ul>{% endif %}
-        <div class="job-message" role="status" aria-live="polite">
-          {% if job.state in ['queued', 'researching'] %}<span class="working-indicator" aria-hidden="true"></span><div><strong>{{ 'Your question is queued.' if job.state == 'queued' else 'Researching' }}</strong><p>{{ 'It will begin automatically when a research slot is available. You may navigate away.' if job.state == 'queued' else 'ScryRaven is working on your question. You may navigate away while research continues.' }}</p><noscript><a href="{{ url_for('open_session', session_id=saved.metadata.session_id) }}">Refresh status</a></noscript></div>
-          {% else %}<div><strong>{{ 'Research interrupted' if job.state == 'interrupted' else 'Research failed' }}</strong><p>{{ job.error|default('Your question and attachments are saved. Retry when you are ready.', true) }}</p>{% if not read_only %}<form method="post" action="{{ url_for('open_session', session_id=saved.metadata.session_id) }}/jobs/{{ job.job_id }}/retry"><input type="hidden" name="form_token" value="{{ form_token('retry') }}"><button class="small-button" type="submit">Retry this question</button></form>{% endif %}</div>{% endif %}
+        <div class="job-message">
+          {% if job.state in ['queued', 'researching'] %}
+          <span class="working-indicator" aria-hidden="true"></span>
+          <div>
+            <div class="activity-current">
+              <strong role="status" aria-label="Current activity">{{ 'Your question is queued.' if job.state == 'queued' else 'Researching' }}</strong>
+              {% if activity_url %}<time class="activity-elapsed" data-activity-timer aria-live="off" hidden></time>{% endif %}
+            </div>
+            <p>{{ 'It will begin automatically when a research slot is available. You may navigate away.' if job.state == 'queued' else 'You may navigate away while research continues.' }}</p>
+            <noscript><a href="{{ url_for('open_session', session_id=saved.metadata.session_id) }}">Refresh status</a></noscript>
+          </div>
+          {% else %}<div><strong role="status">{{ 'Research interrupted' if job.state == 'interrupted' else 'Research failed' }}</strong><p>{{ job.error|default('Your question and attachments are saved. Retry when you are ready.', true) }}</p>{% if not read_only %}<form method="post" action="{{ url_for('open_session', session_id=saved.metadata.session_id) }}/jobs/{{ job.job_id }}/retry"><input type="hidden" name="form_token" value="{{ form_token('retry') }}"><button class="small-button" type="submit">Retry this question</button></form>{% endif %}</div>{% endif %}
         </div>
+        {% if activity_url %}
+          {% if job.state in ['queued', 'researching'] %}
+          <div class="live-activity" data-activity-live="{{ activity_url }}">{{ activity_events() }}</div>
+          {% else %}{{ activity_archive(activity_url) }}{% endif %}
+        {% endif %}
         {{ run_record(job.run_settings|default(none), job.run_receipt|default(none)) }}
       </section>
       {% elif saved and not turns %}<p class="empty-session">This research hasn’t saved an answer yet. Ask a question below.</p>{% endif %}

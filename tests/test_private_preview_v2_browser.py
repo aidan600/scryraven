@@ -191,7 +191,9 @@ def test_queued_admission_updates_to_researching_without_reload(browser, hosted_
             screenshot(page, "preview-v2-queued-390.png")
             release[0].set()
             assert started[4].wait(5)
-            page.wait_for_function("() => document.querySelector('.job-message strong').textContent === 'Researching'")
+            page.get_by_role("status", name="Current activity").filter(
+                has_text="Investigating your question",
+            ).wait_for()
             assert page.evaluate("document.body.dataset.offlineNoReload") == "retained"
             assert page.locator(".session-row.selected .session-job-state").inner_text() == "Researching"
             screenshot(page, "preview-v2-researching-390.png")

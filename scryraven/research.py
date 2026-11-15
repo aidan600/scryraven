@@ -404,6 +404,7 @@ def _run_turn(
     question: str, *, model=None, search=search_exa, lexical_search=search_serper, fetch=fetch_linkup,
     limits: RunLimits | None = None, retained_acquisitions=(), context=None,
     session_turn: int = 1, observe: Callable[[dict], None] | None = None,
+    activity: Callable[[dict], None] | None = None,
     initial_evidence: tuple[Evidence, ...] = (),
     documents: tuple[SessionDocument, ...] = (),
     images: tuple[SessionImage, ...] = (), image_ids: tuple[str, ...] = (),
@@ -442,25 +443,40 @@ def _run_turn(
 
     for image_id in image_ids:
         select_image(image_id)
+
+    def announce(action, **fields):
+        if activity is not None:
+            try:
+                activity({"action": action, **fields})
+            except Exception:
+                pass  # Activity is independent of ordinary Research and Answer.
+
     # All real transport requests obey the remaining run deadline. Injected offline
     # transports retain their ordinary signatures and never require credentials.
     bootstrap_available = session_turn == 1 and not retained_acquisitions
     provider_search_type = None
 
-    def search_call(query):
+    def search_call(query, *, on_dispatch=None):
         nonlocal bootstrap_available, provider_search_type
         if search is not search_exa:
+            if on_dispatch is not None:
+                on_dispatch(query)
             return search(query)
         provider_search_type = "lite" if bootstrap_available else "auto"
         # Acquisition has already admitted this external attempt. Even a failed
         # executed request consumes the bootstrap; later searches use Auto.
         bootstrap_available = False
-        return search(query, search_type=provider_search_type, timeout_seconds=min(300, budget.remaining_seconds))
+        dispatch = {"on_dispatch": on_dispatch} if on_dispatch is not None else {}
+        return search(query, search_type=provider_search_type, timeout_seconds=min(300, budget.remaining_seconds),
+                      **dispatch)
 
-    def lexical_call(query):
+    def lexical_call(query, *, on_dispatch=None):
         if lexical_search is not search_serper:
+            if on_dispatch is not None:
+                on_dispatch(query)
             return lexical_search(query)
-        return lexical_search(query, timeout_seconds=min(300, budget.remaining_seconds))
+        dispatch = {"on_dispatch": on_dispatch} if on_dispatch is not None else {}
+        return lexical_search(query, timeout_seconds=min(300, budget.remaining_seconds), **dispatch)
 
     def fetch_call(url):
         if fetch is not fetch_linkup:
@@ -469,11 +485,13 @@ def _run_turn(
 
     read_providers = configured_read_providers() if fetch is fetch_linkup else ()
 
-    def fetch_external_read(url):
+    def fetch_external_read(url, *, on_start=None):
         available = tuple(provider for provider in read_providers if provider not in library.unavailable_providers)
         if not available:
             return None
         count = budget.before_external(maximum_dispatches=len(available))
+        if on_start is not None:
+            on_start()
         outcome = fetch_dual(url, providers=available[:count],
                              timeout_seconds=min(300, budget.remaining_seconds))
         budget.settle_external(count, sum(attempt.charged for attempt in outcome.attempts))
@@ -525,6 +543,8 @@ def _run_turn(
             nonlocal requests_in_interaction
             budget.before_model(actual_stage, continuation=requests_in_interaction > 0)
             requests_in_interaction += 1
+            if actual_stage == "answer":
+                announce("answer_dispatch_started")
         role = None
         if isinstance(model, OpenAIModel):
             config = getattr(model, "config", None)
@@ -643,6 +663,8 @@ def _run_turn(
                     )
                 else:
                     budget.before_model(stage)
+                    if stage == "answer":
+                        announce("answer_dispatch_started")
                     raw = model(stage, prompt, packet, shape.model_json_schema())
         except _Bound:
             raise
@@ -754,6 +776,7 @@ def _run_turn(
         return [library.materials[ref].material() for ref in chosen]
 
     def finish(decision, refs, reason):
+        announce("answer_validation_started")
         items = [library.materials[ref] for ref in refs]
         answer, citations, uses = resolve_citations(
             decision.answer, items, list(library.acquisitions), trace, documents=library.documents,
@@ -777,6 +800,43 @@ def _run_turn(
         nonlocal last_route, route_index, bound
         last_route = []
         route_index += 1
+
+        def search_dispatched(query, request_index, kind, search_type, *, group_index=None):
+            announce("search_dispatched", route_index=route_index, request_index=request_index,
+                     group_index=group_index, kind=kind,
+                     provider="serper" if kind == "search_lexical" else "exa",
+                     search_type=search_type, query=query)
+
+        def acquisition_finished(result, request_index, *, duration=None, group_index=None, metadata=None):
+            if activity is None:
+                return
+            counts = result.get("search_novelty_receipt", {})
+            kind = result["kind"]
+            status = result["status"]
+            code = result.get("code") or ""
+            external = (result.get("external", False) or result.get("suppressed", False)
+                        or code in {"external_attempts", "deadline"})
+            if status == "error" and (
+                result.get("suppressed") or (external and not result.get("provider_dispatched"))
+                or code.endswith(("_unavailable", "_missing")) or code in {"external_attempts", "deadline"}
+            ):
+                status = "unavailable"
+            announce(
+                "acquisition_finished", route_index=route_index, request_index=request_index,
+                group_index=group_index, kind=kind, external=external,
+                provider=result.get("provider"), status=status, duration_seconds=duration,
+                candidate_count=counts.get("returned_candidate_count", 0),
+                new_candidate_count=counts.get("new_candidate_count", 0),
+                highlight_count=counts.get("returned_material_count", 0),
+                new_material_count=len(result.get("new_acquisition_ids", ())),
+                material_count=len(result.get("material_ids", ())) + int(result.get("visual_input_supplied") is True),
+                read_providers=tuple(attempt["provider"] for attempt in result.get("read_provider_attempts", ())
+                                     if attempt["dispatched"]),
+                original_text_retrieved=kind == "read" and external and (
+                    result["status"] == "ok" or bool(result.get("new_acquisition_ids"))),
+                **(metadata or {}),
+            )
+
         def record_timing(operation, request_index, search_type):
             emit(
                 "acquisition_timing", route_index=route_index, request_index=request_index,
@@ -833,36 +893,63 @@ def _run_turn(
                 if request.mode not in {"auto", "local"} or request.start_char is not None or request.end_char is not None:
                     result = {"error": "image_has_no_text_offsets"}
                 else:
+                    announce("acquisition_started", route_index=route_index, request_index=request_index,
+                             kind="read", external=False)
                     result = select_image(request.target)
-                apply_acquisition({"kind": "read", "status": "error" if "error" in result else "ok",
-                                   "request": request.model_dump(), "material_ids": [], **result})
+                image_result = {"kind": "read", "status": "error" if "error" in result else "ok",
+                                "request": request.model_dump(), "material_ids": [], **result}
+                apply_acquisition(image_result)
+                acquisition_finished(image_result, request_index)
                 return False
 
+            duration = None
+            metadata = {}
+
             def observe_operation(operation, *, request_index=request_index):
+                nonlocal duration
+                duration = operation["duration_seconds"]
                 if operation["external"] and "read_provider_attempts" not in operation:
                     budget.settle_external(1, int(operation["provider_dispatched"]))
                 # Serial Search records the mode search_call assigned during this call.
                 record_timing(operation, request_index,
                               provider_search_type if operation["kind"] == "search" else None)
 
+            def observe_start(operation):
+                metadata.update({key: operation[key] for key in ("title", "hostname") if key in operation})
+                announce("acquisition_started", route_index=route_index, request_index=request_index, **operation)
+
+            def on_search_dispatch(query):
+                mode = "lexical" if request.kind == "search_lexical" else provider_search_type
+                search_dispatched(query, request_index, request.kind, mode)
+
+            activity_options = ({"observe_start": observe_start, "on_search_dispatch": on_search_dispatch}
+                                if activity is not None else {})
             try:
                 result = library.execute(request.model_dump(), before_external=budget.before_external,
-                                         observe_operation=observe_operation, clock=clock)
+                                         observe_operation=observe_operation, clock=clock, **activity_options)
             except _Bound as exc:
                 bound = exc.code
                 result = {"kind": request.kind, "status": "error", "code": exc.code, "material_ids": []}
             apply_acquisition(result)
+            acquisition_finished(result, request_index, duration=duration, metadata=metadata)
             return bound == "deadline"
 
-        def transport_generic_search(query, search_type, timeout_seconds):
+        def transport_generic_search(query, search_type, timeout_seconds, request_index, group_index):
             """External Search only. No library, ID, budget or Lite/Auto mutation."""
             started_at = clock()
             code = None
             leads = None
+
+            def on_dispatch(actual_query):
+                search_dispatched(actual_query, request_index, "search", search_type, group_index=group_index)
+
             try:
                 if search is search_exa:
-                    leads = search(query, search_type=search_type, timeout_seconds=timeout_seconds)
+                    dispatch = {"on_dispatch": on_dispatch} if activity is not None else {}
+                    leads = search(query, search_type=search_type, timeout_seconds=timeout_seconds, **dispatch)
                 else:
+                    if activity is not None:
+                        on_dispatch(query)
                     leads = search(query)
             except Exception as exc:
                 code = generic_search_failure(exc)
@@ -886,10 +973,14 @@ def _run_turn(
                 else:
                     mode = None
                 modes.append(mode)
+            group_index = group[0][0]
+            announce("search_batch_started", route_index=route_index, group_index=group_index,
+                     request_count=len(group))
             with ThreadPoolExecutor(max_workers=len(group)) as pool:
                 futures = [
-                    pool.submit(transport_generic_search, plan["query"], mode, timeout_seconds)
-                    for (_request_index, _request, plan), mode in zip(group, modes)
+                    pool.submit(transport_generic_search, plan["query"], mode, timeout_seconds,
+                                request_index, group_index)
+                    for (request_index, _request, plan), mode in zip(group, modes)
                 ]
                 outcomes = []
                 for future in futures:
@@ -908,12 +999,17 @@ def _run_turn(
                 result = library.admit_transported_search(
                     plan, outcome, observe_operation=observe_operation)
                 apply_acquisition(result)
+                acquisition_finished(result, request_index, group_index=group_index,
+                                     duration=max(0.0, outcome["ended_at"] - outcome["started_at"]))
                 results.append(result)
             starts = [item["started_at"] for item in outcomes]
             ends = [item["ended_at"] for item in outcomes]
             durations = [max(0.0, end - start) for start, end in zip(starts, ends)]
             summed = sum(durations)
             span = max(0.0, max(ends) - min(starts))
+            announce("search_batch_finished", route_index=route_index, group_index=group_index,
+                     request_count=len(group), successful_request_count=sum(item["status"] == "ok" for item in results),
+                     duration_seconds=span)
             emit(
                 "search_concurrency_group", route_index=route_index,
                 first_request_index=group[0][0], last_request_index=group[-1][0],
@@ -1097,7 +1193,7 @@ def _run_turn(
     from scryraven.answer_library import AnswerLibrary
     owner_refs = list(initial_refs)
     owner_library = AnswerLibrary(library, owner_refs, attention_characters=limits.attention_characters,
-                                  emit=emit, clock=clock)
+                                  emit=emit, activity=announce if activity is not None else None, clock=clock)
 
     def answer_library_with_images(name, raw_arguments):
         if name == "library_read":
@@ -1112,7 +1208,11 @@ def _run_turn(
                 owner_library.operations += 1
                 if args.start_char is not None or args.end_char is not None:
                     return {"error": "image_has_no_text_offsets"}
+                announce("answer_inspection_started", kind="read", external=False)
                 result = select_image(args.target)
+                supplied = result.get("visual_input_supplied") is True
+                announce("answer_inspection_finished", kind="read", external=False,
+                         status="ok" if supplied else "error", material_count=int(supplied))
                 emit("user_image_read", image_id=args.target, success="error" not in result)
                 return result
         return owner_library(name, raw_arguments)
@@ -1234,6 +1334,7 @@ def _run_turn(
             def final_feedback(raw):
                 nonlocal validated, validation_error, final_count
                 final_count += 1
+                announce("answer_validation_started")
                 final = parse_response("answer", raw, SemanticAnswerDecision)
                 try:
                     feedback = correction(final)
@@ -1267,6 +1368,7 @@ def _run_turn(
                 final = ask("answer", ANSWER_PROMPT, packet, SemanticAnswerDecision,
                             answer_library=answer_library_with_images if available_images else owner_library,
                             research_tool=investigate)
+                announce("answer_validation_started")
                 feedback = correction(final)
                 if feedback is None:
                     emit("answer_decision", decision=final.model_dump(

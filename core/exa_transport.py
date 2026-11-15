@@ -37,6 +37,7 @@ def search_exa(
     search_type: str = "auto",
     api_key: str | None = None, timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
     post: Callable[..., Any] | None = None,
+    on_dispatch: Callable[[str], None] | None = None,
 ) -> list[DiscoveryCandidate]:
     query = _required_text(query, "query")
     if isinstance(result_count, bool) or not isinstance(result_count, int) or not 1 <= result_count <= 100:
@@ -49,7 +50,7 @@ def search_exa(
             "query": query, "dynamic": True, "verbosity": "high",
         }},
     }, api_key, timeout_seconds, post,
-        extra_headers={"Exa-Beta": EXA_DYNAMIC_HIGHLIGHTS_BETA})
+        extra_headers={"Exa-Beta": EXA_DYNAMIC_HIGHLIGHTS_BETA}, on_search_dispatch=on_dispatch)
     candidates = []
     for row in _results(data):
         url = _text(row.get("url"))
@@ -94,7 +95,8 @@ def fetch_exa(
 
 
 def _post_json(url, payload, api_key, timeout_seconds, post, *,
-               extra_headers: Mapping[str, str] | None = None) -> Mapping[str, Any]:
+               extra_headers: Mapping[str, str] | None = None,
+               on_search_dispatch: Callable[[str], None] | None = None) -> Mapping[str, Any]:
     token = api_key if api_key is not None else os.getenv(EXA_API_KEY_ENV)
     if not isinstance(token, str) or not token.strip():
         raise ExaTransportError("exa_configuration_missing")
@@ -104,6 +106,11 @@ def _post_json(url, payload, api_key, timeout_seconds, post, *,
     headers = {"x-api-key": token.strip(), "Content-Type": "application/json"}
     if extra_headers:
         headers.update(extra_headers)
+    if on_search_dispatch is not None:
+        try:
+            on_search_dispatch(payload["query"])
+        except Exception:
+            pass  # Optional activity cannot prevent dispatch.
     try:
         response = (post or post_provider_request)(
             url, json=payload, headers=headers, timeout=timeout,
