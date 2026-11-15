@@ -36,6 +36,22 @@ jobs against the merged baseline, model and acquisition counts matched. Median
 admission-to-commit time increased 4.9 ms for one Search and 3.2 ms for a
 parallel Search batch with two Reads. Timing ranges overlapped.
 
+Two brokered ordinary local Reading Room submissions at
+`baeabf06c7e45bfce47e1b467a4b3e05004845ad` completed in 8.343 seconds
+(BIPM prefixes) and 95.563 seconds (California civil-case reclassification).
+The browser displayed actual dispatched searches during both runs. The longer
+run displayed parallel searches, delegated Research, two logical dual-provider
+Reads that retrieved source text, retained-material inspection, and the return
+to Answer. Both completed histories reopened with their searches and saved
+status. The runs used 15 physical model requests and 19 acquisition-provider
+dispatches in total. All reported inference tiers were Fast. The conservative
+metered estimate was $3.009157 including a $2 acquisition reserve. Actual
+billing was unobserved. Sanitized evidence is under ignored
+`local-evals/runs/live-research-activity-01/`. These observations concern
+activity fidelity and delivery. They include zero independent source checks
+and do not establish broader answer quality, participant comprehension, or
+deployed performance.
+
 ## Hosted answer feedback
 
 The private hosted preview shows a collapsed Leave feedback disclosure beneath
