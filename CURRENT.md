@@ -917,8 +917,9 @@ These are reversible configuration values, not architectural requirements or a
 semantic router. Compatible injected configurations may vary in quality and
 validation coverage; there is no automatic premium escalation or model fallback.
 Research Search requests carry the retrieval `query` and a separate evidence
-`objective`. Exa receives both fields as written by Research. The objective
-describes what the retrieved sources should help establish. Research is
+`objective`. Exa receives the query and any nonblank objective as written by
+Research. The objective describes what the retrieved sources should help
+establish. Research is
 instructed to choose distinct needs, preserve discovery space, revise the
 briefing from route results, and choose Read, Find, further Search or return
 according to the unresolved evidence. The existing briefing and acquisition
@@ -1487,29 +1488,43 @@ post and acquired Exa highlights for qualifications. The run used seven semantic
 attempts and 12 external attempts. This shows one successful source-class route,
 not general semantic-selection reliability or Level-7 synthesis.
 
-Evidence-Directed Research 01 did not meet live investigation acceptance.
+The isolated Search smoke at `dad512b5` retrieved PoE 3.30 profitability and
+release material, relevant Lawrence of Arabia production accounts, and the
+official Caterpillar v. Lewis opinion. Its PoE route also gave unsupported
+weight to Atlas and Scarabs, and a proposed film search repeated the horse-count
+need. A scripted LinkUp Fast request returned ten navigation candidates and
+zero Evidence records. The earlier smoke at `550a1d68` also showed keyword
+accumulation. Both smokes ended before Answer.
+
 The ordinary local PoE 3.30 turn at `7848f344782bbe2ea1d642e19b21c7e27d5f7c13`
 sent the model-authored query and objective separately on all six Exa requests.
-Its initial route repeated the version-check need and narrowed the profitability
-search to Atlas and Scarabs before seeing evidence. This repeated the material
-failure in the earlier isolated Search smoke. The subsequent Research decisions
-used acquired evidence about Threads replacing Scarabs, inspected identified
-originals and separated current boss-farm models from independent measurements.
-Answer gave version-specific farming options, qualified the estimated returns
-and explained why the evidence could not rank them on a comparable basis.
-The durable answer and citations reopened with exact Evidence.
+Terra repeated the version-check need and again narrowed a profitability search
+to Atlas and Scarabs before seeing evidence. Subsequent Research decisions used
+the acquired finding that Threads replaced Scarabs, inspected identified
+originals, and separated boss-farm models from independent measurements.
+Answer gave version-specific farming options and qualified the return estimates
+and their comparability. Its citations reopened with exact Evidence. The run
+took 81.578 seconds, with seven physical model requests and 17 acquisition
+dispatches, for an estimated $0.928125. The original acceptance gate stopped
+the campaign after this case. Klamath, aircraft, and the retained-source
+follow-up were exercised by scripted offline fixtures.
 
-The one submission took 81.578 seconds, with five Terra and two Sol physical
-requests and 17 acquisition dispatches (six Exa Search, one LinkUp Search,
-five Exa Contents and five LinkUp Fetch). The conservative metered estimate
-was $0.928125. The repeated initial-route failure stopped the campaign before
-the planned Klamath and aircraft submissions. Source-bearing offline fixtures
-exercise those paths and the retained-source follow-up with scripted choices.
-The earlier PoE observation ended before Answer, so it supplies no paired
-answer-quality baseline. General investigative reliability remains unproved.
-Sanitized evidence is under ignored `local-evals/runs/evidence-directed-research-01/`;
-the earlier isolated comparison is under
-`local-evals/runs/semantic-search-final-acceptance-01/`.
+A separate comparison at `1c24c01b` sampled three initial Research decisions
+each from GPT-6.1 Terra and GPT-6 Luna on one PoE 3.30 question, both at
+medium/Fast. All six decisions retained broad profitability discovery. Two
+Terra draws and zero Luna draws gave unsupported emphasis to Atlas. The primary
+blind reviewer judged consequential narrowing in one Terra draw and zero Luna
+draws. The second reviewer judged zero in both because route-level breadth
+survived. The comparison ended before acquisition or Answer and supplies no
+retrieval or answer-quality comparison.
+
+The publication decision permits initial hypothesis testing when meaningful
+discovery breadth survives. Terra remains the default Research model.
+Unsupported hypothesis emphasis and repeated needs remain observable,
+and general investigative reliability remains unproved. Sanitized evidence is
+under ignored `local-evals/runs/semantic-search-correction-01/`,
+`semantic-search-final-acceptance-01/`, `evidence-directed-research-01/`, and
+`poe-research-model-bakeoff-01/` within the same runs directory.
 
 Foundation 01 established four valid frozen Levels 1–3 cases; its NPS comparison
 was excluded for evaluator/source ambiguity. Foundation 02 established three
