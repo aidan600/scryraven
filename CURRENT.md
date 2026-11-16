@@ -1485,24 +1485,26 @@ post and acquired Exa highlights for qualifications. The run used seven semantic
 attempts and 12 external attempts. This shows one successful source-class route,
 not general semantic-selection reliability or Level-7 synthesis.
 
-Semantic Search Correction 01 did not meet live query-formulation acceptance.
-At `550a1d68c7f2a18fad8125db348d2e81714422da`, three isolated Terra/medium/Fast
-decisions still produced keyword-heavy Exa requests for open-ended Path of
-Exile 3.30 farming, the number of horses used in filming Lawrence of Arabia,
-and a constrained Supreme Court case. The first PoE search sought release
-information; its proposed farming searches added candidate mechanisms or
-strategies. The legal query retained the case, year, reporter and subsection
-number, but omitted the U.S. Code title and stacked terms. The three dispatched
-queries matched the decisions and Actual searches activity, and each returned
-six source-derived highlight records. A separately scripted LinkUp Fast Search
-returned ten navigation candidates and zero Evidence records. The calls used
-two Exa Lite requests, one Exa Auto request and one LinkUp request. The
-conservative metered estimate was $0.046; actual billing was unobserved.
-The final prompt tightens instructions on trailing keywords and version scope
-and supplies a natural statutory lookup example. The model and Exa allowances
-were exhausted before that refinement, so its effect remains unverified.
-No full-product question or further Read was run. Sanitized evidence is under
-ignored `local-evals/runs/semantic-search-correction-01/`.
+Semantic Search Correction 01 did not meet final live query-formulation
+acceptance. At `dad512b5a40a5dbef38040b47109c0817ba88488`, the final prompt
+produced an open Path of Exile 3.30 profitability query and a separate version
+check. Its third query repeated the farming objective and introduced Atlas
+and Scarabs before any acquisition. That query retrieved Atlas and Scarab
+rework material, including highlights describing Scarabs being replaced in
+3.30. The dispatched Lawrence of Arabia query retrieved relevant production and
+scene-specific accounts, while a second proposed query repeated the horse
+count and added camels. The legal decision proposed distinct case and statutory
+lookups. The dispatched case lookup retrieved official U.S. Reports copies.
+The second film and legal proposals were outside the smoke's dispatch allowance.
+
+The three isolated Terra/medium/Fast decisions produced five physical Exa
+dispatches. All five matched the decision and Actual searches entry, and each
+returned six source highlight records. One scripted LinkUp Fast Search returned
+ten source-identifiable navigation candidates and zero Evidence records. The
+conservative metered estimate for final acceptance was $0.056240. The smoke
+ended at the Research handoff. Sanitized evidence is under ignored
+`local-evals/runs/semantic-search-final-acceptance-01/`, with the earlier
+smoke under `local-evals/runs/semantic-search-correction-01/`.
 
 Foundation 01 established four valid frozen Levels 1–3 cases; its NPS comparison
 was excluded for evaluator/source ambiguity. Foundation 02 established three
