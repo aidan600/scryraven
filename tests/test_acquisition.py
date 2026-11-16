@@ -5,10 +5,9 @@ from functools import partial
 
 import pytest
 
-from core import exa_transport, linkup_transport, serper_transport
+from core import exa_transport, linkup_transport
 from core.exa_transport import DiscoveryCandidate, ExaTransportError, FetchedMaterial
 from core.linkup_transport import LinkupTransportError
-from core.serper_transport import SerperTransportError
 from scryraven.acquisition import FIND_RESULT_LIMIT, AcquisitionError, AcquisitionLibrary
 from scryraven.sources import Evidence, exact_view
 
@@ -335,7 +334,7 @@ def test_provider_exception_is_safe_and_budget_callback_exception_propagates(ope
 
 @pytest.mark.parametrize(("kind", "environment_name", "code"), [
     ("search", exa_transport.EXA_API_KEY_ENV, "exa_configuration_missing"),
-    ("search_lexical", serper_transport.SERPER_API_KEY_ENV, "serper_configuration_missing"),
+    ("search_lexical", linkup_transport.LINKUP_API_KEY_ENV, "linkup_configuration_missing"),
     ("read", linkup_transport.LINKUP_API_KEY_ENV, "linkup_configuration_missing"),
 ])
 def test_missing_provider_configuration_reaches_acquisition_result(monkeypatch, kind, environment_name, code):
@@ -346,6 +345,19 @@ def test_missing_provider_configuration_reaches_acquisition_result(monkeypatch, 
     assert result["status"] == "error" and result["code"] == code
     assert result["external"] and not result["local"]
     assert library.acquisitions == []
+
+
+@pytest.mark.parametrize(("first", "second"), [("search_lexical", "read"), ("read", "search_lexical")])
+def test_missing_linkup_key_is_shared_across_search_and_fetch(monkeypatch, first, second):
+    monkeypatch.delenv(linkup_transport.LINKUP_API_KEY_ENV, raising=False)
+    library = AcquisitionLibrary()
+    library.allow_question_urls(URL)
+    first_result = request(library, first, query="known publication", target=URL)
+    second_result = request(library, second, query="known publication", target=URL)
+    assert first_result["provider"] == second_result["provider"] == "linkup"
+    assert first_result["code"] == second_result["code"] == "linkup_configuration_missing"
+    assert first_result["external"] and not first_result["provider_dispatched"]
+    assert second_result["suppressed"] and not second_result["external"]
 
 
 def test_linkup_no_readable_material_reaches_acquisition_result():
@@ -368,7 +380,7 @@ def test_linkup_no_readable_material_reaches_acquisition_result():
 
 @pytest.mark.parametrize(("kind", "error", "expected"), [
     ("search", ExaTransportError("private provider detail"), "search_failed"),
-    ("search_lexical", SerperTransportError("private provider detail"), "search_failed"),
+    ("search_lexical", LinkupTransportError("private provider detail"), "search_failed"),
     ("read", LinkupTransportError("private provider detail"), "read_failed"),
     ("search", RuntimeError("exa_configuration_missing"), "search_failed"),
     ("read", RuntimeError("linkup_material_unavailable"), "read_failed"),
@@ -426,7 +438,7 @@ def test_body_free_operation_timing_distinguishes_external_and_local_routes():
     local_read = execute("read", target=external_read["material_ids"][0], mode="local")
     local_find = execute("find", query="PRIVATE")
 
-    assert [operation["provider"] for operation in operations] == ["exa", "serper", "linkup", "local", "local"]
+    assert [operation["provider"] for operation in operations] == ["exa", "linkup", "linkup", "local", "local"]
     assert [operation["duration_seconds"] for operation in operations] == pytest.approx([2.5, 1.25, 3.0, 0.4, 0.75])
     assert [operation["external"] for operation in operations] == [True, True, True, False, False]
     assert [operation["started_at"] for operation in operations] == [10.0, 13.0, 20.0, 25.0, 30.0]

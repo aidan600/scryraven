@@ -11,17 +11,18 @@ from test_image_inputs import decision as image_decision
 from test_image_inputs import reply, scripted, session_image
 from test_research_loop import Script, answer, decision, no_fetch, request
 
-from core import exa_transport, serper_transport
+from core import exa_transport, linkup_transport
 from core.exa_transport import DiscoveryCandidate
 from scryraven import research
 
 
-@pytest.mark.parametrize("transport, env, kind, payload_key", [
-    (exa_transport, "EXA_API_KEY", "search", "query"),
-    (serper_transport, "SERPER_API_KEY", "search_lexical", "q"),
+@pytest.mark.parametrize("transport, env, kind, payload_key, provider", [
+    (exa_transport, "EXA_API_KEY", "search", "query", "exa"),
+    (linkup_transport, "LINKUP_API_KEY", "search_lexical", "q", "linkup"),
 ])
 @pytest.mark.parametrize("configured", [False, True])
-def test_only_actual_search_dispatch_supplies_query_text(monkeypatch, transport, env, kind, payload_key, configured):
+def test_only_actual_search_dispatch_supplies_query_text(monkeypatch, transport, env, kind, payload_key, provider,
+                                                        configured):
     monkeypatch.delenv(env, raising=False)
     if configured:
         monkeypatch.setenv(env, "offline-test-value")
@@ -32,6 +33,7 @@ def test_only_actual_search_dispatch_supplies_query_text(monkeypatch, transport,
         calls.append(json[payload_key])
         assert events[-1]["action"] == "search_dispatched"
         assert events[-1]["query"] == json[payload_key]
+        assert events[-1]["provider"] == provider
         raise requests.HTTPError()
 
     monkeypatch.setattr(transport, "post_provider_request", reject)
@@ -40,7 +42,7 @@ def test_only_actual_search_dispatch_supplies_query_text(monkeypatch, transport,
     result = research.run("What is the threshold?", model=model, fetch=no_fetch, activity=events.append)
     acquisition = [event for event in events if event["action"] == "acquisition_finished"]
     assert [event["status"] for event in acquisition] == ["error" if configured else "unavailable"]
-    assert calls == (["exact question wording"] if configured else [])
+    assert calls == (["  exact question wording  "] if configured else [])
     assert sum("query" in event for event in events) == int(configured)
     assert not {event["action"] for event in events} & {event["action"] for event in result.trace}
 

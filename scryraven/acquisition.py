@@ -14,8 +14,13 @@ from urllib.parse import quote, urljoin, urlsplit
 
 from core.dual_read import DualReadResult, validate_read_material
 from core.exa_transport import DiscoveryCandidate, ExaTransportError, search_exa
-from core.linkup_transport import LINKUP_FAILURE_CODES, LINKUP_FETCH_STRATEGY, LinkupTransportError, fetch_linkup
-from core.serper_transport import SerperTransportError, search_serper
+from core.linkup_transport import (
+    LINKUP_FAILURE_CODES,
+    LINKUP_FETCH_STRATEGY,
+    LinkupTransportError,
+    fetch_linkup,
+    search_linkup,
+)
 from core.transport import FetchedMaterial
 from scryraven.documents import (
     DOCUMENT_ID,
@@ -35,7 +40,6 @@ SEARCH_NOVELTY_COUNTS = (
 )
 PROVIDER_CONFIGURATION_CODES = {
     "exa": "exa_configuration_missing",
-    "serper": "serper_configuration_missing",
     "linkup": "linkup_configuration_missing",
 }
 
@@ -120,7 +124,7 @@ class AcquisitionLibrary:
         self, retained_acquisitions: Iterable[Evidence] = (), *,
         documents: Iterable[SessionDocument] = (),
         search: Callable[..., list[DiscoveryCandidate]] = search_exa,
-        lexical_search: Callable[..., list[DiscoveryCandidate]] = search_serper,
+        lexical_search: Callable[..., list[DiscoveryCandidate]] = search_linkup,
         fetch: Callable[..., FetchedMaterial] = fetch_linkup,
         fetch_read: Callable[[str], DualReadResult | None] | None = None,
     ) -> None:
@@ -391,7 +395,7 @@ class AcquisitionLibrary:
             value = request.get(key, "")
             if not isinstance(value, str):
                 raise AcquisitionError("invalid_request_field")
-            result[key] = value.strip()
+            result[key] = value if key == "query" and kind in {"search", "search_lexical"} else value.strip()
         result["mode"] = request.get("mode", "auto")
         if not isinstance(result["mode"], str) or result["mode"] not in {"auto", "local", "full", "refresh"}:
             raise AcquisitionError("invalid_read_mode")
@@ -407,7 +411,7 @@ class AcquisitionLibrary:
         start, end = result["start_char"], result["end_char"]
         if (start is not None or end is not None) and (start is None or end is None or not 0 <= start < end):
             raise AcquisitionError("invalid_exact_range")
-        if kind in {"search", "search_lexical", "find"} and not result["query"]:
+        if kind in {"search", "search_lexical", "find"} and not result["query"].strip():
             raise AcquisitionError("empty_query")
         if kind == "read" and not result["target"]:
             raise AcquisitionError("empty_target")
@@ -501,7 +505,7 @@ class AcquisitionLibrary:
         result["material_ids"] = list(dict.fromkeys(result["material_ids"]))
         duration = max(0.0, ended_at - started_at)
         provider = result.get("provider") or (
-            {"search": "exa", "search_lexical": "serper", "read": "linkup"}.get(result["kind"])
+            {"search": "exa", "search_lexical": "linkup", "read": "linkup"}.get(result["kind"])
             if result["external"] else "local")
         if provider in PROVIDER_CONFIGURATION_CODES and result.get("code") == PROVIDER_CONFIGURATION_CODES[provider]:
             self.unavailable_providers.setdefault(provider, result["code"])
@@ -557,14 +561,14 @@ class AcquisitionLibrary:
 
     def _search(self, request: dict, result: dict, before_external: Callable[[], None], on_dispatch) -> None:
         lexical = request["kind"] == "search_lexical"
-        self._before_provider("serper" if lexical else "exa", result, before_external)
+        self._before_provider("linkup" if lexical else "exa", result, before_external)
         try:
             transport = self.lexical_search if lexical else self.search
             leads = (transport(request["query"], on_dispatch=on_dispatch) if on_dispatch is not None
                      else transport(request["query"]))
         except Exception as exc:
-            if lexical and isinstance(exc, SerperTransportError) and str(exc) == "serper_configuration_missing":
-                raise AcquisitionError("serper_configuration_missing") from None
+            if lexical and isinstance(exc, LinkupTransportError) and str(exc) == "linkup_configuration_missing":
+                raise AcquisitionError("linkup_configuration_missing") from None
             if lexical:
                 raise AcquisitionError("search_failed") from None
             raise AcquisitionError(generic_search_failure(exc)) from None
@@ -592,7 +596,7 @@ class AcquisitionLibrary:
         new_ids = returned_ids - prior_material_ids
         new_candidate_materials = sum(self.materials[ref].url not in known_urls for ref in new_ids)
         result["search_novelty_receipt"] = {
-            "provider": "serper" if lexical else "exa", "kind": request["kind"],
+            "provider": "linkup" if lexical else "exa", "kind": request["kind"],
             "returned_candidate_count": len(returned_urls),
             "new_candidate_count": len(returned_urls - known_urls),
             "known_candidate_count": len(returned_urls & known_urls),

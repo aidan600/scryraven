@@ -20,8 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from core.dual_read import configured_read_providers, fetch_dual
 from core.exa_transport import search_exa
-from core.linkup_transport import fetch_linkup
-from core.serper_transport import search_serper
+from core.linkup_transport import fetch_linkup, search_linkup
 from scryraven import model as model_transport
 from scryraven.acquisition import AcquisitionError, AcquisitionLibrary, generic_search_failure
 from scryraven.calculator import calculate
@@ -159,11 +158,18 @@ Use briefing for a concise provisional answer and the important source-backed im
 
 Select evidence for answering the user's question, including material that changes or contradicts the briefing. The briefing is fallible guidance, not evidence. Do not make Answer reconstruct every useful relationship from a list of source IDs, and do not write a polished final answer here.
 
+# Search query formulation
+For semantic search, express the information needed as a natural, grammatical phrase or question. Name the subject, the relationship or evidence sought, and any material scope. A short phrase is often enough. Keep exact names, dates, versions, jurisdictions and provisions when they identify the right material. Use the question and conversation to interpret ambiguous identifiers. If a material ambiguity remains, investigate it without silently replacing the user's identifier or assuming one meaning.
+
+For open discovery, describe what the sources should establish and leave the possible answers open. For example, use "Field studies comparing ways to reduce bird collisions with office windows" instead of "bird collisions office glass decals nets film UV lights". Avoid adding speculative answers, mechanisms or loosely related entities just to increase keyword coverage. Make independent searches address different information needs, such as comparative effectiveness and installation costs, when both matter.
+
+Be specific when the question already identifies an exact fact or source, or when acquired evidence gives you a concrete claim to verify. For example, "What date did the James Webb Space Telescope reach its orbit around Sun–Earth L2, according to NASA?" is a precise semantic query. Start with the precise lookup when it is already warranted.
+
 # Operations and response contract
 Return the supplied ResearchDecision schema.
 - action=research: include useful requests, normally one to three. action=return: requests=[].
-- search: describe the needed subject, relationship, source type and applicable time in natural language. Results contain provider-selected highlights, not complete publications.
-- search_lexical: use literal terms or site constraints for discovery. Its snippets are navigation, not citable evidence.
+- search: use Exa for semantic discovery or targeted verification with the query guidance above. Results contain source highlights, not complete publications.
+- search_lexical: use LinkUp for keyword-oriented navigation when exact names, identifiers or distinctive source wording are the strongest lead. Result snippets guide navigation only. Read the source for Evidence.
 - read: target is a known C/E/D ID or observed URL; focus describes the needed
   source wording for lexical passage navigation, not a semantic summary.
   mode=auto rereads an exact E ID, even a highlight. full reuses or acquires its
@@ -401,7 +407,7 @@ def run(question: str, **kwargs) -> CompletedAnswer:
 
 
 def _run_turn(
-    question: str, *, model=None, search=search_exa, lexical_search=search_serper, fetch=fetch_linkup,
+    question: str, *, model=None, search=search_exa, lexical_search=search_linkup, fetch=fetch_linkup,
     limits: RunLimits | None = None, retained_acquisitions=(), context=None,
     session_turn: int = 1, observe: Callable[[dict], None] | None = None,
     activity: Callable[[dict], None] | None = None,
@@ -471,7 +477,7 @@ def _run_turn(
                       **dispatch)
 
     def lexical_call(query, *, on_dispatch=None):
-        if lexical_search is not search_serper:
+        if lexical_search is not search_linkup:
             if on_dispatch is not None:
                 on_dispatch(query)
             return lexical_search(query)
@@ -748,9 +754,8 @@ def _run_turn(
                 for provider, code in library.unavailable_providers.items()]
 
     def no_available_acquisition():
-        discovery_unavailable = {"exa", "serper"} <= library.unavailable_providers.keys()
-        known_url_available = bool(library.candidates) and "linkup" not in library.unavailable_providers
-        return bool(discovery_unavailable and not known_url_available
+        discovery_unavailable = {"exa", "linkup"} <= library.unavailable_providers.keys()
+        return bool(discovery_unavailable
                     and not library.materials and not library.documents and not available_images)
 
     def configuration_handoff():
@@ -804,7 +809,7 @@ def _run_turn(
         def search_dispatched(query, request_index, kind, search_type, *, group_index=None):
             announce("search_dispatched", route_index=route_index, request_index=request_index,
                      group_index=group_index, kind=kind,
-                     provider="serper" if kind == "search_lexical" else "exa",
+                     provider="linkup" if kind == "search_lexical" else "exa",
                      search_type=search_type, query=query)
 
         def acquisition_finished(result, request_index, *, duration=None, group_index=None, metadata=None):

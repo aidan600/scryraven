@@ -5,7 +5,7 @@ import json
 from test_model_transport import Response
 from test_research_loop import Script, answer, decision, request
 
-from core import dual_read, serper_transport
+from core import dual_read, linkup_transport
 from core.exa_transport import DiscoveryCandidate
 from core.transport import FetchedMaterial
 from scryraven import __main__ as cli
@@ -25,14 +25,14 @@ def test_explicit_capability_dispatch_and_failure_isolation():
         calls.append(("exa", query))
         return []
 
-    def serper(query):
-        calls.append(("serper", query))
+    def lexical(query):
+        calls.append(("linkup_search", query))
         return []
 
-    library = AcquisitionLibrary(search=exa, lexical_search=serper)
+    library = AcquisitionLibrary(search=exa, lexical_search=lexical)
     assert library.execute({"kind": "search", "query": "ordinary"}, before_external=lambda: None)["status"] == "ok"
     assert library.execute({"kind": "search_lexical", "query": "community"}, before_external=lambda: None)["status"] == "ok"
-    assert calls == [("exa", "ordinary"), ("serper", "community")]
+    assert calls == [("exa", "ordinary"), ("linkup_search", "community")]
 
     def fail(query):
         calls.append(("failed", query))
@@ -40,17 +40,17 @@ def test_explicit_capability_dispatch_and_failure_isolation():
 
     library = AcquisitionLibrary(search=exa, lexical_search=fail)
     assert library.execute({"kind": "search_lexical", "query": "post"}, before_external=lambda: None)["code"] == "search_failed"
-    library = AcquisitionLibrary(search=fail, lexical_search=serper)
+    library = AcquisitionLibrary(search=fail, lexical_search=lexical)
     assert library.execute({"kind": "search", "query": "fact"}, before_external=lambda: None)["code"] == "search_failed"
     assert calls[-2:] == [("failed", "post"), ("failed", "fact")]
 
 
-def test_serper_candidate_requires_linkup_read_before_evidence():
+def test_linkup_search_candidate_requires_read_before_evidence():
     calls = []
 
     def lexical(query):
-        calls.append(("serper", query))
-        # Even a transport mistake cannot upgrade a Serper snippet to Evidence.
+        calls.append(("linkup_search", query))
+        # Even a transport mistake cannot upgrade a lexical snippet to Evidence.
         return [DiscoveryCandidate("Public post", URL, "Snippet claims the answer is seven.",
                                    context_kind="provider_highlights")]
 
@@ -69,15 +69,15 @@ def test_serper_candidate_requires_linkup_read_before_evidence():
     assert read["material_ids"] == ["E1"]
     assert library.acquisitions[0].acquisition == "fetched_source"
     assert library.acquisitions[0].content == "The actual published source says seven."
-    assert calls == [("serper", "public post"), ("linkup", URL)]
+    assert calls == [("linkup_search", "public post"), ("linkup", URL)]
     assert library.execute({"kind": "read", "target": "C1"}, before_external=lambda: (_ for _ in ()).throw(AssertionError("external")))["local"]
     assert library.execute({"kind": "find", "query": "published"}, before_external=lambda: (_ for _ in ()).throw(AssertionError("external")))["local"]
 
 
-def test_exa_serper_duplicate_url_keeps_candidate_and_source_identity():
+def test_exa_linkup_duplicate_url_keeps_candidate_and_source_identity():
     library = AcquisitionLibrary(
         search=lambda q: [DiscoveryCandidate("Exa", URL, "Exact highlight.", context_kind="provider_highlights")],
-        lexical_search=lambda q: [DiscoveryCandidate("Serper", URL, "Navigation snippet")],
+        lexical_search=lambda q: [DiscoveryCandidate("LinkUp", URL, "Navigation snippet")],
         fetch=lambda url: FetchedMaterial(url, "Fetched source."),
     )
     exa = library.execute({"kind": "search", "query": "fact"}, before_external=lambda: None)
@@ -102,16 +102,20 @@ def test_research_and_session_can_choose_lexical_then_read():
         answer("The source says seven. [E1]"),
     )
     calls = []
+    def lexical(query):
+        calls.append(("linkup_search", query))
+        return [DiscoveryCandidate("Post", URL, "Answer seven")]
+
     kwargs = dict(model=model,
                   search=lambda q: calls.append(("exa", q)) or [],
-                  lexical_search=lambda q: calls.append(("serper", q)) or [DiscoveryCandidate("Post", URL, "Answer seven")],
+                  lexical_search=lexical,
                   fetch=lambda url: calls.append(("linkup", url)) or FetchedMaterial(url, "The source says seven."))
     result = run("What does this public post say?", **kwargs)
     assert result.posture == "supported"
     assert [(event["result"]["kind"], event["result"]["material_ids"])
             for event in result.trace if event["action"] == "acquisition_result"] == [
                 ("search_lexical", []), ("read", ["E1"])]
-    assert calls == [("serper", "public post"), ("linkup", URL)]
+    assert calls == [("linkup_search", "public post"), ("linkup", URL)]
     assert model.calls[1][2]["evidence"] == []
     assert model.calls[1][2]["catalog"]["candidates"][0]["context"] == "Answer seven"
     assert model.calls[2][2]["evidence"][0]["content"] == "The source says seven."
@@ -126,8 +130,8 @@ def test_research_and_session_can_choose_lexical_then_read():
     assert session.acquisitions[0].acquisition == "fetched_source"
 
 
-def test_cli_uses_serper_then_linkup_through_ordinary_run(monkeypatch, capsys):
-    for key in ("OPENAI_API_KEY", "SERPER_API_KEY", "LINKUP_API_KEY"):
+def test_cli_uses_linkup_search_then_fetch_through_ordinary_run(monkeypatch, capsys):
+    for key in ("OPENAI_API_KEY", "LINKUP_API_KEY"):
         monkeypatch.setenv(key, "offline-test-value")
     monkeypatch.delenv("EXA_API_KEY", raising=False)
     outputs = iter([
@@ -152,15 +156,18 @@ def test_cli_uses_serper_then_linkup_through_ordinary_run(monkeypatch, capsys):
             return Response({"status": "completed", "output": [{"type": "message", "phase": "final_answer",
                              "content": [{"type": "output_text", "text": text}]}]})
         providers.append(url)
-        if url == serper_transport.SERPER_SEARCH_URL:
-            return Response({"organic": [{"title": "Post", "link": URL, "snippet": "A claim"}]})
+        if url == linkup_transport.LINKUP_SEARCH_URL:
+            assert kwargs["json"] == {
+                "q": "public post", "depth": "fast", "outputType": "searchResults", "maxResults": 10,
+            }
+            return Response({"results": [{"type": "text", "name": "Post", "url": URL, "content": "A claim"}]})
         raise AssertionError("unexpected provider")
 
     monkeypatch.setattr(model.requests, "post", post)
     monkeypatch.setattr("scryraven.research.fetch_dual", fetch_read)
     assert cli.main(["What does this public post say?"]) == 0
     assert "The source says seven. [1]" in capsys.readouterr().out
-    assert providers == [serper_transport.SERPER_SEARCH_URL]
+    assert providers == [linkup_transport.LINKUP_SEARCH_URL]
 
 
 def test_reading_room_uses_same_lexical_capability(tmp_path):
@@ -177,10 +184,10 @@ def test_reading_room_uses_same_lexical_capability(tmp_path):
         session_options={
             "model": model_script,
             "search": lambda q: calls.append(("exa", q)) or [],
-            "lexical_search": lambda q: calls.append(("serper", q)) or [DiscoveryCandidate("Post", URL, "Claim")],
+            "lexical_search": lambda q: calls.append(("linkup_search", q)) or [DiscoveryCandidate("Post", URL, "Claim")],
             "fetch": lambda url: calls.append(("linkup", url)) or FetchedMaterial(url, "The source says seven."),
         },
     )
     response = submit(app.test_client(), question="What does this public post say?")
     assert response.status_code == 303
-    assert calls == [("serper", "public post"), ("linkup", URL)]
+    assert calls == [("linkup_search", "public post"), ("linkup", URL)]

@@ -39,8 +39,7 @@ def main(argv: list[str] | None = None) -> int:
     os.environ.pop("OPENAI_API_KEY", None)
     configured = {
         provider: bool(os.environ.get(name, "").strip())
-        for provider, name in (("exa", "EXA_API_KEY"), ("serper", "SERPER_API_KEY"),
-                               ("linkup", "LINKUP_API_KEY"))
+        for provider, name in (("exa", "EXA_API_KEY"), ("linkup", "LINKUP_API_KEY"))
     }
     manifest["acquisition_configuration"] = configured
     failure_code = "forensic_launch_failed"

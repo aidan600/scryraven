@@ -26,7 +26,6 @@ def test_missing_required_search_fails_before_model_or_server(tmp_path, monkeypa
     monkeypatch.delenv("EXA_API_KEY", raising=False)
     if exa is not None:
         monkeypatch.setenv("EXA_API_KEY", exa)
-    monkeypatch.setenv("SERPER_API_KEY", "synthetic-serper-value")
     monkeypatch.setenv("LINKUP_API_KEY", "  ")
     monkeypatch.setenv("OPENAI_API_KEY", "synthetic-api-value")
     monkeypatch.setattr(child, "OpenAIModel", lambda **_: pytest.fail("model constructed"))
@@ -35,7 +34,7 @@ def test_missing_required_search_fails_before_model_or_server(tmp_path, monkeypa
     result = _manifest(tmp_path)
     assert result["safe_error_code"] == "exa_configuration_missing"
     assert result["launch_status"] == "failed"
-    assert result["acquisition_configuration"] == {"exa": False, "serper": True, "linkup": False}
+    assert result["acquisition_configuration"] == {"exa": False, "linkup": False}
     assert "OPENAI_API_KEY" not in os.environ
     assert not (tmp_path / "sessions.sqlite3").exists()
     assert not (tmp_path / "observer.jsonl").exists()
@@ -48,7 +47,6 @@ def test_explicit_plan_injection_isolated_logs_real_application_and_zero_startup
 ):
     monkeypatch.setenv("EXA_API_KEY", "synthetic-exa-value")
     monkeypatch.setenv("OPENAI_API_KEY", "synthetic-api-value")
-    monkeypatch.delenv("SERPER_API_KEY", raising=False)
     monkeypatch.setenv("LINKUP_API_KEY", "synthetic-linkup-value")
     models = []
 
@@ -82,7 +80,7 @@ def test_explicit_plan_injection_isolated_logs_real_application_and_zero_startup
         assert manifest["api_inference_fallback"] is False
         assert manifest["inference_backend"] == "chatgpt_plan"
         assert manifest["plan_account"] == "personal"
-        assert manifest["acquisition_configuration"] == {"exa": True, "serper": False, "linkup": True}
+        assert manifest["acquisition_configuration"] == {"exa": True, "linkup": True}
         assert app.test_client().get("/").status_code == 200
         assert models[0].plan_transport.physical_requests == 0
 

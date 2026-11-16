@@ -19,7 +19,6 @@ from test_research_passage_locators import owned
 
 from core.exa_transport import DiscoveryCandidate, ExaTransportError
 from core.linkup_transport import LinkupTransportError
-from core.serper_transport import SerperTransportError
 from core.transport import FetchedMaterial
 from scryraven.dogfood_diagnostics import TurnDiagnostics
 from scryraven.forensic_log import ForensicLog
@@ -41,8 +40,7 @@ class Missing:
 
     def __call__(self, value):
         self.calls.append(value)
-        error = {"exa": ExaTransportError, "serper": SerperTransportError,
-                 "linkup": LinkupTransportError}[self.provider]
+        error = {"exa": ExaTransportError, "linkup": LinkupTransportError}[self.provider]
         raise error(f"{self.provider}_configuration_missing")
 
 
@@ -73,13 +71,13 @@ def budget(result):
     return result.trace[-1]["budget"]
 
 
-def test_original_twelve_exa_four_serper_pattern_stops_before_seventeen_research_calls():
-    exa, serper = Missing("exa"), Missing("serper")
+def test_repeated_missing_search_stops_without_exhausting_research_calls():
+    exa, linkup = Missing("exa"), Missing("linkup")
     model = RepeatingResearch(["search"] * 12 + ["search_lexical"] * 4)
     result = run("Find a synthetic public fact.", model=model, search=exa,
-                 lexical_search=serper, fetch=prohibited)
+                 lexical_search=linkup, fetch=prohibited)
     assert len(exa.calls) == 1
-    assert not serper.calls
+    assert not linkup.calls
     assert [stage for stage, _ in model.calls] == ["research", "research", "answer"]
     assert budget(result)["external_attempts"] == 1
     assert not result.evidence and not result.citations
@@ -89,29 +87,29 @@ def test_original_twelve_exa_four_serper_pattern_stops_before_seventeen_research
                for item in limitations)
 
 
-def test_exa_then_serper_configuration_failure_hands_off_without_another_luna_call():
-    exa, serper = Missing("exa"), Missing("serper")
+def test_exa_then_linkup_configuration_failure_hands_off_without_another_luna_call():
+    exa, linkup = Missing("exa"), Missing("linkup")
     model = RepeatingResearch(["search", "search_lexical"] + ["search"] * 14)
-    result = run("Find a synthetic public fact.", model=model, search=exa,
-                 lexical_search=serper, fetch=prohibited)
-    assert len(exa.calls) == len(serper.calls) == 1
+    result = run(f"Find a synthetic public fact in {URL}", model=model, search=exa,
+                 lexical_search=linkup, fetch=prohibited)
+    assert len(exa.calls) == len(linkup.calls) == 1
     assert [stage for stage, _ in model.calls] == ["research", "research", "answer"]
     assert budget(result)["external_attempts"] == 2
     limitations = model.calls[-1][1]["acquisition_limitations"]
     assert {(item.get("provider"), item["code"]) for item in limitations
             if item.get("provider")} == {
-                ("exa", "exa_configuration_missing"), ("serper", "serper_configuration_missing")}
+                ("exa", "exa_configuration_missing"), ("linkup", "linkup_configuration_missing")}
     assert not model.calls[-1][1]["evidence"]
     assert result.posture == "unable" and not result.citations
 
 
-def test_missing_serper_does_not_block_working_exa():
-    serper = Missing("serper")
+def test_missing_linkup_does_not_block_working_exa():
+    linkup = Missing("linkup")
     model = Script(decision(requests=[request("search_lexical")]), decision(),
                    decision("return", ["E1"]), answer(VALUE + " [E1]"))
     result = run("Find the value.", model=model, search=highlights,
-                 lexical_search=serper, fetch=prohibited)
-    assert len(serper.calls) == 1 and result.posture == "supported"
+                 lexical_search=linkup, fetch=prohibited)
+    assert len(linkup.calls) == 1 and result.posture == "supported"
     assert result.citations[0].materials[0].content == VALUE
     assert budget(result)["external_attempts"] == 2
 
@@ -131,12 +129,15 @@ def test_missing_exa_keeps_configured_known_url_read_available():
     assert budget(result)["external_attempts"] == 2
 
 
-def test_both_search_lanes_missing_still_allow_known_url_read():
-    exa, serper = Missing("exa"), Missing("serper")
+def test_linkup_search_endpoint_failure_still_allows_linkup_read():
+    def lexical(_query):
+        raise LinkupTransportError("linkup_endpoint_rate_limited")
+
+    exa = Missing("exa")
     model = Script(decision(), decision(requests=[request("search_lexical")]),
                    decision(requests=[request("read", query="", target="C1")]),
                    decision("return", ["E1"]), answer(VALUE + " [E1]"))
-    result = run(f"Find the value in {URL}", model=model, search=exa, lexical_search=serper,
+    result = run(f"Find the value in {URL}", model=model, search=exa, lexical_search=lexical,
                  fetch=lambda url: FetchedMaterial(url, VALUE))
     assert result.posture == "supported" and result.evidence[0].content == VALUE
     assert budget(result)["external_attempts"] == 3
@@ -171,7 +172,7 @@ def test_working_configured_paths_keep_normal_behavior():
         searches.append(query)
         return highlights(query)
 
-    def serper(query):
+    def linkup(query):
         lexical.append(query)
         return [DiscoveryCandidate("Other original", URL + "/other", "navigation only")]
 
@@ -184,7 +185,7 @@ def test_working_configured_paths_keep_normal_behavior():
                    decision("return", ["E2"]),
                    answer("The independently acquired qualification applies. [E2]"))
     result = run("Find the qualification.", model=model, search=search,
-                 lexical_search=serper, fetch=fetch)
+                 lexical_search=linkup, fetch=fetch)
     assert len(searches) == len(lexical) == len(reads) == 1
     assert reads == [URL + "/other"]
     assert budget(result)["external_attempts"] == 3
@@ -214,7 +215,7 @@ def test_next_turn_in_same_session_retries_provider_after_configuration_is_corre
 
 
 def test_explicit_user_premise_answer_needs_no_provider_configuration(monkeypatch):
-    for name in ("EXA_API_KEY", "SERPER_API_KEY", "LINKUP_API_KEY"):
+    for name in ("EXA_API_KEY", "LINKUP_API_KEY"):
         monkeypatch.delenv(name, raising=False)
     model = Script(decision("return"), answer("Under your premise, the value is seven.",
                                                support_basis="user_premises"))
@@ -294,10 +295,10 @@ def test_body_free_and_forensic_receipts_distinguish_dispatch_and_local_suppress
 
 
 def test_known_unavailable_exa_is_suppressed_before_concurrent_group_reservation():
-    exa, serper = Missing("exa"), []
+    exa, linkup = Missing("exa"), []
 
     def lexical(query):
-        serper.append(query)
+        linkup.append(query)
         return []
 
     model = Script(decision(),
@@ -305,7 +306,7 @@ def test_known_unavailable_exa_is_suppressed_before_concurrent_group_reservation
                                       request("search_lexical")]),
                    decision("return"), answer("Not established.", "unable"))
     result = run("Find a synthetic fact.", model=model, search=exa, lexical_search=lexical)
-    assert len(exa.calls) == len(serper) == 1
+    assert len(exa.calls) == len(linkup) == 1
     assert budget(result)["external_attempts"] == 2
 
 
@@ -346,26 +347,26 @@ def test_initial_unavailable_state_is_shared_with_delegated_research(monkeypatch
 
 
 def test_delegated_research_hands_back_both_missing_discovery_codes(monkeypatch):
-    exa, serper = Missing("exa"), Missing("serper")
+    exa, linkup = Missing("exa"), Missing("linkup")
     model, payloads, _ = scripted(monkeypatch, [
         reply(initial("return")), tool("research", {"need": "Find an external fact."}, "r1"),
         reply(delegated(requests=[request()])),
         reply(delegated(requests=[request("search_lexical")])),
         reply(answer("Search is not configured, so the fact is not established.", "unable")),
     ])
-    result = run("Find an external fact.", model=model, search=exa, lexical_search=serper,
+    result = run("Find an external fact.", model=model, search=exa, lexical_search=linkup,
                  fetch=prohibited)
-    assert len(exa.calls) == len(serper.calls) == 1
+    assert len(exa.calls) == len(linkup.calls) == 1
     assert stages(payloads) == ["research", "answer", "research", "research", "answer"]
     returned = results(payloads[-1])["r1"]
     assert not returned["evidence"] and budget(result)["external_attempts"] == 2
     assert {row["code"] for row in returned["acquisition_limitations"] if row.get("provider")} == {
-        "exa_configuration_missing", "serper_configuration_missing"}
+        "exa_configuration_missing", "linkup_configuration_missing"}
 
 
 @pytest.mark.parametrize("backend", ["api", "chatgpt_plan"])
 def test_repeated_delegation_after_established_impossibility_spends_no_more_luna_calls(monkeypatch, backend):
-    exa, serper = Missing("exa"), Missing("serper")
+    exa, linkup = Missing("exa"), Missing("linkup")
     model, payloads, _ = scripted(monkeypatch, [
         reply(initial(requests=[request()])),
         reply(initial(requests=[request("search_lexical")])),
@@ -373,20 +374,20 @@ def test_repeated_delegation_after_established_impossibility_spends_no_more_luna
         tool("research", {"need": "Try a different wording of that missing fact."}, "r2"),
         reply(answer("Search configuration is missing, so the fact is not established.", "unable")),
     ], backend)
-    result = run("Find an external fact.", model=model, search=exa, lexical_search=serper,
+    result = run("Find an external fact.", model=model, search=exa, lexical_search=linkup,
                  fetch=prohibited)
-    assert len(exa.calls) == len(serper.calls) == 1
+    assert len(exa.calls) == len(linkup.calls) == 1
     assert stages(payloads) == ["research", "research", "answer", "answer", "answer"]
     for returned in results(payloads[-1]).values():
         assert not returned["evidence"]
         assert {row["code"] for row in returned["acquisition_limitations"] if row.get("provider")} == {
-            "exa_configuration_missing", "serper_configuration_missing"}
+            "exa_configuration_missing", "linkup_configuration_missing"}
     assert budget(result)["external_attempts"] == 2
     assert result.posture == "unable" and not result.citations
 
 
-def test_delegated_missing_serper_allows_working_exa_and_exact_return(monkeypatch):
-    serper = Missing("serper")
+def test_delegated_missing_linkup_allows_working_exa_and_exact_return(monkeypatch):
+    linkup = Missing("linkup")
     model, payloads, _ = scripted(monkeypatch, [
         reply(initial("return")), tool("research", {"need": "Find the exact original value."}, "r1"),
         reply(delegated(requests=[request("search_lexical")])),
@@ -394,8 +395,8 @@ def test_delegated_missing_serper_allows_working_exa_and_exact_return(monkeypatc
         reply(answer(VALUE + " [E1]")),
     ])
     result = run("Find the external value.", model=model, search=highlights,
-                 lexical_search=serper, fetch=prohibited)
-    assert len(serper.calls) == 1 and result.posture == "supported"
+                 lexical_search=linkup, fetch=prohibited)
+    assert len(linkup.calls) == 1 and result.posture == "supported"
     assert results(payloads[-1])["r1"]["evidence"][0]["content"] == VALUE
     assert result.citations[0].materials[0].content == VALUE
     assert budget(result)["external_attempts"] == 2

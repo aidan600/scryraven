@@ -39,7 +39,8 @@ def search_exa(
     post: Callable[..., Any] | None = None,
     on_dispatch: Callable[[str], None] | None = None,
 ) -> list[DiscoveryCandidate]:
-    query = _required_text(query, "query")
+    if not isinstance(query, str) or not query.strip():
+        raise ValueError("query must be non-empty text")
     if isinstance(result_count, bool) or not isinstance(result_count, int) or not 1 <= result_count <= 100:
         raise ValueError("result_count must be an integer between 1 and 100")
     if not isinstance(search_type, str) or search_type not in {"auto", "deep", "lite"}:
