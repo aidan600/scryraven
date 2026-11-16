@@ -70,6 +70,25 @@ def test_search_uses_requested_result_count_and_preserves_six_result_order():
     assert calls[1][1]["json"]["numResults"] == 3
 
 
+@pytest.mark.parametrize("search_type", ["lite", "auto"])
+def test_search_sends_exact_objective_separately_from_query_and_highlights(search_type):
+    query = "  Comparable aircraft operating-cost data.  "
+    objective = "  Distinguish statute mile and nautical mile figures.  "
+    dispatched = []
+
+    def post(_endpoint, *, json, **kwargs):
+        assert dispatched == [query]
+        assert json == {
+            "query": query, "type": search_type, "numResults": 6, "objective": objective,
+            "contents": {"text": False, "highlights": {"query": query, "dynamic": True, "verbosity": "high"}},
+        }
+        assert kwargs["headers"]["Exa-Beta"] == exa.EXA_DYNAMIC_HIGHLIGHTS_BETA
+        return Response({"results": []})
+
+    assert exa.search_exa(query, objective=objective, search_type=search_type, api_key="offline",  # pragma: allowlist secret
+                          on_dispatch=dispatched.append, post=post) == []
+
+
 @pytest.mark.parametrize(("highlights", "context", "kind"), [
     (["A single selection."], "A single selection.", "provider_highlights"),
     (["First…\nline", "Second café…"],

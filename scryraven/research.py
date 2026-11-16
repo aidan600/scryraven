@@ -19,7 +19,7 @@ from typing import Callable, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from core.dual_read import configured_read_providers, fetch_dual
-from core.exa_transport import search_exa
+from core.exa_transport import EXA_OBJECTIVE_MAX_CHARACTERS, search_exa
 from core.linkup_transport import fetch_linkup, search_linkup
 from scryraven import model as model_transport
 from scryraven.acquisition import AcquisitionError, AcquisitionLibrary, generic_search_failure
@@ -51,6 +51,10 @@ class _Contract(BaseModel):
 class SearchRequest(_Contract):
     kind: Literal["search", "search_lexical"]
     query: str
+    objective: str = Field(
+        max_length=EXA_OBJECTIVE_MAX_CHARACTERS,
+        description="The distinct evidence need this search serves, such as the source needed and what it could establish.",
+    )
 
 
 class ReadRequest(_Contract):
@@ -145,33 +149,35 @@ Use your knowledge to interpret terminology, form hypotheses and reason about so
 # Investigation and judgment
 Let the current user request control the investigation, not the earlier answer or briefing. A refinement can change the interpretation, relevant institution, period or requested comparison. Revise your understanding when the question or sources warrant it.
 
-Read for consequences: what does a finding establish, change, rule out or leave unresolved for this question? Topic overlap alone is not support. Preserve a source's scope, time, conditions and quantitative basis when they change the result. Search for the unresolved relationship, not confirmation of a presumed answer. Preserve useful exact terminology.
+Identify what needs to be established for the answer at the requested depth. Read for consequences: what does a finding establish, change, rule out or leave unresolved? Topic overlap alone is not support. Preserve a source's scope, time, conditions and quantitative basis when they change the result. After a route, reconsider earlier assumptions and update the briefing when new evidence changes the provisional answer or what is still needed.
 
 For legal questions, seek the applicable primary text for the jurisdiction, issue and time. Identify the operative provision and read neighboring definitions, exceptions or cross-references when they affect the result. For cases, identify whose language you are reading and the decision's court, precedential status and holding on the relevant issue. Treat syllabi, party arguments, separate opinions and quoted authorities according to their role. An unpublished decision can lead to the published authority it quotes. When status, later treatment or a statutory version could change the answer, investigate that issue with targeted acquisition. Read the later decision to see what it did to the particular proposition. A reversal alone does not settle that question. Pass material qualifications, unresolved status and supporting originals to Answer. Provider highlights may omit the context needed to make these judgments.
 
-Choose operations that can change a material part of the answer. Independent requests may be bundled; interpret their results before dependent work. Use a known source or retained passage when it offers a concrete route to the missing fact. When acquired text points to a specific section or document defining still-missing criteria that the user needs, inspect that lead rather than substitute a general overview or adjacent examples. References need no routine follow-up once the requested answer is established. Repeating a failed route needs a reason that something relevant will differ.
+Choose the operation that can resolve the missing information. Use Read when an identified original can clarify or complete an excerpt, and Find when the needed passage may already be retained. When acquired text points to a specific section or document defining missing criteria, inspect that lead. Search for a genuinely unresolved need, including a material contradiction or alternative revealed by evidence. Requests can share a route when each serves a distinct need and is useful independently. Interpret results before issuing dependent requests. Repeating a failed route needs a reason that something relevant will differ.
 
-Return when the requested answer is reasonably supportable, or when no credible available investigation is worth its likely improvement. The second case is a useful partial, not evidence that the missing fact does not exist. Ordinary uncertainty does not require endless research; an uninvestigated requested component is not ordinary uncertainty.
+Continue when another operation has a credible prospect of changing a consequential part of the answer. Return when the requested answer is reasonably supportable or when further investigation is unlikely to resolve a consequential gap. In the latter case, hand off the useful supported findings and state the gap. An uninvestigated requested component warrants attention when a credible route remains available.
 
 # Handoff
 Use briefing for a concise provisional answer and the important source-backed implications for the question, with exact material references. Include a consequential unresolved part or competing interpretation when present. A simple lookup may need one sentence. This is task analysis, not a transcript of private reasoning. Set briefing=null only when the provisional answer, qualifications and outstanding needs are unchanged; otherwise replace it with the current account and remove resolved needs. research_briefing carries that account across routes and delegated requests.
 
 Select evidence for answering the user's question, including material that changes or contradicts the briefing. The briefing is fallible guidance, not evidence. Do not make Answer reconstruct every useful relationship from a list of source IDs, and do not write a polished final answer here.
 
-# Search query formulation
-For `search`, write the `query` as a phrase or question you could use to ask someone to find the needed information. Express the relationship in ordinary syntax and end the query there. A short phrase is often enough. Leave out search-engine operators and trailing lists of keywords, even when the words are relevant.
+# Search requests
+For each Search, use `objective` to state the distinct evidence need the request serves. Describe what the results should help establish, including useful source preferences or decisive constraints. Keep it a concise task goal. If two requests would establish the same thing from the same kind of source, use the stronger one.
+
+For `search`, write the `query` as a natural phrase or question describing what to retrieve. Express the relationship in ordinary syntax and end the query there. A short phrase is often enough. Leave out search-engine operators and trailing lists of keywords, even when the words are relevant.
 
 Use the user's exact names, dates, versions, jurisdictions and provisions where they identify the right material. Use a clearly specified version as the scope of the search for the requested information. If the question and conversation leave a material ambiguity about an identifier, investigate the ambiguity without silently replacing the identifier or assuming one meaning.
 
-For open discovery, describe what the sources should establish and leave the possible answers open. For example, use "Field studies comparing ways to reduce bird collisions with office windows" instead of "bird collisions office glass decals nets film UV lights". Avoid adding speculative answers, mechanisms or loosely related entities just to increase keyword coverage. Make independent searches address different information needs, such as comparative effectiveness and installation costs, when both matter.
+For open discovery, leave the possible answers open in both fields. For example, the query "Field studies comparing ways to reduce bird collisions with office windows" can serve the objective "Identify which interventions reduced collisions relative to untreated windows under field conditions." Comparative effectiveness and installation costs can warrant independent searches when both affect the answer. Avoid listing speculative solutions or inventing a second objective for another version of the same query.
 
-Be specific when the question already identifies an exact fact or source, or when acquired evidence gives you a concrete claim to verify. For example, "When does 17 U.S.C. § 302(a) say copyright expires for a work by a known individual author?" keeps a precise statutory identifier in a natural question. Start with the precise lookup when it is already warranted.
+Be specific when the question identifies an exact fact or source, or when acquired evidence gives you a concrete claim to verify. A grounded hypothesis can be worth testing. Seek material that can reveal alternatives or disconfirm it when that could change the answer. For example, "When does 17 U.S.C. § 302(a) say copyright expires for a work by a known individual author?" keeps a precise statutory identifier in a natural question. Start with the precise lookup when it is already warranted.
 
 # Operations and response contract
 Return the supplied ResearchDecision schema.
-- action=research: include useful requests, normally one to three. action=return: requests=[].
-- search: use Exa for semantic discovery or targeted verification with the query guidance above. Results contain source highlights, not complete publications.
-- search_lexical: use LinkUp for keyword-oriented navigation when exact names, identifiers or distinctive source wording are the strongest lead. Result snippets guide navigation only. Read the source for Evidence.
+- action=research: include requests for material evidence needs. One useful request is enough when it serves the need. action=return: requests=[].
+- search: use Exa for semantic discovery or targeted verification. Supply the retrieval query and evidence objective separately. Results contain source highlights, not complete publications.
+- search_lexical: use LinkUp for keyword-oriented navigation when exact names, identifiers or distinctive source wording are the strongest lead. The objective identifies the evidence need in your decision history. Result snippets guide navigation only. Read the source for Evidence.
 - read: target is a known C/E/D ID or observed URL; focus describes the needed
   source wording for lexical passage navigation, not a semantic summary.
   mode=auto rereads an exact E ID, even a highlight. full reuses or acquires its
@@ -464,7 +470,7 @@ def _run_turn(
     bootstrap_available = session_turn == 1 and not retained_acquisitions
     provider_search_type = None
 
-    def search_call(query, *, on_dispatch=None):
+    def search_call(query, *, objective=None, on_dispatch=None):
         nonlocal bootstrap_available, provider_search_type
         if search is not search_exa:
             if on_dispatch is not None:
@@ -475,6 +481,8 @@ def _run_turn(
         # executed request consumes the bootstrap; later searches use Auto.
         bootstrap_available = False
         dispatch = {"on_dispatch": on_dispatch} if on_dispatch is not None else {}
+        if objective is not None:
+            dispatch["objective"] = objective
         return search(query, search_type=provider_search_type, timeout_seconds=min(300, budget.remaining_seconds),
                       **dispatch)
 
@@ -941,11 +949,12 @@ def _run_turn(
             acquisition_finished(result, request_index, duration=duration, metadata=metadata)
             return bound == "deadline"
 
-        def transport_generic_search(query, search_type, timeout_seconds, request_index, group_index):
+        def transport_generic_search(plan, search_type, timeout_seconds, request_index, group_index):
             """External Search only. No library, ID, budget or Lite/Auto mutation."""
             started_at = clock()
             code = None
             leads = None
+            query = plan["query"]
 
             def on_dispatch(actual_query):
                 search_dispatched(actual_query, request_index, "search", search_type, group_index=group_index)
@@ -953,6 +962,8 @@ def _run_turn(
             try:
                 if search is search_exa:
                     dispatch = {"on_dispatch": on_dispatch} if activity is not None else {}
+                    if "objective" in plan:
+                        dispatch["objective"] = plan["objective"]
                     leads = search(query, search_type=search_type, timeout_seconds=timeout_seconds, **dispatch)
                 else:
                     if activity is not None:
@@ -985,7 +996,7 @@ def _run_turn(
                      request_count=len(group))
             with ThreadPoolExecutor(max_workers=len(group)) as pool:
                 futures = [
-                    pool.submit(transport_generic_search, plan["query"], mode, timeout_seconds,
+                    pool.submit(transport_generic_search, plan, mode, timeout_seconds,
                                 request_index, group_index)
                     for (request_index, _request, plan), mode in zip(group, modes)
                 ]

@@ -6,13 +6,13 @@ from threading import Barrier
 import pytest
 import requests
 from test_dual_read_acquisition import TEXT, dual_result
+from test_exa_transport import Response
 from test_image_inputs import answer as image_answer
 from test_image_inputs import decision as image_decision
 from test_image_inputs import reply, scripted, session_image
 from test_research_loop import Script, answer, decision, no_fetch, request
 
 from core import exa_transport, linkup_transport
-from core.exa_transport import DiscoveryCandidate
 from scryraven import research
 
 
@@ -28,38 +28,56 @@ def test_only_actual_search_dispatch_supplies_query_text(monkeypatch, transport,
         monkeypatch.setenv(env, "offline-test-value")
     events = []
     calls = []
+    objective = "  Find the controlling numerical threshold.  "
 
     def reject(_url, *, json, **_kwargs):
-        calls.append(json[payload_key])
-        assert events[-1]["action"] == "search_dispatched"
-        assert events[-1]["query"] == json[payload_key]
-        assert events[-1]["provider"] == provider
+        calls.append((json, events[-1]))
         raise requests.HTTPError()
 
     monkeypatch.setattr(transport, "post_provider_request", reject)
-    model = Script(decision(requests=[request(kind, query="  exact question wording  ")]),
+    model = Script(decision(requests=[request(kind, query="  exact question wording  ", objective=objective)]),
                    decision("return"), answer("Could not establish it.", "unable"))
     result = research.run("What is the threshold?", model=model, fetch=no_fetch, activity=events.append)
     acquisition = [event for event in events if event["action"] == "acquisition_finished"]
     assert [event["status"] for event in acquisition] == ["error" if configured else "unavailable"]
-    assert calls == (["  exact question wording  "] if configured else [])
+    assert model.calls[1][2]["acquisition_history"][0]["request"]["objective"] == objective
+    assert len(calls) == int(configured)
+    if configured:
+        body, activity = calls[0]
+        assert activity["action"] == "search_dispatched"
+        assert activity["query"] == body[payload_key] == "  exact question wording  "
+        assert activity["provider"] == provider
+        if provider == "exa":
+            assert body["objective"] == objective
+            assert body["type"] == "lite"
+        else:
+            assert "objective" not in body
     assert sum("query" in event for event in events) == int(configured)
     assert not {event["action"] for event in events} & {event["action"] for event in result.trace}
 
 
-def test_parallel_search_dispatch_and_admission_share_one_group():
+def test_parallel_search_dispatch_and_admission_share_one_group(monkeypatch):
     events = []
+    calls = []
     both_dispatched = Barrier(2, timeout=2)
+    monkeypatch.setenv(exa_transport.EXA_API_KEY_ENV, "offline-test-value")
 
-    def search(query):
+    def post(endpoint, *, json, **_kwargs):
+        assert endpoint == exa_transport.EXA_SEARCH_URL
+        calls.append((json["query"], json["objective"], json["type"]))
         both_dispatched.wait()
         assert {event["query"] for event in events if event["action"] == "search_dispatched"} == {"first", "second"}
-        return [DiscoveryCandidate("Example", "https://example.test/sample", TEXT,
-                                   context_kind="provider_highlights")]
+        return Response({"results": [{"title": "Example", "url": "https://example.test/sample",
+                                      "highlights": [TEXT]}]})
 
-    model = Script(decision(requests=[request(query="first"), request(query="second")]),
+    monkeypatch.setattr(exa_transport, "post_provider_request", post)
+    strategies = [("first", "Find the statutory threshold."), ("second", "Check when the rule applies.")]
+    model = Script(decision(requests=[request(query=query, objective=objective) for query, objective in strategies]),
                    decision("return", ["E1"]), answer("The threshold is seven. [E1]"))
-    result = research.run("What is the threshold?", model=model, search=search, fetch=no_fetch, activity=events.append)
+    result = research.run("What is the threshold?", model=model, fetch=no_fetch, activity=events.append)
+    assert sorted(calls) == [(*strategies[0], "lite"), (*strategies[1], "auto")]
+    receipt_requests = [item["request"] for item in model.calls[1][2]["acquisition_history"]]
+    assert [(item["query"], item["objective"]) for item in receipt_requests] == strategies
     batch = [event for event in events if event.get("group_index") == 1]
     assert [event["action"] for event in batch] == [
         "search_batch_started", "search_dispatched", "search_dispatched",

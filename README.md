@@ -430,9 +430,10 @@ There is no runtime cost estimator.
 
 ## Acquisition and evidence
 
-Exa supplies semantic Search with six results and query-guided Dynamic Highlights.
-A fresh session starts with Lite and uses Auto for later searches. Research may
-select LinkUp's `fast` keyword Search with `searchResults` output for up to ten
+Exa supplies semantic Search with a retrieval query, a separate evidence
+objective, six results and query-guided Dynamic Highlights. A fresh session's
+first generic Search uses cached Lite retrieval, with Auto for later searches.
+Research may select LinkUp's `fast` keyword Search with `searchResults` output for up to ten
 navigation candidates. Research can Read a useful URL to acquire original text as
 Evidence. External Read selects one actual representation from LinkUp Fetch or
 Exa Contents. Generated provider summaries and answers are excluded. Metadata

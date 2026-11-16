@@ -77,9 +77,10 @@ def test_failed_search_has_no_success_receipt(bad):
 def test_diagnostic_accounting_does_not_change_model_packets_or_session_state(tmp_path, monkeypatch, reopen):
     def exercise(name):
         model = Script(
-            decision(requests=[request(query="PRIVATE initial query")]),
+            decision(requests=[request(query="PRIVATE initial query", objective="PRIVATE evidence objective")]),
             decision(requests=[request("read", target="E1", mode="local")]),
-            decision(requests=[request("search_lexical", query="PRIVATE lexical query")]),
+            decision(requests=[request("search_lexical", query="PRIVATE lexical query",
+                                       objective="PRIVATE navigation objective")]),
             decision(requests=[request("find", query="seven")]),
             decision(requests=[request(query="PRIVATE repeated query")]),
             decision("return", ["E1"]), answer(),
@@ -105,6 +106,9 @@ def test_diagnostic_accounting_does_not_change_model_packets_or_session_state(tm
         return model.calls, state, diagnostics, events
 
     calls, state, diagnostics, events = exercise("instrumented")
+    latest_research_packet = calls[5][2]
+    assert [row["request"]["objective"] for row in latest_research_packet["acquisition_history"]
+            if "objective" in row["request"]] == ["PRIVATE evidence objective", "PRIVATE navigation objective"]
     for stage, _, packet, _ in calls:
         serialized = json.dumps(packet)
         assert "search_route_receipts" not in serialized

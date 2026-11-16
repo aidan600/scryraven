@@ -15,6 +15,7 @@ EXA_CONTENTS_URL = "https://api.exa.ai/contents"
 EXA_API_KEY_ENV = "EXA_API_KEY"  # pragma: allowlist secret
 DEFAULT_TIMEOUT_SECONDS = 60.0
 DEFAULT_DISCOVERY_RESULT_COUNT = 6
+EXA_OBJECTIVE_MAX_CHARACTERS = 4096
 DISCOVERY_CONTEXT_SAFETY_LIMIT = 65_536
 EXA_DYNAMIC_HIGHLIGHTS_BETA = "dynamic-highlights-2026-08-28"
 
@@ -33,7 +34,7 @@ class DiscoveryCandidate:
 
 
 def search_exa(
-    query: str, *, result_count: int = DEFAULT_DISCOVERY_RESULT_COUNT,
+    query: str, *, objective: str | None = None, result_count: int = DEFAULT_DISCOVERY_RESULT_COUNT,
     search_type: str = "auto",
     api_key: str | None = None, timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
     post: Callable[..., Any] | None = None,
@@ -41,16 +42,21 @@ def search_exa(
 ) -> list[DiscoveryCandidate]:
     if not isinstance(query, str) or not query.strip():
         raise ValueError("query must be non-empty text")
+    if objective is not None and (not isinstance(objective, str) or len(objective) > EXA_OBJECTIVE_MAX_CHARACTERS):
+        raise ValueError(f"objective must be text of at most {EXA_OBJECTIVE_MAX_CHARACTERS} characters")
     if isinstance(result_count, bool) or not isinstance(result_count, int) or not 1 <= result_count <= 100:
         raise ValueError("result_count must be an integer between 1 and 100")
     if not isinstance(search_type, str) or search_type not in {"auto", "deep", "lite"}:
         raise ValueError("search_type must be auto, deep or lite")
-    data = _post_json(EXA_SEARCH_URL, {
+    payload = {
         "query": query, "type": search_type, "numResults": result_count,
         "contents": {"text": False, "highlights": {
             "query": query, "dynamic": True, "verbosity": "high",
         }},
-    }, api_key, timeout_seconds, post,
+    }
+    if objective is not None and objective.strip():
+        payload["objective"] = objective
+    data = _post_json(EXA_SEARCH_URL, payload, api_key, timeout_seconds, post,
         extra_headers={"Exa-Beta": EXA_DYNAMIC_HIGHLIGHTS_BETA}, on_search_dispatch=on_dispatch)
     candidates = []
     for row in _results(data):

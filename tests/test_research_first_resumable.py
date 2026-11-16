@@ -23,7 +23,7 @@ VALUE = "The stated value is seven."
 
 def request(kind="search", query="requested original value", target="", **changes):
     if kind in {"search", "search_lexical"}:
-        return {"kind": kind, "query": query, **changes}
+        return {"kind": kind, "query": query, "objective": "", **changes}
     if kind == "find":
         return {"kind": kind, "query": query, "scope": [], **changes}
     return {"kind": kind, "target": target, "mode": "auto", "focus": "",

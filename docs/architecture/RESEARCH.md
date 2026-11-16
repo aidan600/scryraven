@@ -79,16 +79,26 @@ interpretation-recovery and shared-evidence observations leave specialized
 interpretation, discovery of controlling criteria and consequential omission
 unresolved; they do not establish an additional reviewer or Analyst's benefit.
 
-Exa supplies semantic Search. Research describes the subject, evidence sought
-and applicable scope in a natural phrase or question. Open discovery leaves
-possible answers open, and independent queries address distinct information
-needs. A precise question or a lead from acquired material can warrant a targeted
-query immediately. Exact names, versions, dates, jurisdictions and provisions stay
-in the query when they matter. Research uses conversation context to interpret
-ambiguous identifiers and carries forward any material ambiguity it cannot resolve.
-Research writes the query directly. It can select LinkUp Fast Search for
-keyword-oriented navigation using identifiers or distinctive source wording.
-The request uses `depth=fast` and `outputType=searchResults`.
+Research chooses acquisition against a consequential evidence need. Each Search
+has a `query` describing what to retrieve and an `objective` describing what
+the results should help establish. Exa receives both model-authored fields
+separately. Open discovery leaves possible answers open, and independently
+useful searches address distinct needs. A precise question or a lead from
+acquired material can warrant a targeted lookup immediately. Exact names,
+versions, dates, jurisdictions and provisions stay in the query when they
+matter. Conversation context helps interpret ambiguous identifiers.
+
+After a route, Research reassesses what the material establishes or contradicts
+and revises its briefing when the provisional answer or remaining needs change.
+A promising original can warrant Read, a retained passage can warrant Find, and
+a still-unresolved need can warrant another Search. Research hands off supported
+findings and consequential gaps when the next operation is unlikely to help.
+The same briefing and acquisition history carry this work between decisions.
+
+Research can select LinkUp Fast Search for keyword-oriented navigation using
+identifiers or distinctive source wording. The request uses `depth=fast` and
+`outputType=searchResults`. Its objective stays in the Research request
+history. LinkUp receives the query only.
 External known-URL Read can dispatch LinkUp static Fetch and Exa Contents
 concurrently for the same URL. There is no automatic Search fallback, model
 router, premium escalation, Scout, specialist hierarchy, verifier, or prose
@@ -98,8 +108,9 @@ For a fresh first session turn (`session_turn == 1`) with no retained acquisitio
 entering the turn, a private run-local transport wrapper sends the first executed
 generic Exa Search with `type=lite`. It consumes the bootstrap on execution,
 including a failed request, and sends subsequent generic Searches with
-`type=auto`. Other turns and retained-entry turns use Auto throughout. Earlier
-lexical Search, Read or Find does not consume it; an Answer without generic Search
+`type=auto`. Other turns and retained-entry turns use Auto throughout. Lite
+serves cached index material, which can limit a freshness-critical first result.
+Earlier lexical Search, Read or Find does not consume it; an Answer without generic Search
 makes no Lite request. Direct `search_exa()` callers default to Auto and its
 accepted types are Auto, Deep and Lite. Deep remains an accepted transport type,
 without an automatic fallback. Research selects the ordinary route

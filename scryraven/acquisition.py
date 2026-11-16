@@ -13,7 +13,7 @@ from html import unescape
 from urllib.parse import quote, urljoin, urlsplit
 
 from core.dual_read import DualReadResult, validate_read_material
-from core.exa_transport import DiscoveryCandidate, ExaTransportError, search_exa
+from core.exa_transport import EXA_OBJECTIVE_MAX_CHARACTERS, DiscoveryCandidate, ExaTransportError, search_exa
 from core.linkup_transport import (
     LINKUP_FAILURE_CODES,
     LINKUP_FETCH_STRATEGY,
@@ -396,6 +396,13 @@ class AcquisitionLibrary:
             if not isinstance(value, str):
                 raise AcquisitionError("invalid_request_field")
             result[key] = value if key == "query" and kind in {"search", "search_lexical"} else value.strip()
+        if kind in {"search", "search_lexical"}:
+            objective = request.get("objective")
+            if objective is not None:
+                if not isinstance(objective, str) or len(objective) > EXA_OBJECTIVE_MAX_CHARACTERS:
+                    raise AcquisitionError("invalid_request_field")
+                if objective.strip():
+                    result["objective"] = objective
         result["mode"] = request.get("mode", "auto")
         if not isinstance(result["mode"], str) or result["mode"] not in {"auto", "local", "full", "refresh"}:
             raise AcquisitionError("invalid_read_mode")
@@ -564,8 +571,10 @@ class AcquisitionLibrary:
         self._before_provider("linkup" if lexical else "exa", result, before_external)
         try:
             transport = self.lexical_search if lexical else self.search
-            leads = (transport(request["query"], on_dispatch=on_dispatch) if on_dispatch is not None
-                     else transport(request["query"]))
+            options = {"on_dispatch": on_dispatch} if on_dispatch is not None else {}
+            if not lexical and "objective" in request:
+                options["objective"] = request["objective"]
+            leads = transport(request["query"], **options)
         except Exception as exc:
             if lexical and isinstance(exc, LinkupTransportError) and str(exc) == "linkup_configuration_missing":
                 raise AcquisitionError("linkup_configuration_missing") from None

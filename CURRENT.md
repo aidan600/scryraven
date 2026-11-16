@@ -916,16 +916,17 @@ zero live calls and establishes no GPT-6.1 Sol quality or latency result.
 These are reversible configuration values, not architectural requirements or a
 semantic router. Compatible injected configurations may vary in quality and
 validation coverage; there is no automatic premium escalation or model fallback.
-Exa supplies semantic Search. The Research prompt asks for natural-language
-queries that describe the evidence needed, keep open-ended discovery open, and
-preserve material identifiers and scope. Distinct searches address distinct
-needs, and precise questions or evidence can warrant a targeted query immediately.
-Context informs the interpretation of ambiguous identifiers without silently
-changing a version. Research can select LinkUp Fast (`depth=fast`,
-`outputType=searchResults`) for keyword-oriented navigation using exact names,
-identifiers or distinctive source wording. LinkUp returns candidate identities
-and snippets with navigation-only custody. Search query strings are dispatched
-as written by Research. For a known-URL Read requiring a new fetch, the turn dispatches
+Research Search requests carry the retrieval `query` and a separate evidence
+`objective`. Exa receives both fields as written by Research. The objective
+describes what the retrieved sources should help establish. Research is
+instructed to choose distinct needs, preserve discovery space, revise the
+briefing from route results, and choose Read, Find, further Search or return
+according to the unresolved evidence. The existing briefing and acquisition
+history carry this working account between decisions. Research can select
+LinkUp Fast (`depth=fast`, `outputType=searchResults`) for keyword-oriented
+navigation. The LinkUp query is sent as written, and its objective stays in the
+Research request history. LinkUp returns candidate identities and snippets
+with navigation-only custody. For a known-URL Read requiring a new fetch, the turn dispatches
 LinkUp static Fetch and Exa Contents concurrently when both are configured and physical
 allowance permits. A single eligible provider can supply a Read on its own. A short
 comparison can select a later original when it preserves clearly broader overlapping
@@ -1039,7 +1040,8 @@ On `session_turn == 1` with no retained acquisitions entering the turn, the firs
 executed generic Exa Search uses `type=lite`; every later generic Search uses
 `type=auto`. Other turns and retained-entry turns use Auto throughout. Read,
 Find, lexical Search or Answer may come first; only execution of generic Search
-consumes this run-local bootstrap, including a failed executed attempt. Direct
+consumes this run-local bootstrap, including a failed executed attempt. Lite
+serves cached index material and may miss freshness-critical changes. Direct
 `search_exa()` callers still default to Auto. Query-specific Highlights use provider-native Dynamic
 allocation with `dynamic=true`, `verbosity=high` and the
 `Exa-Beta: dynamic-highlights-2026-08-28` header; no fixed `maxCharacters` is

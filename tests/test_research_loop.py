@@ -9,14 +9,15 @@ from scryraven.research import (
     ResearchDecision,
     RunError,
     RunLimits,
+    SearchRequest,
     run,
 )
 from scryraven.sources import Evidence
 
 
-def request(kind="search", query="public fact", target="", mode="auto", focus=""):
+def request(kind="search", query="public fact", target="", mode="auto", focus="", objective=""):
     if kind in {"search", "search_lexical"}:
-        return {"kind": kind, "query": query}
+        return {"kind": kind, "query": query, "objective": objective}
     if kind == "find":
         return {"kind": kind, "query": query, "scope": []}
     return dict(kind=kind, target=target, mode=mode, focus=focus,
@@ -37,6 +38,12 @@ def test_research_decision_schema_has_no_purpose_and_rejects_legacy_output():
     assert "purpose" not in ResearchDecision.model_json_schema()["properties"]
     with pytest.raises(ValueError):
         ResearchDecision.model_validate({**expected, "purpose": "Legacy route prose"})
+
+
+def test_search_request_publishes_a_required_evidence_objective():
+    assert "objective" in SearchRequest.model_json_schema()["required"]
+    with pytest.raises(ValueError, match="objective"):
+        SearchRequest.model_validate({"kind": "search", "query": "Exact search string"})
 
 
 def test_legacy_purpose_output_uses_bounded_malformed_response_correction():
