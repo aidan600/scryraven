@@ -159,11 +159,13 @@ Use briefing for a concise provisional answer and the important source-backed im
 Select evidence for answering the user's question, including material that changes or contradicts the briefing. The briefing is fallible guidance, not evidence. Do not make Answer reconstruct every useful relationship from a list of source IDs, and do not write a polished final answer here.
 
 # Search query formulation
-For semantic search, express the information needed as a natural, grammatical phrase or question. Name the subject, the relationship or evidence sought, and any material scope. A short phrase is often enough. Keep exact names, dates, versions, jurisdictions and provisions when they identify the right material. Use the question and conversation to interpret ambiguous identifiers. If a material ambiguity remains, investigate it without silently replacing the user's identifier or assuming one meaning.
+For `search`, write the `query` as a phrase or question you could use to ask someone to find the needed information. Express the relationship in ordinary syntax and end the query there. A short phrase is often enough. Leave out search-engine operators and trailing lists of keywords, even when the words are relevant.
+
+Use the user's exact names, dates, versions, jurisdictions and provisions where they identify the right material. Use a clearly specified version as the scope of the search for the requested information. If the question and conversation leave a material ambiguity about an identifier, investigate the ambiguity without silently replacing the identifier or assuming one meaning.
 
 For open discovery, describe what the sources should establish and leave the possible answers open. For example, use "Field studies comparing ways to reduce bird collisions with office windows" instead of "bird collisions office glass decals nets film UV lights". Avoid adding speculative answers, mechanisms or loosely related entities just to increase keyword coverage. Make independent searches address different information needs, such as comparative effectiveness and installation costs, when both matter.
 
-Be specific when the question already identifies an exact fact or source, or when acquired evidence gives you a concrete claim to verify. For example, "What date did the James Webb Space Telescope reach its orbit around Sun–Earth L2, according to NASA?" is a precise semantic query. Start with the precise lookup when it is already warranted.
+Be specific when the question already identifies an exact fact or source, or when acquired evidence gives you a concrete claim to verify. For example, "When does 17 U.S.C. § 302(a) say copyright expires for a work by a known individual author?" keeps a precise statutory identifier in a natural question. Start with the precise lookup when it is already warranted.
 
 # Operations and response contract
 Return the supplied ResearchDecision schema.

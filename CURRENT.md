@@ -1476,7 +1476,7 @@ an answer-quality miss with the necessary source available. It does not establis
 a dual-Read evidence defect or causation. The quality gate stayed open, and the
 candidate branch was kept local. Deployment and user data were untouched.
 
-The Research-selectable Serper lane completed one ordinary St. Dorothy's Rest
+The former Research-selectable Serper lane completed one ordinary St. Dorothy's Rest
 observation at `884c69a917aa19528574da42fdae2a8b85ba86b1`: Research chose
 three lexical searches among seven Exa searches, then used two LinkUp Reads.
 The Serper-discovered official Instagram post was fetched through LinkUp and
@@ -1484,6 +1484,25 @@ cited for the director selection. The final supported answer used that fetched
 post and acquired Exa highlights for qualifications. The run used seven semantic
 attempts and 12 external attempts. This shows one successful source-class route,
 not general semantic-selection reliability or Level-7 synthesis.
+
+Semantic Search Correction 01 did not meet live query-formulation acceptance.
+At `550a1d68c7f2a18fad8125db348d2e81714422da`, three isolated Terra/medium/Fast
+decisions still produced keyword-heavy Exa requests for open-ended Path of
+Exile 3.30 farming, the number of horses used in filming Lawrence of Arabia,
+and a constrained Supreme Court case. The first PoE search sought release
+information; its proposed farming searches added candidate mechanisms or
+strategies. The legal query retained the case, year, reporter and subsection
+number, but omitted the U.S. Code title and stacked terms. The three dispatched
+queries matched the decisions and Actual searches activity, and each returned
+six source-derived highlight records. A separately scripted LinkUp Fast Search
+returned ten navigation candidates and zero Evidence records. The calls used
+two Exa Lite requests, one Exa Auto request and one LinkUp request. The
+conservative metered estimate was $0.046; actual billing was unobserved.
+The final prompt tightens instructions on trailing keywords and version scope
+and supplies a natural statutory lookup example. The model and Exa allowances
+were exhausted before that refinement, so its effect remains unverified.
+No full-product question or further Read was run. Sanitized evidence is under
+ignored `local-evals/runs/semantic-search-correction-01/`.
 
 Foundation 01 established four valid frozen Levels 1–3 cases; its NPS comparison
 was excluded for evaluator/source ambiguity. Foundation 02 established three
