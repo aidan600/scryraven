@@ -309,7 +309,7 @@ class TurnDiagnostics:
             receipt = event.get("search_novelty_receipt")
             if isinstance(receipt, dict):
                 row["search_novelty_receipt"] = {
-                    "provider": _one_of(receipt.get("provider"), {"exa", "serper"}),
+                    "provider": _one_of(receipt.get("provider"), {"exa", "linkup", "serper"}),
                     "kind": _one_of(receipt.get("kind"), {"search", "search_lexical"}),
                     **{key: _nonnegative_int(receipt.get(key)) for key in SEARCH_NOVELTY_COUNTS},
                 }

@@ -23,7 +23,7 @@ VALUE = "The stated value is seven."
 
 def request(kind="search", query="requested original value", target="", **changes):
     if kind in {"search", "search_lexical"}:
-        return {"kind": kind, "query": query, **changes}
+        return {"kind": kind, "query": query, "objective": "", **changes}
     if kind == "find":
         return {"kind": kind, "query": query, "scope": [], **changes}
     return {"kind": kind, "target": target, "mode": "auto", "focus": "",
@@ -657,7 +657,7 @@ def test_serial_and_concurrent_provider_timeouts_obey_300_and_remaining_turn(mon
                                    context_kind="provider_highlights")]
 
     def lexical(query, *, timeout_seconds):
-        external.append(("serper", query, None, timeout_seconds))
+        external.append(("lexical", query, None, timeout_seconds))
         return [DiscoveryCandidate("Lexical original", "https://example.org/lexical", VALUE,
                                    context_kind="navigation")]
 
@@ -666,7 +666,7 @@ def test_serial_and_concurrent_provider_timeouts_obey_300_and_remaining_turn(mon
         return FetchedMaterial(url, "The full original establishes seven.")
 
     monkeypatch.setattr(research, "search_exa", exa)
-    monkeypatch.setattr(research, "search_serper", lexical)
+    monkeypatch.setattr(research, "search_linkup", lexical)
     monkeypatch.setattr(research, "fetch_linkup", fetch)
 
     def lexical_later(_payload):
@@ -690,7 +690,7 @@ def test_serial_and_concurrent_provider_timeouts_obey_300_and_remaining_turn(mon
     first_group = {query: (mode, timeout) for provider, query, mode, timeout in external[:2] if provider == "exa"}
     assert first_group == {"first": ("lite", 300), "second": ("auto", 300)}
     assert [(provider, timeout) for provider, _query, _mode, timeout in external[2:]] == [
-        ("serper", 175), ("linkup", 120), ("exa", 50)]
+        ("lexical", 175), ("linkup", 120), ("exa", 50)]
     assert result.posture == "supported" and result.trace[-1]["budget"]["external_attempts"] == 5
 
 

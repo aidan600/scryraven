@@ -41,7 +41,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\forensic-readi
 server. A real launch passes `C:\Users\aidan\ScryRaven\.env` by absolute path to
 the existing credential doorman. The child removes `OPENAI_API_KEY`, requires
 nonblank Exa configuration before constructing the model or web server, and
-reports optional Serper/LinkUp configuration only as booleans. Missing Exa or an
+reports optional LinkUp configuration only as a boolean. Missing Exa or an
 unavailable plan implementation fails closed with a fixed safe diagnostic.
 Startup never authenticates, sends inference or calls an acquisition provider;
 the first user question exercises account/model access. The selected plan is the

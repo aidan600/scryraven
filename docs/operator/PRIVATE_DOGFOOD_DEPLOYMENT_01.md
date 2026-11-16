@@ -117,8 +117,7 @@ Set these through protected Railway service variables, never tracked files:
 | `SCRYRAVEN_BILLING_AUTHORIZED` | Explicit operator approval: `true` |
 | `OPENAI_API_KEY` | Operator-owned API credential, supplied externally |
 | `EXA_API_KEY` | Ordinary general Search credential |
-| `SERPER_API_KEY` | Alternate lexical/community/current discovery credential |
-| `LINKUP_API_KEY` | External known-URL Read credential |
+| `LINKUP_API_KEY` | Precision keyword Search and external known-URL Read credential |
 
 The app never loads `.env`. The agent's offline tests use synthetic placeholders
 and do not inspect real environment values. For agent-operated credentialed

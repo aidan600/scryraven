@@ -7,8 +7,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 
 from core.exa_transport import DiscoveryCandidate, search_exa
-from core.linkup_transport import fetch_linkup
-from core.serper_transport import search_serper
+from core.linkup_transport import fetch_linkup, search_linkup
 from core.transport import FetchedMaterial
 from scryraven.documents import SessionDocument
 from scryraven.images import SessionImage
@@ -67,7 +66,7 @@ class ResearchSession:
     def __init__(
         self, *, model: Callable | None = None,
         search: Callable[..., list[DiscoveryCandidate]] = search_exa,
-        lexical_search: Callable[..., list[DiscoveryCandidate]] = search_serper,
+        lexical_search: Callable[..., list[DiscoveryCandidate]] = search_linkup,
         fetch: Callable[[str], FetchedMaterial] = fetch_linkup,
         limits: RunLimits = RunLimits(),
         engine: Callable[..., CompletedAnswer] | None = None,

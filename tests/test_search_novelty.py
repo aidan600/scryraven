@@ -62,7 +62,7 @@ def test_lexical_remains_navigation_only_and_empty_search_has_receipt():
         receipt = result["search_novelty_receipt"]
         assert [receipt[k] for k in SEARCH_NOVELTY_COUNTS[:3]] == list(expected)
         assert all(receipt[k] == 0 for k in SEARCH_NOVELTY_COUNTS[3:])
-        assert receipt["provider"] == "serper"
+        assert receipt["provider"] == "linkup"
         assert result["material_ids"] == result["new_acquisition_ids"] == []
     assert not library.acquisitions
 
@@ -77,9 +77,10 @@ def test_failed_search_has_no_success_receipt(bad):
 def test_diagnostic_accounting_does_not_change_model_packets_or_session_state(tmp_path, monkeypatch, reopen):
     def exercise(name):
         model = Script(
-            decision(requests=[request(query="PRIVATE initial query")]),
+            decision(requests=[request(query="PRIVATE initial query", objective="PRIVATE evidence objective")]),
             decision(requests=[request("read", target="E1", mode="local")]),
-            decision(requests=[request("search_lexical", query="PRIVATE lexical query")]),
+            decision(requests=[request("search_lexical", query="PRIVATE lexical query",
+                                       objective="PRIVATE navigation objective")]),
             decision(requests=[request("find", query="seven")]),
             decision(requests=[request(query="PRIVATE repeated query")]),
             decision("return", ["E1"]), answer(),
@@ -105,6 +106,9 @@ def test_diagnostic_accounting_does_not_change_model_packets_or_session_state(tm
         return model.calls, state, diagnostics, events
 
     calls, state, diagnostics, events = exercise("instrumented")
+    latest_research_packet = calls[5][2]
+    assert [row["request"]["objective"] for row in latest_research_packet["acquisition_history"]
+            if "objective" in row["request"]] == ["PRIVATE evidence objective", "PRIVATE navigation objective"]
     for stage, _, packet, _ in calls:
         serialized = json.dumps(packet)
         assert "search_route_receipts" not in serialized
@@ -123,7 +127,7 @@ def test_diagnostic_accounting_does_not_change_model_packets_or_session_state(tm
     assert "PRIVATE" not in json.dumps(diagnostics.acquisitions)
     receipts = [event["search_novelty_receipt"] for event in diagnostics.acquisitions
                 if "search_novelty_receipt" in event]
-    assert [r["provider"] for r in receipts] == ["exa", "serper", "exa"]
+    assert [r["provider"] for r in receipts] == ["exa", "linkup", "exa"]
     assert [r["new_candidate_count"] for r in receipts] == [1, 1, 0]
     assert receipts[-1]["exact_reused_material_count"] == 1
     assert sum(e["action"] == "acquisition_timing" for e in events) == 5

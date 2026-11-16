@@ -756,8 +756,8 @@ semantic owner, coverage checker, provider stack or credential system was added.
 Research and Answer prompts are reconstructed around the briefing relationship;
 fit/repacking loops and automatic unselected-source completion remain absent.
 
-Definite `exa_configuration_missing`, `serper_configuration_missing` and
-`linkup_configuration_missing` failures now mark only that provider unavailable
+Definite `exa_configuration_missing` and `linkup_configuration_missing`
+failures mark only that provider unavailable
 for the current turn, shared by initial and delegated Research. Further requests
 to it are denied locally without spending another external attempt. The original
 fixed code and provider reach Research and Answer as operational limitations.
@@ -916,11 +916,18 @@ zero live calls and establishes no GPT-6.1 Sol quality or latency result.
 These are reversible configuration values, not architectural requirements or a
 semantic router. Compatible injected configurations may vary in quality and
 validation coverage; there is no automatic premium escalation or model fallback.
-Exa supplies ordinary general
-Search. Research can explicitly select Serper lexical/community/current
-discovery for a needed source class. Serper
-candidates and snippets guide navigation only;
-they are not Evidence. For a known-URL Read requiring a new fetch, the turn dispatches
+Research Search requests carry the retrieval `query` and a separate evidence
+`objective`. Exa receives the query and any nonblank objective as written by
+Research. The objective describes what the retrieved sources should help
+establish. Research is
+instructed to choose distinct needs, preserve discovery space, revise the
+briefing from route results, and choose Read, Find, further Search or return
+according to the unresolved evidence. The existing briefing and acquisition
+history carry this working account between decisions. Research can select
+LinkUp Fast (`depth=fast`, `outputType=searchResults`) for keyword-oriented
+navigation. The LinkUp query is sent as written, and its objective stays in the
+Research request history. LinkUp returns candidate identities and snippets
+with navigation-only custody. For a known-URL Read requiring a new fetch, the turn dispatches
 LinkUp static Fetch and Exa Contents concurrently when both are configured and physical
 allowance permits. A single eligible provider can supply a Read on its own. A short
 comparison can select a later original when it preserves clearly broader overlapping
@@ -971,7 +978,7 @@ The forensic development launcher explicitly injects the plan backend for
 credential loading to the existing command doorman using the absolute
 `C:\Users\aidan\ScryRaven\.env` path, including from phase worktrees. It removes
 the API key only in its own child and requires nonblank
-Exa configuration before creating the app or server. Optional Serper/LinkUp
+Exa configuration before creating the app or server. Optional LinkUp
 configuration is reported only as booleans. A child manifest records the actual
 revision, resolved role profile, selected backend and zero startup model
 dispatches; readiness requires the child's successful bind and a localhost GET.
@@ -1011,11 +1018,11 @@ state. Changing only Read focus does not change `static_fetch`; provider
 configuration suppression remains the existing operational correction.
 
 Search novelty is mechanically measured for safe acquisition diagnostics and
-forensic analysis only. Each successful Exa or lexical/Serper Search reports
+forensic analysis only. Each successful Exa or lexical LinkUp Search reports
 provider/kind and eight numeric counts: returned/new/known candidates,
 returned/new material, new-candidate material, refreshed-known-candidate material
-and exact reused material. Identity, admission, duplicate handling and Serper's
-navigation-only role are unchanged. Body-free diagnostics contain no query,
+and exact reused material. LinkUp lexical Search has zero material counts.
+Body-free diagnostics contain no query,
 URL, title, highlights or source body. The diagnostic receipt is excluded from
 model-facing acquisition history; novelty counts do not enter either role and
 session persistence is unchanged.
@@ -1034,12 +1041,13 @@ On `session_turn == 1` with no retained acquisitions entering the turn, the firs
 executed generic Exa Search uses `type=lite`; every later generic Search uses
 `type=auto`. Other turns and retained-entry turns use Auto throughout. Read,
 Find, lexical Search or Answer may come first; only execution of generic Search
-consumes this run-local bootstrap, including a failed executed attempt. Direct
+consumes this run-local bootstrap, including a failed executed attempt. Lite
+serves cached index material and may miss freshness-critical changes. Direct
 `search_exa()` callers still default to Auto. Query-specific Highlights use provider-native Dynamic
 allocation with `dynamic=true`, `verbosity=high` and the
 `Exa-Beta: dynamic-highlights-2026-08-28` header; no fixed `maxCharacters` is
 requested. Actual returned source selections retain `provider_highlights` custody,
-explicit separation and the existing size guard. Serper discovery remains unchanged.
+explicit separation and the existing size guard.
 The earlier integration received offline
 verification; Exa Evidence-Objective Search 01 exercised the retained Highlight
 mechanics with the historical Deep/Auto default in four ordinary product runs.
@@ -1287,7 +1295,7 @@ document metadata in the catalog, not the PDF bytes or the whole extraction.
 Local Read and Find use the retained text, spend no external attempt, and do not
 consume the Exa Lite bootstrap. A large document uses the existing bounded
 packet and exact-view limits. Document text is Evidence of what that document
-states. Web Search, Serper, and LinkUp remain available on the same turn.
+states. External Search and Read remain available on the same turn.
 Body-free diagnostics may count documents, pages, characters, local Read size,
 and Find region counts. They do not record filenames, queries, or page text.
 No Jev, Clef, embedding, or vector index is part of this path.
@@ -1336,8 +1344,8 @@ attempt and mark partial usage when a continuation has no reported counters.
 Both surfaces disclose that no external sources were used for source-free
 supported/partial completed answers without inferring a user-premise basis from
 empty citations. They disclose a Research operating-bound completion without
-changing Answer's supported/partial/unable posture. Known safe Exa and Serper
-configuration errors retain their fixed codes through Acquisition. LinkUp retains
+changing Answer's supported/partial/unable posture. Exa and LinkUp configuration
+errors retain their fixed codes through Acquisition. LinkUp Read retains
 `linkup_timeout`, `linkup_connection_failed`, `linkup_endpoint_access_rejected`
 (401/403), `linkup_endpoint_rate_limited` (429), `linkup_endpoint_server_failed`
 (5xx), `linkup_json_invalid`, `linkup_response_invalid`,
@@ -1471,7 +1479,7 @@ an answer-quality miss with the necessary source available. It does not establis
 a dual-Read evidence defect or causation. The quality gate stayed open, and the
 candidate branch was kept local. Deployment and user data were untouched.
 
-The Research-selectable Serper lane completed one ordinary St. Dorothy's Rest
+The former Research-selectable Serper lane completed one ordinary St. Dorothy's Rest
 observation at `884c69a917aa19528574da42fdae2a8b85ba86b1`: Research chose
 three lexical searches among seven Exa searches, then used two LinkUp Reads.
 The Serper-discovered official Instagram post was fetched through LinkUp and
@@ -1479,6 +1487,44 @@ cited for the director selection. The final supported answer used that fetched
 post and acquired Exa highlights for qualifications. The run used seven semantic
 attempts and 12 external attempts. This shows one successful source-class route,
 not general semantic-selection reliability or Level-7 synthesis.
+
+The isolated Search smoke at `dad512b5` retrieved PoE 3.30 profitability and
+release material, relevant Lawrence of Arabia production accounts, and the
+official Caterpillar v. Lewis opinion. Its PoE route also gave unsupported
+weight to Atlas and Scarabs, and a proposed film search repeated the horse-count
+need. A scripted LinkUp Fast request returned ten navigation candidates and
+zero Evidence records. The earlier smoke at `550a1d68` also showed keyword
+accumulation. Both smokes ended before Answer.
+
+The ordinary local PoE 3.30 turn at `7848f344782bbe2ea1d642e19b21c7e27d5f7c13`
+sent the model-authored query and objective separately on all six Exa requests.
+Terra repeated the version-check need and again narrowed a profitability search
+to Atlas and Scarabs before seeing evidence. Subsequent Research decisions used
+the acquired finding that Threads replaced Scarabs, inspected identified
+originals, and separated boss-farm models from independent measurements.
+Answer gave version-specific farming options and qualified the return estimates
+and their comparability. Its citations reopened with exact Evidence. The run
+took 81.578 seconds, with seven physical model requests and 17 acquisition
+dispatches, for an estimated $0.928125. The original acceptance gate stopped
+the campaign after this case. Klamath, aircraft, and the retained-source
+follow-up were exercised by scripted offline fixtures.
+
+A separate comparison at `1c24c01b` sampled three initial Research decisions
+each from GPT-6.1 Terra and GPT-6 Luna on one PoE 3.30 question, both at
+medium/Fast. All six decisions retained broad profitability discovery. Two
+Terra draws and zero Luna draws gave unsupported emphasis to Atlas. The primary
+blind reviewer judged consequential narrowing in one Terra draw and zero Luna
+draws. The second reviewer judged zero in both because route-level breadth
+survived. The comparison ended before acquisition or Answer and supplies no
+retrieval or answer-quality comparison.
+
+The publication decision permits initial hypothesis testing when meaningful
+discovery breadth survives. Terra remains the default Research model.
+Unsupported hypothesis emphasis and repeated needs remain observable,
+and general investigative reliability remains unproved. Sanitized evidence is
+under ignored `local-evals/runs/semantic-search-correction-01/`,
+`semantic-search-final-acceptance-01/`, `evidence-directed-research-01/`, and
+`poe-research-model-bakeoff-01/` within the same runs directory.
 
 Foundation 01 established four valid frozen Levels 1–3 cases; its NPS comparison
 was excluded for evaluator/source ambiguity. Foundation 02 established three

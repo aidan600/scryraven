@@ -122,7 +122,7 @@ def test_other_operations_do_not_consume_bootstrap(monkeypatch):
     assert lexical == ["lexical"] and reads == ["https://example.test/page"]
     assert [call["json"]["type"] for call in calls] == ["lite"]
     operations = [e for e in result.trace if e["action"] == "acquisition_timing"]
-    assert [e["provider"] for e in operations] == ["serper", "linkup", "local", "exa"]
+    assert [e["provider"] for e in operations] == ["linkup", "linkup", "local", "exa"]
     assert all("provider_search_type" not in e for e in operations[:3])
 
 

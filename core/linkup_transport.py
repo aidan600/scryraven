@@ -1,4 +1,4 @@
-"""Mechanical LinkUp static Fetch transport for one selected public URL."""
+"""LinkUp keyword search and static Fetch transports."""
 
 from __future__ import annotations
 
@@ -9,11 +9,14 @@ from urllib.parse import urlsplit
 
 import requests
 
+from core.exa_transport import DiscoveryCandidate
 from core.transport import FetchedMaterial, post_provider_request
 
 LINKUP_FETCH_URL = "https://api.linkup.so/v1/fetch"
+LINKUP_SEARCH_URL = "https://api.linkup.so/v1/search"
 LINKUP_API_KEY_ENV = "LINKUP_API_KEY"  # pragma: allowlist secret
 DEFAULT_TIMEOUT_SECONDS = 30.0
+DISCOVERY_RESULT_COUNT = 10
 LINKUP_FETCH_STRATEGY = "static_fetch"
 LINKUP_FAILURE_CODES = frozenset({
     "linkup_timeout", "linkup_connection_failed", "linkup_endpoint_access_rejected",
@@ -33,6 +36,57 @@ def fetch_linkup(
 ) -> FetchedMaterial:
     """Fetch static readable material for one exact selected public URL."""
     url = _required_url(selected_url)
+    payload = _post_linkup(LINKUP_FETCH_URL, {"url": url}, api_key, timeout_seconds, post)
+    text = payload.get("markdown")
+    if not isinstance(text, str) or not text.strip():
+        text = payload.get("content")
+    if not isinstance(text, str) or not text.strip():
+        raise LinkupTransportError("linkup_material_unavailable")
+    return FetchedMaterial(url, text)
+
+
+def search_linkup(
+    query: str, *, api_key: str | None = None,
+    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS, post: Callable[..., Any] | None = None,
+    on_dispatch: Callable[[str], None] | None = None,
+) -> list[DiscoveryCandidate]:
+    """Send one keyword lookup and return navigation candidates."""
+    if not isinstance(query, str) or not query.strip():
+        raise ValueError("query must be non-empty text")
+    payload = _post_linkup(
+        LINKUP_SEARCH_URL,
+        {"q": query, "depth": "fast", "outputType": "searchResults", "maxResults": DISCOVERY_RESULT_COUNT},
+        api_key, timeout_seconds, post, on_dispatch=on_dispatch,
+    )
+    rows = payload.get("results")
+    if not isinstance(rows, list):
+        raise LinkupTransportError("linkup_response_invalid")
+    candidates = []
+    for row in rows:
+        if not isinstance(row, Mapping) or row.get("type") != "text":
+            continue
+        try:
+            url = _required_url(row.get("url"))
+        except ValueError:
+            continue
+        if len(url) > 2048:
+            continue
+        title = _navigation_text(row.get("name"), 300)
+        snippet = _navigation_text(row.get("content"), 500)
+        candidates.append(DiscoveryCandidate(title, url, snippet))
+        if len(candidates) == DISCOVERY_RESULT_COUNT:
+            break
+    return candidates
+
+
+def _navigation_text(value: Any, limit: int) -> str:
+    return " ".join(value.split())[:limit] if isinstance(value, str) else ""
+
+
+def _post_linkup(
+    endpoint: str, body: dict, api_key: str | None, timeout_seconds: float,
+    post: Callable[..., Any] | None, *, on_dispatch: Callable[[str], None] | None = None,
+) -> Mapping:
     token = api_key if api_key is not None else os.getenv(LINKUP_API_KEY_ENV)
     if not isinstance(token, str) or not token.strip():
         raise LinkupTransportError("linkup_configuration_missing")
@@ -42,10 +96,15 @@ def fetch_linkup(
         raise ValueError("timeout_seconds must be positive") from None
     if timeout <= 0:
         raise ValueError("timeout_seconds must be positive")
+    if on_dispatch is not None:
+        try:
+            on_dispatch(body["q"])
+        except Exception:
+            pass  # Optional activity cannot prevent dispatch.
     try:
         response = (post or post_provider_request)(
-            LINKUP_FETCH_URL,
-            json={"url": url},
+            endpoint,
+            json=body,
             headers={"Authorization": f"Bearer {token.strip()}", "Content-Type": "application/json"},
             timeout=timeout,
         )
@@ -76,12 +135,7 @@ def fetch_linkup(
         raise LinkupTransportError("linkup_transport_failed") from None
     if not isinstance(payload, Mapping):
         raise LinkupTransportError("linkup_response_invalid")
-    text = payload.get("markdown")
-    if not isinstance(text, str) or not text.strip():
-        text = payload.get("content")
-    if not isinstance(text, str) or not text.strip():
-        raise LinkupTransportError("linkup_material_unavailable")
-    return FetchedMaterial(url, text)
+    return payload
 
 
 def _required_url(value: str) -> str:

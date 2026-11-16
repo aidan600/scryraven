@@ -1,4 +1,4 @@
-"""Offline contract for LinkUp static Fetch as ordinary external Read."""
+"""Offline contracts for LinkUp Search and static Fetch."""
 
 import traceback
 
@@ -6,6 +6,7 @@ import pytest
 import requests
 
 from core import linkup_transport as linkup
+from core.exa_transport import DiscoveryCandidate
 from core.transport import FetchedMaterial
 
 
@@ -19,6 +20,41 @@ class Response:
 
     def json(self):
         return self.payload
+
+
+def test_fast_search_dispatches_exact_query_and_returns_only_bounded_navigation():
+    query = '  Lawrence of Arabia (1962)  "horse supplier"  '
+    url = "https://example.test/archive?name=a%20b&limit=10"
+    dispatched = []
+
+    def post(endpoint, *, json, headers, timeout):
+        assert endpoint == linkup.LINKUP_SEARCH_URL
+        assert dispatched == [query]
+        assert json == {"q": query, "depth": "fast", "outputType": "searchResults", "maxResults": 10}
+        assert headers == {"Authorization": "Bearer offline", "Content-Type": "application/json"}
+        assert timeout == linkup.DEFAULT_TIMEOUT_SECONDS
+        return Response({
+            "answer": "Do not return or admit a generated answer.",
+            "results": [
+                {"type": "image", "url": "https://example.test/image"},
+                {"type": "text", "url": "ftp://example.test/invalid"},
+                {"type": "text", "name": "  Source name ", "url": url, "content": "  A snippet.\n "},
+                *[{"type": "text", "url": f"https://example.test/{index}", "content": "x" * 600}
+                  for index in range(12)],
+            ],
+        })
+
+    results = linkup.search_linkup(query, api_key="offline", post=post,  # pragma: allowlist secret
+                                  on_dispatch=dispatched.append)
+    assert results[0] == DiscoveryCandidate("Source name", url, "A snippet.")
+    assert len(results) == 10 and len(results[-1].context) == 500
+    assert all(candidate.context_kind == "navigation" for candidate in results)
+
+
+def test_fast_search_rejects_answer_only_payload():
+    with pytest.raises(linkup.LinkupTransportError, match="^linkup_response_invalid$"):
+        linkup.search_linkup("phrase", api_key="offline",  # pragma: allowlist secret
+                             post=lambda *args, **kwargs: Response({"answer": "private", "sources": []}))
 
 
 def test_static_fetch_preserves_returned_markdown_for_the_exact_requested_url():

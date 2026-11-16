@@ -79,25 +79,38 @@ interpretation-recovery and shared-evidence observations leave specialized
 interpretation, discovery of controlling criteria and consequential omission
 unresolved; they do not establish an additional reviewer or Analyst's benefit.
 
-Exa supplies ordinary general Search. Research formulates generic Exa queries as
-concise natural-language evidence objectives describing what source material should
-establish, preserving consequential already-known entity, relationship,
-source-class, time, scope, applicability and comparison constraints. Proper nouns,
-exact terminology, quotations and source constraints remain available when part
-of the need. Research writes the query directly; no mechanical query transformer,
-extra model call, new schema or semantic owner is introduced. Research may select
-lexical/community/current discovery through Serper for literal phrases, site
-constraints, social/community sources or exact/current navigation when useful. External
-known-URL Read can dispatch LinkUp static Fetch and Exa Contents concurrently for
-the same URL. There is no automatic Search fallback, model router,
-premium escalation, Scout, specialist hierarchy, verifier, or prose polisher.
+Research chooses acquisition against a consequential evidence need. Each Search
+has a `query` describing what to retrieve and an `objective` describing what
+the results should help establish. Exa receives both model-authored fields
+separately. Open discovery leaves possible answers open, and independently
+useful searches address distinct needs. A precise question or a lead from
+acquired material can warrant a targeted lookup immediately. Exact names,
+versions, dates, jurisdictions and provisions stay in the query when they
+matter. Conversation context helps interpret ambiguous identifiers.
+
+After a route, Research reassesses what the material establishes or contradicts
+and revises its briefing when the provisional answer or remaining needs change.
+A promising original can warrant Read, a retained passage can warrant Find, and
+a still-unresolved need can warrant another Search. Research hands off supported
+findings and consequential gaps when the next operation is unlikely to help.
+The same briefing and acquisition history carry this work between decisions.
+
+Research can select LinkUp Fast Search for keyword-oriented navigation using
+identifiers or distinctive source wording. The request uses `depth=fast` and
+`outputType=searchResults`. Its objective stays in the Research request
+history. LinkUp receives the query only.
+External known-URL Read can dispatch LinkUp static Fetch and Exa Contents
+concurrently for the same URL. There is no automatic Search fallback, model
+router, premium escalation, Scout, specialist hierarchy, verifier, or prose
+polisher.
 
 For a fresh first session turn (`session_turn == 1`) with no retained acquisitions
 entering the turn, a private run-local transport wrapper sends the first executed
 generic Exa Search with `type=lite`. It consumes the bootstrap on execution,
 including a failed request, and sends subsequent generic Searches with
-`type=auto`. Other turns and retained-entry turns use Auto throughout. Earlier
-lexical Search, Read or Find does not consume it; an Answer without generic Search
+`type=auto`. Other turns and retained-entry turns use Auto throughout. Lite
+serves cached index material, which can limit a freshness-critical first result.
+Earlier lexical Search, Read or Find does not consume it; an Answer without generic Search
 makes no Lite request. Direct `search_exa()` callers default to Auto and its
 accepted types are Auto, Deep and Lite. Deep remains an accepted transport type,
 without an automatic fallback. Research selects the ordinary route
@@ -251,10 +264,11 @@ attempt; a missing continuation counter leaves a marked partial aggregate.
 ## Acquisition, custody, and reversible attention
 
 `scryraven.acquisition.AcquisitionLibrary` retains immutable actual
-`Evidence` and supplies an inspectable catalog. Ordinary Search admits source-derived Exa
-highlights mechanically. Serper lexical search supplies navigation candidates only:
-its snippets never become Evidence. Research can Read an observed candidate URL
-to acquire actual source material. Navigation metadata is never admitted as source text.
+`Evidence` and supplies an inspectable catalog. Ordinary Search admits
+source-derived Exa highlights mechanically. LinkUp lexical Search supplies source
+URLs, identity and navigation snippets as candidates. Research can Read an
+observed candidate URL to acquire actual source material. Navigation metadata
+is never admitted as source text.
 
 An external Read reserves up to two physical dispatches and sends each configured
 arm the exact same URL. If one slot is available, LinkUp is preferred when configured.
@@ -282,8 +296,8 @@ keeps its source-specific inspection behavior. Ranking is navigation, not a
 judgment of relevance or support.
 A failed search or local match says nothing about factual nonexistence.
 
-Acquisition retains fixed safe `exa_configuration_missing` and
-`serper_configuration_missing` failures. LinkUp transport, Acquisition and
+Acquisition retains the fixed safe `exa_configuration_missing` failure.
+LinkUp transport, Acquisition and
 body-free diagnostics preserve `linkup_timeout`, `linkup_connection_failed`,
 `linkup_endpoint_access_rejected` (401/403), `linkup_endpoint_rate_limited` (429),
 `linkup_endpoint_server_failed` (5xx), `linkup_json_invalid`,
@@ -309,7 +323,7 @@ forensic and body-free diagnostics keep their respective privacy boundaries.
 
 Successful Search and lexical Search produce `search_novelty_receipt` solely for
 safe acquisition diagnostics and forensic analysis. Its shape contains `provider`
-(`exa`/`serper`), `kind` (`search`/`search_lexical`) and eight numeric counts:
+(`exa`/`linkup`), `kind` (`search`/`search_lexical`) and eight numeric counts:
 
 - `returned_candidate_count`, `new_candidate_count`, `known_candidate_count`;
 - `returned_material_count`, `new_material_count`;
@@ -323,8 +337,8 @@ unique returned material IDs, measured against the library before each request.
 partition by whether the URL was already known; returned preexisting records
 count as exact reuse. Duplicate identical slots add no counts; distinct versions
 of one URL remain separate material IDs. Empty successful Searches produce zero
-counts; failed or denied requests do not produce a success receipt. Serper
-remains navigation-only with zero material counts.
+counts; failed or denied requests do not produce a success receipt. LinkUp
+lexical Search has zero material counts.
 
 Body-free acquisition timing and dogfood diagnostics retain only these counts and
 fixed provider/kind values, never queries, URLs, titles, highlights or bodies.
