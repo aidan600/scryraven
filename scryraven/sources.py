@@ -11,12 +11,21 @@ from dataclasses import dataclass
 from hashlib import sha256
 from typing import Literal
 
+from core.scholarly_transport import PublicationMetadata
+
 # Provisional, observable economics choices; none decides evidentiary sufficiency.
 TARGETED_SOURCE_CHARACTERS = 32_000
 REGION_TARGET = 3_200
 REGION_MAX = 4_800
 PACKET_CHARACTERS = 32_000
 EXPANSION_CHARACTERS = 48_000
+ACQUIRED_MATERIAL_KINDS = frozenset({"provider_highlights", "fetched_source", "publication_abstract"})
+AcquisitionKind = Literal["provider_highlights", "fetched_source", "publication_abstract", "targeted_view"]
+RangeBasis = Literal["acquired_highlight", "publication_abstract"]
+PARTIAL_RANGE_BASES: dict[str, RangeBasis] = {
+    "provider_highlights": "acquired_highlight",
+    "publication_abstract": "publication_abstract",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,7 +34,7 @@ class Evidence:
     url: str
     title: str
     content: str
-    acquisition: Literal["provider_highlights", "fetched_source", "targeted_view"] = "fetched_source"
+    acquisition: AcquisitionKind = "fetched_source"
     source_id: str = ""
     parent_id: str | None = None
     start_char: int | None = None
@@ -41,7 +50,10 @@ class Evidence:
     textless_page_count: int | None = None
     # Highlight ranges address the immutable acquired excerpt, which may join
     # separated provider selections. They never claim full-page coordinates.
-    range_basis: Literal["acquired_highlight"] | None = None
+    range_basis: RangeBasis | None = None
+    publication: PublicationMetadata | None = None
+    open_article_license: str | None = None
+    open_article_version: str | None = None
 
     def __post_init__(self) -> None:
         if not self.source_id:
@@ -54,9 +66,21 @@ class Evidence:
         elif any(value is not None for value in (self.parent_id, self.start_char, self.end_char)):
             raise ValueError("non_view_has_source_offsets")
         if (self.range_basis is not None
-                and (self.range_basis != "acquired_highlight" or self.acquisition != "targeted_view"
+                and (self.range_basis not in {"acquired_highlight", "publication_abstract"}
+                     or self.acquisition != "targeted_view"
                      or self.source_kind != "web")):
             raise ValueError("invalid_range_basis")
+        if self.publication is not None and (
+                self.source_kind != "web" or not isinstance(self.publication, PublicationMetadata)):
+            raise ValueError("invalid_publication_metadata")
+        if self.acquisition == "publication_abstract" and self.publication is None:
+            raise ValueError("missing_publication_metadata")
+        if self.open_article_license is not None and (
+                self.publication is None or self.acquisition not in {"fetched_source", "targeted_view"}
+                or self.range_basis is not None):
+            raise ValueError("invalid_open_article_provenance")
+        if self.open_article_version is not None and self.open_article_license is None:
+            raise ValueError("invalid_open_article_provenance")
         document_fields = (self.document_id, self.filename, self.page_start, self.page_end,
                            self.visual_analysis, self.textless_page_count)
         if self.source_kind == "web":
@@ -91,6 +115,12 @@ class Evidence:
                        visual_analysis=self.visual_analysis, textless_page_count=self.textless_page_count)
         if self.range_basis is not None:
             row["range_basis"] = self.range_basis
+        if self.publication is not None:
+            row["publication"] = self.publication.model_dump(mode="json", exclude_none=True)
+        if self.open_article_license is not None:
+            row["open_article_license"] = self.open_article_license
+        if self.open_article_version is not None:
+            row["open_article_version"] = self.open_article_version
         return row
 
 
@@ -153,7 +183,7 @@ def support_text(region: SupportRegion, material: Evidence) -> str:
 
 
 def exact_view(parent: Evidence, start: int, end: int) -> Evidence:
-    if (parent.acquisition not in {"fetched_source", "provider_highlights"}
+    if (parent.acquisition not in ACQUIRED_MATERIAL_KINDS
             or type(start) is not int or type(end) is not int
             or not 0 <= start < end <= len(parent.content)):
         raise ValueError("invalid_source_range")
@@ -162,7 +192,8 @@ def exact_view(parent: Evidence, start: int, end: int) -> Evidence:
         "targeted_view", parent.source_id, parent.id, start, end, parent.source_kind,
         parent.document_id, parent.filename, None, None, parent.visual_analysis,
         parent.textless_page_count,
-        "acquired_highlight" if parent.acquisition == "provider_highlights" else None,
+        PARTIAL_RANGE_BASES.get(parent.acquisition), parent.publication, parent.open_article_license,
+        parent.open_article_version,
     )
 
 

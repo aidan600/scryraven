@@ -1,5 +1,79 @@
 # ScryRaven Current Truth
 
+## Scientific research and publication inspection
+
+The ordinary initial and delegated Research roles can choose Europe PMC for
+biomedical and life-science discovery alongside Exa and LinkUp. An exact
+publicly supplied abstract retains its own acquisition label. Europe PMC
+records can identify authors, venues, publication years, article types,
+DOI/PMID/PMCID, reported preprints and retractions, and linked publication
+versions or notices. An exact known open PMC target can use the Articles API to
+retrieve JATS text. That route verifies the PMCID and a reusable Creative
+Commons or public-domain license before retaining a readable article
+extraction. Generic search and ordinary publisher/repository Read cover work
+outside that route's index and license coverage.
+
+Research can optionally look up a journal's exact ISSN and classification
+year in the Finnish Publication Forum. Its reported level belongs to the
+specified year. Evaluating panels and subject labels describe the current
+registry record. Europe PMC also exposes positive NLM Index Medicus
+membership when reported for a biomedical record. Missing venue standing
+stays unknown. Research weighs the study's relevance, design and original
+findings first. Registry records, indexing and publication metadata guide
+navigation. Acquired source text carries factual support.
+
+Research's provisional account and selected passages carry the methods,
+results and conditions needed for the question. Answer develops the
+mechanism or comparison to the depth the question warrants and can associate
+decisive scientific claims with exact saved passages through the existing
+citation mechanism. Citation previews and the Reader show scholarly
+identifiers, venue and authors when observed, and distinguish selected
+abstract text, open-article text and generic highlights. Citation numbers and
+exact saved material survive reopening. The two semantic owners and shared
+turn limits remain in force.
+
+Four matched ordinary local assessments compared merged baseline
+`bc746884f38278ef1d6db487a16f7babf255f27b` with initial experimental runtime
+`4046afd355aef9147cd40b4d4a2cc612866f4ad8`. The three scientific pairs were
+already useful at baseline. The revised answers developed more of the
+assay-to-inference chain for naked mole-rat hypoxia, experimental controls
+and competing meta-analyses for reef-fish behavior, and original retraction
+and trial-supplement support for PREDIMED. Blinded reviewers modestly preferred
+the revised reef-fish and PREDIMED answers. The reef-fish answer cited two
+original Europe PMC abstracts with publication metadata. The same run acquired
+a licensed article body and cited its abstract. The California statutory
+comparison remained correct with ordinary official-source citations.
+
+The matched baseline/revised runs used 22/26 physical model requests,
+45/59 provider dispatches and 326.533/354.157 summed wall seconds. The
+estimated list-rate costs were $1.40–1.46 and $2.37–2.47 respectively.
+The first PREDIMED scholarly keyword query returned unrelated records. Generic
+acquisition recovered the original evidence. The refined prompt favors exact
+identifiers or distinctive titles for known papers.
+
+Six further ordinary cases exercised runtime
+`ea06838691c84143203c56466a042d938619ccad`. The simple enzyme lookup stayed brief.
+The ATBC and CARET comparison used original trial reports and separated the
+factorial beta-carotene estimate from the combination intervention. The panda
+synthesis gave direct digestive-balance experiments priority when interpreting
+microbial genes and enzyme assays. The targeted Sundin et al. question used
+licensed article passages for details about tank and sump replication,
+individual testing and response measures. The journal-standing question used
+the ISSN lookup and independently Read and cited the official registry
+record for the journal's 2025 Level 2, keeping current panel scope distinct.
+The battery calculation and FAA comparison remained concise and cited the
+controlling FAA text.
+
+All 14 submissions completed, using 78 physical model requests, 144 provider
+dispatches and about $4.92–5.13 at public list rates. Actual invoices were
+unobserved. Exact selected text and saved passage custody held across the
+campaign. The narrow Reading Room browser check reopened an abstract citation
+and showed the byline, DOI, exact saved text and linked notice at 320 pixels.
+Sanitized evidence and adjudication are under ignored
+`local-evals/runs/scientific-research-product-01/`. General scientific
+reliability, cross-field scholarly coverage, and production performance
+remain unestablished.
+
 ## Reading Room live research activity
 
 The conversation shows the current operation and elapsed time beneath a pending
@@ -406,8 +480,9 @@ Answer owns final conclusions, warranted inference, useful partials and concise
 material qualifications. Briefings remain fallible analysis, never Evidence.
 Find is described as bounded ranked lexical retrieval; Read distinguishes parent
 acquisition from bounded exposure; Calculate documents decimal-only syntax.
-Schemas, models, providers, tools, budgets, session state, citation custody and
-Reading Room are unchanged. No new semantic owner or lifecycle is introduced.
+The later scientific research integration extends instructions, acquisition
+and citation presentation as described above. It uses the existing role
+assignments, budget and exact citation custody.
 
 Frozen runtime `3a31d17dffcf8b6cf2b57f479edfb4fa5f425642` was evaluated with
 explicit personal-plan Terra/medium Research and Sol/medium Answer; personal
@@ -1018,10 +1093,11 @@ state. Changing only Read focus does not change `static_fetch`; provider
 configuration suppression remains the existing operational correction.
 
 Search novelty is mechanically measured for safe acquisition diagnostics and
-forensic analysis only. Each successful Exa or lexical LinkUp Search reports
+forensic analysis only. Each successful Exa, lexical LinkUp or Europe PMC Search reports
 provider/kind and eight numeric counts: returned/new/known candidates,
 returned/new material, new-candidate material, refreshed-known-candidate material
 and exact reused material. LinkUp lexical Search has zero material counts.
+Europe PMC material counts represent acquired publication abstracts.
 Body-free diagnostics contain no query,
 URL, title, highlights or source body. The diagnostic receipt is excluded from
 model-facing acquisition history; novelty counts do not enter either role and
@@ -1040,7 +1116,7 @@ Ordinary generic Exa Search uses six results and `contents.text=false`.
 On `session_turn == 1` with no retained acquisitions entering the turn, the first
 executed generic Exa Search uses `type=lite`; every later generic Search uses
 `type=auto`. Other turns and retained-entry turns use Auto throughout. Read,
-Find, lexical Search or Answer may come first; only execution of generic Search
+Find, lexical or scholarly Search, venue lookup, or Answer may come first. Only execution of generic Search
 consumes this run-local bootstrap, including a failed executed attempt. Lite
 serves cached index material and may miss freshness-critical changes. Direct
 `search_exa()` callers still default to Auto. Query-specific Highlights use provider-native Dynamic
@@ -1063,7 +1139,7 @@ One Search failure does not cancel another already-dispatched Search. A run of
 more than three generic Searches is divided into groups of at most three. If the
 whole group cannot be reserved against the existing 16-attempt external budget,
 or the run deadline has already expired, those requests stay on the serial path.
-Read, Find, lexical Search, and any mixed route stay serial. Transport workers
+Read, Find, lexical or scholarly Search, venue lookup, and any mixed route stay serial. Transport workers
 do not allocate IDs or mutate the acquisition library. Body-free
 `search_concurrency_groups` diagnostics record the route span, summed transport,
 and overlap, without query or payload text.

@@ -96,7 +96,7 @@ def _print_result(result: CompletedAnswer, *, trace: bool, trace_evidence: bool)
         diagnostics = {"trace": result.trace}
         if trace_evidence:
             diagnostics["selected_evidence"] = [
-                asdict(item) for item in result.selected_evidence
+                item.material() for item in result.selected_evidence
             ]
             diagnostics["citations"] = [
                 {"number": item.number, "source_id": item.source_id, "title": item.title, "url": item.url,

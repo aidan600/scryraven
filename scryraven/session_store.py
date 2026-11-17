@@ -18,6 +18,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from core.scholarly_transport import PublicationMetadata
 from scryraven.documents import (
     DOCUMENT_ID,
     PreparedDocument,
@@ -31,7 +32,7 @@ from scryraven.images import MAX_ATTACHMENT_REQUEST_BYTES, MAX_ATTACHMENTS_PER_Q
 from scryraven.model import valid_model_identifier
 from scryraven.presentation import Citation, CitationUse
 from scryraven.run_settings import BILLED_BACKENDS, RunSettings
-from scryraven.sources import Evidence, SupportRegion, exact_view, support_text
+from scryraven.sources import AcquisitionKind, Evidence, RangeBasis, SupportRegion, exact_view, support_text
 
 
 @dataclass(frozen=True)
@@ -149,7 +150,7 @@ class _EvidenceRecord(_Record):
     url: str
     title: str
     content: str
-    acquisition: Literal["provider_highlights", "fetched_source", "targeted_view"]
+    acquisition: AcquisitionKind
     source_id: str
     parent_id: str | None
     start_char: int | None
@@ -161,7 +162,10 @@ class _EvidenceRecord(_Record):
     page_end: int | None = None
     visual_analysis: bool | None = None
     textless_page_count: int | None = None
-    range_basis: Literal["acquired_highlight"] | None = None
+    range_basis: RangeBasis | None = None
+    publication: PublicationMetadata | None = None
+    open_article_license: str | None = None
+    open_article_version: str | None = None
 
 
 class _CitationRecord(_Record):
@@ -240,7 +244,7 @@ def _evidence(record: _EvidenceRecord) -> Evidence:
         _require(bool(record.id and record.source_id and record.content and not record.url.strip()))
     else:
         _require(bool(record.id and record.source_id and record.url.strip() and record.content.strip()))
-    return Evidence(**record.model_dump())
+    return Evidence(**record.model_dump(exclude={"publication"}), publication=record.publication)
 
 
 def _decode(payload: str, revision: int, documents: tuple[SessionDocument, ...] = (),
