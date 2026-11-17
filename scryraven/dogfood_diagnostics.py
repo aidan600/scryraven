@@ -17,6 +17,7 @@ from threading import Lock
 from time import monotonic
 
 from core.linkup_transport import LINKUP_FAILURE_CODES
+from core.scholarly_transport import SCHOLARLY_FAILURE_CODES
 from scryraven.acquisition import SEARCH_NOVELTY_COUNTS
 from scryraven.errors import RunError
 from scryraven.session_store import SessionStoreError
@@ -28,9 +29,9 @@ _CACHE_FAMILY = re.compile(
 _CONTRACTS = {"research", "answer"}
 _POSTURES = {"supported", "partial", "unable"}
 _STOP_REASONS = {"supported", "not_established", "research_bound"}
-_PROVIDERS = {"exa", "serper", "linkup", "local"}
+_PROVIDERS = {"exa", "serper", "linkup", "europe_pmc", "local"}
 _READ_SELECTIONS = {"no_usable_material", "first_usable", "broader_original", "cleaner_structure"}
-_KINDS = {"search", "search_lexical", "read", "find"}
+_KINDS = {"search", "search_lexical", "search_scholarly", "read", "find"}
 _READ_MODES = {"auto", "local", "full", "refresh"}
 _BREAKPOINTS = {"instructions", "history", "research_context"}
 _REASONING_EFFORTS = {"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"}
@@ -52,6 +53,7 @@ _CODES = {
     "exa_configuration_missing", "serper_configuration_missing",
     "provider_configuration_missing",
     *LINKUP_FAILURE_CODES,
+    *SCHOLARLY_FAILURE_CODES,
     "invalid_request", "invalid_request_kind", "invalid_request_field",
     "invalid_read_mode", "invalid_find_scope", "invalid_exact_range",
     "empty_query", "empty_target", "invalid_public_url",
@@ -309,8 +311,8 @@ class TurnDiagnostics:
             receipt = event.get("search_novelty_receipt")
             if isinstance(receipt, dict):
                 row["search_novelty_receipt"] = {
-                    "provider": _one_of(receipt.get("provider"), {"exa", "linkup", "serper"}),
-                    "kind": _one_of(receipt.get("kind"), {"search", "search_lexical"}),
+                    "provider": _one_of(receipt.get("provider"), _PROVIDERS - {"local"}),
+                    "kind": _one_of(receipt.get("kind"), _KINDS - {"read", "find"}),
                     **{key: _nonnegative_int(receipt.get(key)) for key in SEARCH_NOVELTY_COUNTS},
                 }
             navigation = event.get("document_navigation")

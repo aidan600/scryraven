@@ -11,6 +11,7 @@ from urllib.parse import unquote, urlsplit
 
 from markdown_it import MarkdownIt
 
+from core.scholarly_transport import PublicationMetadata
 from scryraven.documents import TEXT_ONLY_WARNING, safe_original_href, textless_page_warning
 from scryraven.sources import Evidence, SupportRegion, support_text
 
@@ -93,6 +94,36 @@ def source_label(citation: Citation) -> str:
     return parsed.hostname or "Untitled source"
 
 
+def _publication(citation: Citation) -> PublicationMetadata | None:
+    return next((item.publication for item in reversed(citation.materials) if item.publication), None)
+
+
+def _publication_byline(citation: Citation) -> str:
+    publication = _publication(citation)
+    if publication is None:
+        return ""
+    authors = ", ".join(publication.authors[:3])
+    if len(publication.authors) > 3:
+        authors += " et al."
+    return " · ".join(filter(None, (authors, publication.journal, str(publication.year or ""))))
+
+
+def _article_scope(citation: Citation) -> str:
+    return " · ".join(dict.fromkeys(_material_provenance(item)[0] for item in citation.materials))
+
+
+_PUBLICATION_STATUSES = {"preprint": "Preprint", "retracted": "Retracted", "published": "Published record"}
+_PUBLICATION_VERSIONS = {
+    "author_manuscript": "Author manuscript", "published": "Version of record", "unknown": "Version unspecified",
+}
+_PUBLICATION_RELATIONS = {
+    "published_version": "Related publication", "preprint": "Related preprint",
+    "correction": "Correction or republication", "corrects": "Corrected article",
+    "retraction": "Retraction notice", "retracts": "Retracted article",
+    "expression_of_concern": "Expression of concern", "expression_of_concern_for": "Article named in concern",
+}
+
+
 RESEARCH_BOUND_DISCLOSURE = (
     "Research reached its operating limit; this answer uses the material gathered by then."
 )
@@ -114,6 +145,7 @@ def render_cli(result: Result | SessionTurn) -> str:
         f"[{item.number}] {source_label(item)}\n    {document_page_label(item)}"
         if item.source_kind == "user_document"
         else f"[{item.number}] {source_label(item)}\n    {item.url}"
+        + (f"\n    {_publication_byline(item)}\n    {_article_scope(item)}" if _publication(item) else "")
         for item in result.citations
     )
     return result.answer + "\n\n" + "\n".join(status) + ("\n\nSources\n" + sources if sources else "")
@@ -285,6 +317,7 @@ def _source_link(url: str) -> str:
 _ACQUISITION_LABELS = {
     "provider_highlights": ("Extractive highlight", "Selections may be noncontiguous or omit surrounding context."),
     "fetched_source": ("Fetched source text", "Text extracted from the publication."),
+    "publication_abstract": ("Publication abstract", "Abstract text supplied by Europe PMC."),
     "targeted_view": ("Selected slice", "Slice boundaries are not original-document page locations."),
 }
 
@@ -297,6 +330,12 @@ def _material_provenance(material: Evidence) -> tuple[str, str]:
     if material.range_basis == "acquired_highlight":
         return ("Selected acquired excerpt",
                 "Offsets refer only to the retained provider excerpt. Omitted context and original-page positions are unknown.")
+    if material.range_basis == "publication_abstract":
+        return "Selected abstract passage", "Offsets refer to the retained publication abstract."
+    if material.open_article_license:
+        if material.acquisition == "targeted_view":
+            return "Selected article text", "Exact passage from the open-access article body supplied by Europe PMC."
+        return "Open-access article text", "Article body supplied by Europe PMC."
     return _ACQUISITION_LABELS[material.acquisition]
 
 
@@ -327,8 +366,42 @@ def citation_preview_html(citation: Citation, *, original_href: str | None = Non
                    if isinstance(citation.description, str) and citation.description.strip() else "")
     link = (f'<a href="{escape(href, quote=True)}" target="_blank" rel="noopener noreferrer">'
             f'{action} <span aria-hidden="true">↗</span></a>' if href else "Original source URL unavailable.")
-    return (f'<p class="publisher-domain">{escape(publisher)}</p>' + description
+    byline = _publication_byline(citation)
+    publication = _publication(citation)
+    material = ""
+    if publication:
+        status = _PUBLICATION_STATUSES.get(publication.status)
+        scope = " · ".join(filter(None, (status, _article_scope(citation))))
+        material = f'<p class="publication-detail">{escape(scope)}</p>'
+    return (f'<p class="publisher-domain">{escape(byline or publisher)}</p>' + material + description
             + f'<p class="source-url">{link}</p>')
+
+
+def _publication_details(citation: Citation) -> str:
+    publication = _publication(citation)
+    if publication is None:
+        return ""
+    details = []
+    if byline := _publication_byline(citation):
+        details.append(escape(byline))
+    if publication.doi:
+        details.append(f"DOI {escape(publication.doi)}")
+    if publication.pmid:
+        details.append(f"PMID {escape(publication.pmid)}")
+    if publication.article_types:
+        details.append(escape(", ".join(publication.article_types)))
+    if publication.status:
+        details.append(f"{_PUBLICATION_STATUSES[publication.status]} · {escape(publication.source)}")
+    if publication.indexing:
+        index = publication.indexing
+        details.append(f"Indexed in {escape(index.source)} · {escape(index.field)}")
+    for relation in publication.related:
+        if safe_publication_url(relation.url):
+            href = escape(relation.url, quote=True)
+            label = _PUBLICATION_RELATIONS[relation.kind]
+            note = f" · {escape(relation.note)}" if relation.note else ""
+            details.append(f'<a href="{href}" target="_blank" rel="noopener noreferrer">{label}</a>{note}')
+    return '<div class="publication-detail">' + "".join(f"<p>{detail}</p>" for detail in details) + "</div>"
 
 
 def _support_excerpts(material: Evidence, regions: list[SupportRegion], radius: int,
@@ -420,14 +493,22 @@ def source_body_html(citation: Citation, *, collapse_long: bool = False, origina
                        '<span class="hide-material">Show preview</span></summary>' + content + '</details>')
         selection = (f'<h3>Selection {index} of {len(citation.materials)}</h3>'
                      if len(citation.materials) > 1 else "")
+        license_note = ""
+        if item.open_article_license and safe_publication_url(item.open_article_license):
+            license_href = escape(item.open_article_license, quote=True)
+            version_label = _PUBLICATION_VERSIONS.get(item.open_article_version)
+            version = f"{version_label} · " if version_label else ""
+            license_note = (f'<p class="publication-detail">{version}<a href="{license_href}" target="_blank" '
+                            'rel="noopener noreferrer">Article license</a></p>')
         materials.append('<section class="material">'
                          + selection + f'<p class="acquisition"><span>{label}</span> · {qualification}</p>'
-                         + content + '</section>')
+                         + license_note + content + '</section>')
     identity = (_document_identity(citation, original_href) if citation.source_kind == "user_document"
                 else _source_link(citation.url))
     support = "".join(_support_html(citation, use, source_anchor)
                       for use in uses if use.number == citation.number and use.support)
     return (identity
+            + _publication_details(citation)
             + support
             + ('<h2>Full saved material</h2>' if support else '<h2>Material ScryRaven used from this source</h2>')
             + '<p class="scope">Exact text saved with this answer. '

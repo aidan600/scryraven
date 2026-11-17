@@ -98,8 +98,12 @@ The same briefing and acquisition history carry this work between decisions.
 Research can select LinkUp Fast Search for keyword-oriented navigation using
 identifiers or distinctive source wording. The request uses `depth=fast` and
 `outputType=searchResults`. Its objective stays in the Research request
-history. LinkUp receives the query only.
-External known-URL Read can dispatch LinkUp static Fetch and Exa Contents
+history. LinkUp receives the query only. Research can also choose Europe PMC
+Search when its biomedical or life-science index can help identify relevant
+studies, their publication versions or accessible originals. This uses the
+same Search decision and turn allowance. Exa and LinkUp remain options for
+literature or source material beyond that index.
+General external known-URL Read can dispatch LinkUp static Fetch and Exa Contents
 concurrently for the same URL. There is no automatic Search fallback, model
 router, premium escalation, Scout, specialist hierarchy, verifier, or prose
 polisher.
@@ -182,6 +186,16 @@ compact. User stipulations can support conditional reasoning but beliefs,
 assistant history and model recollection do not become external facts. Documents
 establish what their supplied text states, not independent outside verification.
 
+For substantive scientific questions, Research chooses the originals needed to
+connect the mechanism, measurement or model to the conclusion. It seeks methods,
+results and qualifications when an abstract or highlight cannot establish the
+scope. The existing briefing and exact selections preserve relevant study design,
+quantities and competing results. Answer draws the supported conclusion and
+explains how study conditions, outcomes or methods affect the comparison.
+Multiple representations of one study cannot establish independent replication.
+Appraisal depends on the question and discipline. Journal context may guide
+selection, while the study's contribution determines evidentiary weight.
+
 Answer may invoke `research(need)` for a consequential gap. The same Research
 loop uses the original question, latest briefing, shared library, acquisition
 receipts and remaining resources. It returns a revised briefing, exact originals
@@ -220,7 +234,7 @@ source-body observation remains a separate opt-in diagnostic projection.
 
 The Answer contract is `SemanticAnswerDecision`: posture, `support_basis`,
 answer, and `missing_information`, plus optional generated `citation_descriptions`
-for presentation. Sol, through the existing Answer model role,
+and `citation_passages` for inspection. Sol, through the existing Answer model role,
 owns meaning, prose, adequacy and citations. It evaluates the briefing against supplied Evidence and cites exact supplied
 aliases beside supported factual claims.
 A completed valid Answer proceeds directly to deterministic citation resolution
@@ -270,7 +284,30 @@ URLs, identity and navigation snippets as candidates. Research can Read an
 observed candidate URL to acquire actual source material. Navigation metadata
 is never admitted as source text.
 
-An external Read reserves up to two physical dispatches and sends each configured
+Europe PMC core Search records can supply publication identifiers, authors,
+venue, publication year, recorded article types, version and status links,
+and links to accessible originals. Identifiers detect repeated hits for the same
+publication. Explicit links between separately identified versions preserve each
+version as its own source material. When the service supplies author abstract
+text, it is retained with the `publication_abstract` acquisition label. Passage
+offsets into it address only the retained abstract. Record metadata is separate
+from the abstract and remains navigation, including publication-status records.
+
+On a known Europe PMC open-text path, Read uses the public full-text XML endpoint.
+It checks article identity and reuse license before retaining extracted article
+text. Bibliographic access hints alone cannot authorize text acquisition. The
+extract includes supplied abstract and body text, and retains available article
+version and license separately. It follows the same bounded exact-view delivery
+as other acquired source text. A body-text acquisition does not imply that the
+model inspected the entire body, figures or supplements.
+
+The positive NLM Index Medicus observation is scoped to indexed biomedical and
+life-science articles. It is a field-relevant indexing signal with publication
+year available independently. It supplies neither a journal quartile nor a
+current journal-wide ranking. Unknown indicator values stay absent. No venue
+score or indexing gate changes citation eligibility.
+
+An ordinary web Read reserves up to two physical dispatches and sends each configured
 arm the exact same URL. If one slot is available, LinkUp is preferred when configured.
 A Read with one eligible provider uses that provider alone. Each arm runs in an
 independently terminable worker. Its collection and cleanup share the remaining
@@ -307,8 +344,9 @@ fallback). Endpoint classifications establish only a LinkUp API response, not a
 target website status. Unknown injected Read exceptions remain `read_failed`;
 invalid injected fetched material remains `unusable_fetch_material`. Raw failure
 text, bodies, headers and credentials do not cross these diagnostic boundaries.
-A single provider failure does not force a turn-wide fail-fast decision;
-Research judges the acquisition result.
+Research can still choose scholarly Search when both general providers are
+unconfigured. An entirely suppressed route hands control back to Answer.
+Research judges the acquisition result and chooses any further available route.
 
 Research receives one turn-scoped `acquisition_history` of compact operation
 receipts. It records attempted requests, resulting material/candidate IDs, safe
@@ -321,9 +359,10 @@ The history is not persistent semantic memory. Answer receives actionable
 acquisition limitations rather than the full worker operation log. Existing
 forensic and body-free diagnostics keep their respective privacy boundaries.
 
-Successful Search and lexical Search produce `search_novelty_receipt` solely for
-safe acquisition diagnostics and forensic analysis. Its shape contains `provider`
-(`exa`/`linkup`), `kind` (`search`/`search_lexical`) and eight numeric counts:
+Successful Searches produce `search_novelty_receipt` solely for safe acquisition
+diagnostics and forensic analysis. Its shape contains `provider`
+(`exa`/`linkup`/`europe_pmc`), `kind` (`search`/`search_lexical`/`search_scholarly`)
+and eight numeric counts:
 
 - `returned_candidate_count`, `new_candidate_count`, `known_candidate_count`;
 - `returned_material_count`, `new_material_count`;
@@ -333,7 +372,8 @@ safe acquisition diagnostics and forensic analysis. Its shape contains `provider
 Candidate identity remains the library's exact observed URL key and existing
 public-URL admission check. Counts use unique valid candidate identities and
 unique returned material IDs, measured against the library before each request.
-`_retain` still compares exact URL, content and acquisition kind. New records
+`_retain` compares exact URL, content, acquisition kind and saved publication
+provenance. New records
 partition by whether the URL was already known; returned preexisting records
 count as exact reuse. Duplicate identical slots add no counts; distinct versions
 of one URL remain separate material IDs. Empty successful Searches produce zero
@@ -351,7 +391,7 @@ Read's target and mode have explicit mechanical meaning:
 
 | Request | Behavior |
 | --- | --- |
-| Exact material ID with `auto` | Reread that retained item locally, including highlights. |
+| Exact material ID with `auto` | Reread that retained item locally, including highlights and abstracts. |
 | `local` | Inspect available retained material without external acquisition. |
 | `full` | Reuse the latest retained full parent for the source or acquire full text if absent. Large parents yield bounded exact views, so one Read need not expose the whole body. |
 | Candidate ID or observed URL with `auto` | Reuse an available full parent or acquire source text. |
@@ -521,9 +561,10 @@ Analysis code is decode-only schema/reference validation in `scryraven.historica
 Historical judgments are excluded from new model packets. The stopped Investigator
 executable harness and its Author adapter are retired to their preserved Git lineage.
 
-The primary Answer may supply a short, contiguous passage locator for a legal
-citation occurrence using its exact supplied material alias and that alias's
-one-based occurrence in the answer. The resolver attaches coordinates and hashes
+The primary Answer may supply a short, contiguous passage locator for an important
+citation occurrence, such as a decisive study result or legal proposition. It uses
+its exact supplied material alias and that alias's one-based occurrence in the
+answer. The resolver attaches coordinates and hashes
 only after a unique literal or whitespace-only match in the cited snapshot.
 Missing, conflicting or invalid locators leave ordinary source-level citations.
 New and historical coordinates and hashes are validated against their own saved
@@ -552,6 +593,14 @@ shows acquisition labels and identifies physical PDF pages. Original PDF links
 and native source disclosures work with JavaScript disabled. Reopening and
 inspection use saved coordinates and text without model calls or fetching the
 current publication.
+
+Scholarly citations can display recorded authors, venue, year, identifiers,
+article types, publication status and explicit version or notice links from the
+cited snapshots. Inspection labels the actual material available, including
+publication abstracts and licensed article text. Evidence
+views and the durable answer retain those snapshots alongside exact content.
+Publication metadata and its absence cannot grant new source support or change
+earlier citation numbering.
 
 The Reading Room and CLI disclose that no external sources were used for
 completed source-free supported/partial answers. Presentation derives this from

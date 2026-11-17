@@ -21,6 +21,15 @@ from core.linkup_transport import (
     fetch_linkup,
     search_linkup,
 )
+from core.scholarly_transport import (
+    SCHOLARLY_FAILURE_CODES,
+    PublicationMetadata,
+    ScholarlyCandidate,
+    ScholarlyFullText,
+    ScholarlyTransportError,
+    fetch_scholarly,
+    search_scholarly,
+)
 from core.transport import FetchedMaterial
 from scryraven.documents import (
     DOCUMENT_ID,
@@ -30,7 +39,16 @@ from scryraven.documents import (
     index_parent,
     page_slices,
 )
-from scryraven.sources import TARGETED_SOURCE_CHARACTERS, Evidence, SourceIndex, exact_view, rank_corpus_regions
+from scryraven.sources import (
+    ACQUIRED_MATERIAL_KINDS,
+    PARTIAL_RANGE_BASES,
+    TARGETED_SOURCE_CHARACTERS,
+    AcquisitionKind,
+    Evidence,
+    SourceIndex,
+    exact_view,
+    rank_corpus_regions,
+)
 
 FIND_RESULT_LIMIT = 8
 SEARCH_NOVELTY_COUNTS = (
@@ -42,6 +60,8 @@ PROVIDER_CONFIGURATION_CODES = {
     "exa": "exa_configuration_missing",
     "linkup": "linkup_configuration_missing",
 }
+SEARCH_PROVIDERS = {"search": "exa", "search_lexical": "linkup", "search_scholarly": "europe_pmc"}
+ACQUISITION_KINDS = SEARCH_PROVIDERS.keys() | {"read", "find"}
 
 
 def _public_url(url: str) -> bool:
@@ -125,17 +145,22 @@ class AcquisitionLibrary:
         documents: Iterable[SessionDocument] = (),
         search: Callable[..., list[DiscoveryCandidate]] = search_exa,
         lexical_search: Callable[..., list[DiscoveryCandidate]] = search_linkup,
+        scholarly_search: Callable[..., list[ScholarlyCandidate]] = search_scholarly,
         fetch: Callable[..., FetchedMaterial] = fetch_linkup,
         fetch_read: Callable[[str], DualReadResult | None] | None = None,
+        scholarly_fetch: Callable = fetch_scholarly,
     ) -> None:
         self.search, self.lexical_search, self.fetch = search, lexical_search, fetch
         self.fetch_read = fetch_read
+        self.scholarly_search, self.scholarly_fetch = scholarly_search, scholarly_fetch
         self.acquisitions = list(retained_acquisitions)
         self.materials: dict[str, Evidence] = {}
         self.exposed: set[str] = set()
         self.candidates: dict[str, dict] = {}
         self._source_ids: dict[str, str] = {}
         self._candidate_ids: dict[str, str] = {}
+        self._publications: dict[str, PublicationMetadata] = {}
+        self._scholarly_full_text: dict[str, str] = {}
         self._indexes: dict[str, SourceIndex] = {}
         self._documents: dict[str, SessionDocument] = {}
         self._index_parents: dict[str, Evidence] = {}
@@ -150,12 +175,17 @@ class AcquisitionLibrary:
             self._documents[document.document_id] = document
         for index, item in enumerate(self.acquisitions, 1):
             if (not isinstance(item, Evidence) or item.id != f"E{index}"
-                    or item.acquisition not in {"fetched_source", "provider_highlights"}
+                    or item.acquisition not in ACQUIRED_MATERIAL_KINDS
                     or not item.content.strip() or not _public_url(item.url)
                     or item.source_id != self._source_ids.setdefault(item.url, item.id)):
                 raise AcquisitionError("invalid_retained_acquisitions")
             self.materials[item.id] = item
             self._candidate(item.url, item.title)
+            if item.publication is not None:
+                self._publications[item.url] = item.publication
+                if (item.publication.open_article_available and item.publication.pmcid
+                        and item.url == f"https://pmc.ncbi.nlm.nih.gov/articles/{item.publication.pmcid}/"):
+                    self._scholarly_full_text[item.url] = item.publication.pmcid
 
     def _candidate(self, url: str, title: str = "", context: str = "") -> str:
         if not _public_url(url):
@@ -200,7 +230,8 @@ class AcquisitionLibrary:
         return {
             "materials": rows,
             "candidates": [{**row, "material_ids": [item.id for item in self.acquisitions
-                                                       if item.url == row["url"]]}
+                                                       if item.url == row["url"]],
+                            **self._publication_navigation(row["url"])}
                            for row in self.candidates.values()],
             "documents": [{
                 "id": document.document_id, "filename": document.filename,
@@ -210,15 +241,30 @@ class AcquisitionLibrary:
             } for document in self._documents.values()],
         }
 
-    def _retain(self, url: str, title: str, content: str, acquisition: str) -> Evidence:
+    def _publication_navigation(self, url: str) -> dict:
+        publication = self._publications.get(url)
+        return {
+            **({"publication": publication.model_dump(mode="json", exclude_none=True)} if publication else {}),
+            **({"open_article_available": True} if url in self._scholarly_full_text else {}),
+        }
+
+    def _retain(
+        self, url: str, title: str, content: str, acquisition: AcquisitionKind, *,
+        open_article_license: str | None = None, open_article_version: str | None = None,
+    ) -> Evidence:
         if not _public_url(url) or not isinstance(content, str) or not content.strip():
             raise AcquisitionError("unusable_acquisition")
+        publication = self._publications.get(url)
         existing = next((item for item in self.acquisitions
-                         if (item.url, item.content, item.acquisition) == (url, content, acquisition)), None)
+                         if (item.url, item.content, item.acquisition, item.publication, item.open_article_license,
+                             item.open_article_version) == (url, content, acquisition, publication,
+                                                            open_article_license, open_article_version)), None)
         if existing is not None:
             return existing
         ref = f"E{len(self.acquisitions) + 1}"
-        item = Evidence(ref, url, title, content, acquisition, self._source_ids.setdefault(url, ref))
+        item = Evidence(ref, url, title, content, acquisition, self._source_ids.setdefault(url, ref),
+                        publication=publication, open_article_license=open_article_license,
+                        open_article_version=open_article_version)
         self.acquisitions.append(item)
         self.materials[ref] = item
         self._candidate(url, title)
@@ -273,7 +319,7 @@ class AcquisitionLibrary:
             if (isinstance(start, bool) or isinstance(end, bool)
                     or not isinstance(start, int) or not isinstance(end, int)):
                 raise AcquisitionError("invalid_exact_range")
-            if (parent.acquisition not in {"fetched_source", "provider_highlights"}
+            if (parent.acquisition not in ACQUIRED_MATERIAL_KINDS
                     or not 0 <= start < end <= len(parent.content)):
                 raise AcquisitionError("invalid_exact_range")
             # Preserve the complete requested range in source order, with each
@@ -292,15 +338,15 @@ class AcquisitionLibrary:
                     lexical_match_found = metrics["candidate_regions_considered"] > 0
             else:
                 items = [parent]
-                selection_mode = "provider_highlights" if parent.acquisition == "provider_highlights" else "full_parent"
+                selection_mode = "full_parent" if parent.acquisition == "fetched_source" else parent.acquisition
         self.materials.update((item.id, item) for item in items)
         receipt = {"selection_mode": selection_mode,
                    "returned_characters": sum(len(view.content) for view in items),
                    "ranges": [{"id": view.id, "start_char": view.start_char, "end_char": view.end_char}
                               for view in items if view.acquisition == "targeted_view"]}
-        if parent.acquisition == "provider_highlights" and any(view.range_basis for view in items):
+        if parent.acquisition in PARTIAL_RANGE_BASES and any(view.range_basis for view in items):
             receipt.update(parent_id=parent.id, parent_characters=len(parent.content),
-                           range_basis="acquired_highlight")
+                           range_basis=PARTIAL_RANGE_BASES[parent.acquisition])
         if parent.acquisition == "fetched_source":
             if items == [parent]:
                 receipt["ranges"] = [{"id": parent.id, "start_char": 0, "end_char": len(parent.content)}]
@@ -363,7 +409,7 @@ class AcquisitionLibrary:
                 raise AcquisitionError("invalid_exact_range") from None
             # Ordinary targeted views are bounded; larger requests use the
             # explicit parent range path, which splits them for delivery.
-            if (parent.acquisition not in {"fetched_source", "provider_highlights"}
+            if (parent.acquisition not in ACQUIRED_MATERIAL_KINDS
                     or not 0 <= start < end <= len(parent.content)
                     or end - start > TARGETED_SOURCE_CHARACTERS):
                 raise AcquisitionError("invalid_exact_range")
@@ -388,15 +434,15 @@ class AcquisitionLibrary:
         if not isinstance(request, dict):
             raise AcquisitionError("invalid_request")
         kind = request.get("kind")
-        if not isinstance(kind, str) or kind not in {"search", "search_lexical", "read", "find"}:
+        if not isinstance(kind, str) or kind not in ACQUISITION_KINDS:
             raise AcquisitionError("invalid_request_kind")
         result = {"kind": kind}
         for key in ("query", "target", "focus"):
             value = request.get(key, "")
             if not isinstance(value, str):
                 raise AcquisitionError("invalid_request_field")
-            result[key] = value if key == "query" and kind in {"search", "search_lexical"} else value.strip()
-        if kind in {"search", "search_lexical"}:
+            result[key] = value if key == "query" and kind in SEARCH_PROVIDERS else value.strip()
+        if kind in SEARCH_PROVIDERS:
             objective = request.get("objective")
             if objective is not None:
                 if not isinstance(objective, str) or len(objective) > EXA_OBJECTIVE_MAX_CHARACTERS:
@@ -418,7 +464,7 @@ class AcquisitionLibrary:
         start, end = result["start_char"], result["end_char"]
         if (start is not None or end is not None) and (start is None or end is None or not 0 <= start < end):
             raise AcquisitionError("invalid_exact_range")
-        if kind in {"search", "search_lexical", "find"} and not result["query"].strip():
+        if (kind in SEARCH_PROVIDERS or kind == "find") and not result["query"].strip():
             raise AcquisitionError("empty_query")
         if kind == "read" and not result["target"]:
             raise AcquisitionError("empty_target")
@@ -434,13 +480,13 @@ class AcquisitionLibrary:
         started_at = clock()
         before = len(self.acquisitions)
         kind = request.get("kind") if isinstance(request, dict) else None
-        result = {"kind": kind if isinstance(kind, str) and kind in {"search", "search_lexical", "read", "find"} else None,
+        result = {"kind": kind if isinstance(kind, str) and kind in ACQUISITION_KINDS else None,
                   "status": "ok", "material_ids": [], "new_acquisition_ids": [],
                   "candidate_refs": [], "external": False, "local": True}
         try:
             normalized = self._request(request)
             result["request"] = normalized
-            if normalized["kind"] in {"search", "search_lexical"}:
+            if normalized["kind"] in SEARCH_PROVIDERS:
                 self._search(normalized, result, before_external, on_search_dispatch)
             elif normalized["kind"] == "read":
                 self._read(normalized, result, before_external, observe_start)
@@ -512,7 +558,7 @@ class AcquisitionLibrary:
         result["material_ids"] = list(dict.fromkeys(result["material_ids"]))
         duration = max(0.0, ended_at - started_at)
         provider = result.get("provider") or (
-            {"search": "exa", "search_lexical": "linkup", "read": "linkup"}.get(result["kind"])
+            (SEARCH_PROVIDERS.get(result["kind"]) or "linkup")
             if result["external"] else "local")
         if provider in PROVIDER_CONFIGURATION_CODES and result.get("code") == PROVIDER_CONFIGURATION_CODES[provider]:
             self.unavailable_providers.setdefault(provider, result["code"])
@@ -523,8 +569,9 @@ class AcquisitionLibrary:
         if "read_provider_attempts" in result:
             result["provider_dispatched"] = any(row["dispatched"] for row in result["read_provider_attempts"])
         else:
+            configuration_code = PROVIDER_CONFIGURATION_CODES.get(provider)
             result["provider_dispatched"] = bool(
-                result["external"] and result.get("code") != PROVIDER_CONFIGURATION_CODES.get(provider))
+                result["external"] and (configuration_code is None or result.get("code") != configuration_code))
         if "failed_external_read" in result:
             result["failed_external_read"]["duration_seconds"] = round(duration, 6)
         if observe_operation is not None:
@@ -567,20 +614,24 @@ class AcquisitionLibrary:
         return result
 
     def _search(self, request: dict, result: dict, before_external: Callable[[], None], on_dispatch) -> None:
-        lexical = request["kind"] == "search_lexical"
-        self._before_provider("linkup" if lexical else "exa", result, before_external)
+        provider = SEARCH_PROVIDERS[request["kind"]]
+        self._before_provider(provider, result, before_external)
         try:
-            transport = self.lexical_search if lexical else self.search
+            transport = {"exa": self.search, "linkup": self.lexical_search,
+                         "europe_pmc": self.scholarly_search}[provider]
             options = {"on_dispatch": on_dispatch} if on_dispatch is not None else {}
-            if not lexical and "objective" in request:
+            if provider == "exa" and "objective" in request:
                 options["objective"] = request["objective"]
             leads = transport(request["query"], **options)
         except Exception as exc:
-            if lexical and isinstance(exc, LinkupTransportError) and str(exc) == "linkup_configuration_missing":
+            if provider == "linkup" and isinstance(exc, LinkupTransportError) and str(exc) == "linkup_configuration_missing":
                 raise AcquisitionError("linkup_configuration_missing") from None
-            if lexical:
-                raise AcquisitionError("search_failed") from None
-            raise AcquisitionError(generic_search_failure(exc)) from None
+            if provider == "exa":
+                raise AcquisitionError(generic_search_failure(exc)) from None
+            if (provider == "europe_pmc" and isinstance(exc, ScholarlyTransportError)
+                    and str(exc) in SCHOLARLY_FAILURE_CODES):
+                raise AcquisitionError(str(exc)) from None
+            raise AcquisitionError("search_failed") from None
         if not isinstance(leads, list):
             raise AcquisitionError("invalid_search_response")
         self._admit_search_leads(request, result, leads)
@@ -591,6 +642,10 @@ class AcquisitionLibrary:
         prior_material_ids = set(self.materials)
         lexical = request["kind"] == "search_lexical"
         for lead in leads:
+            if request["kind"] == "search_scholarly":
+                if isinstance(lead, ScholarlyCandidate) and _public_url(lead.url):
+                    self._admit_scholarly_lead(lead, result)
+                continue
             if not isinstance(lead, DiscoveryCandidate) or not _public_url(lead.url):
                 continue
             navigation = lead.context.strip()[:650] if lexical and isinstance(lead.context, str) else ""
@@ -605,7 +660,7 @@ class AcquisitionLibrary:
         new_ids = returned_ids - prior_material_ids
         new_candidate_materials = sum(self.materials[ref].url not in known_urls for ref in new_ids)
         result["search_novelty_receipt"] = {
-            "provider": "linkup" if lexical else "exa", "kind": request["kind"],
+            "provider": SEARCH_PROVIDERS[request["kind"]], "kind": request["kind"],
             "returned_candidate_count": len(returned_urls),
             "new_candidate_count": len(returned_urls - known_urls),
             "known_candidate_count": len(returned_urls & known_urls),
@@ -614,6 +669,27 @@ class AcquisitionLibrary:
             "refreshed_known_candidate_material_count": len(new_ids) - new_candidate_materials,
             "exact_reused_material_count": len(returned_ids & prior_material_ids),
         }
+
+    def _admit_scholarly_lead(self, lead: ScholarlyCandidate, result: dict) -> None:
+        self._publications[lead.url] = lead.publication
+        result["candidate_refs"].append(self._candidate(lead.url, lead.title))
+        if lead.full_text_pmcid is not None:
+            self._scholarly_full_text[lead.url] = lead.full_text_pmcid
+        if lead.publication.doi:
+            doi_url = "https://doi.org/" + quote(lead.publication.doi, safe="/")
+            if doi_url != lead.url:
+                self._publications[doi_url] = lead.publication
+                result["candidate_refs"].append(self._candidate(doi_url, lead.title))
+        if lead.publication.open_access_url and _public_url(lead.publication.open_access_url):
+            access_url = lead.publication.open_access_url
+            self._publications[access_url] = lead.publication
+            result["candidate_refs"].append(self._candidate(access_url, lead.title))
+        for relation in lead.publication.related:
+            if _public_url(relation.url):
+                result["candidate_refs"].append(self._candidate(relation.url))
+        if lead.abstract:
+            item = self._retain(lead.url, lead.title, lead.abstract, "publication_abstract")
+            result["material_ids"].append(item.id)
 
     def _document_request(self, ref: str) -> tuple[SessionDocument, int | None, int | None] | None:
         """Resolve a D id. None means the ref is not a document id."""
@@ -696,8 +772,10 @@ class AcquisitionLibrary:
                                     title=title, hostname=urlsplit(url).hostname)
 
         mode = request["mode"]
+        open_pmcid = self._scholarly_full_text.get(url)
         full = next((item for item in reversed(self.acquisitions)
-                     if item.url == url and item.acquisition == "fetched_source"), None)
+                     if item.url == url and item.acquisition == "fetched_source"
+                     and (open_pmcid is None or mode == "local" or item.open_article_license is not None)), None)
         if mode == "local":
             item = exact_item or full or next((item for item in reversed(self.acquisitions) if item.url == url), None)
             if item is None:
@@ -706,6 +784,8 @@ class AcquisitionLibrary:
             item = exact_item
         elif mode in {"auto", "full"} and full is not None:
             item = full
+        elif open_pmcid is not None:
+            item = self._read_open_article(url, title, open_pmcid, mode, result, before_external, read_started)
         else:
             outcome = None
             if self.fetch_read is not None:
@@ -743,6 +823,31 @@ class AcquisitionLibrary:
         result["material_ids"] = [item.id for item in items]
         result["candidate_refs"] = [self._candidate_ids[url]]
         result["read_receipt"] = receipt
+
+    def _read_open_article(self, url, title, pmcid, mode, result, before_external, read_started) -> Evidence:
+        self._before_provider("europe_pmc", result, before_external)
+        read_started(True)
+        try:
+            article = self.scholarly_fetch(pmcid)
+            if (not isinstance(article, ScholarlyFullText) or article.url != url
+                    or not article.content.strip() or not article.license_url):
+                raise AcquisitionError("unusable_fetch_material")
+        except Exception as exc:
+            code = (str(exc) if (
+                isinstance(exc, ScholarlyTransportError) and str(exc) in SCHOLARLY_FAILURE_CODES
+                or isinstance(exc, AcquisitionError)
+            ) else "read_failed")
+        else:
+            version = article.version
+            if version == "unknown" and self._publications[url].version == "author_manuscript":
+                version = "author_manuscript"
+            return self._retain(url, title, article.content, "fetched_source",
+                                open_article_license=article.license_url, open_article_version=version)
+        result["failed_external_read"] = {
+            "candidate_ref": self._candidate_ids[url], "provider": "europe_pmc",
+            "strategy": "open_article_xml", "requested_mode": mode, "code": code,
+        }
+        raise AcquisitionError(code) from None
 
     def _record_external_read(self, url, outcome, result):
         # Receipts contain only fixed transport facts. Only the selected exact

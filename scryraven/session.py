@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 from core.exa_transport import DiscoveryCandidate, search_exa
 from core.linkup_transport import fetch_linkup, search_linkup
+from core.scholarly_transport import ScholarlyCandidate, ScholarlyFullText, fetch_scholarly, search_scholarly
 from core.transport import FetchedMaterial
 from scryraven.documents import SessionDocument
 from scryraven.images import SessionImage
@@ -67,6 +68,8 @@ class ResearchSession:
         self, *, model: Callable | None = None,
         search: Callable[..., list[DiscoveryCandidate]] = search_exa,
         lexical_search: Callable[..., list[DiscoveryCandidate]] = search_linkup,
+        scholarly_search: Callable[..., list[ScholarlyCandidate]] = search_scholarly,
+        scholarly_fetch: Callable[[str], ScholarlyFullText] = fetch_scholarly,
         fetch: Callable[[str], FetchedMaterial] = fetch_linkup,
         limits: RunLimits = RunLimits(),
         engine: Callable[..., CompletedAnswer] | None = None,
@@ -75,6 +78,7 @@ class ResearchSession:
     ) -> None:
         self._model, self._search, self._lexical_search, self._fetch, self._limits = (
             model, search, lexical_search, fetch, limits)
+        self._scholarly_search, self._scholarly_fetch = scholarly_search, scholarly_fetch
         self._engine = engine
         self._observe = observe
         self._activity = activity
@@ -152,6 +156,8 @@ class ResearchSession:
         initial_options = {"initial_evidence": prior_cited} if prior_cited else {}
         if self._activity is not None and self._engine is None:
             initial_options["activity"] = self._activity
+        if self._engine is None:
+            initial_options.update(scholarly_search=self._scholarly_search, scholarly_fetch=self._scholarly_fetch)
         if snapshot.images:
             initial_options.update(images=snapshot.images, image_ids=image_ids)
         result = (self._engine or _run_turn)(

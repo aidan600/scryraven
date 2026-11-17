@@ -939,6 +939,9 @@
     if (Number.isInteger(operation.highlights)) {
       meta.push('Source highlights in ' + operation.highlights + (operation.highlights === 1 ? ' result' : ' results'));
     }
+    if (Number.isInteger(operation.abstracts)) {
+      meta.push(operation.abstracts + (operation.abstracts === 1 ? ' publication abstract' : ' publication abstracts'));
+    }
     if (Number.isFinite(operation.elapsed_seconds)) meta.push(durationText(operation.elapsed_seconds));
     const description = meta.filter(Boolean).join(' · ');
     if (description) row.append(activityText('p', description, 'activity-note'));

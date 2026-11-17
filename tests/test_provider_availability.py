@@ -19,6 +19,7 @@ from test_research_passage_locators import owned
 
 from core.exa_transport import DiscoveryCandidate, ExaTransportError
 from core.linkup_transport import LinkupTransportError
+from core.scholarly_transport import PublicationMetadata, ScholarlyCandidate
 from core.transport import FetchedMaterial
 from scryraven.dogfood_diagnostics import TurnDiagnostics
 from scryraven.forensic_log import ForensicLog
@@ -87,13 +88,13 @@ def test_repeated_missing_search_stops_without_exhausting_research_calls():
                for item in limitations)
 
 
-def test_exa_then_linkup_configuration_failure_hands_off_without_another_luna_call():
+def test_exa_then_linkup_configuration_failure_hands_off_after_all_suppressed_route():
     exa, linkup = Missing("exa"), Missing("linkup")
     model = RepeatingResearch(["search", "search_lexical"] + ["search"] * 14)
     result = run(f"Find a synthetic public fact in {URL}", model=model, search=exa,
                  lexical_search=linkup, fetch=prohibited)
     assert len(exa.calls) == len(linkup.calls) == 1
-    assert [stage for stage, _ in model.calls] == ["research", "research", "answer"]
+    assert [stage for stage, _ in model.calls] == ["research", "research", "research", "answer"]
     assert budget(result)["external_attempts"] == 2
     limitations = model.calls[-1][1]["acquisition_limitations"]
     assert {(item.get("provider"), item["code"]) for item in limitations
@@ -101,6 +102,34 @@ def test_exa_then_linkup_configuration_failure_hands_off_without_another_luna_ca
                 ("exa", "exa_configuration_missing"), ("linkup", "linkup_configuration_missing")}
     assert not model.calls[-1][1]["evidence"]
     assert result.posture == "unable" and not result.citations
+
+
+def test_scholarly_search_remains_usable_after_both_generic_configuration_failures():
+    exa, linkup = Missing("exa"), Missing("linkup")
+    scholarly_query = "synthetic assay treatment"
+    publication = PublicationMetadata(pmid="10", journal="Synthetic Research", year=2021)
+    scholarly_queries = []
+
+    def discover(query):
+        scholarly_queries.append(query)
+        return [ScholarlyCandidate("https://pubmed.ncbi.nlm.nih.gov/10/", "Synthetic assay", VALUE, publication)]
+
+    model = Script(
+        decision(), decision(requests=[request("search_lexical")]),
+        decision(requests=[{"kind": "search_scholarly", "query": scholarly_query, "objective": "Find the value."}]),
+        decision("return", ["E1"]), answer(VALUE + " [E1]"),
+    )
+    result = run("What value did the assay find?", model=model, search=exa, lexical_search=linkup,
+                 scholarly_search=discover, fetch=prohibited)
+
+    assert len(exa.calls) == len(linkup.calls) == 1
+    assert scholarly_queries == [scholarly_query]
+    assert budget(result)["external_attempts"] == 3
+    assert budget(result)["physical_acquisition_dispatches"] == 1
+    assert result.posture == "supported"
+    original, = result.citations[0].materials
+    assert (original.acquisition, original.content, original.publication) == (
+        "publication_abstract", VALUE, publication)
 
 
 def test_missing_linkup_does_not_block_working_exa():
@@ -352,12 +381,13 @@ def test_delegated_research_hands_back_both_missing_discovery_codes(monkeypatch)
         reply(initial("return")), tool("research", {"need": "Find an external fact."}, "r1"),
         reply(delegated(requests=[request()])),
         reply(delegated(requests=[request("search_lexical")])),
+        reply(delegated("return")),
         reply(answer("Search is not configured, so the fact is not established.", "unable")),
     ])
     result = run("Find an external fact.", model=model, search=exa, lexical_search=linkup,
                  fetch=prohibited)
     assert len(exa.calls) == len(linkup.calls) == 1
-    assert stages(payloads) == ["research", "answer", "research", "research", "answer"]
+    assert stages(payloads) == ["research", "answer", "research", "research", "research", "answer"]
     returned = results(payloads[-1])["r1"]
     assert not returned["evidence"] and budget(result)["external_attempts"] == 2
     assert {row["code"] for row in returned["acquisition_limitations"] if row.get("provider")} == {
@@ -365,19 +395,22 @@ def test_delegated_research_hands_back_both_missing_discovery_codes(monkeypatch)
 
 
 @pytest.mark.parametrize("backend", ["api", "chatgpt_plan"])
-def test_repeated_delegation_after_established_impossibility_spends_no_more_luna_calls(monkeypatch, backend):
+def test_repeated_delegation_cannot_dispatch_unconfigured_providers(monkeypatch, backend):
     exa, linkup = Missing("exa"), Missing("linkup")
     model, payloads, _ = scripted(monkeypatch, [
         reply(initial(requests=[request()])),
         reply(initial(requests=[request("search_lexical")])),
+        reply(initial("return")),
         tool("research", {"need": "Find the missing fact."}, "r1"),
+        reply(delegated(requests=[request()])),
         tool("research", {"need": "Try a different wording of that missing fact."}, "r2"),
+        reply(delegated(requests=[request("search_lexical")])),
         reply(answer("Search configuration is missing, so the fact is not established.", "unable")),
     ], backend)
     result = run("Find an external fact.", model=model, search=exa, lexical_search=linkup,
                  fetch=prohibited)
     assert len(exa.calls) == len(linkup.calls) == 1
-    assert stages(payloads) == ["research", "research", "answer", "answer", "answer"]
+    assert stages(payloads) == ["research", "research", "research", "answer", "research", "answer", "research", "answer"]
     for returned in results(payloads[-1]).values():
         assert not returned["evidence"]
         assert {row["code"] for row in returned["acquisition_limitations"] if row.get("provider")} == {

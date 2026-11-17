@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from core.exa_transport import DISCOVERY_CONTEXT_SAFETY_LIMIT
 from scryraven.acquisition import AcquisitionError, AcquisitionLibrary
+from scryraven.sources import PARTIAL_RANGE_BASES
 
 MAX_OPERATIONS = 12
 CATALOG_PAGE = 24
@@ -77,7 +78,7 @@ def _available_exact_view(item, available):
                 continue
             start, end = known.start_char, known.end_char
         else:
-            basis = "acquired_highlight" if known.acquisition == "provider_highlights" else None
+            basis = PARTIAL_RANGE_BASES.get(known.acquisition)
             if item.parent_id != known.id or item.range_basis != basis:
                 continue
             start, end = 0, len(known.content)

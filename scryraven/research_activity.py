@@ -12,8 +12,8 @@ _INVESTIGATING = "Investigating your question"
 _ANSWERING = "Preparing the answer"
 _RETRIEVING = "Retrieving source text"
 _INSPECTING = "Inspecting retained material"
-_PROVIDERS = {"exa": "Exa", "serper": "Serper", "linkup": "LinkUp"}
-_SEARCH_TYPES = {"lite": "Lite", "auto": "Auto", "lexical": "Lexical"}
+_PROVIDERS = {"exa": "Exa", "serper": "Serper", "linkup": "LinkUp", "europe_pmc": "Europe PMC"}
+_SEARCH_TYPES = {"lite": "Lite", "auto": "Auto", "lexical": "Lexical", "scholarly": "Scholarly"}
 _JOB_LABELS = {
     "queued": "Waiting to start",
     "researching": _INVESTIGATING,
@@ -146,14 +146,17 @@ class ActivityProjection:
             return
         activity_id = f"{route}:group:{group}" if type(group) is int else f"{route}:request:{request}"
         kind = event.get("kind")
-        if kind in {"search", "search_lexical"} or action in {"search_batch_started", "search_batch_finished"}:
+        if kind in {"search", "search_lexical", "search_scholarly"} or action in {
+                "search_batch_started", "search_batch_finished"}:
             self._search(event, action, activity_id)
         elif kind in {"read", "find"}:
             self._read(event, action, activity_id)
 
     def _search(self, event, action, activity_id):
         group = type(event.get("group_index")) is int
-        stage = "Running parallel searches" if group else "Searching the web"
+        scholarly = event.get("kind") == "search_scholarly"
+        stage = "Running parallel searches" if group else (
+            "Searching scholarly literature" if scholarly else "Searching the web")
         if action == "search_batch_started":
             return  # The first actual dispatch is the first user-visible search.
         if action not in {"search_dispatched", "acquisition_finished", "search_batch_finished"}:
@@ -181,8 +184,11 @@ class ActivityProjection:
                     **_duration(event),
                 }
                 if event.get("status") == "ok":
-                    previous.update(candidates=_count(event, "candidate_count"),
-                                    highlights=_count(event, "highlight_count"))
+                    previous["candidates"] = _count(event, "candidate_count")
+                    if scholarly:
+                        previous["abstracts"] = _count(event, "abstract_count")
+                    else:
+                        previous["highlights"] = _count(event, "highlight_count")
             if provider:
                 previous["provider"] = provider
             searches[request] = previous
@@ -204,6 +210,8 @@ class ActivityProjection:
         if event.get("status") != "ok":
             return "Search failed"
         if not _count(event, "new_candidate_count") and not _count(event, "new_material_count"):
+            if event.get("kind") == "search_scholarly":
+                return "No new publication links or abstracts"
             return "No new links or highlights"
         return "Search returned"
 
@@ -216,6 +224,12 @@ class ActivityProjection:
             return "Parallel searches could not complete"
         if not group and successful[0]["outcome"] == "No new links or highlights":
             return "Search returned no new links or highlights"
+        if not group and "abstracts" in successful[0]:
+            item = successful[0]
+            if item["outcome"] == "No new publication links or abstracts":
+                return item["outcome"]
+            return (f"Scholarly search returned {_amount(item['candidates'], 'publication link', 'publication links')}"
+                    f" and {_amount(item['abstracts'], 'abstract', 'abstracts')}")
         candidates = sum(item["candidates"] for item in successful)
         highlights = sum(item["highlights"] for item in successful)
         lead = _amount(len(successful), "search returned", "searches returned") if group else "Search returned"
