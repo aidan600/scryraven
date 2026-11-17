@@ -5,6 +5,7 @@ fulfilled locally. Model and provider I/O use synthetic fixtures.
 """
 
 from contextlib import contextmanager
+from dataclasses import replace
 from pathlib import Path
 from threading import Thread
 
@@ -15,6 +16,7 @@ from test_durable_support_reader import saved_session
 from test_reading_room import submit
 from test_research_loop import answer, decision
 from test_research_loop import request as research_request
+from test_scholarly_product import ABSTRACT, NOTICE, PMC, find_article, scholarly_request
 from werkzeug.serving import make_server
 
 from scryraven.reading_room import _QuietHandler, create_app
@@ -264,6 +266,48 @@ def test_mobile_tap_exposes_preview_original_and_saved_material_without_overflow
         assert page.locator('#turn-1-source-1-excerpt').get_attribute('open') is not None
         assert page.locator('#turn-1-source-1-excerpt .material-text').is_visible()
         assert preview.is_hidden()
+
+
+def test_narrow_mobile_scholarly_preview_opens_exact_abstract_and_publication_details(browser, tmp_path):
+    store = SQLiteSessionStore(tmp_path / "scholarly-browser.sqlite3")
+    lead, = find_article("")
+    doi = "10.1234/" + "hypoxia-recovery-experiment-" * 4 + "2024"
+    article = replace(lead, publication=lead.publication.model_copy(update={"doi": doi}))
+    model = Script(
+        decision(requests=[scholarly_request()]), decision("return", ["E1"]),
+        answer("The authors measured recovery after low-oxygen exposure. [E1]"),
+    )
+    session = ResearchSession.create(store=store, model=model, search=no_io, fetch=no_io,
+                                     scholarly_search=lambda _query: [article])
+    session.ask("What did the study measure?")
+    app = create_app(store=store, session_options={"model": no_io, "search": no_io, "fetch": no_io})
+    with running_room(app) as base, browser.new_context(
+        viewport={"width": 320, "height": 660}, is_mobile=True, has_touch=True,
+    ) as context:
+        context.route(NOTICE, lambda route: route.fulfill(body="Offline publication correction"))
+        page = context.new_page()
+        page.goto(f"{base}/sessions/{session.session_id}")
+        page.locator("a.citation").tap()
+        preview = page.locator("#citation-preview")
+        assert preview.is_visible()
+        assert "Sample A, Sample B · The Experimental Journal · 2024" in preview.inner_text()
+        assert "Published record · Publication abstract" in preview.inner_text()
+        assert preview.get_by_role("link", name="Open original publication").get_attribute("href") == PMC
+        bounds = preview.bounding_box()
+        assert 0 <= bounds["x"] < bounds["x"] + bounds["width"] <= 320
+
+        preview.get_by_role("link", name="View saved excerpt").tap()
+        excerpt = page.locator("#turn-1-source-1-excerpt")
+        assert excerpt.get_attribute("open") is not None
+        assert excerpt.locator(".material-text code").text_content() == ABSTRACT
+        assert excerpt.locator(".acquisition").inner_text().startswith("Publication abstract")
+        assert excerpt.get_by_text(f"DOI {doi}", exact=True).is_visible()
+        with page.expect_popup() as opened:
+            excerpt.get_by_role("link", name="Correction or republication").tap()
+        assert opened.value.url == NOTICE
+        opened.value.close()
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        assert page.locator(".reading-scroll").evaluate("(el) => el.scrollWidth <= el.clientWidth + 1")
 
 
 def test_mobile_activation_without_pointerdown_opens_preview_without_fragment_navigation(citation_browser, pdf_citation_page):
