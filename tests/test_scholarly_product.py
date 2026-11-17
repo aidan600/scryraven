@@ -2,7 +2,13 @@
 
 from test_research_loop import Script, answer, decision, no_fetch, request
 
-from core.scholarly_transport import PublicationMetadata, PublicationRelation, ScholarlyCandidate, ScholarlyFullText
+from core.scholarly_transport import (
+    PublicationMetadata,
+    PublicationRelation,
+    ScholarlyCandidate,
+    ScholarlyFullText,
+    VenueStanding,
+)
 from core.transport import FetchedMaterial
 from scryraven.presentation import citation_preview_html, source_body_html
 from scryraven.session import ResearchSession
@@ -123,3 +129,31 @@ def test_publication_relationship_leads_are_valid_read_targets():
     result = ResearchSession(model=model, fetch=fetch, scholarly_search=find_article).ask("What changed in the notice?")
     assert result_urls == [NOTICE]
     assert result.citations[0].materials[0].publication is None
+
+
+def test_venue_classification_is_year_specific_navigation_with_one_dispatch():
+    url = "https://jfp.csc.fi/jufoportal_base/en/12345"
+    venue = VenueStanding(issn="0340-5443", journal="The Experimental Journal", year=2025, level=2,
+                          current_panels=(11,), current_subjects=("Ecology",), url=url)
+    sent = []
+
+    def lookup(issn, year):
+        sent.append((issn, year))
+        return venue
+
+    model = Script(
+        decision(requests=[{"kind": "lookup_venue", "issn": "0340-5443", "year": 2025}]),
+        decision("return"),
+        answer("I found a register entry but cannot establish the requested study result.", "unable"),
+    )
+    result = ResearchSession(model=model, fetch=no_fetch, search=no_fetch, venue_lookup=lookup).ask(
+        "What does the study establish?",
+    )
+    packet = model.calls[1][2]
+    receipt, = packet["acquisition_history"]
+    assert receipt["venue_standing"] == venue.model_dump(mode="json")
+    assert receipt["candidate_refs"] == ["C1"]
+    assert packet["catalog"]["candidates"][0]["url"] == url
+    assert packet["evidence"] == [] and not result.evidence and not result.citations
+    assert sent == [("0340-5443", 2025)]
+    assert result.trace[-1]["budget"]["physical_acquisition_dispatches"] == 1

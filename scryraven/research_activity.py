@@ -12,7 +12,8 @@ _INVESTIGATING = "Investigating your question"
 _ANSWERING = "Preparing the answer"
 _RETRIEVING = "Retrieving source text"
 _INSPECTING = "Inspecting retained material"
-_PROVIDERS = {"exa": "Exa", "serper": "Serper", "linkup": "LinkUp", "europe_pmc": "Europe PMC"}
+_PROVIDERS = {"exa": "Exa", "serper": "Serper", "linkup": "LinkUp", "europe_pmc": "Europe PMC",
+              "jufo": "Publication Forum"}
 _SEARCH_TYPES = {"lite": "Lite", "auto": "Auto", "lexical": "Lexical", "scholarly": "Scholarly"}
 _JOB_LABELS = {
     "queued": "Waiting to start",
@@ -146,7 +147,7 @@ class ActivityProjection:
             return
         activity_id = f"{route}:group:{group}" if type(group) is int else f"{route}:request:{request}"
         kind = event.get("kind")
-        if kind in {"search", "search_lexical", "search_scholarly"} or action in {
+        if kind in {"search", "search_lexical", "search_scholarly", "lookup_venue"} or action in {
                 "search_batch_started", "search_batch_finished"}:
             self._search(event, action, activity_id)
         elif kind in {"read", "find"}:
@@ -154,9 +155,10 @@ class ActivityProjection:
 
     def _search(self, event, action, activity_id):
         group = type(event.get("group_index")) is int
+        venue = event.get("kind") == "lookup_venue"
         scholarly = event.get("kind") == "search_scholarly"
-        stage = "Running parallel searches" if group else (
-            "Searching scholarly literature" if scholarly else "Searching the web")
+        stage = {"lookup_venue": "Checking journal standing", "search_scholarly": "Searching scholarly literature"}.get(
+            event.get("kind"), "Running parallel searches" if group else "Searching the web")
         if action == "search_batch_started":
             return  # The first actual dispatch is the first user-visible search.
         if action not in {"search_dispatched", "acquisition_finished", "search_batch_finished"}:
@@ -172,18 +174,18 @@ class ActivityProjection:
                     return
                 mode = _SEARCH_TYPES.get(event.get("search_type"))
                 previous = {
-                    "label": f"{mode} search" if mode else "Web search",
+                    "label": "Journal lookup" if venue else (f"{mode} search" if mode else "Web search"),
                     "query": query[:QUERY_CHARACTERS], "query_truncated": len(query) > QUERY_CHARACTERS,
                     "outcome": "Searching",
                 }
             else:
                 previous = {
                     **previous,
-                    "label": previous.get("label", "Web search"),
+                    "label": previous.get("label", "Journal lookup" if venue else "Web search"),
                     "outcome": self._search_outcome(event),
                     **_duration(event),
                 }
-                if event.get("status") == "ok":
+                if event.get("status") == "ok" and not venue:
                     previous["candidates"] = _count(event, "candidate_count")
                     if scholarly:
                         previous["abstracts"] = _count(event, "abstract_count")
@@ -205,6 +207,10 @@ class ActivityProjection:
 
     @staticmethod
     def _search_outcome(event):
+        if event.get("kind") == "lookup_venue":
+            if event.get("status") != "ok":
+                return "Journal lookup unavailable"
+            return "Journal classification found" if event.get("venue_found") else "Journal standing unknown"
         if event.get("status") == "unavailable":
             return "Search unavailable"
         if event.get("status") != "ok":

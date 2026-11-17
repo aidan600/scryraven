@@ -303,9 +303,24 @@ model inspected the entire body, figures or supplements.
 
 The positive NLM Index Medicus observation is scoped to indexed biomedical and
 life-science articles. It is a field-relevant indexing signal with publication
-year available independently. It supplies neither a journal quartile nor a
-current journal-wide ranking. Unknown indicator values stay absent. No venue
-score or indexing gate changes citation eligibility.
+year available independently.
+
+When venue context would materially help, Research can request
+`lookup_venue(issn, year)` within the shared acquisition limits. The Finnish
+Publication Forum's public JUFO service returns a classification only for a
+unique exact serial identifier and recorded level in the requested year. The
+result keeps the historical level, registration source and official portal link
+with the current evaluating panel identifiers and current subject annotations.
+The register response supplies no historical panel assignments. A missing,
+ambiguous or unclassified record leaves standing unknown. JUFO levels describe
+publication channels within the register's field-sensitive assessment process.
+Indexing is a separate signal, and neither metric supplies evidence of the
+findings or quality of an individual paper. The lookup returns navigation and
+never grants a citation alias. The ordinary Read operation can pursue the
+official source when the classification itself is the user’s question.
+
+See the [official public JUFO API description](https://wiki.eduuni.fi/spaces/cscvirtajtp/pages/578257375/v2.x)
+and the [Publication Forum's classification and panel methodology](https://www.tsv.fi/en/assessment-and-openness/assessment-of-publication-channels/publication-forum).
 
 An ordinary web Read reserves up to two physical dispatches and sends each configured
 arm the exact same URL. If one slot is available, LinkUp is preferred when configured.
@@ -476,9 +491,10 @@ continuity or general reliability.
 `RunLimits` permits 40 physical requests across roles, 16 logical external acquisition
 operations, a 900-second hard whole-turn ceiling and 128,000 cumulative Answer source
 characters. Each underlying model request is capped at 300 seconds and remaining
-turn time. The turn also permits 32 physical acquisition-provider dispatches. Search
-and Read each consume one logical operation. Each dispatched arm of a dual Read
-counts toward the physical ceiling, including failed or locally cancelled requests.
+turn time. The turn also permits 32 physical acquisition-provider dispatches.
+Search, external Read and venue lookup each consume one logical operation.
+Each dispatched arm of a dual Read counts toward the physical ceiling, including
+failed or locally cancelled requests.
 No terminal reserve, separate Answer clock or renewed per-tool allowance
 exists. Research leaves one physical completion opportunity where feasible.
 Local inspection spends no external acquisition attempt. Denied external routes

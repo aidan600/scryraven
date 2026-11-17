@@ -21,9 +21,15 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from core.dual_read import configured_read_providers, fetch_dual
 from core.exa_transport import EXA_OBJECTIVE_MAX_CHARACTERS, search_exa
 from core.linkup_transport import fetch_linkup, search_linkup
-from core.scholarly_transport import fetch_scholarly, search_scholarly
+from core.scholarly_transport import fetch_scholarly, lookup_venue, search_scholarly
 from scryraven import model as model_transport
-from scryraven.acquisition import SEARCH_PROVIDERS, AcquisitionError, AcquisitionLibrary, generic_search_failure
+from scryraven.acquisition import (
+    SEARCH_PROVIDERS,
+    VENUE_PROVIDER,
+    AcquisitionError,
+    AcquisitionLibrary,
+    generic_search_failure,
+)
 from scryraven.calculator import calculate
 from scryraven.documents import SessionDocument, document_text_view
 from scryraven.errors import RunError
@@ -67,6 +73,12 @@ class ReadRequest(_Contract):
     end_char: int | None
 
 
+class VenueRequest(_Contract):
+    kind: Literal["lookup_venue"]
+    issn: str = Field(pattern=r"^[0-9]{4}-[0-9]{3}[0-9X]$")
+    year: int = Field(ge=1000, le=9999)
+
+
 class FindRequest(_Contract):
     kind: Literal["find"]
     query: str
@@ -81,7 +93,7 @@ class ExactPassage(_Contract):
 class ResearchDecision(_Contract):
     briefing: str | None
     action: Literal["research", "return"]
-    requests: list[SearchRequest | ReadRequest | FindRequest]
+    requests: list[SearchRequest | ReadRequest | FindRequest | VenueRequest]
     retain: list[str]
     evidence_refs: list[str | ExactPassage]
 
@@ -185,7 +197,8 @@ Return the supplied ResearchDecision schema.
 - action=research: include requests for material evidence needs. One useful request is enough when it serves the need. action=return: requests=[].
 - search: use Exa for semantic discovery or targeted verification. Supply the retrieval query and evidence objective separately. Results contain source highlights, not complete publications.
 - search_lexical: use LinkUp for keyword-oriented navigation when exact names, identifiers or distinctive source wording are the strongest lead. The objective identifies the evidence need in your decision history. Result snippets guide navigation only. Read the source for Evidence.
-- search_scholarly: use Europe PMC when biomedical and life-science literature discovery, exact publication identity or an open original would help. Use plain terms, an identifier or supported Europe PMC query syntax. An explicitly supplied abstract is the article's abstract; publication records and links guide navigation. Use general Search for fields and material beyond this index.
+- search_scholarly: use Europe PMC when biomedical and life-science literature discovery, exact publication identity or an open original would help. Use a few distinctive terms for discovery. For a known paper prefer DOI:<doi>, EXT_ID:<PMID> or TITLE:"distinctive title phrase". Do not combine dates, competing titles and a whole evidence question into a keyword query. An explicitly supplied abstract is the article's abstract; publication records and links guide navigation. Use general Search for fields and material beyond this index.
+- lookup_venue: if editorial context materially helps, supply a known journal ISSN and the year being assessed. This checks the Finnish Publication Forum classification and reports the venue's current evaluating panels and subject classifications separately. A missing result leaves standing unknown. A reported tier is contextual publication metadata, not study quality or Evidence. If the user asks about the classification itself, acquire the official source text.
 - read: target is a known C/E/D ID or observed URL; focus describes the needed
   source wording for lexical passage navigation, not a semantic summary.
   mode=auto rereads an exact E ID, even a highlight. full reuses or acquires its
@@ -429,6 +442,7 @@ def run(question: str, **kwargs) -> CompletedAnswer:
 def _run_turn(
     question: str, *, model=None, search=search_exa, lexical_search=search_linkup, fetch=fetch_linkup,
     scholarly_search=search_scholarly, scholarly_fetch=fetch_scholarly,
+    venue_lookup=lookup_venue,
     limits: RunLimits | None = None, retained_acquisitions=(), context=None,
     session_turn: int = 1, observe: Callable[[dict], None] | None = None,
     activity: Callable[[dict], None] | None = None,
@@ -524,6 +538,11 @@ def _run_turn(
             return scholarly_fetch(pmcid)
         return scholarly_fetch(pmcid, timeout_seconds=min(20, budget.remaining_seconds))
 
+    def venue_call(issn, year):
+        if venue_lookup is not lookup_venue:
+            return venue_lookup(issn, year)
+        return venue_lookup(issn, year, timeout_seconds=min(15, budget.remaining_seconds))
+
     read_providers = configured_read_providers() if fetch is fetch_linkup else ()
 
     def fetch_external_read(url, *, on_start=None):
@@ -541,7 +560,8 @@ def _run_turn(
     library = AcquisitionLibrary(retained_acquisitions=retained_acquisitions, documents=documents,
                                  search=search_call, lexical_search=lexical_call, fetch=fetch_call,
                                  fetch_read=fetch_external_read if read_providers else None,
-                                 scholarly_search=scholarly_call, scholarly_fetch=fetch_open_article)
+                                 scholarly_search=scholarly_call, scholarly_fetch=fetch_open_article,
+                                 venue_lookup=venue_call)
     library.allow_question_urls(question)
     trace: list[dict] = []
 
@@ -833,7 +853,7 @@ def _run_turn(
         def search_dispatched(query, request_index, kind, search_type, *, group_index=None):
             announce("search_dispatched", route_index=route_index, request_index=request_index,
                      group_index=group_index, kind=kind,
-                     provider=SEARCH_PROVIDERS[kind],
+                     provider=SEARCH_PROVIDERS.get(kind, VENUE_PROVIDER),
                      search_type=search_type, query=query)
 
         def acquisition_finished(result, request_index, *, duration=None, group_index=None, metadata=None):
@@ -858,6 +878,7 @@ def _run_turn(
                 new_candidate_count=counts.get("new_candidate_count", 0),
                 highlight_count=counts.get("returned_material_count", 0) if kind == "search" else 0,
                 abstract_count=counts.get("returned_material_count", 0) if kind == "search_scholarly" else 0,
+                venue_found=bool(result.get("venue_standing")),
                 new_material_count=len(result.get("new_acquisition_ids", ())),
                 material_count=len(result.get("material_ids", ())) + int(result.get("visual_input_supplied") is True),
                 read_providers=tuple(attempt["provider"] for attempt in result.get("read_provider_attempts", ())
@@ -903,7 +924,7 @@ def _run_turn(
             receipt = {key: deepcopy(result[key]) for key in (
                 "kind", "status", "code", "provider", "suppressed", "material_ids",
                 "candidate_refs", "read_receipt", "failed_external_read",
-                "matching_region_count", "omitted_match_count",
+                "matching_region_count", "omitted_match_count", "venue_standing",
             ) if key in result}
             receipt["route"] = route_index
             receipt["request"] = {key: value for key, value in result.get("request", {}).items()
@@ -949,8 +970,8 @@ def _run_turn(
                 announce("acquisition_started", route_index=route_index, request_index=request_index, **operation)
 
             def on_search_dispatch(query):
-                mode = {"search_lexical": "lexical", "search_scholarly": "scholarly"}.get(
-                    request.kind, provider_search_type)
+                mode = {"search_lexical": "lexical", "search_scholarly": "scholarly",
+                        "lookup_venue": "venue"}.get(request.kind, provider_search_type)
                 search_dispatched(query, request_index, request.kind, mode)
 
             activity_options = ({"observe_start": observe_start, "on_search_dispatch": on_search_dispatch}

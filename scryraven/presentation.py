@@ -334,8 +334,8 @@ def _material_provenance(material: Evidence) -> tuple[str, str]:
         return "Selected abstract passage", "Offsets refer to the retained publication abstract."
     if material.open_article_license:
         if material.acquisition == "targeted_view":
-            return "Selected article text", "Exact passage from the open-access article body supplied by Europe PMC."
-        return "Open-access article text", "Article body supplied by Europe PMC."
+            return "Selected article text", "Exact passage from the open-access article supplied by Europe PMC."
+        return "Open-access article text", "Text from the open-access article supplied by Europe PMC."
     return _ACQUISITION_LABELS[material.acquisition]
 
 

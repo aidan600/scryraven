@@ -23,11 +23,15 @@ from core.linkup_transport import (
 )
 from core.scholarly_transport import (
     SCHOLARLY_FAILURE_CODES,
+    VENUE_FAILURE_CODES,
     PublicationMetadata,
     ScholarlyCandidate,
     ScholarlyFullText,
     ScholarlyTransportError,
+    VenueStanding,
+    VenueTransportError,
     fetch_scholarly,
+    lookup_venue,
     search_scholarly,
 )
 from core.transport import FetchedMaterial
@@ -61,7 +65,8 @@ PROVIDER_CONFIGURATION_CODES = {
     "linkup": "linkup_configuration_missing",
 }
 SEARCH_PROVIDERS = {"search": "exa", "search_lexical": "linkup", "search_scholarly": "europe_pmc"}
-ACQUISITION_KINDS = SEARCH_PROVIDERS.keys() | {"read", "find"}
+VENUE_PROVIDER = "jufo"
+ACQUISITION_KINDS = SEARCH_PROVIDERS.keys() | {"read", "find", "lookup_venue"}
 
 
 def _public_url(url: str) -> bool:
@@ -149,10 +154,12 @@ class AcquisitionLibrary:
         fetch: Callable[..., FetchedMaterial] = fetch_linkup,
         fetch_read: Callable[[str], DualReadResult | None] | None = None,
         scholarly_fetch: Callable = fetch_scholarly,
+        venue_lookup: Callable = lookup_venue,
     ) -> None:
         self.search, self.lexical_search, self.fetch = search, lexical_search, fetch
         self.fetch_read = fetch_read
         self.scholarly_search, self.scholarly_fetch = scholarly_search, scholarly_fetch
+        self.venue_lookup = venue_lookup
         self.acquisitions = list(retained_acquisitions)
         self.materials: dict[str, Evidence] = {}
         self.exposed: set[str] = set()
@@ -436,6 +443,12 @@ class AcquisitionLibrary:
         kind = request.get("kind")
         if not isinstance(kind, str) or kind not in ACQUISITION_KINDS:
             raise AcquisitionError("invalid_request_kind")
+        if kind == "lookup_venue":
+            issn, year = request.get("issn"), request.get("year")
+            if (not isinstance(issn, str) or not re.fullmatch(r"[0-9]{4}-[0-9]{3}[0-9X]", issn)
+                    or type(year) is not int or not 1000 <= year <= 9999):
+                raise AcquisitionError("invalid_request_field")
+            return {"kind": kind, "issn": issn, "year": year}
         result = {"kind": kind}
         for key in ("query", "target", "focus"):
             value = request.get(key, "")
@@ -488,6 +501,8 @@ class AcquisitionLibrary:
             result["request"] = normalized
             if normalized["kind"] in SEARCH_PROVIDERS:
                 self._search(normalized, result, before_external, on_search_dispatch)
+            elif normalized["kind"] == "lookup_venue":
+                self._lookup_venue(normalized, result, before_external, on_search_dispatch)
             elif normalized["kind"] == "read":
                 self._read(normalized, result, before_external, observe_start)
             else:
@@ -690,6 +705,27 @@ class AcquisitionLibrary:
         if lead.abstract:
             item = self._retain(lead.url, lead.title, lead.abstract, "publication_abstract")
             result["material_ids"].append(item.id)
+
+    def _lookup_venue(self, request: dict, result: dict, before_external: Callable[[], None], on_dispatch) -> None:
+        self._before_provider(VENUE_PROVIDER, result, before_external)
+        issn, year = request["issn"], request["year"]
+        self._observe_start(on_dispatch, query=f"{issn} ({year})")
+        try:
+            standing = self.venue_lookup(issn, year)
+        except Exception as exc:
+            code = (str(exc) if isinstance(exc, VenueTransportError) and str(exc) in VENUE_FAILURE_CODES
+                    else "venue_lookup_failed")
+            raise AcquisitionError(code) from None
+        if standing is None:
+            result["venue_standing"] = None
+            return
+        if (not isinstance(standing, VenueStanding) or (standing.issn, standing.year) != (issn, year)
+                or not _public_url(standing.url)):
+            raise AcquisitionError("invalid_venue_response")
+        result["venue_standing"] = standing.model_dump(mode="json")
+        result["candidate_refs"].append(self._candidate(standing.url, standing.journal))
+        if standing.record_url and _public_url(standing.record_url):
+            result["candidate_refs"].append(self._candidate(standing.record_url, standing.journal))
 
     def _document_request(self, ref: str) -> tuple[SessionDocument, int | None, int | None] | None:
         """Resolve a D id. None means the ref is not a document id."""

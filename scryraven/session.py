@@ -8,7 +8,14 @@ from dataclasses import dataclass
 
 from core.exa_transport import DiscoveryCandidate, search_exa
 from core.linkup_transport import fetch_linkup, search_linkup
-from core.scholarly_transport import ScholarlyCandidate, ScholarlyFullText, fetch_scholarly, search_scholarly
+from core.scholarly_transport import (
+    ScholarlyCandidate,
+    ScholarlyFullText,
+    VenueStanding,
+    fetch_scholarly,
+    lookup_venue,
+    search_scholarly,
+)
 from core.transport import FetchedMaterial
 from scryraven.documents import SessionDocument
 from scryraven.images import SessionImage
@@ -70,6 +77,7 @@ class ResearchSession:
         lexical_search: Callable[..., list[DiscoveryCandidate]] = search_linkup,
         scholarly_search: Callable[..., list[ScholarlyCandidate]] = search_scholarly,
         scholarly_fetch: Callable[[str], ScholarlyFullText] = fetch_scholarly,
+        venue_lookup: Callable[[str, int], VenueStanding | None] = lookup_venue,
         fetch: Callable[[str], FetchedMaterial] = fetch_linkup,
         limits: RunLimits = RunLimits(),
         engine: Callable[..., CompletedAnswer] | None = None,
@@ -79,6 +87,7 @@ class ResearchSession:
         self._model, self._search, self._lexical_search, self._fetch, self._limits = (
             model, search, lexical_search, fetch, limits)
         self._scholarly_search, self._scholarly_fetch = scholarly_search, scholarly_fetch
+        self._venue_lookup = venue_lookup
         self._engine = engine
         self._observe = observe
         self._activity = activity
@@ -157,7 +166,8 @@ class ResearchSession:
         if self._activity is not None and self._engine is None:
             initial_options["activity"] = self._activity
         if self._engine is None:
-            initial_options.update(scholarly_search=self._scholarly_search, scholarly_fetch=self._scholarly_fetch)
+            initial_options.update(scholarly_search=self._scholarly_search, scholarly_fetch=self._scholarly_fetch,
+                                   venue_lookup=self._venue_lookup)
         if snapshot.images:
             initial_options.update(images=snapshot.images, image_ids=image_ids)
         result = (self._engine or _run_turn)(

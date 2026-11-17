@@ -1,4 +1,4 @@
-"""Europe PMC acquisition through the public Articles API."""
+"""Public scholarly acquisition and publication context."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import math
 import re
 from collections.abc import Callable, Mapping
 from contextlib import closing, nullcontext
+from copy import copy
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from time import monotonic
@@ -19,18 +20,22 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstra
 from urllib3.util import Timeout
 
 EUROPE_PMC_API = "https://www.ebi.ac.uk/europepmc/webservices/rest"
+_JUFO_API = "https://jufo-rest.csc.fi/v2.1"
+JUFO_SEARCH_URL = f"{_JUFO_API}/search"
 DEFAULT_TIMEOUT_SECONDS = 20.0
 SEARCH_PAGE_SIZE = 8
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 MAX_ABSTRACT_CHARACTERS = 24_000
+_SHARED_FAILURES = {
+    "access_rejected", "endpoint_failed", "endpoint_redirected", "json_invalid",
+    "material_unavailable", "rate_limited", "response_invalid", "response_too_large",
+    "timeout", "transport_failed",
+}
 SCHOLARLY_FAILURE_CODES = frozenset({
-    "europe_pmc_access_rejected", "europe_pmc_endpoint_failed",
-    "europe_pmc_endpoint_redirected", "europe_pmc_identity_mismatch",
-    "europe_pmc_json_invalid", "europe_pmc_license_unavailable",
-    "europe_pmc_material_unavailable", "europe_pmc_rate_limited",
-    "europe_pmc_response_invalid", "europe_pmc_response_too_large",
-    "europe_pmc_timeout", "europe_pmc_transport_failed", "europe_pmc_xml_invalid",
+    *(f"europe_pmc_{reason}" for reason in _SHARED_FAILURES),
+    "europe_pmc_identity_mismatch", "europe_pmc_license_unavailable", "europe_pmc_xml_invalid",
 })
+VENUE_FAILURE_CODES = frozenset(f"jufo_{reason}" for reason in _SHARED_FAILURES)
 
 _DOI = re.compile(r"10\.[0-9]{4,9}/[^\s<>\x00-\x1f]{1,230}", re.IGNORECASE)
 _PMCID = re.compile(r"PMC[0-9]{1,12}")
@@ -119,6 +124,22 @@ class PublicationMetadata(BaseModel):
     open_article_available: Annotated[bool, Field(strict=True)] = False
 
 
+class VenueStanding(BaseModel):
+    """The exact requested register year, with the panel context of the current record."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    issn: _IssnValue
+    source: Literal["Finnish Publication Forum (JUFO)"] = "Finnish Publication Forum (JUFO)"
+    journal: _Label
+    year: Annotated[int, Field(strict=True, ge=1000, le=9999)]
+    level: Annotated[int, Field(strict=True, ge=1, le=3)]
+    current_panels: tuple[Annotated[int, Field(strict=True, gt=0)], ...] = Field(default=(), max_length=8)
+    current_subjects: tuple[_Label, ...] = Field(default=(), max_length=8)
+    url: _URL
+    record_url: _URL | None = None
+
+
 @dataclass(frozen=True, slots=True)
 class ScholarlyCandidate:
     url: str
@@ -138,6 +159,10 @@ class ScholarlyFullText:
 
 class ScholarlyTransportError(RuntimeError):
     """Only fixed safe diagnostics cross the transport boundary."""
+
+
+class VenueTransportError(RuntimeError):
+    """A fixed safe publication-register diagnostic."""
 
 
 _RELATIONS: dict[str, RelationKind] = {
@@ -171,10 +196,7 @@ def search_scholarly(
         },
         on_dispatch=on_dispatch,
     )
-    try:
-        payload = json.loads(body)
-    except (ValueError, RecursionError):
-        raise ScholarlyTransportError("europe_pmc_json_invalid") from None
+    payload = _json(body, "europe_pmc")
     rows = _rows(payload, "resultList", "result")
     if not isinstance(_mapping(_mapping(payload).get("resultList")).get("result"), list):
         raise ScholarlyTransportError("europe_pmc_response_invalid")
@@ -192,6 +214,50 @@ def search_scholarly(
         if len(candidates) == SEARCH_PAGE_SIZE:
             break
     return candidates
+
+
+def lookup_venue(
+    issn: str, year: int, *, timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    get: Callable[..., Any] | None = None,
+) -> VenueStanding | None:
+    """Read an exact JUFO series assessment for the specified year, when available."""
+    if not isinstance(issn, str) or not _ISSN.fullmatch(issn):
+        raise ValueError("issn must be a hyphenated serial identifier")
+    if type(year) is not int or not 1000 <= year <= 9999:
+        raise ValueError("year must be a four-digit integer")
+    body = _request(JUFO_SEARCH_URL, timeout_seconds, get, provider="jufo",
+                    params={"issn": issn, "type": "series", "_size": 12})
+    payload = _json(body, "jufo")
+    if not isinstance(payload, list):
+        raise VenueTransportError("jufo_response_invalid")
+    matches = [
+        row for row in payload
+        if isinstance(row, Mapping) and _mapping(row.get("type")).get("id") == "Series"
+        and any(row.get(key) == issn for key in ("issn_print", "issn_electronic", "issnl"))
+    ]
+    if len(matches) != 1:
+        return None
+    row = matches[0]
+    journal = _label(row.get("title"))
+    channel_id = row.get("jufo_id")
+    raw_level = _mapping(row.get("level_history")).get(str(year))
+    if (not journal or type(channel_id) is not int or not 0 < channel_id < 10 ** 11
+            or type(raw_level) not in (str, int) or str(raw_level) not in ("1", "2", "3")):
+        return None
+    raw_panels = row.get("panels")
+    panels = tuple(dict.fromkeys(
+        panel for panel in raw_panels if type(panel) is int and panel > 0
+    ))[:8] if isinstance(raw_panels, list) else ()
+    raw_subjects = row.get("okm_disciplines")
+    subjects = _labels([
+        _mapping(_mapping(item).get("localized_labels")).get("en") for item in raw_subjects
+    ], 8) if isinstance(raw_subjects, list) else ()
+    return VenueStanding(
+        issn=issn, journal=journal, year=year, level=int(raw_level),
+        current_panels=panels, current_subjects=subjects,
+        url=f"https://jfp.csc.fi/jufoportal?Jufo_ID={channel_id}",
+        record_url=f"{_JUFO_API}/channel/{channel_id}",
+    )
 
 
 def fetch_scholarly(
@@ -214,7 +280,8 @@ def fetch_scholarly(
     if article.tag != "article" or meta is None:
         raise ScholarlyTransportError("europe_pmc_material_unavailable")
     ids = {item.get("pub-id-type"): item.text for item in meta.findall("article-id")}
-    ids_in_article = {ids.get("pmcid"), f"PMC{ids.get('pmc')}"}
+    pmc = ids.get("pmc")
+    ids_in_article = {ids.get("pmcid"), pmc, f"PMC{pmc}"}
     if pmcid not in ids_in_article:
         raise ScholarlyTransportError("europe_pmc_identity_mismatch")
     license_url = _article_license(meta)
@@ -273,10 +340,9 @@ def _search_candidate(row: Mapping) -> ScholarlyCandidate | None:
     license_label = _label(row.get("license"))
     # Unknown search labels can lead to the documented open subset. The XML
     # license is checked before retaining any article text.
-    reusable = not license_label or license_label.lower().replace("-", " ") in {
-        "cc by", "cc by sa", "cc0", "cc 0", "public domain",
-    }
-    full_text_pmcid = pmcid if is_open_full_text and reusable else None
+    restrictions = (license_label or "").lower().replace("-", " ").split()
+    known_restriction = restrictions[:2] == ["cc", "by"] and bool({"nc", "nd"}.intersection(restrictions))
+    full_text_pmcid = pmcid if is_open_full_text and not known_restriction else None
     if full_text_pmcid:
         url = _pmc_url(full_text_pmcid)
     elif doi:
@@ -352,9 +418,10 @@ def _open_access_url(row: Mapping) -> str | None:
     return min(links)[1] if links else None
 
 
-def _request(url, timeout_seconds, get, *, params=None, on_dispatch=None) -> bytes:
+def _request(url, timeout_seconds, get, *, params=None, on_dispatch=None, provider="europe_pmc") -> bytes:
     from scryraven.chatgpt_plan.http import PlanError, response_deadline
 
+    error = VenueTransportError if provider == "jufo" else ScholarlyTransportError
     timeout = float(timeout_seconds)
     if not math.isfinite(timeout) or timeout <= 0:
         raise ValueError("timeout_seconds must be positive")
@@ -374,25 +441,33 @@ def _request(url, timeout_seconds, get, *, params=None, on_dispatch=None) -> byt
                 allow_redirects=False, stream=True, headers={"User-Agent": "ScryRaven scholarly retrieval"},
             ) as response:
                 if 300 <= response.status_code < 400:
-                    raise ScholarlyTransportError("europe_pmc_endpoint_redirected")
+                    raise error(f"{provider}_endpoint_redirected")
                 response.raise_for_status()
                 body = bytearray()
                 with response_deadline(response, end - monotonic()):
                     for chunk in response.iter_content(64 * 1024):
                         body.extend(chunk)
                         if len(body) > MAX_RESPONSE_BYTES:
-                            raise ScholarlyTransportError("europe_pmc_response_too_large")
+                            raise error(f"{provider}_response_too_large")
     except (PlanError, requests.exceptions.Timeout):
-        raise ScholarlyTransportError("europe_pmc_timeout") from None
+        raise error(f"{provider}_timeout") from None
     except requests.exceptions.HTTPError as exc:
         code = {
-            401: "europe_pmc_access_rejected", 403: "europe_pmc_access_rejected",
-            404: "europe_pmc_material_unavailable", 429: "europe_pmc_rate_limited",
-        }.get(getattr(exc.response, "status_code", None), "europe_pmc_endpoint_failed")
-        raise ScholarlyTransportError(code) from None
+            401: "access_rejected", 403: "access_rejected",
+            404: "material_unavailable", 429: "rate_limited",
+        }.get(getattr(exc.response, "status_code", None), "endpoint_failed")
+        raise error(f"{provider}_{code}") from None
     except requests.exceptions.RequestException:
-        raise ScholarlyTransportError("europe_pmc_transport_failed") from None
+        raise error(f"{provider}_transport_failed") from None
     return bytes(body)
+
+
+def _json(body: bytes, provider: str) -> Any:
+    try:
+        return json.loads(body)
+    except (ValueError, RecursionError):
+        error = VenueTransportError if provider == "jufo" else ScholarlyTransportError
+        raise error(f"{provider}_json_invalid") from None
 
 
 def _mapping(value: Any) -> Mapping:
@@ -434,6 +509,7 @@ _BLOCK_TAGS = {
     "h1", "h2", "h3", "h4", "h5", "h6", "fig", "table", "table-wrap", "tr",
 }
 _SEPARATOR = {**dict.fromkeys(_BLOCK_TAGS, "\n"), "td": "\t", "th": "\t"}
+_SCRIPT_OPEN = {"sub": "_{", "sup": "^{"}
 
 
 class _AbstractParser(HTMLParser):
@@ -445,10 +521,10 @@ class _AbstractParser(HTMLParser):
         self.parts.append(data)
 
     def handle_starttag(self, tag, attrs):
-        self.parts.append(_SEPARATOR.get(tag, ""))
+        self.parts.append(_SCRIPT_OPEN.get(tag, _SEPARATOR.get(tag, "")))
 
     def handle_endtag(self, tag):
-        self.parts.append(_SEPARATOR.get(tag, ""))
+        self.parts.append("}" if tag in _SCRIPT_OPEN else _SEPARATOR.get(tag, ""))
 
 
 def _abstract_text(value: Any) -> str:
@@ -468,13 +544,27 @@ def _jats_text(node: ElementTree.Element) -> str:
     """Deterministic readable extraction from the supplied XML, without summaries."""
     def render(element: ElementTree.Element):
         tag = element.tag.rsplit("}", 1)[-1]
+        if tag == "alternatives" and (tex := element.find("tex-math")) is not None:
+            yield from render(tex)
+            return
+        if tag == "math":
+            # Flattening MathML, such as fractions or powers, changes the
+            # reported value. Retain its supplied alternative or original markup.
+            alternative = element.get("alttext")
+            if alternative:
+                yield alternative
+            else:
+                original = copy(element)
+                original.tail = None
+                yield ElementTree.tostring(original, encoding="unicode")
+            return
         separator = _SEPARATOR.get(tag, "")
-        yield separator
+        yield _SCRIPT_OPEN.get(tag, separator)
         yield element.text or ""
         for child in element:
             yield from render(child)
             yield child.tail or ""
-        yield separator
+        yield "}" if tag in _SCRIPT_OPEN else separator
 
     return _clean_lines("".join(render(node)))
 
