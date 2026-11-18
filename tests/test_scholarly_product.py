@@ -3,8 +3,9 @@
 import json
 from functools import partial
 
+import pytest
 from test_research_loop import Script, answer, decision, no_fetch, request
-from test_scholarly_transport import Response
+from test_scholarly_transport import JATS, Response
 
 from core.scholarly_transport import (
     PublicationMetadata,
@@ -12,9 +13,11 @@ from core.scholarly_transport import (
     ScholarlyCandidate,
     ScholarlyFullText,
     VenueStanding,
+    fetch_scholarly,
     search_scholarly,
 )
 from core.transport import FetchedMaterial
+from scryraven.acquisition import AcquisitionLibrary
 from scryraven.presentation import citation_preview_html, source_body_html
 from scryraven.session import ResearchSession
 from scryraven.session_store import SQLiteSessionStore
@@ -102,6 +105,38 @@ def test_metadata_only_publication_is_navigation_and_cannot_validate_as_evidence
     assert packet["catalog"]["candidates"][0]["publication"]["doi"] == "10.1234/oxygen"
     assert packet["evidence"] == []
     assert not result.evidence and not result.citations
+
+
+@pytest.mark.parametrize("restore", [False, True], ids=["same-turn", "restored"])
+def test_later_record_without_open_flag_preserves_verified_pmc_read_route(restore):
+    confirmed, = find_article("")
+    sparse = ScholarlyCandidate("https://doi.org/10.1234/oxygen", confirmed.title, ABSTRACT,
+                                PublicationMetadata(doi="10.1234/oxygen", pmcid="PMC12345"))
+    records = iter([confirmed, sparse])
+    licensed = JATS.replace(b"PMC100001", b"PMC12345")
+    responses = iter([licensed.replace(b"/by/", b"/by-nc/"), licensed])
+    fetch_article = partial(fetch_scholarly, get=lambda _url, **_kwargs: Response(next(responses)))
+    library = AcquisitionLibrary(scholarly_search=lambda _query: [next(records)],
+                                 scholarly_fetch=fetch_article, fetch=no_fetch)
+    for _ in range(2):
+        assert library.execute(scholarly_request(), before_external=lambda: None)["status"] == "ok"
+    abstracts = tuple(library.acquisitions)
+    assert [item.publication.open_article_available for item in abstracts] == [True, False]
+    if restore:
+        library = AcquisitionLibrary(abstracts, scholarly_fetch=fetch_article, fetch=no_fetch)
+
+    landing, = [row for row in library.catalog()["candidates"] if row["url"] == PMC]
+    assert landing.get("open_article_available") is True
+    read = request("read", target=landing["id"], mode="full")
+    rejected = library.execute(read, before_external=lambda: None)
+    assert rejected["code"] == "europe_pmc_license_unavailable"
+    assert tuple(library.acquisitions) == abstracts
+    accepted = library.execute(read, before_external=lambda: None)
+    assert accepted["provider"] == "europe_pmc" and accepted["status"] == "ok"
+    material_id, = accepted["material_ids"]
+    article = library.materials[material_id]
+    assert (article.url, article.open_article_license) == (PMC, LICENSE)
+    assert "Sixty cultures" in article.content
 
 
 def test_scholarly_extractor_cannot_substitute_text_from_a_different_publication():

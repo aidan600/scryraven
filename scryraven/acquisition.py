@@ -694,12 +694,11 @@ class AcquisitionLibrary:
             if landing != url and _public_url(landing):
                 candidates.append(self._candidate(landing, title))
                 self._publications[landing] = publication
-        if publication.pmcid:
-            pmc_url = f"https://pmc.ncbi.nlm.nih.gov/articles/{publication.pmcid}/"
-            if full_text_pmcid == publication.pmcid:
-                self._scholarly_full_text[pmc_url] = publication.pmcid
-            else:
-                self._scholarly_full_text.pop(pmc_url, None)
+        # A nonconfirming record leaves a known route available. The Read still
+        # verifies the article's identity and license before retaining its text.
+        if full_text_pmcid is not None and full_text_pmcid == publication.pmcid:
+            pmc_url = f"https://pmc.ncbi.nlm.nih.gov/articles/{full_text_pmcid}/"
+            self._scholarly_full_text[pmc_url] = full_text_pmcid
         return candidates
 
     def _admit_scholarly_lead(self, lead: ScholarlyCandidate, result: dict) -> None:

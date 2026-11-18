@@ -16,6 +16,8 @@ outside that route's index and license coverage.
 Europe PMC receives a fielded lookup when Research sends a standalone DOI,
 explicit PMID, or PMCID. Research can choose the PubMed and PMC locations
 reported by the indexed record, including after reopening a saved abstract.
+A later record without open-full-text confirmation leaves a previously
+identified PMC article route available for the independent license check.
 The short “Cookies must be enabled” reload template is a failed Read and
 supplies no Evidence.
 An offline Research → Answer regression exercised a failed publisher Read,
