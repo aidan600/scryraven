@@ -92,6 +92,12 @@ _EMPTY_LANDING_BODY = re.compile(
     r"you need to enable javascript to run this app|loading(?: content)?)[\s.!…]*$",
     re.IGNORECASE,
 )
+_COOKIE_RELOAD_PAGE = re.compile(
+    r"\s*(?:#{1,6}[ \t]+)?cookies must be enabled[.!]?\s+"
+    r"enable cookies for [a-z0-9.-]+ and reload this page to continue[.!]?"
+    r"(?:\s+\[[^\]\n]+\]\(https?://[^\s()]+\))*\s*",
+    re.IGNORECASE,
+)
 _WORDS_OR_TARGET = re.compile(r"\]\(|[^\W_]+", re.UNICODE)
 _WORD_CELL = re.compile(r"[^\W_]+(?:\s+[^\W_]+)?", re.UNICODE)
 
@@ -123,6 +129,11 @@ def configured_read_providers() -> tuple[str, ...]:
     ) if os.environ.get(key, "").strip())
 
 
+def is_cookie_interstitial(text: str) -> bool:
+    """Recognize a whole short cookie gate, including an optional link-only footer."""
+    return len(text) <= 900 and _COOKIE_RELOAD_PAGE.fullmatch(text) is not None
+
+
 def validate_read_material(url: str, material: FetchedMaterial) -> str | None:
     """Check transport identity, empty material, and recognizable interstitials."""
     if not isinstance(material, FetchedMaterial) or not isinstance(material.readable_text, str):
@@ -132,6 +143,8 @@ def validate_read_material(url: str, material: FetchedMaterial) -> str | None:
     text = material.readable_text
     if not text.strip():
         return "unusable_fetch_material"
+    if is_cookie_interstitial(text):
+        return "read_access_challenge"
     # A site-load template may be collapsed onto one line with a heading.
     if len(text) <= 400 and (interstitial := _SITE_LOAD_INTERSTITIAL.search(text)):
         prefix = text[:interstitial.start()].strip()

@@ -41,6 +41,29 @@ class Response:
         yield self.content
 
 
+@pytest.mark.parametrize(("query", "wire_query"), [
+    ("10.1234/Article", 'DOI:"10.1234/Article"'),
+    ("https://doi.org/10.1234/Article(2)", 'DOI:"10.1234/Article(2)"'),
+    ("PMID: 29000001", "EXT_ID:29000001 AND SRC:MED"),
+    ("https://pubmed.ncbi.nlm.nih.gov/29000001/", "EXT_ID:29000001 AND SRC:MED"),
+    ("pmc100001", "PMCID:PMC100001"),
+    ("https://pmc.ncbi.nlm.nih.gov/articles/PMC100001/", "PMCID:PMC100001"),
+    ("2020", "2020"),
+    ('TITLE:"Heat response" AND PUB_YEAR:2018', 'TITLE:"Heat response" AND PUB_YEAR:2018'),
+    ('DOI:"10.1234/Article"', 'DOI:"10.1234/Article"'),
+    ("10.1234/Article OR heat stress", "10.1234/Article OR heat stress"),
+])
+def test_only_exact_publication_identifiers_are_fielded(query, wire_query):
+    dispatched = []
+
+    def get(_url, **kwargs):
+        assert dispatched == [wire_query]
+        assert kwargs["params"]["query"] == wire_query
+        return Response(b'{"resultList": {"result": []}}')
+
+    assert search_scholarly(query, get=get, on_dispatch=dispatched.append) == []
+
+
 def test_selects_original_abstracts_and_keeps_preprint_and_article_distinct():
     article = {
         "source": "MED", "pmid": "29000001", "pmcid": "PMC100001",

@@ -40,6 +40,18 @@ VENUE_FAILURE_CODES = frozenset(f"jufo_{reason}" for reason in _SHARED_FAILURES)
 _DOI = re.compile(r"10\.[0-9]{4,9}/[^\s<>\x00-\x1f]{1,230}", re.IGNORECASE)
 _PMCID = re.compile(r"PMC[0-9]{1,12}")
 _PMID = re.compile(r"[1-9][0-9]{0,10}")
+_EXACT_DOI_QUERY = re.compile(
+    r"(?:https?://(?:dx\.)?doi\.org/|doi:\s*)?(10\.[0-9]{4,9}/[-._;()/:a-z0-9]{1,230})",
+    re.IGNORECASE | re.ASCII,
+)
+_EXACT_PMID_QUERY = re.compile(
+    rf"(?:PMID:\s*|https?://pubmed\.ncbi\.nlm\.nih\.gov/)({_PMID.pattern})/?",
+    re.IGNORECASE | re.ASCII,
+)
+_EXACT_PMCID_QUERY = re.compile(
+    rf"(?:PMCID:\s*|https?://pmc\.ncbi\.nlm\.nih\.gov/articles/)?({_PMCID.pattern})/?",
+    re.IGNORECASE | re.ASCII,
+)
 _ISSN = re.compile(r"[0-9]{4}-[0-9]{3}[0-9X]")
 _SOURCE = re.compile(r"[A-Z]{3}")
 _RECORD_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}")
@@ -123,6 +135,15 @@ class PublicationMetadata(BaseModel):
     open_access_url: _URL | None = None
     open_article_available: Annotated[bool, Field(strict=True)] = False
 
+    def landing_urls(self) -> tuple[str, ...]:
+        """Public navigation targets supplied or identified by the record."""
+        return tuple(dict.fromkeys(url for url in (
+            f"https://doi.org/{quote(self.doi, safe='/')}" if self.doi else None,
+            _pubmed_url(self.pmid) if self.pmid else None,
+            _pmc_url(self.pmcid) if self.pmcid else None,
+            self.open_access_url,
+        ) if url))
+
 
 class VenueStanding(BaseModel):
     """The exact requested register year, with the panel context of the current record."""
@@ -180,6 +201,18 @@ _RELATIONS: dict[str, RelationKind] = {
 }
 
 
+def _field_exact_identifier(query: str) -> str:
+    """Field a whole identifier so it selects the record rather than citing papers."""
+    term = query.strip()
+    if doi := _EXACT_DOI_QUERY.fullmatch(term):
+        return f'DOI:"{doi[1]}"'
+    if pmid := _EXACT_PMID_QUERY.fullmatch(term):
+        return f"EXT_ID:{pmid[1]} AND SRC:MED"
+    if pmcid := _EXACT_PMCID_QUERY.fullmatch(term):
+        return f"PMCID:{pmcid[1].upper()}"
+    return query
+
+
 def search_scholarly(
     query: str, *, timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
     get: Callable[..., Any] | None = None,
@@ -191,7 +224,7 @@ def search_scholarly(
     body = _request(
         f"{EUROPE_PMC_API}/search", timeout_seconds, get,
         params={
-            "query": query, "format": "json", "resultType": "core",
+            "query": _field_exact_identifier(query), "format": "json", "resultType": "core",
             "pageSize": SEARCH_PAGE_SIZE,
         },
         on_dispatch=on_dispatch,

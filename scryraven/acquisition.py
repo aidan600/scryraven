@@ -12,7 +12,7 @@ from collections.abc import Callable, Iterable
 from html import unescape
 from urllib.parse import quote, urljoin, urlsplit
 
-from core.dual_read import DualReadResult, validate_read_material
+from core.dual_read import DualReadResult, is_cookie_interstitial, validate_read_material
 from core.exa_transport import EXA_OBJECTIVE_MAX_CHARACTERS, DiscoveryCandidate, ExaTransportError, search_exa
 from core.linkup_transport import (
     LINKUP_FAILURE_CODES,
@@ -187,12 +187,12 @@ class AcquisitionLibrary:
                     or item.source_id != self._source_ids.setdefault(item.url, item.id)):
                 raise AcquisitionError("invalid_retained_acquisitions")
             self.materials[item.id] = item
-            self._candidate(item.url, item.title)
-            if item.publication is not None:
-                self._publications[item.url] = item.publication
-                if (item.publication.open_article_available and item.publication.pmcid
-                        and item.url == f"https://pmc.ncbi.nlm.nih.gov/articles/{item.publication.pmcid}/"):
-                    self._scholarly_full_text[item.url] = item.publication.pmcid
+            publication = item.publication
+            if publication is None:
+                self._candidate(item.url, item.title)
+            else:
+                pmcid = publication.pmcid if publication.open_article_available else None
+                self._admit_publication_landings(item.url, item.title, publication, pmcid)
 
     def _candidate(self, url: str, title: str = "", context: str = "") -> str:
         if not _public_url(url):
@@ -685,20 +685,26 @@ class AcquisitionLibrary:
             "exact_reused_material_count": len(returned_ids & prior_material_ids),
         }
 
+    def _admit_publication_landings(
+        self, url: str, title: str, publication: PublicationMetadata, full_text_pmcid: str | None,
+    ) -> list[str]:
+        candidates = [self._candidate(url, title)]
+        self._publications[url] = publication
+        for landing in publication.landing_urls():
+            if landing != url and _public_url(landing):
+                candidates.append(self._candidate(landing, title))
+                self._publications[landing] = publication
+        # A nonconfirming record leaves a known route available. The Read still
+        # verifies the article's identity and license before retaining its text.
+        if full_text_pmcid is not None and full_text_pmcid == publication.pmcid:
+            pmc_url = f"https://pmc.ncbi.nlm.nih.gov/articles/{full_text_pmcid}/"
+            self._scholarly_full_text[pmc_url] = full_text_pmcid
+        return candidates
+
     def _admit_scholarly_lead(self, lead: ScholarlyCandidate, result: dict) -> None:
-        self._publications[lead.url] = lead.publication
-        result["candidate_refs"].append(self._candidate(lead.url, lead.title))
-        if lead.full_text_pmcid is not None:
-            self._scholarly_full_text[lead.url] = lead.full_text_pmcid
-        if lead.publication.doi:
-            doi_url = "https://doi.org/" + quote(lead.publication.doi, safe="/")
-            if doi_url != lead.url:
-                self._publications[doi_url] = lead.publication
-                result["candidate_refs"].append(self._candidate(doi_url, lead.title))
-        if lead.publication.open_access_url and _public_url(lead.publication.open_access_url):
-            access_url = lead.publication.open_access_url
-            self._publications[access_url] = lead.publication
-            result["candidate_refs"].append(self._candidate(access_url, lead.title))
+        result["candidate_refs"].extend(self._admit_publication_landings(
+            lead.url, lead.title, lead.publication, lead.full_text_pmcid,
+        ))
         for relation in lead.publication.related:
             if _public_url(relation.url):
                 result["candidate_refs"].append(self._candidate(relation.url))
@@ -846,6 +852,8 @@ class AcquisitionLibrary:
                     if (not isinstance(fetched, FetchedMaterial) or fetched.requested_url != url
                             or not isinstance(fetched.readable_text, str) or not fetched.readable_text.strip()):
                         code = "unusable_fetch_material"
+                    elif is_cookie_interstitial(fetched.readable_text):
+                        code = "read_access_challenge"
             if code is not None:
                 result["failed_external_read"] = {
                     "candidate_ref": self._candidate_ids[url], "provider": result["provider"],
