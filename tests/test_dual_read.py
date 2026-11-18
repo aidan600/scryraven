@@ -17,6 +17,10 @@ URL = "https://example.org/article?section=methods"
 LINKUP_TEXT = "# Original equipment report\n\nThe tested compressor controls its outlet pressure."
 EXA_TEXT = "# Original equipment report\n\nObserved flow rates match the specified conditions."
 CHALLENGE = "# A required part of this site couldn’t load.\n\nYour browser is unsupported."
+COOKIE_CHALLENGE = (
+    "# Cookies must be enabled\n\nEnable cookies for example.org and reload this page to continue.\n\n"
+    "[Disclosure](https://example.org/disclosure)"
+)
 
 
 @pytest.fixture
@@ -112,9 +116,10 @@ def test_concurrent_exact_url_preserves_first_when_peer_has_no_clear_upgrade(end
     assert abs(linkup.dispatch_offset_seconds - exa.dispatch_offset_seconds) < 0.15
 
 
-def test_challenge_does_not_start_peer_timer_and_late_exa_is_retained(endpoint):
+@pytest.mark.parametrize("challenge", [CHALLENGE, COOKIE_CHALLENGE])
+def test_challenge_does_not_start_peer_timer_and_late_exa_is_retained(endpoint, challenge):
     _, responses, _ = endpoint
-    responses.update(linkup=(0, 200, CHALLENGE), exa=(0.4, 200, EXA_TEXT))
+    responses.update(linkup=(0, 200, challenge), exa=(0.4, 200, EXA_TEXT))
     result = fetch()
     assert result.provider == result.first_usable_provider == "exa"
     assert result.material == FetchedMaterial(URL, EXA_TEXT)
@@ -300,6 +305,9 @@ def test_early_error_keeps_valid_36_second_result_with_remaining_turn_time(monke
     (FetchedMaterial(URL, " "), "unusable_fetch_material"),
     (FetchedMaterial("https://example.com/unrelated", LINKUP_TEXT), "read_identity_mismatch"),
     (FetchedMaterial(URL, CHALLENGE), "read_access_challenge"),
+    (FetchedMaterial(URL, COOKIE_CHALLENGE), "read_access_challenge"),
+    (FetchedMaterial(URL, COOKIE_CHALLENGE +
+                     "\n\nThe browser stores the session identifier in an HTTP-only cookie."), None),
     (FetchedMaterial(URL, "# Error 404\n\nReturn to the homepage."), "read_landing_page"),
     (FetchedMaterial(URL, "You need to enable JavaScript to run this app."), "read_landing_page"),
     (FetchedMaterial(URL, "Publisher | A required part of this site couldn’t load. Check your connection."),

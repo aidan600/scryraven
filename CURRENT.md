@@ -13,6 +13,16 @@ Commons or public-domain license before retaining a readable article
 extraction. Generic search and ordinary publisher/repository Read cover work
 outside that route's index and license coverage.
 
+Europe PMC receives a fielded lookup when Research sends a standalone DOI,
+explicit PMID, or PMCID. Research can choose the PubMed and PMC locations
+reported by the indexed record, including after reopening a saved abstract.
+The short “Cookies must be enabled” reload template is a failed Read and
+supplies no Evidence.
+An offline Research → Answer regression exercised a failed publisher Read,
+recovery through a same-record PMC location, and historical reopening of
+the exact cited passage alongside the earlier abstract. Live retrieval and
+its cost effect were outside this check.
+
 Research can optionally look up a journal's exact ISSN and classification
 year in the Finnish Publication Forum. Its reported level belongs to the
 specified year. Evaluating panels and subject labels describe the current

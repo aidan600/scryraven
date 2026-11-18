@@ -1,6 +1,10 @@
 """Publication navigation and source text travel through the ordinary session."""
 
+import json
+from functools import partial
+
 from test_research_loop import Script, answer, decision, no_fetch, request
+from test_scholarly_transport import Response
 
 from core.scholarly_transport import (
     PublicationMetadata,
@@ -8,6 +12,7 @@ from core.scholarly_transport import (
     ScholarlyCandidate,
     ScholarlyFullText,
     VenueStanding,
+    search_scholarly,
 )
 from core.transport import FetchedMaterial
 from scryraven.presentation import citation_preview_html, source_body_html
@@ -129,6 +134,72 @@ def test_publication_relationship_leads_are_valid_read_targets():
     result = ResearchSession(model=model, fetch=fetch, scholarly_search=find_article).ask("What changed in the notice?")
     assert result_urls == [NOTICE]
     assert result.citations[0].materials[0].publication is None
+
+
+def test_reopened_scholarly_record_can_recover_a_cookie_blocked_original(tmp_path):
+    doi = "10.1234/oxygen"
+    publisher = f"https://doi.org/{doi}"
+    queries = []
+    reads = []
+
+    def get_record(url, *, params, **options):
+        queries.append(params["query"])
+        row = {"doi": doi, "pmcid": "PMC12345", "pmid": "40585390", "source": "MED",
+               "title": "A recovery experiment", "abstractText": ABSTRACT}
+        return Response(json.dumps({"resultList": {"result": [row]}}).encode())
+
+    database = tmp_path / "recovery.sqlite3"
+    first = ResearchSession.create(
+        store=SQLiteSessionStore(database), search=no_fetch, fetch=no_fetch,
+        scholarly_search=partial(search_scholarly, get=get_record),
+        model=Script(decision(requests=[{**scholarly_request(), "query": doi}]),
+                     decision("return", ["E1"]), answer("The experiment measured recovery. [E1]")),
+    )
+    first.ask(f"What did the experiment identified by {doi} measure?")
+    prior_turn, = first.turns
+    prior_material, = prior_turn.citations[0].materials
+    assert queries == [f'DOI:"{doi}"']
+    assert (prior_material.url, prior_material.content, prior_material.acquisition) == (
+        publisher, ABSTRACT, "publication_abstract")
+
+    def fetch(url):
+        reads.append(url)
+        if url == publisher:
+            return FetchedMaterial(url, "# Cookies must be enabled\n\n"
+                                   "Enable cookies for doi.org and reload this page to continue.")
+        assert url == PMC
+        return FetchedMaterial(url, BODY)
+
+    def read_alternate(packet):
+        failed, = packet["acquisition_history"]
+        assert failed["status"] == "error" and failed["code"] == "read_access_challenge"
+        assert not failed["material_ids"]
+        landings = {row["url"]: row["id"] for row in packet["catalog"]["candidates"]
+                    if row.get("publication", {}).get("doi") == doi}
+        assert {PMC, "https://pubmed.ncbi.nlm.nih.gov/40585390/"} <= landings.keys()
+        return decision(requests=[request("read", target=landings[PMC], mode="full")])
+
+    passage = "Thirty animals were randomly allocated."
+    model = Script(decision(requests=[request("read", target="E1", mode="full")]),
+                   read_alternate, decision("return", ["E2"]),
+                   {**answer(f"{passage} [E2]"), "citation_passages": [
+                       {"ref": "E2", "occurrence": 1, "text": passage}]})
+    reopened = ResearchSession.open(first.session_id, store=SQLiteSessionStore(database), model=model,
+                                    search=no_fetch, fetch=fetch, scholarly_search=no_fetch, scholarly_fetch=no_fetch)
+    result = reopened.ask("How many animals did that study randomly allocate?")
+    assert reads == [publisher, PMC]
+    assert result.trace[-1]["budget"]["physical_acquisition_dispatches"] == 2
+    saved = ResearchSession.open(first.session_id, store=SQLiteSessionStore(database))
+    original, recovered = saved.turns
+    assert original == prior_turn
+    assert [item.content for item in saved.acquisitions] == [ABSTRACT, BODY]
+    citation, = recovered.citations
+    material, = citation.materials
+    assert citation.url == material.url == PMC
+    assert material.acquisition == "fetched_source" and material.open_article_license is None
+    use, = recovered.citation_uses
+    support, = use.support
+    assert support_text(support, material) == passage
 
 
 def test_venue_classification_is_year_specific_navigation_with_one_dispatch():
