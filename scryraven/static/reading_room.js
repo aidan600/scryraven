@@ -267,6 +267,23 @@
     closePreview();
   }, {passive: true});
   window.addEventListener('resize', positionPreview);
+  document.addEventListener('reading-room-table-layout', () => {
+    const tableViewport = origin?.closest('.table-scroll');
+    if (tableViewport) {
+      const bounds = origin.getBoundingClientRect();
+      const viewport = tableViewport.getBoundingClientRect();
+      const table = origin.closest('table');
+      const rowHeader = origin.closest('tr')?.cells[0];
+      const left = narrow.matches && table.classList.contains('table-prose') &&
+        !table.classList.contains('table-is-read') && rowHeader && !rowHeader.contains(origin)
+        ? Math.max(viewport.left, rowHeader.getBoundingClientRect().right) : viewport.left;
+      if (bounds.right <= left || bounds.left >= viewport.right) {
+        closePreview();
+        return;
+      }
+    }
+    positionPreview();
+  });
   window.visualViewport?.addEventListener('resize', positionPreview);
   window.visualViewport?.addEventListener('scroll', positionPreview);
   document.addEventListener('click', event => {

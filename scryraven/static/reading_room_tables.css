@@ -1,0 +1,43 @@
+@media screen {
+  .answer-table { max-width: 100%; min-width: 0; margin: 24px 0; }
+  .table-scroll { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; }
+  .answer .table-scroll > table { display: table; min-width: 100%; max-width: none; overflow: visible; margin: 0; }
+  .answer-table img { max-width: 100%; height: auto; }
+  .table-tools { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+  .table-scroll-cue { color: var(--muted); font: 11px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  .table-controls { display: inline-flex; flex-shrink: 0; border: 1px solid var(--line); border-radius: 6px; padding: 2px; }
+  .table-controls button { min-height: 40px; padding: 7px 14px; border-radius: 4px; background: transparent; color: var(--muted); font: 500 12px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  .table-controls button[aria-pressed=true] { background: #e5ece9; color: #294f60; }
+}
+
+@media screen and (max-width: 760px) {
+  .table-tools { position: sticky; top: 0; z-index: 4; padding: 6px 0; background: var(--paper); }
+  .answer .table-scroll > table { font-size: 15px; }
+  .answer .table-prose-grid { width: max-content; }
+  .answer .table-prose-grid th, .answer .table-prose-grid td {
+    min-width: clamp(12rem, calc(100vw - 6rem - 48px), 20rem);
+    width: clamp(12rem, calc(100vw - 6rem - 48px), 20rem);
+    max-width: 20rem;
+  }
+  .answer .table-prose tr > :first-child { min-width: 6rem; width: 6rem; max-width: 6rem; }
+  .answer .table-prose:not(.table-is-read) tbody tr > :first-child {
+    position: sticky; left: 0; z-index: 1; background: var(--paper); box-shadow: 1px 0 var(--line);
+  }
+  .answer .table-prose:not(.table-is-read) .table-row-title { font-weight: 600; }
+  .answer .table-scroll > .table-is-read { display: block; width: 100%; font: inherit; }
+  .answer .table-is-read thead { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .answer .table-is-read tbody { display: block; }
+  .answer .table-is-read tbody > tr { display: block; padding: 16px 18px 20px; margin-bottom: 18px; border: 1px solid var(--line); border-radius: 6px; }
+  .answer .table-is-read tbody > tr:last-child { margin-bottom: 0; }
+  .answer .table-is-read tbody tr > td, .answer .table-is-read tbody tr > th {
+    display: block; min-width: 0; width: auto; max-width: none; padding: 16px 0 0; border: 0; background: transparent;
+  }
+  .answer .table-is-read tbody tr > :first-child { min-width: 0; width: auto; max-width: none; padding: 0; }
+  .table-is-read .table-row-title { font: 600 18px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--ink); }
+  .table-read-label { margin-bottom: 6px; color: var(--muted); font: 600 12px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+}
+
+@media print {
+  .table-tools, .table-read-label { display: none !important; }
+  .answer-table, .table-scroll { display: block; position: static; overflow: visible; height: auto; margin: 0; }
+}

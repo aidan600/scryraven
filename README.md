@@ -216,6 +216,11 @@ Touch browsers open a printable answer first. On iPhone or iPad, use its print
 button or Safari’s **Share → Print**, expand the preview, then choose
 **Share → Save to Files**. **Back to answer** returns to the conversation.
 
+On phone screens, prose-heavy tables open in **Read**, with a labeled section
+for each row. Choose **Table** to compare columns side by side; swipe within the
+table to see more columns while its row names stay visible. Compact numeric
+tables, wider screens and PDFs keep a grid.
+
 Each session's **…** menu offers **Rename** and **Delete**. Rename preserves all
 research and requires no model call. Delete requires confirmation and permanently
 removes that session and its saved material. History, reopening, and both actions

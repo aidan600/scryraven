@@ -126,11 +126,16 @@ reader/print/source GETs, HEAD, rejected writes/foreign Host, unavailable
 dictation, and Ctrl+C temporary-directory cleanup passed. Windows launch and
 LAN reachability from a physical iPhone remain for the device check.
 
-## Native iPhone verification: pending
+## Native iPhone verification
 
-No iPhone or native Safari print/save interface was available. Desktop WebKit,
-a mobile viewport, PDF generation and stubs would not satisfy this check. The
-previous native Windows smoke is not repeated or made a permanent release gate.
+The original Cloud implementation turn had no iPhone or native Safari print/save
+interface. Aidan subsequently reported that the sample PDF saved successfully in
+native iPhone Safari on the Blinky preview of candidate
+`804ae6d52a50ab874d69f4b15e1a40a81aa0be2c`. This preserves that bounded AID-5
+device evidence; the original failure point and exact iOS version remain unknown.
+The combined AID-7 table candidate still needs a device retest. Desktop WebKit,
+a mobile viewport, PDF generation and stubs do not substitute for it. The previous
+native Windows smoke is not repeated or made a permanent release gate.
 
 Using the local synthetic fixture above:
 

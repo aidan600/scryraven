@@ -8,9 +8,12 @@ from ipaddress import IPv4Address, IPv4Network
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
+from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from table_read_samples import SOURCE_BODY as CHEESE_SOURCE_BODY
+from table_read_samples import make_table_fixture
 from test_reading_room_print_browser import EARLY, make_print_fixture
 from werkzeug.serving import make_server
 from werkzeug.wrappers import Response
@@ -30,6 +33,22 @@ def private_host(value):
     return str(address)
 
 
+def source_origin(value):
+    try:
+        parsed = urlsplit(value)
+        parsed.port  # Validate malformed/out-of-range ports without connecting.
+        valid = (parsed.scheme in {"http", "https"} and parsed.hostname
+                 and parsed.username is None and parsed.password is None
+                 and parsed.path in {"", "/"} and not parsed.query and not parsed.fragment
+                 and not any(character.isspace() or ord(character) < 32 for character in value)
+                 and not any(character in value for character in "\\?#"))
+    except ValueError:
+        valid = False
+    if not valid:
+        raise argparse.ArgumentTypeError("Use an HTTP(S) origin without credentials, path, query or fragment.")
+    return value.removesuffix("/")
+
+
 def read_only(app):
     def serve(environ, start_response):
         if environ["REQUEST_METHOD"] not in {"GET", "HEAD"}:
@@ -45,6 +64,9 @@ def main():
     parser.add_argument("--host", type=private_host, default="127.0.0.1",
                         help="Bind only this private LAN IPv4 address (default: 127.0.0.1).")
     parser.add_argument("--port", type=int, default=7332)
+    parser.add_argument("--tables", action="store_true", help="Show the full-length synthetic cheese table instead.")
+    parser.add_argument("--source-origin", type=source_origin,
+                        help="Use an existing HTTP(S) preview origin for synthetic source links; no connection is made.")
     args = parser.parse_args()
     if not 1 <= args.port <= 65535:
         parser.error("Use a port from 1 to 65535.")
@@ -52,10 +74,15 @@ def main():
     with TemporaryDirectory(prefix="scryraven-print-") as directory, patch(
         "scryraven.dictation.available", return_value=False,
     ):
-        origin = f"http://{args.host}:{args.port}"
-        app, path = make_print_fixture(Path(directory) / "print.sqlite3", source_urls=(
-            origin + "/synthetic/canopy-survey", origin + "/synthetic/design-notes",
-        ))
+        origin = args.source_origin or f"http://{args.host}:{args.port}"
+        database = Path(directory) / "print.sqlite3"
+        if args.tables:
+            app, path = make_table_fixture(database, source_url=origin + "/synthetic/cheese-notes",
+                                           last_cell_url=origin + "/synthetic/last-cell")
+        else:
+            app, path = make_print_fixture(database, source_urls=(
+                origin + "/synthetic/canopy-survey", origin + "/synthetic/design-notes",
+            ))
         app.config["TRUSTED_HOSTS"] = [args.host]
 
         @app.get("/synthetic/canopy-survey")
@@ -67,12 +94,25 @@ def main():
             return Response("Synthetic print-test source only.\n\nSynthetic design notes for shade at bus stops.\n",
                             mimetype="text/plain")
 
+        if args.tables:
+            @app.get("/synthetic/cheese-notes")
+            def cheese_notes():
+                return Response(CHEESE_SOURCE_BODY + "\n", mimetype="text/plain")
+
+            @app.get("/synthetic/last-cell")
+            def last_cell():
+                return Response("Synthetic table-test link only. The final cell link reached this local page.\n",
+                                mimetype="text/plain")
+
         server = None
         try:
             server = make_server(args.host, args.port, read_only(app), threaded=True, request_handler=_QuietHandler)
             print("Synthetic answers only; provider calls and all mutations are disabled.", flush=True)
-            print(f"Synthetic Reading Room: http://{args.host}:{server.server_port}{path}#turn-2", flush=True)
+            print(f"Synthetic Reading Room: http://{args.host}:{server.server_port}{path}#turn-{1 if args.tables else 2}",
+                  flush=True)
             print("Press Ctrl+C to stop and remove the temporary fixture.", flush=True)
+            if args.source_origin:
+                print(f"Synthetic source origin: {args.source_origin}", flush=True)
             server.serve_forever()
         except KeyboardInterrupt:
             pass

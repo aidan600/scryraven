@@ -360,12 +360,30 @@ table/code text, internal citation destinations, original-source links, omitted
 app controls, desktop cleanup and touch navigation/return with and without
 JavaScript. Focused hosted checks verified owner/admin access, foreign and
 unauthenticated denial, no-store/CSP headers and no session/job mutation.
-Native iPhone Safari save-to-Files remains unverified; AID-5's original failure
-point and iOS version remain unknown. WebKit could not be installed in this task
+Aidan reported that the sample PDF saved successfully in native iPhone Safari
+on the Blinky preview of the preserved AID-5 candidate
+`804ae6d52a50ab874d69f4b15e1a40a81aa0be2c`. The original failure point and iOS
+version remain unknown. The combined table/print candidate still needs its
+device retest. WebKit could not be installed in this task
 because its download hosts were denied by the environment network policy.
 The prior Windows print smoke is historical evidence, not a new release gate.
 Device verification steps and the bounded diagnosis are in
 `docs/operator/IOS_SAFARI_PRINT_AID5.md`.
+
+At phone widths, simple text-heavy answer tables default to Read: each row is a
+full-width section with its first cell as a heading and labeled remaining cells.
+A Read / Table switch keeps the same content and citation nodes. Table mode
+uses a contained horizontal scroller, a pinned row name and a visible offscreen
+column cue; one prose attribute fits beside its row name at representative phone
+widths. Compact numeric tables and wider screens retain a grid. Ambiguous
+headers, spanning cells and other complex structures use the scrollable fallback.
+The original table header relationships remain available to assistive technology;
+repeated visual labels are hidden from it. Without JavaScript the original grid
+remains available. Print and the protected PDF view retain their grid and contain
+one copy of the answer. The synthetic retest runner accepts `--tables` for full
+paragraph-length cheese comparisons with saved-passage and local source links.
+Validation and remaining native Safari/VoiceOver limits are recorded in
+`docs/operator/MOBILE_TABLES_AID7.md`.
 
 The welcome headline is “Ask away.” with the public-sources subtitle. Narrow
 screens place the empty-state composer near the bottom. Text expansion and the
