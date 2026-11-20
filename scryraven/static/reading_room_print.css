@@ -54,6 +54,7 @@ body:has(.turn) > :not(.workspace),
 /* A standalone answer uses the same layout before the print sheet opens. */
 @media screen {
   body.print-document > .print-toolbar { display: block; max-width: 790px; margin: 0 auto; padding: 20px; font-size: 14px; }
+  body.print-document > .answer-pdf-dialog[open] { display: block; }
   .print-toolbar button { margin-left: 16px; }
   .print-toolbar p { margin: 12px 0 0; }
   .print-document .reading-content { max-width: 790px; margin: 0 auto; padding: 20px; }

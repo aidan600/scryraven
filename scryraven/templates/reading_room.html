@@ -1,4 +1,5 @@
 {% from '_print_sources.html' import print_sources %}
+{% from '_answer_pdf_download.html' import pdf_download, pdf_dialog %}
 {% macro icon(name) -%}
 <svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 {% if name == 'book' %}<path d="M12 5c-3-2-6-2-9-1v15c3-1 6-1 9 1 3-2 6-2 9-1V4c-3-1-6-1-9 1Z"/><path d="M12 5v15"/>
@@ -200,6 +201,9 @@
   <script src="{{ url_for('static', filename='reading_room_tables.js') }}" defer></script>
   <script src="{{ url_for('static', filename='reading_room.js') }}" defer></script>
   <script src="{{ url_for('static', filename='reading_room_dictation.js') }}" defer></script>
+  {% if answer_pdf_available and turns %}
+  <script src="{{ url_for('static', filename='reading_room_pdf.js') }}" defer></script>
+  {% endif %}
 </head>
 <body data-session-id="{{ saved.metadata.session_id if saved else '' }}" data-revision="{{ saved.metadata.revision if saved else 0 }}" data-job-id="{{ job.job_id if job else '' }}" data-job-state="{{ job.state if job else '' }}" data-browser-identity="{{ browser_identity }}">
 <a class="skip-link" href="#reading">Skip to reading</a>
@@ -315,7 +319,7 @@
         {% endif %}
         <div class="answer-export">
           {% if answer_pdf_available %}
-          <a class="text-button" href="{{ url_for('download_answer_pdf', session_id=saved.metadata.session_id, turn_index=turn.number) }}">Download PDF</a>
+          {{ pdf_download(saved.metadata.session_id, turn.number) }}
           {% endif %}
           <a class="text-button print-answer" href="{{ url_for('print_answer', session_id=saved.metadata.session_id, turn_index=turn.number) }}">Print</a>
         </div>
@@ -485,5 +489,6 @@
   </div>
 </dialog>
 {% endif %}
+{% if answer_pdf_available and turns %}{{ pdf_dialog() }}{% endif %}
 </body>
 </html>

@@ -399,6 +399,11 @@ dialog::backdrop { background: #1e323d26; }
 .source-settings-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .source-settings-actions p { margin: 0; color: var(--muted); font-size: 12px; }
 .run-settings-dialog .dialog-actions { margin-top: 18px; }
+.answer-pdf-dialog { width: 420px; }
+.answer-pdf-dialog h2 { margin: 0; font-size: 17px; }
+.answer-pdf-dialog .dialog-actions { flex-wrap: wrap; }
+.pdf-download-status { color: var(--muted); }
+.pdf-download-safari { font-size: 13px; }
 .run-record { margin-top: 12px; font-size: 11px; color: var(--muted); }
 .run-record > summary { width: fit-content; padding: 6px 0; }
 .run-configuration { margin: 10px 0; padding: 12px 14px; background: #f1f4f1; border-radius: 6px; }

@@ -1,0 +1,26 @@
+{% macro pdf_download(session_id, turn_index) -%}
+  {% set url = url_for('download_answer_pdf', session_id=session_id, turn_index=turn_index) %}
+  <a class="text-button browser-pdf-download" href="{{ url }}" hidden>Download PDF</a>
+  <button class="text-button standalone-pdf-download" type="button" aria-haspopup="dialog"
+    data-pdf-url="{{ url }}" data-pdf-filename="scryraven-answer-{{ turn_index }}.pdf"
+    data-pdf-answer-url="{{ url_for('open_session', session_id=session_id, _anchor='turn-' ~ turn_index) }}"
+    hidden>Download PDF</button>
+{%- endmacro %}
+
+{% macro pdf_dialog() -%}
+<dialog class="run-settings-dialog answer-pdf-dialog" id="answer-pdf-dialog" aria-labelledby="answer-pdf-title">
+  <h2 id="answer-pdf-title">Download PDF</h2>
+  <p class="pdf-download-status" role="status"></p>
+  <details class="pdf-download-safari" hidden>
+    <summary>Open in Safari</summary>
+    <label for="pdf-answer-url">Copy this answer’s address and open it in Safari to download the PDF.</label>
+    <input id="pdf-answer-url" type="url" readonly>
+  </details>
+  <form method="dialog" class="dialog-actions">
+    <button class="small-button pdf-download-retry" type="button" hidden>Retry</button>
+    <button class="small-button pdf-download-share" type="button" hidden>Share PDF</button>
+    <a class="small-button pdf-download-save" download target="_blank" rel="noopener noreferrer" hidden>Save PDF</a>
+    <button class="small-button" autofocus>Close</button>
+  </form>
+</dialog>
+{%- endmacro %}

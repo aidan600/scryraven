@@ -388,9 +388,12 @@ def test_untrusted_question_title_answer_and_material_are_inert(tmp_path):
     assert not any(tag in {"img", "iframe", "object", "embed"} for tag, a in page.tags)
     assert not any(name.startswith("on") for tag, a in page.tags for name in a)
     scripts = [attrs for tag, attrs in page.tags if tag == "script"]
-    assert [script.get("src") for script in scripts] == [
+    trusted_scripts = [
         None, "/static/reading_room_tables.js", "/static/reading_room.js", "/static/reading_room_dictation.js",
     ]
+    if client.application.jinja_env.globals["answer_pdf_available"]:
+        trusted_scripts.append("/static/reading_room_pdf.js")
+    assert [script.get("src") for script in scripts] == trusted_scripts
     assert "<script>" + reading_room._READING_CONTEXT_SCRIPT + "</script>" in html
     assert page.pre == [attack]
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html

@@ -211,7 +211,9 @@ Saved selections remain available when the original site changes.
 
 Choose **Download PDF** beneath a completed answer to save its question, full
 answer, and linked Sources as a selectable PDF. **Print** opens the browser
-print flow. The hosted image includes the PDF renderer. Local installs can add
+print flow. In the installed iPhone web app, tap **Download PDF**, wait for
+**Share PDF**, then choose **Save to Files** in the share sheet. **Close**
+returns to the answer. The hosted image includes the PDF renderer. Local installs can add
 it with `python -m pip install -r requirements-pdf.txt` and the native Pango
 dependencies for their platform. See the
 [PDF setup and device check](docs/operator/IOS_SAFARI_PRINT_AID5.md).
