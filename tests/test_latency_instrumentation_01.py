@@ -92,7 +92,7 @@ def test_existing_model_usage_boundary_populates_safe_call_record(monkeypatch):
     assert [(item["contract"], item["model"], item["reasoning_effort"])
             for item in starts] == [
                 ("research", "gpt-6.1-terra", "medium"),
-                ("answer", "gpt-6.1-sol", "medium"),
+                ("answer", "gpt-6.2-sol", "medium"),
             ]
     assert {key: returned[0]["usage"][key] for key in (
         "input_tokens", "cached_input_tokens", "cache_write_tokens",

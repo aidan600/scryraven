@@ -211,6 +211,8 @@ def test_keyboard_reaches_offscreen_citations_and_keeps_preview_after_focus_scro
             page.keyboard.press(tab)  # Next citation in normal reading order.
             if page.locator('.sources-control').evaluate_all('(els) => els.includes(document.activeElement)'):
                 page.keyboard.press(tab)  # Continue past the closed source list.
+            if page.locator('.print-answer').evaluate_all('(els) => els.includes(document.activeElement)'):
+                page.keyboard.press(tab)
             if page.locator('.run-record > summary').evaluate_all('(els) => els.includes(document.activeElement)'):
                 # Run provenance remains an inspectable keyboard stop between answers.
                 record = page.locator('.run-record:has(> summary:focus)')

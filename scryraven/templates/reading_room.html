@@ -104,7 +104,7 @@
 <div class="run-selection">
   <button class="run-settings-open" type="button" aria-haspopup="dialog" aria-controls="run-settings-dialog"><span class="run-selection-backend">{{ {'chatgpt_plan':'ChatGPT plan', 'openai':'OpenAI API · API billed', 'openrouter':'OpenRouter · OpenRouter billed'}.get(settings.backend, 'Run settings') }}</span><span class="run-selection-roles">Research {{ settings.research_model }} · {{ settings.research_reasoning or 'model default' }} / Answer {{ settings.answer_model }} · {{ settings.answer_reasoning or 'model default' }}{% if settings.backend == 'openai' %} · {{ 'Choose processing' if initial_processing_profile|default(none) else ('Fast' if settings.api_processing == 'fast' else 'Standard') }}{% endif %}</span><span class="run-selection-edit">Edit</span></button>
 </div>
-<dialog class="run-settings-dialog" id="run-settings-dialog" aria-labelledby="run-settings-title" aria-describedby="run-settings-intro" data-billing-url="{{ url_for('update_billing_authorization') }}" data-billing-token="{{ form_token('billing') }}" data-billing-authorizations='{{ billing_authorizations|tojson }}' data-model-profiles='{{ run_settings_profiles|tojson }}'>
+<dialog class="run-settings-dialog" id="run-settings-dialog" aria-labelledby="run-settings-title" aria-describedby="run-settings-intro" data-billing-url="{{ url_for('update_billing_authorization') }}" data-billing-token="{{ form_token('billing') }}" data-billing-authorizations='{{ billing_authorizations|tojson }}' data-model-profiles='{{ run_settings_profiles|tojson }}' data-first-party-launch-profile='{{ first_party_launch_profile|tojson }}' data-default-answer-model="{{ default_answer_model }}">
   <div class="run-settings-heading"><div><p class="eyebrow">For your next question</p><h2 id="run-settings-title">Run settings</h2></div><button class="icon-button run-settings-close" type="button" aria-label="Close run settings">{{ icon('close') }}</button></div>
   <p class="settings-intro" id="run-settings-intro">Saved with your question. Changing these settings never changes an accepted run or its retry.</p>
   <label for="run-backend">Inference backend</label>
@@ -307,7 +307,19 @@
           {% endfor %}
           </div>
         </details>
+        <section class="print-sources" aria-labelledby="print-sources-{{ turn.number }}">
+          <h3 id="print-sources-{{ turn.number }}">Sources</h3>
+          <ul>
+          {% for source in turn.sources %}
+            <li id="print-{{ source.id }}">[{{ source.number }}]
+              {% if source.href %}<a href="{{ source.href }}" target="_blank" rel="noopener noreferrer">{{ source.title }}</a>{% else %}{{ source.title }}{% endif %}
+              {% if source.locator %}<span class="print-source-locator">{{ source.locator }}</span>{% endif %}
+            </li>
+          {% endfor %}
+          </ul>
+        </section>
         {% endif %}
+        <button class="text-button print-answer" type="button" hidden>Print / Save as PDF</button>
         {% if turn.activity_url %}{{ activity_archive(turn.activity_url) }}{% endif %}
         {{ run_record(turn.run_settings|default(none), turn.run_receipt|default(none)) }}
         {% if hosted_mode %}
@@ -378,7 +390,7 @@
 
 {% if not unavailable %}
 {% set preferences = hosted_preferences|default(run_settings) %}
-<dialog class="run-settings-dialog hosted-settings-dialog" id="{{ 'hosted' if hosted_mode else 'conversation' }}-settings-dialog" aria-labelledby="reading-room-settings-title" data-model-choices='{{ hosted_model_choices|default({})|tojson }}'>
+<dialog class="run-settings-dialog hosted-settings-dialog" id="{{ 'hosted' if hosted_mode else 'conversation' }}-settings-dialog" aria-labelledby="reading-room-settings-title" data-model-choices='{{ hosted_answer_model_choices|default({})|tojson }}'>
   <div class="run-settings-heading"><h2 id="reading-room-settings-title">Settings</h2><button class="icon-button" type="button" data-dialog-close aria-label="Close settings">{{ icon('close') }}</button></div>
   {% if not read_only %}
   {% if saved %}
@@ -409,14 +421,15 @@
     {% if identity.is_admin %}
     <div class="run-roles">
     {% for role, label in [('research', 'Research'), ('answer', 'Answer')] %}
+      {% set model_choices = hosted_answer_model_choices if role == 'answer' else hosted_model_choices %}
       <fieldset><legend>{{ label }}</legend>
         <label for="hosted-{{ role }}-model">{{ label }} model</label>
         <select id="hosted-{{ role }}-model" name="{{ role }}_model" data-hosted-role="{{ role }}" required>
-        {% for model_id, choice in hosted_model_choices.items() %}<option value="{{ model_id }}"{% if preferences[role + '_model'] == model_id %} selected{% endif %}>{{ choice.label }} · {{ model_id }}</option>{% endfor %}
+        {% for model_id, choice in model_choices.items() %}<option value="{{ model_id }}"{% if preferences[role + '_model'] == model_id %} selected{% endif %}>{{ choice.label }} · {{ model_id }}</option>{% endfor %}
         </select>
         <label for="hosted-{{ role }}-reasoning">{{ label }} reasoning effort</label>
         <select id="hosted-{{ role }}-reasoning" name="{{ role }}_reasoning">
-        {% for effort in hosted_model_choices.get(preferences[role + '_model'], {}).get('reasoning', []) %}<option value="{{ effort }}"{% if (preferences[role + '_reasoning'] or '') == effort %} selected{% endif %}>{{ effort|capitalize if effort else 'Model default' }}</option>{% endfor %}
+        {% for effort in model_choices.get(preferences[role + '_model'], {}).get('reasoning', []) %}<option value="{{ effort }}"{% if (preferences[role + '_reasoning'] or '') == effort %} selected{% endif %}>{{ effort|capitalize if effort else 'Model default' }}</option>{% endfor %}
         </select>
       </fieldset>
     {% endfor %}

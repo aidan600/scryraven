@@ -195,7 +195,7 @@ list and footer, with viewport-positioned action menus and explicit dismissal.
 Sidebar Settings works on desktop and mobile. The administrator can durably save
 exact approved OpenAI Research/Answer models and compatible reasoning efforts,
 plus the shared Standard/Fast processing choice, without restart. Initial hosted
-defaults are gpt-6.1-terra/medium Research, gpt-6.1-sol/medium Answer and Fast.
+defaults are gpt-6.1-terra/medium Research, gpt-6.2-sol/medium Answer and Fast.
 Environment role/tier configuration seeds the profile until administrator choices
 are saved; the saved protected SQLite profile then takes precedence on restart.
 Invited testers can save only their own Standard/Fast preference, applied with the
@@ -205,12 +205,12 @@ and explicit retries retain original settings when defaults change. Unknown
 historical settings still cannot be invented for retry. Billing authorization
 remains operator-owned without repeated confirmation.
 
-Approved exact hosted identifiers are gpt-6.1-terra, gpt-6.1-sol and gpt-6-luna.
-Static provider compatibility validation follows their official Responses API
-model documentation: low/medium/high/xhigh/max for all three, none for Terra/Luna,
-and model default by omitting effort. Sol/none, arbitrary identifiers, backends,
-credentials and altered technical limits are rejected. This is offline parameter
-validation, not proof of live model/account access or provider behavior.
+The hosted Research choices are gpt-6.1-terra, gpt-6.1-sol and gpt-6-luna. The
+hosted Answer choices also include gpt-6.2-sol. Settings accept
+low/medium/high/xhigh/max for each choice, none for Terra/Luna, and model default
+by omitting effort. Validation rejects Sol/none, arbitrary identifiers, backends,
+credentials and altered technical limits. These checks run offline. Live provider
+compatibility and account access for GPT-6.2 Sol remain unverified.
 
 Preferences retain the existing app_preferences table without a historical
 payload rewrite. Nullable ownership and durable UTC daily
@@ -262,6 +262,10 @@ ChatGPT personal plan, OpenAI API and OpenRouter. Both roles have suggestion men
 that open with the current exact identifier intact, plus editable custom identifiers.
 The first OpenRouter choice leaves neutral exact-model fields and links to its
 model catalog; configured backend profiles survive switching and later submissions.
+When the page opens on a last-used OpenRouter profile, switching to an unsaved
+first-party backend restores both roles' resolved first-party launch models and
+reasoning. A saved destination profile takes precedence. An OpenRouter launch
+uses shipped first-party model and reasoning defaults for this fallback.
 Model-default reasoning omits the parameter, while explicit supported
 efforts remain exact. OpenAI Standard explicitly requests `default`; Fast requests
 `fast`. The returned tier is recorded independently. Plan/OpenRouter omit API
@@ -275,11 +279,13 @@ backends, with no visible allowance control. External acquisition, wall-time and
 attention limits remain unchanged. The ceiling is a technical guard, not a dollar
 limit, usage target or credit-balance claim.
 
-The initial profile comes from the actual launch model/personal configuration;
-the personal file and shipped defaults remain unchanged. Last-used UI settings and
+The initial profile comes from the actual launch model or personal configuration,
+with GPT-6.2 Sol as the shipped Answer default. Last-used UI settings and
 per-backend model/processing profiles live separately in the existing session
-database preferences table, without a schema-version change. Each accepted job owns an
-immutable backend/role/effort/processing/run-limit snapshot. Per-job model clones
+database preferences table and take precedence when saved. Existing profiles
+retain their saved model IDs, including profiles that originally used the prior
+shipped default. Each accepted job owns an immutable
+backend/role/effort/processing/run-limit snapshot. Per-job model clones
 use the existing manager factory. Active and queued runs do not reread model
 preferences; retry copies the original snapshot, including older smaller resource
 allowances and exact Standard/Fast choices, and preserves newer preferences.
@@ -338,6 +344,15 @@ text-only analysis disclosure. Citation previews, original links and exact saved
 excerpts keep their existing paths. A focus/scroll race is repaired so a queued
 scroll event does not dismiss a preview while its visible citation or a preview
 action has keyboard focus; an offscreen citation still dismisses it.
+
+Each completed turn offers **Print / Save as PDF** through the browser. The
+selected question, full answer, citation numbers and linked sources print
+without the Reading Room controls. Saved-passage citations link to the printed
+source list. Links to original attached PDFs use the existing protected routes.
+An offline Windows Chromium check printed a three-page synthetic answer and
+verified its full text, table and code, public links and absence of app controls.
+Separate PDF checks verified saved-passage destinations and protected attachment
+links with page locators.
 
 The welcome headline is “Ask away.” with the public-sources subtitle. Narrow
 screens place the empty-state composer near the bottom. Text expansion and the
@@ -973,7 +988,7 @@ general reliability claim for the new contracts.
 Ordinary runtime selects semantic Research and Answer roles through
 `ModelConfig.research` and `ModelConfig.answer`. Tracked package-owned shipped
 defaults in `scryraven/model_roles.defaults.json` are GPT-6.1 Terra / medium / Fast for
-Research and GPT-6.1 Sol / medium / Fast for Answer. An optional complete per-user
+Research and GPT-6.2 Sol / medium / Fast for Answer. An optional complete per-user
 `model_roles.json` outside the checkout controls active ordinary model IDs,
 reasoning and service tiers. The precedence is explicit injected `ModelConfig`,
 then the user file, then shipped defaults. Windows uses

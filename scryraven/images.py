@@ -150,6 +150,6 @@ def image_input_blocks(images: tuple[SessionImage, ...] | list[SessionImage]) ->
 
 def supports_image_input(model: str) -> bool:
     """Conservative known multimodal models; never switch a selected model or route."""
-    return model in {"gpt-6.1-terra", "gpt-6.1-sol", "gpt-6.1-luna", "gpt-6-astra",
+    return model in {"gpt-6.1-terra", "gpt-6.1-sol", "gpt-6.2-sol", "gpt-6.1-luna", "gpt-6-astra",
                      "gpt-6-sol", "gpt-6-luna", "gpt-4o", "gpt-4.1", "gpt-4.1-mini",
                      "gpt-4.1-nano", "o3", "o4-mini"}

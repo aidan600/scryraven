@@ -10,6 +10,38 @@
   let tappedPreview = false;
   let excerptReturn = null;
   let suppressedFocus = null;
+  let printTurn = null;
+  let titleBeforePrint = null;
+  const citationPrintRestores = new Map();
+
+  reader.querySelectorAll('.print-answer').forEach(button => {
+    button.hidden = false;
+    button.addEventListener('click', () => {
+      printTurn?.classList.remove('is-printing');
+      printTurn = button.closest('.turn');
+      printTurn.classList.add('is-printing');
+      titleBeforePrint ??= document.title;
+      document.title = printTurn.querySelector('.question-block h2').textContent;
+      window.print();
+    });
+  });
+  window.addEventListener('beforeprint', () => {
+    // Saved-passage links in the reader become links to the printed source list.
+    (printTurn || reader).querySelectorAll('a.citation[data-source-id][href^="#"]').forEach(citation => {
+      if (!citationPrintRestores.has(citation)) citationPrintRestores.set(citation, citation.getAttribute('href'));
+      citation.setAttribute('href', '#print-' + citation.dataset.sourceId);
+    });
+  });
+  window.addEventListener('afterprint', () => {
+    citationPrintRestores.forEach((href, citation) => citation.setAttribute('href', href));
+    citationPrintRestores.clear();
+    printTurn?.classList.remove('is-printing');
+    printTurn = null;
+    if (titleBeforePrint !== null) {
+      document.title = titleBeforePrint;
+      titleBeforePrint = null;
+    }
+  });
 
   function closePreview(restoreFocus = false) {
     clearTimeout(dismissTimer);
@@ -353,10 +385,11 @@
     const microphone = askForm.querySelector('.dictation-toggle');
     authorizations = JSON.parse(settingsDialog.dataset.billingAuthorizations);
     const profiles = JSON.parse(settingsDialog.dataset.modelProfiles);
+    const defaultAnswerModel = settingsDialog.dataset.defaultAnswerModel;
     let previousBackend = backend.value;
-    const firstPartyProfile = {
-      research_model: previousBackend === 'openrouter' ? 'gpt-6.1-terra' : askForm.querySelector('#research-model').value,
-      answer_model: previousBackend === 'openrouter' ? 'gpt-6.1-sol' : askForm.querySelector('#answer-model').value,
+    const firstPartyProfile = previousBackend === 'openrouter' ? JSON.parse(settingsDialog.dataset.firstPartyLaunchProfile) : {
+      research_model: askForm.querySelector('#research-model').value,
+      answer_model: askForm.querySelector('#answer-model').value,
       research_reasoning: askForm.querySelector('#research-reasoning').value,
       answer_reasoning: askForm.querySelector('#answer-reasoning').value,
       api_processing: processing.value
@@ -375,7 +408,7 @@
         answer_reasoning: firstPartyProfile.answer_reasoning
       } : firstPartyProfile);
       profileFields.forEach(name => { askForm.elements[name].value = profile[name] || ''; });
-      if (backend.value === 'openai' && profile.api_processing !== undefined) processing.value = profile.api_processing;
+      if (backend.value === 'openai' && profile.api_processing != null) processing.value = profile.api_processing;
     }
     const billedBackend = () => backend.value === 'chatgpt_plan' ? 'openai' : backend.value;
     function updateAuthorization() {
@@ -416,7 +449,9 @@
         const input = askForm.querySelector('#' + role + '-model');
         input.placeholder = backend.value === 'openrouter' ? 'provider/model (exact identifier)' : 'Exact model identifier';
         const suggestions = askForm.querySelector('#' + role + '-suggestions');
-        suggestions.replaceChildren(...['', 'gpt-6.1-terra', 'gpt-6.1-sol', 'gpt-6-luna'].map(model => {
+        const models = ['', 'gpt-6.1-terra', 'gpt-6.1-sol', 'gpt-6-luna'];
+        if (role === 'answer' && !models.includes(defaultAnswerModel)) models.splice(1, 0, defaultAnswerModel);
+        suggestions.replaceChildren(...models.map(model => {
           const option = document.createElement('option');
           option.value = model ? (backend.value === 'openrouter' ? 'openai/' : '') + model : '';
           option.textContent = option.value || 'Choose a suggestion…';

@@ -212,7 +212,7 @@ def test_explicit_environment_never_reads_personal_model_configuration(tmp_path,
     assert config.run_settings.backend == "openai" and config.run_settings.physical_request_limit == 40
     assert config.run_settings.api_processing == "fast"
     assert config.run_settings.research_model == "gpt-6.1-terra" and config.run_settings.research_reasoning == "medium"
-    assert config.run_settings.answer_model == "gpt-6.1-sol" and config.run_settings.answer_reasoning == "medium"
+    assert config.run_settings.answer_model == "gpt-6.2-sol" and config.run_settings.answer_reasoning == "medium"
     assert config.submissions_per_day == 20 and config.forensic_days == 30
 
 

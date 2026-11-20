@@ -261,7 +261,7 @@ def test_actual_200_percent_zoom_settings_dialog_and_keyboard(settings_page, tmp
             assert page.get_by_label("Answer model identifier").input_value() == original
             page.keyboard.press("ArrowDown")
             page.keyboard.press("Enter")
-            assert page.get_by_label("Answer model identifier").input_value() == "gpt-6.1-terra"
+            assert page.get_by_label("Answer model identifier").input_value() == "gpt-6.2-sol"
             page.get_by_label("Answer model identifier").focus()
             assert page.get_by_label("Answer model identifier").evaluate("el => el.getBoundingClientRect().top >= 0 && el.getBoundingClientRect().bottom <= innerHeight")
             page.wait_for_timeout(150)

@@ -130,14 +130,16 @@ def image_blocks(payload):
 
 
 @pytest.mark.parametrize("backend", ["api", "chatgpt_plan"])
-def test_actual_image_input_reaches_both_roles_without_becoming_evidence(monkeypatch, backend):
+@pytest.mark.parametrize("use_defaults", [False, True])
+def test_actual_image_input_reaches_both_roles_without_becoming_evidence(monkeypatch, backend, use_defaults):
     image = session_image()
-    model, payloads = scripted(monkeypatch, [reply(decision()), reply(answer())], backend)
+    model, payloads = scripted(monkeypatch, [reply(decision()), reply(answer())], backend,
+                               config=ModelConfig() if use_defaults else None)
     result = _run_turn("What two colored shapes are in this attached image?", model=model,
                        images=(image,), image_ids=("I1",))
     assert result.image_ids == ("I1",)
     assert not result.evidence and not result.selected_evidence and not result.citations
-    assert [payload["model"] for payload in payloads] == ["gpt-6.1-terra", "gpt-6.1-sol"]
+    assert [payload["model"] for payload in payloads] == ["gpt-6.1-terra", "gpt-6.2-sol" if use_defaults else "gpt-6.1-sol"]
     for payload in payloads:
         block, = image_blocks(payload)
         prefix, data = block["image_url"].split(",", 1)

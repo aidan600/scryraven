@@ -262,24 +262,19 @@ def answer_html(result: Result | SessionTurn, *, source_prefix: str = "source-",
                     source_anchor = f"{source_prefix}{number}"
                     token.attrSet("data-source-id", source_anchor)
                     token.attrSet("aria-label", f"Source {number}: {source_label(citation)}")
-                    href = ""
                     if use.support and _validated_support(citation, use):
                         token.attrSet("href", f"#{_passage_anchor(source_anchor, use)}")
                         token.attrSet("data-saved-passage", "")
                         passage_label = "" if label == str(number) else f" {label}"
                         token.attrSet("aria-label",
                                       f"View saved passage{passage_label} for source {number}, {source_label(citation)}")
-                    elif citation.source_kind == "user_document":
-                        token.attrSet("data-preview-on-click", "")
-                        original = (document_hrefs or {}).get(citation.document_id or "", "")
-                        if safe_original_href(original):
-                            href = original
-                    elif safe_publication_url(citation.url):
-                        href = citation.url
-                    if href:
-                        token.attrSet("href", href)
-                        token.attrSet("target", "_blank")
-                        token.attrSet("rel", "noopener noreferrer")
+                    else:
+                        if citation.source_kind == "user_document":
+                            token.attrSet("data-preview-on-click", "")
+                        if href := citation_original_href(citation, (document_hrefs or {}).get(citation.document_id or "")):
+                            token.attrSet("href", href)
+                            token.attrSet("target", "_blank")
+                            token.attrSet("rel", "noopener noreferrer")
             elif safe_publication_url(destination):
                 token.attrSet("target", "_blank")
                 token.attrSet("rel", "noopener noreferrer")
@@ -301,6 +296,12 @@ def safe_publication_url(url: str) -> bool:
     except ValueError:
         allowed = False
     return allowed
+
+
+def citation_original_href(citation: Citation, document_href: str | None = None) -> str | None:
+    if citation.source_kind == "user_document":
+        return document_href if document_href and safe_original_href(document_href) else None
+    return citation.url if safe_publication_url(citation.url) else None
 
 
 def _source_link(url: str) -> str:
@@ -354,12 +355,11 @@ def _document_identity(citation: Citation, original_href: str | None) -> str:
 
 def citation_preview_html(citation: Citation, *, original_href: str | None = None) -> str:
     """Generated presentation metadata beside an unchanged original-source action."""
+    href = citation_original_href(citation, original_href)
     if citation.source_kind == "user_document":
         publisher = document_page_label(citation)
-        href = original_href if original_href and safe_original_href(original_href) else None
         action = "Open original PDF"
     else:
-        href = citation.url if safe_publication_url(citation.url) else None
         publisher = urlsplit(href).hostname if href else "Web source"
         action = "Open original publication"
     description = (f'<p class="citation-description">{escape(citation.description)}</p>'

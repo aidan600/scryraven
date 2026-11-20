@@ -43,7 +43,7 @@ python -m scryraven "What is the maximum allowed weight of a ten-pin bowling bal
 
 The ordinary runtime selects semantic Research and Answer roles. Shipped defaults
 in `scryraven/model_roles.defaults.json` configure GPT-6.1 Terra / medium / Fast for
-Research and GPT-6.1 Sol / medium / Fast for Answer. An optional per-user file
+Research and GPT-6.2 Sol / medium / Fast for Answer. An optional per-user file
 controls active settings; see [model configuration](#model-configuration).
 Exa supplies semantic Search. Research can select LinkUp Search for precision
 keyword lookup. External known-URL Read starts LinkUp Fetch
@@ -209,6 +209,10 @@ reading position. **Sources** also exposes each publication and its saved
 material through native disclosures. Long saved material can be expanded in full.
 Saved selections remain available when the original site changes.
 
+Choose **Print / Save as PDF** beneath a completed answer to print its question,
+full answer, inline citations and linked sources. Select **Save as PDF** in the
+browser print dialog to keep a copy.
+
 Each session's **…** menu offers **Rename** and **Delete**. Rename preserves all
 research and requires no model call. Delete requires confirmation and permanently
 removes that session and its saved material. History, reopening, and both actions
@@ -353,7 +357,7 @@ With both, eligible Reads can use both providers. ScryRaven does not load `.env`
 Ordinary code selects the semantic roles `research` and `answer` through
 `ModelConfig.research` and `ModelConfig.answer`. The package ships tracked defaults
 in `scryraven/model_roles.defaults.json`: Research is GPT-6.1 Terra / medium / Fast;
-Answer is GPT-6.1 Sol / medium / Fast. `built_in_model_config()` reads these shipped
+Answer is GPT-6.2 Sol / medium / Fast. `built_in_model_config()` reads these shipped
 values independently of local choices. Active ordinary settings use this precedence:
 explicit injected `ModelConfig` > complete per-user file > shipped defaults.
 
@@ -423,8 +427,9 @@ the product does not load `.env`. There is no automatic premium escalation or
 model fallback. Stateless Responses transports use strict structured output;
 no model has built-in web tools. The historical isolated fixed-packet GPT-6 Sol /
 medium / Fast screen showed a consistent latency benefit; Luna / high / Fast
-evidence was noisier. The shipped GPT-6.1 Sol / medium / Fast Answer configuration
-has offline verification only, with no isolated live quality or latency claim.
+evidence was noisier. Offline checks verify selection and request wiring for the
+shipped GPT-6.2 Sol / medium / Fast Answer configuration. Live compatibility,
+quality and latency for that configuration remain unverified here.
 Fast is a reversible default, not a universal speedup, and may cost more per token.
 There is no runtime cost estimator.
 
