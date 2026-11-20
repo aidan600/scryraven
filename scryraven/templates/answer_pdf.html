@@ -1,0 +1,11 @@
+{% from '_printed_answer.html' import printed_answer %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ turn.question }}</title>
+</head>
+<body>
+  {{ printed_answer(turn) }}
+</body>
+</html>

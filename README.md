@@ -209,9 +209,17 @@ reading position. **Sources** also exposes each publication and its saved
 material through native disclosures. Long saved material can be expanded in full.
 Saved selections remain available when the original site changes.
 
-Choose **Print / Save as PDF** beneath a completed answer to print its question,
-full answer, inline citations and linked sources. Select **Save as PDF** in the
-browser print dialog to keep a copy.
+Choose **Download PDF** beneath a completed answer to save its question, full
+answer, and linked Sources as a selectable PDF. **Print** opens the browser
+print flow. The hosted image includes the PDF renderer. Local installs can add
+it with `python -m pip install -r requirements-pdf.txt` and the native Pango
+dependencies for their platform. See the
+[PDF setup and device check](docs/operator/IOS_SAFARI_PRINT_AID5.md).
+
+On phone screens, prose-heavy tables open in **Read**, with a labeled section
+for each row. Choose **Table** to compare columns side by side; swipe within the
+table to see more columns while its row names stay visible. Compact numeric
+tables, wider screens and PDFs keep a grid.
 
 Each session's **…** menu offers **Rename** and **Delete**. Rename preserves all
 research and requires no model call. Delete requires confirmation and permanently

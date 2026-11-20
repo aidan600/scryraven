@@ -1,0 +1,13 @@
+{% macro print_sources(turn) -%}
+<section class="print-sources" aria-labelledby="print-sources-{{ turn.number }}">
+  <h3 id="print-sources-{{ turn.number }}">Sources</h3>
+  <ul>
+  {% for source in turn.sources %}
+    <li id="print-{{ source.id }}">[{{ source.number }}]
+      {% if source.href %}<a href="{{ source.href }}" target="_blank" rel="noopener noreferrer">{{ source.title }}</a>{% else %}{{ source.title }}{% endif %}
+      {% if source.locator %}<span class="print-source-locator">{{ source.locator }}</span>{% endif %}
+    </li>
+  {% endfor %}
+  </ul>
+</section>
+{%- endmacro %}

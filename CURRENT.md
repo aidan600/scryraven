@@ -345,14 +345,38 @@ excerpts keep their existing paths. A focus/scroll race is repaired so a queued
 scroll event does not dismiss a preview while its visible citation or a preview
 action has keyboard focus; an offscreen citation still dismisses it.
 
-Each completed turn offers **Print / Save as PDF** through the browser. The
-selected question, full answer, citation numbers and linked sources print
-without the Reading Room controls. Saved-passage citations link to the printed
-source list. Links to original attached PDFs use the existing protected routes.
-An offline Windows Chromium check printed a three-page synthetic answer and
-verified its full text, table and code, public links and absence of app controls.
-Separate PDF checks verified saved-passage destinations and protected attachment
-links with page locators.
+Completed turns offer **Download PDF** when the renderer is installed. The app
+renders the selected answer and Sources using the existing safe answer markup,
+local fonts, and print styles. The attachment contains selectable text, table
+grids, original-source links and internal citation destinations. The existing
+session access checks and no-store response policy apply. Rendering denies all
+resource fetching, uses one HTTP thread at a time per process, and creates no
+persistent export. The hosted image includes the renderer and fonts. **Print**
+retains the direct desktop action and the protected printable view on touch
+browsers. Original attachment links retain their existing access requirements.
+
+On iOS 27.0.1, the two Safari/Quartz PDFs from the combined preview retained
+the table and Sources but had no link annotations or internal destinations.
+Aidan opened a public source link in a pre-generated Chromium control on the
+iPhone. The internal jump was not verified on the device. The download route's
+own bytes now have deterministic content and annotation checks. The new native
+download and save flow still needs a device check. Setup and checks are recorded
+in `docs/operator/IOS_SAFARI_PRINT_AID5.md`.
+
+At phone widths, simple text-heavy answer tables default to Read: each row is a
+full-width section with its first cell as a heading and labeled remaining cells.
+A Read / Table switch keeps the same content and citation nodes. Table mode
+uses a contained horizontal scroller, a pinned row name and a visible offscreen
+column cue; one prose attribute fits beside its row name at representative phone
+widths. Compact numeric tables and wider screens retain a grid. Ambiguous
+headers, spanning cells and other complex structures use the scrollable fallback.
+The original table header relationships remain available to assistive technology;
+repeated visual labels are hidden from it. Without JavaScript the original grid
+remains available. Print and the protected PDF view retain their grid and contain
+one copy of the answer. The synthetic retest runner accepts `--tables` for full
+paragraph-length cheese comparisons with saved-passage and local source links.
+Validation and remaining native Safari/VoiceOver limits are recorded in
+`docs/operator/MOBILE_TABLES_AID7.md`.
 
 The welcome headline is “Ask away.” with the public-sources subtitle. Narrow
 screens place the empty-state composer near the bottom. Text expansion and the

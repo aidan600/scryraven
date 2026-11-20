@@ -389,7 +389,7 @@ def test_untrusted_question_title_answer_and_material_are_inert(tmp_path):
     assert not any(name.startswith("on") for tag, a in page.tags for name in a)
     scripts = [attrs for tag, attrs in page.tags if tag == "script"]
     assert [script.get("src") for script in scripts] == [
-        None, "/static/reading_room.js", "/static/reading_room_dictation.js",
+        None, "/static/reading_room_tables.js", "/static/reading_room.js", "/static/reading_room_dictation.js",
     ]
     assert "<script>" + reading_room._READING_CONTEXT_SCRIPT + "</script>" in html
     assert page.pre == [attack]

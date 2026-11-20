@@ -10,6 +10,7 @@ from base64 import b64encode
 from collections.abc import Callable
 from dataclasses import asdict
 from hashlib import sha256
+from io import BytesIO
 from pathlib import Path
 from tempfile import SpooledTemporaryFile
 from threading import Lock
@@ -23,7 +24,7 @@ from markupsafe import Markup
 from werkzeug.exceptions import HTTPException, SecurityError
 from werkzeug.serving import WSGIRequestHandler, make_server
 
-from scryraven import dictation
+from scryraven import answer_pdf, dictation
 from scryraven.activity_journal import ActivityJournal
 from scryraven.documents import (
     ALREADY_ATTACHED_NOTICE,
@@ -142,6 +143,8 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
     """Inject only the existing store and ResearchSession's ordinary I/O options."""
     app = Flask(__name__)
     app.jinja_env.globals["reading_context_script"] = Markup(_READING_CONTEXT_SCRIPT)
+    app.jinja_env.globals["answer_pdf_available"] = answer_pdf.available()
+    pdf_slot = Lock()
     # Multipart questions have bounded file bodies; text fields stay small.
     app.config.update(MAX_CONTENT_LENGTH=MAX_ATTACHMENT_REQUEST_BYTES + _FORM_BODY_BYTES,
                       MAX_FORM_MEMORY_SIZE=_FORM_BODY_BYTES, MAX_FORM_PARTS=32,
@@ -753,6 +756,52 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
     @app.get("/sessions/<session_id>")
     def open_session(session_id):
         return page(session_id)
+
+    def printable_turn(session_id, turn_index):
+        try:
+            saved = custody.load(session_id)
+        except SessionStoreError as exc:
+            abort(404 if exc.code == "session_not_found" else 503)
+        if not 1 <= turn_index <= len(saved.state.turns):
+            abort(404)
+        turn = saved.state.turns[turn_index - 1]
+        document_hrefs = {document.document_id: url_for(
+            "original_pdf", session_id=session_id, document_id=document.document_id,
+        ) for document in saved.documents}
+        prefix = f"turn-{turn_index}-source-"
+        return {
+            "number": turn_index, "question": turn.question, "posture": turn.posture,
+            "answer": Markup(answer_html(turn, source_prefix="print-" + prefix)),
+            "source_free": source_free_supported(turn),
+            "operating_bound": turn.stop_reason == "research_bound",
+            "sources": [{"number": c.number, "id": prefix + str(c.number), "title": source_label(c),
+                         "href": citation_original_href(c, document_hrefs.get(c.document_id)),
+                         "locator": document_page_label(c) if c.source_kind == "user_document" else None}
+                        for c in turn.citations],
+        }
+
+    @app.get("/sessions/<session_id>/turns/<int:turn_index>/print")
+    def print_answer(session_id, turn_index):
+        return render_template("print_answer.html", session_id=session_id, turn=printable_turn(session_id, turn_index))
+
+    @app.get("/sessions/<session_id>/turns/<int:turn_index>/pdf")
+    def download_answer_pdf(session_id, turn_index):
+        # Admit one render at a time, leaving the other HTTP threads free.
+        if not pdf_slot.acquire(blocking=False):
+            return app.response_class("Another PDF is being prepared. Please try again shortly.\n",
+                                      status=503, mimetype="text/plain", headers={"Retry-After": "3"})
+        try:
+            turn = printable_turn(session_id, turn_index)
+            markup = render_template("answer_pdf.html", turn=turn)
+            origin = hosted.origin if hosted is not None else request.url_root
+            data = answer_pdf.render_pdf(markup, base_url=origin)
+        except answer_pdf.PdfUnavailable:
+            return app.response_class("PDF download is unavailable. Use Print in the Reading Room.\n",
+                                      status=503, mimetype="text/plain")
+        finally:
+            pdf_slot.release()
+        return send_file(BytesIO(data), mimetype="application/pdf", as_attachment=True, conditional=False,
+                         download_name=f"scryraven-answer-{turn_index}.pdf")
 
     def claim(action, session_id=""):
         return forms.claim(request.form.get("form_token", ""), action, session_id, principal=principal())

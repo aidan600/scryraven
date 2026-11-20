@@ -1,0 +1,32 @@
+{% from '_printed_answer.html' import printed_answer %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ turn.question }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='reading_room.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='reading_room_print.css') }}">
+  <script src="{{ url_for('static', filename='reading_room_print.js') }}" defer></script>
+</head>
+<body class="print-document">
+  <nav class="print-toolbar" aria-label="Print answer">
+    <a href="{{ url_for('open_session', session_id=session_id, _anchor='turn-' ~ turn.number) }}">Back to answer</a>
+    <button class="small-button" type="button" hidden>Print</button>
+    {% if answer_pdf_available %}
+    <a class="text-button" href="{{ url_for('download_answer_pdf', session_id=session_id, turn_index=turn.number) }}">Download PDF</a>
+    {% else %}
+    <p>On iPhone or iPad, you can also print from Safari’s Share menu.</p>
+    {% endif %}
+  </nav>
+  <main class="workspace">
+    <div class="workspace-main">
+      <div class="reading-scroll">
+        <div class="reading-content">
+          {{ printed_answer(turn) }}
+        </div>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

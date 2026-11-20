@@ -241,6 +241,8 @@ def answer_html(result: Result | SessionTurn, *, source_prefix: str = "source-",
 
     tokens = markdown.parse("".join(parts))
     for block in tokens:
+        if block.type == "th_open":
+            block.attrSet("scope", "col")
         if block.type in {"th_open", "td_open"}:
             alignment = (block.attrGet("style") or "").removeprefix("text-align:")
             if alignment in {"left", "center", "right"}:
