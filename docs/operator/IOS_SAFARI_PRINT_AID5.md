@@ -1,0 +1,155 @@
+# AID-5: iOS Safari answer printing
+
+The reported phone behavior and iOS version are unknown. There is no native
+iPhone reproduction or confirmed native root cause in this task.
+
+## Diagnosis and repair
+
+The original action synchronously called `window.print()` in the Reading Room;
+there was no popup or awaited work. Printing depended on temporary selected-turn
+state, `beforeprint` link rewriting, `afterprint` cleanup, and print styles
+unwrapping the viewport-height reader. These are dependency seams, not evidence
+of which seam failed on the reported phone. Playwright PDF generation and
+synthetic print events cannot reproduce the iOS print sheet.
+
+Touch browsers, selected by the existing `(hover: none)` capability, now follow a
+normal link to an owner-protected representation of one committed answer.
+Citation destinations and Sources exist before any print events. The standalone
+page has normal document scrolling, an explicit print button, native Safari
+Share > Print instructions, and Back to answer. It does not auto-print or open a
+popup. Without JavaScript the page and native Safari controls remain available.
+Mouse/keyboard desktop printing retains its direct action and shared print CSS.
+Other no-hover devices also use the printable document; this is not an iOS
+user-agent test.
+
+The new GET uses the existing session authorization and no-store/CSP headers.
+It does not change ownership, generate a public share link, persist an export,
+call a provider, or change the separate Sources scroll behavior in AID-6.
+Inline citations in the standalone document go to its visible Sources list;
+original publications and protected attachment links remain available there.
+An attachment link in a saved PDF continues to require the existing private
+application access.
+
+## Available checks
+
+The synthetic fixture in `tests/test_reading_room_print_browser.py` creates two
+committed turns through `ResearchSession` with all model/provider I/O replaced.
+The long second answer has 25 paragraphs, a wide table, wrapped code, and two
+sources. Linux Chromium 151.0.7922.173 produced a readable three-page PDF with
+all markers, internal citation destinations and original-source links, excluding
+the other turn and app controls. Screenshots and first/last PDF pages were
+visually reviewed. Desktop direct printing and its title/link restoration passed.
+Touch checks at 390 × 844 cover navigation, native-anchor fallback without
+JavaScript, absent `beforeprint`, early `afterprint`, repeated print invocation,
+protected PDF access with locator text, and return to the answer. Stubs cover
+dispatch and state stability, not native print UI cancellation or saving.
+
+Focused command (task-local Python environment):
+
+```sh
+PLAYWRIGHT_BROWSERS_PATH=/tmp/scryraven-browsers .venv/bin/python -m pytest tests/test_reading_room_print_browser.py tests/test_hosted_reading_room.py -q -rs
+```
+
+Result: **20 passed, 4 skipped** in the final focused selection. The four skips are WebKit parameterizations;
+the environment denied the Playwright WebKit download hosts. Chromium was the
+installed `/usr/bin/chromium`, selected through task-local Playwright cache
+symlinks. No browser installation or cache files are committed.
+
+The hosted checks exercise signed synthetic identities, ordinary ownership and
+administrator read access, foreign/unauthenticated denial, invalid/empty turn
+selection, privacy headers, and absence of session/job mutations. No live model,
+research-provider or production answer data was used.
+
+The broad command `PLAYWRIGHT_BROWSERS_PATH=/tmp/scryraven-browsers
+.venv/bin/python -m pytest -q` returned **1,628 passed, 22 failed, 67 skipped**
+in 245.89 seconds. It is not a green full-suite result. All 22 failing checks
+were also observed in an archived, unchanged `main` snapshot at
+`5f6074c1702b06657e8b9fcf2f5f23976cf0fe61`: missing synthetic plan configuration,
+strict floating-point timeout assertions, a completed-answer acknowledgment
+request aborted during navigation, and both zoom checks timing out before their
+extension service worker starts. The queue UI check failed only at the
+request-error assertion (`/viewed: net::ERR_ABORTED`), initially passed in an
+isolated main run, then reproduced on main in another isolated run. This is
+an intermittent baseline failure; no full main-suite rerun is claimed. No
+unrelated repair is included.
+The final focused print/hosted selection also passed after standalone CSS was
+explicitly made independent of `:has()` for normal document flow. Ruff,
+compilation, both JavaScript syntax checks, whitespace checks and all six
+configured pre-commit hooks passed.
+
+## Run locally with synthetic data
+
+If using the supplied Git bundle, first import it into a clean checkout that
+contains base commit `5f6074c1702b06657e8b9fcf2f5f23976cf0fe61`. Git bundle
+verification checks that prerequisite; a normal `git fetch origin main` can
+retrieve it without publishing anything. In PowerShell, replacing the bundle
+path with the downloaded file:
+
+```powershell
+git bundle verify C:\Downloads\aid-5-candidate.bundle
+git fetch C:\Downloads\aid-5-candidate.bundle refs/heads/codex/aid-5-ios-safari-print:refs/heads/codex/aid-5-ios-safari-print
+git switch codex/aid-5-ios-safari-print
+git rev-parse HEAD
+```
+
+Compare HEAD with the exact candidate SHA supplied alongside the bundle. These
+commands create only a local branch; no remote branch or PR is needed.
+
+From the candidate checkout, use the project's development Python environment.
+For example, in Windows PowerShell (replace the example address with the PC's
+private Wi-Fi IPv4 address shown by `ipconfig`):
+
+```powershell
+py -m venv C:\tmp\scryraven-aid5-venv
+C:\tmp\scryraven-aid5-venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-dev.txt
+C:\tmp\scryraven-aid5-venv\Scripts\python.exe tests\serve_print_fixture.py --host 192.168.1.100 --port 7332
+```
+
+On macOS/Linux, use `python3 -m venv /tmp/scryraven-aid5-venv`, then the
+environment's `bin/python` for those install/run commands. For a desktop-only
+check, omit `--host` to bind loopback.
+
+The fixture prints the exact conversation URL to open in Safari on an iPhone
+on the same private Wi-Fi. Allow local Python traffic through the PC's private
+network firewall if prompted. Use the explicit LAN address; the phone's
+`localhost` refers to the phone. This does not require deployment, a public
+tunnel, or any Railway/Cloudflare change.
+
+Each start creates a fresh temporary database containing only generated
+synthetic answers; no existing database path is accepted. Model/provider I/O is
+replaced, dictation is unavailable, and the wrapper permits only read requests.
+It includes local synthetic source pages so PDF source links can be tested
+without external services. The fixture alone trusts the selected private LAN
+address; production host/auth settings are unchanged. Stop with Ctrl+C.
+The actual runner was checked on Linux loopback with Chromium touch emulation:
+reader/print/source GETs, HEAD, rejected writes/foreign Host, unavailable
+dictation, and Ctrl+C temporary-directory cleanup passed. Windows launch and
+LAN reachability from a physical iPhone remain for the device check.
+
+## Native iPhone verification: pending
+
+No iPhone or native Safari print/save interface was available. Desktop WebKit,
+a mobile viewport, PDF generation and stubs would not satisfy this check. The
+previous native Windows smoke is not repeated or made a permanent release gate.
+
+Using the local synthetic fixture above:
+
+1. Record the iPhone model and exact iOS/Safari version. Open the ordinary
+   Reading Room in Safari and a completed long synthetic answer with multiple
+   sources and an earlier turn.
+2. Tap Print / Save as PDF. Confirm the printable page contains only that
+   question/answer, the final paragraph, table/code and linked Sources.
+3. Try its print button; record whether the native sheet opens. Also use
+   Safari Share > Print. Expand the PDF preview if required, then use Share >
+   Save to Files (control placement varies with iOS).
+4. Reopen the saved PDF from Files. Check every page, the end marker and readable
+   wrapping. Test inline citation destinations and both local source links
+   while the fixture server is still running. Protected attachment routes and
+   locator text have separate automated coverage; this fixture has web sources.
+5. Cancel a print attempt, try again, then use Back to answer and repeat with
+   the earlier answer. Confirm ordinary reading remains usable.
+
+Record the exact stage and observed UI for any failure. Do not infer the original
+report's failure from these new observations. Publication is paused pending the
+requested device check; no branch has been pushed and no PR has been opened.
+This task neither deploys nor changes hosting configuration.

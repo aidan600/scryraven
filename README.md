@@ -212,6 +212,9 @@ Saved selections remain available when the original site changes.
 Choose **Print / Save as PDF** beneath a completed answer to print its question,
 full answer, inline citations and linked sources. Select **Save as PDF** in the
 browser print dialog to keep a copy.
+Touch browsers open a printable answer first. On iPhone or iPad, use its print
+button or Safari’s **Share → Print**, expand the preview, then choose
+**Share → Save to Files**. **Back to answer** returns to the conversation.
 
 Each session's **…** menu offers **Rename** and **Delete**. Rename preserves all
 research and requires no model call. Delete requires confirmation and permanently

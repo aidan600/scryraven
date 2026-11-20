@@ -754,6 +754,32 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
     def open_session(session_id):
         return page(session_id)
 
+    @app.get("/sessions/<session_id>/turns/<int:turn_index>/print")
+    def print_answer(session_id, turn_index):
+        # A stable document also supports Safari's native Share > Print flow.
+        # The ordinary session authorization and response headers apply here.
+        try:
+            saved = custody.load(session_id)
+        except SessionStoreError as exc:
+            abort(404 if exc.code == "session_not_found" else 503)
+        if not 1 <= turn_index <= len(saved.state.turns):
+            abort(404)
+        turn = saved.state.turns[turn_index - 1]
+        document_hrefs = {document.document_id: url_for(
+            "original_pdf", session_id=session_id, document_id=document.document_id,
+        ) for document in saved.documents}
+        prefix = f"turn-{turn_index}-source-"
+        return render_template("print_answer.html", session_id=session_id, turn={
+            "number": turn_index, "question": turn.question, "posture": turn.posture,
+            "answer": Markup(answer_html(turn, source_prefix="print-" + prefix)),
+            "source_free": source_free_supported(turn),
+            "operating_bound": turn.stop_reason == "research_bound",
+            "sources": [{"number": c.number, "id": prefix + str(c.number), "title": source_label(c),
+                         "href": citation_original_href(c, document_hrefs.get(c.document_id)),
+                         "locator": document_page_label(c) if c.source_kind == "user_document" else None}
+                        for c in turn.citations],
+        })
+
     def claim(action, session_id=""):
         return forms.claim(request.form.get("form_token", ""), action, session_id, principal=principal())
 

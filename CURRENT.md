@@ -345,14 +345,27 @@ excerpts keep their existing paths. A focus/scroll race is repaired so a queued
 scroll event does not dismiss a preview while its visible citation or a preview
 action has keyboard focus; an offscreen citation still dismisses it.
 
-Each completed turn offers **Print / Save as PDF** through the browser. The
-selected question, full answer, citation numbers and linked sources print
-without the Reading Room controls. Saved-passage citations link to the printed
-source list. Links to original attached PDFs use the existing protected routes.
-An offline Windows Chromium check printed a three-page synthetic answer and
-verified its full text, table and code, public links and absence of app controls.
-Separate PDF checks verified saved-passage destinations and protected attachment
-links with page locators.
+Each completed turn offers **Print / Save as PDF** through the browser. Desktop
+keeps its direct print action. Touch browsers (the no-hover capability) open a
+protected printable document containing only the selected committed question,
+full answer, citation numbers, limitations and linked Sources. The document uses
+normal flow with links prepared before printing, independent of print events,
+and remains usable without JavaScript. Its explicit print button and Safari's
+native Share > Print can be used to save a copy. No public share link, provider
+request or persistent export is created. Original attachments keep their existing
+protected routes and page-locator text.
+
+Linux Chromium 151.0.7922.173 checks verified complete three-page synthetic PDFs,
+table/code text, internal citation destinations, original-source links, omitted
+app controls, desktop cleanup and touch navigation/return with and without
+JavaScript. Focused hosted checks verified owner/admin access, foreign and
+unauthenticated denial, no-store/CSP headers and no session/job mutation.
+Native iPhone Safari save-to-Files remains unverified; AID-5's original failure
+point and iOS version remain unknown. WebKit could not be installed in this task
+because its download hosts were denied by the environment network policy.
+The prior Windows print smoke is historical evidence, not a new release gate.
+Device verification steps and the bounded diagnosis are in
+`docs/operator/IOS_SAFARI_PRINT_AID5.md`.
 
 The welcome headline is “Ask away.” with the public-sources subtitle. Narrow
 screens place the empty-state composer near the bottom. Text expansion and the

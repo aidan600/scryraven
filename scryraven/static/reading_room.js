@@ -15,8 +15,11 @@
   const citationPrintRestores = new Map();
 
   reader.querySelectorAll('.print-answer').forEach(button => {
-    button.hidden = false;
-    button.addEventListener('click', () => {
+    button.addEventListener('click', event => {
+      // Touch browsers get a stable page for native Share > Print as well as
+      // an explicit print button. Desktop keeps its direct print action.
+      if (withoutHover.matches || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+      event.preventDefault();
       printTurn?.classList.remove('is-printing');
       printTurn = button.closest('.turn');
       printTurn.classList.add('is-printing');

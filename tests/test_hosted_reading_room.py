@@ -67,6 +67,7 @@ def post(room, config, key, path, data, email="alice@example.test", **kwargs):
 def test_every_data_route_rejects_unauthenticated_and_forged_identity(room, config):
     app, _, alice, _ = room
     paths = ["/", "/jobs/status", "/admin", f"/sessions/{alice}",
+             f"/sessions/{alice}/turns/1/print",
              f"/sessions/{alice}/documents/D1/original", f"/sessions/{alice}/images/I1/preview",
              f"/sessions/{alice}/images/I1/original", f"/sessions/{alice}/delete",
              f"/admin/sessions/{alice}/export"]
@@ -85,7 +86,7 @@ def test_every_data_route_rejects_unauthenticated_and_forged_identity(room, conf
 
 def test_foreign_session_routes_and_jobs_are_undiscoverable(room, config, key):
     _, _, alice, bob = room
-    for suffix in ("", "/delete", "/documents/D1/original", "/images/I1/preview", "/images/I1/original"):
+    for suffix in ("", "/delete", "/turns/1/print", "/documents/D1/original", "/images/I1/preview", "/images/I1/original"):
         assert get(room, config, key, f"/sessions/{alice}{suffix}", email="bob@example.test").status_code == 404
     for suffix in ("/ask", "/rename", "/delete", f"/jobs/{'c' * 32}/retry"):
         assert post(room, config, key, f"/sessions/{alice}{suffix}", {}, email="bob@example.test").status_code == 404
@@ -93,6 +94,31 @@ def test_foreign_session_routes_and_jobs_are_undiscoverable(room, config, key):
     assert bob in response.text and alice not in response.text and "Alice private" not in response.text
     assert get(room, config, key, "/admin").status_code == 404
     assert get(room, config, key, f"/admin/sessions/{bob}/export").status_code == 404
+
+
+def test_print_view_keeps_answer_private_and_requires_a_completed_turn(room, config, key):
+    _, store, alice, bob = room
+    saved = store.load(alice)
+    path = f"/sessions/{alice}/turns/1/print"
+    for email in ("alice@example.test", config.admin_email):
+        response = get(room, config, key, path, email=email)
+        assert response.status_code == 200
+        assert saved.state.turns[0].question in response.text
+        assert "the standard specifies 12 kPa" in response.text
+        assert 'href="https://example.test/pressure-standard"' in response.text
+        assert "Bob private title" not in response.text and bob not in response.text
+        assert 'class="ask-form"' not in response.text
+        assert response.headers["Cache-Control"] == "no-store"
+        assert response.headers["Referrer-Policy"] == "same-origin"
+        assert response.headers["X-Frame-Options"] == "DENY"
+        assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
+    for index in (0, 2, 999999):
+        response = get(room, config, key, f"/sessions/{alice}/turns/{index}/print")
+        assert response.status_code == 404
+        assert "the standard specifies 12 kPa" not in response.text
+    assert get(room, config, key, f"/sessions/{bob}/turns/1/print", email="bob@example.test").status_code == 404
+    assert store.load(alice) == saved
+    assert not store.list_jobs()
 
 
 def test_answer_view_is_idempotent_and_bound_to_owner_session_and_completed_job(room, config, key):
