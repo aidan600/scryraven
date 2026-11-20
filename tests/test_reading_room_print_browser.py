@@ -73,8 +73,8 @@ def make_print_fixture(database, *, source_urls=SOURCE_URLS):
 def test_print_completed_answer_spans_pages_and_preserves_source_links(browser, tmp_path):
     app, path = make_print_fixture(tmp_path / "print.sqlite3")
     with running_room(app) as base, page_at(browser, base + path) as page:
-        button = page.locator('#turn-2').get_by_role('link', name='Print / Save as PDF')
-        assert page.get_by_role('link', name='Print / Save as PDF').count() == 2
+        button = page.locator('#turn-2').get_by_role('link', name='Print')
+        assert page.get_by_role('link', name='Print').count() == 2
         assert page.locator('.print-sources').last.is_hidden()
         page_title = page.title()
         page.evaluate('''() => {
@@ -133,7 +133,7 @@ def test_empty_reading_room_has_no_answer_print_ui(tmp_path):
     app = create_app(database=tmp_path / 'empty.sqlite3', session_options={"model": no_io, "search": no_io, "fetch": no_io})
     markup = app.test_client().get('/').get_data(as_text=True)
     assert 'print-sources' not in markup
-    assert 'Print / Save as PDF' not in markup
+    assert 'class="answer-export"' not in markup
 
 
 def test_print_preserves_research_limitations(tmp_path):
@@ -150,7 +150,7 @@ def test_print_preserves_research_limitations(tmp_path):
 def test_touch_print_opens_complete_stable_document(print_browser, tmp_path, javascript):
     app, path = make_print_fixture(tmp_path / 'touch-print.sqlite3')
     with running_room(app) as base, page_at(print_browser, base + path, mobile=True, javascript=javascript) as page:
-        page.locator('#turn-2').get_by_role('link', name='Print / Save as PDF').click()
+        page.locator('#turn-2').get_by_role('link', name='Print').click()
         assert page.url == base + path + '/turns/2/print'
         assert page.title() == PRINT_QUESTION
         assert page.locator('.print-toolbar').is_visible()
@@ -160,7 +160,7 @@ def test_touch_print_opens_complete_stable_document(print_browser, tmp_path, jav
         assert PRINT_OPENING in text and PRINT_END in text and OTHER_QUESTION not in text
         assert all(f'Survey location {number:02}.' in text for number in range(1, 26))
         assert all(marker in text for marker in (TABLE_END, CODE_END))
-        assert 'Save to Files' in page.locator('.print-toolbar').inner_text()
+        assert page.locator('.print-toolbar').get_by_role('link', name='Back to answer', exact=True).is_visible()
         assert page.locator('.print-sources a').evaluate_all('(links) => links.map(a => a.href)') == list(SOURCE_URLS)
         assert page.locator('.reading-scroll').evaluate('(el) => getComputedStyle(el).overflowY') == 'visible'
 
@@ -175,7 +175,7 @@ def test_touch_print_opens_complete_stable_document(print_browser, tmp_path, jav
                 };
             }''')
             for _ in range(2):
-                page.get_by_role('button', name='Print / Save as PDF').click()
+                page.get_by_role('button', name='Print').click()
             assert page.evaluate('window.printCalls') == 2
             assert page.title() == PRINT_QUESTION
         page.emulate_media(media='print')

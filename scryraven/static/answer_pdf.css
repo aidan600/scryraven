@@ -1,0 +1,88 @@
+@page {
+  size: Letter portrait;
+  margin: 16mm 17mm;
+}
+
+body {
+  margin: 0;
+  color: #303a3d;
+  font: 11pt/1.5 Georgia, serif;
+  overflow-wrap: anywhere;
+  orphans: 3;
+  widows: 3;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  color: #222b2f;
+  font-family: sans-serif;
+  line-height: 1.3;
+  break-after: avoid;
+}
+h1 { font-size: 17pt; }
+h2 { font-size: 15pt; }
+h3 { font-size: 13pt; }
+h4, h5, h6 { font-size: 11pt; }
+
+.question-block {
+  margin: 0 0 14pt;
+  padding-bottom: 8pt;
+  border-bottom: 1pt solid #bbb;
+  break-after: avoid;
+}
+.question-block h2 { font-size: 17pt; margin: 0; white-space: pre-wrap; }
+.answer > :first-child { margin-top: 0; }
+.answer p { margin: 0 0 9pt; }
+a { color: #244f64; text-decoration: underline; }
+.citation { font: 600 9pt sans-serif; white-space: nowrap; }
+
+blockquote {
+  margin: 10pt 0;
+  padding-left: 10pt;
+  border-left: 2pt solid #bacacd;
+  color: #52626b;
+}
+blockquote p:last-child { margin-bottom: 0; }
+hr { border: 0; border-top: 1pt solid #dce4e3; margin: 12pt 0; }
+code { font: .9em monospace; background: #eef0ec; }
+pre {
+  margin: 10pt 0;
+  padding: 8pt;
+  background: #eef0ec;
+  font: 9pt/1.45 monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+pre code { font-size: inherit; background: transparent; }
+
+.answer table {
+  width: 100%;
+  margin: 12pt 0;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font: 9pt/1.45 sans-serif;
+}
+.answer th, .answer td {
+  padding: 5pt;
+  text-align: left;
+  vertical-align: top;
+  border: .5pt solid #dce4e3;
+}
+.answer th { background: #eef1ed; }
+.answer .align-left { text-align: left; }
+.answer .align-center { text-align: center; }
+.answer .align-right { text-align: right; }
+
+.research-limitation, .source-free-note, .operating-bound-note, .print-sources {
+  font-size: 10pt;
+}
+.research-limitation {
+  margin: 10pt 0;
+  padding-left: 8pt;
+  border-left: 2pt solid #c5c7b4;
+}
+.research-limitation p { margin: 3pt 0 0; }
+.print-sources { margin-top: 16pt; }
+.print-sources h3 { margin: 0 0 6pt; font-size: 12pt; }
+.print-sources ul { list-style: none; margin: 0; padding: 0; }
+.print-sources li { margin-bottom: 4pt; break-inside: avoid; }
+.print-source-locator { display: block; }

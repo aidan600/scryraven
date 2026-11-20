@@ -1,4 +1,4 @@
-{% from '_print_sources.html' import print_sources %}
+{% from '_printed_answer.html' import printed_answer %}
 <!doctype html>
 <html lang="en">
 <head>
@@ -12,23 +12,18 @@
 <body class="print-document">
   <nav class="print-toolbar" aria-label="Print answer">
     <a href="{{ url_for('open_session', session_id=session_id, _anchor='turn-' ~ turn.number) }}">Back to answer</a>
-    <button class="small-button" type="button" hidden>Print / Save as PDF</button>
-    <p>On iPhone or iPad, use Safari’s Share → Print, then expand the preview and use Share → Save to Files to save a PDF.</p>
+    <button class="small-button" type="button" hidden>Print</button>
+    {% if answer_pdf_available %}
+    <a class="text-button" href="{{ url_for('download_answer_pdf', session_id=session_id, turn_index=turn.number) }}">Download PDF</a>
+    {% else %}
+    <p>On iPhone or iPad, you can also print from Safari’s Share menu.</p>
+    {% endif %}
   </nav>
   <main class="workspace">
     <div class="workspace-main">
       <div class="reading-scroll">
         <div class="reading-content">
-          <section class="turn">
-            <div class="question-block"><h2>{{ turn.question }}</h2></div>
-            <div class="answer">{{ turn.answer }}</div>
-            {% if turn.source_free %}<p class="source-free-note">No external sources were used for this answer.</p>{% endif %}
-            {% if turn.operating_bound %}<p class="operating-bound-note">Research reached its operating limit; this answer uses the material gathered by then.</p>{% endif %}
-            {% if turn.posture != 'supported' %}
-            <aside class="research-limitation"><strong>Research limitation</strong><p>{{ 'The available research did not establish an answer to this question.' if turn.posture == 'unable' else 'The available research did not establish every part of the question.' }}</p></aside>
-            {% endif %}
-            {% if turn.sources %}{{ print_sources(turn) }}{% endif %}
-          </section>
+          {{ printed_answer(turn) }}
         </div>
       </div>
     </div>

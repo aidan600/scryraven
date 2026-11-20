@@ -2,6 +2,7 @@
 !Dockerfile
 !requirements.txt
 !requirements-hosted.txt
+!requirements-pdf.txt
 !core/
 !core/**
 !scryraven/

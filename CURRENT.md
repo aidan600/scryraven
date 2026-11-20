@@ -345,30 +345,23 @@ excerpts keep their existing paths. A focus/scroll race is repaired so a queued
 scroll event does not dismiss a preview while its visible citation or a preview
 action has keyboard focus; an offscreen citation still dismisses it.
 
-Each completed turn offers **Print / Save as PDF** through the browser. Desktop
-keeps its direct print action. Touch browsers (the no-hover capability) open a
-protected printable document containing only the selected committed question,
-full answer, citation numbers, limitations and linked Sources. The document uses
-normal flow with links prepared before printing, independent of print events,
-and remains usable without JavaScript. Its explicit print button and Safari's
-native Share > Print can be used to save a copy. No public share link, provider
-request or persistent export is created. Original attachments keep their existing
-protected routes and page-locator text.
+Completed turns offer **Download PDF** when the renderer is installed. The app
+renders the selected answer and Sources using the existing safe answer markup,
+local fonts, and print styles. The attachment contains selectable text, table
+grids, original-source links and internal citation destinations. The existing
+session access checks and no-store response policy apply. Rendering denies all
+resource fetching, uses one HTTP thread at a time per process, and creates no
+persistent export. The hosted image includes the renderer and fonts. **Print**
+retains the direct desktop action and the protected printable view on touch
+browsers. Original attachment links retain their existing access requirements.
 
-Linux Chromium 151.0.7922.173 checks verified complete three-page synthetic PDFs,
-table/code text, internal citation destinations, original-source links, omitted
-app controls, desktop cleanup and touch navigation/return with and without
-JavaScript. Focused hosted checks verified owner/admin access, foreign and
-unauthenticated denial, no-store/CSP headers and no session/job mutation.
-Aidan reported that the sample PDF saved successfully in native iPhone Safari
-on the Blinky preview of the preserved AID-5 candidate
-`804ae6d52a50ab874d69f4b15e1a40a81aa0be2c`. The original failure point and iOS
-version remain unknown. The combined table/print candidate still needs its
-device retest. WebKit could not be installed in this task
-because its download hosts were denied by the environment network policy.
-The prior Windows print smoke is historical evidence, not a new release gate.
-Device verification steps and the bounded diagnosis are in
-`docs/operator/IOS_SAFARI_PRINT_AID5.md`.
+On iOS 27.0.1, the two Safari/Quartz PDFs from the combined preview retained
+the table and Sources but had no link annotations or internal destinations.
+Aidan opened a public source link in a pre-generated Chromium control on the
+iPhone. The internal jump was not verified on the device. The download route's
+own bytes now have deterministic content and annotation checks. The new native
+download and save flow still needs a device check. Setup and checks are recorded
+in `docs/operator/IOS_SAFARI_PRINT_AID5.md`.
 
 At phone widths, simple text-heavy answer tables default to Read: each row is a
 full-width section with its first cell as a heading and labeled remaining cells.

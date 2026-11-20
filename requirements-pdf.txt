@@ -1,0 +1,2 @@
+# Optional for local Reading Room installs. Included in the hosted image.
+weasyprint==70.0

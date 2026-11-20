@@ -327,9 +327,9 @@ def test_reader_and_protected_pdf_export_include_the_complete_last_cell_once(bro
             page.locator(".table-controls").get_by_role("button", name="Table", exact=True).click()
         for standalone in (False, True):
             if standalone:
-                page.get_by_role("link", name="Print / Save as PDF", exact=True).click()
+                page.get_by_role("link", name="Print", exact=True).click()
                 assert page.url.endswith("/turns/1/print")
-                page.get_by_role("button", name="Print / Save as PDF", exact=True).wait_for(state="visible")
+                page.get_by_role("button", name="Print", exact=True).wait_for(state="visible")
             page.emulate_media(media="print")
             pdf = PdfReader(BytesIO(page.pdf(prefer_css_page_size=True)))
             page.emulate_media(media="screen")

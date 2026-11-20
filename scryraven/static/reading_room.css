@@ -142,7 +142,8 @@ summary::-webkit-details-marker { display: none; }
 .sources-control .icon { width: 15px; height: 15px; }
 .source-list { margin-top: 12px; }
 .print-sources { display: none; }
-.print-answer { margin: 8px 0 0 -8px; }
+.answer-export { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; }
+.print-toolbar > .text-button { margin-left: 16px; }
 .source { border: 1px solid var(--line); border-radius: 5px; margin: 10px 0; background: var(--cool); }
 .source > summary { padding: 16px; cursor: pointer; }
 .source-body { padding: 0 20px 20px; }

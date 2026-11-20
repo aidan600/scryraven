@@ -53,8 +53,8 @@ fetch the combined bundle without a destination ref and choose a new local
 device-check branch in a clean checkout:
 
 ```powershell
-git bundle verify C:\Downloads\aid-5-aid-7-candidate.bundle
-git fetch C:\Downloads\aid-5-aid-7-candidate.bundle refs/heads/codex/aid-5-ios-safari-print
+git bundle verify C:\Downloads\aid-5-aid-7-download-candidate.bundle
+git fetch C:\Downloads\aid-5-aid-7-download-candidate.bundle refs/heads/codex/aid-5-ios-safari-print
 git switch -c aid-5-aid-7-device-check FETCH_HEAD
 git rev-parse HEAD
 ```
@@ -88,16 +88,17 @@ Host forwarding arrangement. No preview or hosting change was made in this task.
 3. Tap the saved-passage citation inside Brie's flavour cell in each view. Check
    the exact highlighted passage, then Back to answer: the citation, row, view
    and horizontal position should survive. Check preview actions too.
-4. Export with Print / Save as PDF and the native Safari save flow. Reopen from
-   Files; verify the complete final cell and its marker/link appear once, all
-   columns are present and the link opens the local source while the server runs.
+4. Tap **Download PDF** and save the attachment. Reopen from Files and verify the
+   complete final cell and its marker/link appear once, all columns are present,
+   and the link opens the local source while the server runs. See the
+   [PDF renderer setup](IOS_SAFARI_PRINT_AID5.md#download-pdf).
 5. With VoiceOver, inspect row headings and table header/cell navigation. Check
    that visual labels do not cause duplicate announcements. Try landscape,
    larger text, and the original AID-5 sample as a combined regression check.
 
-Native iPhone Safari and VoiceOver on the combined candidate remain pending.
-Desktop Chromium, touch emulation, accessibility-tree assertions and generated
-PDFs are bounded checks and do not establish that native result.
+Aidan reviewed the combined table preview on iOS 27.0.1. The separate Download
+PDF action and VoiceOver remain to be checked on the updated candidate. The
+earlier browser checks below used Chromium and synthetic fixtures.
 
 ## Checks actually run
 

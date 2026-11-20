@@ -313,7 +313,12 @@
         </details>
         {{ print_sources(turn) }}
         {% endif %}
-        <a class="text-button print-answer" href="{{ url_for('print_answer', session_id=saved.metadata.session_id, turn_index=turn.number) }}">Print / Save as PDF</a>
+        <div class="answer-export">
+          {% if answer_pdf_available %}
+          <a class="text-button" href="{{ url_for('download_answer_pdf', session_id=saved.metadata.session_id, turn_index=turn.number) }}">Download PDF</a>
+          {% endif %}
+          <a class="text-button print-answer" href="{{ url_for('print_answer', session_id=saved.metadata.session_id, turn_index=turn.number) }}">Print</a>
+        </div>
         {% if turn.activity_url %}{{ activity_archive(turn.activity_url) }}{% endif %}
         {{ run_record(turn.run_settings|default(none), turn.run_receipt|default(none)) }}
         {% if hosted_mode %}
