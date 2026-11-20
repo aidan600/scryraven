@@ -355,6 +355,15 @@ persistent export. The hosted image includes the renderer and fonts. **Print**
 retains the direct desktop action and the protected printable view on touch
 browsers. Original attachment links retain their existing access requirements.
 
+In an installed web app, Download PDF prepares the file without navigating
+away from the answer. The dialog provides Close, a second tap to open the
+system share sheet when file sharing is available, and a browser download
+option where supported. The share sheet's Save to Files action saves the PDF.
+If the browser cannot save it, the dialog gives the reader the current page
+address to open in Safari. Cancellation keeps the file ready, and closing
+aborts a pending fetch and returns focus to the answer. Desktop browsers retain
+the original attachment link once the download controls initialize.
+
 On iOS 27.0.1, the two Safari/Quartz PDFs from the combined preview retained
 the table and Sources but had no link annotations or internal destinations.
 Aidan opened a public source link in a pre-generated Chromium control on the

@@ -1,4 +1,5 @@
 {% from '_printed_answer.html' import printed_answer %}
+{% from '_answer_pdf_download.html' import pdf_download, pdf_dialog %}
 <!doctype html>
 <html lang="en">
 <head>
@@ -8,13 +9,17 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='reading_room.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='reading_room_print.css') }}">
   <script src="{{ url_for('static', filename='reading_room_print.js') }}" defer></script>
+  {% if answer_pdf_available %}
+  <script src="{{ url_for('static', filename='reading_room_pdf.js') }}" defer></script>
+  {% endif %}
 </head>
 <body class="print-document">
   <nav class="print-toolbar" aria-label="Print answer">
     <a href="{{ url_for('open_session', session_id=session_id, _anchor='turn-' ~ turn.number) }}">Back to answer</a>
     <button class="small-button" type="button" hidden>Print</button>
     {% if answer_pdf_available %}
-    <a class="text-button" href="{{ url_for('download_answer_pdf', session_id=session_id, turn_index=turn.number) }}">Download PDF</a>
+    {{ pdf_download(session_id, turn.number) }}
+    <noscript><p>On iPhone or iPad, you can also print from Safari’s Share menu.</p></noscript>
     {% else %}
     <p>On iPhone or iPad, you can also print from Safari’s Share menu.</p>
     {% endif %}
@@ -28,5 +33,6 @@
       </div>
     </div>
   </main>
+{% if answer_pdf_available %}{{ pdf_dialog() }}{% endif %}
 </body>
 </html>

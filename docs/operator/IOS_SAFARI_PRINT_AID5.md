@@ -1,5 +1,56 @@
 # AID-5: iOS Safari answer printing
 
+## Installed iPhone app
+
+Aidan reported that Download PDF in the installed iPhone web app replaced the
+answer with a PDF viewer that had no controls or way back. Merged #700 linked
+directly to the attachment endpoint in the current window. An attachment
+response did not prevent iOS from displaying that PDF in the app window.
+
+The installed app now fetches the same protected attachment into a dialog.
+Share PDF starts system file sharing on a fresh tap. The file preparation step
+can outlast the activation from the original tap. If sharing is unavailable or
+fails, Save PDF asks the browser to download a temporary file in a separate
+context. The current page address is available for opening in Safari if the
+browser cannot save the file. Close always returns to the answer, and the
+app keeps the prepared file available after share cancellation. Browser
+download links appear after mode detection. If the script is unavailable,
+Print remains usable.
+
+To check the exact local candidate, import
+`standalone-pdf-download-candidate.bundle` into a clean checkout that contains
+merged #700 at `759cb2e84bc6e5fe2d5b2cd3de3e75f5a3a483a9`.
+
+```powershell
+git bundle verify C:\Downloads\standalone-pdf-download-candidate.bundle
+git fetch C:\Downloads\standalone-pdf-download-candidate.bundle refs/heads/codex/standalone-pdf-download
+git switch -c standalone-pdf-device-check FETCH_HEAD
+git rev-parse HEAD
+```
+
+Run the isolated runner below with `--tables` and the existing private Blinky
+HTTPS origin as `--source-origin`. Web Share requires a secure context. In
+iPhone Safari, open the synthetic answer and add it to the Home Screen as a
+web app. Launch it from that icon and check the following.
+
+1. Tap Download PDF. Confirm the answer remains behind the dialog. Close it
+   during preparation and try again.
+2. Tap Share PDF. Cancel the share sheet, then tap Share PDF again and choose
+   Save to Files. Close the dialog and confirm the answer is still in place.
+3. Reopen the PDF from Files. Check selectable text, the final table cell,
+   source links and the citation jump. Keep the fixture running for its links.
+4. Try Save PDF as the fallback. If it cannot start a download, close the
+   dialog or copy the page address under Open in Safari and use the regular
+   browser download. Confirm the installed app can still return to the answer.
+
+Linux Chromium 151.0.7922.173 passed 16 standalone-flow tests covering both
+mode detectors, the reader and print view, byte-identical File sharing and
+blob downloads, cancellation, retries, Close and focus restoration. The
+existing PDF, reader, print, table and hosted access selection passed 84
+checks. The two runs skipped 30 WebKit cases because Playwright WebKit was
+unavailable. The browser tests emulate installed mode and stub the share
+sheet. The native share sheet and Save to Files still require a device check.
+
 ## Download PDF
 
 On iOS 27.0.1, two native Safari/Quartz PDFs from the combined preview retained
