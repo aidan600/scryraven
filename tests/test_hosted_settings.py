@@ -28,8 +28,10 @@ def test_saved_hosted_defaults_override_environment_and_preserve_local_preferenc
     saved = replace(original, research_model="gpt-6-luna", research_reasoning="high", api_processing="fast")
     preferences.save_defaults(saved.to_dict())
     preferences.save_processing("alice@example.test", "standard")
-    restarted = HostedPreferences(SQLiteSessionStore(config.database), replace(original, research_reasoning="low"))
+    restarted = HostedPreferences(SQLiteSessionStore(config.database),
+                                  replace(original, research_reasoning="low", answer_model="gpt-6.2-sol"))
     assert restarted.defaults() == saved
+    assert restarted.defaults().answer_model == "gpt-6.1-sol"
     assert restarted.for_user("alice@example.test").api_processing == "standard"
     assert restarted.for_user("bob@example.test") == saved
     assert restarted.for_user(config.admin_email, admin=True) == saved
@@ -53,7 +55,10 @@ def test_exact_hosted_family_supported_efforts(config, model, effort):
 @pytest.mark.parametrize("change", [
     {"research_model": "gpt-6.1-sol", "research_reasoning": "none"},
     {"answer_model": "gpt-6.1-sol", "answer_reasoning": "none"},
+    {"research_model": "gpt-6.2-sol"},
+    {"answer_model": "gpt-6.2-sol", "answer_reasoning": "none"},
     {"research_model": "gpt-6-luna-latest"}, {"answer_model": "arbitrary-model"},
+    {"answer_model": "gpt-6.2-sol-latest"},
     {"backend": "chatgpt_plan", "api_processing": None},
 ])
 def test_unsupported_hosted_routing_is_rejected(config, change):
@@ -131,7 +136,8 @@ def test_changes_leave_four_active_and_fifth_queued_snapshots_unchanged(config, 
         assert sum(job.state == "researching" for job in jobs) == 4
         assert sum(job.state == "queued" for job in jobs) == 1
         admin = Form(get(email=config.admin_email).text, "/settings/hosted").fields
-        admin.update(research_model="gpt-6-luna", research_reasoning="high", api_processing="fast")
+        admin.update(research_model="gpt-6-luna", research_reasoning="high",
+                     answer_model="gpt-6.2-sol", api_processing="fast")
         assert post("/settings/hosted", admin, config.admin_email).status_code == 303
         assert all(job.run_settings == config.run_settings for job in store.list_jobs())
         release.set()
@@ -141,6 +147,7 @@ def test_changes_leave_four_active_and_fifth_queued_snapshots_unchanged(config, 
         assert post("/ask", {**fields, "question": "New default question"}).status_code == 303
         assert app.extensions["research_jobs"].wait_idle(10)
         latest = store.list_jobs()[0]
+        assert latest.run_settings.answer_model == "gpt-6.2-sol"
         assert latest.run_settings.research_model == "gpt-6-luna"
         assert latest.run_settings.research_reasoning == "high" and latest.run_settings.api_processing == "fast"
         assert latest.state == "completed"
@@ -226,9 +233,10 @@ def test_retry_preserves_original_snapshot_after_admin_changes_and_restart(confi
     assert post("/ask", {**fields, "question": "Given 10 apples and 2 removed, how many remain?"}).status_code == 303
     assert app.extensions["research_jobs"].wait_idle(10)
     old = store.list_jobs()[0]
-    assert old.state == "failed"
+    assert old.state == "failed" and old.run_settings.answer_model == "gpt-6.1-sol"
     admin = Form(get(email=config.admin_email).text, "/settings/hosted").fields
-    admin.update(research_model="gpt-6-luna", research_reasoning="high", api_processing="fast")
+    admin.update(research_model="gpt-6-luna", research_reasoning="high",
+                 answer_model="gpt-6.2-sol", api_processing="fast")
     assert post("/settings/hosted", admin, config.admin_email).status_code == 303
     app.extensions["research_jobs"].shutdown()
     app, store, get, post = hosted_room(config, key, factory)
@@ -243,5 +251,6 @@ def test_retry_preserves_original_snapshot_after_admin_changes_and_restart(confi
     restarted, reopened, get, _ = hosted_room(config, key, factory)
     assert "gpt-6-luna" in get(email=config.admin_email).text
     assert reopened.get_hosted_preferences()["research_reasoning"] == "high"
+    assert reopened.get_hosted_preferences()["answer_model"] == "gpt-6.2-sol"
     assert reopened.load(old.session_id).state.turns[0].answer == "Eight remain."
     assert restarted.extensions["research_jobs"].wait_idle(10)

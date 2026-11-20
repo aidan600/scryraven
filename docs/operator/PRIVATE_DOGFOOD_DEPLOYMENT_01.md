@@ -130,7 +130,7 @@ Optional operator controls:
 | `PORT` | `8080`; Railway supplies its assigned listening port |
 | `SCRYRAVEN_BIND_HOST` | `0.0.0.0`; use `127.0.0.1` for local verification |
 | `SCRYRAVEN_HTTP_THREADS` | `8`, permitted range 4–32 |
-| `SCRYRAVEN_RESEARCH_MODEL` / `SCRYRAVEN_ANSWER_MODEL` | Initial `gpt-6.1-terra` / `gpt-6.1-sol`, ignoring personal model files |
+| `SCRYRAVEN_RESEARCH_MODEL` / `SCRYRAVEN_ANSWER_MODEL` | Initial `gpt-6.1-terra` / `gpt-6.2-sol`, ignoring personal model files |
 | `SCRYRAVEN_RESEARCH_REASONING` / `SCRYRAVEN_ANSWER_REASONING` | Initial `medium` / `medium`; empty omits effort |
 | `SCRYRAVEN_API_PROCESSING` | Initial `fast`; higher rates may apply |
 | `SCRYRAVEN_SUBMISSIONS_PER_DAY` | `20` per identity per UTC day |
@@ -139,15 +139,15 @@ Optional operator controls:
 
 The sidebar **Settings** entry allows the administrator to save approved exact
 OpenAI Research/Answer models, compatible reasoning efforts and Standard/Fast
-processing immediately, without Railway variable edits or restart. The approved
-identifiers are `gpt-6.1-terra`, `gpt-6.1-sol` and `gpt-6-luna`. All offer Low,
-Medium, High, Extra high and Max; Terra/Luna also offer None. Model default omits
-the effort parameter. Sol/None and unknown identifiers are rejected server-side.
-These static compatibility checks follow the official
-[Terra](https://developers.openai.com/api/docs/models/gpt-6.1-terra),
-[Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol) and
-[Luna](https://developers.openai.com/api/docs/models/gpt-6-luna) API model pages;
-offline validation does not establish account access or live compatibility.
+processing immediately, without Railway variable edits or restart. The Research
+choices are `gpt-6.1-terra`, `gpt-6.1-sol` and `gpt-6-luna`. Answer also offers
+`gpt-6.2-sol`. All offer Low, Medium, High, Extra high and Max. Terra and Luna
+also offer None. Model default omits the effort parameter. The server rejects
+Sol/None and unknown identifiers. Live compatibility and account access for
+GPT-6.2 Sol remain unverified here.
+[Terra 6.1 API model](https://developers.openai.com/api/docs/models/gpt-6.1-terra),
+[Sol 6.1 API model](https://developers.openai.com/api/docs/models/gpt-6.1-sol),
+[Luna API model](https://developers.openai.com/api/docs/models/gpt-6-luna).
 
 Environment configuration supplies the initial hosted defaults until an
 administrator saves Settings. The durable saved administrator profile then takes

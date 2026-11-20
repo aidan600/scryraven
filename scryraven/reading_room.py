@@ -48,10 +48,12 @@ from scryraven.images import (
     image_preview,
     prepare_image,
 )
-from scryraven.model import ModelError, OpenAIModel
+from scryraven.model import ModelError, OpenAIModel, built_in_model_config
 from scryraven.presentation import (
     answer_html,
+    citation_original_href,
     citation_preview_html,
+    document_page_label,
     source_body_html,
     source_free_supported,
     source_label,
@@ -178,6 +180,15 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
     initial_config = getattr(initial_model, "config", None)
     mixed_processing = (initial_settings.backend == "openai" and initial_config is not None
                         and initial_config.research.service_tier != initial_config.answer.service_tier)
+    shipped_config = built_in_model_config()
+    first_party_launch_profile = initial_settings.to_dict()
+    if initial_settings.backend == "openrouter":
+        first_party_launch_profile = {
+            "research_model": shipped_config.research.model,
+            "research_reasoning": shipped_config.research.reasoning,
+            "answer_model": shipped_config.answer.model,
+            "answer_reasoning": shipped_config.answer.reasoning,
+        }
     session_path = custody.path if isinstance(custody, SQLiteSessionStore) else None
     diagnostic_path = Path(dogfood_log).expanduser().resolve() if dogfood_log is not None else None
     forensic_path = Path(forensic_log).expanduser().resolve() if forensic_log is not None else None
@@ -380,10 +391,11 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
     @app.context_processor
     def hosted_context():
         identity = getattr(g, "identity", None)
-        from scryraven.hosted_preferences import HOSTED_MODEL_CHOICES
+        from scryraven.hosted_preferences import HOSTED_ANSWER_MODEL_CHOICES, HOSTED_MODEL_CHOICES
         return {"hosted_mode": hosted is not None, "identity": identity,
                 "browser_identity": sha256(identity.email.encode()).hexdigest() if identity else "local",
                 "hosted_model_choices": HOSTED_MODEL_CHOICES if hosted is not None else {},
+                "hosted_answer_model_choices": HOSTED_ANSWER_MODEL_CHOICES if hosted is not None else {},
                 "hosted_preferences": hosted_preferences.defaults().to_dict() if hosted is not None else {}}
 
     @app.before_request
@@ -613,6 +625,8 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
                 "attachments": attachment_links(saved,
                     session_jobs[number].document_ids if number in session_jobs else (), turn.image_ids),
                 "sources": [{"number": c.number, "id": prefix + str(c.number), "title": source_label(c),
+                             "href": citation_original_href(c, document_hrefs.get(c.document_id)),
+                             "locator": document_page_label(c) if c.source_kind == "user_document" else None,
                              "preview": Markup(citation_preview_html(
                                  c, original_href=document_hrefs.get(c.document_id),
                              )),
@@ -655,6 +669,8 @@ def create_app(*, database: str | Path | None = None, store: SessionStore | None
             dictation_max_seconds=dictation.MAX_SECONDS,
             run_settings_profiles=({} if hosted is not None else {backend: settings.to_dict()
                                    for backend, settings in custody.get_run_settings_profiles().items()}),
+            first_party_launch_profile=first_party_launch_profile,
+            default_answer_model=shipped_config.answer.model,
             initial_processing_profile=({
                 "research": initial_config.research.service_tier or "model default",
                 "answer": initial_config.answer.service_tier or "model default",

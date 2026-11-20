@@ -26,7 +26,7 @@ Railway topology and offline/live verification distinction.
 `scryraven.research` has two semantic model contracts: Research and Answer.
 Ordinary runtime selects `ModelConfig.research` or `ModelConfig.answer`; the
 package ships tracked defaults in `scryraven/model_roles.defaults.json`: GPT-6.1 Terra /
-medium / Fast for Research and GPT-6.1 Sol / medium / Fast for Answer. An optional
+medium / Fast for Research and GPT-6.2 Sol / medium / Fast for Answer. An optional
 complete user/operator `model_roles.json` outside the repository overrides all
 three execution settings. Explicit injected `ModelConfig` takes precedence over
 the user file, which takes precedence over shipped defaults. `built_in_model_config()`
@@ -67,10 +67,11 @@ is introduced. An earlier Luna effort comparison kept high after medium missed
 a controlling Passport identity lead; that is historical evidence.
 The earlier ordinary-route Standard/Fast comparison did not isolate a Fast speed
 benefit; a later isolated fixed-packet screen showed a consistent latency benefit
-for GPT-6 Sol / medium / Fast and noisier evidence for Luna / high / Fast. The
-shipped GPT-6.1 Sol / medium / Fast Answer configuration has offline verification;
-Independent Answer Library Access 01 exercised the effective user override
-GPT-6.1 Sol / high / Standard, without isolating a model or tier benefit.
+for GPT-6 Sol / medium / Fast and noisier evidence for Luna / high / Fast.
+Offline checks verify selection and request wiring for the shipped GPT-6.2 Sol /
+medium / Fast Answer configuration. Independent Answer Library Access 01
+exercised the effective user override GPT-6.1 Sol / high / Standard, without
+isolating a model or tier benefit.
 Fast may cost more per token, and
 there is no runtime cost estimator. Model choices are not
 read from environment variables; `.env.example` contains credential placeholders.

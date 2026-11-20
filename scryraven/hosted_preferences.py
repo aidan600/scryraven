@@ -17,15 +17,19 @@ HOSTED_MODEL_CHOICES = {
     "gpt-6.1-sol": {"label": "Sol", "reasoning": ("", "low", "medium", "high", "xhigh", "max")},
     "gpt-6-luna": {"label": "Luna", "reasoning": ("", "none", "low", "medium", "high", "xhigh", "max")},
 }
+HOSTED_ANSWER_MODEL_CHOICES = {
+    **HOSTED_MODEL_CHOICES,
+    "gpt-6.2-sol": {"label": "Sol 6.2", "reasoning": ("", "low", "medium", "high", "xhigh", "max")},
+}
 
 
 def validate_hosted_settings(settings: RunSettings) -> RunSettings:
     """Validate the approved API family without inference or credential access."""
     if settings.backend != "openai":
         raise ValueError("invalid_run_settings")
-    for model, effort in ((settings.research_model, settings.research_reasoning),
-                          (settings.answer_model, settings.answer_reasoning)):
-        choice = HOSTED_MODEL_CHOICES.get(model)
+    for model, effort, choices in ((settings.research_model, settings.research_reasoning, HOSTED_MODEL_CHOICES),
+                                   (settings.answer_model, settings.answer_reasoning, HOSTED_ANSWER_MODEL_CHOICES)):
+        choice = choices.get(model)
         if choice is None or (effort or "") not in choice["reasoning"]:
             raise ValueError("invalid_run_settings")
     return settings

@@ -103,7 +103,9 @@ def scripted(monkeypatch, outputs, backend="api", *, config=CONFIG):
         from scryraven.chatgpt_plan.transport import plan_payload
 
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        model = OpenAIModel(config, backend="chatgpt_plan")
+        # The scripted transport never uses the platform's credential vault.
+        model = OpenAIModel(config, backend="chatgpt_plan", plan_auth=SimpleNamespace())
+
         def plan_request(payload, *, timeout, before_dispatch):
             body = plan_payload(payload)
             return dispatch(body, min(timeout, before_dispatch()))
@@ -241,8 +243,8 @@ def test_shipped_roles_and_initial_delegated_research_share_first_lite_eligibili
     assert [mode for mode, _ in modes] == ["lite", "auto"]
     assert stages(payloads) == ["research", "research", "answer", "research", "research", "answer"]
     assert [payload["model"] for payload in payloads] == [
-        "gpt-6.1-terra", "gpt-6.1-terra", "gpt-6.1-sol",
-        "gpt-6.1-terra", "gpt-6.1-terra", "gpt-6.1-sol",
+        "gpt-6.1-terra", "gpt-6.1-terra", "gpt-6.2-sol",
+        "gpt-6.1-terra", "gpt-6.1-terra", "gpt-6.2-sol",
     ]
     assert all(payload["reasoning"] == {"effort": "medium"} for payload in payloads)
     if backend == "api":
