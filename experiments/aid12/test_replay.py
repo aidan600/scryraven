@@ -10,7 +10,8 @@ from test_research_loop import answer, decision, request
 
 from core.exa_transport import DiscoveryCandidate
 from core.transport import FetchedMaterial
-from experiments.aid12.stopping import STOPPING_INSTRUCTION, initial_research_prompt
+from experiments.aid12.stopping import STOPPING_INSTRUCTION, ordinary_research_prompt
+from experiments.aid12.timing import profile_turn
 from scryraven import research
 from scryraven.model import ModelConfig, ModelRole, OpenAIModel
 from scryraven.session_store import SQLiteSessionStore
@@ -41,6 +42,25 @@ def handoff(*refs):
     return respond("research", decision("return", refs, briefing="Use the selected source material."))
 
 
+def delegate(need):
+    return "answer", model_reply({}) | {"service_tier": "default", "output": [{
+        "type": "function_call", "name": "research", "call_id": "resolve-scope",
+        "arguments": json.dumps({"need": need}),
+    }]}, 0
+
+
+def cited_answer(text, ref, excerpt):
+    return respond("answer", answer(f"{text} [{ref}]") | {
+        "citation_passages": [{"ref": ref, "occurrence": 1, "text": excerpt}],
+    })
+
+
+def saved_passage(turn):
+    region, = turn.citation_uses[0].support
+    material = next(item for item in turn.citations[0].materials if item.id == region.evidence_ref)
+    return material, material.content[region.start_char:region.end_char]
+
+
 def no_network(*args, **kwargs):
     pytest.fail("An opt-in replay attempted network I/O")
 
@@ -50,7 +70,7 @@ def replay(request, monkeypatch, tmp_path):
     candidate = request.param == "candidate"
     original = research.RESEARCH_PROMPT
     if candidate:
-        monkeypatch.setattr(research, "RESEARCH_PROMPT", initial_research_prompt(original))
+        monkeypatch.setattr(research, "RESEARCH_PROMPT", ordinary_research_prompt(original))
     monkeypatch.setattr(socket.socket, "connect", no_network)
     monkeypatch.setattr(socket.socket, "connect_ex", no_network)
     monkeypatch.setenv("OPENAI_API_KEY", "offline-fixture")
@@ -58,7 +78,7 @@ def replay(request, monkeypatch, tmp_path):
     store.set_billing_authorization("openai", True)  # Fixture DB, injected Responses only.
     log = tmp_path / "diagnostics.jsonl"
 
-    def run(question, steps, *, highlights=None, full=None):
+    def run(question, steps, *, highlights=None, full=None, first_answer_evidence=None):
         transport = ScriptedResponses(*steps)
 
         def search(query):
@@ -91,9 +111,14 @@ def replay(request, monkeypatch, tmp_path):
             prompt = payload["input"][0]["content"][0]["text"]
             assert (STOPPING_INSTRUCTION in prompt) == (
                 candidate and stage == "research" and "Answer has requested delegated_need." not in prompt)
+        if first_answer_evidence is not None:
+            payload = next(call["json"] for call in transport.calls if call["json"]["text"]["format"]["name"] == "answer")
+            packet = json.loads("".join(block["text"] for block in payload["input"][1]["content"]))
+            assert [(item["id"], item["content"]) for item in packet["evidence"]] == first_answer_evidence
         receipt = json.loads(log.read_text(encoding="utf-8"))
         assert receipt["physical_requests"] == len(steps)
         assert all(call["returned_service_tier"] == "default" for call in receipt["model_calls"])
+        profile_turn(receipt)
         session_id = store.list_sessions()[0].session_id
         turns = SQLiteSessionStore(store.path).load(session_id).state.turns
         return receipt, turns
@@ -174,19 +199,86 @@ def test_native_calculation_keeps_answer_continuation(replay):
 
 def test_answer_can_delegate_to_ordinary_research_when_evidence_is_weak(replay):
     _, run = replay
-    delegated = model_reply({}) | {"service_tier": "default", "output": [{
-        "type": "function_call", "name": "research", "call_id": "resolve-scope",
-        "arguments": json.dumps({"need": "Verify the place and year of the value in the register."}),
-    }]}
+    delegated = delegate("Verify the place and year of the value in the register.")
     receipt, (saved,) = run(
         "What was the 2024 North district permit fee?",
-        [find("fee"), handoff(), ("answer", delegated, 0), read_register(), handoff("E2"),
+        [find("fee"), handoff(), delegated, read_register(), handoff("E2"),
          respond("answer", answer("7 credits. [E2]"))],
         highlights={"fee": [(REGISTER, "The permit fee is 7 credits.")]}, full={REGISTER: DIRECT},
     )
     assert receipt["outcome"] == "completed" and receipt["research_episodes"] == 1
     assert receipt["role_physical_requests"] == {"research": 4, "answer": 2}
     assert saved.answer == "7 credits. [1]" and saved.citations[0].materials[0].content == DIRECT
+
+
+@pytest.mark.parametrize(
+    ("question", "highlights", "refs"),
+    [
+        ("What was the 2024 North district permit fee?",
+         [(REGISTER, "The 2024 South district permit fee is 7 credits.")], ["E1"]),
+        ("What was the 2024 North district permit fee?",
+         [(REGISTER, "Lake City's North district charges 7 credits in 2024."),
+          (NOTICE, "River City's North district charges 9 credits in 2024.")], ["E1", "E2"]),
+        ("What was the 2024 North district fee for a new permit?",
+         [(REGISTER, "The 2024 North district permit fee is 7 credits for")], ["E1"]),
+        ("What was the 2024 North district permit fee?",
+         [(REGISTER, DIRECT),
+          (NOTICE, "The North District Permit Board sets the 2024 permit fee at 9 credits.")], ["E1", "E2"]),
+    ],
+    ids=["wrong-identity", "ambiguous-identity", "truncated-highlight", "unresolved-authority-conflict"],
+)
+def test_valid_citation_can_publish_an_unsupported_early_stop_in_either_arm(replay, question, highlights, refs):
+    _, run = replay
+    first_url, first_excerpt = highlights[0]
+    receipt, (saved,) = run(
+        question,
+        [find("fee"), handoff(*refs), cited_answer("The 2024 North district fee was 7 credits.", "E1", first_excerpt)],
+        highlights={"fee": highlights},
+        first_answer_evidence=[(ref, text) for ref, (_, text) in zip(refs, highlights, strict=True)],
+    )
+    assert receipt["outcome"] == "completed" and receipt["corrections"]["answer"] == {}
+    assert receipt["physical_acquisition_dispatches"] == 1
+    assert saved.posture == "supported" and saved.answer == "The 2024 North district fee was 7 credits. [1]"
+    citation, = saved.citations
+    assert citation.url == first_url
+    assert saved_passage(saved)[1] == first_excerpt
+
+
+@pytest.mark.parametrize("path", ["early-stop", "ordinary-read", "answer-recovery"])
+def test_hidden_correction_on_same_highlight_in_either_arm(replay, path):
+    _, run = replay
+    # Each path starts with one unqualified highlight. Only the full source
+    # supplies the retroactive correction.
+    correction = "November 2024 correction: The fee is 9 credits, retroactive to the start of 2024."
+    full_text = DIRECT + "\n" + correction
+    read_and_return = [read_register(), handoff("E2")]
+    if path == "early-stop":
+        steps = [handoff("E1"), cited_answer("7 credits.", "E1", DIRECT)]
+        expected_passage = DIRECT
+        expected = ("7 credits. [1]", DIRECT, 2, 1, 1, 0)
+    else:
+        if path == "ordinary-read":
+            steps = read_and_return.copy()
+            expected = ("9 credits. [1]", full_text, 3, 1, 2, 0)
+        else:
+            steps = [handoff("E1"), delegate("Check whether the register has a later correction."), *read_and_return]
+            expected = ("9 credits. [1]", full_text, 4, 2, 2, 1)
+        steps.append(cited_answer("9 credits.", "E2", correction))
+        expected_passage = correction
+    receipt, (saved,) = run(
+        "What was the North district's 2024 permit fee?",
+        [find("fee"), *steps],
+        highlights={"fee": [(REGISTER, DIRECT)]}, full={REGISTER: full_text},
+    )
+    assert receipt["outcome"] == "completed" and saved.posture == "supported"
+    assert saved.citations[0].url == REGISTER
+    material, passage = saved_passage(saved)
+    assert passage == expected_passage
+    assert (
+        saved.answer, material.content,
+        receipt["role_physical_requests"]["research"], receipt["role_physical_requests"]["answer"],
+        receipt["physical_acquisition_dispatches"], receipt["research_episodes"],
+    ) == expected
 
 
 def test_invalid_citation_cannot_publish(replay):

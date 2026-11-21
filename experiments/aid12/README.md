@@ -7,14 +7,16 @@ and one provider dispatch needed by this candidate. There is no evidence yet
 that redundant rounds account for half of current median latency.
 
 Base and control are `8ecf38816a0aea2f146c5af0b600e28decc2a66f`, identical to
-`main` when fetched. The candidate is the single initial Research instruction
-in [stopping.py](stopping.py), applied explicitly in an isolated local
-experiment process. The control uses that revision's ordinary initial Research
-prompt. Both use the same delegated Research prompt, Answer prompt, two semantic
-roles, source custody, validation and provider configuration. The initial
-Research prompt cache family changes with the treatment. The production tree
-and its defaults, `CURRENT.md`, legacy runner and shared benchmark files need
-no edits for this comparison.
+`main` when fetched. The candidate adds one instruction in
+[stopping.py](stopping.py), applied explicitly in an isolated local experiment
+process. It reaches every ordinary Research decision in a turn before Answer,
+including decisions after acquisition and on follow-up turns. Delegated Research
+uses its separately computed prompt, and Answer uses its ordinary prompt.
+Both arms retain the two semantic roles, source custody, validation and provider
+configuration. The ordinary Research prompt cache family changes with the
+treatment. Startup rejects any prompt other than the registered control and
+requires exactly one insertion marker. The registered candidate prompt SHA-256
+is `1ec71483e1b6d0c26c2ad621416e37731e996cd3340fc428c4cd95b72ae67092`.
 
 ## Evidence for the candidate
 
@@ -38,15 +40,22 @@ revisions. They are historical live data for profiling, with zero observations
 of the specified Standard API control or candidate.
 
 In that canary, measured model requests accounted for 93.5% of elapsed time.
-Even eliminating the entire Search duration would save only 6.5%. The candidate
-targets the extra serial Research request and any redundant acquisition when
-the existing Research model already sees a directly sufficient passage.
-If the necessary steps took the same 12.547 s as in the canary, a 50% reduction
-would require an untreated turn of at least 25.094 s whose remaining time was
-all avoidable. These are illustrative bounds using historical timings. A
-three-request control leaves no request to remove by this mechanism. Bypassing
-either model, prefetching based on question shape, and treating navigation-only
-metadata as evidence would change the product contract or the provider workload.
+Search occupied 6.5%. The candidate targets an extra serial Research request
+and redundant acquisition when the Research model already sees a directly
+sufficient passage. The observed efficient path has no extra round for it to
+remove. Even granting zero Search and overhead, holding the observed model
+request durations fixed leaves 11.735 s. A 50% reduction through deletion alone
+would require an untreated turn of at least 23.470 s for that model-only floor,
+or 25.094 s if all 12.547 s of the necessary path remain.
+
+The observed model calls depend on each other in order. As a scale check, even
+deleting the longest physical model request (4.703 s) and all Search time (0.812 s)
+would save about 44.0% in that turn, and the deleted request would be Answer.
+This arithmetic uses one earlier configuration and fixed per-call durations.
+It does not bound how the registered models themselves will behave or generalize
+to a current cohort. The evidence supports profiling avoidable work before a
+paid comparison. It has not identified a second lever that can plausibly halve
+the already-efficient path within this experiment's constraints.
 
 Research remains responsible for judging the entity, period, scope, material
 qualifications and completeness of exact acquired text. When evidence is weak
@@ -72,17 +81,46 @@ respectively, a redundant local reread and a redundant external Read plus the
 Research request needed after each. The selected literal support was identical
 for each pair.
 
-The seven other pairs cover insufficient scope, wrong identity, conflicting
+The seven other initial pairs cover insufficient scope, wrong identity, conflicting
 records, multipart work with separate support, native calculation, Answer-led
 delegated Research, and an invalid citation. Each arm completes nine of ten
 scripted turns and rejects the intentionally invalid citation without saving
 an answer. All real inference and acquisition counts are zero. The replay
-shows that these decisions can flow through the product intact. It supplies no
-rate of real model stopping, false shortcuts, answer correctness, or latency.
+shows that these decisions can flow through the product intact.
 
-Two isolated replay runs passed 20/20. Existing focused checks covering
-instrumentation, Research, handoffs, Answer calculation/finalization and Reading
-Room passed 91/91. The full Linux suite at the unchanged base recorded 1,556
+### Counterfactual early stops
+
+Four further pairs replay the same premature stop and the same overconfident
+Answer in both arms. The ordinary validators publish the answer with a working
+citation and exact saved passage for each of four fixture errors. These are a
+wrong entity, an ambiguous entity, a truncated qualification, and unresolved
+conflict between credible authorities. Passage offsets and exact text custody
+establish what was cited. Whether it supports the claim remains an evidence
+judgment, even when Answer marks its posture as supported.
+The incompatible second excerpt reaches Answer in the ambiguous and conflicting
+cases. Their saved citation groups contain the cited authority alone, so a
+review of those groups would miss the other excerpt the model saw.
+
+Three paths in each arm start with the same apparent answer in a permit
+register highlight. Only the full original reveals a retroactive correction.
+
+| Scripted path | Published fee | Research requests | Answer requests | Provider dispatches |
+| --- | ---: | ---: | ---: | ---: |
+| Early stop after highlight | 7 credits, superseded | 2 | 1 | 1 |
+| Ordinary Research Read | 9 credits, with the correction passage | 3 | 1 | 2 |
+| Early stop with Answer-led recovery | 9 credits, with the correction passage | 4 | 2 | 2 |
+
+The two correct paths reopen the exact correction passage, including when
+delegated recovery groups the original highlight and full text under one
+citation number. The last path adds two physical requests compared with doing
+the Read during ordinary Research. The responses were fixed to exercise these
+paths. There is no estimate of how often either model will stop early, recover,
+or give a materially wrong answer.
+
+Two isolated runs passed all 48 current experiment checks. Existing focused
+checks covering instrumentation, Research, handoffs, Answer
+calculation/finalization and Reading Room passed 91/91. The full Linux suite
+at the unchanged base recorded 1,556
 passed, 207 skipped and 18 failed. Nine failures require the Windows personal-plan
 vault. The other nine assert exact request timeouts that shrink by a small
 amount between dispatch checks on this clock. That suite ran before the
@@ -115,9 +153,8 @@ review. The reviewer verifies each against an original before adjudication.
 The negative cases were written and frozen in earlier campaigns, independent
 of the treatment. Their exact question text was held out while writing the
 candidate and offline fixtures. The pinned sources below identify the verbatim
-questions and existing review obligations. Open them in the evaluation phase
-and record the question and rubric hashes before the first paired submission.
-Do not disclose case labels or rubrics to ScryRaven.
+questions and existing review obligations. Before the first paired submission,
+recheck the registered digests. Send only exact question text to ScryRaven.
 
 | ID | Coverage | Frozen question locator |
 | --- | --- | --- |
@@ -138,17 +175,48 @@ bound to `STAGE_B_CASES["FST1"]` (`R1`) in
 file without executing the historical caller. Review the result against the
 stipulated inputs and deterministic arithmetic.
 
+Offline verification resolved both Git blobs, each V2 case as an independent
+turn with a nonempty rubric, F06's explicit conflict obligation, and the FST1
+AST binding as a string literal. The following SHA-256 values hash UTF-8,
+compact sorted-key JSON objects keyed by case ID with verbatim question strings
+or the existing rubric arrays as values. This verifies the locators and wording.
+Independent factual adjudication against original public material belongs to
+the separately authorized run.
+
+| Registered content | SHA-256 |
+| --- | --- |
+| D01–D04 pilot questions | `c635d48bceb9578400989540ae3cbc4332e9067ee2db815a4710a75cac56d3b7` |
+| All 18 questions | `0ba89a458577078bfbf264585644882e405815b42ef15f14eb3328d55afe6cac` |
+| Five V2 negative rubrics | `3f4418f4d8390fef5beaf3fbe54e6ea89211f73c5e99a9ce1f0fb86df631f9b0` |
+
 ## Live measurement and cost
 
-1. **Screen with four control submissions.** Use the ordinary local Reading Room
-   and its body-free `--dogfood-log`. Run D01–D04 once each at the pinned control.
-   Review the exact saved sources and the ordered timings. Count a round as
-   avoidable only if the evidence available before it already supports the full
+1. **Screen with four separately authorized control submissions.** Use the
+   ordinary local Reading Room and run D01–D04 once each at the pinned control.
+   Capture body-free timings with `--dogfood-log`. Use the existing local
+   `--forensic-log` for these public questions to capture the exact exposure at
+   the proposed return point and the later evidence. Keep those artifacts in
+   isolated local storage. Join by session and attempted turn. An independent
+   reviewer compares the pre-stop packet, full originals and later evidence.
+   Count a round as redundant only if the earlier packet establishes the full
    answer and later work adds no material evidence, qualification or resolution.
-   Estimate an optimistic per-case duration by subtracting only those redundant
-   Research and acquisition intervals from elapsed time. If the median still
-   exceeds half of the pilot median, stop the paid comparison of this mechanism
-   for the 50% target. Keep the pilot separate from the paired analysis.
+   An apparently complete highlight with a later correction is required work.
+   A missing packet or incomplete timing cannot support a pilot decision.
+
+   Use [timing.py](timing.py) to profile each complete receipt. Supply reviewed
+   ordinary Research request durations from the corresponding ordered forensic
+   events and removable external requests by `(route_index, request_index)`.
+   For each turn, the route-only estimate subtracts those Research durations
+   and only the reduction in the union of external intervals. The more
+   optimistic model-only floor makes all provider, local, queue and browser
+   time free and keeps the measured durations of the remaining Research and
+   Answer requests. Compare each estimate's median across the same four draws
+   with half the baseline submit-to-render median. A model-only median above
+   that threshold rules out reaching it by the covered deletions at fixed
+   retained model timings on these draws. Advance to the paid paired comparison
+   only if the route-only median also reaches the threshold and adjudication
+   establishes that the proposed skipped work was redundant. Keep the pilot
+   separate from paired results.
 2. **Compare paired arms only if separately authorized and the pilot supports
    proceeding.** Use the existing credential doorman with the same API account,
    machine, local Reading Room, provider configuration, default limits and
@@ -157,8 +225,9 @@ stipulated inputs and deterministic arithmetic.
    both API Standard (`default`). Verify requested and returned model and tier
    receipts per request. Keep the sending path ordinary. For the candidate
    process only, set `research.RESEARCH_PROMPT =
-   initial_research_prompt(research.RESEARCH_PROMPT)` before starting the
-   existing `reading_room.create_app` and `serve`, as in replay. Record revision,
+   ordinary_research_prompt(research.RESEARCH_PROMPT)` before starting the
+   existing `reading_room.create_app` and `serve`, as in replay. A prompt
+   registration mismatch aborts candidate setup. Record revision,
    prompt and manifest hashes and reserve one fresh database and log per arm.
    Keep browser polling, cache conditions and provider settings comparable and
    retain the reported cache and tier differences.
@@ -176,13 +245,14 @@ stipulated inputs and deterministic arithmetic.
    For source-free and honest partial/unable controls, time to the appropriate
    terminal render and record its posture. Record admission and commit
    separately. Time to first useful content is secondary. Mark it unavailable
-   if the UI only provides progress before the finished answer. Use physical
-   model-call durations by role and union of dispatched external acquisition
-   intervals from the dogfood log to profile model versus provider time. Keep
-   queue, browser polling, local tooling, and unexplained remainder visible.
-   Avoid counting concurrent provider time twice or attributing nested Research
-   to both roles. Record model calls, continuations, provider dispatches,
-   fallback routes, failures and missing telemetry.
+   if the UI only provides progress before the finished answer. Sum durations
+   from `physical_model_calls` by role. Answer's enclosing semantic span and
+   `research_tool_seconds` already include delegated work. Use the union of
+   dispatched external `acquisitions` intervals, one interval per logical
+   operation, for time on the external path. A dual Read's provider legs are
+   counted separately for cost. Keep worker remainder (including local work)
+   and browser timing separate. Record model calls, continuations, provider
+   dispatches, fallback routes, failures and missing telemetry.
 5. **Review before unblinding.** An independent reviewer checks the saved
    answers and literal excerpts against original public material and the frozen
    obligations, with arm, timings and order hidden. Check fact, entity, time,
