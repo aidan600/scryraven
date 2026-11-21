@@ -1,5 +1,9 @@
 # AID-12 simple lookup latency
 
+The [opening-request analysis](opening-request.md) is the current follow-up.
+The stopping experiment below is retained as negative evidence, including
+the hidden correction that a plausible cited highlight failed to establish.
+
 The 50% median elapsed-time target is unresolved. The offline candidate can
 remove a scripted redundant Research round, with exact citations preserved.
 The closest documented clean lookup already performed the three model requests
