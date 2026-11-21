@@ -1,0 +1,27 @@
+{
+  "case_id": "D07-derived",
+  "question": "Which engine was fitted to the 2024 Honda Passport in the United States and Canada, and is it the same engine as the GE Passport aircraft engine?",
+  "sources": [
+    {
+      "kind": "honda",
+      "title": "American Honda — 2024 Honda Passport Specifications & Features",
+      "url": "https://hondanews.com/en-US/honda-automobiles/releases/release-7b0d03d783f6d642dbbefc6b2a130141-2024-honda-passport-specifications-features",
+      "locator": "POWER UNIT > ENGINE, first trim column (the other trims repeat the values)",
+      "text": "2024 HONDA PASSPORT\nEngine Type | V6\nDisplacement (cc) | 3,471\nValve Train | 24-Valve SOHC i-VTEC®"
+    },
+    {
+      "kind": "honda",
+      "title": "Honda Canada — 2024 Passport Specifications",
+      "url": "https://hondanews.ca/en-CA/hci-automobiles/releases/release-1128768177ab00a73471b1938c15f800-2024-passport-specifications",
+      "locator": "ENGINE, Sport / TrailSport / Black Edition",
+      "text": "2024 Passport Specifications\n3.5-litre, 24-valve, Direct Injection, SOHC, i-VTEC® V6 | • | • | •\nDisplacement (cc) | 3471 | 3471 | 3471"
+    },
+    {
+      "kind": "ge",
+      "title": "GE Aerospace — Passport Turbofan",
+      "url": "https://www.geaerospace.com/commercial/aircraft-engines/passport",
+      "locator": "Page heading and Tried. Tested. Proven. section",
+      "text": "Passport Turbofan\nGE Aerospace’s Passport engine powers Bombardier’s latest and most elite ultra-long range business jet, the Global 7500 and 8000."
+    }
+  ]
+}
