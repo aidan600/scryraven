@@ -176,3 +176,26 @@ An alternate model identifier, omitted identity and a Fast response tier
 each prevent an otherwise `supported` turn from qualifying. These are mocked
 transport responses. Live receipt behavior, semantic improvement and actual
 pass rates remain unmeasured. The candidate and shipped prompts are unchanged.
+
+The follow-up passed all 33 focused replay and receipt tests. The full Linux
+suite reported 1,589 passed, 207 skipped and the same 18 failures reproduced
+at the base revision. Ruff and scoped pre-commit checks passed.
+
+## Independent source preflight
+
+A separate verifier, blinded to the candidate, control and all model
+outputs, checked the 40 frozen reserved cases. The verifier substantiated
+37 through primary public sources and three through exact arithmetic on
+explicit premises. Six records include source-access or scope notes.
+The separate exceptions ledger records zero broken and zero unresolved cases.
+The manifest digest remained unchanged. Keep the case-level findings in the
+ignored corpus for the review coordinator.
+
+| Ignored artifact path under `local-evals/runs/aid-10-source-preflight/` | SHA-256 |
+| --- | --- |
+| `verification.json` | `624542e4ca6517ee7c2ef8f46c938d3f6083f115e2a39617cdf0ea74d285fc6d` |
+| `broken-or-unresolved.json` | `d585feab4a760a72253ad96ee126aa1665a1bc9fd4c51884caef52aa03cd463d` |
+
+The source preflight establishes the public reference basis for review.
+Product retrieval, live model receipts, answer quality and the 90% held-out
+target remain unmeasured.
