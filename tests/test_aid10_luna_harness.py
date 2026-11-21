@@ -41,8 +41,9 @@ def prohibited(*_args, **_kwargs):
     pytest.fail("unexpected external provider dispatch")
 
 
-def scripted_turn(monkeypatch, phase, arm, *, result_posture="supported", receipt_problem=None):
+def scripted_turn(monkeypatch, phase, arm, *, result_posture="supported", receipt_problem=None, receipt_at=5):
     monkeypatch.setenv("OPENAI_API_KEY", "synthetic-test-only")
+    monkeypatch.setattr(requests.Session, "request", prohibited)
     sent = []
     outputs = iter([
         investigate("research", requests=[{"kind": "search", "query": QUESTION, "objective": "Find originals."}]),
@@ -61,13 +62,17 @@ def scripted_turn(monkeypatch, phase, arm, *, result_posture="supported", receip
             raise requests.Timeout()
         data = {"status": "completed", "model": payload["model"],
                 "service_tier": "default", "output": output}
-        if len(sent) == 5:
+        if len(sent) == receipt_at:
             if receipt_problem == "model":
                 data["model"] = "gpt-6.2-terra"
+            elif receipt_problem == "model_alias":
+                data["model"] = f"{payload['model']}-2026-11-20"
             elif receipt_problem == "tier":
                 data["service_tier"] = "fast"
             elif receipt_problem == "unreported":
                 del data["service_tier"]
+            elif receipt_problem == "unreported_model":
+                del data["model"]
         return SimpleNamespace(raise_for_status=lambda: None, json=lambda: data)
 
     result = harness.run_case(QUESTION, phase, arm, post=post, search=search, fetch=prohibited,
@@ -89,6 +94,12 @@ def test_native_session_preserves_role_pins_and_delivers_exact_citations(monkeyp
     ]
     assert [item["reasoning"]["effort"] for item in sent] == ["high", "high", "medium", "high", "medium"]
     assert {item["service_tier"] for item in sent} == {"default"}
+    assert len(result["usage"]) == len(sent)
+    for receipt, payload in zip(result["usage"], sent, strict=True):
+        assert receipt["stage"] == payload["text"]["format"]["name"]
+        assert receipt["backend"] == "api"
+        assert receipt["model"] == payload["model"] == receipt["returned_model"]
+        assert receipt["requested_service_tier"] == "default" == receipt["returned_service_tier"]
     assert result["gate_issues"] == []
     assert result["outcome"]["citations"][0]["materials"][0]["content"] == SOURCE
     assert result["outcome"]["answer"].endswith("[1]")
@@ -125,6 +136,20 @@ def test_partial_timeout_and_bad_receipts_cannot_pass(monkeypatch, posture, prob
                               result_posture=posture, receipt_problem=problem)
     assert gate in result["gate_issues"]
     assert result["configuration_stop"] is stop
+
+
+@pytest.mark.parametrize("receipt_at", [1, 3, 4, 5])
+@pytest.mark.parametrize("problem,gate", [
+    ("model_alias", "returned_model_mismatch"),
+    ("unreported_model", "missing_model_or_tier_receipt"),
+    ("tier", "standard_tier_mismatch"),
+])
+def test_each_dispatch_needs_its_own_exact_receipt(monkeypatch, receipt_at, problem, gate):
+    result, _ = scripted_turn(monkeypatch, "luna-reserved", "hardened",
+                              receipt_problem=problem, receipt_at=receipt_at)
+    assert result["outcome"]["posture"] == "supported"
+    assert result["gate_issues"] == [gate]
+    assert result["configuration_stop"] is True
 
 
 def test_review_retains_interrupted_slot_and_requires_adjudication(monkeypatch, tmp_path):

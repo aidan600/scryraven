@@ -19,6 +19,7 @@ from scripts.aid10_luna import (
     prompts,
     settings,
 )
+from scryraven.sources import locate_unique_passage
 
 DEFECTS = {
     "unsupported_claim", "citation", "omission", "lookalike",
@@ -178,6 +179,64 @@ def score(mapping: list[dict], reviews: list[dict], ownership: dict) -> dict:
             "reviewed_outcomes": len(expected), "disputed_outcomes": len(disputed), "rows": rows}
 
 
+def trace_reviewed_passage(turn: dict, material_id: str, passage: str) -> dict:
+    """Locate adjudicated text in the acquired original and actual model packets."""
+    events = turn["events"]
+    originals = [(index, item) for index, event in enumerate(events)
+                 if event["action"] == "acquired_material"
+                 for item in event["evidence"] if item["id"] == material_id]
+    if len(originals) != 1:
+        raise ValueError("passage trace requires one captured acquired material with that ID")
+    acquired_index, original = originals[0]
+    content = original["content"]
+    start, end = locate_unique_passage(content, passage)
+    answer_returns = [index for index, event in enumerate(events)
+                      if event["action"] == "model_returned" and event.get("contract") == "answer"]
+    finalized = turn["outcome"] is not None and any(event["action"] == "answer_decision" for event in events)
+    cutoff = max(answer_returns) if finalized and answer_returns else len(events)
+    research_packets, answer_packets = [], []
+    for index in range(acquired_index + 1, cutoff):
+        event = events[index]
+        action = event["action"]
+        if action == "exposure":
+            entries = event["evidence"]
+            packets = answer_packets if event["contract"] == "answer" else research_packets
+        elif action in {"answer_library_result", "research_tool_result"}:
+            entries = event["result"].get("evidence", [])
+            packets = answer_packets
+        else:
+            continue
+        for entry in entries:
+            if _covers_acquired_range(entry, original, start, end):
+                packets.append({"event_index": index, "action": action, "material_id": entry["id"]})
+    return {
+        "material_id": material_id,
+        "source_id": original["source_id"],
+        "acquired_event_index": acquired_index,
+        "start_char": start,
+        "end_char": end,
+        "material_sha256": sha256(content.encode("utf-8")).hexdigest(),
+        "passage_sha256": sha256(content[start:end].encode("utf-8")).hexdigest(),
+        "answer_finalized": finalized and bool(answer_returns),
+        "research_packets": research_packets,
+        "answer_packets": answer_packets,
+    }
+
+
+def _covers_acquired_range(entry: dict, original: dict, start: int, end: int) -> bool:
+    if entry["source_id"] != original["source_id"] or entry["url"] != original["url"]:
+        return False
+    if entry["id"] == original["id"]:
+        return entry["acquisition"] == original["acquisition"] and entry["content"] == original["content"]
+    if entry["acquisition"] != "targeted_view" or entry["parent_id"] != original["id"]:
+        return False
+    left, right = entry["start_char"], entry["end_char"]
+    return (type(left) is int and type(right) is int
+            and 0 <= left <= start < end <= right <= len(original["content"])
+            and entry["id"] == f"{original['id']}@{left}:{right}"
+            and entry["content"] == original["content"][left:right])
+
+
 def read_block(path: Path) -> list[dict]:
     # A process killed while emitting a turn may leave an incomplete final line.
     complete, _, _ = path.read_text(encoding="utf-8").rpartition("\n")
@@ -211,6 +270,12 @@ def main(argv: list[str] | None = None) -> int:
     scorer.add_argument("--reviews", type=Path, nargs="+", required=True)
     scorer.add_argument("--ownership", type=Path)
     scorer.add_argument("--report", type=Path, required=True)
+    tracer = commands.add_parser("trace-passage", help="Trace one adjudicated passage after unblinding.")
+    tracer.add_argument("--log", type=Path, required=True)
+    tracer.add_argument("--case-id", required=True)
+    tracer.add_argument("--arm", choices=ARMS, required=True)
+    tracer.add_argument("--material-id", required=True)
+    tracer.add_argument("--passage-file", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
         if args.command == "blind":
@@ -222,7 +287,7 @@ def main(argv: list[str] | None = None) -> int:
                 raise ValueError("blind packet and private key require distinct new paths")
             save(args.packet, packet)
             save(args.key, {"revision": revision, "phase": args.phase, "key": key})
-        else:
+        elif args.command == "score":
             if len(args.reviews) not in {2, 3}:
                 raise ValueError("provide two reviewers and an adjudicator when required")
             key = read(args.key)
@@ -230,6 +295,14 @@ def main(argv: list[str] | None = None) -> int:
             ownership = read(args.ownership) if args.ownership else {}
             report = score(key["key"], reviews, ownership)
             save(args.report, {"revision": key["revision"], "phase": key["phase"], **report})
+        else:
+            turns = [row for row in read_block(args.log) if row["kind"] == "turn_finished"
+                     and (row["case_id"], row["arm"]) == (args.case_id, args.arm)]
+            if len(turns) != 1:
+                raise ValueError("select exactly one finished turn from the log")
+            result = trace_reviewed_passage(turns[0], args.material_id,
+                                            args.passage_file.read_text(encoding="utf-8").strip())
+            print(json.dumps(result, indent=2))
     except (OSError, ValueError, TypeError, KeyError) as exc:
         parser.error(str(exc))
     return 0

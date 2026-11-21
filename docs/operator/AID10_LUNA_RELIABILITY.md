@@ -121,3 +121,58 @@ The failures were Windows vault initialization and assertions requiring exact
 timeout equality after elapsed setup time. Optional browser checks skipped in
 this environment. Ruff lint, scoped pre-commit checks and Git whitespace checks
 passed. `CURRENT.md` remains the record of the shipped runtime.
+
+## Development replay and failure ownership
+
+This follow-up exercised the two existing development obligations for stopping
+distance and license coverage. Scripted Responses drove the ordinary
+`ResearchSession.ask` and native Answer continuations with invented source
+packets. On the development replay, the original frozen question text comes
+from the ignored manifest. The default test run uses synthetic question
+variants.
+
+| Scripted defect or control | Observed result |
+| --- | --- |
+| Wrong split of a correctly totaled distance | Both arms returned `supported` with an actual citation and saved support span. The correct values appeared in Research and in Answer's initial packet. The defect is in Answer synthesis on this replay. |
+| Valid numbers with the original qualification dropped | Research saw the complete original. Answer's initial packet received only the numeric range from that original. Identical wording from a separate source did not count as exposure of the original. Reviewers can use the trace to identify a handoff gap and inspect whether any other source supplied equivalent support. |
+| Missing second sub-answer on notices | Both arms returned `supported` and cited the license packet even though the answer only covered permission. The notice requirement was already in Answer's initial packet, locating the omission in Answer synthesis. |
+| Correct scope recovered through local Read or delegated Research | In both continuations, Answer received a verifiable exact view before finalizing. Both recovered answers retained the scope and two components. |
+| Permission available and notice evidence missing | An honest scripted partial was retained with the specific gap and remains ineligible for Luna-only acceptance. |
+| Concise correct paraphrase | The replay retained both license obligations without echoing the source wording. The provenance check left the answer unchanged. |
+
+The existing guidance asks Answer to verify material parts and scope, but the
+scripted counterexamples pass the product's citation and posture mechanics.
+There is no semantic rejection or automatic repair in this change. The
+experiment-only `trace-passage` command gives a reviewer exact provenance
+after a defect has been independently identified. It locates a unique passage
+in an acquired material, then reports matching Research exposures, initial
+Answer exposure, Answer library results and delegated deliveries. A match
+requires the same acquired material or a verified exact slice of its original
+version. The output gives zero-based event indices, half-open source offsets,
+and material and passage SHA-256 digests for the ownership evidence note.
+Evaluate the briefing, alternative evidence, missing acquisitions and the
+adjudicated answer separately. Incomplete traces and equivalent support from
+other sources require reviewer judgment.
+
+Run the development replay and exact receipt contract tests from the checkout:
+
+```sh
+SCRYRAVEN_AID10_DEVELOPMENT_MANIFEST=local-evals/runs/aid-10-freeze/cases.json \
+  python -m pytest -q tests/test_aid10_luna_harness.py tests/test_aid10_luna_failure_ownership.py
+```
+
+On an existing unblinded log, use the reviewer-selected acquired material ID
+and a text file containing the decisive passage:
+
+```sh
+python -m scripts.aid10_luna_review trace-passage --log <run.jsonl> --case-id <id> --arm <arm> --material-id <id> --passage-file <reviewed-passage.txt>
+```
+
+The receipt tests compare the actual serialized requests and normalized
+receipts for exact model and Standard tier (`default`), with Luna/high
+Research and Sol 6.2/medium or Luna/medium Answer. Exact receipt checks
+cover each physical request, including nested Research and resumed Answer.
+An alternate model identifier, omitted identity and a Fast response tier
+each prevent an otherwise `supported` turn from qualifying. These are mocked
+transport responses. Live receipt behavior, semantic improvement and actual
+pass rates remain unmeasured. The candidate and shipped prompts are unchanged.
