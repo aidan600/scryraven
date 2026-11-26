@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import re
 from dataclasses import dataclass
 from html import escape
 from typing import TYPE_CHECKING, Literal
@@ -205,6 +206,48 @@ def _collapse_citation_run(
     return visible
 
 
+def _parse_answer_markdown(markdown: MarkdownIt, body: str, marker: str):
+    tokens = markdown.parse(body)
+    if f"](#{marker}" not in body or "|" not in body:
+        return tokens
+
+    # Markdown tables discard cells past the header's column count. A suffix
+    # of generated citations after a closing pipe can become one of those cells.
+    address = rf"#{re.escape(marker)}\d+-\d+"
+    link = rf"\[\[[\d.]+\]\]\({address}\)"
+    suffix = re.compile(rf"(?<!\\)\|[ \t]*(?P<links>{link}(?:[ \t]*{link})*)[ \t]*(?P<cr>\r?)$")
+
+    def displayed(parsed):
+        return {child.attrGet("href") for block in parsed for child in block.children or ()
+                if child.type == "link_open"}
+
+    original_links = displayed(tokens)
+    lines = body.split("\n")
+    proposed = lines.copy()
+    missing = {}
+    for index, line in enumerate(lines):
+        match = suffix.search(line)
+        if not match:
+            continue
+        refs = set(re.findall(address, match["links"]))
+        if refs & original_links:
+            continue  # Includes a legitimate citation-only cell.
+        proposed[index] = line[:match.start()] + " " + match["links"] + " |" + match["cr"]
+        missing[index] = refs
+    if not missing:
+        return tokens
+
+    repaired = markdown.parse("\n".join(proposed))
+    table_rows = {block.map[0] for block in repaired if block.type == "tr_open" and block.map}
+    repaired_links = displayed(repaired)
+    kept = {index for index, refs in missing.items() if index in table_rows and refs <= repaired_links}
+    if not kept:
+        return tokens
+    if kept == missing.keys():
+        return repaired
+    return markdown.parse("\n".join(proposed[i] if i in kept else line for i, line in enumerate(lines)))
+
+
 def answer_html(result: Result | SessionTurn, *, source_prefix: str = "source-",
                 citation_previews: bool = False, document_hrefs: dict[str, str] | None = None) -> str:
     # Only spans emitted by validation become links. Ordinary numeric brackets
@@ -239,7 +282,7 @@ def answer_html(result: Result | SessionTurn, *, source_prefix: str = "source-",
     parts.append(result.answer[previous:])
     markdown = MarkdownIt("commonmark", {"html": False}).enable("table").disable(["image", "autolink"])
 
-    tokens = markdown.parse("".join(parts))
+    tokens = _parse_answer_markdown(markdown, "".join(parts), marker)
     for block in tokens:
         if block.type == "th_open":
             block.attrSet("scope", "col")

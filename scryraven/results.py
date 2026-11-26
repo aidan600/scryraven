@@ -7,6 +7,8 @@ from collections import Counter
 from dataclasses import dataclass
 from hashlib import sha256
 
+from markdown_it import MarkdownIt
+
 from scryraven.documents import SessionDocument, document_text_view
 from scryraven.errors import RunError
 from scryraven.presentation import Citation, CitationUse
@@ -53,6 +55,24 @@ def _saved_passage(material: Evidence | None, text: str | None) -> tuple[Support
     except ValueError:
         return ()
     return (SupportRegion(material.id, start, end, material_hash, passage_hash),)
+
+
+def _terminal_fence_body(draft: str, token: re.Pattern[str]) -> tuple[str, str] | None:
+    """Separate a terminal closing delimiter from a citation-only suffix."""
+    suffix = re.search(
+        rf"(?m)^ {{0,3}}(?P<fence>`{{3,}}|~{{3,}})[ \t]*"
+        rf"(?P<cites>{token.pattern}(?:[ \t]*{token.pattern})*)[ \t]*(?:\r?\n[ \t]*)*\Z",
+        draft,
+    )
+    if suffix is None:
+        return None
+    body = draft[:suffix.end("fence")]
+    line = body.count("\n")
+    for block in MarkdownIt("commonmark").parse(body):
+        if (block.type == "fence" and block.map and block.map[0] < line == block.map[1] - 1
+                and suffix["fence"].startswith(block.markup)):
+            return body, draft[suffix.start("cites"):]
+    return None
 
 
 def resolve_citations(
@@ -117,10 +137,18 @@ def resolve_citations(
     link = re.search(r"https?://|\]\(|!\[|<a\b|(?m:^[ \t]{0,3}\[[^\]\n]+\]:)", draft, re.IGNORECASE)
     if link:
         reject("unresolved_answer_link", "answer_link_or_image", link)
-    literal_syntax = (
-        r"(?ms:^ {0,3}(`{3,}|~{3,})[^\n]*\n.*?(?:^ {0,3}\1[ \t]*$|\Z))"
-        r"|(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\2(?!`)|(?m:^(?: {4}|\t).+$)"
-    )
+    split_fence = _terminal_fence_body(draft, token)
+    if split_fence is not None:
+        body, suffix = split_fence
+        draft = f"{body}\n\n{suffix}"
+    if "```" in draft or "~~~" in draft:
+        line_starts = [0, *(line.end() for line in re.finditer(r"\r\n?|\n", draft)), len(draft)]
+        for block in MarkdownIt("commonmark").parse(draft):
+            if block.type == "fence" and block.map:
+                start, end = block.map
+                if literal := token.search(draft, line_starts[start], line_starts[end]):
+                    reject("malformed_citation_reference", "literal_citation", literal)
+    literal_syntax = r"(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)|(?m:^(?: {4}|\t).+$)"
     for literal in re.finditer(literal_syntax, draft):
         if token.search(literal.group()):
             reject("malformed_citation_reference", "literal_citation", literal)
