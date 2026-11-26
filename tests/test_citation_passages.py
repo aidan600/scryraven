@@ -9,6 +9,7 @@ from test_research_first_resumable import initial, reply, request, scripted, sta
 from test_research_loop import Script, answer, decision, no_fetch, search
 
 from core.exa_transport import DiscoveryCandidate
+from scryraven import answer_pdf
 from scryraven.errors import RunError
 from scryraven.results import resolve_citations
 from scryraven.session import ResearchSession
@@ -25,9 +26,16 @@ def locator(ref, occurrence, text):
      "| Total | Seven | [1] [1]"),
     ("~~~text\nTotal: Seven\n~~~~ [E1] [E1]",
      "~~~~\n\n[1] [1]"),
+    ("~~~text\nTotal: Seven\n~~~ [E1]\n\nThe report verifies the total. [E1]",
+     "~~~\n\n[1]\n\nThe report verifies the total. [1]"),
+    ("```text\nTotal: Seven\n```` [E1] [E1]\nThe report verifies the total. [E1]",
+     "````\n\n[1] [1]\n\nThe report verifies the total. [1]"),
+    ("~~~text\r\nTotal: Seven\r\n~~~~ [E1]\r\n\r\nThe report verifies the total. [E1]",
+     "~~~~\r\n\r\n[1]\r\n\r\nThe report verifies the total. [1]"),
 ])
-def test_block_end_citations_survive_reading_room_reopen(tmp_path, draft, saved_tail):
-    spans = ["The recorded total was seven.", "The final report verified the total."]
+def test_block_end_citations_survive_reading_room_reopen(tmp_path, monkeypatch, draft, saved_tail):
+    spans = ["The recorded total was seven.", "The final report verified the total.",
+             "The published method is described in the report."][:draft.count("[E1]")]
     body = "\n\n".join(spans)
 
     def discover(_query):
@@ -52,7 +60,7 @@ def test_block_end_citations_survive_reading_room_reopen(tmp_path, draft, saved_
     anchors = {attrs["id"] for _, attrs in page.tags if "id" in attrs}
     uses = [attrs for tag, attrs in page.tags if tag == "a" and attrs.get("class") == "citation"]
     assert [link["data-citation-start"] for link in uses] == [str(use.start) for use in saved.citation_uses]
-    assert len({link["href"] for link in uses}) == 2
+    assert len({link["href"] for link in uses}) == len(spans)
     for link, use, span in zip(uses, saved.citation_uses, spans, strict=True):
         assert link["href"][1:] in anchors and "data-saved-passage" in link
         region, = use.support
@@ -61,16 +69,31 @@ def test_block_end_citations_survive_reading_room_reopen(tmp_path, draft, saved_
         assert "<table>" in html
     else:
         assert "<pre><code" in html
+        assert "Total: Seven\n</code></pre>" in html
 
     print_page = client.get(f"/sessions/{session.session_id}/turns/1/print")
     assert print_page.status_code == 200
     print_html = print_page.get_data(as_text=True)
-    assert print_html.count('class="citation"') == 2
+    assert print_html.count('class="citation"') == len(spans)
+
+    def render_pdf(markup, *, base_url):
+        assert markup.count('class="citation"') == len(spans)
+        return b"%PDF-test"
+
+    monkeypatch.setattr(answer_pdf, "render_pdf", render_pdf)
+    pdf = client.get(f"/sessions/{session.session_id}/turns/1/pdf")
+    assert pdf.status_code == 200 and pdf.data == b"%PDF-test"
 
 
 @pytest.mark.parametrize("draft", [
     "~~~\n~~~ [E1]\nA line of code.\n~~~",
+    "~~~\n~~~ [E1]\n\nThis looks like prose.\n~~~\n\nReal prose. [E1]",
     "~~~~\nA line of code.\n~~~ [E1]",
+    "```text\nA line of code.\n~~~ [E1]\n\nProse. [E1]",
+    "~~~\nA line of code.\n~~~ [E1] plus words\n\nProse. [E1]",
+    "    ~~~\n    A line of code.\n    ~~~ [E1]\n\nProse. [E1]",
+    "~~~\nA line of code.\n~~~ [E1]\n\nInline code `[E1]`.",
+    "<!--\n~~~\nLiteral [E1]\n~~~\n-->\n\nProse. [E1]",
     "~~~\nLiteral [E1]\n~~~ [E1]",
     "~~~ [E1]",
     "~~~\rLiteral [E1]\r~~~",

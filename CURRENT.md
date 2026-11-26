@@ -1359,9 +1359,9 @@ separately. Historical and new coordinates and hashes are validated on reopen
 without model/provider I/O or payload rewriting.
 Generated citations after a closing Markdown table pipe remain visible in the
 Reading Room and print/PDF rendering, with the saved citation target and
-offset unchanged. A citation-only suffix on a terminal code-fence close is
-placed after the code block before citation resolution. Literal citations
-inside code still fail validation.
+offset unchanged. A citation-only suffix on a matching closing code fence is
+placed after the code block before citation resolution, including when more
+prose follows. Citation markers inside literal code still fail validation.
 Authenticated Exa and Serper searches succeeded through the broker with the
 maintained `.env`. In the recovered personal-plan Reading Room demonstration,
 the California general-plan answer cited planning guidance and applicable
