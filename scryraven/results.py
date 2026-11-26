@@ -7,6 +7,9 @@ from collections import Counter
 from dataclasses import dataclass
 from hashlib import sha256
 
+from markdown_it import MarkdownIt
+from markdown_it.token import Token
+
 from scryraven.documents import SessionDocument, document_text_view
 from scryraven.errors import RunError
 from scryraven.presentation import Citation, CitationUse
@@ -53,6 +56,59 @@ def _saved_passage(material: Evidence | None, text: str | None) -> tuple[Support
     except ValueError:
         return ()
     return (SupportRegion(material.id, start, end, material_hash, passage_hash),)
+
+
+def _line_starts(text: str) -> list[int]:
+    return [0, *(line.end() for line in re.finditer(r"\r\n?|\n", text)), len(text)]
+
+
+def _has_closing_fence(block: Token) -> bool:
+    # MarkdownIt includes the closer in the token's line range, but leaves it
+    # out of the code content. An implicitly ended fence adds only its opener.
+    assert block.map is not None
+    start, end = block.map
+    code_lines = block.content.count("\n") + int(bool(block.content) and not block.content.endswith("\n"))
+    return end - start == code_lines + 2
+
+
+def _separate_fence_citations(draft: str, token: re.Pattern[str], markdown: MarkdownIt) -> str:
+    """Move citation-only suffixes outside closing fences."""
+    suffix = re.compile(
+        rf" {{0,3}}(?P<fence>`{{3,}}|~{{3,}})[ \t]*"
+        rf"(?P<cites>{token.pattern}(?:[ \t]*{token.pattern})*)[ \t]*"
+    )
+    while True:
+        starts = _line_starts(draft)
+        normalized = draft
+        for block in markdown.parse(draft):
+            if block.type != "fence" or not block.map or _has_closing_fence(block):
+                continue
+            start, end = block.map
+            for line in range(start + 1, end):
+                raw = draft[starts[line]:starts[line + 1]]
+                content = raw.rstrip("\r\n")
+                match = suffix.fullmatch(content)
+                if match is None or not match["fence"].startswith(block.markup):
+                    continue
+                eol = raw[len(content):]
+                preceding = draft[starts[line] - 2:starts[line]]
+                separator = eol or ("\r\n" if preceding == "\r\n" else preceding[-1])
+                tail = draft[starts[line + 1]:]
+                after = eol
+                if tail and not re.match(r"[ \t]*(?:\r\n?|\n)", tail):
+                    after += separator
+                indent = content[:match.start("fence")]
+                proposed = (draft[:starts[line] + match.end("fence")] + separator * 2
+                            + indent + match["cites"] + after + tail)
+                if any(candidate.type == "fence" and candidate.map == [start, line + 1]
+                       and _has_closing_fence(candidate) for candidate in markdown.parse(proposed)):
+                    normalized = proposed
+                    break
+            if normalized != draft:
+                break
+        if normalized == draft:
+            return draft
+        draft = normalized
 
 
 def resolve_citations(
@@ -117,13 +173,25 @@ def resolve_citations(
     link = re.search(r"https?://|\]\(|!\[|<a\b|(?m:^[ \t]{0,3}\[[^\]\n]+\]:)", draft, re.IGNORECASE)
     if link:
         reject("unresolved_answer_link", "answer_link_or_image", link)
-    literal_syntax = (
-        r"(?ms:^ {0,3}(`{3,}|~{3,})[^\n]*\n.*?(?:^ {0,3}\1[ \t]*$|\Z))"
-        r"|(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\2(?!`)|(?m:^(?: {4}|\t).+$)"
-    )
-    for literal in re.finditer(literal_syntax, draft):
-        if token.search(literal.group()):
-            reject("malformed_citation_reference", "literal_citation", literal)
+    literal_regions = []
+    outside_start = 0
+    if "```" in draft or "~~~" in draft:
+        markdown = MarkdownIt("commonmark", {"html": False}).enable("table")
+        draft = _separate_fence_citations(draft, token, markdown)
+        line_starts = _line_starts(draft)
+        for block in markdown.parse(draft):
+            if block.type == "fence" and block.map:
+                start, end = (line_starts[line] for line in block.map)
+                if literal := token.search(draft, start, end):
+                    reject("malformed_citation_reference", "literal_citation", literal)
+                literal_regions.append((outside_start, start))
+                outside_start = end
+    literal_regions.append((outside_start, len(draft)))
+    literal_syntax = re.compile(r"(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)|(?m:^(?: {4}|\t).+$)")
+    for start, end in literal_regions:
+        for literal in literal_syntax.finditer(draft, start, end):
+            if token.search(literal.group()):
+                reject("malformed_citation_reference", "literal_citation", literal)
 
     def replace(match: re.Match) -> str:
         nonlocal offset

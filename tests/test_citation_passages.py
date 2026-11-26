@@ -4,10 +4,13 @@ import json
 from hashlib import sha256
 
 import pytest
+from test_reading_room import Page, app_for
 from test_research_first_resumable import initial, reply, request, scripted, stages
 from test_research_loop import Script, answer, decision, no_fetch, search
 
 from core.exa_transport import DiscoveryCandidate
+from scryraven import answer_pdf
+from scryraven.errors import RunError
 from scryraven.results import resolve_citations
 from scryraven.session import ResearchSession
 from scryraven.session_store import SQLiteSessionStore
@@ -16,6 +19,89 @@ from scryraven.sources import Evidence, exact_view, support_text
 
 def locator(ref, occurrence, text):
     return {"ref": ref, "occurrence": occurrence, "text": text}
+
+
+@pytest.mark.parametrize(("draft", "saved_tail"), [
+    ("| Measure | Value |\n| --- | --- |\n| Total | Seven | [E1] [E1]",
+     "| Total | Seven | [1] [1]"),
+    ("~~~text\nTotal: Seven\n~~~~ [E1] [E1]",
+     "~~~~\n\n[1] [1]"),
+    ("~~~text\nTotal: Seven\n~~~ [E1]\n\nThe report verifies the total. [E1]",
+     "~~~\n\n[1]\n\nThe report verifies the total. [1]"),
+    ("```text\nTotal: Seven\n```` [E1] [E1]\nThe report verifies the total. [E1]",
+     "````\n\n[1] [1]\n\nThe report verifies the total. [1]"),
+    ("~~~text\r\nTotal: Seven\r\n~~~~ [E1]\r\n\r\nThe report verifies the total. [E1]",
+     "~~~~\r\n\r\n[1]\r\n\r\nThe report verifies the total. [1]"),
+])
+def test_block_end_citations_survive_reading_room_reopen(tmp_path, monkeypatch, draft, saved_tail):
+    spans = ["The recorded total was seven.", "The final report verified the total.",
+             "The published method is described in the report."][:draft.count("[E1]")]
+    body = "\n\n".join(spans)
+
+    def discover(_query):
+        return [DiscoveryCandidate("Measurement", "https://example.org/report", body,
+                                   context_kind="provider_highlights")]
+
+    store = SQLiteSessionStore(tmp_path / "block-citations.sqlite3")
+    model = Script(decision(), decision("return", ["E1"]), {
+        **answer(draft), "citation_passages": [locator("E1", index, span)
+                                              for index, span in enumerate(spans, 1)],
+    })
+    session = ResearchSession.create(store=store, model=model, search=discover, fetch=no_fetch)
+    result = session.ask("What was the total and was it verified?")
+    reopened_store = SQLiteSessionStore(store.path)
+    saved, = ResearchSession.open(session.session_id, store=reopened_store).turns
+    assert saved.answer == result.answer and saved.answer.endswith(saved_tail)
+    assert saved.citation_uses == result.citation_uses
+
+    client = app_for(reopened_store).test_client()
+    html = client.get(f"/sessions/{session.session_id}").get_data(as_text=True)
+    page = Page(html)
+    anchors = {attrs["id"] for _, attrs in page.tags if "id" in attrs}
+    uses = [attrs for tag, attrs in page.tags if tag == "a" and attrs.get("class") == "citation"]
+    assert [link["data-citation-start"] for link in uses] == [str(use.start) for use in saved.citation_uses]
+    assert len({link["href"] for link in uses}) == len(spans)
+    for link, use, span in zip(uses, saved.citation_uses, spans, strict=True):
+        assert link["href"][1:] in anchors and "data-saved-passage" in link
+        region, = use.support
+        assert support_text(region, saved.citations[0].materials[0]) == span
+    if draft.startswith("|"):
+        assert "<table>" in html
+    else:
+        assert "<pre><code" in html
+        assert "Total: Seven\n</code></pre>" in html
+
+    print_page = client.get(f"/sessions/{session.session_id}/turns/1/print")
+    assert print_page.status_code == 200
+    print_html = print_page.get_data(as_text=True)
+    assert print_html.count('class="citation"') == len(spans)
+
+    def render_pdf(markup, *, base_url):
+        assert markup.count('class="citation"') == len(spans)
+        return b"%PDF-test"
+
+    monkeypatch.setattr(answer_pdf, "render_pdf", render_pdf)
+    pdf = client.get(f"/sessions/{session.session_id}/turns/1/pdf")
+    assert pdf.status_code == 200 and pdf.data == b"%PDF-test"
+
+
+@pytest.mark.parametrize("draft", [
+    "~~~\n~~~ [E1]\nA line of code.\n~~~",
+    "~~~\n~~~ [E1]\n\nThis looks like prose.\n~~~\n\nReal prose. [E1]",
+    "~~~~\nA line of code.\n~~~ [E1]",
+    "```text\nA line of code.\n~~~ [E1]\n\nProse. [E1]",
+    "~~~\nA line of code.\n~~~ [E1] plus words\n\nProse. [E1]",
+    "    ~~~\n    A line of code.\n    ~~~ [E1]\n\nProse. [E1]",
+    "~~~\nA line of code.\n~~~ [E1]\n\nInline code `[E1]`.",
+    "<!--\n~~~\nLiteral [E1]\n~~~\n-->\n\nProse. [E1]",
+    "~~~\nLiteral [E1]\n~~~ [E1]",
+    "~~~ [E1]",
+    "~~~\rLiteral [E1]\r~~~",
+])
+def test_block_end_repair_cannot_release_literal_citations(draft):
+    source = Evidence("E1", "https://example.org/report", "Measurement", "Report text")
+    with pytest.raises(RunError, match="malformed_citation_reference"):
+        resolve_citations(draft, [source], [source], [])
 
 
 def test_same_opinion_occurrences_save_distinct_original_text_with_independent_fallback(tmp_path):
